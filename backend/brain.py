@@ -71,6 +71,10 @@ from security import (
 )
 from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
 from emission import compute_piq_emission, emission_manifest
+from extraction import (
+    extract_from_pdf_layout, fetch_registry_metadata, reconcile_bibliographic_record,
+    parse_reference_entries, summarize_references, clean_author_list,
+)
 from http_client import guarded, run_bounded
 
 # The ScilemNetwork LSTM that lived here has been removed. It embedded
@@ -286,15 +290,37 @@ def build_assessment_prompt(paper_text, canary=""):
     # explicitly delimited as data.
     guard = build_security_directive(canary) if canary else ""
 
-    return guard + f"""
-Analyze the manuscript excerpts below and respond strictly in JSON format.
-Evaluate across the 8 core Pi-Index criteria (C1: Semantic Originality, C2: Methodological Rigor, C3: Interdisciplinary Entropy, C4: Societal Impact, C5: Open Science, C6: Literature Integration, C7: Empirical Density, and C8: Future Actionability).
+    return guard + f"""You are one of several independent expert reviewers assessing a manuscript.
+Other reviewers are assessing it separately; your judgement will be compared against theirs, so
+report what you actually observe rather than what you expect a reviewer to say.
 
-Keys required in JSON:
-1. "title": Title of the paper.
-2. "authors": String of human author names.
-3. "opinion": Detailed qualitative assessment covering criteria C1-C8.
-4. "references": List of objects: [{{"citation": "[1]", "authors": "Author et al.", "year": "2024"}}]
+Respond with JSON only. No prose outside the JSON object.
+
+EXTRACTION RULES — accuracy here matters more than completeness:
+- "title": the manuscript's own title. NOT the journal name, a running header, a DOI line, a
+  copyright notice, or a preprint banner. If you cannot identify it confidently, return "".
+- "authors": the human author names only, comma-separated, in order. Exclude affiliations,
+  departments, universities, email addresses, superscript markers and corresponding-author notes.
+  If none are identifiable, return "".
+
+ASSESSMENT RULES:
+- Judge only what the text actually contains. Do not credit work that is not evidenced.
+- Be specific: cite what the manuscript says, not general praise or criticism.
+- If a criterion cannot be judged from the excerpts provided, say so for that criterion.
+
+Required JSON keys:
+1. "title": string
+2. "authors": string
+3. "opinion": 120-250 words of substantive assessment. State the central claim, then the strongest
+   and weakest aspects, referencing concrete evidence from the text.
+4. "criteria": object with keys C1..C8. Each value is an object:
+   {{"score": <0-100 integer>, "evidence": "<one specific sentence citing the manuscript>"}}
+   C1 Semantic Originality, C2 Methodological Rigor, C3 Interdisciplinary Synergy,
+   C4 Societal Impact, C5 Open Science, C6 Literature Integration, C7 Empirical Density,
+   C8 Future Actionability.
+5. "key_claims": array of up to 3 short strings — the manuscript's main claims as stated.
+6. "concerns": array of up to 3 short strings — specific, actionable methodological concerns.
+7. "references": array of up to 10 objects {{"citation": "[1]", "authors": "...", "year": "2024"}}
 
 --- FRONT MATTER ---
 {front_matter}
@@ -481,6 +507,89 @@ def grade_adjudication_quality(consensus_results) -> dict:
     }
 
 
+def summarize_panel_criteria(consensus_results) -> str:
+    """Render per-criterion scores across jurors, with their spread.
+
+    Divergence between independent jurors on a specific criterion is exactly
+    the signal a human reviewer should look at first, so it is surfaced as a
+    column rather than buried in prose.
+    """
+    labels = {
+        "C1": "Semantic Originality", "C2": "Methodological Rigor",
+        "C3": "Interdisciplinary Synergy", "C4": "Societal Impact",
+        "C5": "Open Science", "C6": "Literature Integration",
+        "C7": "Empirical Density", "C8": "Future Actionability",
+    }
+    collected = {key: [] for key in labels}
+    evidence = {key: [] for key in labels}
+    for provider, data in (consensus_results or {}).items():
+        if provider.startswith("_") or not isinstance(data, dict) or data.get("api_failed"):
+            continue
+        block = data.get("criteria")
+        if not isinstance(block, dict):
+            continue
+        for key in labels:
+            entry = block.get(key)
+            if isinstance(entry, dict):
+                try:
+                    collected[key].append(float(entry.get("score")))
+                except (TypeError, ValueError):
+                    pass
+                note = str(entry.get("evidence", "")).strip()
+                if note:
+                    evidence[key].append(f"{provider.upper()}: {note}")
+            else:
+                try:
+                    collected[key].append(float(entry))
+                except (TypeError, ValueError):
+                    pass
+
+    if not any(collected.values()):
+        return ""
+
+    rows = ["\n#### Panel Criteria Assessment\n",
+            "| Criterion | Jurors | Mean | Range | Agreement |",
+            "| --- | --- | --- | --- | --- |"]
+    for key, label in labels.items():
+        values = collected[key]
+        if not values:
+            rows.append(f"| {key} {label} | 0 | — | — | not assessed |")
+            continue
+        mean = sum(values) / len(values)
+        spread = max(values) - min(values)
+        agreement = ("strong" if spread <= 10 else
+                     "moderate" if spread <= 25 else "weak — jurors diverged")
+        rows.append(
+            f"| {key} {label} | {len(values)} | {mean:.0f} | "
+            f"{min(values):.0f}–{max(values):.0f} | {agreement} |")
+
+    detail = []
+    for key, notes in evidence.items():
+        if notes:
+            detail.append(f"- **{key} {labels[key]}** — {notes[0][:240]}")
+    if detail:
+        rows.append("\n**Supporting evidence cited by jurors**\n")
+        rows.extend(detail[:8])
+    return "\n".join(rows) + "\n"
+
+
+def collect_panel_lists(consensus_results, field: str, heading: str) -> str:
+    """Merge a list-valued field across jurors, de-duplicated."""
+    seen, items = set(), []
+    for provider, data in (consensus_results or {}).items():
+        if provider.startswith("_") or not isinstance(data, dict) or data.get("api_failed"):
+            continue
+        for entry in (data.get(field) or [])[:3]:
+            text = str(entry).strip()
+            key = text.lower()[:60]
+            if text and key not in seen:
+                seen.add(key)
+                items.append(f"- {text[:220]}")
+    if not items:
+        return ""
+    return f"\n#### {heading}\n\n" + "\n".join(items[:8]) + "\n"
+
+
 def adjudicate_panel_verdict(consensus_results, text=None):
     prompt = "You are the Pidyne Assessment Engine. Review these independent model assessments:\n\n"
     active_count = 0
@@ -542,6 +651,14 @@ Respond strictly in JSON with keys:
     juror_line = ", ".join(
         f"{m['label']}" for m in quality["participating_models"]
     ) or "none"
+
+    # Aggregate the panel's structured per-criterion judgements. Previously the
+    # report carried only free prose, so a reader could not see where the
+    # jurors agreed and where they diverged — which is the most useful thing a
+    # multi-model panel produces.
+    criteria_table = summarize_panel_criteria(consensus_results)
+    claims_block = collect_panel_lists(consensus_results, "key_claims", "Claims identified")
+    concerns_block = collect_panel_lists(consensus_results, "concerns", "Concerns raised")
     header_prefix = (
         "### Final Verdict & Evidence Synthesis\n\n"
         f"| Field | Value |\n| --- | --- |\n"
@@ -550,7 +667,9 @@ Respond strictly in JSON with keys:
         f"| Independent External Jurors | {quality['external_juror_count']} |\n"
         f"| Judgement Quality | **{quality['tier']}** (confidence {quality['confidence']:.2f}) |\n"
         f"| Inter-Model Agreement | {quality['inter_model_agreement'] * 100:.0f}% |\n\n"
-        f"> {quality['rationale']}\n\n---\n\n"
+        f"> {quality['rationale']}\n\n"
+        + criteria_table + claims_block + concerns_block +
+        "\n---\n\n"
     )
 
     if not data:
@@ -1104,8 +1223,60 @@ def process_single_pdf(
             if k != "scilem" and k != "_judge_metadata"
         )
         
-        title = raw_data.get("Extracted_Title", filename.replace(".pdf", "").replace("_", " ").title())
-        extracted_author = raw_data.get("Extracted_Author", pdf_meta_author if pdf_meta_author else "Independent Research Scholar")
+        # Bibliographic reconciliation. Registry metadata beats PDF typography,
+        # which beats the model panel's reading, which beats the filename.
+        # Previously the title was whichever juror answered first, with a local
+        # fallback of "line one of the PDF" — which on a published paper is
+        # usually a journal banner rather than the title.
+        registry_meta = guarded(lambda: fetch_registry_metadata(provided_doi),
+                                fallback={}, label="registry metadata") or {}
+        layout_meta = guarded(lambda: extract_from_pdf_layout(file_bytes),
+                              fallback={}, label="pdf layout") or {}
+        bibliographic = reconcile_bibliographic_record(
+            registry=registry_meta,
+            layout=layout_meta,
+            model_title=raw_data.get("Extracted_Title", ""),
+            model_authors=raw_data.get("Extracted_Author", ""),
+            filename=filename,
+        )
+        title = bibliographic["title"]
+        extracted_author = bibliographic["authors"]
+        if extracted_author in ("", "Unidentified") and pdf_meta_author:
+            cleaned_meta = clean_author_list(pdf_meta_author)
+            if cleaned_meta:
+                extracted_author = cleaned_meta
+                bibliographic["authors"] = cleaned_meta
+                bibliographic["authors_basis"] = "pdf-metadata"
+                bibliographic["authors_confidence"] = 0.4
+
+        if bibliographic["title_confidence"] < 0.5:
+            warnings_list.append(
+                f"LOW-CONFIDENCE TITLE: the title was inferred from "
+                f"{bibliographic['title_basis'].replace('-', ' ')} and may be wrong. Supplying a DOI "
+                f"lets the publisher-deposited record be used instead."
+            )
+        if bibliographic["authors_confidence"] < 0.5:
+            warnings_list.append(
+                f"LOW-CONFIDENCE AUTHORS: the author list was inferred from "
+                f"{bibliographic['authors_basis'].replace('-', ' ')}. piQ attribution depends on this, "
+                f"so verify it before relying on the leaderboard entry."
+            )
+
+        # Structured reference parsing, independent of DOI presence.
+        reference_entries = guarded(lambda: parse_reference_entries(full_text),
+                                    fallback=[], label="reference parsing") or []
+        reference_summary = summarize_references(reference_entries)
+        reference_audit["parsed_entries"] = len(reference_entries)
+        reference_audit["summary"] = reference_summary
+        if registry_meta.get("reference_count") and reference_summary["total"]:
+            declared = registry_meta["reference_count"]
+            found = reference_summary["total"]
+            if found < declared * 0.5:
+                warnings_list.append(
+                    f"REFERENCE EXTRACTION INCOMPLETE: the publisher record lists {declared} "
+                    f"references but only {found} could be parsed from the PDF. Literature "
+                    f"engagement may be understated."
+                )
         
         signal_vector = build_signal_vector(
             panel_rating=pidyne_ai_rating,

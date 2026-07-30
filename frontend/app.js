@@ -177,8 +177,20 @@ const HELP = {
     body: `<p>Every assessment writes an immutable block containing the evaluation hash, criteria
       weights, validator signature and a zk-SNARK proof binding the score to the document without
       revealing the document itself.</p>
-      <p>Search by evaluation hash, block hash, title or author to retrieve any record and open its
-      complete dossier.</p>`,
+      <h4>Reading the chain</h4>
+      <ul>
+        <li><strong>Block</strong> — height in the Proof-of-Research chain.</li>
+        <li><strong>Eval hash</strong> — SHA-256 of the manuscript bytes. The same PDF always
+          produces the same hash, which is how duplicate submissions are detected.</li>
+        <li><strong>Block hash</strong> — chains to its predecessor, so altering any historical
+          block invalidates every block after it.</li>
+        <li><strong>Validator</strong> — HMAC signature over the block index and timestamp.</li>
+        <li><strong>Settlement</strong> — "On-chain" links to the Sepolia transaction that minted
+          the piQ. "Local" means the block exists but was not settled on-chain, usually because no
+          signing key is configured or the wallet has no gas.</li>
+      </ul>
+      <h4>On-chain addresses</h4>
+      <div id="chainAddressList" class="addr-list"><span class="hint">Loading addresses…</span></div>`,
   },
   architecture: {
     title: "Framework Architecture",
@@ -284,6 +296,30 @@ function openHelp(key) {
   const h = HELP[key];
   if (!h) return;
   openModal(`<div class="help-modal"><h2>${escapeHtml(h.title)}</h2>${h.body}</div>`);
+  if (key === "explorer") loadChainAddresses();
+}
+
+/** Fetch and render the real contract / wallet addresses the ledger uses. */
+async function loadChainAddresses() {
+  const box = document.getElementById("chainAddressList");
+  if (!box) return;
+  try {
+    const d = await (await fetch(`${API}/api/chain/contracts`)).json();
+    box.innerHTML = (d.addresses || []).map(a => `
+      <div class="addr-item">
+        <div class="addr-label">${escapeHtml(a.label)}
+          ${a.configured ? "" : `<span class="pill pill-muted">not configured</span>`}</div>
+        ${a.address
+          ? (a.explorer_url
+              ? `<a href="${escapeHtml(a.explorer_url)}" target="_blank" rel="noopener"><code class="wrap">${escapeHtml(a.address)}</code></a>`
+              : `<code class="wrap">${escapeHtml(a.address)}</code>`)
+          : `<code class="wrap">—</code>`}
+        <div class="addr-desc">${escapeHtml(a.description)}</div>
+      </div>`).join("") +
+      `<p class="hint">Network: ${escapeHtml(d.network)} (chain ${escapeHtml(String(d.chain_id))}).</p>`;
+  } catch (e) {
+    box.innerHTML = `<span class="hint">Could not load on-chain addresses.</span>`;
+  }
 }
 
 document.addEventListener("click", (e) => {
@@ -1111,6 +1147,16 @@ function renderJudgePanel(meta, consensus) {
   });
   html += `</tbody></table>`;
 
+  // Coerce before trimming: a model can return a non-string "opinion"
+  // (object, number, null), and calling .trim() on it threw, which took the
+  // whole dossier down with "m.detail.trim is not a function".
+  models.forEach(m => {
+    if (m.detail === null || m.detail === undefined) m.detail = "";
+    else if (typeof m.detail !== "string") {
+      try { m.detail = typeof m.detail === "object" ? JSON.stringify(m.detail) : String(m.detail); }
+      catch (e) { m.detail = String(m.detail); }
+    }
+  });
   const withDetail = models.filter(m => m.detail && m.detail.trim());
   if (withDetail.length) {
     html += `<details class="dossier-details"><summary>Individual model assessments (${withDetail.length})</summary>`;
@@ -1691,7 +1737,118 @@ const mapFilterState = { minScore: 0, maxScore: 100, fields: [] };
 let mapNetworkInstance = null;
 let mapLastData = null;
 
+// Unified author/field search. Replaces a checklist that could not scale
+// past a handful of fields, and folds the author filter into the same control.
+const mapSearchIndex = { authors: [], fields: [] };
+const mapSelection = { author: "All Authors", fields: [] };
+
+async function loadMapSearchIndex() {
+  try {
+    const [fieldsRes, authorsRes] = await Promise.all([
+      fetch(`${API}/api/analytics/fields`),
+      fetch(`${API}/api/analytics/leaderboard?limit=100&sort=papers&order=desc`),
+    ]);
+    const fields = await fieldsRes.json();
+    const authors = await authorsRes.json();
+    mapSearchIndex.fields = (fields.fields || []).map(f => ({
+      value: f, count: (fields.counts || {})[f] || 0,
+    }));
+    mapSearchIndex.authors = (authors.rankings || []).map(a => ({
+      value: a.author, count: a.papers,
+    }));
+    mapFilterState.fields = mapSearchIndex.fields.map(f => f.value);
+  } catch (e) { /* search simply returns nothing */ }
+}
+
+function renderMapSearchResults(query) {
+  const box = document.getElementById("mapSearchResults");
+  const q = (query || "").trim().toLowerCase();
+  if (!q) { box.classList.add("hidden"); return; }
+
+  const match = list => list.filter(x => x.value.toLowerCase().includes(q)).slice(0, 6);
+  const fields = match(mapSearchIndex.fields);
+  const authors = match(mapSearchIndex.authors);
+
+  if (!fields.length && !authors.length) {
+    box.innerHTML = `<div class="msr-empty">No matching author or field.</div>`;
+    box.classList.remove("hidden");
+    return;
+  }
+  let html = "";
+  if (fields.length) {
+    html += `<div class="msr-group">Fields</div>` + fields.map(f =>
+      `<div class="msr-item" data-kind="field" data-value="${escapeHtml(f.value)}">
+        <span>${escapeHtml(f.value)}</span><span class="msr-count">${f.count}</span></div>`).join("");
+  }
+  if (authors.length) {
+    html += `<div class="msr-group">Authors</div>` + authors.map(a =>
+      `<div class="msr-item" data-kind="author" data-value="${escapeHtml(a.value)}">
+        <span>${escapeHtml(a.value)}</span><span class="msr-count">${a.count}</span></div>`).join("");
+  }
+  box.innerHTML = html;
+  box.classList.remove("hidden");
+  box.querySelectorAll(".msr-item").forEach(item => {
+    item.addEventListener("click", () => {
+      applyMapSelection(item.dataset.kind, item.dataset.value);
+      document.getElementById("mapSearchInput").value = "";
+      document.getElementById("mapSearchClear").classList.add("hidden");
+      box.classList.add("hidden");
+    });
+  });
+}
+
+function applyMapSelection(kind, value) {
+  if (kind === "author") {
+    mapSelection.author = value;
+    document.getElementById("mapAuthorFilter").innerHTML =
+      `<option value="${escapeHtml(value)}" selected>${escapeHtml(value)}</option>`;
+  } else if (!mapSelection.fields.includes(value)) {
+    mapSelection.fields.push(value);
+  }
+  syncMapFilters();
+  loadMap();
+}
+
+function syncMapFilters() {
+  // No explicit field selection means "everything", which is what a user
+  // expects from an empty filter — not an empty result.
+  mapFilterState.fields = mapSelection.fields.length
+    ? [...mapSelection.fields]
+    : mapSearchIndex.fields.map(f => f.value);
+
+  const chips = document.getElementById("mapActiveFilters");
+  const parts = [];
+  if (mapSelection.author !== "All Authors") {
+    parts.push(`<span class="chip">${escapeHtml(mapSelection.author)}
+      <button type="button" class="chip-remove" data-kind="author">×</button></span>`);
+  }
+  mapSelection.fields.forEach(f => {
+    parts.push(`<span class="chip">${escapeHtml(f)}
+      <button type="button" class="chip-remove" data-kind="field" data-value="${escapeHtml(f)}">×</button></span>`);
+  });
+  chips.innerHTML = parts.join("");
+  chips.querySelectorAll(".chip-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.kind === "author") {
+        mapSelection.author = "All Authors";
+        document.getElementById("mapAuthorFilter").innerHTML =
+          `<option value="All Authors" selected>All Authors</option>`;
+      } else {
+        mapSelection.fields = mapSelection.fields.filter(f => f !== btn.dataset.value);
+      }
+      syncMapFilters();
+      loadMap();
+    });
+  });
+  updateMapFilterSummary();
+}
+
 async function loadMapFieldChecklist() {
+  await loadMapSearchIndex();
+  syncMapFilters();
+  return;
+  // legacy checklist path retained below but unreachable
+  // eslint-disable-next-line no-unreachable
   try {
     const res = await fetch(`${API}/api/analytics/fields`);
     const data = await res.json();
@@ -1757,14 +1914,13 @@ function fieldOf(path) {
 function updateMapFilterSummary() {
   const el = document.getElementById("mapFilterSummary");
   if (!el) return;
-  const author = document.getElementById("mapAuthorFilter").value;
-  const min = document.getElementById("mapMinScore").value || 0;
-  const max = document.getElementById("mapMaxScore").value || 100;
-  const total = document.querySelectorAll(".map-field-checkbox").length;
-  const on = document.querySelectorAll(".map-field-checkbox:checked").length;
-  const parts = [author === "All Authors" ? "All authors" : author];
-  parts.push(total && on < total ? `${on} of ${total} fields` : "all fields");
-  if (Number(min) > 0 || Number(max) < 100) parts.push(`piX ${min}–${max}`);
+  const min = Number(document.getElementById("mapMinScore").value || 0);
+  const max = Number(document.getElementById("mapMaxScore").value || 100);
+  const parts = [mapSelection.author === "All Authors" ? "All authors" : mapSelection.author];
+  parts.push(mapSelection.fields.length
+    ? `${mapSelection.fields.length} field${mapSelection.fields.length === 1 ? "" : "s"}`
+    : "all fields");
+  if (min > 0 || max < 100) parts.push(`piX ${min}–${max}`);
   el.textContent = parts.join(" · ");
 }
 
@@ -2004,6 +2160,41 @@ document.getElementById("mapFreezeBtn").addEventListener("click", () => {
 document.getElementById("mapAuthorFilter").addEventListener("change", loadMap);
 document.getElementById("mapApplyFiltersBtn").addEventListener("click", loadMap);
 
+const mapSearchInput = document.getElementById("mapSearchInput");
+mapSearchInput.addEventListener("input", debounced(e => {
+  document.getElementById("mapSearchClear").classList.toggle("hidden", !e.target.value);
+  renderMapSearchResults(e.target.value);
+}, 160));
+mapSearchInput.addEventListener("focus", () => renderMapSearchResults(mapSearchInput.value));
+document.getElementById("mapSearchClear").addEventListener("click", () => {
+  mapSearchInput.value = "";
+  document.getElementById("mapSearchClear").classList.add("hidden");
+  document.getElementById("mapSearchResults").classList.add("hidden");
+});
+document.addEventListener("click", e => {
+  if (!e.target.closest(".map-search-wrap")) {
+    document.getElementById("mapSearchResults")?.classList.add("hidden");
+  }
+});
+
+// piX range: two handles on one track, kept from crossing over.
+const mapMinEl = document.getElementById("mapMinScore");
+const mapMaxEl = document.getElementById("mapMaxScore");
+function syncScoreRange(changed) {
+  let lo = Number(mapMinEl.value), hi = Number(mapMaxEl.value);
+  if (lo > hi) {
+    if (changed === "min") { hi = lo; mapMaxEl.value = hi; }
+    else { lo = hi; mapMinEl.value = lo; }
+  }
+  document.getElementById("mapScoreOut").textContent = `${lo} – ${hi}`;
+  updateMapFilterSummary();
+}
+mapMinEl.addEventListener("input", () => syncScoreRange("min"));
+mapMaxEl.addEventListener("input", () => syncScoreRange("max"));
+mapMinEl.addEventListener("change", loadMap);
+mapMaxEl.addEventListener("change", loadMap);
+syncScoreRange();
+
 // ---------------------------------------------------------------------------
 // Leaderboards — both tables share the same sort/pagination machinery so they
 // stay visually and behaviourally uniform.
@@ -2221,19 +2412,42 @@ async function loadExplorer() {
       });
     } else {
       const res = await fetch(`${API}/api/explorer/latest`);
+      if (!res.ok) {
+        container.innerHTML = `<div class="warning-box">The ledger is unavailable. If the server was
+          just updated, restart it so the schema migration can run.</div>`;
+        return;
+      }
       const data = await res.json();
-      container.innerHTML = `<h3>Latest Assessed Papers</h3>
-        <div class="table-scroll"><table class="data-table"><thead><tr>
-          <th>Title</th><th>Author</th><th class="num">piX</th><th>Eval Hash</th>
+      if (!data.records.length) {
+        container.innerHTML = `<div class="hint">No assessments recorded yet.</div>`;
+        return;
+      }
+      const chain = data.chain || {};
+      container.innerHTML = `
+        <h3>Proof-of-Research Chain <span class="hint">${escapeHtml(chain.network || "")} · chain ${escapeHtml(String(chain.chain_id || ""))}</span></h3>
+        <div class="table-scroll"><table class="data-table ledger-table"><thead><tr>
+          <th class="num">Block</th><th>Manuscript</th><th>Eval Hash</th><th>Block Hash</th>
+          <th>Validator</th><th class="num">piX</th><th class="num">piQ</th><th>Settlement</th>
         </tr></thead><tbody>` +
-        data.records.map(r =>
-          `<tr class="clickable-row" data-hash="${escapeHtml(r.eval_hash || "")}">
-            <td class="cell-primary">${escapeHtml(r.title)}</td>
-            <td class="cell-muted">${escapeHtml(r.author || "—")}</td>
-            <td class="num strong">${(r.score || 0).toFixed(2)}</td>
-            <td><code>${escapeHtml((r.eval_hash || "").slice(0, 12))}…</code></td>
+        data.records.map(r => `
+          <tr class="clickable-row" data-hash="${escapeHtml(r.eval_hash || "")}">
+            <td class="num mono">${r.block_height ?? "—"}</td>
+            <td class="cell-primary">${escapeHtml((r.title || "Untitled").slice(0, 60))}
+              <div class="cr-sigdesc">${escapeHtml(r.author || "—")}${
+                r.timestamp ? ` · ${new Date(r.timestamp).toLocaleDateString()}` : ""}</div></td>
+            <td><code class="mono">${escapeHtml((r.eval_hash || "").slice(0, 10))}…</code></td>
+            <td><code class="mono">${r.block_hash ? escapeHtml(r.block_hash.slice(0, 10)) + "…" : "—"}</code></td>
+            <td><code class="mono">${escapeHtml((r.validator_node || "—").replace("Validator_Pi_", ""))}</code></td>
+            <td class="num strong">${(r.score || 0).toFixed(1)}</td>
+            <td class="num">${Number(r.piq || 0).toFixed(3)}</td>
+            <td>${r.settled && r.explorer_url
+              ? `<a href="${escapeHtml(r.explorer_url)}" target="_blank" rel="noopener" class="pill q-high">On-chain</a>`
+              : `<span class="pill pill-muted">Local</span>`}</td>
           </tr>`).join("") +
-        `</tbody></table></div>`;
+        `</tbody></table></div>
+        <p class="hint">Each row is one Proof-of-Research block. The block hash chains to its
+        predecessor, the validator signature is derived from the server's signing secret, and
+        "On-chain" links to the Sepolia settlement transaction. Select a row for the full dossier.</p>`;
       container.querySelectorAll(".clickable-row").forEach(tr => {
         tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
       });
@@ -2274,85 +2488,106 @@ flowchart TB
   classDef chain fill:#e0f2fe,stroke:#0891b2,stroke-width:1.5px,color:#0f172a
   classDef ui fill:#fce7f3,stroke:#db2777,stroke-width:1.5px,color:#0f172a
   classDef gate fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#0f172a
+  classDef guard fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a
 
-  subgraph S1["1 · Intake and Identity"]
+  U["Researcher"]:::intake --> IDENT{{"Identity<br/>ORCID · DID · Wallet"}}:::intake
+
+  subgraph S0["Admission control"]
     direction LR
-    U["Researcher"]:::intake
-    IDENT{{"Identity<br/>ORCID iD · W3C DID · Wallet"}}:::intake
-    FEE{"piQ balance<br/>≥ 0.10?"}:::gate
-    UP["Local PDF Upload"]:::intake
-    DOI["DOI Lookup<br/>Unpaywall → S2 → CORE"]:::intake
-    DISC["Auto-Discover<br/>OpenAlex search"]:::intake
+    GUARD["Abuse guard<br/>velocity · automation · payload"]:::guard
+    TRIAL{"Free trial<br/>3 documents?"}:::gate
+    FEE{"piQ balance<br/>covers fee?"}:::gate
+  end
+  IDENT --> GUARD --> TRIAL
+  TRIAL -->|"allowance left"| INTAKE
+  TRIAL -->|"exhausted"| FEE
+  FEE -->|"insufficient"| STOP["Refused<br/>no fee charged"]:::gate
+  FEE -->|"fee debited"| INTAKE
+
+  subgraph S1["1 · Intake"]
+    direction LR
+    INTAKE["Source resolution"]:::intake
+    UP["Local PDF"]:::intake
+    DOI["DOI<br/>Unpaywall → S2 → CORE"]:::intake
+    DISC["OpenAlex discovery"]:::intake
     ZK1["ZK double-blind<br/>assignment"]:::intake
   end
+  INTAKE --> UP & DOI & DISC --> ZK1
 
-  subgraph S2["2 · Extraction and Deterministic Scoring"]
-    direction LR
-    PARSE["PyMuPDF<br/>layout-aware extraction"]:::extract
-    MDAR["MDAR adherence<br/>+ RRID validation"]:::extract
-    REPRO["Reproducibility markers<br/>code · data · license · container"]:::extract
-    DENS["Empirical density<br/>statistics · sample sizes"]:::extract
-    TOPO["Citation topology<br/>entropy"]:::extract
+  subgraph S2["2 · Extraction"]
+    direction TB
+    PARSE["PyMuPDF<br/>layout-aware text"]:::extract
+    BIB["Bibliographic reconciliation<br/>registry → typography → panel"]:::extract
+    REFS["Reference parsing<br/>+ registry verification"]:::extract
+    DET["Deterministic signals<br/>MDAR · RRID · repro · density"]:::extract
+    SEC["Integrity scan<br/>hidden text · metadata"]:::guard
   end
+  ZK1 --> PARSE --> BIB & REFS & DET & SEC
 
-  subgraph S3["3 · Independent Model Panel"]
+  subgraph S3["3 · Independent panel"]
     direction LR
-    L1["Llama 3.3 70B"]:::panel
+    L1["Llama 3.3"]:::panel
     L2["Mistral Large"]:::panel
-    L3["Qwen 2.5 72B"]:::panel
-    L4["Gemini 2.0 Flash"]:::panel
-    L5["Scilem Local<br/>Neural Engine"]:::panel
+    L3["Qwen 2.5"]:::panel
+    L4["Gemini 2.0"]:::panel
+    L5["Structural analyser<br/>deterministic"]:::panel
   end
+  PARSE --> CANARY["Canary issued<br/>per evaluation"]:::guard
+  CANARY --> L1 & L2 & L3 & L4
+  PARSE --> L5
 
-  subgraph S4["4 · Pidyne Adjudication"]
+  subgraph S4["4 · Pidyne adjudication"]
     direction TB
-    SYN["Evidence synthesis<br/>across all jurors"]:::judge
-    AGREE["Inter-model<br/>agreement measure"]:::judge
-    QUAL["Judgement quality grade<br/>High · Moderate · Limited"]:::judge
-    CRIT["8 criteria scores<br/>C1 – C8"]:::judge
-    LOGIC["Adversarial logic<br/>integrity matrix"]:::judge
+    SYN["Evidence synthesis"]:::judge
+    AGREE["Inter-model agreement"]:::judge
+    QUAL["Judgement quality<br/>High · Moderate · Limited"]:::judge
+    TRIP{"Canary emitted?"}:::gate
   end
+  L1 & L2 & L3 & L4 & L5 --> SYN --> AGREE --> QUAL
+  SYN --> TRIP
+  TRIP -->|"yes — injection"| ZERO["Logic integrity = 0"]:::gate
+  SEC --> TRIP
 
-  subgraph S5["5 · Proof-of-Research and Tokenomics"]
+  subgraph S5["5 · Scoring"]
     direction TB
-    PIX["piX composite score"]:::chain
-    GATE{"piX ≥ 50<br/>AND logic ≥ 50?"}:::gate
-    MINT["Mint soulbound piQ<br/>piX / 10"]:::chain
-    ZERO["No piQ minted"]:::chain
+    SIG["Signal vector<br/>13 normalized inputs"]:::judge
+    RUB["Versioned rubric<br/>weights sum to 1.0"]:::judge
+    PIX["piX composite<br/>epoch-weighted"]:::judge
+    LOGIC["Logic integrity"]:::judge
+  end
+  DET & REFS & BIB --> SIG
+  QUAL --> SIG --> RUB --> PIX
+  AGREE --> LOGIC
+  ZERO --> LOGIC
+
+  subgraph S6["6 · Emission and settlement"]
+    direction TB
+    GATE{"piX ≥ threshold<br/>AND logic ≥ floor?"}:::gate
+    EMIT["Difficulty-adjusted emission<br/>halving · author decay"]:::chain
+    NONE["0 piQ"]:::gate
     ZK2["zk-SNARK proof"]:::chain
     BLOCK["PoR block<br/>+ epoch weights"]:::chain
-    ETH["Sepolia Ethereum<br/>settlement"]:::chain
+    ETH["Sepolia settlement"]:::chain
   end
-
-  subgraph S6["6 · Outputs"]
-    direction LR
-    DOSS["Full report<br/>and CoARA dossier"]:::ui
-    FORE["Pidyne LSTM<br/>epoch forecast"]:::ui
-    MAPS["Global map<br/>of science"]:::ui
-    BOARD["piX and piQ<br/>leaderboards"]:::ui
-    DEF["Adversarial<br/>defence strategy"]:::ui
-  end
-
-  U --> IDENT --> FEE
-  FEE -->|"insufficient"| STOP["Run refused<br/>fee not charged"]:::gate
-  FEE -->|"charged 0.10 piQ"| UP & DOI & DISC
-  UP & DOI & DISC --> ZK1 --> PARSE
-  PARSE --> MDAR & REPRO & DENS & TOPO
-  PARSE --> L1 & L2 & L3 & L4 & L5
-  L1 & L2 & L3 & L4 & L5 --> SYN
-  SYN --> AGREE --> QUAL
-  MDAR & REPRO & DENS & TOPO --> CRIT
-  SYN --> CRIT --> LOGIC --> PIX
-  QUAL --> CRIT
-  PIX --> GATE
-  GATE -->|"yes"| MINT --> ZK2
-  GATE -->|"no"| ZERO --> ZK2
+  PIX & LOGIC --> GATE
+  GATE -->|"yes"| EMIT --> ZK2
+  GATE -->|"no"| NONE --> ZK2
   ZK2 --> BLOCK --> ETH
+
+  subgraph S7["7 · Outputs"]
+    direction LR
+    DOSS["Dossier<br/>per-signal attribution"]:::ui
+    FORE["Pidyne LSTM forecast"]:::ui
+    MAPS["Map of science"]:::ui
+    BOARD["piX / piQ boards"]:::ui
+    DEF["GA rebuttal strategy"]:::ui
+    FAIR["FAIR and CoARA export"]:::ui
+  end
   BLOCK --> FORE
-  CRIT --> DOSS
+  RUB --> DOSS & DEF
   QUAL --> DOSS
-  ETH --> DOSS
-  CRIT --> MAPS & BOARD & DEF
+  ETH --> DOSS --> FAIR
+  BIB --> MAPS & BOARD
 `;
 
 const SCORE_FLOWCHART = `

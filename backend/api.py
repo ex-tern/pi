@@ -43,7 +43,7 @@ from config import (
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, PIQ_PROCESSING_FEE, DONATION_WALLET,
-    CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL,
+    CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
@@ -59,9 +59,14 @@ from integrations import (
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state, generate_assistant_reply,
+    derive_next_epoch_weights,
 )
-from rubric import rubric_manifest, RUBRIC_VERSION, apply_scoring_rubric, compute_composite_score
+from rubric import (
+    rubric_manifest, RUBRIC_VERSION, apply_scoring_rubric, compute_composite_score,
+    CRITERIA_ORDER as BRAIN_CRITERIA_ORDER,
+)
 from emission import emission_manifest, compute_processing_fee, fee_manifest
+import abuse_guard
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
 import numpy as np
@@ -243,25 +248,68 @@ def verify_wallet(req: WalletVerifyRequest):
     return {"address": clean_wallet, "authenticated": authenticated}
 
 
+def resolve_orcid_redirect_uri(request: Request) -> str:
+    """The callback URL registered with ORCID, defaulting to this deployment."""
+    configured = (ORCID_REDIRECT_URI or "").strip()
+    if configured and "localhost" not in configured and "127.0.0.1" not in configured:
+        return configured
+    return f"{resolve_frontend_origin(request)}/api/auth/orcid/callback"
+
+
 @app.get("/api/auth/orcid/login-url")
-def orcid_login_url(wallet: Optional[str] = None):
+def orcid_login_url(request: Request, wallet: Optional[str] = None):
+    if not ORCID_CLIENT_ID or not ORCID_CLIENT_SECRET:
+        raise HTTPException(
+            status_code=503,
+            detail="ORCID sign-in is not configured on this deployment "
+                   "(ORCID_CLIENT_ID / ORCID_CLIENT_SECRET are unset).",
+        )
     state_payload = wallet if wallet and w3.is_address(wallet) else "none"
+    redirect_uri = resolve_orcid_redirect_uri(request)
     url = (
         f"https://orcid.org/oauth/authorize?client_id={ORCID_CLIENT_ID}"
-        f"&response_type=code&scope=/authenticate&redirect_uri={ORCID_REDIRECT_URI}"
+        f"&response_type=code&scope=/authenticate"
+        f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
         f"&state={state_payload}"
     )
-    return {"url": url}
+    return {"url": url, "redirect_uri": redirect_uri}
+
+
+def resolve_frontend_origin(request: Request) -> str:
+    """Where to send the browser back to after an OAuth round trip.
+
+    FRONTEND_ORIGIN defaults to http://localhost:8000, which is correct for
+    local development and wrong for every deployment. On a hosted instance the
+    ORCID callback was redirecting to localhost, so the browser silently
+    dropped the `?orcid=` parameters and the sidebar never showed the account
+    as connected.
+
+    An explicitly configured FRONTEND_ORIGIN still wins; otherwise the origin
+    is derived from the request itself, honouring the proxy headers that
+    platforms like Railway set.
+    """
+    configured = (FRONTEND_ORIGIN or "").strip().rstrip("/")
+    if configured and configured not in ("http://localhost:8000", "http://127.0.0.1:8000"):
+        return configured
+
+    forwarded_host = request.headers.get("x-forwarded-host") or request.headers.get("host")
+    if forwarded_host:
+        proto = request.headers.get("x-forwarded-proto")
+        if not proto:
+            proto = "https" if not forwarded_host.startswith(("localhost", "127.0.0.1")) else "http"
+        return f"{proto}://{forwarded_host}".rstrip("/")
+    return configured or "http://localhost:8000"
 
 
 @app.get("/api/auth/orcid/callback")
-def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
+def orcid_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None):
+    frontend = resolve_frontend_origin(request)
     wallet_qs = ""
     if state and state != "none" and w3.is_address(state):
         wallet_qs = f"&wallet={w3.to_checksum_address(state)}"
 
     if not code:
-        return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error=missing_code")
+        return RedirectResponse(f"{frontend}/?orcid_error=missing_code")
 
     try:
         res = requests.post(
@@ -271,7 +319,7 @@ def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
                 "client_secret": ORCID_CLIENT_SECRET,
                 "grant_type": "authorization_code",
                 "code": code,
-                "redirect_uri": ORCID_REDIRECT_URI,
+                "redirect_uri": resolve_orcid_redirect_uri(request),
             },
             headers={"Accept": "application/json"},
         )
@@ -282,13 +330,13 @@ def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
             if real_orcid:
                 add_log(f"ORCID Profile Successfully Authenticated: {real_orcid}")
                 name_qs = urllib.parse.quote(real_name or "")
-                return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid={real_orcid}&orcid_name={name_qs}{wallet_qs}")
+                return RedirectResponse(f"{frontend}/?orcid={real_orcid}&orcid_name={name_qs}{wallet_qs}")
         err_desc = res.json().get("error_description", "Invalid Code") if res.content else "Invalid Code"
         add_log(f"ORCID Auth Error: {err_desc}")
-        return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error={urllib.parse.quote(err_desc)}")
+        return RedirectResponse(f"{frontend}/?orcid_error={urllib.parse.quote(err_desc)}")
     except Exception as e:
         add_log(f"Failed to connect to ORCID API: {e}")
-        return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error={urllib.parse.quote(str(e))}")
+        return RedirectResponse(f"{frontend}/?orcid_error={urllib.parse.quote(str(e))}")
 
 
 def count_assessed_papers() -> int:
@@ -342,6 +390,49 @@ def user_piq_ledger(wallet: Optional[str] = None, orcid: Optional[str] = None):
 # ---------------------------------------------------------------------------
 # 2b. CHAIN STATUS & DONATIONS
 # ---------------------------------------------------------------------------
+@app.get("/api/chain/contracts")
+def chain_contracts():
+    """The on-chain identities this ledger settles against.
+
+    Surfaced so the explorer can show exactly which addresses a record refers
+    to, rather than presenting hashes with no way to check where they landed.
+    The admin address is derived from the signing key, never the key itself.
+    """
+    admin_address = None
+    if ETH_ADMIN_PRIVATE_KEY:
+        try:
+            admin_address = w3.eth.account.from_key(ETH_ADMIN_PRIVATE_KEY).address
+        except Exception:
+            admin_address = None
+
+    def entry(address, label, description):
+        return {
+            "label": label, "address": address or None, "description": description,
+            "explorer_url": get_sepolia_explorer_url(address, "address") if address else None,
+            "configured": bool(address),
+        }
+
+    return {
+        "network": CHAIN_NAME, "chain_id": CHAIN_ID, "currency": CHAIN_CURRENCY,
+        "explorer": BLOCK_EXPLORER_URL,
+        "addresses": [
+            entry(PIQ_CONTRACT_ADDRESS, "piQ token contract",
+                  "Soulbound pi-Quotient token. Receives verifyProofAndMint calls when a "
+                  "manuscript clears the minting threshold."),
+            entry(REGISTRY_CONTRACT_ADDRESS, "State registry contract",
+                  "Holds the IPFS CID pointing at the encrypted ledger state backup."),
+            entry(admin_address, "Minting authority",
+                  "Wallet that signs minting transactions. Derived from the configured signing "
+                  "key; the key itself is never exposed."),
+            entry(DONATION_WALLET, "Donation address",
+                  "Receives Support & Donate contributions. Confers no piQ and no scoring "
+                  "advantage."),
+            entry(OWNER_ID, "Owner wallet",
+                  "Administrative wallet permitted to re-score the corpus and reset local state."),
+        ],
+    }
+
+
 @app.get("/api/chain/status")
 def chain_status():
     """Live Ethereum connectivity, so the UI can tell the user honestly
@@ -372,6 +463,20 @@ def donate_info():
 # 3. INTAKE / ASSESSMENT PIPELINE  (streams NDJSON progress like the old
 #    st.status(...) live box, then a final line with all results)
 # ---------------------------------------------------------------------------
+@app.get("/api/trial/status")
+def trial_status(request: Request):
+    """How much free allowance this visitor has left, and why."""
+    ip = get_client_ip(request)
+    used = get_free_evals_used(ip)
+    return {
+        "documents_allowed": abuse_guard.FREE_DOCUMENTS,
+        "documents_used": min(used, abuse_guard.FREE_DOCUMENTS),
+        "remaining": max(0, abuse_guard.FREE_DOCUMENTS - used),
+        "note": ("Metered per distinct manuscript. Re-assessing a paper you have already "
+                 "submitted does not consume allowance."),
+    }
+
+
 @app.get("/api/stats/count")
 def stats_count():
     conn = get_db_connection()
@@ -673,26 +778,45 @@ async def assess_stream(
     # Server-side free-trial gate — the browser's localStorage counter is a
     # convenience for the UI, not a security boundary (a user can clear it
     # trivially). This is the authoritative check.
-    free_trial_active = False
-    if not has_web3 and not orcid:
-        used = get_free_evals_used(client_ip)
-        if used >= FREE_EVALS_PER_IP:
-            raise HTTPException(
-                status_code=402,
-                detail=f"Free trial limit ({FREE_EVALS_PER_IP}) reached for this connection. "
-                       f"Connect a Web3 wallet in the sidebar to continue.",
-            )
-        free_trial_active = True
+    free_trial_active = not has_web3 and not orcid
 
     max_bytes = int(MAX_UPLOAD_MB * 1024 * 1024)
-    file_payload = []
+    file_payload, fingerprints = [], []
     for f in files:
         if f.content_type and f.content_type not in ("application/pdf", "application/octet-stream"):
             raise HTTPException(status_code=400, detail=f"'{f.filename}' is not a PDF file.")
         raw = await f.read()
-        if len(raw) > max_bytes:
-            raise HTTPException(status_code=413, detail=f"'{f.filename}' exceeds the {MAX_UPLOAD_MB}MB upload limit.")
+        # Structural validation before any paid inference: a renamed .txt or a
+        # truncated download should be rejected here, not after it has consumed
+        # LLM credits.
+        valid, why = abuse_guard.validate_upload(f.filename, raw, max_bytes)
+        if not valid:
+            raise HTTPException(status_code=400, detail=why)
         file_payload.append((f.filename, raw))
+        fingerprints.append(abuse_guard.document_fingerprint(raw))
+
+    # DOI and discovery submissions are fingerprinted by identifier, since
+    # their bytes are not available until retrieval.
+    if include_doi and doi.strip():
+        fingerprints.append(abuse_guard.document_fingerprint(doi.strip().lower().encode()))
+    for entry in discover_list:
+        key = (entry.get("doi") or entry.get("title") or "").strip().lower()
+        if key:
+            fingerprints.append(abuse_guard.document_fingerprint(key.encode()))
+
+    # Layered abuse controls. Velocity limits apply to everyone; free-tier
+    # metering and automation heuristics apply only to unidentified visitors,
+    # since identified users pay in piQ and that is its own control.
+    verdict = abuse_guard.evaluate_request(
+        ip=client_ip,
+        headers={k.lower(): v for k, v in request.headers.items()},
+        documents_used=get_free_evals_used(client_ip),
+        fingerprints=fingerprints,
+        has_identity=bool(has_web3 or orcid),
+    )
+    if not verdict["allowed"]:
+        add_log(f"Blocked submission from {client_ip}: {verdict['reason'][:100]}")
+        raise HTTPException(status_code=verdict["code"], detail=verdict["reason"])
 
     paper_count = len(file_payload) + len(discover_list) + (1 if (include_doi and doi.strip()) else 0)
 
@@ -723,7 +847,10 @@ async def assess_stream(
             )
 
     if free_trial_active and paper_count:
-        increment_free_evals_used(client_ip)
+        # Metered per distinct document, so a resubmission costs no allowance.
+        abuse_guard.register_documents(client_ip, fingerprints)
+        for _ in range(max(1, len(fingerprints))):
+            increment_free_evals_used(client_ip)
 
     def gen():
         yield from stream_assessment_progress(
@@ -873,6 +1000,36 @@ def describe_forecast_criteria(weights):
 
 CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
 
+
+def reconstruct_weight_history(limit: int = 60):
+    """Rebuild the epoch-weight series from stored criteria scores.
+
+    Blocks written before per-block weighting all carry [1.0] * 8, which gives
+    the forecaster a flat line and nothing to learn. The papers themselves
+    still hold their C1-C8 scores, so the same derivation the ledger now uses
+    can simply be replayed over them in timestamp order.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT c1, c2, c3, c4, c5, c6, c7, c8 FROM papers_assessment
+               WHERE final_score IS NOT NULL
+               ORDER BY timestamp ASC LIMIT ?""",
+            (limit,),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    history, previous = [], None
+    for row in rows:
+        scores = {key: safe_float(value, 50.0)
+                  for key, value in zip(BRAIN_CRITERIA_ORDER, row)}
+        previous = derive_next_epoch_weights(scores, previous)
+        history.append(list(previous))
+    return history
+
 WEIGHT_MIN = 0.05
 # The largest a single weight can be while the other seven still hold their
 # floor and all eight sum to 8.0. Clipping to anything tighter than this is
@@ -943,19 +1100,29 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 
     weight_matrix = np.array([[safe_float(v, 1.0) for v in r[1:9]] for r in rows], dtype=np.float32)
 
-    # A constant series means the ledger predates the weight fix. Say so
-    # plainly rather than drawing eight flat lines and calling it a forecast.
+    # A constant series means those blocks predate per-block weighting. Rather
+    # than refusing to forecast, reconstruct the series from the criteria
+    # scores of the papers themselves: the same derivation the ledger now
+    # applies, replayed over history. This makes the forecast work immediately
+    # on an existing corpus instead of requiring the ledger to be rebuilt.
+    series_source = "ledger"
     if float(np.max(np.ptp(weight_matrix, axis=0))) < 1e-6:
-        return {
-            "ready": False,
-            "message": (
-                "All recorded blocks carry identical criteria weights, so there is no trend to "
-                "forecast. These blocks were written before per-block weighting was enabled — "
-                "assess new manuscripts to begin building a meaningful series."
-            ),
-            "blocks_recorded": len(rows), "blocks_required": 3,
-            "history": [], "forecast": None, "criteria": [],
-        }
+        reconstructed = reconstruct_weight_history()
+        if len(reconstructed) >= 3:
+            weight_matrix = np.array(reconstructed, dtype=np.float32)
+            rows = [(i + 1, *w, None) for i, w in enumerate(reconstructed)]
+            series_source = "reconstructed"
+        else:
+            return {
+                "ready": False,
+                "message": (
+                    "The recorded blocks all carry identical criteria weights (they predate "
+                    "per-block weighting), and there are not yet enough assessed papers to "
+                    "reconstruct a series. Assess a few manuscripts to build one."
+                ),
+                "blocks_recorded": len(rows), "blocks_required": 3,
+                "history": [], "forecast": None, "criteria": [],
+            }
 
     actual_lookback = max(1, min(lookback, len(rows) - 1))
 
@@ -1055,6 +1222,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         "lookback_used": actual_lookback,
         "blocks_recorded": len(rows),
         "training_loss": round(final_loss, 6),
+        "series_source": series_source,
         "interpretation": interpretation,
         "top_criterion": ranked[0]["id"],
         "biggest_mover": mover["id"],
@@ -1552,9 +1720,17 @@ def explorer_search(q: str = Query(default="")):
 def explorer_latest():
     conn = get_db_connection()
     try:
+        # Joined against the Proof-of-Research chain so the explorer shows
+        # actual ledger data — block height, validator, block hash, proof and
+        # settlement transaction — rather than a plain list of titles.
         rows = conn.execute(
-            "SELECT title, author_name, final_score, eval_hash FROM papers_assessment "
-            "ORDER BY timestamp DESC LIMIT 20"
+            """SELECT p.title, p.author_name, p.final_score, p.eval_hash, p.timestamp,
+                      p.tx_hash, p.zk_proof, p.piq_minted,
+                      b.block_height, b.block_hash, b.previous_hash, b.validator_node,
+                      b.por_proof, b.model_used, b.formulas_hash
+               FROM papers_assessment p
+               LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
+               ORDER BY p.timestamp DESC LIMIT 25"""
         ).fetchall()
     except sqlite3.Error as e:
         add_log(f"Ledger read failed: {e}")
@@ -1563,7 +1739,22 @@ def explorer_latest():
                                    "updated, restart it so the schema migration can run.")
     finally:
         conn.close()
-    return {"records": [{"title": r[0], "author": r[1], "score": r[2], "eval_hash": r[3]} for r in rows]}
+    records = []
+    for r in rows:
+        tx = r[5]
+        records.append({
+            "title": r[0], "author": clean_author_name(r[1]), "score": r[2],
+            "eval_hash": r[3], "timestamp": r[4],
+            "tx_hash": tx, "explorer_url": get_sepolia_explorer_url(tx, "tx"),
+            "settled": bool(tx and isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66),
+            "zk_proof": r[6], "piq": r[7],
+            "block_height": r[8], "block_hash": r[9], "previous_hash": r[10],
+            "validator_node": r[11], "por_proof": r[12], "model_used": r[13],
+            "formulas_hash": r[14],
+        })
+    return {"records": records, "chain": {
+        "network": CHAIN_NAME, "chain_id": CHAIN_ID, "explorer": BLOCK_EXPLORER_URL,
+    }}
 
 
 @app.get("/api/explorer/dossier/{eval_hash}")
