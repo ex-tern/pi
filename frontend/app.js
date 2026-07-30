@@ -97,10 +97,20 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
   const statusEl = document.getElementById("mmStatus");
   const provider = window.ethereum;
   if (!provider) { statusEl.textContent = "MetaMask not detected!"; return; }
+
+  statusEl.textContent = "Connecting...";
+  // If MetaMask's approval popup doesn't grab focus (common in some
+  // browsers/OSes), the request just hangs with no feedback. Nudge the
+  // user to go find it instead of leaving them staring at "Connecting...".
+  const hintTimer = setTimeout(() => {
+    statusEl.innerHTML = "Still waiting — check for a MetaMask popup " +
+      "(click the fox icon in your browser toolbar) and approve it there.";
+  }, 6000);
+
   try {
-    statusEl.textContent = "Connecting...";
     const accounts = await provider.request({ method: "eth_requestAccounts" });
-    if (!accounts || !accounts.length) return;
+    clearTimeout(hintTimer);
+    if (!accounts || !accounts.length) { statusEl.textContent = ""; return; }
     const account = accounts[0];
     statusEl.textContent = "Signing...";
     const nonce = Math.floor(Math.random() * 100000000);
@@ -119,7 +129,14 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     statusEl.textContent = "";
     renderSidebar();
   } catch (e) {
-    statusEl.textContent = "Connection failed.";
+    clearTimeout(hintTimer);
+    if (e && e.code === -32002) {
+      statusEl.textContent = "A MetaMask request is already open — click the fox icon in your toolbar to find it.";
+    } else if (e && e.code === 4001) {
+      statusEl.textContent = "Connection request was rejected.";
+    } else {
+      statusEl.textContent = "Connection failed.";
+    }
   }
 });
 
