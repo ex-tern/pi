@@ -58,19 +58,19 @@ AUTHOR_DECAY_HALFLIFE = 12.0    # papers, per author, per halving of their own r
 AUTHOR_MIN_FACTOR = 0.25        # never below a quarter, so contribution always pays
 
 
-def halving_epoch(total_papers: int) -> int:
+def current_halving_epoch(total_papers: int) -> int:
     """Which halving epoch the corpus is currently in (0 = genesis)."""
     if total_papers < 0:
         return 0
     return min(MAX_HALVINGS, int(total_papers // HALVING_INTERVAL))
 
 
-def supply_factor(total_papers: int) -> float:
+def compute_supply_factor(total_papers: int) -> float:
     """Emission multiplier from the halving schedule."""
-    return 0.5 ** halving_epoch(total_papers)
+    return 0.5 ** current_halving_epoch(total_papers)
 
 
-def quality_floor(total_papers: int) -> float:
+def compute_quality_threshold(total_papers: int) -> float:
     """Minimum piX required to mint, rising asymptotically with corpus size.
 
     Saturating exponential rather than linear: the bar rises quickly while the
@@ -83,7 +83,7 @@ def quality_floor(total_papers: int) -> float:
     return round(FLOOR_PIX_INITIAL + (FLOOR_PIX_CEILING - FLOOR_PIX_INITIAL) * progress, 3)
 
 
-def author_factor(author_paper_count: int) -> float:
+def compute_author_decay_factor(author_paper_count: int) -> float:
     """Diminishing returns on an author's own accumulated output."""
     if author_paper_count <= 0:
         return 1.0
@@ -91,7 +91,7 @@ def author_factor(author_paper_count: int) -> float:
     return round(max(AUTHOR_MIN_FACTOR, factor), 6)
 
 
-def compute_emission(pix_score: float, logic_integrity: float, total_papers: int,
+def compute_piq_emission(pix_score: float, logic_integrity: float, total_papers: int,
                      author_paper_count: int = 0) -> Dict:
     """Decide how much piQ this manuscript mints, and explain the decision.
 
@@ -117,10 +117,10 @@ def compute_emission(pix_score: float, logic_integrity: float, total_papers: int
     total_papers = max(0, int(total_papers or 0))
     author_paper_count = max(0, int(author_paper_count or 0))
 
-    floor = quality_floor(total_papers)
-    epoch = halving_epoch(total_papers)
-    supply = supply_factor(total_papers)
-    author_mult = author_factor(author_paper_count)
+    floor = compute_quality_threshold(total_papers)
+    epoch = current_halving_epoch(total_papers)
+    supply = compute_supply_factor(total_papers)
+    author_mult = compute_author_decay_factor(author_paper_count)
 
     reasons = []
     minted = 0.0
@@ -182,24 +182,24 @@ BASE_FEE = 0.1
 MIN_FEE = 0.001
 
 
-def current_fee(total_papers: int, base_fee: float = BASE_FEE) -> float:
+def compute_processing_fee(total_papers: int, base_fee: float = BASE_FEE) -> float:
     """Processing fee at the corpus's current difficulty."""
     try:
         base = float(base_fee)
     except (TypeError, ValueError):
         base = BASE_FEE
-    return round(max(MIN_FEE, base * supply_factor(total_papers)), 6)
+    return round(max(MIN_FEE, base * compute_supply_factor(total_papers)), 6)
 
 
 def fee_manifest(total_papers: int, base_fee: float = BASE_FEE) -> Dict:
-    fee = current_fee(total_papers, base_fee)
+    fee = compute_processing_fee(total_papers, base_fee)
     # What a paper exactly at the qualifying threshold nets after the fee.
-    floor_pix = quality_floor(total_papers)
-    marginal = (floor_pix / BASE_DIVISOR) * supply_factor(total_papers)
+    floor_pix = compute_quality_threshold(total_papers)
+    marginal = (floor_pix / BASE_DIVISOR) * compute_supply_factor(total_papers)
     return {
         "fee": fee,
         "base_fee": base_fee,
-        "supply_factor": round(supply_factor(total_papers), 6),
+        "supply_factor": round(compute_supply_factor(total_papers), 6),
         "marginal_paper_mints": round(marginal, 6),
         "marginal_paper_nets": round(marginal - fee, 6),
         "sustainable": marginal > fee,
@@ -226,7 +226,7 @@ def theoretical_max_supply() -> float:
 
 def emission_manifest(total_papers: int = 0) -> Dict:
     """Publish the full emission policy and where the corpus currently sits."""
-    epoch = halving_epoch(total_papers)
+    epoch = current_halving_epoch(total_papers)
     schedule = []
     for e in range(MAX_HALVINGS + 1):
         start = e * HALVING_INTERVAL
@@ -236,15 +236,15 @@ def emission_manifest(total_papers: int = 0) -> Dict:
             "papers_to": None if e == MAX_HALVINGS else ((e + 1) * HALVING_INTERVAL) - 1,
             "supply_factor": round(0.5 ** e, 6),
             "piq_per_100_pix": round((100.0 / BASE_DIVISOR) * (0.5 ** e), 4),
-            "quality_floor_at_start": quality_floor(start),
+            "quality_floor_at_start": compute_quality_threshold(start),
             "current": e == epoch,
         })
     return {
         "policy_version": "piq-emission/1.0",
         "corpus_size": total_papers,
         "current_epoch": epoch,
-        "current_supply_factor": round(supply_factor(total_papers), 6),
-        "current_quality_floor": quality_floor(total_papers),
+        "current_supply_factor": round(compute_supply_factor(total_papers), 6),
+        "current_quality_floor": compute_quality_threshold(total_papers),
         "logic_floor": LOGIC_FLOOR,
         "halving_interval": HALVING_INTERVAL,
         "max_halvings": MAX_HALVINGS,

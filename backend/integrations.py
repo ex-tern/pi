@@ -83,7 +83,7 @@ def fetch_core_text_by_doi(doi):
         
     return None
 
-def create_virtual_pdf_from_text(text, title="CORE Open Access Text"):
+def build_pdf_from_text(text, title="CORE Open Access Text"):
     if not FITZ_AVAILABLE:
         return None
     try:
@@ -98,7 +98,7 @@ def create_virtual_pdf_from_text(text, title="CORE Open Access Text"):
             if leftover >= 0:
                 break
 
-            fitted_chars = _estimate_fitted_chars(remaining, rect, fontsize=10)
+            fitted_chars = estimate_characters_per_page(remaining, rect, fontsize=10)
             if fitted_chars <= 0:
                 break
             remaining = remaining[fitted_chars:]
@@ -109,7 +109,7 @@ def create_virtual_pdf_from_text(text, title="CORE Open Access Text"):
     except Exception:
         return None
 
-def _estimate_fitted_chars(text, rect, fontsize):
+def estimate_characters_per_page(text, rect, fontsize):
     try:
         chars_per_line = max(1, int(rect.width / (fontsize * 0.5)))
         lines_per_page = max(1, int(rect.height / (fontsize * 1.2)))
@@ -117,7 +117,7 @@ def _estimate_fitted_chars(text, rect, fontsize):
     except Exception:
         return len(text)
 
-def fetch_author_coara_metrics(author_name):
+def fetch_legacy_author_metrics(author_name):
     try:
         clean_name = clean_author_name(author_name)
         if (
@@ -143,41 +143,91 @@ def fetch_author_coara_metrics(author_name):
         pass
     return 0.0, 0, "Methodology & Validation"
 
-def search_openalex_topics(topic_query, limit=100):
+def normalize_doi(raw):
+    """Strip URL prefixes so a DOI is always a bare identifier."""
+    if not raw:
+        return ""
+    return (str(raw).replace("https://doi.org/", "")
+            .replace("http://doi.org/", "")
+            .replace("doi.org/", "").strip())
+
+
+def collect_pdf_candidates(work):
+    """Every plausible full-text URL for an OpenAlex work, best first.
+
+    Retrieval previously used a single URL — `best_oa_location.pdf_url` or the
+    generic `oa_url`. That field is frequently a landing page rather than a
+    PDF, and when it was absent or unusable the paper simply failed with no
+    fallback, which is why auto-discovered papers so often could not be
+    retrieved. OpenAlex usually lists several locations (publisher, repository,
+    preprint server); trying them in order of directness recovers most of them.
+    """
+    candidates, seen = [], set()
+
+    def add(url):
+        if url and url not in seen:
+            seen.add(url)
+            candidates.append(url)
+
+    # Direct PDF links first — these need no further resolution.
+    for loc in ([work.get("best_oa_location"), work.get("primary_location")]
+                + list(work.get("locations") or [])):
+        if isinstance(loc, dict):
+            add(loc.get("pdf_url"))
+
+    # Then landing pages, which download_pdf can often resolve.
+    for loc in ([work.get("best_oa_location"), work.get("primary_location")]
+                + list(work.get("locations") or [])):
+        if isinstance(loc, dict):
+            add(loc.get("landing_page_url"))
+
+    add((work.get("open_access") or {}).get("oa_url"))
+    return candidates
+
+
+def search_open_access_works(topic_query, limit=100):
+    """Search OpenAlex for open-access works with a retrievable full text."""
     try:
-        url = f"https://api.openalex.org/works?search={requests.utils.quote(topic_query)}&filter=is_oa:true&per_page={limit}"
-        res = requests.get(url, timeout=10)
-        if res.status_code == 200:
-            results = res.json().get("results", [])
-            extracted = []
-            for item in results:
-                title = item.get("title", "Untitled Paper")
-                doi = item.get("doi", "")
+        params = {
+            "search": topic_query,
+            # has_fulltext narrows results to works OpenAlex believes it can
+            # actually reach, which materially raises the retrieval hit rate.
+            "filter": "is_oa:true,has_doi:true",
+            "per_page": min(int(limit), 50),
+            "sort": "relevance_score:desc",
+        }
+        res = requests.get("https://api.openalex.org/works", params=params,
+                           headers={"User-Agent": "ScholarPi-PiIndex/2.2 (mailto:research@pi-index.org)"},
+                           timeout=12)
+        if res.status_code != 200:
+            return []
 
-                best_oa = item.get("best_oa_location") or {}
-                pdf_url = best_oa.get("pdf_url") or item.get("open_access", {}).get("oa_url", "")
+        extracted = []
+        for item in res.json().get("results", []):
+            doi = normalize_doi(item.get("doi", ""))
+            candidates = collect_pdf_candidates(item)
+            if not doi and not candidates:
+                continue
 
-                authorships = item.get("authorships", [])
-                authors_list = [
-                    a.get("author", {}).get("display_name", "") for a in authorships
-                ]
-                authors_str = (
-                    ", ".join([a for a in authors_list if a])
-                    if authors_list
-                    else "Unidentified"
-                )
+            authors = [a.get("author", {}).get("display_name", "")
+                       for a in (item.get("authorships") or [])]
+            authors_str = ", ".join(a for a in authors if a) or "Unidentified"
 
-                if pdf_url or doi:
-                    extracted.append({
-                        "title": title,
-                        "doi": doi,
-                        "pdf_url": pdf_url,
-                        "authors": authors_str,
-                    })
-            return extracted
-    except Exception:
-        pass
-    return []
+            extracted.append({
+                "title": item.get("title") or "Untitled Paper",
+                "doi": doi,
+                # Kept for backward compatibility with existing callers.
+                "pdf_url": candidates[0] if candidates else "",
+                "pdf_candidates": candidates[:5],
+                "authors": authors_str,
+                "year": item.get("publication_year"),
+                "oa_status": (item.get("open_access") or {}).get("oa_status"),
+            })
+        return extracted
+    except Exception as e:
+        import logging
+        logging.warning("Open-access search failed for %r: %s", topic_query, e)
+        return []
 
 def fetch_doi_metadata(doi):
     clean_doi = (
@@ -224,7 +274,7 @@ def fetch_semantic_scholar_pdf(title_or_doi):
         pass
     return None
 
-def download_pdf_from_url(pdf_url):
+def download_pdf(pdf_url):
     if not pdf_url:
         return None
 
@@ -279,7 +329,7 @@ def download_pdf_from_url(pdf_url):
 
     return None
 
-def calculate_citation_topology(doi: str) -> float:
+def measure_legacy_citation_entropy(doi: str) -> float:
     if not doi or doi == "None":
         return 0.50
 

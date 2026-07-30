@@ -25,6 +25,8 @@ from datetime import datetime
 from collections import deque, defaultdict
 from typing import Optional, List
 
+import sqlite3
+
 import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
@@ -49,17 +51,18 @@ from database import (
 )
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 from integrations import (
+    normalize_doi, collect_pdf_candidates,
     clean_author_name, is_likely_institution, fetch_doi_metadata,
-    fetch_semantic_scholar_pdf, download_pdf_from_url, fetch_core_text_by_doi,
-    create_virtual_pdf_from_text, search_openalex_topics,
+    fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
+    build_pdf_from_text, search_open_access_works,
 )
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
-    PidyneBlockchainDataset, reset_scilem, evaluate_scilem_analysis_report,
+    PidyneBlockchainDataset, clear_structural_analyzer_state, generate_assistant_reply,
 )
-from rubric import rubric_manifest, RUBRIC_VERSION
-from emission import emission_manifest, current_fee, fee_manifest
-from scientometrics import FIELD_TO_DOMAIN, fetch_trending_topics
+from rubric import rubric_manifest, RUBRIC_VERSION, apply_scoring_rubric, compute_composite_score
+from emission import emission_manifest, compute_processing_fee, fee_manifest
+from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
 import numpy as np
 import torch
@@ -288,7 +291,7 @@ def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
         return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error={urllib.parse.quote(str(e))}")
 
 
-def _current_corpus_size() -> int:
+def count_assessed_papers() -> int:
     conn = get_db_connection()
     try:
         return conn.execute("SELECT COUNT(*) FROM papers_assessment").fetchone()[0] or 0
@@ -296,12 +299,12 @@ def _current_corpus_size() -> int:
         conn.close()
 
 
-def _active_fee() -> float:
+def resolve_active_fee() -> float:
     """Processing fee at the corpus's current difficulty epoch."""
-    return current_fee(_current_corpus_size(), PIQ_PROCESSING_FEE)
+    return compute_processing_fee(count_assessed_papers(), PIQ_PROCESSING_FEE)
 
 
-def _normalize_identity(wallet: Optional[str], orcid: Optional[str]):
+def normalize_identity(wallet: Optional[str], orcid: Optional[str]):
     clean_wallet = w3.to_checksum_address(wallet) if wallet and w3.is_address(wallet) else ""
     return clean_wallet, (orcid or "").strip()
 
@@ -310,14 +313,14 @@ def _normalize_identity(wallet: Optional[str], orcid: Optional[str]):
 def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
     """Lifetime piQ awarded, plus the fee-adjusted spendable balance the
     assessment pipeline actually charges against."""
-    clean_wallet, clean_orcid = _normalize_identity(wallet, orcid)
+    clean_wallet, clean_orcid = normalize_identity(wallet, orcid)
     if not clean_wallet and not clean_orcid:
         return {
             "total_piq": 0.0, "minted": 0.0, "fees_paid": 0.0, "balance": 0.0,
-            "fee_per_paper": _active_fee(), "papers_affordable": 0,
+            "fee_per_paper": resolve_active_fee(), "papers_affordable": 0,
         }
     bal = get_piq_balance(clean_wallet, clean_orcid)
-    fee = _active_fee()
+    fee = resolve_active_fee()
     return {
         "total_piq": bal["minted"],
         "minted": bal["minted"],
@@ -330,7 +333,7 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
 
 @app.get("/api/user/piq-ledger")
 def user_piq_ledger(wallet: Optional[str] = None, orcid: Optional[str] = None):
-    clean_wallet, clean_orcid = _normalize_identity(wallet, orcid)
+    clean_wallet, clean_orcid = normalize_identity(wallet, orcid)
     if not clean_wallet and not clean_orcid:
         return {"entries": []}
     return {"entries": get_piq_fee_history(clean_wallet, clean_orcid)}
@@ -379,7 +382,7 @@ def stats_count():
     return {"total_analyzed": n}
 
 
-def _item_from_result(res, filename):
+def build_result_payload(res, filename):
     consensus = res[19] if isinstance(res[19], dict) else {}
     scores = res[8] or {}
 
@@ -430,35 +433,69 @@ def _item_from_result(res, filename):
     }
 
 
-def _resolve_pdf_bytes(doi: str = "", pdf_url: str = ""):
-    """Shared resolution chain: try a known PDF URL directly, then DOI
-    metadata, then Semantic Scholar, then a CORE full-text fallback wrapped
-    into a virtual PDF. Used by both the single-DOI intake and the
-    auto-discovery batch below so the two paths can't silently drift apart."""
-    doi = (doi or "").strip()
-    pdf_url = (pdf_url or "").strip()
-    try:
-        if pdf_url:
-            pdf_bytes = download_pdf_from_url(pdf_url)
-            if pdf_bytes:
-                return pdf_bytes
-        if doi:
+def retrieve_manuscript_bytes(doi: str = "", pdf_url: str = "", candidates: List[str] = None):
+    """Resolve a manuscript to PDF bytes, trying every known source.
+
+    Returns ``(pdf_bytes, attempts)`` where `attempts` records what was tried
+    and why each failed. Previously this returned only bytes-or-None, so a
+    discovery failure surfaced in the UI as an unexplained "could not
+    retrieve" with no way to tell a paywall from a transient network error.
+
+    Sources are tried most-direct first: known PDF URLs, then DOI metadata,
+    then Semantic Scholar, then a CORE full-text fallback wrapped into a
+    synthetic PDF.
+    """
+    doi = normalize_doi(doi or "")
+    attempts = []
+    urls = [u for u in ([pdf_url] + list(candidates or [])) if u]
+
+    for url in urls[:6]:
+        try:
+            data = download_pdf(url)
+            if data:
+                attempts.append({"source": url[:120], "result": "ok"})
+                return data, attempts
+            attempts.append({"source": url[:120], "result": "not a retrievable PDF"})
+        except Exception as e:
+            attempts.append({"source": url[:120], "result": f"error: {e}"[:120]})
+
+    if doi:
+        try:
             metadata = fetch_doi_metadata(doi)
-            pdf_bytes = download_pdf_from_url(metadata["pdf_url"]) if metadata and metadata.get("pdf_url") else None
-            if pdf_bytes:
-                return pdf_bytes
-            pdf_bytes = download_pdf_from_url(fetch_semantic_scholar_pdf(doi))
-            if pdf_bytes:
-                return pdf_bytes
-            pdf_bytes = create_virtual_pdf_from_text(fetch_core_text_by_doi(doi))
-            if pdf_bytes:
-                return pdf_bytes
-    except Exception as e:
-        add_log(f"Resolve error (doi={doi or 'none'}): {e}")
-    return None
+            if metadata and metadata.get("pdf_url"):
+                data = download_pdf(metadata["pdf_url"])
+                if data:
+                    attempts.append({"source": "Unpaywall", "result": "ok"})
+                    return data, attempts
+            attempts.append({"source": "Unpaywall", "result": "no open-access PDF listed"})
+        except Exception as e:
+            attempts.append({"source": "Unpaywall", "result": f"error: {e}"[:120]})
+
+        try:
+            s2 = fetch_semantic_scholar_pdf(doi)
+            data = download_pdf(s2) if s2 else None
+            if data:
+                attempts.append({"source": "Semantic Scholar", "result": "ok"})
+                return data, attempts
+            attempts.append({"source": "Semantic Scholar", "result": "no open-access PDF"})
+        except Exception as e:
+            attempts.append({"source": "Semantic Scholar", "result": f"error: {e}"[:120]})
+
+        try:
+            text = fetch_core_text_by_doi(doi)
+            data = build_pdf_from_text(text) if text else None
+            if data:
+                attempts.append({"source": "CORE full text", "result": "ok (text-only)"})
+                return data, attempts
+            attempts.append({"source": "CORE full text", "result": "no full text indexed"})
+        except Exception as e:
+            attempts.append({"source": "CORE full text", "result": f"error: {e}"[:120]})
+
+    add_log(f"Retrieval failed (doi={doi or 'none'}): {len(attempts)} source(s) tried")
+    return None, attempts
 
 
-def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: bool,
+def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_doi: bool,
                             discover_papers: List[dict], user_id: str, book_address: str,
                             fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False,
                             active_fee: float = PIQ_PROCESSING_FEE):
@@ -523,20 +560,21 @@ def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: 
             yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
             return
         yield line({"type": "status", "message": f"Resolving DOI: {doi}..."})
-        pdf_bytes = _resolve_pdf_bytes(doi=doi)
+        pdf_bytes, attempts = retrieve_manuscript_bytes(doi=doi)
 
         if pdf_bytes:
             yield line({"type": "status", "message": "Assessing document..."})
             res = process_single_pdf(pdf_bytes, f"DOI_{doi}.pdf", "", user_id, book_address, provided_doi=doi)
             if res:
-                item = _item_from_result(res, f"DOI_{doi}.pdf")
+                item = build_result_payload(res, f"DOI_{doi}.pdf")
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed DOI {doi}: score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
         else:
             for m in give_back(f"DOI {doi}"):
                 yield m
-            yield line({"type": "download_error", "doi": doi, "url": f"https://doi.org/{doi}"})
+            yield line({"type": "download_error", "doi": doi,
+                        "url": f"https://doi.org/{doi}", "attempts": attempts})
 
     for paper in discover_papers:
         title = (paper.get("title") or "Untitled").strip()
@@ -551,21 +589,25 @@ def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: 
             return
 
         yield line({"type": "status", "message": f"Retrieving open-access paper: {title[:80]}..."})
-        pdf_bytes = _resolve_pdf_bytes(doi=p_doi, pdf_url=pdf_url)
+        pdf_bytes, attempts = retrieve_manuscript_bytes(
+            doi=p_doi, pdf_url=pdf_url, candidates=paper.get("pdf_candidates"))
 
         fname = f"Discovered_{p_doi or title[:60]}.pdf"
         if pdf_bytes:
             yield line({"type": "status", "message": f"Assessing: {title[:80]}..."})
             res = process_single_pdf(pdf_bytes, fname, "", user_id, book_address, provided_doi=p_doi or "None")
             if res:
-                item = _item_from_result(res, fname)
+                item = build_result_payload(res, fname)
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed discovered paper '{title[:60]}': score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
         else:
             for m in give_back(title):
                 yield m
-            yield line({"type": "download_error", "doi": p_doi or title, "url": f"https://doi.org/{p_doi}" if p_doi else ""})
+            yield line({"type": "download_error", "doi": p_doi or title,
+                        "title": title,
+                        "url": f"https://doi.org/{p_doi}" if p_doi else "",
+                        "attempts": attempts})
 
     for fname, raw_bytes in files:
         ok, msgs = take_fee(fname)
@@ -578,7 +620,7 @@ def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: 
         yield line({"type": "status", "message": f"Analyzing {fname}..."})
         res = process_single_pdf(raw_bytes, fname, "", user_id, book_address)
         if res:
-            item = _item_from_result(res, fname)
+            item = build_result_payload(res, fname)
             item["fee_charged"] = fee if charge_fees else 0.0
             add_log(f"Assessed {fname}: score {item['score']:.2f}")
             yield line({"type": "result", "item": item})
@@ -621,6 +663,7 @@ async def assess_stream(
                     "title": str(p.get("title", ""))[:300],
                     "doi": str(p.get("doi", ""))[:200],
                     "pdf_url": str(p.get("pdf_url", ""))[:1000],
+                    "pdf_candidates": [str(u)[:1000] for u in (p.get("pdf_candidates") or [])][:5],
                 })
         except HTTPException:
             raise
@@ -657,8 +700,8 @@ async def assess_stream(
     # out of their earned balance; users still on the free trial don't, since
     # they have no balance yet and the trial exists precisely to let them earn
     # their first piQ.
-    fee_wallet, fee_orcid = _normalize_identity(wallet, orcid)
-    active_fee = _active_fee()
+    fee_wallet, fee_orcid = normalize_identity(wallet, orcid)
+    active_fee = resolve_active_fee()
     charge_fees = bool((fee_wallet or fee_orcid) and not free_trial_active and active_fee > 0)
 
     if charge_fees and paper_count:
@@ -683,7 +726,7 @@ async def assess_stream(
         increment_free_evals_used(client_ip)
 
     def gen():
-        yield from _run_assessment_stream(
+        yield from stream_assessment_progress(
             file_payload, doi, include_doi, discover_list, user_id, book_address,
             fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
             active_fee=active_fee,
@@ -706,7 +749,7 @@ def discover_hot_topics():
     OpenAlex is unreachable, and the response says which source was used so
     the UI never implies staleness is freshness.
     """
-    result = fetch_trending_topics(limit=10)
+    result = fetch_active_research_topics(limit=10)
     if result["topics"]:
         return result
     return {"topics": HOT_TOPICS, "source": "fallback-seed", "cached": False}
@@ -720,7 +763,7 @@ def discover_search(
 ):
     check_rate_limit(get_client_ip(request), bucket="discover")
     try:
-        results = search_openalex_topics(q, limit=limit)
+        results = search_open_access_works(q, limit=limit)
     except Exception as e:
         add_log(f"Discovery search error: {e}")
         results = []
@@ -740,13 +783,13 @@ def assess_text(req: TextAssessRequest, request: Request):
         raise HTTPException(status_code=400, detail="Paper text cannot be empty.")
     if len(req.paper_text) > 500_000:
         raise HTTPException(status_code=413, detail="Paper text is too long (max 500,000 characters).")
-    pdf_bytes = create_virtual_pdf_from_text(req.paper_text, title="Pasted Manuscript Text")
+    pdf_bytes = build_pdf_from_text(req.paper_text, title="Pasted Manuscript Text")
     if not pdf_bytes:
         raise HTTPException(status_code=500, detail="Could not convert text into a processable document.")
     res = process_single_pdf(pdf_bytes, "Pasted_Text.pdf", "", "Anonymous")
     if not res:
         raise HTTPException(status_code=500, detail="Assessment failed.")
-    item = _item_from_result(res, "Pasted_Text.pdf")
+    item = build_result_payload(res, "Pasted_Text.pdf")
     add_log(f"Assessed pasted text: score {item['score']:.2f}")
     return item
 
@@ -792,7 +835,7 @@ def scilem_chat(req: ScilemChatRequest, request: Request):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
-    return {"response": evaluate_scilem_analysis_report(req.prompt)}
+    return {"response": generate_assistant_reply(req.prompt)}
 
 
 class ScilemResetRequest(BaseModel):
@@ -803,7 +846,7 @@ class ScilemResetRequest(BaseModel):
 def scilem_reset(req: ScilemResetRequest):
     if not req.wallet or req.wallet.lower() != OWNER_ID.lower():
         raise HTTPException(status_code=403, detail="Only the Web3 owner wallet may reset Scilem.")
-    msg = reset_scilem()
+    msg = clear_structural_analyzer_state()
     add_log(msg)
     return {"message": msg}
 
@@ -811,7 +854,7 @@ def scilem_reset(req: ScilemResetRequest):
 # ---------------------------------------------------------------------------
 # 6. PIDYNE FORECAST  (LSTM epoch-weight forecasting)
 # ---------------------------------------------------------------------------
-def get_criteria_info(weights):
+def describe_forecast_criteria(weights):
     labels = [
         ("C1", "Originality", "Semantic distance from literature corpus penalized by generative AI laundering heuristics."),
         ("C2", "Methodological Rigor", "Deterministic adherence to MDAR reporting standards and valid RRIDs via SciScore."),
@@ -838,7 +881,7 @@ WEIGHT_MIN = 0.05
 WEIGHT_MAX = 8.0 - (7 * WEIGHT_MIN)
 
 
-def _normalize_weights(vec):
+def project_weights_onto_simplex(vec):
     """Project a raw weight vector onto {w : sum(w) = 8, MIN <= w_i <= MAX}.
 
     Clip and renormalize interact — each one breaks the other's invariant —
@@ -868,18 +911,24 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     written with a constant [1.0] * 8 weight vector — eight perfectly flat,
     perfectly overlapping lines. Blocks now record the criteria weighting each
     assessed manuscript's evidence profile implies (see
-    brain.derive_epoch_weights), so the series carries real signal, and this
+    brain.derive_next_epoch_weights), so the series carries real signal, and this
     endpoint returns the observed history plus the forecast point explicitly
     marked, along with the per-criterion delta and trend direction.
     """
-    conn = get_db_connection()
     try:
-        rows = conn.execute(
-            """SELECT block_height, w1, w2, w3, w4, w5, w6, w7, w8, timestamp
-               FROM blockchain_por_weights ORDER BY block_height ASC"""
-        ).fetchall()
-    finally:
-        conn.close()
+        conn = get_db_connection()
+        try:
+            rows = conn.execute(
+                """SELECT block_height, w1, w2, w3, w4, w5, w6, w7, w8, timestamp
+                   FROM blockchain_por_weights ORDER BY block_height ASC"""
+            ).fetchall()
+        finally:
+            conn.close()
+    except sqlite3.Error as e:
+        add_log(f"Forecast ledger read failed: {e}")
+        return {"ready": False, "message": "The Proof-of-Research ledger is unavailable.",
+                "blocks_recorded": 0, "blocks_required": 3, "history": [],
+                "forecast": None, "criteria": []}
 
     if len(rows) < 3:
         return {
@@ -928,10 +977,18 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
             epoch_loss += float(loss.item())
         final_loss = epoch_loss / max(1, len(dataloader))
 
-    model.eval()
-    with torch.no_grad():
-        window = torch.tensor(weight_matrix[-actual_lookback:], dtype=torch.float32).unsqueeze(0)
-        raw_pred = model(window).squeeze().numpy()
+    try:
+        model.eval()
+        with torch.no_grad():
+            window = torch.tensor(weight_matrix[-actual_lookback:], dtype=torch.float32).unsqueeze(0)
+            raw_pred = model(window).squeeze().numpy()
+    except Exception as e:
+        logging.error("Pidyne forecast inference failed: %s", e)
+        return {"ready": False,
+                "message": "The forecasting model could not run on this server. This is usually a "
+                           "memory limit on small hosts.",
+                "blocks_recorded": len(rows), "blocks_required": 3,
+                "history": [], "forecast": None, "criteria": []}
 
     last = weight_matrix[-1]
 
@@ -953,7 +1010,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     sharpened = pred_mean + (raw_pred - pred_mean) * CONTRAST_GAIN
     projected = (CONTINUITY * last) + ((1.0 - CONTINUITY) * sharpened)
 
-    next_weights = _normalize_weights(projected)
+    next_weights = project_weights_onto_simplex(projected)
 
     hist_slice = rows[-(actual_lookback + 1):]
     history = []
@@ -969,7 +1026,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     for i, key in enumerate(CRITERIA_KEYS):
         forecast_point[key] = round(float(next_weights[i]), 5)
 
-    criteria = get_criteria_info(next_weights)
+    criteria = describe_forecast_criteria(next_weights)
     for i, c in enumerate(criteria):
         current = float(last[i])
         delta = float(next_weights[i]) - current
@@ -1007,7 +1064,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 # ---------------------------------------------------------------------------
 # 7. ANALYTICS — leaderboard, top papers, map-of-science bubble network
 # ---------------------------------------------------------------------------
-def _corpus_fields():
+def list_corpus_fields():
     """Fields actually present in the assessed corpus, most common first.
 
     Replaces a hardcoded nine-item list that bore no relation to what had been
@@ -1032,7 +1089,7 @@ def _corpus_fields():
     return [f for f, _ in ranked], dict(ranked)
 
 
-def _aggregate_authors(rows):
+def aggregate_author_statistics(rows):
     """rows: iterable of (author_name, piq_minted, final_score). Splits
     comma-joined author strings, filters out institutions/unknowns, and
     aggregates piQ/paper-count/avg-score per individual author name."""
@@ -1067,7 +1124,7 @@ def analytics_summary():
         author_rows = conn.execute("SELECT author_name, 0, 0 FROM papers_assessment").fetchall()
     finally:
         conn.close()
-    unique_authors = {r["author"] for r in _aggregate_authors(author_rows)}
+    unique_authors = {r["author"] for r in aggregate_author_statistics(author_rows)}
     return {
         "total_papers": row[0] or 0,
         "total_piq": round(safe_float(row[1], 0.0), 2),
@@ -1080,7 +1137,7 @@ def analytics_summary():
 
 @app.get("/api/analytics/fields")
 def analytics_fields():
-    fields, counts = _corpus_fields()
+    fields, counts = list_corpus_fields()
     return {"fields": fields, "counts": counts, "source": "assessed-corpus"}
 
 
@@ -1102,6 +1159,87 @@ def get_emission_policy():
     manifest["total_piq_minted"] = round(safe_float(minted, 0.0), 4)
     manifest["fee"] = fee_manifest(total, PIQ_PROCESSING_FEE)
     return manifest
+
+
+class RescoreRequest(BaseModel):
+    dry_run: bool = True
+    limit: int = 500
+
+
+@app.post("/api/admin/rescore")
+def rescore_corpus(req: RescoreRequest, wallet: str = Query(default="")):
+    """Replay stored signal vectors through the current rubric.
+
+    Scores were previously computed once and frozen, so a rubric change left
+    old and new scores silently incomparable on the same leaderboard. Because
+    the normalized signal vector is persisted with every assessment, re-scoring
+    needs no re-analysis and no LLM calls: it is a pure recomputation.
+
+    Defaults to a dry run that reports what would change without writing.
+    """
+    if not wallet or wallet.lower() != OWNER_ID.lower():
+        raise HTTPException(status_code=403, detail="Only the owner wallet may re-score the corpus.")
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT eval_hash, signal_vector, rubric_version, final_score
+               FROM papers_assessment
+               WHERE signal_vector IS NOT NULL AND signal_vector != '{}'
+               ORDER BY timestamp DESC LIMIT ?""",
+            (max(1, min(5000, req.limit)),),
+        ).fetchall()
+
+        weight_row = conn.execute(
+            """SELECT block_height, w1, w2, w3, w4, w5, w6, w7, w8
+               FROM blockchain_por_weights ORDER BY block_height DESC LIMIT 1"""
+        ).fetchone()
+        epoch = weight_row[0] if weight_row else 0
+        epoch_weights = list(weight_row[1:9]) if weight_row else None
+
+        examined, changed, updates = 0, 0, []
+        for eval_hash, raw_signals, old_version, old_score in rows:
+            signals = parse_json_or_default(raw_signals, None)
+            if not signals:
+                continue
+            examined += 1
+            scores = apply_scoring_rubric(signals)
+            new_score = compute_composite_score(scores, epoch_weights)
+            delta = new_score - safe_float(old_score, 0.0)
+            if abs(delta) > 0.01 or old_version != RUBRIC_VERSION:
+                changed += 1
+                updates.append((eval_hash, scores, new_score, compute_composite_score(scores), delta))
+
+        if not req.dry_run:
+            for eval_hash, scores, new_score, unweighted, _ in updates:
+                conn.execute(
+                    """UPDATE papers_assessment
+                       SET c1=?, c2=?, c3=?, c4=?, c5=?, c6=?, c7=?, c8=?,
+                           final_score=?, unweighted_score=?, rubric_version=?, scoring_epoch=?
+                       WHERE eval_hash=?""",
+                    (*scores.values(), new_score, unweighted, RUBRIC_VERSION, epoch, eval_hash),
+                )
+            conn.commit()
+            add_log(f"Re-scored {len(updates)} record(s) under {RUBRIC_VERSION}.")
+    finally:
+        conn.close()
+
+    return {
+        "dry_run": req.dry_run,
+        "rubric_version": RUBRIC_VERSION,
+        "scoring_epoch": epoch,
+        "examined": examined,
+        "changed": changed,
+        "sample": [
+            {"eval_hash": h, "new_score": round(ns, 2), "delta": round(d, 2)}
+            for h, _, ns, _, d in updates[:20]
+        ],
+        "note": (
+            "Dry run: no records were modified. Re-run with dry_run=false to apply."
+            if req.dry_run else
+            "Records updated in place. piQ already minted is not retroactively changed."
+        ),
+    }
 
 
 @app.get("/api/rubric")
@@ -1129,7 +1267,7 @@ def analytics_leaderboard(
     finally:
         conn.close()
 
-    results = _aggregate_authors(rows)
+    results = aggregate_author_statistics(rows)
     if q.strip():
         q_lower = q.strip().lower()
         results = [r for r in results if q_lower in r["author"].lower()]
@@ -1185,7 +1323,7 @@ def analytics_top_papers(
     return {"papers": papers, "total": total}
 
 
-def build_topic_path(field: str, subfield: str) -> str:
+def format_topic_path(field: str, subfield: str) -> str:
     """Compose a 'Domain > Field' path from stored classification data.
 
     This replaces a keyword-matching function that ran over the hardcoded
@@ -1252,7 +1390,7 @@ def analytics_map(
             # The filter operates on the field, which is what the UI offers.
             if selected_fields and field not in selected_fields:
                 continue
-            path = build_topic_path(field, subfield)
+            path = format_topic_path(field, subfield)
             agg = topic_aggregates.setdefault(path, {"weight_sum": 0.0, "frequency": 0})
             agg["weight_sum"] += score
             agg["frequency"] += 1
@@ -1326,7 +1464,7 @@ CRITERIA_TITLES = {
 }
 
 
-def _safe_json(raw, default):
+def parse_json_or_default(raw, default):
     if not raw:
         return default
     try:
@@ -1336,9 +1474,9 @@ def _safe_json(raw, default):
         return default
 
 
-def _row_to_dossier(r):
-    consensus = _safe_json(r[20], {})
-    judge_meta = _safe_json(r[24], {}) or consensus.get("_judge_metadata", {}) or {}
+def build_dossier_from_row(r):
+    consensus = parse_json_or_default(r[20], {})
+    judge_meta = parse_json_or_default(r[24], {}) or consensus.get("_judge_metadata", {}) or {}
     scores = {"C1": r[5], "C2": r[6], "C3": r[7], "C4": r[8], "C5": r[9], "C6": r[10], "C7": r[11], "C8": r[12]}
     return {
         "title": r[0], "author_name": r[1], "filename": r[2], "score": r[3], "logic_integrity": r[4],
@@ -1351,21 +1489,42 @@ def _row_to_dossier(r):
         "consensus_raw": consensus,
         "evidence_report_text": r[21] or "",
         "scilem_rating": r[22],
-        "warnings": _safe_json(r[23], []),
+        "warnings": parse_json_or_default(r[23], []),
         "judge_metadata": judge_meta,
         "timestamp": r[25], "doi": r[26], "submitted_by": r[27], "eth_book": r[28],
-        "integrity": _safe_json(r[29], {}),
-        "reference_audit": _safe_json(r[30], {}),
-        "authorship_signal": _safe_json(r[31], {}),
-        "topology_detail": _safe_json(r[32], {}),
-        "classification": _safe_json(r[33], {}),
-        "criteria_breakdown": _safe_json(r[34], []),
-        "author_metrics": _safe_json(r[35], {}),
+        "integrity": parse_json_or_default(r[29], {}),
+        "reference_audit": parse_json_or_default(r[30], {}),
+        "authorship_signal": parse_json_or_default(r[31], {}),
+        "topology_detail": parse_json_or_default(r[32], {}),
+        "classification": parse_json_or_default(r[33], {}),
+        "criteria_breakdown": parse_json_or_default(r[34], []),
+        "author_metrics": parse_json_or_default(r[35], {}),
         "rubric_version": r[36],
-        "emission": _safe_json(r[37], {}),
+        "emission": parse_json_or_default(r[37], {}),
         "explorer_url": get_sepolia_explorer_url(r[14], "tx"),
-        "fee_charged": _active_fee(),
+        "fee_charged": resolve_active_fee(),
     }
+
+
+def restrict_to_existing_columns(conn, requested: str) -> str:
+    """Restrict a column list to columns that actually exist.
+
+    A long-running process can hold a stale schema, and naming a missing column
+    fails the whole query — which is what turned the Ledger Explorer into a
+    blanket "Error loading ledger". Degrading to the available subset keeps the
+    explorer usable while the migration catches up.
+    """
+    try:
+        present = {row[1] for row in conn.execute("PRAGMA table_info(papers_assessment)")}
+    except sqlite3.Error:
+        return requested
+    kept = []
+    for col in (c.strip() for c in requested.replace("\n", " ").split(",")):
+        if not col:
+            continue
+        bare = col.split(".")[-1].strip()
+        kept.append(col if bare in present else f"NULL AS {bare}")
+    return ", ".join(kept)
 
 
 @app.get("/api/explorer/search")
@@ -1375,7 +1534,7 @@ def explorer_search(q: str = Query(default="")):
         if q.strip():
             q_term = f"%{q.strip()}%"
             rows = conn.execute(
-                f"""SELECT {EXPLORER_COLUMNS}
+                f"""SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)}
                     FROM papers_assessment p
                     LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
                     WHERE b.block_hash LIKE ? OR p.eval_hash LIKE ? OR p.title LIKE ? OR p.author_name LIKE ?
@@ -1383,10 +1542,10 @@ def explorer_search(q: str = Query(default="")):
                 (q_term, q_term, q_term, q_term),
             ).fetchall()
         else:
-            rows = conn.execute(f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p ORDER BY p.timestamp DESC LIMIT 20").fetchall()
+            rows = conn.execute(f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p ORDER BY p.timestamp DESC LIMIT 20").fetchall()
     finally:
         conn.close()
-    return {"records": [_row_to_dossier(r) for r in rows]}
+    return {"records": [build_dossier_from_row(r) for r in rows]}
 
 
 @app.get("/api/explorer/latest")
@@ -1394,8 +1553,14 @@ def explorer_latest():
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT title, author_name, final_score, eval_hash FROM papers_assessment ORDER BY timestamp DESC LIMIT 20"
+            "SELECT title, author_name, final_score, eval_hash FROM papers_assessment "
+            "ORDER BY timestamp DESC LIMIT 20"
         ).fetchall()
+    except sqlite3.Error as e:
+        add_log(f"Ledger read failed: {e}")
+        raise HTTPException(status_code=503,
+                            detail="The ledger database is unavailable. If the server was recently "
+                                   "updated, restart it so the schema migration can run.")
     finally:
         conn.close()
     return {"records": [{"title": r[0], "author": r[1], "score": r[2], "eval_hash": r[3]} for r in rows]}
@@ -1405,12 +1570,12 @@ def explorer_latest():
 def explorer_dossier(eval_hash: str):
     conn = get_db_connection()
     try:
-        row = conn.execute(f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)).fetchone()
+        row = conn.execute(f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)).fetchone()
     finally:
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Record not found.")
-    return _row_to_dossier(row)
+    return build_dossier_from_row(row)
 
 
 # ---------------------------------------------------------------------------
@@ -1438,7 +1603,7 @@ CRITERION_DEFINITIONS = {
 }
 
 
-def _build_fair_dossier(d: dict) -> dict:
+def build_fair_dossier(d: dict) -> dict:
     """Assemble a self-describing, CoARA-aligned assessment record."""
     integrity = d.get("integrity") or {}
     ref_audit = d.get("reference_audit") or {}
@@ -1550,13 +1715,13 @@ def fair_dossier(eval_hash: str):
     conn = get_db_connection()
     try:
         row = conn.execute(
-            f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
+            f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
         ).fetchone()
     finally:
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Record not found.")
-    return _build_fair_dossier(_row_to_dossier(row))
+    return build_fair_dossier(build_dossier_from_row(row))
 
 
 @app.get("/api/dossier/by-doi")
@@ -1571,7 +1736,7 @@ def dossier_by_doi(doi: str = Query(..., min_length=4, max_length=200)):
     conn = get_db_connection()
     try:
         row = conn.execute(
-            f"""SELECT {EXPLORER_COLUMNS} FROM papers_assessment p
+            f"""SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p
                 WHERE LOWER(p.doi) = LOWER(?) ORDER BY p.timestamp DESC LIMIT 1""",
             (clean,),
         ).fetchone()
@@ -1580,7 +1745,7 @@ def dossier_by_doi(doi: str = Query(..., min_length=4, max_length=200)):
     if not row:
         return {"found": False, "doi": clean,
                 "message": "No ScholarPi assessment exists for this DOI yet."}
-    dossier = _row_to_dossier(row)
+    dossier = build_dossier_from_row(row)
     return {
         "found": True,
         "doi": clean,
@@ -1600,15 +1765,15 @@ def coara_dossier_html(eval_hash: str):
     conn = get_db_connection()
     try:
         row = conn.execute(
-            f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
+            f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
         ).fetchone()
     finally:
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Record not found.")
 
-    d = _row_to_dossier(row)
-    fair = _build_fair_dossier(d)
+    d = build_dossier_from_row(row)
+    fair = build_fair_dossier(d)
     judge = d.get("judge_metadata") or {}
     integrity = d.get("integrity") or {}
 

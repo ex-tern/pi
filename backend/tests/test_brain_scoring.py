@@ -31,37 +31,37 @@ SAMPLE_THIN_TEXT = "This is a short note with no methodology described at all."
 
 
 def test_calculate_deterministic_mdar_detects_rigor_signals():
-    mdar, rrid_count = brain.calculate_deterministic_mdar(SAMPLE_RIGOROUS_TEXT)
+    mdar, rrid_count = brain.measure_mdar_adherence(SAMPLE_RIGOROUS_TEXT)
     assert 0.0 <= mdar <= 1.0
     assert rrid_count == 2
     # A paper describing blinding, randomization, power analysis, and 2 RRIDs
     # should score meaningfully higher than a paper mentioning none of that.
-    thin_mdar, thin_rrid = brain.calculate_deterministic_mdar(SAMPLE_THIN_TEXT)
+    thin_mdar, thin_rrid = brain.measure_mdar_adherence(SAMPLE_THIN_TEXT)
     assert mdar > thin_mdar
     assert thin_rrid == 0
 
 
 def test_calculate_reproducibility_score_range_and_signal_detection():
-    score, flags = brain.calculate_reproducibility_score(SAMPLE_RIGOROUS_TEXT)
+    score, flags = brain.measure_reproducibility_markers(SAMPLE_RIGOROUS_TEXT)
     assert 0.0 <= score <= 1.0
     assert flags["code_or_data_repository"] is True
     assert flags["open_license"] is True
     assert flags["containerized_execution"] is True
 
-    thin_score, thin_flags = brain.calculate_reproducibility_score(SAMPLE_THIN_TEXT)
+    thin_score, thin_flags = brain.measure_reproducibility_markers(SAMPLE_THIN_TEXT)
     assert not any(thin_flags.values())
     assert score > thin_score
 
 
 def test_calculate_empirical_density_range():
-    density = brain.calculate_empirical_density(SAMPLE_RIGOROUS_TEXT)
+    density = brain.measure_empirical_density(SAMPLE_RIGOROUS_TEXT)
     assert 0.0 <= density <= 1.0
-    thin_density = brain.calculate_empirical_density(SAMPLE_THIN_TEXT)
+    thin_density = brain.measure_empirical_density(SAMPLE_THIN_TEXT)
     assert density > thin_density
 
 
 def test_compute_formulaic_criteria_bounds_and_keys():
-    scores = brain.compute_formulaic_criteria(
+    scores = brain.score_criteria_from_legacy_args(
         reproducibility_score=0.75,
         sciscore_adherence=0.6,
         topological_entropy=0.5,
@@ -83,7 +83,7 @@ def test_compute_formulaic_criteria_bounds_and_keys():
 def test_compute_formulaic_criteria_clamps_extremes():
     # ai_rating way out of the normal 0-100 range shouldn't blow past
     # the 0-100 output bound on any criterion.
-    scores = brain.compute_formulaic_criteria(
+    scores = brain.score_criteria_from_legacy_args(
         reproducibility_score=1.0, sciscore_adherence=1.0,
         topological_entropy=1.0, ai_rating=1000.0, vapri=1.0,
         empirical_density=1.0,
@@ -100,24 +100,24 @@ def test_generate_rebuttal_strategy_targets_lowest_criterion():
 
 
 def test_get_formulas_hash_is_stable():
-    assert brain.get_formulas_hash() == brain.get_formulas_hash()
-    assert len(brain.get_formulas_hash()) == 64  # sha256 hex digest
+    assert brain.compute_rubric_fingerprint() == brain.compute_rubric_fingerprint()
+    assert len(brain.compute_rubric_fingerprint()) == 64  # sha256 hex digest
 
 
 def test_adaptive_chunking_short_text_passthrough():
     text = "short text"
-    assert brain.adaptive_chunking(text, 1000) == text
+    assert brain.truncate_to_token_budget(text, 1000) == text
 
 
 def test_adaptive_chunking_truncates_long_text():
     text = "A" * 1000
-    chunked = brain.adaptive_chunking(text, 100)
+    chunked = brain.truncate_to_token_budget(text, 100)
     assert "[TRUNCATED FOR TOKEN LIMITS]" in chunked
     assert len(chunked) < len(text)
 
 
 def test_query_llm_json_reports_missing_key_without_network_call():
-    provider, data = brain.query_llm_json("llama", "some-model", "", "https://example.com", "prompt")
+    provider, data = brain.request_model_assessment("llama", "some-model", "", "https://example.com", "prompt")
     assert provider == "llama"
     assert data["api_failed"] is True
     assert "missing" in data["opinion"].lower()

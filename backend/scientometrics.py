@@ -40,11 +40,12 @@ from typing import Dict, List, Optional, Tuple
 import requests
 
 from integrations import clean_author_name, is_likely_institution
+from http_client import (
+    fetch_json, run_bounded, doi_cache, author_cache, work_cache, DEFAULT_TIMEOUT,
+)
 
 OPENALEX_BASE = "https://api.openalex.org"
 CROSSREF_BASE = "https://api.crossref.org"
-POLITE_HEADERS = {"User-Agent": "ScholarPi-PiIndex/2.1 (mailto:research@pi-index.org)"}
-DEFAULT_TIMEOUT = 10
 
 
 # ===========================================================================
@@ -62,7 +63,7 @@ _LEVEL_DISTANCE = {
 }
 
 
-def _topic_separation(a: dict, b: dict) -> float:
+def measure_ontological_distance(a: dict, b: dict) -> float:
     """Ontological distance between two OpenAlex topic records."""
     if a.get("domain") and b.get("domain") and a["domain"] != b["domain"]:
         return _LEVEL_DISTANCE["domain"]
@@ -75,7 +76,7 @@ def _topic_separation(a: dict, b: dict) -> float:
     return _LEVEL_DISTANCE["same"]
 
 
-def _parse_topics(work: dict) -> List[dict]:
+def normalize_topic_records(work: dict) -> List[dict]:
     """Normalise OpenAlex topic records, falling back to legacy concepts.
 
     The `concepts` branch exists only for works OpenAlex has not yet
@@ -105,7 +106,7 @@ def _parse_topics(work: dict) -> List[dict]:
     return parsed
 
 
-def compute_hierarchical_entropy(topics: List[dict]) -> Dict:
+def measure_topic_diversity(topics: List[dict]) -> Dict:
     """Affinity-weighted Shannon entropy scaled by mean ontological distance.
 
     Returns a normalized score in [0, 1] plus the components behind it, so the
@@ -141,7 +142,7 @@ def compute_hierarchical_entropy(topics: List[dict]) -> Dict:
     for i in range(len(valid)):
         for j in range(i + 1, len(valid)):
             w = probs[i] * probs[j]
-            weighted_sep += _topic_separation(valid[i], valid[j]) * w
+            weighted_sep += measure_ontological_distance(valid[i], valid[j]) * w
             weight_total += w
     mean_sep = (weighted_sep / weight_total) if weight_total > 0 else 0.0
 
@@ -172,7 +173,7 @@ def compute_hierarchical_entropy(topics: List[dict]) -> Dict:
     return detail
 
 
-def compute_corroboration_index(judge_meta: dict, evidence_report: str = "") -> Dict:
+def measure_panel_corroboration(judge_meta: dict, evidence_report: str = "") -> Dict:
     """Replaces VAPRI.
 
     VAPRI was ``md5(evidence_report) % 1000 / 1000`` — a hash digest treated as
@@ -224,7 +225,7 @@ def compute_corroboration_index(judge_meta: dict, evidence_report: str = "") -> 
     }
 
 
-def compute_citation_engagement(text: str, reference_audit: dict = None) -> float:
+def measure_citation_engagement(text: str, reference_audit: dict = None) -> float:
     """Depth of literature engagement, from reference density and resolvability.
 
     Counts distinct bibliography entries relative to document length, rather
@@ -233,7 +234,7 @@ def compute_citation_engagement(text: str, reference_audit: dict = None) -> floa
     """
     if not text:
         return 0.0
-    section = extract_reference_section(text)
+    section = locate_bibliography(text)
     entries = len(re.findall(r"^\s*\[\d+\]|^\s*\d+\.\s+[A-Z]", section, re.MULTILINE))
     if entries == 0:
         entries = len(_DOI_RE.findall(section))
@@ -251,7 +252,7 @@ def compute_citation_engagement(text: str, reference_audit: dict = None) -> floa
     return round(max(0.0, min(1.0, base)), 4)
 
 
-def compute_reference_integrity(reference_audit: dict) -> float:
+def measure_citation_resolvability(reference_audit: dict) -> float:
     """Share of conclusively-checked DOIs that resolve. Neutral when unknown."""
     audit = reference_audit or {}
     verified = audit.get("verified", 0) or 0
@@ -263,7 +264,7 @@ def compute_reference_integrity(reference_audit: dict) -> float:
     return round(verified / conclusive, 4)
 
 
-def detect_persistent_identifiers(text: str) -> float:
+def measure_persistent_identifier_use(text: str) -> float:
     """Presence of persistent identifiers on the work's own outputs."""
     if not text:
         return 0.0
@@ -278,7 +279,7 @@ def detect_persistent_identifiers(text: str) -> float:
     return round(sum(signals) / len(signals), 4)
 
 
-def detect_open_licence(text: str) -> float:
+def measure_open_licensing(text: str) -> float:
     """Explicit open licensing on data or code."""
     if not text:
         return 0.0
@@ -290,7 +291,7 @@ def detect_open_licence(text: str) -> float:
     return 1.0 if strong else (0.5 if weak else 0.0)
 
 
-def calculate_hierarchical_topology(doi: str) -> Dict:
+def fetch_topic_diversity_for_doi(doi: str) -> Dict:
     """Fetch a work from OpenAlex by DOI and score its interdisciplinarity."""
     neutral = {"score": 0.50, "basis": "unavailable", "topic_count": 0,
                "domains": [], "fields": [], "subfields": [], "spans_domains": False}
@@ -298,20 +299,16 @@ def calculate_hierarchical_topology(doi: str) -> Dict:
         return neutral
 
     clean = doi.replace("https://doi.org/", "").replace("doi.org/", "").strip()
-    try:
-        res = requests.get(f"{OPENALEX_BASE}/works/https://doi.org/{clean}",
-                           headers=POLITE_HEADERS, timeout=DEFAULT_TIMEOUT)
-        if res.status_code != 200:
-            return neutral
-        topics = _parse_topics(res.json())
-        detail = compute_hierarchical_entropy(topics)
-        # Carry the raw assignments so the classifier can reuse them rather
-        # than issuing a second identical request.
-        detail["_topics"] = topics
-        return detail
-    except Exception as e:
-        logging.debug("Hierarchical topology lookup failed for %s: %s", clean, e)
+    status, payload = fetch_json(f"{OPENALEX_BASE}/works/https://doi.org/{clean}",
+                                 cache=work_cache, cache_key=("work", clean))
+    if status != 200 or not payload:
         return neutral
+    topics = normalize_topic_records(payload)
+    detail = measure_topic_diversity(topics)
+    # Carry the raw assignments so the classifier can reuse them rather than
+    # issuing a second identical request.
+    detail["_topics"] = topics
+    return detail
 
 
 # ===========================================================================
@@ -333,13 +330,8 @@ def calculate_hierarchical_topology(doi: str) -> Dict:
 # They appear in the dossier as *author context*, which is what they are
 # legitimately good for: situating a body of work, never grading a paper.
 
-_AUTHOR_CACHE = {}
-_AUTHOR_CACHE_TTL = 24 * 3600
-
-
-def fetch_author_bibliometrics(author_name: str) -> Dict:
+def fetch_author_metrics(author_name: str) -> Dict:
     """Retrieve h-index, i10-index and related counts for an author."""
-    import time as _time
     empty = {
         "resolved": False, "queried": author_name, "h_index": None, "i10_index": None,
         "works_count": None, "cited_by_count": None, "two_year_mean_citedness": None,
@@ -355,17 +347,15 @@ def fetch_author_bibliometrics(author_name: str) -> Dict:
         return empty
 
     key = first.lower()
-    now = _time.time()
-    cached = _AUTHOR_CACHE.get(key)
-    if cached and (now - cached["_at"]) < _AUTHOR_CACHE_TTL:
-        return cached["data"]
+    cached = author_cache.get(key)
+    if cached is not None:
+        return cached
 
     try:
-        res = requests.get(f"{OPENALEX_BASE}/authors",
-                           params={"search": first, "per_page": 1},
-                           headers=POLITE_HEADERS, timeout=DEFAULT_TIMEOUT)
-        if res.status_code == 200:
-            results = res.json().get("results") or []
+        status, payload = fetch_json(f"{OPENALEX_BASE}/authors",
+                                     params={"search": first, "per_page": 1})
+        if status == 200 and payload:
+            results = payload.get("results") or []
             if results:
                 a = results[0]
                 stats = a.get("summary_stats") or {}
@@ -391,17 +381,17 @@ def fetch_author_bibliometrics(author_name: str) -> Dict:
                     ),
                     "affects_score": False,
                 }
-                _AUTHOR_CACHE[key] = {"_at": now, "data": data}
+                author_cache.set(key, data)
                 return data
     except Exception as e:
         logging.debug("Author bibliometrics lookup failed for %s: %s", first, e)
         empty["note"] = "OpenAlex was unreachable; author metrics unavailable for this assessment."
 
-    _AUTHOR_CACHE[key] = {"_at": now, "data": empty}
+    author_cache.set(key, empty)
     return empty
 
 
-def summarize_author_metrics(metrics: Dict) -> str:
+def format_author_metrics(metrics: Dict) -> str:
     """One-line human summary for the dossier."""
     if not metrics or not metrics.get("resolved"):
         return "Author bibliometrics unavailable."
@@ -425,7 +415,7 @@ _TRENDING_CACHE = {"topics": [], "fetched_at": 0.0}
 _TRENDING_TTL = 6 * 3600  # OpenAlex topic rankings move slowly; 6h is ample.
 
 
-def fetch_trending_topics(limit: int = 10) -> Dict:
+def fetch_active_research_topics(limit: int = 10) -> Dict:
     """Pull currently high-activity research topics from OpenAlex.
 
     Replaces a hardcoded list that was frozen at authoring time and would have
@@ -440,17 +430,16 @@ def fetch_trending_topics(limit: int = 10) -> Dict:
 
     try:
         year = __import__("datetime").datetime.now().year
-        res = requests.get(
+        status, payload = fetch_json(
             f"{OPENALEX_BASE}/works",
             params={
                 "filter": f"from_publication_date:{year - 1}-01-01,is_oa:true",
                 "group_by": "primary_topic.id",
                 "per_page": 100,
             },
-            headers=POLITE_HEADERS, timeout=DEFAULT_TIMEOUT,
         )
-        if res.status_code == 200:
-            groups = res.json().get("group_by", [])
+        if status == 200 and payload:
+            groups = payload.get("group_by", [])
             names = []
             for g in groups:
                 name = (g.get("key_display_name") or "").strip()
@@ -570,7 +559,7 @@ FIELD_TERMS = {
 }
 
 
-def classify_from_topics(topics: List[dict]) -> Dict:
+def classify_by_openalex_topics(topics: List[dict]) -> Dict:
     """Derive fields/subfields from OpenAlex topic assignments (authoritative)."""
     fields, subfields, domains = [], [], []
     for t in sorted(topics or [], key=lambda x: x.get("score", 0), reverse=True):
@@ -589,7 +578,7 @@ def classify_from_topics(topics: List[dict]) -> Dict:
     }
 
 
-def classify_from_text(text: str, top_n: int = 3) -> Dict:
+def classify_by_text_vocabulary(text: str, top_n: int = 3) -> Dict:
     """Score manuscript text against per-field term vocabularies.
 
     Uses length-normalized term frequency with a saturating count per term, so
@@ -650,7 +639,7 @@ def classify_from_text(text: str, top_n: int = 3) -> Dict:
     }
 
 
-def classify_manuscript(text: str, topics: List[dict] = None) -> Dict:
+def classify_manuscript_fields(text: str, topics: List[dict] = None) -> Dict:
     """Field classification with explicit provenance.
 
     OpenAlex assignments win when available; text analysis is the fallback.
@@ -658,10 +647,10 @@ def classify_manuscript(text: str, topics: List[dict] = None) -> Dict:
     can weight an inferred classification differently from an authoritative one.
     """
     if topics:
-        from_topics = classify_from_topics(topics)
+        from_topics = classify_by_openalex_topics(topics)
         if from_topics:
             return from_topics
-    return classify_from_text(text)
+    return classify_by_text_vocabulary(text)
 
 
 # ===========================================================================
@@ -681,7 +670,7 @@ def _clean_doi(raw: str) -> str:
     return d.lower()
 
 
-def extract_reference_section(text: str) -> str:
+def locate_bibliography(text: str) -> str:
     """Isolate the bibliography, so in-text DOIs aren't mistaken for citations.
 
     Takes the last plausible heading occurrence, since papers routinely say
@@ -707,9 +696,9 @@ def extract_reference_section(text: str) -> str:
     return text[-6000:] if len(text) > 6000 else text
 
 
-def extract_cited_dois(text: str, limit: int = 25) -> List[str]:
+def extract_cited_identifiers(text: str, limit: int = 25) -> List[str]:
     """Collect unique DOIs from the reference section, order preserved."""
-    section = extract_reference_section(text)
+    section = locate_bibliography(text)
     seen, out = set(), []
     for m in _DOI_RE.finditer(section):
         d = _clean_doi(m.group(0))
@@ -721,34 +710,45 @@ def extract_cited_dois(text: str, limit: int = 25) -> List[str]:
     return out
 
 
-def _verify_doi_openalex(doi: str) -> Optional[bool]:
+def verify_doi_against_openalex(doi: str) -> Optional[bool]:
     """True = exists, False = definitively absent, None = inconclusive."""
-    try:
-        r = requests.get(f"{OPENALEX_BASE}/works/https://doi.org/{doi}",
-                         headers=POLITE_HEADERS, timeout=DEFAULT_TIMEOUT)
-        if r.status_code == 200:
-            return True
-        if r.status_code == 404:
-            return False
-    except Exception:
-        pass
+    status, _ = fetch_json(f"{OPENALEX_BASE}/works/https://doi.org/{doi}",
+                           cache=doi_cache, cache_key=("oa", doi))
+    if status == 200:
+        return True
+    if status == 404:
+        return False
     return None
 
 
-def _verify_doi_crossref(doi: str) -> Optional[bool]:
-    try:
-        r = requests.get(f"{CROSSREF_BASE}/works/{doi}/agency",
-                         headers=POLITE_HEADERS, timeout=DEFAULT_TIMEOUT)
-        if r.status_code == 200:
-            return True
-        if r.status_code == 404:
-            return False
-    except Exception:
-        pass
+def verify_doi_against_crossref(doi: str) -> Optional[bool]:
+    status, _ = fetch_json(f"{CROSSREF_BASE}/works/{doi}/agency",
+                           cache=doi_cache, cache_key=("cr", doi))
+    if status == 200:
+        return True
+    if status == 404:
+        return False
     return None
 
 
-def audit_references(text: str, max_checks: int = 15) -> Dict:
+def classify_citation_validity(doi: str) -> str:
+    """Classify one DOI as verified / fabricated / unverified.
+
+    Crossref is consulted only when OpenAlex does not confirm the work, which
+    halves the request count for the common case of a well-indexed reference.
+    """
+    oa = verify_doi_against_openalex(doi)
+    if oa is True:
+        return "verified"
+    cr = verify_doi_against_crossref(doi)
+    if cr is True:
+        return "verified"
+    if oa is False and cr is False:
+        return "fabricated"
+    return "unverified"
+
+
+def audit_citation_integrity(text: str, max_checks: int = 15, budget_seconds: float = 8.0) -> Dict:
     """Verify cited DOIs against two independent registries.
 
     A DOI is only called fabricated when BOTH OpenAlex and Crossref
@@ -764,22 +764,28 @@ def audit_references(text: str, max_checks: int = 15) -> Dict:
         "penalty_applied": False,
     }
 
-    dois = extract_cited_dois(text)
+    dois = extract_cited_identifiers(text)
     report["total_found"] = len(dois)
     if not dois:
         report["verdict"] = "no_dois_found"
         return report
 
-    for doi in dois[:max_checks]:
+    # Verified in parallel under a hard time budget. Sequentially this could
+    # occupy the request for minutes when a registry is slow, which is what
+    # surfaced as an unexplained gateway timeout. Anything unfinished when the
+    # budget expires is reported as unverified — never as fabricated.
+    candidates = dois[:max_checks]
+    outcomes = run_bounded(
+        ((doi, (lambda d=doi: classify_citation_validity(d))) for doi in candidates),
+        budget_seconds=budget_seconds, max_workers=6,
+    )
+
+    for doi in candidates:
         report["checked"] += 1
-        oa = _verify_doi_openalex(doi)
-        if oa is True:
+        outcome = outcomes.get(doi, "unverified")
+        if outcome == "verified":
             report["verified"] += 1
-            continue
-        cr = _verify_doi_crossref(doi)
-        if cr is True:
-            report["verified"] += 1
-        elif oa is False and cr is False:
+        elif outcome == "fabricated":
             report["fabricated"] += 1
             if len(report["fabricated_dois"]) < 10:
                 report["fabricated_dois"].append(doi)
@@ -787,6 +793,8 @@ def audit_references(text: str, max_checks: int = 15) -> Dict:
             report["unverified"] += 1
             if len(report["unverified_dois"]) < 10:
                 report["unverified_dois"].append(doi)
+
+    report["timed_out"] = len(outcomes) < len(candidates)
 
     conclusive = report["verified"] + report["fabricated"]
     ratio = (report["fabricated"] / conclusive) if conclusive else 0.0
@@ -845,7 +853,7 @@ _LLM_CONNECTIVES = [
 ]
 
 
-def _split_sections(text: str) -> Dict[str, str]:
+def split_into_sections(text: str) -> Dict[str, str]:
     """Split on recognised headings; returns {} when structure is unclear."""
     if not text:
         return {}
@@ -862,7 +870,7 @@ def _split_sections(text: str) -> Dict[str, str]:
     return sections
 
 
-def _lexical_profile(text: str) -> Optional[Dict]:
+def measure_lexical_profile(text: str) -> Optional[Dict]:
     words = re.findall(r"[a-zA-Z']+", text.lower())
     if len(words) < 60:
         return None
@@ -890,13 +898,13 @@ def _lexical_profile(text: str) -> Optional[Dict]:
     }
 
 
-def _connective_density(text: str) -> float:
+def measure_connective_density(text: str) -> float:
     words = max(1, len(text.split()))
     hits = sum(len(re.findall(p, text, re.IGNORECASE)) for p in _LLM_CONNECTIVES)
     return (hits / words) * 1000.0  # per 1,000 words
 
 
-def analyze_authorship_signal(text: str) -> Dict:
+def assess_authorship_consistency(text: str) -> Dict:
     """Advisory assessment of possible unedited generative-AI text.
 
     Design constraints, stated plainly because they are the point:
@@ -931,12 +939,12 @@ def analyze_authorship_signal(text: str) -> Dict:
         result["note"] = "Document too short for a reliable authorship assessment."
         return result
 
-    sections = _split_sections(text)
+    sections = split_into_sections(text)
     result["assessed"] = True
     indicators = []
 
     # --- Indicator 1: cross-section profile divergence ---
-    profiles = {name: p for name, p in ((n, _lexical_profile(b)) for n, b in sections.items()) if p}
+    profiles = {name: p for name, p in ((n, measure_lexical_profile(b)) for n, b in sections.items()) if p}
     divergence = 0.0
     if len(profiles) >= 3:
         ttrs = [p["ttr"] for p in profiles.values()]
@@ -955,7 +963,7 @@ def analyze_authorship_signal(text: str) -> Dict:
             })
 
     # --- Indicator 2: near-absent burstiness ---
-    whole = _lexical_profile(text)
+    whole = measure_lexical_profile(text)
     if whole and whole["sentence_length_cv"] < 0.22:
         indicators.append({
             "name": "uniform sentence rhythm",
@@ -965,7 +973,7 @@ def analyze_authorship_signal(text: str) -> Dict:
         })
 
     # --- Indicator 3: extreme formulaic-connective density ---
-    density = _connective_density(text)
+    density = measure_connective_density(text)
     if density > 3.0:
         indicators.append({
             "name": "formulaic connective density",

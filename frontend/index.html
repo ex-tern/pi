@@ -205,59 +205,71 @@
         <div class="card">
           <h2>Global Map of Science<button class="help-btn" data-help="map" aria-label="About the map of science">?</button></h2>
 
-          <div class="filter-panel">
-            <div class="filter-row">
-              <label class="filter-label">Author</label>
-              <select id="mapAuthorFilter"><option value="All Authors">All Authors</option></select>
-            </div>
-            <div class="filter-row">
-              <label class="filter-label">Score range</label>
-              <input type="number" id="mapMinScore" min="0" max="100" value="0" class="score-input">
-              <span>–</span>
-              <input type="number" id="mapMaxScore" min="0" max="100" value="100" class="score-input">
-            </div>
-            <div class="filter-row filter-row-top">
-              <label class="filter-label">Fields</label>
-              <div id="mapFieldChecklist" class="field-checklist"></div>
-            </div>
-            <button id="mapApplyFiltersBtn" class="btn btn-primary btn-block">Apply Filters</button>
+          <!-- Everything is collapsed by default: the map itself is the point,
+               and controls should be available without competing with it. -->
+          <div class="map-controls">
+            <details class="ctl-group">
+              <summary><span class="ctl-title">Filters</span><span class="ctl-hint" id="mapFilterSummary">All authors · all fields</span></summary>
+              <div class="ctl-body">
+                <div class="filter-row">
+                  <label class="filter-label">Author</label>
+                  <select id="mapAuthorFilter"><option value="All Authors">All Authors</option></select>
+                </div>
+                <div class="filter-row">
+                  <label class="filter-label">piX range</label>
+                  <input type="number" id="mapMinScore" min="0" max="100" value="0" class="score-input">
+                  <span>–</span>
+                  <input type="number" id="mapMaxScore" min="0" max="100" value="100" class="score-input">
+                </div>
+                <details class="ctl-subgroup">
+                  <summary>Fields</summary>
+                  <div id="mapFieldChecklist" class="field-checklist"></div>
+                </details>
+                <button id="mapApplyFiltersBtn" class="btn btn-primary btn-block">Apply Filters</button>
+              </div>
+            </details>
+
+            <details class="ctl-group">
+              <summary><span class="ctl-title">Appearance</span><span class="ctl-hint">Size, labels, density</span></summary>
+              <div class="ctl-body">
+                <label class="filter-label">Bubble size represents</label>
+                <select id="mapSizeMode">
+                  <option value="frequency">Paper count</option>
+                  <option value="avg_score">Average piX</option>
+                  <option value="uniform">Uniform</option>
+                </select>
+                <div class="slider-row">
+                  <label for="mapMaxNodes">Nodes shown <output id="mapMaxNodesOut">20</output></label>
+                  <input type="range" id="mapMaxNodes" min="5" max="60" step="1" value="20">
+                </div>
+                <div class="slider-row">
+                  <label for="mapNodeScale">Bubble size <output id="mapNodeScaleOut">1.0×</output></label>
+                  <input type="range" id="mapNodeScale" min="0.4" max="2.5" step="0.1" value="1">
+                </div>
+                <div class="slider-row">
+                  <label for="mapLabelSize">Labels <output id="mapLabelSizeOut">13px</output></label>
+                  <input type="range" id="mapLabelSize" min="0" max="22" step="1" value="13">
+                </div>
+              </div>
+            </details>
+
+            <details class="ctl-group">
+              <summary><span class="ctl-title">Layout</span><span class="ctl-hint">Physics &amp; spacing</span></summary>
+              <div class="ctl-body">
+                <div class="slider-row">
+                  <label for="mapRepulsion">Spread <output id="mapRepulsionOut">50</output></label>
+                  <input type="range" id="mapRepulsion" min="0" max="100" step="1" value="50">
+                </div>
+                <div class="slider-row">
+                  <label for="mapLinkStrength">Clustering <output id="mapLinkStrengthOut">50</output></label>
+                  <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="50">
+                </div>
+                <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
+                <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Group by domain</label>
+                <button id="mapResetSettingsBtn" class="btn btn-ghost btn-block">Reset to defaults</button>
+              </div>
+            </details>
           </div>
-
-          <details class="sidebar-expander">
-            <summary>Map Settings</summary>
-
-            <div class="slider-row">
-              <label for="mapMaxNodes">Nodes shown <output id="mapMaxNodesOut">20</output></label>
-              <input type="range" id="mapMaxNodes" min="5" max="60" step="1" value="20">
-            </div>
-            <div class="slider-row">
-              <label for="mapNodeScale">Bubble size <output id="mapNodeScaleOut">1.0×</output></label>
-              <input type="range" id="mapNodeScale" min="0.4" max="2.5" step="0.1" value="1">
-            </div>
-            <div class="slider-row">
-              <label for="mapRepulsion">Spread <output id="mapRepulsionOut">50</output></label>
-              <input type="range" id="mapRepulsion" min="0" max="100" step="1" value="50">
-            </div>
-            <div class="slider-row">
-              <label for="mapLinkStrength">Clustering <output id="mapLinkStrengthOut">50</output></label>
-              <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="50">
-            </div>
-            <div class="slider-row">
-              <label for="mapLabelSize">Labels <output id="mapLabelSizeOut">On</output></label>
-              <input type="range" id="mapLabelSize" min="0" max="22" step="1" value="13">
-            </div>
-
-            <label class="filter-label" style="margin-top:8px;">Bubble size represents</label>
-            <select id="mapSizeMode">
-              <option value="frequency">Paper count</option>
-              <option value="avg_score">Average piX</option>
-              <option value="uniform">Uniform</option>
-            </select>
-
-            <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
-            <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Group by domain</label>
-            <button id="mapResetSettingsBtn" class="btn btn-ghost btn-block">Reset to defaults</button>
-          </details>
 
           <div class="map-shell">
             <div id="mapNetwork" class="map-network"></div>

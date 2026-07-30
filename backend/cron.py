@@ -4,7 +4,7 @@ import sys
 import requests
 from config import HOT_TOPICS
 from ledger import restore_state_from_web3, backup_state_to_web3
-from integrations import download_pdf_from_url
+from integrations import download_pdf
 from brain import process_single_pdf
 
 def run_headless_cron():
@@ -35,7 +35,7 @@ def run_headless_cron():
     processed_count = 0
     for p in papers:
         print(f"Attempting download for: {p['title']}")
-        pdf_bytes = download_pdf_from_url(p["pdf_url"])
+        pdf_bytes = download_pdf(p["pdf_url"])
         if pdf_bytes:
             process_single_pdf(
                 pdf_bytes, 

@@ -146,7 +146,7 @@ for _key, _spec in RUBRIC.items():
         assert _sig in SIGNAL_CATALOGUE, f"{_key} references unknown signal '{_sig}'"
 
 
-def _clamp01(v) -> float:
+def clamp_unit_interval(v) -> float:
     try:
         v = float(v)
     except (TypeError, ValueError):
@@ -156,12 +156,12 @@ def _clamp01(v) -> float:
     return max(0.0, min(1.0, v))
 
 
-def normalize_signals(raw: Dict) -> Dict[str, float]:
+def normalize_signal_vector(raw: Dict) -> Dict[str, float]:
     """Coerce every catalogued signal into [0, 1], defaulting to 0.0."""
-    return {name: _clamp01(raw.get(name, 0.0)) for name in SIGNAL_CATALOGUE}
+    return {name: clamp_unit_interval(raw.get(name, 0.0)) for name in SIGNAL_CATALOGUE}
 
 
-def score_criteria(signals: Dict) -> Dict[str, float]:
+def apply_scoring_rubric(signals: Dict) -> Dict[str, float]:
     """Apply the rubric. Returns criterion -> score in [0, 100].
 
     Because each criterion's weights sum to 1.0 and every signal is bounded to
@@ -169,14 +169,14 @@ def score_criteria(signals: Dict) -> Dict[str, float]:
     needed, which means a score of 100 genuinely represents every input signal
     at maximum rather than an additive overflow that happened to be truncated.
     """
-    s = normalize_signals(signals)
+    s = normalize_signal_vector(signals)
     return {
         key: round(sum(s[sig] * w for sig, w in spec["weights"].items()) * 100.0, 4)
         for key, spec in RUBRIC.items()
     }
 
 
-def explain_criterion(key: str, signals: Dict) -> Dict:
+def explain_criterion_score(key: str, signals: Dict) -> Dict:
     """Per-criterion breakdown: which signal contributed how many points.
 
     This is what makes a score actionable. A researcher seeing
@@ -185,7 +185,7 @@ def explain_criterion(key: str, signals: Dict) -> Dict:
     spec = RUBRIC.get(key)
     if not spec:
         return {}
-    s = normalize_signals(signals)
+    s = normalize_signal_vector(signals)
     contributions = []
     for sig, w in sorted(spec["weights"].items(), key=lambda kv: kv[1], reverse=True):
         contributions.append({
@@ -208,8 +208,8 @@ def explain_criterion(key: str, signals: Dict) -> Dict:
     }
 
 
-def explain_all(signals: Dict) -> List[Dict]:
-    return [explain_criterion(k, signals) for k in CRITERIA_ORDER]
+def explain_all_criteria(signals: Dict) -> List[Dict]:
+    return [explain_criterion_score(k, signals) for k in CRITERIA_ORDER]
 
 
 def rubric_manifest() -> Dict:
@@ -241,7 +241,7 @@ def rubric_manifest() -> Dict:
 # ---------------------------------------------------------------------------
 # Composite
 # ---------------------------------------------------------------------------
-def composite_score(criteria_scores: Dict[str, float], epoch_weights: List[float] = None) -> float:
+def compute_composite_score(criteria_scores: Dict[str, float], epoch_weights: List[float] = None) -> float:
     """The piX composite.
 
     Defaults to the unweighted mean, matching the historical definition so

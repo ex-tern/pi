@@ -195,7 +195,7 @@ _ACTIONABLE_VERBS = [
 # ---------------------------------------------------------------------------
 # Readability
 # ---------------------------------------------------------------------------
-def _count_syllables(word: str) -> int:
+def count_syllables(word: str) -> int:
     word = word.lower().strip(".,;:!?()[]\"'")
     if not word:
         return 0
@@ -217,7 +217,7 @@ def flesch_reading_ease(text: str) -> float:
     words = re.findall(r"[A-Za-z']+", text)
     if not sentences or not words:
         return 0.0
-    syllables = sum(_count_syllables(w) for w in words)
+    syllables = sum(count_syllables(w) for w in words)
     return 206.835 - 1.015 * (len(words) / len(sentences)) - 84.6 * (syllables / len(words))
 
 
@@ -234,7 +234,7 @@ FITNESS_WEIGHTS = {
 TARGET_WORDS = 95
 
 
-def evaluate_fitness(candidate: str, criterion_key: str) -> Dict:
+def score_rebuttal_fitness(candidate: str, criterion_key: str) -> Dict:
     """Multi-objective fitness in [0, 1], with the components exposed.
 
     Penalties are subtractive and uncapped-downward so a single sycophantic or
@@ -308,7 +308,7 @@ def evaluate_fitness(candidate: str, criterion_key: str) -> Dict:
 # ---------------------------------------------------------------------------
 # Genetic algorithm
 # ---------------------------------------------------------------------------
-def _compose(criterion_key: str, score: float, diag_i: int, remedy_idx: List[int],
+def compose_rebuttal_text(criterion_key: str, score: float, diag_i: int, remedy_idx: List[int],
              commit_i: int) -> str:
     meta = CRITERION_META[criterion_key]
     diagnosis = meta["diagnosis"][diag_i % len(meta["diagnosis"])]
@@ -331,7 +331,7 @@ def _compose(criterion_key: str, score: float, diag_i: int, remedy_idx: List[int
             f"{diagnosis} {remedy_text} {commitment}")
 
 
-def _random_genome(meta: dict, rng: random.Random) -> Dict:
+def random_rebuttal_genome(meta: dict, rng: random.Random) -> Dict:
     return {
         "diag": rng.randrange(len(meta["diagnosis"])),
         "remedies": rng.sample(range(len(meta["remedies"])),
@@ -340,7 +340,7 @@ def _random_genome(meta: dict, rng: random.Random) -> Dict:
     }
 
 
-def _crossover(a: Dict, b: Dict, rng: random.Random) -> Dict:
+def crossover_genomes(a: Dict, b: Dict, rng: random.Random) -> Dict:
     child_remedies = list({*a["remedies"][:1], *b["remedies"][:2]})
     if not child_remedies:
         child_remedies = a["remedies"]
@@ -351,7 +351,7 @@ def _crossover(a: Dict, b: Dict, rng: random.Random) -> Dict:
     }
 
 
-def _mutate(g: Dict, meta: dict, rng: random.Random, rate: float = 0.3) -> Dict:
+def mutate_genome(g: Dict, meta: dict, rng: random.Random, rate: float = 0.3) -> Dict:
     g = {"diag": g["diag"], "remedies": list(g["remedies"]), "commit": g["commit"]}
     if rng.random() < rate:
         g["diag"] = rng.randrange(len(meta["diagnosis"]))
@@ -368,7 +368,7 @@ def _mutate(g: Dict, meta: dict, rng: random.Random, rate: float = 0.3) -> Dict:
     return g
 
 
-def _boltzmann_select(pop: List[Tuple[Dict, float]], temperature: float,
+def select_by_boltzmann_tournament(pop: List[Tuple[Dict, float]], temperature: float,
                       rng: random.Random) -> Dict:
     """Boltzmann tournament selection.
 
@@ -394,7 +394,7 @@ def _boltzmann_select(pop: List[Tuple[Dict, float]], temperature: float,
     return pop[-1][0]
 
 
-def optimize_rebuttal(criterion_key: str, score: float, generations: int = 12,
+def evolve_rebuttal_for_criterion(criterion_key: str, score: float, generations: int = 12,
                       population_size: int = 24, seed: int = None) -> Dict:
     """Evolve the highest-fitness rebuttal for one criterion.
 
@@ -415,15 +415,15 @@ def optimize_rebuttal(criterion_key: str, score: float, generations: int = 12,
         seed = abs(hash((criterion_key, round(score, 1)))) % (2 ** 31)
     rng = random.Random(seed)
 
-    population = [_random_genome(meta, rng) for _ in range(population_size)]
+    population = [random_rebuttal_genome(meta, rng) for _ in range(population_size)]
     history = []
     best_genome, best_fit, best_eval = None, -1.0, None
 
     for gen in range(generations):
         scored = []
         for g in population:
-            text = _compose(criterion_key, score, g["diag"], g["remedies"], g["commit"])
-            ev = evaluate_fitness(text, criterion_key)
+            text = compose_rebuttal_text(criterion_key, score, g["diag"], g["remedies"], g["commit"])
+            ev = score_rebuttal_fitness(text, criterion_key)
             scored.append((g, ev["fitness"]))
             if ev["fitness"] > best_fit:
                 best_fit, best_genome, best_eval = ev["fitness"], g, ev
@@ -440,12 +440,12 @@ def optimize_rebuttal(criterion_key: str, score: float, generations: int = 12,
         # Elitism: the incumbent best always survives intact.
         next_pop = [best_genome]
         while len(next_pop) < population_size:
-            p1 = _boltzmann_select(scored, temperature, rng)
-            p2 = _boltzmann_select(scored, temperature, rng)
-            next_pop.append(_mutate(_crossover(p1, p2, rng), meta, rng))
+            p1 = select_by_boltzmann_tournament(scored, temperature, rng)
+            p2 = select_by_boltzmann_tournament(scored, temperature, rng)
+            next_pop.append(mutate_genome(crossover_genomes(p1, p2, rng), meta, rng))
         population = next_pop
 
-    text = _compose(criterion_key, score, best_genome["diag"],
+    text = compose_rebuttal_text(criterion_key, score, best_genome["diag"],
                     best_genome["remedies"], best_genome["commit"])
     return {
         "text": text,
@@ -474,7 +474,7 @@ def generate_rebuttal_strategy(scores_dict: dict) -> str:
 
     ranked = sorted(numeric.items(), key=lambda kv: kv[1])
     primary_key, primary_score = ranked[0]
-    primary = optimize_rebuttal(primary_key, primary_score)
+    primary = evolve_rebuttal_for_criterion(primary_key, primary_score)
 
     parts = [
         "**Adversarial Defense Strategy**",
@@ -487,7 +487,7 @@ def generate_rebuttal_strategy(scores_dict: dict) -> str:
         secondary_key, secondary_score = ranked[1]
         # Only worth raising when it is genuinely also weak.
         if secondary_score < 70:
-            secondary = optimize_rebuttal(secondary_key, secondary_score)
+            secondary = evolve_rebuttal_for_criterion(secondary_key, secondary_score)
             parts += ["", "**Priority 2 — next most material**", secondary["text"]]
 
     strongest_key, strongest_score = ranked[-1]
