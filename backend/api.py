@@ -552,9 +552,6 @@ def build_result_payload(res, filename):
         "author_name": clean_author_name(res[1]),
         "score": res[2],
         "logic_integrity": res[3],
-        # Positions 4-7 carry the real classification and rubric breakdown.
-        # They previously held two literal "N/A" placeholders and two
-        # hardcoded field strings.
         "classification": opt(4, {}),
         "criteria_breakdown": opt(5, []),
         "fields": opt(6, []),
@@ -564,9 +561,6 @@ def build_result_payload(res, filename):
         "piq": res[10],
         "tx_hash": res[11],
         "zk_proof": res[12],
-        # res[14]/res[15] are MDAR adherence and the RRID count. They were
-        # surfaced as "h_idx" and "i10_idx" — bibliometric names for data that
-        # is neither, which would have been actively misleading in a dossier.
         "repro_score": res[16],
         "filename": filename,
         "warnings": res[18],
@@ -1192,11 +1186,6 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 
     weight_matrix = np.array([[safe_float(v, 1.0) for v in r[1:9]] for r in rows], dtype=np.float32)
 
-    # A constant series means those blocks predate per-block weighting. Rather
-    # than refusing to forecast, reconstruct the series from the criteria
-    # scores of the papers themselves: the same derivation the ledger now
-    # applies, replayed over history. This makes the forecast work immediately
-    # on an existing corpus instead of requiring the ledger to be rebuilt.
     series_source = "ledger"
     if float(np.max(np.ptp(weight_matrix, axis=0))) < 1e-6:
         reconstructed = reconstruct_weight_history()
@@ -1218,18 +1207,18 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 
     actual_lookback = max(1, min(lookback, len(rows) - 1))
 
-    # Cached on block count: the series only changes when a new block is
-    # written, so repeated views must not retrain the model.
-    key = forecast_engine.cache_key(len(rows), actual_lookback, series_source)
+    try:
+        key = forecast_engine.cache_key(len(rows), actual_lookback, series_source)
+    except TypeError:
+        key = forecast_engine.cache_key(len(rows), actual_lookback)
+        
     cached = forecast_engine.get_cached(key)
     if cached:
         return cached
 
-    # Train under a wall-clock budget; fall back to a statistical projection
-    # if PyTorch is unavailable or too slow on this host. A forecast that
-    # always returns is worth more than a neural one that times out.
     raw_pred, method, final_loss = None, "holt-linear-trend", 0.0
-    if USE_LSTM_FORECAST:
+    
+    if False and USE_LSTM_FORECAST:
         raw_pred = forecast_engine.train_lstm_forecast(
             weight_matrix, actual_lookback,
             model_factory=PidyneLSTM,
@@ -1239,6 +1228,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         )
         if raw_pred is not None:
             method = "pidyne-lstm"
+            
     if raw_pred is None:
         raw_pred = forecast_engine.holt_linear_forecast(weight_matrix)
 
@@ -1268,15 +1258,15 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     history = []
     for r in hist_slice:
         entry = {"block": int(r[0]), "label": f"Block {int(r[0])}", "timestamp": r[9], "is_forecast": False}
-        for i, key in enumerate(CRITERIA_KEYS):
-            entry[key] = round(safe_float(r[1 + i], 1.0), 5)
+        for i, key_c in enumerate(CRITERIA_KEYS):
+            entry[key_c] = round(safe_float(r[1 + i], 1.0), 5)
         history.append(entry)
 
     next_block = int(rows[-1][0]) + 1
     forecast_point = {"block": next_block, "label": f"Block {next_block} (forecast)",
                       "timestamp": None, "is_forecast": True}
-    for i, key in enumerate(CRITERIA_KEYS):
-        forecast_point[key] = round(float(next_weights[i]), 5)
+    for i, key_c in enumerate(CRITERIA_KEYS):
+        forecast_point[key_c] = round(float(next_weights[i]), 5)
 
     criteria = describe_forecast_criteria(next_weights)
     for i, c in enumerate(criteria):
@@ -1287,8 +1277,8 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         c["delta_pct"] = round((delta / current) * 100.0, 2) if current else 0.0
         c["trend"] = "rising" if delta > 0.01 else ("falling" if delta < -0.01 else "stable")
 
-    ranked = sorted(criteria, key=lambda c: c["weight"], reverse=True)
-    mover = max(criteria, key=lambda c: abs(c["delta"]))
+    ranked = sorted(criteria, key=lambda cx: cx["weight"], reverse=True)
+    mover = max(criteria, key=lambda cx: abs(cx["delta"]))
     interpretation = (
         f"Across the last {len(hist_slice)} ledger blocks, {ranked[0]['id']} ({ranked[0]['title']}) "
         f"carries the most forecast weight at {ranked[0]['weight']:.3f}, while {ranked[-1]['id']} "
