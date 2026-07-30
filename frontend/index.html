@@ -7,6 +7,7 @@
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
 <body>
 
@@ -14,13 +15,18 @@
 
   <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar">
-    <h2 class="sidebar-title">System Access & Sync</h2>
+    <h2 class="sidebar-title">System Access &amp; Sync</h2>
+
+    <div id="chainBadge" class="chain-badge chain-unknown">
+      <span class="chain-dot"></span><span id="chainBadgeText">Checking network…</span>
+    </div>
 
     <div id="mmConnectWrap">
       <button id="connectMmBtn" class="btn mm-btn">Connect MetaMask</button>
       <div id="mmStatus" class="mm-status"></div>
     </div>
     <div id="mmLinked" class="linked-badge hidden"></div>
+    <button id="switchNetworkBtn" class="btn btn-outline btn-block hidden">Switch to Sepolia</button>
 
     <div id="orcidConnectWrap" style="margin-top:8px;">
       <button id="connectOrcidBtn" class="btn orcid-btn">Link ORCID Account</button>
@@ -29,10 +35,13 @@
 
     <div id="researcherPanel" class="hidden">
       <div class="researcher-info">
-        <strong>Researcher:</strong> <span id="researcherName">Anonymous Researcher</span><br>
-        <strong>TOTAL piQ AWARDED:</strong> <code id="researcherPiq">0.00 piQ</code>
+        <div class="ri-row"><span>Researcher</span><strong id="researcherName">Anonymous Researcher</strong></div>
+        <div class="ri-row"><span>piQ earned</span><code id="researcherPiq">0.00</code></div>
+        <div class="ri-row"><span>Fees paid</span><code id="researcherFees">0.00</code></div>
+        <div class="ri-row ri-total"><span>Spendable balance</span><code id="researcherBalance">0.00</code></div>
+        <div class="ri-note" id="researcherAffordable"></div>
       </div>
-      <button id="unlinkBtn" class="btn btn-secondary">Unlink / Reset Session</button>
+      <button id="unlinkBtn" class="btn btn-secondary btn-block">Unlink / Reset Session</button>
     </div>
 
     <hr>
@@ -43,46 +52,69 @@
     </details>
 
     <details class="sidebar-expander">
-      <summary>🧠 Scilem Assistant</summary>
-      <div id="scilemChatBox" class="scilem-chat-box">
-        <div class="chat-msg ai">🧠 <strong>Scilem:</strong> Welcome! Ask any research question or check criteria ratings.</div>
+      <summary>Scilem Assistant <span class="pill pill-muted">Inactive</span></summary>
+      <div class="notice-box" id="scilemNotice">
+        <strong>Local language model inactive.</strong>
+        Due to server limitations, the local language model powering the Scilem conversational
+        assistant is not running on this deployment.
+        <span class="notice-sub">Manuscript assessment is unaffected — the Scilem deterministic
+        structural analyser still evaluates every paper as part of the model panel.</span>
       </div>
       <form id="scilemForm" class="scilem-form">
-        <input id="scilemInput" type="text" placeholder="Ask Scilem..." autocomplete="off">
-        <button type="submit" class="btn">Send</button>
+        <input id="scilemInput" type="text" placeholder="Assistant unavailable" autocomplete="off" disabled>
+        <button type="submit" class="btn" disabled>Send</button>
       </form>
-      <button id="scilemResetBtn" class="btn btn-secondary hidden" style="margin-top:6px;">Reset Scilem (Owner)</button>
     </details>
+
+    <hr>
+
+    <div class="donate-card">
+      <div class="donate-title">Support ScholarPi</div>
+      <p class="donate-text">
+        ScholarPi is independent, non-commercial research infrastructure. Contributions fund
+        model inference credits, RPC access and hosting.
+      </p>
+      <button id="donateBtn" class="btn btn-donate btn-block">Support &amp; Donate</button>
+    </div>
   </aside>
 
   <!-- ===================== MAIN ===================== -->
   <main class="main">
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="assess">📄 Assess Manuscript</button>
-      <button class="tab-btn" data-tab="analytics">🌐 Analytics & Map</button>
-      <button class="tab-btn" data-tab="explorer">⛓️ Ledger Explorer</button>
-      <button class="tab-btn" data-tab="diagram">📊 Architecture</button>
+      <button class="tab-btn active" data-tab="assess">Assess Manuscript</button>
+      <button class="tab-btn" data-tab="analytics">Analytics &amp; Map</button>
+      <button class="tab-btn" data-tab="explorer">Ledger Explorer</button>
+      <button class="tab-btn" data-tab="diagram">Architecture</button>
     </nav>
 
     <!-- TAB: ASSESS -->
     <section id="tab-assess" class="tab-panel active">
       <div class="page-header">
-        <h1>📄 Manuscript Intake & Processing</h1>
+        <h1>Manuscript Intake &amp; Processing<button class="help-btn" data-help="intake" aria-label="About manuscript intake">?</button></h1>
         <div class="count-badge">Total Analyzed: <span id="totalAnalyzed">–</span></div>
       </div>
 
       <div class="card">
-        <h2>Assess a Manuscript</h2>
+        <h2>Assess a Manuscript<button class="help-btn" data-help="assess" aria-label="About assessment">?</button></h2>
+
         <div id="freeTrialWarning" class="warning-box hidden">
-          🔒 <strong>Free Trial Completed:</strong> Please connect your <strong>Web3 Ethereum Wallet</strong> in the sidebar to continue.
+          <strong>Free trial completed.</strong> Connect your Ethereum wallet or link ORCID in the
+          sidebar to continue assessing manuscripts.
         </div>
-        <label id="stakeCheckboxWrap" class="checkbox-row hidden">
-          <input type="checkbox" id="stakeCheckbox" checked> Stake 0.1 piQ to Process
-        </label>
+
+        <div id="feeNotice" class="fee-notice">
+          <div class="fee-notice-main">
+            <span class="fee-amount" id="feeAmount">0.10 piQ</span>
+            <span class="fee-label">processing fee per paper</span>
+            <button class="help-btn" data-help="fee" aria-label="About the processing fee">?</button>
+          </div>
+          <div class="fee-notice-bal" id="feeBalanceLine">Connect an identity to see your balance.</div>
+        </div>
 
         <div class="subtabs">
-          <button class="subtab-btn active" data-subtab="local">📄 Local Upload</button>
-          <button class="subtab-btn" data-subtab="doi">🔗 DOI Lookup</button>
+          <button class="subtab-btn active" data-subtab="local">Local Upload</button>
+          <button class="subtab-btn" data-subtab="doi">DOI Lookup</button>
+          <button class="subtab-btn" data-subtab="discover">Auto-Discover</button>
         </div>
 
         <div id="subtab-local" class="subtab-panel active">
@@ -95,13 +127,27 @@
             <input type="checkbox" id="includeDoiCheckbox"> Include this DOI in pipeline
           </label>
         </div>
+        <div id="subtab-discover" class="subtab-panel">
+          <p class="hint">Search open-access literature (via OpenAlex) and pick papers to feed straight into the pipeline below — no manual download needed.</p>
+          <div id="hotTopicsRow" class="hot-topics-row"></div>
+          <div class="discover-search-row">
+            <input type="text" id="discoverQueryInput" placeholder="Search a topic, e.g. 'CRISPR gene editing'...">
+            <button id="discoverSearchBtn" class="btn">Search</button>
+          </div>
+          <div id="discoverResults" class="discover-results"></div>
+          <div id="discoverSelectedWrap" class="discover-selected hidden">
+            <strong>Selected for assessment (<span id="discoverSelectedCount">0</span>/10):</strong>
+            <div id="discoverSelectedChips" class="chip-row"></div>
+          </div>
+        </div>
 
+        <div id="estimatedCost" class="est-cost hidden"></div>
         <button id="runPipelineBtn" class="btn btn-primary btn-block">Run Assessment Pipeline</button>
         <div id="pipelineStatus" class="status-box hidden"></div>
       </div>
 
       <div id="resultsSection" class="hidden">
-        <h2>Assessment Results</h2>
+        <h2>Assessment Results<button class="help-btn" data-help="results" aria-label="About results">?</button></h2>
         <div id="downloadErrors"></div>
         <div id="resultsList"></div>
       </div>
@@ -109,7 +155,7 @@
 
     <!-- TAB: ANALYTICS -->
     <section id="tab-analytics" class="tab-panel">
-      <div class="page-header"><h1>🌐 Map & Analytics</h1></div>
+      <div class="page-header"><h1>Map &amp; Analytics<button class="help-btn" data-help="analytics" aria-label="About analytics">?</button></h1></div>
 
       <div class="stats-bar">
         <div class="stat-card"><div class="stat-value" id="statTotalPapers">–</div><div class="stat-label">Total Papers</div></div>
@@ -120,21 +166,37 @@
 
       <div class="two-col">
         <div class="card">
-          <h2>Pidyne Forecast</h2>
-          <select id="lookbackSelect">
-            <option value="1">1 Epoch</option>
-            <option value="3" selected>3 Epochs</option>
-            <option value="5">5 Epochs</option>
-          </select>
-          <button id="runForecastBtn" class="btn" style="margin-left:8px;">Run Neural Forecast</button>
+          <h2>Pidyne Forecast<button class="help-btn" data-help="pidyne" aria-label="About the Pidyne forecast">?</button></h2>
+          <p class="hint">Projects how the eight Pi-Index criteria weights will shift in the next ledger epoch, learned from the weights recorded in every Proof-of-Research block.</p>
+
+          <div class="forecast-toolbar">
+            <select id="lookbackSelect" class="inline-select">
+              <option value="1">Lookback: 1 epoch</option>
+              <option value="3" selected>Lookback: 3 epochs</option>
+              <option value="5">Lookback: 5 epochs</option>
+            </select>
+            <button id="runForecastBtn" class="btn btn-primary">Run Neural Forecast</button>
+          </div>
+
           <div id="forecastMsg" class="hint"></div>
-          <canvas id="forecastChart" height="220"></canvas>
-          <h3>Ledger Forecast Criteria</h3>
-          <div id="criteriaGrid" class="criteria-grid"></div>
+          <div id="forecastEmpty" class="empty-state hidden"></div>
+
+          <div id="forecastChartWrap" class="chart-wrap hidden">
+            <canvas id="forecastChart" height="240"></canvas>
+          </div>
+
+          <div id="forecastMeta" class="forecast-meta hidden"></div>
+          <div id="forecastInsight" class="insight-box hidden"></div>
+
+          <h3 id="criteriaHeading" class="hidden">Projected Criteria Weights<button class="help-btn" data-help="criteria" aria-label="About criteria weights">?</button></h3>
+          <table class="data-table hidden" id="criteriaTable">
+            <thead><tr><th>ID</th><th>Criterion</th><th class="num">Current</th><th class="num">Projected</th><th class="num">Change</th></tr></thead>
+            <tbody id="criteriaBody"></tbody>
+          </table>
         </div>
 
         <div class="card">
-          <h2>Global Map of Science</h2>
+          <h2>Global Map of Science<button class="help-btn" data-help="map" aria-label="About the map of science">?</button></h2>
 
           <div class="filter-panel">
             <div class="filter-row">
@@ -155,7 +217,7 @@
           </div>
 
           <details class="sidebar-expander">
-            <summary>⚙️ Map Settings</summary>
+            <summary>Map Settings</summary>
             <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Physics simulation</label>
             <label class="filter-label">Node sizing</label>
             <select id="mapSizeMode">
@@ -174,77 +236,131 @@
           <div id="mapNetwork" class="map-network"></div>
           <div id="mapEmptyState" class="hint hidden">No papers match these filters.</div>
           <details class="sidebar-expander" open>
-            <summary>Map Legend & Data <span class="hint">(click a row to focus it)</span></summary>
-            <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th>Freq</th><th>Avg Weight</th></tr></thead><tbody></tbody></table>
+            <summary>Map Legend &amp; Data <span class="hint">(click a row to focus it)</span></summary>
+            <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Freq</th><th class="num">Avg Weight</th></tr></thead><tbody></tbody></table>
           </details>
         </div>
       </div>
 
       <div class="two-col">
-        <div class="card">
-          <h2>Pi Quotient (piQ) Leaderboard</h2>
-          <input type="text" id="leaderboardSearch" placeholder="Search authors...">
-          <table class="data-table sortable-table" id="leaderboardTable">
-            <thead><tr>
-              <th data-sort="author">Author</th>
-              <th data-sort="piq">piQ</th>
-              <th data-sort="papers">Papers</th>
-              <th data-sort="avg_score">Avg Score</th>
-            </tr></thead>
-            <tbody id="leaderboardBody"></tbody>
-          </table>
-          <div class="pagination" id="leaderboardPagination"></div>
-        </div>
-        <div class="card">
-          <h2>piX Top Papers</h2>
-          <div class="filter-row">
-            <input type="text" id="topPapersSearch" placeholder="Search title or author...">
+        <!-- piX — Top Papers -->
+        <div class="card leaderboard-card">
+          <div class="lb-head">
+            <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Top Papers]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
+            <p class="hint">Individual manuscripts ranked by their composite Pi-Index score. Select any row to open its full assessment report and dossier.</p>
+          </div>
+          <div class="lb-toolbar">
+            <input type="text" id="topPapersSearch" class="lb-search" placeholder="Search title or author…">
             <input type="number" id="topPapersMinScore" min="0" max="100" placeholder="Min score" class="score-input">
           </div>
-          <table class="data-table sortable-table" id="topPapersTable">
-            <thead><tr>
-              <th data-sort="title">Title</th>
-              <th data-sort="none">Author</th>
-              <th data-sort="score">Score</th>
-              <th data-sort="piq">piQ</th>
-              <th data-sort="logic">Logic</th>
-              <th data-sort="date">Date</th>
-            </tr></thead>
-            <tbody id="topPapersBody"></tbody>
-          </table>
+          <div class="table-scroll">
+            <table class="data-table sortable-table" id="topPapersTable">
+              <thead><tr>
+                <th class="col-rank">#</th>
+                <th data-sort="title">Title</th>
+                <th data-sort="none">Author</th>
+                <th data-sort="score" class="num">piX</th>
+                <th data-sort="piq" class="num">piQ</th>
+                <th data-sort="logic" class="num">Logic</th>
+                <th data-sort="date" class="num">Date</th>
+              </tr></thead>
+              <tbody id="topPapersBody"></tbody>
+            </table>
+          </div>
           <div class="pagination" id="topPapersPagination"></div>
+        </div>
+
+        <!-- piQ — Top Authors -->
+        <div class="card leaderboard-card">
+          <div class="lb-head">
+            <h2>pi-Quotient (piQ) Leaderboard <span class="lb-scope">[Top Authors]</span><button class="help-btn" data-help="piq" aria-label="About the pi-Quotient leaderboard">?</button></h2>
+            <p class="hint">Researchers ranked by total piQ earned across all of their assessed manuscripts. Select a row to see that author's papers.</p>
+          </div>
+          <div class="lb-toolbar">
+            <input type="text" id="leaderboardSearch" class="lb-search" placeholder="Search authors…">
+          </div>
+          <div class="table-scroll">
+            <table class="data-table sortable-table" id="leaderboardTable">
+              <thead><tr>
+                <th class="col-rank">#</th>
+                <th data-sort="author">Author</th>
+                <th data-sort="piq" class="num">piQ</th>
+                <th data-sort="papers" class="num">Papers</th>
+                <th data-sort="avg_score" class="num">Avg piX</th>
+              </tr></thead>
+              <tbody id="leaderboardBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="leaderboardPagination"></div>
         </div>
       </div>
     </section>
 
     <!-- TAB: EXPLORER -->
     <section id="tab-explorer" class="tab-panel">
-      <div class="page-header"><h1>⛓️ Proof-of-Research Ledger Explorer</h1></div>
+      <div class="page-header"><h1>Proof-of-Research Ledger Explorer<button class="help-btn" data-help="explorer" aria-label="About the ledger explorer">?</button></h1></div>
       <div class="card">
-        <input type="text" id="explorerSearch" placeholder="Search by Eval Hash, Block Hash, Title, or Author...">
+        <input type="text" id="explorerSearch" placeholder="Search by Eval Hash, Block Hash, Title, or Author…">
         <div id="explorerResults"></div>
       </div>
     </section>
 
     <!-- TAB: DIAGRAM -->
     <section id="tab-diagram" class="tab-panel">
-      <div class="page-header"><h1>📊 Framework Architecture</h1></div>
+      <div class="page-header"><h1>Framework Architecture<button class="help-btn" data-help="architecture" aria-label="About the architecture">?</button></h1></div>
+
       <div class="card">
-        <p>Pi-Index filters noise and yields quantitative results strictly aligned with <strong>Responsible Research Assessment (RRA)</strong> and <strong>CoARA</strong> (Coalition for Advancing Research Assessment) guidelines.</p>
-        <h3>System Pipeline</h3>
-        <ol class="pipeline-list">
-          <li><strong>Unified Multi-Source Intake & ZK-Identity Registry</strong> — ORCID iD / W3C DID verification, local PDF / Unpaywall DOI / OpenAlex ingestion, ZK double-blind assignment.</li>
-          <li><strong>Core Evaluation & Adversarial Analysis Pipeline (CoARA/RRA)</strong> — PyMuPDF layout extraction, deterministic MDAR/RRID scoring, multi-LLM consensus (Llama, Mistral, Qwen, Gemini, Scilem), adversarial logic integrity matrix.</li>
-          <li><strong>Blockchain Consensus, Cryptographic Proofs & Slashing Tokenomics</strong> — Proof-of-Research validation, anti-laundering slashing guard, soulbound piQ token minting.</li>
-          <li><strong>User Interface, Cartography & Institutional Policy Support</strong> — CoARA/DORA dossiers, AI defense rebuttal strategy, global map of science, Pidyne LSTM forecasting.</li>
-        </ol>
-        <h3>CoARA Compliance & Core Pillars</h3>
-        <ul>
-          <li><strong>Diverse Research Outputs (C5 & C8):</strong> structurally evaluates open datasets, code repositories, and containerized executable environments.</li>
-          <li><strong>Qualitative & Quantitative Balance (C1-C8):</strong> algorithms act as auditors, not replacements for peer review.</li>
-          <li><strong>Transparency & Researcher Sovereignty:</strong> evaluation weights, logic states, and criteria scores are hashed and stored on Ethereum (Sepolia). Researchers retain sovereign ownership via DID/ORCID.</li>
+        <p class="lede">Pi-Index filters noise and yields quantitative results strictly aligned with
+        <strong>Responsible Research Assessment (RRA)</strong> and <strong>CoARA</strong>
+        (Coalition for Advancing Research Assessment) guidelines.</p>
+
+        <div class="arch-legend">
+          <span class="al-item"><span class="al-swatch sw-intake"></span>Intake &amp; Identity</span>
+          <span class="al-item"><span class="al-swatch sw-extract"></span>Extraction &amp; Heuristics</span>
+          <span class="al-item"><span class="al-swatch sw-panel"></span>Multi-LLM Panel</span>
+          <span class="al-item"><span class="al-swatch sw-judge"></span>Pidyne Judge</span>
+          <span class="al-item"><span class="al-swatch sw-chain"></span>Ledger &amp; Chain</span>
+          <span class="al-item"><span class="al-swatch sw-ui"></span>Outputs</span>
+        </div>
+
+        <div class="diagram-frame">
+          <div class="mermaid" id="archDiagram"></div>
+        </div>
+        <p class="hint diagram-caption">End-to-end processing flow: intake and identity, extraction and
+        deterministic scoring, the independent model panel, Pidyne adjudication, and Proof-of-Research
+        settlement on Sepolia.</p>
+      </div>
+
+      <div class="card">
+        <h2>Scoring Pipeline in Detail<button class="help-btn" data-help="scoring" aria-label="About the scoring pipeline">?</button></h2>
+        <div class="diagram-frame">
+          <div class="mermaid" id="scoreDiagram"></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <h2>Stage Reference</h2>
+        <table class="data-table">
+          <thead><tr><th>Stage</th><th>Component</th><th>What Happens</th></tr></thead>
+          <tbody>
+            <tr><td><span class="stage-tag st-intake">1</span></td><td>Unified Intake &amp; ZK-Identity Registry</td><td>ORCID iD / W3C DID verification, local PDF, Unpaywall DOI resolution and OpenAlex discovery, ZK double-blind assignment.</td></tr>
+            <tr><td><span class="stage-tag st-extract">2</span></td><td>Extraction &amp; Deterministic Scoring</td><td>PyMuPDF layout-aware text extraction, MDAR adherence, RRID validation, reproducibility markers, empirical density.</td></tr>
+            <tr><td><span class="stage-tag st-panel">3</span></td><td>Independent Model Panel</td><td>Llama, Mistral, Qwen and Gemini each assess the manuscript separately, alongside the local Scilem structural analyser.</td></tr>
+            <tr><td><span class="stage-tag st-judge">4</span></td><td>Pidyne Adjudication</td><td>Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
+            <tr><td><span class="stage-tag st-chain">5</span></td><td>Proof-of-Research &amp; Tokenomics</td><td>Block validation, zk-SNARK proof generation, criteria-weight recording, soulbound piQ minting on Sepolia.</td></tr>
+            <tr><td><span class="stage-tag st-ui">6</span></td><td>Dossiers, Cartography &amp; Forecasting</td><td>CoARA/DORA dossiers, AI defence rebuttal strategy, global map of science, Pidyne LSTM epoch forecasting.</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="card">
+        <h2>CoARA Compliance &amp; Core Pillars</h2>
+        <ul class="pillar-list">
+          <li><strong>Diverse Research Outputs (C5 &amp; C8):</strong> structurally evaluates open datasets, code repositories, and containerized executable environments.</li>
+          <li><strong>Qualitative &amp; Quantitative Balance (C1–C8):</strong> algorithms act as auditors, not replacements for peer review.</li>
+          <li><strong>Transparency &amp; Researcher Sovereignty:</strong> evaluation weights, logic states, and criteria scores are hashed and stored on Ethereum (Sepolia). Researchers retain sovereign ownership via DID/ORCID.</li>
         </ul>
-        <p class="footer-note">Framework Author: Ali Vafadar Yengejeh | Università degli Studi di Milano-Bicocca</p>
+        <p class="footer-note">Framework Author: Ali Vafadar Yengejeh · Università degli Studi di Milano-Bicocca</p>
       </div>
     </section>
   </main>
@@ -253,7 +369,7 @@
 <!-- ===================== MODAL ===================== -->
 <div id="modalOverlay" class="modal-overlay hidden">
   <div class="modal">
-    <button id="modalClose" class="modal-close">&times;</button>
+    <button id="modalClose" class="modal-close" aria-label="Close">&times;</button>
     <div id="modalBody"></div>
   </div>
 </div>

@@ -25,6 +25,42 @@ WEB3_PROVIDER_URI = os.getenv("WEB3_PROVIDER_URI", "https://ethereum-sepolia-rpc
 ETH_ADMIN_PRIVATE_KEY = os.getenv("ETH_ADMIN_PRIVATE_KEY", "")
 PIQ_CONTRACT_ADDRESS = os.getenv("PIQ_CONTRACT_ADDRESS", "0xaE7a504aCF32ABf0E891B74bF39E4527999A6256")
 
+# ---------------------------------------------------------------------------
+# Ethereum network
+# ---------------------------------------------------------------------------
+# Sepolia testnet by default. Public RPC endpoints rate-limit and go down
+# fairly often, so the ledger tries each of these in order and uses the first
+# one that actually responds, rather than failing the whole chain integration
+# because a single provider is having a bad day.
+CHAIN_ID = int(os.getenv("CHAIN_ID", "11155111"))
+CHAIN_NAME = os.getenv("CHAIN_NAME", "Sepolia")
+CHAIN_CURRENCY = os.getenv("CHAIN_CURRENCY", "SepoliaETH")
+BLOCK_EXPLORER_URL = os.getenv("BLOCK_EXPLORER_URL", "https://sepolia.etherscan.io")
+
+_fallback_rpcs_raw = os.getenv("WEB3_FALLBACK_RPCS", "").strip()
+if _fallback_rpcs_raw:
+    WEB3_FALLBACK_RPCS = [u.strip() for u in _fallback_rpcs_raw.split(",") if u.strip()]
+else:
+    WEB3_FALLBACK_RPCS = [
+        "https://ethereum-sepolia-rpc.publicnode.com",
+        "https://rpc.sepolia.org",
+        "https://sepolia.drpc.org",
+        "https://1rpc.io/sepolia",
+    ]
+# The configured primary always gets tried first, without being duplicated.
+WEB3_RPC_ENDPOINTS = [WEB3_PROVIDER_URI] + [u for u in WEB3_FALLBACK_RPCS if u != WEB3_PROVIDER_URI]
+
+# ---------------------------------------------------------------------------
+# piQ processing fee
+# ---------------------------------------------------------------------------
+# Every manuscript costs a flat fee, debited from the submitter's piQ balance.
+# This replaced the old "stake 0.1 piQ" checkbox, which was purely cosmetic —
+# nothing was ever escrowed, returned or accounted for.
+PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
+
+# Wallet that receives Support & Donate contributions.
+DONATION_WALLET = os.getenv("DONATION_WALLET", "0x1Af8D9A120b02D0983590587364F8705e6942356")
+
 # Data directory (SQLite DB + PyTorch weights). Overridable so production
 # deployments (Docker, systemd) can point it at a persistent volume instead
 # of the service account's home directory.
@@ -63,6 +99,28 @@ FREE_EVALS_PER_IP = int(os.getenv("FREE_EVALS_PER_IP", "1"))
 # limiter applied to the assessment endpoints.
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "10"))
+
+# The Scilem sidebar chat (/api/scilem/chat) lazily loads a ~1.1B parameter
+# TinyLlama model on first use — several hundred MB to a few GB of RAM.
+# That's fine on a real server, but it WILL crash a free-tier host with
+# ~512MB of RAM (Render's free web service, for example). Set this to
+# "false" on memory-constrained deployments; the endpoint then returns a
+# friendly message instead of trying to load the model and getting killed
+# by the host's out-of-memory limit. Manuscript assessment itself does not
+# use this model and is unaffected either way.
+#
+# Currently defaults to DISABLED: the deployment target does not have the
+# memory headroom to host the local language model, so the sidebar assistant
+# is switched off and the UI explains why. Set ENABLE_SCILEM_LOCAL_MODEL=true
+# on a machine with sufficient RAM to turn it back on.
+ENABLE_SCILEM_LOCAL_MODEL = os.getenv("ENABLE_SCILEM_LOCAL_MODEL", "false").strip().lower() not in ("false", "0", "no")
+
+SCILEM_DISABLED_NOTICE = (
+    "Due to server limitations, the local language model is inactive. "
+    "The Scilem conversational assistant is unavailable on this deployment. "
+    "Manuscript assessment is unaffected — the Scilem deterministic structural "
+    "analyser still runs on every paper as part of the evaluation panel."
+)
 
 
 def get_secret(key, default=""):
@@ -108,6 +166,7 @@ def config_summary():
         f"IPFS backup (Pinata): {flag(PINATA_API_KEY and PINATA_SECRET_API_KEY)}",
         f"On-chain state registry: {flag(REGISTRY_CONTRACT_ADDRESS and ETH_ADMIN_PRIVATE_KEY)}",
         f"ORCID login: {flag(ORCID_CLIENT_ID and ORCID_CLIENT_SECRET)}",
+        f"Scilem local chat model: {'enabled' if ENABLE_SCILEM_LOCAL_MODEL else 'DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)'}",
     ]
     if not (GROQ_API_KEY or OR_API_KEY or GEMINI_API_KEY):
         lines.append(

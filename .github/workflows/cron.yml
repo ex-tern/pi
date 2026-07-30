@@ -1,0 +1,45 @@
+name: Background Paper Assessment
+
+# Optional: this runs the headless cron worker (backend/cron.py) on a
+# schedule to auto-assess open-access papers from the HOT_TOPICS list in
+# config.py. Not required for the webapp itself to work — enable only if
+# you want autonomous background assessment. Requires the same secrets as
+# backend/.env, added under Settings → Secrets and variables → Actions.
+
+on:
+  schedule:
+    - cron: '*/30 * * * *'   # every 30 min — the original every-5-min cadence
+                              # is aggressive for a free LLM-key budget; adjust freely
+  workflow_dispatch:
+
+jobs:
+  assess:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      - name: Install Dependencies
+        working-directory: backend
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+
+      - name: Run Background Assessment
+        working-directory: backend
+        run: python cron.py --cron
+        env:
+          GROQ_API_KEY: ${{ secrets.GROQ_API_KEY }}
+          OR_API_KEY: ${{ secrets.OR_API_KEY }}
+          GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+          PINATA_API_KEY: ${{ secrets.PINATA_API_KEY }}
+          PINATA_SECRET_API_KEY: ${{ secrets.PINATA_SECRET_API_KEY }}
+          ETH_ADMIN_PRIVATE_KEY: ${{ secrets.ETH_ADMIN_PRIVATE_KEY }}
+          REGISTRY_CONTRACT_ADDRESS: ${{ secrets.REGISTRY_CONTRACT_ADDRESS }}
+          PIQ_CONTRACT_ADDRESS: ${{ secrets.PIQ_CONTRACT_ADDRESS }}
+          WEB3_PROVIDER_URI: ${{ secrets.WEB3_PROVIDER_URI }}

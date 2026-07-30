@@ -15,11 +15,15 @@ const Session = {
   set freeEvalsUsed(v) { localStorage.setItem("sp_free_evals", String(v)); },
   hasWeb3() { return !!this.wallet; },
   hasOrcid() { return !!this.orcid; },
+  hasIdentity() { return !!(this.wallet || this.orcid); },
   currentUser() { return this.orcid || this.wallet || "Anonymous"; },
 };
 
 let evaluatedBuffer = []; // mirrors st.session_state.evaluated_papers_buffer
 let downloadErrors = [];
+let piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: 0.1, papers_affordable: 0 };
+let chainState = null;
+let donationInfo = null;
 
 // ---------------------------------------------------------------------------
 // Bootstrapping: read ORCID / wallet redirect params, clean URL
@@ -44,7 +48,170 @@ function bootstrapFromQueryParams() {
 }
 
 // ---------------------------------------------------------------------------
-// Sidebar: wallet / orcid / logs / scilem
+// Contextual help. Every major section carries a circled "?" that explains
+// the idea behind it, so the interface is self-documenting rather than
+// assuming the reader already knows what piX, piQ or Pidyne mean.
+// ---------------------------------------------------------------------------
+const HELP = {
+  intake: {
+    title: "Manuscript Intake & Processing",
+    body: `<p>This is where papers enter the system. There are three routes in, and all three
+      converge on exactly the same evaluation pipeline:</p>
+      <ul>
+        <li><strong>Local Upload</strong> — assess a PDF from your own machine. Nothing is published;
+          only the resulting scores and a hash of the document reach the ledger.</li>
+        <li><strong>DOI Lookup</strong> — the system resolves the DOI through Unpaywall, Semantic
+          Scholar and CORE in turn, and assesses the first open-access copy it can legally retrieve.</li>
+        <li><strong>Auto-Discover</strong> — search open-access literature via OpenAlex and queue up
+          to ten papers at once.</li>
+      </ul>
+      <p>Every processed manuscript writes a Proof-of-Research block, which is what makes the
+      Pidyne forecast on the Analytics tab possible.</p>`,
+  },
+  assess: {
+    title: "How Assessment Works",
+    body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
+      several large language models — Llama, Mistral, Qwen and Gemini — while the local Scilem
+      engine performs deterministic structural analysis in parallel.</p>
+      <p>The <strong>Pidyne engine</strong> then acts as the judge: it reads all of the panel's
+      independent assessments and adjudicates a single verdict. Because the jurors come from
+      different providers and training corpora, their errors are largely uncorrelated, so
+      agreement between them is real evidence rather than repetition.</p>
+      <p>Alongside the model panel, deterministic checks run on the extracted text: MDAR reporting
+      adherence, RRID validity, open-science and reproducibility markers, and empirical density.
+      These are reproducible and cannot be talked around by a persuasive abstract.</p>`,
+  },
+  fee: {
+    title: "The 0.1 piQ Processing Fee",
+    body: `<p>Each manuscript costs a flat <strong>0.1 piQ</strong> to process, debited from your
+      balance at the moment that paper begins processing.</p>
+      <p>This replaced the earlier "stake 0.1 piQ" model. Staking implied an escrow that was
+      returned afterwards, but nothing was ever actually held or settled — it was a checkbox with
+      no accounting behind it. A fee is honest about what is happening: assessment consumes real
+      inference credits, and the fee reflects that cost.</p>
+      <h4>How the accounting works</h4>
+      <ul>
+        <li>Your <strong>spendable balance</strong> = piQ earned from your own assessed manuscripts
+          minus fees you have already paid.</li>
+        <li>Fees are charged <em>per paper</em>, not per batch. A batch that runs out of balance
+          halfway through stops cleanly rather than failing entirely.</li>
+        <li>If a paper's source cannot be retrieved, the fee for it is <strong>refunded
+          automatically</strong> — you are never charged for work that was not done.</li>
+        <li>Re-submitting a manuscript that was already assessed returns the cached record and
+          costs nothing.</li>
+      </ul>
+      <p>New users get a free trial run, which is how you earn the first piQ that funds
+      subsequent assessments.</p>`,
+  },
+  results: {
+    title: "Reading Your Results",
+    body: `<p>Each result shows the composite <strong>piX</strong> score and the <strong>piQ</strong>
+      awarded. Open <em>Full Report &amp; Dossier</em> for the complete record: every warning raised
+      during processing, every model that participated and whether it succeeded, which model
+      served as final judge, the judgement-quality grade, all eight criteria scores, and the
+      cryptographic proofs written to the ledger.</p>
+      <p><em>Suggest Defense</em> generates an adversarial rebuttal strategy targeting your
+      weakest criterion — useful when preparing for peer review.</p>`,
+  },
+  analytics: {
+    title: "Analytics & Map",
+    body: `<p>Corpus-level views of everything assessed so far: the Pidyne forecast of where
+      evaluation weight is heading, a network map of the scientific fields represented, and the
+      two leaderboards ranking papers by piX and authors by piQ.</p>`,
+  },
+  pidyne: {
+    title: "The Pidyne Forecast",
+    body: `<p>The eight Pi-Index criteria are not weighted equally forever. Every time a manuscript
+      is assessed, a Proof-of-Research block records the criteria weighting that paper's evidence
+      profile implies: criteria the corpus consistently evidences well gain weight, sparsely
+      evidenced ones lose it.</p>
+      <p><strong>Pidyne</strong> is an LSTM neural network trained on that recorded sequence of
+      block weights. It learns the trajectory the corpus is on and projects where the weighting
+      lands in the next epoch.</p>
+      <h4>Reading the chart</h4>
+      <ul>
+        <li>Solid lines are <strong>observed</strong> weights from real ledger blocks.</li>
+        <li>The dashed segment at the right is the <strong>forecast</strong> for the next epoch.</li>
+        <li>The eight weights always sum to 8.0, so a criterion above 1.0 is being weighted more
+          heavily than baseline, and below 1.0 less heavily.</li>
+      </ul>
+      <p>A rising criterion means the assessed literature is producing stronger and more consistent
+      evidence on that dimension. The forecast needs at least three recorded blocks before it can
+      identify a trend.</p>`,
+  },
+  criteria: {
+    title: "Criteria Weights",
+    body: `<p>The eight criteria are normalized so their weights always total 8.0 — a weight of
+      exactly 1.0 is the neutral baseline. The <em>Change</em> column shows the projected shift
+      from the current epoch to the next.</p>
+      <p>Select any row to read the full definition of that criterion.</p>`,
+  },
+  map: {
+    title: "Global Map of Science",
+    body: `<p>Each bubble is a research subfield detected across the assessed corpus. Bubble size
+      reflects either how often the subfield appears or its average score, and colour groups
+      subfields into their parent discipline. Edges connect subfields sharing a parent field.</p>
+      <p>Use the legend table below the map to jump to and focus any individual field.</p>`,
+  },
+  pix: {
+    title: "pi-Index (piX) — Top Papers",
+    body: `<p><strong>piX</strong> is a manuscript's composite quality score, from 0 to 100. It is
+      the mean of the eight criteria scores (C1–C8), each independently computed from a blend of
+      the model panel's adjudicated verdict and deterministic textual analysis.</p>
+      <p>piX describes <em>a paper</em>. Its companion metric, piQ, describes <em>a researcher</em>.</p>
+      <p>Select any row to open the paper's full assessment report and dossier.</p>`,
+  },
+  piq: {
+    title: "pi-Quotient (piQ) — Top Authors",
+    body: `<p><strong>piQ</strong> is the soulbound token minted to a researcher when their
+      manuscript clears the quality threshold. A paper earns <code>piX / 10</code> piQ, and only if
+      both its piX score and its logic-integrity score reach 50.0 — below that, nothing is minted.</p>
+      <p>piQ is non-transferable by design. It cannot be bought, sold or delegated, so it measures
+      contribution rather than capital. It is also the currency that pays the 0.1 piQ per-paper
+      processing fee, which means the system is funded by demonstrated research quality.</p>
+      <p>Select a row to see that author's assessed papers.</p>`,
+  },
+  explorer: {
+    title: "Proof-of-Research Ledger Explorer",
+    body: `<p>Every assessment writes an immutable block containing the evaluation hash, criteria
+      weights, validator signature and a zk-SNARK proof binding the score to the document without
+      revealing the document itself.</p>
+      <p>Search by evaluation hash, block hash, title or author to retrieve any record and open its
+      complete dossier.</p>`,
+  },
+  architecture: {
+    title: "Framework Architecture",
+    body: `<p>The flowchart traces a manuscript end to end: intake and identity verification,
+      text extraction and deterministic scoring, independent assessment by the model panel,
+      Pidyne adjudication, and Proof-of-Research settlement on Sepolia.</p>
+      <p>Colour indicates the stage a step belongs to; see the legend above the diagram.</p>`,
+  },
+  scoring: {
+    title: "Scoring Pipeline",
+    body: `<p>This diagram shows how raw signals become the eight criteria scores, the composite
+      piX score, the logic-integrity check and finally the piQ minting decision.</p>
+      <p>Note the gate at the end: both piX and logic integrity must reach 50.0 before any piQ is
+      minted. A paper that scores well but fails the adversarial logic check earns nothing.</p>`,
+  },
+};
+
+function openHelp(key) {
+  const h = HELP[key];
+  if (!h) return;
+  openModal(`<div class="help-modal"><h2>${escapeHtml(h.title)}</h2>${h.body}</div>`);
+}
+
+document.addEventListener("click", (e) => {
+  const btn = e.target.closest(".help-btn");
+  if (btn) {
+    e.preventDefault();
+    e.stopPropagation();
+    openHelp(btn.dataset.help);
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Sidebar: wallet / orcid / balance / chain
 // ---------------------------------------------------------------------------
 async function renderSidebar() {
   const mmWrap = document.getElementById("mmConnectWrap");
@@ -56,7 +223,7 @@ async function renderSidebar() {
   if (Session.hasWeb3()) {
     mmWrap.classList.add("hidden");
     mmLinked.classList.remove("hidden");
-    mmLinked.textContent = `Web3 Linked: ${Session.wallet.slice(0, 6)}...${Session.wallet.slice(-4)}`;
+    mmLinked.textContent = `Web3 Linked: ${Session.wallet.slice(0, 6)}…${Session.wallet.slice(-4)}`;
   } else {
     mmWrap.classList.remove("hidden");
     mmLinked.classList.add("hidden");
@@ -71,34 +238,150 @@ async function renderSidebar() {
     orcidLinked.classList.add("hidden");
   }
 
-  if (Session.hasWeb3() || Session.hasOrcid()) {
+  if (Session.hasIdentity()) {
     researcherPanel.classList.remove("hidden");
     document.getElementById("researcherName").textContent = Session.researcherName;
-    try {
-      const qs = new URLSearchParams();
-      if (Session.wallet) qs.set("wallet", Session.wallet);
-      if (Session.orcid) qs.set("orcid", Session.orcid);
-      const res = await fetch(`${API}/api/user/piq-total?${qs}`);
-      const data = await res.json();
-      document.getElementById("researcherPiq").textContent = `${data.total_piq.toFixed(2)} piQ`;
-    } catch (e) { /* ignore */ }
+    await refreshPiqBalance();
   } else {
     researcherPanel.classList.add("hidden");
   }
 
-  document.getElementById("scilemResetBtn").classList.toggle(
-    "hidden", !(Session.hasWeb3() && Session.wallet.toLowerCase() === OWNER_ID.toLowerCase())
-  );
-
   refreshAssessGate();
 }
+
+async function refreshPiqBalance() {
+  if (!Session.hasIdentity()) {
+    piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: piqState.fee_per_paper, papers_affordable: 0 };
+    renderFeeNotice();
+    return;
+  }
+  try {
+    const qs = new URLSearchParams();
+    if (Session.wallet) qs.set("wallet", Session.wallet);
+    if (Session.orcid) qs.set("orcid", Session.orcid);
+    const res = await fetch(`${API}/api/user/piq-total?${qs}`);
+    const data = await res.json();
+    piqState = data;
+
+    document.getElementById("researcherPiq").textContent = `${data.minted.toFixed(2)} piQ`;
+    document.getElementById("researcherFees").textContent = `${data.fees_paid.toFixed(2)} piQ`;
+    const balEl = document.getElementById("researcherBalance");
+    balEl.textContent = `${data.balance.toFixed(2)} piQ`;
+    balEl.className = data.balance < data.fee_per_paper ? "bal-low" : "bal-ok";
+
+    const note = document.getElementById("researcherAffordable");
+    note.textContent = data.balance < data.fee_per_paper
+      ? "Balance below the per-paper fee."
+      : `Covers ${data.papers_affordable} more paper${data.papers_affordable === 1 ? "" : "s"}.`;
+  } catch (e) { /* ignore */ }
+  renderFeeNotice();
+}
+
+function renderFeeNotice() {
+  const fee = piqState.fee_per_paper ?? 0.1;
+  document.getElementById("feeAmount").textContent = `${fee.toFixed(2)} piQ`;
+  const line = document.getElementById("feeBalanceLine");
+
+  if (!Session.hasIdentity()) {
+    line.innerHTML = Session.freeEvalsUsed > 0
+      ? `<span class="fee-warn">Free trial used. Connect a wallet or ORCID to continue.</span>`
+      : `<span class="fee-ok">Free trial available — your first assessment is on us.</span>`;
+    return;
+  }
+  if (piqState.balance < fee) {
+    line.innerHTML = `<span class="fee-warn">Balance ${piqState.balance.toFixed(2)} piQ — below the ${fee.toFixed(2)} piQ fee. Earn piQ by having your own manuscripts assessed.</span>`;
+  } else {
+    line.innerHTML = `<span class="fee-ok">Balance ${piqState.balance.toFixed(2)} piQ — covers ${piqState.papers_affordable} paper${piqState.papers_affordable === 1 ? "" : "s"}.</span>`;
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Ethereum network: status badge, chain switching, donations
+// ---------------------------------------------------------------------------
+const SEPOLIA = {
+  chainIdHex: "0xaa36a7",
+  chainName: "Sepolia Test Network",
+  nativeCurrency: { name: "Sepolia Ether", symbol: "SepoliaETH", decimals: 18 },
+  rpcUrls: ["https://ethereum-sepolia-rpc.publicnode.com", "https://rpc.sepolia.org"],
+  blockExplorerUrls: ["https://sepolia.etherscan.io"],
+};
+
+async function loadChainStatus() {
+  const badge = document.getElementById("chainBadge");
+  const text = document.getElementById("chainBadgeText");
+  try {
+    const res = await fetch(`${API}/api/chain/status`);
+    chainState = await res.json();
+    badge.className = "chain-badge " + (
+      chainState.minting_enabled ? "chain-ok" : (chainState.connected ? "chain-warn" : "chain-down")
+    );
+    if (chainState.connected) {
+      text.textContent = `${chainState.chain_name} · block ${chainState.block_number ?? "—"}`;
+    } else {
+      text.textContent = `${chainState.chain_name} unreachable`;
+    }
+    badge.title = chainState.reason || "";
+  } catch (e) {
+    badge.className = "chain-badge chain-down";
+    text.textContent = "Network status unavailable";
+  }
+  await refreshWalletNetwork();
+}
+
+async function refreshWalletNetwork() {
+  const btn = document.getElementById("switchNetworkBtn");
+  if (!window.ethereum || !Session.hasWeb3()) { btn.classList.add("hidden"); return; }
+  try {
+    const current = await window.ethereum.request({ method: "eth_chainId" });
+    btn.classList.toggle("hidden", current === SEPOLIA.chainIdHex);
+  } catch (e) {
+    btn.classList.add("hidden");
+  }
+}
+
+/** Asks MetaMask to switch to Sepolia, adding the network first if the
+ *  wallet doesn't know about it yet (error 4902). */
+async function ensureSepolia() {
+  if (!window.ethereum) return false;
+  try {
+    const current = await window.ethereum.request({ method: "eth_chainId" });
+    if (current === SEPOLIA.chainIdHex) return true;
+  } catch (e) { /* fall through and try switching */ }
+
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain",
+      params: [{ chainId: SEPOLIA.chainIdHex }],
+    });
+    return true;
+  } catch (err) {
+    if (err && (err.code === 4902 || (err.data && err.data.originalError && err.data.originalError.code === 4902))) {
+      try {
+        await window.ethereum.request({ method: "wallet_addEthereumChain", params: [SEPOLIA] });
+        return true;
+      } catch (addErr) {
+        return false;
+      }
+    }
+    return false;
+  }
+}
+
+document.getElementById("switchNetworkBtn").addEventListener("click", async () => {
+  const ok = await ensureSepolia();
+  if (ok) { await refreshWalletNetwork(); await loadChainStatus(); }
+  else alert("Could not switch networks. Please select Sepolia manually in MetaMask.");
+});
 
 document.getElementById("connectMmBtn").addEventListener("click", async () => {
   const statusEl = document.getElementById("mmStatus");
   const provider = window.ethereum;
-  if (!provider) { statusEl.textContent = "MetaMask not detected!"; return; }
+  if (!provider) {
+    statusEl.innerHTML = `MetaMask not detected. <a href="https://metamask.io/download/" target="_blank" rel="noopener">Install it</a> to continue.`;
+    return;
+  }
 
-  statusEl.textContent = "Connecting...";
+  statusEl.textContent = "Connecting…";
   // If MetaMask's approval popup doesn't grab focus (common in some
   // browsers/OSes), the request just hangs with no feedback. Nudge the
   // user to go find it instead of leaving them staring at "Connecting...".
@@ -112,7 +395,11 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     clearTimeout(hintTimer);
     if (!accounts || !accounts.length) { statusEl.textContent = ""; return; }
     const account = accounts[0];
-    statusEl.textContent = "Signing...";
+
+    statusEl.textContent = "Checking network…";
+    await ensureSepolia();
+
+    statusEl.textContent = "Signing…";
     const nonce = Math.floor(Math.random() * 100000000);
     const message = `ScholarPi wants you to sign in with your Ethereum account:\n${account}\n\nSign in with Ethereum to authenticate session.\n\nNonce: ${nonce}\nIssued At: ${new Date().toISOString()}`;
     let signature = null;
@@ -128,6 +415,7 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     Session.wallet = data.address;
     statusEl.textContent = "";
     renderSidebar();
+    loadChainStatus();
   } catch (e) {
     clearTimeout(hintTimer);
     if (e && e.code === -32002) {
@@ -139,6 +427,114 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     }
   }
 });
+
+if (window.ethereum && window.ethereum.on) {
+  window.ethereum.on("chainChanged", () => { refreshWalletNetwork(); loadChainStatus(); });
+  window.ethereum.on("accountsChanged", (accounts) => {
+    if (!accounts || !accounts.length) { Session.wallet = ""; }
+    else if (Session.hasWeb3()) { Session.wallet = accounts[0]; }
+    renderSidebar();
+  });
+}
+
+// --- Donations ---
+document.getElementById("donateBtn").addEventListener("click", showDonateModal);
+
+async function showDonateModal() {
+  if (!donationInfo) {
+    try {
+      donationInfo = await (await fetch(`${API}/api/donate/info`)).json();
+    } catch (e) {
+      donationInfo = {
+        wallet: OWNER_ID, chain_name: "Sepolia", currency: "SepoliaETH",
+        explorer_url: `https://sepolia.etherscan.io/address/${OWNER_ID}`,
+        suggested_amounts: ["0.005", "0.01", "0.05", "0.1"],
+        message: "Contributions fund model inference credits, RPC access and hosting.",
+      };
+    }
+  }
+  const d = donationInfo;
+  openModal(`
+    <div class="donate-modal">
+      <h2>Support ScholarPi</h2>
+      <p>${escapeHtml(d.message)}</p>
+
+      <h3>Send ${escapeHtml(d.currency)} on ${escapeHtml(d.chain_name)}</h3>
+      <div class="donate-amounts">
+        ${d.suggested_amounts.map(a => `<button class="btn amount-btn" data-amount="${a}">${a}</button>`).join("")}
+      </div>
+      <div class="donate-custom">
+        <input type="text" id="donateCustomAmount" placeholder="Custom amount" inputmode="decimal">
+        <button class="btn btn-primary" id="donateSendBtn">Send via MetaMask</button>
+      </div>
+      <div id="donateStatus" class="donate-status"></div>
+
+      <h3>Or send manually</h3>
+      <div class="addr-row">
+        <code class="addr" id="donateAddr">${escapeHtml(d.wallet)}</code>
+        <button class="btn" id="copyAddrBtn">Copy</button>
+      </div>
+      <p class="hint">
+        <a href="${escapeHtml(d.explorer_url)}" target="_blank" rel="noopener">View this address on the block explorer</a>
+      </p>
+      <p class="hint">ScholarPi never takes custody of funds beyond this address, and donating confers
+      no piQ, no scoring advantage and no influence over assessments.</p>
+    </div>
+  `);
+
+  let selected = null;
+  document.querySelectorAll(".amount-btn").forEach(b => {
+    b.addEventListener("click", () => {
+      document.querySelectorAll(".amount-btn").forEach(x => x.classList.remove("selected"));
+      b.classList.add("selected");
+      selected = b.dataset.amount;
+      document.getElementById("donateCustomAmount").value = b.dataset.amount;
+    });
+  });
+
+  document.getElementById("copyAddrBtn").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(d.wallet);
+      document.getElementById("copyAddrBtn").textContent = "Copied";
+      setTimeout(() => { const el = document.getElementById("copyAddrBtn"); if (el) el.textContent = "Copy"; }, 1800);
+    } catch (e) { /* clipboard blocked; the address is visible anyway */ }
+  });
+
+  document.getElementById("donateSendBtn").addEventListener("click", async () => {
+    const statusEl = document.getElementById("donateStatus");
+    const amount = (document.getElementById("donateCustomAmount").value || selected || "").trim();
+    if (!amount || isNaN(Number(amount)) || Number(amount) <= 0) {
+      statusEl.innerHTML = `<span class="fee-warn">Enter a valid amount.</span>`;
+      return;
+    }
+    if (!window.ethereum) {
+      statusEl.innerHTML = `<span class="fee-warn">MetaMask not detected — copy the address above and send manually.</span>`;
+      return;
+    }
+    statusEl.textContent = "Preparing transaction…";
+    try {
+      const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
+      if (!accounts || !accounts.length) { statusEl.textContent = ""; return; }
+      const ok = await ensureSepolia();
+      if (!ok) {
+        statusEl.innerHTML = `<span class="fee-warn">Please switch MetaMask to ${escapeHtml(d.chain_name)} and try again.</span>`;
+        return;
+      }
+      const valueWei = "0x" + BigInt(Math.round(Number(amount) * 1e18)).toString(16);
+      statusEl.textContent = "Confirm the transaction in MetaMask…";
+      const txHash = await window.ethereum.request({
+        method: "eth_sendTransaction",
+        params: [{ from: accounts[0], to: d.wallet, value: valueWei }],
+      });
+      statusEl.innerHTML = `<span class="fee-ok">Thank you. Transaction submitted:</span>
+        <a href="https://sepolia.etherscan.io/tx/${escapeHtml(txHash)}" target="_blank" rel="noopener">${escapeHtml(txHash.slice(0, 18))}…</a>`;
+    } catch (err) {
+      statusEl.innerHTML = err && err.code === 4001
+        ? `<span class="fee-warn">Transaction rejected.</span>`
+        : `<span class="fee-warn">Could not send: ${escapeHtml(String(err && err.message ? err.message : err))}</span>`;
+    }
+  });
+}
 
 document.getElementById("connectOrcidBtn").addEventListener("click", async () => {
   const qs = Session.wallet ? `?wallet=${encodeURIComponent(Session.wallet)}` : "";
@@ -163,35 +559,9 @@ async function pollLogs() {
 setInterval(pollLogs, 4000);
 pollLogs();
 
-document.getElementById("scilemForm").addEventListener("submit", async (e) => {
-  e.preventDefault();
-  const input = document.getElementById("scilemInput");
-  const box = document.getElementById("scilemChatBox");
-  const prompt = input.value.trim();
-  if (!prompt) return;
-  box.insertAdjacentHTML("beforeend", `<div class="chat-msg user">👤 <strong>You:</strong> ${escapeHtml(prompt)}</div>`);
-  input.value = "";
-  box.scrollTop = box.scrollHeight;
-  try {
-    const res = await fetch(`${API}/api/scilem/chat`, {
-      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt }),
-    });
-    const data = await res.json();
-    box.insertAdjacentHTML("beforeend", `<div class="chat-msg ai">🧠 ${escapeHtml(data.response)}</div>`);
-  } catch (e) {
-    box.insertAdjacentHTML("beforeend", `<div class="chat-msg ai">Error connecting to Scilem backend.</div>`);
-  }
-  box.scrollTop = box.scrollHeight;
-});
-
-document.getElementById("scilemResetBtn").addEventListener("click", async () => {
-  const res = await fetch(`${API}/api/scilem/reset`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ wallet: Session.wallet }),
-  });
-  if (res.ok) {
-    document.getElementById("scilemChatBox").innerHTML = `<div class="chat-msg ai">🧠 <strong>Scilem has been reset.</strong> Neural weights and context cleared to baseline by Web3 owner.</div>`;
-  }
-});
+// The Scilem assistant is disabled on this deployment; the form is inert but
+// we intercept submission so a stray Enter keypress can't reload the page.
+document.getElementById("scilemForm").addEventListener("submit", (e) => e.preventDefault());
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -202,8 +572,9 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "analytics") { initAnalyticsTab(); }
+    if (btn.dataset.tab === "analytics") initAnalyticsTab();
     if (btn.dataset.tab === "explorer") loadExplorer();
+    if (btn.dataset.tab === "diagram") renderArchitectureDiagrams();
   });
 });
 
@@ -213,6 +584,8 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
     document.querySelectorAll(".subtab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`subtab-${btn.dataset.subtab}`).classList.add("active");
+    if (btn.dataset.subtab === "discover") loadHotTopicsRow();
+    updateEstimatedCost();
   });
 });
 
@@ -221,25 +594,48 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // ---------------------------------------------------------------------------
 function refreshAssessGate() {
   const warn = document.getElementById("freeTrialWarning");
-  const stakeWrap = document.getElementById("stakeCheckboxWrap");
-  if (Session.freeEvalsUsed > 0) {
-    if (!Session.hasWeb3()) {
-      warn.classList.remove("hidden");
-      stakeWrap.classList.add("hidden");
-    } else {
-      warn.classList.add("hidden");
-      stakeWrap.classList.remove("hidden");
-    }
-  } else {
-    warn.classList.add("hidden");
-    stakeWrap.classList.add("hidden");
+  const blocked = Session.freeEvalsUsed > 0 && !Session.hasIdentity();
+  warn.classList.toggle("hidden", !blocked);
+  renderFeeNotice();
+  updateEstimatedCost();
+}
+
+function countQueuedPapers() {
+  const files = document.getElementById("pdfFiles").files.length;
+  const doi = document.getElementById("doiInput").value.trim();
+  const includeDoi = document.getElementById("includeDoiCheckbox").checked;
+  return files + selectedDiscoveryPapers.length + (includeDoi && doi ? 1 : 0);
+}
+
+function updateEstimatedCost() {
+  const box = document.getElementById("estimatedCost");
+  const n = countQueuedPapers();
+  if (!n) { box.classList.add("hidden"); return; }
+
+  const fee = piqState.fee_per_paper ?? 0.1;
+  const onFreeTrial = !Session.hasIdentity() && Session.freeEvalsUsed === 0;
+  box.classList.remove("hidden");
+
+  if (onFreeTrial) {
+    box.className = "est-cost est-free";
+    box.innerHTML = `<strong>${n}</strong> paper${n === 1 ? "" : "s"} queued — covered by your free trial run.`;
+    return;
   }
+  const total = fee * n;
+  const affordable = piqState.balance >= total;
+  box.className = "est-cost " + (affordable ? "est-ok" : "est-warn");
+  box.innerHTML = affordable
+    ? `<strong>${n}</strong> paper${n === 1 ? "" : "s"} queued · total fee <strong>${total.toFixed(2)} piQ</strong> · balance after: ${(piqState.balance - total).toFixed(2)} piQ`
+    : `<strong>${n}</strong> paper${n === 1 ? "" : "s"} queued · total fee <strong>${total.toFixed(2)} piQ</strong> · your balance is only ${piqState.balance.toFixed(2)} piQ. Processing will stop when the balance runs out.`;
 }
 
 document.getElementById("pdfFiles").addEventListener("change", (e) => {
   const list = document.getElementById("fileList");
-  list.innerHTML = [...e.target.files].map(f => `• ${escapeHtml(f.name)}`).join("<br>");
+  list.innerHTML = [...e.target.files].map(f => `<span class="fl-item">${escapeHtml(f.name)}</span>`).join("");
+  updateEstimatedCost();
 });
+document.getElementById("doiInput").addEventListener("input", updateEstimatedCost);
+document.getElementById("includeDoiCheckbox").addEventListener("change", updateEstimatedCost);
 
 async function loadTotalAnalyzed() {
   try {
@@ -249,31 +645,140 @@ async function loadTotalAnalyzed() {
   } catch (e) { /* ignore */ }
 }
 
+// ---------------------------------------------------------------------------
+// AUTO-DISCOVER subtab
+// ---------------------------------------------------------------------------
+const MAX_DISCOVERY_BATCH = 10;
+let selectedDiscoveryPapers = [];
+let discoverHotTopicsLoaded = false;
+
+function discoveryKey(p) { return p.doi || p.pdf_url || p.title; }
+
+async function loadHotTopicsRow() {
+  if (discoverHotTopicsLoaded) return;
+  try {
+    const res = await fetch(`${API}/api/discover/hot-topics`);
+    const data = await res.json();
+    document.getElementById("hotTopicsRow").innerHTML = data.topics.map(t =>
+      `<button type="button" class="hot-topic-chip" data-topic="${escapeHtml(t)}">${escapeHtml(t)}</button>`
+    ).join("");
+    document.querySelectorAll(".hot-topic-chip").forEach(btn => {
+      btn.addEventListener("click", () => {
+        document.getElementById("discoverQueryInput").value = btn.dataset.topic;
+        runDiscoverySearch(btn.dataset.topic);
+      });
+    });
+    discoverHotTopicsLoaded = true;
+  } catch (e) { /* ignore */ }
+}
+
+async function runDiscoverySearch(query) {
+  const box = document.getElementById("discoverResults");
+  if (!query || query.trim().length < 2) {
+    box.innerHTML = `<div class="hint">Type at least 2 characters, or pick a hot topic above.</div>`;
+    return;
+  }
+  box.innerHTML = `<div class="hint">Searching open-access sources…</div>`;
+  try {
+    const res = await fetch(`${API}/api/discover/search?q=${encodeURIComponent(query.trim())}&limit=15`);
+    if (!res.ok) { box.innerHTML = `<div class="hint">Search failed. Try again shortly.</div>`; return; }
+    const data = await res.json();
+    if (!data.results.length) {
+      box.innerHTML = `<div class="hint">No open-access papers found for "${escapeHtml(query)}". Try a broader topic.</div>`;
+      return;
+    }
+    box.innerHTML = data.results.map(p => {
+      const key = discoveryKey(p);
+      const isSelected = selectedDiscoveryPapers.some(sp => discoveryKey(sp) === key);
+      const hasSource = !!(p.pdf_url || p.doi);
+      return `
+        <label class="discover-row ${hasSource ? "" : "discover-row-disabled"}">
+          <input type="checkbox" class="discover-checkbox" data-key="${escapeHtml(key)}" ${isSelected ? "checked" : ""} ${hasSource ? "" : "disabled"}>
+          <div class="discover-row-body">
+            <div class="discover-row-title">${escapeHtml(p.title || "Untitled")}</div>
+            <div class="discover-row-meta">${escapeHtml(p.authors || "Unknown authors")}${p.doi ? ` · DOI: ${escapeHtml(p.doi)}` : ""}${!hasSource ? " · No retrievable source" : ""}</div>
+          </div>
+        </label>`;
+    }).join("");
+
+    box.querySelectorAll(".discover-checkbox").forEach((cb, idx) => {
+      cb.addEventListener("change", () => toggleDiscoverySelection(data.results[idx], cb));
+    });
+  } catch (e) {
+    box.innerHTML = `<div class="hint">Search failed. Try again shortly.</div>`;
+  }
+}
+
+function toggleDiscoverySelection(paper, checkboxEl) {
+  const key = discoveryKey(paper);
+  const idx = selectedDiscoveryPapers.findIndex(sp => discoveryKey(sp) === key);
+  if (checkboxEl.checked) {
+    if (idx === -1) {
+      if (selectedDiscoveryPapers.length >= MAX_DISCOVERY_BATCH) {
+        alert(`You can select up to ${MAX_DISCOVERY_BATCH} auto-discovered papers per run.`);
+        checkboxEl.checked = false;
+        return;
+      }
+      selectedDiscoveryPapers.push(paper);
+    }
+  } else if (idx !== -1) {
+    selectedDiscoveryPapers.splice(idx, 1);
+  }
+  renderSelectedDiscoveryChips();
+}
+
+function renderSelectedDiscoveryChips() {
+  const wrap = document.getElementById("discoverSelectedWrap");
+  const chipsBox = document.getElementById("discoverSelectedChips");
+  document.getElementById("discoverSelectedCount").textContent = selectedDiscoveryPapers.length;
+  updateEstimatedCost();
+  if (!selectedDiscoveryPapers.length) { wrap.classList.add("hidden"); return; }
+  wrap.classList.remove("hidden");
+  chipsBox.innerHTML = selectedDiscoveryPapers.map((p, i) =>
+    `<span class="chip">${escapeHtml((p.title || "Untitled").slice(0, 60))}<button type="button" class="chip-remove" data-idx="${i}">×</button></span>`
+  ).join("");
+  chipsBox.querySelectorAll(".chip-remove").forEach(btn => {
+    btn.addEventListener("click", () => {
+      selectedDiscoveryPapers.splice(Number(btn.dataset.idx), 1);
+      renderSelectedDiscoveryChips();
+      document.querySelectorAll(".discover-checkbox").forEach(cb => cb.checked =
+        selectedDiscoveryPapers.some(sp => discoveryKey(sp) === cb.dataset.key));
+    });
+  });
+}
+
+document.getElementById("discoverSearchBtn").addEventListener("click", () => {
+  runDiscoverySearch(document.getElementById("discoverQueryInput").value);
+});
+document.getElementById("discoverQueryInput").addEventListener("keydown", (e) => {
+  if (e.key === "Enter") { e.preventDefault(); runDiscoverySearch(e.target.value); }
+});
+
 document.getElementById("runPipelineBtn").addEventListener("click", async () => {
   const fileInput = document.getElementById("pdfFiles");
   const doi = document.getElementById("doiInput").value.trim();
   const includeDoi = document.getElementById("includeDoiCheckbox").checked;
-  const stakeChecked = document.getElementById("stakeCheckbox").checked;
 
-  if (Session.freeEvalsUsed >= 1 && (!Session.hasWeb3() || !stakeChecked)) {
-    alert("Free trial limit reached. Connect Web3 and stake 0.1 piQ.");
+  if (!fileInput.files.length && !(includeDoi && doi) && selectedDiscoveryPapers.length === 0) {
+    alert("Please add at least one source to assess (upload a PDF, include a DOI, or select an auto-discovered paper).");
     return;
   }
-  if (!fileInput.files.length && !(includeDoi && doi)) {
-    alert("Please tick at least one source to assess.");
+  if (Session.freeEvalsUsed >= 1 && !Session.hasIdentity()) {
+    alert("Free trial limit reached. Connect an Ethereum wallet or link ORCID to continue.");
     return;
   }
 
   const runBtn = document.getElementById("runPipelineBtn");
-  runBtn.disabled = true; runBtn.textContent = "Working...";
+  runBtn.disabled = true; runBtn.textContent = "Working…";
   const statusBox = document.getElementById("pipelineStatus");
   statusBox.classList.remove("hidden");
-  statusBox.innerHTML = `<div class="status-line">Initializing Assessment Pipeline...</div>`;
+  statusBox.innerHTML = `<div class="status-line">Initializing assessment pipeline…</div>`;
 
   const formData = new FormData();
   for (const f of fileInput.files) formData.append("files", f);
   formData.append("doi", doi);
   formData.append("include_doi", includeDoi);
+  formData.append("discover_papers", JSON.stringify(selectedDiscoveryPapers));
   formData.append("wallet", Session.wallet);
   formData.append("orcid", Session.orcid);
 
@@ -282,7 +787,7 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     if (!res.ok) {
       let detail = `Request failed (HTTP ${res.status}).`;
       try { detail = (await res.json()).detail || detail; } catch (e) { /* body wasn't JSON */ }
-      statusBox.innerHTML += `<div class="status-line" style="color:#dc2626;">${escapeHtml(detail)}</div>`;
+      statusBox.innerHTML += `<div class="status-line status-error">${escapeHtml(detail)}</div>`;
       return;
     }
     const reader = res.body.getReader();
@@ -301,11 +806,14 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     }
     if (buf.trim()) handleStreamLine(JSON.parse(buf), statusBox);
   } catch (e) {
-    statusBox.innerHTML += `<div class="status-line" style="color:#dc2626;">Error: ${escapeHtml(String(e))}</div>`;
+    statusBox.innerHTML += `<div class="status-line status-error">Error: ${escapeHtml(String(e))}</div>`;
   } finally {
     runBtn.disabled = false; runBtn.textContent = "Run Assessment Pipeline";
     fileInput.value = "";
     document.getElementById("fileList").innerHTML = "";
+    selectedDiscoveryPapers = [];
+    renderSelectedDiscoveryChips();
+    document.querySelectorAll(".discover-checkbox").forEach(cb => { cb.checked = false; });
     loadTotalAnalyzed();
     renderSidebar();
   }
@@ -314,7 +822,11 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
 function handleStreamLine(obj, statusBox) {
   if (obj.type === "status") {
     statusBox.innerHTML += `<div class="status-line">${escapeHtml(obj.message)}</div>`;
-    statusBox.scrollTop = statusBox.scrollHeight;
+  } else if (obj.type === "fee") {
+    statusBox.innerHTML += `<div class="status-line status-fee">${escapeHtml(obj.message)}</div>`;
+    if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
+  } else if (obj.type === "fee_error") {
+    statusBox.innerHTML += `<div class="status-line status-error">${escapeHtml(obj.message)}</div>`;
   } else if (obj.type === "result") {
     evaluatedBuffer.unshift(obj.item);
     Session.freeEvalsUsed = Session.freeEvalsUsed + 1;
@@ -323,8 +835,15 @@ function handleStreamLine(obj, statusBox) {
     downloadErrors.unshift(obj);
     renderResults();
   } else if (obj.type === "done") {
-    statusBox.innerHTML += `<div class="status-line"><strong>Complete.</strong></div>`;
+    statusBox.innerHTML += `<div class="status-line status-done">${escapeHtml(obj.message || "Complete.")}</div>`;
   }
+  statusBox.scrollTop = statusBox.scrollHeight;
+}
+
+function qualityPill(meta) {
+  if (!meta || !meta.tier) return "";
+  const cls = { High: "q-high", Moderate: "q-mod", Limited: "q-low" }[meta.tier] || "q-mod";
+  return `<span class="pill ${cls}">Judgement: ${escapeHtml(meta.tier)}</span>`;
 }
 
 function renderResults() {
@@ -333,21 +852,28 @@ function renderResults() {
   section.classList.remove("hidden");
 
   document.getElementById("downloadErrors").innerHTML = downloadErrors.map(err =>
-    `<div class="warning-box">Failed DOI: <code>${escapeHtml(err.doi)}</code> (Publisher restricts direct access)</div>`
+    `<div class="warning-box">Could not retrieve <code>${escapeHtml(err.doi)}</code> — the publisher restricts direct access. Any fee for this item was refunded.</div>`
   ).join("");
 
   document.getElementById("resultsList").innerHTML = evaluatedBuffer.map((item, idx) => {
-    const warnBadge = item.warnings && item.warnings.length ? ` ⚠️ <em>(${item.warnings.length} warning checks active)</em>` : "";
+    const meta = item.judge_metadata || (item.consensus_raw || {})._judge_metadata || {};
+    const warnCount = (item.warnings || []).length;
     return `
     <div class="result-card">
-      <div>
-        <strong>${escapeHtml(item.title)}</strong> — <em>${escapeHtml(item.author_name)}</em>${warnBadge}<br>
-        <strong>Score: ${item.score.toFixed(2)} | piQ: ${item.piq}</strong>
+      <div class="result-main">
+        <div class="result-title">${escapeHtml(item.title)}</div>
+        <div class="result-author">${escapeHtml(item.author_name)}</div>
+        <div class="result-pills">
+          <span class="pill p-score">piX ${item.score.toFixed(1)}</span>
+          <span class="pill p-piq">piQ ${Number(item.piq || 0).toFixed(2)}</span>
+          ${qualityPill(meta)}
+          ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
+        </div>
       </div>
       <div class="result-actions">
-        <button class="btn" onclick="showDetailsModal(${idx})">More Details</button>
+        <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
         <button class="btn" onclick="showDefenseModal(${idx})">Suggest Defense</button>
-        <button class="btn btn-secondary" onclick="removeResult(${idx})">✕</button>
+        <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
       </div>
     </div>`;
   }).join("");
@@ -361,113 +887,442 @@ function removeResult(idx) { evaluatedBuffer.splice(idx, 1); renderResults(); }
 const modalOverlay = document.getElementById("modalOverlay");
 document.getElementById("modalClose").addEventListener("click", () => modalOverlay.classList.add("hidden"));
 modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) modalOverlay.classList.add("hidden"); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") modalOverlay.classList.add("hidden"); });
 
 function openModal(html) {
   document.getElementById("modalBody").innerHTML = html;
   modalOverlay.classList.remove("hidden");
+  document.querySelector(".modal").scrollTop = 0;
 }
 
 function showDetailsModal(idx) { renderDossierModal(evaluatedBuffer[idx]); }
 
+// --- Full report & dossier -------------------------------------------------
+const MODEL_LABELS = {
+  llama: "Llama 3.3 70B", mistral: "Mistral Large", qwen: "Qwen 2.5 72B",
+  gemini: "Gemini 2.0 Flash", scilem: "Scilem Local Neural Engine",
+};
+
+function renderJudgePanel(meta, consensus) {
+  const models = [];
+  const seen = new Set();
+
+  (meta.participating_models || []).forEach(m => {
+    seen.add(m.key);
+    models.push({ key: m.key, label: m.label, role: m.role, status: "active", detail: m.detail });
+  });
+  (meta.failed_models || []).forEach(m => {
+    seen.add(m.key);
+    models.push({ key: m.key, label: m.label, role: m.role, status: "failed", detail: m.detail });
+  });
+  // Fall back to reading the raw consensus for older records saved before
+  // judge metadata was persisted.
+  Object.keys(MODEL_LABELS).forEach(k => {
+    if (seen.has(k)) return;
+    const entry = (consensus || {})[k];
+    if (!entry) return;
+    models.push({
+      key: k, label: MODEL_LABELS[k], role: k === "scilem" ? "Structural Analyst" : "Panel Juror",
+      status: entry.api_failed ? "failed" : "active", detail: entry.opinion || "",
+    });
+  });
+
+  if (!models.length) return "";
+
+  const tierClass = { High: "q-high", Moderate: "q-mod", Limited: "q-low" }[meta.tier] || "q-mod";
+  const finalJudge = meta.final_judge_label || meta.judge_provider || "Not recorded";
+
+  let html = `<h3>Adjudication &amp; Model Panel</h3>`;
+
+  html += `<div class="judge-summary">
+    <div class="js-row"><span>Final judge</span><code>${escapeHtml(finalJudge)}</code></div>
+    <div class="js-row"><span>Independent external jurors</span><strong>${meta.external_juror_count ?? "—"}</strong></div>
+    <div class="js-row"><span>Inter-model agreement</span><strong>${
+      typeof meta.inter_model_agreement === "number" ? (meta.inter_model_agreement * 100).toFixed(0) + "%" : "—"
+    }</strong></div>
+    <div class="js-row"><span>Judgement quality</span>
+      <span class="pill ${tierClass}">${escapeHtml(meta.tier || "Not graded")}${
+        typeof meta.confidence === "number" ? ` · ${meta.confidence.toFixed(2)}` : ""
+      }</span></div>
+  </div>`;
+
+  if (meta.rationale) {
+    html += `<div class="quality-rationale">${escapeHtml(meta.rationale)}</div>`;
+  }
+
+  html += `<table class="data-table"><thead><tr>
+      <th>Model</th><th>Role</th><th>Status</th></tr></thead><tbody>`;
+  models.forEach(m => {
+    const isJudge = finalJudge.toLowerCase().includes(m.label.toLowerCase().split(" ")[0]);
+    html += `<tr>
+      <td>${escapeHtml(m.label)}${isJudge ? ` <span class="pill p-judge">Final Judge</span>` : ""}</td>
+      <td>${escapeHtml(m.role)}</td>
+      <td>${m.status === "active"
+        ? `<span class="pill q-high">Participated</span>`
+        : `<span class="pill q-low">Unavailable</span>`}</td>
+    </tr>`;
+  });
+  html += `</tbody></table>`;
+
+  const withDetail = models.filter(m => m.detail && m.detail.trim());
+  if (withDetail.length) {
+    html += `<details class="dossier-details"><summary>Individual model assessments (${withDetail.length})</summary>`;
+    withDetail.forEach(m => {
+      html += `<div class="llm-card">
+        <div class="llm-card-head"><strong>${escapeHtml(m.label)}</strong>
+          <span class="pill ${m.status === "active" ? "q-high" : "q-low"}">${m.status === "active" ? "Participated" : "Unavailable"}</span>
+        </div>
+        <div class="llm-card-body">${escapeHtml(m.detail)}</div>
+      </div>`;
+    });
+    html += `</details>`;
+  }
+  return html;
+}
+
 function renderDossierModal(item) {
-  let html = `<h2>${escapeHtml(item.title)} by ${escapeHtml(item.author_name)}</h2>`;
-  html += `<p><strong>Evaluation Hash:</strong> <code>${escapeHtml(item.eval_hash || "0x0")}</code></p>`;
-  html += `<p><strong>piQ Minted:</strong> <code>${item.piq ?? 0}</code></p>`;
+  const consensus = item.consensus_raw || {};
+  const meta = item.judge_metadata || consensus._judge_metadata || {};
+  const warnings = item.warnings || [];
+
+  let html = `<div class="dossier">`;
+  html += `<div class="dossier-head">
+    <h2>${escapeHtml(item.title || "Untitled")}</h2>
+    <div class="dossier-author">${escapeHtml(item.author_name || "Unknown author")}</div>
+    <div class="result-pills">
+      <span class="pill p-score">piX ${Number(item.score || 0).toFixed(1)}</span>
+      <span class="pill p-piq">piQ ${Number(item.piq || 0).toFixed(2)}</span>
+      ${typeof item.logic_integrity === "number" ? `<span class="pill p-logic">Logic ${item.logic_integrity.toFixed(1)}</span>` : ""}
+      ${qualityPill(meta)}
+    </div>
+  </div>`;
+
+  // --- Warnings: the most important thing to surface, so it goes first ---
+  html += `<h3>Processing Warnings</h3>`;
+  if (warnings.length) {
+    html += `<div class="warn-list">` + warnings.map(w =>
+      `<div class="warn-item">${escapeHtml(String(w).replace(/\*\*/g, ""))}</div>`
+    ).join("") + `</div>`;
+  } else {
+    html += `<div class="ok-box">No warnings were raised during processing. All extraction,
+      model-panel and ledger stages completed as expected.</div>`;
+  }
+
+  // --- Judge panel & quality ---
+  html += renderJudgePanel(meta, consensus);
+
+  // --- Criteria breakdown ---
+  const criteria = item.criteria_detail && item.criteria_detail.length
+    ? item.criteria_detail
+    : Object.entries(item.scores_dict || {}).map(([k, v]) => ({ id: k, title: "", score: Number(v) || 0 }));
+  if (criteria.length) {
+    html += `<h3>Criteria Breakdown</h3><table class="data-table"><thead><tr>
+      <th>ID</th><th>Criterion</th><th class="num">Score</th><th class="bar-col">Profile</th>
+      </tr></thead><tbody>`;
+    criteria.forEach(c => {
+      const score = Number(c.score) || 0;
+      html += `<tr>
+        <td><strong>${escapeHtml(String(c.id).slice(0, 2))}</strong></td>
+        <td>${escapeHtml(c.title || String(c.id).replace(/^C\d_?/, "").replace(/_/g, " "))}</td>
+        <td class="num">${score.toFixed(1)}</td>
+        <td class="bar-col"><span class="bar"><span class="bar-fill" style="width:${Math.max(0, Math.min(100, score))}%"></span></span></td>
+      </tr>`;
+    });
+    html += `</tbody></table>`;
+  }
+
+  // --- Deterministic signals ---
+  const signals = [];
+  if (typeof item.mdar_score === "number") signals.push(["MDAR adherence", `${(item.mdar_score * 100).toFixed(1)}%`]);
+  if (typeof item.rrid_count === "number") signals.push(["Valid RRIDs detected", item.rrid_count]);
+  if (typeof item.repro_score === "number") signals.push(["Reproducibility signal", `${(item.repro_score * 100).toFixed(1)}%`]);
+  if (typeof item.scilem_rating === "number") signals.push(["Scilem structural rating", item.scilem_rating.toFixed(2)]);
+  if (signals.length) {
+    html += `<h3>Deterministic Signals</h3><table class="data-table"><tbody>` +
+      signals.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`).join("") +
+      `</tbody></table>`;
+  }
+
+  // --- Ledger record ---
+  html += `<h3>Ledger Record</h3><table class="data-table"><tbody>`;
+  html += `<tr><td>Evaluation hash</td><td><code class="wrap">${escapeHtml(item.eval_hash || "—")}</code></td></tr>`;
+  html += `<tr><td>piQ minted</td><td><code>${Number(item.piq || 0).toFixed(2)}</code></td></tr>`;
+  if (item.fee_charged) html += `<tr><td>Processing fee</td><td><code>${Number(item.fee_charged).toFixed(2)} piQ</code></td></tr>`;
   if (item.tx_hash) {
-    html += `<p><strong>Tx Hash:</strong> <code id="dossier-tx-${item.eval_hash}">${escapeHtml(item.tx_hash)}</code></p>`;
+    html += `<tr><td>Transaction</td><td id="dossier-tx"><code class="wrap">${escapeHtml(item.tx_hash)}</code></td></tr>`;
   }
-  if (item.zk_proof) html += `<p><strong>zk-SNARK Proof:</strong> <code>${escapeHtml(item.zk_proof)}</code></p>`;
+  if (item.zk_proof) html += `<tr><td>zk-SNARK proof</td><td><code class="wrap">${escapeHtml(item.zk_proof)}</code></td></tr>`;
+  if (item.doi && item.doi !== "None") html += `<tr><td>DOI</td><td><code>${escapeHtml(item.doi)}</code></td></tr>`;
+  if (item.timestamp) html += `<tr><td>Assessed</td><td>${escapeHtml(new Date(item.timestamp).toLocaleString())}</td></tr>`;
+  html += `</tbody></table>`;
 
-  if (item.warnings && item.warnings.length) {
-    html += `<div class="badge-warn">⚠️ Manuscript Flagged with ${item.warnings.length} Warning Check(s):<ul>` +
-      item.warnings.map(w => `<li>${escapeHtml(w)}</li>`).join("") + `</ul></div>`;
-  }
-
-  if (item.consensus_raw && typeof item.consensus_raw === "object") {
-    html += `<h3>Multi-LLM Extractions</h3>`;
-    for (const key of ["llama", "mistral", "qwen", "gemini", "scilem"]) {
-      const data = item.consensus_raw[key];
-      if (!data) continue;
-      html += `<div class="llm-card"><strong>Model: ${key.toUpperCase()}</strong><br>`;
-      if (key === "scilem") {
-        html += `Engine Status: Active (Local PyTorch Neural Network)<br>Structural Analysis: ${escapeHtml(data.opinion || "Scilem structural analysis active.")}`;
-      } else if (data.api_failed) {
-        html += `Status: Rate / Credit Limit Hit<br>Opinion: ${escapeHtml(data.opinion || "No opinion extracted.")}`;
-      } else {
-        html += `Extracted Title: <code>${escapeHtml(data.title || "N/A")}</code><br>Extracted Authors: <code>${escapeHtml(data.authors || "N/A")}</code><br>Opinion: ${escapeHtml(data.opinion || "No opinion extracted.")}`;
-      }
-      html += `</div>`;
-    }
-  }
-
+  // --- Full synthesized report ---
   if (item.evidence_report_text) {
-    html += `<h3>Synthesized Evidence Report</h3><div class="llm-card" style="white-space:pre-wrap;">${escapeHtml(item.evidence_report_text)}</div>`;
+    html += `<h3>Synthesized Evidence Report</h3>
+      <div class="report-body">${renderLightMarkdown(item.evidence_report_text)}</div>`;
   }
 
+  html += `</div>`;
   openModal(html);
 
   if (item.tx_hash) {
     fetch(`${API}/api/explorer/tx-url?tx=${encodeURIComponent(item.tx_hash)}`)
       .then(r => r.json())
       .then(d => {
-        if (!d.url) return;
-        const el = document.getElementById(`dossier-tx-${item.eval_hash}`);
-        if (el) el.innerHTML = `<a href="${d.url}" target="_blank" rel="noopener">${escapeHtml(item.tx_hash)}</a>`;
+        const cell = document.getElementById("dossier-tx");
+        if (!cell) return;
+        cell.innerHTML = d.url
+          ? `<a href="${d.url}" target="_blank" rel="noopener"><code class="wrap">${escapeHtml(item.tx_hash)}</code></a>`
+          : `<code class="wrap">${escapeHtml(item.tx_hash)}</code> <span class="hint">(not settled on-chain)</span>`;
       })
       .catch(() => {});
   }
 }
 
+/** Minimal, escape-first markdown rendering — enough for the headings,
+ *  bold, tables and lists the evidence report uses, without pulling in a
+ *  parser or ever injecting raw HTML from the model. */
+function renderLightMarkdown(text) {
+  const lines = String(text).split("\n");
+  let out = "";
+  let inTable = false, inList = false;
+
+  const closeBlocks = () => {
+    if (inTable) { out += "</tbody></table>"; inTable = false; }
+    if (inList) { out += "</ul>"; inList = false; }
+  };
+  const inline = (s) => escapeHtml(s)
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/`(.+?)`/g, "<code>$1</code>");
+
+  for (const raw of lines) {
+    const line = raw.trim();
+    if (!line) { closeBlocks(); continue; }
+
+    // Table separator rows carry no content.
+    if (/^\|?\s*-{3,}\s*\|/.test(line) || /^\|[\s|:-]+\|$/.test(line)) continue;
+
+    if (line.startsWith("|")) {
+      const cells = line.split("|").slice(1, -1).map(c => c.trim());
+      if (!inTable) {
+        closeBlocks();
+        out += `<table class="data-table"><tbody>`;
+        inTable = true;
+      }
+      out += "<tr>" + cells.map(c => `<td>${inline(c)}</td>`).join("") + "</tr>";
+      continue;
+    }
+
+    // A horizontal rule. Checked before the list branch, since "---" also
+    // matches the bullet pattern.
+    if (/^([-*_])\1{2,}$/.test(line.replace(/\s+/g, ""))) { closeBlocks(); out += "<hr>"; continue; }
+
+    // List items must be handled before closeBlocks(), otherwise every
+    // consecutive bullet gets wrapped in its own <ul>.
+    if (/^[-*]\s+/.test(line)) {
+      if (inTable) { out += "</tbody></table>"; inTable = false; }
+      if (!inList) { out += "<ul>"; inList = true; }
+      out += `<li>${inline(line.replace(/^[-*]\s+/, ""))}</li>`;
+      continue;
+    }
+
+    closeBlocks();
+
+    if (line.startsWith("####")) out += `<h5>${inline(line.replace(/^#+\s*/, ""))}</h5>`;
+    else if (line.startsWith("#")) out += `<h4>${inline(line.replace(/^#+\s*/, ""))}</h4>`;
+    else if (line.startsWith(">")) out += `<blockquote>${inline(line.slice(1).trim())}</blockquote>`;
+    else out += `<p>${inline(line)}</p>`;
+  }
+  closeBlocks();
+  return out;
+}
+
+async function openDossierByHash(hash) {
+  if (!hash) return;
+  openModal(`<div class="dossier"><h2>Loading dossier…</h2><p class="hint">Retrieving the full assessment record from the ledger.</p></div>`);
+  try {
+    const r = await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}`);
+    if (!r.ok) {
+      openModal(`<div class="dossier"><h2>Record unavailable</h2><p>No ledger record was found for this evaluation hash.</p></div>`);
+      return;
+    }
+    renderDossierModal(await r.json());
+  } catch (e) {
+    openModal(`<div class="dossier"><h2>Could not load dossier</h2><p>${escapeHtml(String(e))}</p></div>`);
+  }
+}
+
 async function showDefenseModal(idx) {
   const item = evaluatedBuffer[idx];
-  openModal(`<h2>AI Peer Review Defense Strategy</h2><p>Synthesizing adversarial defense strategy...</p>`);
-  const res = await fetch(`${API}/api/defense-strategy`, {
-    method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scores: item.scores_dict }),
-  });
-  const data = await res.json();
-  openModal(`<h2>AI Peer Review Defense Strategy</h2><p>${escapeHtml(data.strategy)}</p>`);
+  openModal(`<h2>AI Peer Review Defense Strategy</h2><p class="hint">Synthesizing adversarial defense strategy…</p>`);
+  try {
+    const res = await fetch(`${API}/api/defense-strategy`, {
+      method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ scores: item.scores_dict }),
+    });
+    const data = await res.json();
+    openModal(`<h2>AI Peer Review Defense Strategy</h2><div class="report-body">${renderLightMarkdown(data.strategy)}</div>`);
+  } catch (e) {
+    openModal(`<h2>AI Peer Review Defense Strategy</h2><p>Could not generate a strategy right now.</p>`);
+  }
 }
 
 // ---------------------------------------------------------------------------
-// ANALYTICS TAB
+// ANALYTICS TAB — Pidyne forecast
 // ---------------------------------------------------------------------------
 let forecastChart = null;
+const CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
+const CRITERIA_COLORS = ["#2563eb", "#f97316", "#16a34a", "#a855f7", "#eab308", "#dc2626", "#0891b2", "#db2777"];
+let lastForecastCriteria = [];
 
 async function loadForecast() {
-  const lookback = document.getElementById("lookbackSelect").value;
   const msg = document.getElementById("forecastMsg");
-  msg.textContent = "Training Pidyne LSTM...";
+  const empty = document.getElementById("forecastEmpty");
+  const chartWrap = document.getElementById("forecastChartWrap");
+  const metaBox = document.getElementById("forecastMeta");
+  const insight = document.getElementById("forecastInsight");
+  const table = document.getElementById("criteriaTable");
+  const heading = document.getElementById("criteriaHeading");
+
+  const lookback = document.getElementById("lookbackSelect").value;
+  msg.textContent = "Training Pidyne LSTM on recorded ledger weights…";
+  [empty, chartWrap, metaBox, insight, table, heading].forEach(el => el.classList.add("hidden"));
+
   try {
     const res = await fetch(`${API}/api/forecast?lookback=${lookback}`);
     const data = await res.json();
+
     if (!data.ready) {
-      msg.textContent = data.message;
-      document.getElementById("criteriaGrid").innerHTML = "";
+      msg.textContent = "";
+      empty.classList.remove("hidden");
+      const recorded = data.blocks_recorded ?? 0;
+      const required = data.blocks_required ?? 3;
+      empty.innerHTML = `
+        <div class="empty-title">Not enough ledger history yet</div>
+        <p>${escapeHtml(data.message || "")}</p>
+        <div class="progress-track"><div class="progress-fill" style="width:${Math.min(100, (recorded / required) * 100)}%"></div></div>
+        <div class="hint">${recorded} of ${required} blocks recorded</div>`;
       if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
       return;
     }
-    msg.textContent = `Ledger Forecast (Raw Sum = ${data.raw_sum.toFixed(6)}/8.0)`;
+
+    msg.textContent = "";
+    chartWrap.classList.remove("hidden");
+
+    // Observed history, then the forecast point appended. Each criterion gets
+    // two datasets sharing a colour: a solid observed line, and a dashed
+    // segment joining the last real block to the projection — so it is always
+    // visually obvious which part is measured and which part is predicted.
+    const points = data.history.concat([data.forecast]);
+    const labels = points.map(p => p.label);
+    const lastIdx = data.history.length - 1;
+
+    const datasets = [];
+    CRITERIA_KEYS.forEach((k, i) => {
+      const color = CRITERIA_COLORS[i];
+      datasets.push({
+        label: k,
+        data: points.map((p, idx) => (idx <= lastIdx ? p[k] : null)),
+        borderColor: color, backgroundColor: color,
+        borderWidth: 2, fill: false, tension: 0.25, pointRadius: 3, pointHoverRadius: 5,
+        spanGaps: false,
+      });
+      datasets.push({
+        label: `${k} forecast`,
+        data: points.map((p, idx) => (idx >= lastIdx ? p[k] : null)),
+        borderColor: color, backgroundColor: color,
+        borderWidth: 2, borderDash: [6, 4], fill: false, tension: 0.25,
+        pointRadius: (ctx) => (ctx.dataIndex === points.length - 1 ? 6 : 0),
+        pointStyle: "rectRot",
+        spanGaps: true,
+      });
+    });
 
     const ctx = document.getElementById("forecastChart").getContext("2d");
-    const labels = data.history.map(h => h.block);
-    const criteriaKeys = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
-    const colors = ["#38bdf8", "#f97316", "#22c55e", "#a855f7", "#eab308", "#ef4444", "#06b6d4", "#ec4899"];
-    const datasets = criteriaKeys.map((k, i) => ({
-      label: k, data: data.history.map(h => h[k]), borderColor: colors[i], fill: false, tension: 0.2, pointRadius: 3,
-    }));
     if (forecastChart) forecastChart.destroy();
-    forecastChart = new Chart(ctx, { type: "line", data: { labels, datasets }, options: { responsive: true, scales: { y: { beginAtZero: true } } } });
+    forecastChart = new Chart(ctx, {
+      type: "line",
+      data: { labels, datasets },
+      options: {
+        responsive: true,
+        interaction: { mode: "index", intersect: false },
+        plugins: {
+          legend: {
+            labels: {
+              boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 11 },
+              // Only the solid observed series appear in the legend; the
+              // dashed forecast twins would just double every entry.
+              filter: (l) => !l.text.includes("forecast"),
+            },
+          },
+          tooltip: {
+            callbacks: {
+              title: (items) => items[0].label,
+              label: (c) => (c.parsed.y === null ? null : `${c.dataset.label.replace(" forecast", "")}: ${c.parsed.y.toFixed(4)}`),
+            },
+            filter: (item) => item.parsed.y !== null && !item.dataset.label.includes("forecast"),
+          },
+        },
+        scales: {
+          y: {
+            beginAtZero: false,
+            title: { display: true, text: "Criterion weight (Σ = 8.0)", font: { size: 11 } },
+            grid: { color: "rgba(148,163,184,0.18)" },
+          },
+          x: { grid: { display: false } },
+        },
+      },
+    });
 
-    document.getElementById("criteriaGrid").innerHTML = data.criteria.map(c =>
-      `<button class="btn" onclick='showCriterionModal(${JSON.stringify(c).replace(/'/g, "&#39;")})'>${c.id}: ${c.weight.toFixed(5)}</button>`
-    ).join("");
+    metaBox.classList.remove("hidden");
+    metaBox.innerHTML = `
+      <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
+      <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
+      <div class="fm-item"><span>Training loss</span><strong>${Number(data.training_loss).toFixed(5)}</strong></div>
+      <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>`;
+
+    if (data.interpretation) {
+      insight.classList.remove("hidden");
+      insight.innerHTML = `<strong>What this shows:</strong> ${escapeHtml(data.interpretation)}`;
+    }
+
+    lastForecastCriteria = data.criteria;
+    heading.classList.remove("hidden");
+    table.classList.remove("hidden");
+    document.getElementById("criteriaBody").innerHTML = data.criteria.map((c, i) => {
+      const cls = c.trend === "rising" ? "trend-up" : (c.trend === "falling" ? "trend-down" : "trend-flat");
+      const arrow = c.trend === "rising" ? "▲" : (c.trend === "falling" ? "▼" : "—");
+      return `<tr class="clickable-row" data-cidx="${i}">
+        <td><span class="c-dot" style="background:${CRITERIA_COLORS[i]}"></span><strong>${escapeHtml(c.id)}</strong></td>
+        <td>${escapeHtml(c.title)}</td>
+        <td class="num">${c.current_weight.toFixed(4)}</td>
+        <td class="num">${c.weight.toFixed(4)}</td>
+        <td class="num ${cls}">${arrow} ${c.delta >= 0 ? "+" : ""}${c.delta_pct.toFixed(1)}%</td>
+      </tr>`;
+    }).join("");
+
+    document.querySelectorAll("#criteriaBody .clickable-row").forEach(tr => {
+      tr.addEventListener("click", () => showCriterionModal(lastForecastCriteria[Number(tr.dataset.cidx)]));
+    });
   } catch (e) {
-    msg.textContent = "Error loading forecast.";
+    msg.textContent = "";
+    empty.classList.remove("hidden");
+    empty.innerHTML = `<div class="empty-title">Forecast unavailable</div><p>Could not reach the forecasting service.</p>`;
   }
 }
 
 function showCriterionModal(c) {
-  openModal(`<h2>${c.id}: ${escapeHtml(c.title)}</h2><p><strong>Current Epoch Weight:</strong> <code>${c.weight.toFixed(6)}</code></p><p>${escapeHtml(c.description)}</p>`);
+  if (!c) return;
+  const cls = c.trend === "rising" ? "trend-up" : (c.trend === "falling" ? "trend-down" : "trend-flat");
+  openModal(`
+    <h2>${escapeHtml(c.id)} — ${escapeHtml(c.title)}</h2>
+    <p>${escapeHtml(c.description)}</p>
+    <table class="data-table"><tbody>
+      <tr><td>Current epoch weight</td><td class="num"><code>${c.current_weight.toFixed(6)}</code></td></tr>
+      <tr><td>Projected next epoch</td><td class="num"><code>${c.weight.toFixed(6)}</code></td></tr>
+      <tr><td>Projected change</td><td class="num ${cls}">${c.delta >= 0 ? "+" : ""}${c.delta.toFixed(6)} (${c.delta >= 0 ? "+" : ""}${c.delta_pct.toFixed(2)}%)</td></tr>
+    </tbody></table>
+    <p class="hint">Weights are normalized so all eight criteria sum to 8.0. A weight above 1.0 means
+    this criterion is currently weighted more heavily than the neutral baseline.</p>`);
 }
 
 document.getElementById("runForecastBtn").addEventListener("click", loadForecast);
@@ -485,7 +1340,7 @@ async function loadAnalyticsSummary() {
   } catch (e) { /* ignore */ }
 }
 
-// --- Map: settings persisted in localStorage, filters kept in memory ---
+// --- Map ---
 const MapSettings = {
   get physics() { return localStorage.getItem("sp_map_physics") !== "false"; },
   set physics(v) { localStorage.setItem("sp_map_physics", String(v)); },
@@ -565,9 +1420,9 @@ async function loadMap() {
 
     const tbody = document.querySelector("#mapLegendTable tbody");
     tbody.innerHTML = data.legend.map(row =>
-      `<tr class="legend-row" data-topic="${escapeHtml(row.topic)}">
+      `<tr class="legend-row clickable-row" data-topic="${escapeHtml(row.topic)}">
         <td><span class="color-box" style="background:${row.color};"></span></td>
-        <td>${escapeHtml(row.topic)}</td><td>${row.frequency}</td><td>${row.avg_weight}</td>
+        <td>${escapeHtml(row.topic)}</td><td class="num">${row.frequency}</td><td class="num">${row.avg_weight}</td>
       </tr>`
     ).join("");
     tbody.querySelectorAll(".legend-row").forEach(tr => {
@@ -583,23 +1438,14 @@ async function loadMap() {
 
 document.getElementById("mapAuthorFilter").addEventListener("change", loadMap);
 document.getElementById("mapApplyFiltersBtn").addEventListener("click", loadMap);
-document.getElementById("mapPhysicsToggle").addEventListener("change", (e) => {
-  MapSettings.physics = e.target.checked;
-  loadMap();
-});
-document.getElementById("mapSizeMode").addEventListener("change", (e) => {
-  MapSettings.sizeMode = e.target.value;
-  loadMap();
-});
-document.getElementById("mapMaxNodes").addEventListener("change", (e) => {
-  MapSettings.maxNodes = e.target.value;
-  loadMap();
-});
+document.getElementById("mapPhysicsToggle").addEventListener("change", (e) => { MapSettings.physics = e.target.checked; loadMap(); });
+document.getElementById("mapSizeMode").addEventListener("change", (e) => { MapSettings.sizeMode = e.target.value; loadMap(); });
+document.getElementById("mapMaxNodes").addEventListener("change", (e) => { MapSettings.maxNodes = e.target.value; loadMap(); });
 
-// --- Leaderboard: search, sort, pagination ---
-const leaderboardState = { q: "", sort: "piq", order: "desc", limit: 10, offset: 0, total: 0 };
-let leaderboardDebounce = null;
-
+// ---------------------------------------------------------------------------
+// Leaderboards — both tables share the same sort/pagination machinery so they
+// stay visually and behaviourally uniform.
+// ---------------------------------------------------------------------------
 function renderSortIndicators(theadSelector, state) {
   document.querySelectorAll(`${theadSelector} th[data-sort]`).forEach(th => {
     th.classList.remove("sorted-asc", "sorted-desc");
@@ -612,10 +1458,9 @@ function renderPagination(containerId, state, reload) {
   const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
   const currentPage = Math.floor(state.offset / state.limit) + 1;
   el.innerHTML = `
-    <button class="btn" id="${containerId}-prev" ${currentPage <= 1 ? "disabled" : ""}>‹ Prev</button>
-    <span class="page-indicator">Page ${currentPage} of ${totalPages} (${state.total} total)</span>
-    <button class="btn" id="${containerId}-next" ${currentPage >= totalPages ? "disabled" : ""}>Next ›</button>
-  `;
+    <button class="btn btn-ghost" id="${containerId}-prev" ${currentPage <= 1 ? "disabled" : ""}>‹ Prev</button>
+    <span class="page-indicator">Page ${currentPage} of ${totalPages} · ${state.total} total</span>
+    <button class="btn btn-ghost" id="${containerId}-next" ${currentPage >= totalPages ? "disabled" : ""}>Next ›</button>`;
   document.getElementById(`${containerId}-prev`).addEventListener("click", () => {
     state.offset = Math.max(0, state.offset - state.limit);
     reload();
@@ -624,6 +1469,27 @@ function renderPagination(containerId, state, reload) {
     if (state.offset + state.limit < state.total) { state.offset += state.limit; reload(); }
   });
 }
+
+function bindSortHeaders(tableSelector, state, reload) {
+  document.querySelectorAll(`${tableSelector} thead th[data-sort]`).forEach(th => {
+    th.addEventListener("click", () => {
+      const col = th.dataset.sort;
+      if (col === "none") return;
+      if (state.sort === col) state.order = state.order === "asc" ? "desc" : "asc";
+      else { state.sort = col; state.order = "desc"; }
+      state.offset = 0;
+      reload();
+    });
+  });
+}
+
+function debounced(fn, ms = 350) {
+  let t = null;
+  return (...args) => { clearTimeout(t); t = setTimeout(() => fn(...args), ms); };
+}
+
+// --- piQ Leaderboard [Top Authors] ---
+const leaderboardState = { q: "", sort: "piq", order: "desc", limit: 10, offset: 0, total: 0 };
 
 async function loadLeaderboard() {
   try {
@@ -636,15 +1502,25 @@ async function loadLeaderboard() {
     leaderboardState.total = data.total;
 
     document.getElementById("leaderboardBody").innerHTML = data.rankings.length
-      ? data.rankings.map(r =>
-          `<tr><td>${escapeHtml(r.author)}</td><td>${r.piq.toFixed(2)}</td><td>${r.papers}</td><td>${r.avg_score.toFixed(1)}</td></tr>`
-        ).join("")
-      : `<tr><td colspan="4" class="hint">No authors match this search.</td></tr>`;
+      ? data.rankings.map((r, i) => {
+          const rank = leaderboardState.offset + i + 1;
+          return `<tr class="clickable-row" data-author="${escapeHtml(r.author)}">
+            <td class="col-rank">${rankBadge(rank)}</td>
+            <td class="cell-primary">${escapeHtml(r.author)}</td>
+            <td class="num strong">${r.piq.toFixed(2)}</td>
+            <td class="num">${r.papers}</td>
+            <td class="num">${r.avg_score.toFixed(1)}</td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="5" class="empty-cell">No authors match this search.</td></tr>`;
+
+    document.querySelectorAll("#leaderboardBody .clickable-row").forEach(tr => {
+      tr.addEventListener("click", () => showAuthorPapers(tr.dataset.author));
+    });
 
     renderSortIndicators("#leaderboardTable thead", leaderboardState);
     renderPagination("leaderboardPagination", leaderboardState, loadLeaderboard);
 
-    // Keep the map's author filter populated from an unfiltered, unpaginated view
     if (!leaderboardState.q && leaderboardState.offset === 0) {
       const select = document.getElementById("mapAuthorFilter");
       const current = select.value;
@@ -656,31 +1532,49 @@ async function loadLeaderboard() {
   } catch (e) { /* ignore */ }
 }
 
-document.querySelectorAll("#leaderboardTable thead th[data-sort]").forEach(th => {
-  th.addEventListener("click", () => {
-    const col = th.dataset.sort;
-    if (leaderboardState.sort === col) {
-      leaderboardState.order = leaderboardState.order === "asc" ? "desc" : "asc";
-    } else {
-      leaderboardState.sort = col;
-      leaderboardState.order = "desc";
-    }
-    leaderboardState.offset = 0;
-    loadLeaderboard();
-  });
-});
-document.getElementById("leaderboardSearch").addEventListener("input", (e) => {
-  clearTimeout(leaderboardDebounce);
-  leaderboardDebounce = setTimeout(() => {
-    leaderboardState.q = e.target.value.trim();
-    leaderboardState.offset = 0;
-    loadLeaderboard();
-  }, 350);
-});
+function rankBadge(rank) {
+  const cls = rank === 1 ? "rank-1" : rank === 2 ? "rank-2" : rank === 3 ? "rank-3" : "rank-n";
+  return `<span class="rank ${cls}">${rank}</span>`;
+}
 
-// --- Top Papers: search, score filter, sort, pagination ---
+async function showAuthorPapers(author) {
+  openModal(`<h2>${escapeHtml(author)}</h2><p class="hint">Loading assessed papers…</p>`);
+  try {
+    const qs = new URLSearchParams({ q: author, sort: "score", order: "desc", limit: 50, offset: 0 });
+    const res = await fetch(`${API}/api/analytics/top-papers?${qs}`);
+    const data = await res.json();
+    let html = `<h2>${escapeHtml(author)}</h2>
+      <p class="hint">${data.total} assessed paper${data.total === 1 ? "" : "s"}. Select one to open its full dossier.</p>`;
+    if (!data.papers.length) {
+      html += `<div class="ok-box">No papers found for this author.</div>`;
+    } else {
+      html += `<table class="data-table"><thead><tr><th>Title</th><th class="num">piX</th><th class="num">piQ</th></tr></thead><tbody>`;
+      html += data.papers.map(p =>
+        `<tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}">
+          <td class="cell-primary">${escapeHtml(p.title)}</td>
+          <td class="num strong">${(p.score || 0).toFixed(1)}</td>
+          <td class="num">${(p.piq || 0).toFixed(2)}</td>
+        </tr>`).join("");
+      html += `</tbody></table>`;
+    }
+    openModal(html);
+    document.querySelectorAll("#modalBody .clickable-row").forEach(tr => {
+      tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
+    });
+  } catch (e) {
+    openModal(`<h2>${escapeHtml(author)}</h2><p>Could not load this author's papers.</p>`);
+  }
+}
+
+bindSortHeaders("#leaderboardTable", leaderboardState, loadLeaderboard);
+document.getElementById("leaderboardSearch").addEventListener("input", debounced((e) => {
+  leaderboardState.q = e.target.value.trim();
+  leaderboardState.offset = 0;
+  loadLeaderboard();
+}));
+
+// --- piX Leaderboard [Top Papers] ---
 const topPapersState = { q: "", minScore: 0, sort: "score", order: "desc", limit: 10, offset: 0, total: 0 };
-let topPapersDebounce = null;
 
 async function loadTopPapers() {
   try {
@@ -694,33 +1588,22 @@ async function loadTopPapers() {
     topPapersState.total = data.total;
 
     document.getElementById("topPapersBody").innerHTML = data.papers.length
-      ? data.papers.map((p, idx) => `
-          <tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}">
-            <td>${escapeHtml(p.title)}</td>
-            <td>${escapeHtml(p.author || "")}</td>
-            <td>${(p.score || 0).toFixed(1)}</td>
-            <td>${(p.piq || 0).toFixed(2)}</td>
-            <td>${(p.logic_score || 0).toFixed(1)}</td>
-            <td>${p.date ? new Date(p.date).toLocaleDateString() : ""}</td>
-          </tr>`
-        ).join("")
-      : `<tr><td colspan="6" class="hint">No papers match these filters.</td></tr>`;
+      ? data.papers.map((p, i) => {
+          const rank = topPapersState.offset + i + 1;
+          return `<tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}" title="Open full report and dossier">
+            <td class="col-rank">${rankBadge(rank)}</td>
+            <td class="cell-primary">${escapeHtml(p.title)}</td>
+            <td class="cell-muted">${escapeHtml(p.author || "—")}</td>
+            <td class="num strong">${(p.score || 0).toFixed(1)}</td>
+            <td class="num">${(p.piq || 0).toFixed(2)}</td>
+            <td class="num">${(p.logic_score || 0).toFixed(1)}</td>
+            <td class="num cell-muted">${p.date ? new Date(p.date).toLocaleDateString() : "—"}</td>
+          </tr>`;
+        }).join("")
+      : `<tr><td colspan="7" class="empty-cell">No papers match these filters.</td></tr>`;
 
     document.querySelectorAll("#topPapersBody .clickable-row").forEach(tr => {
-      tr.addEventListener("click", async () => {
-        const hash = tr.dataset.hash;
-        if (!hash) return;
-        try {
-          const r = await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}`);
-          if (!r.ok) return;
-          const dossier = await r.json();
-          renderDossierModal({
-            title: dossier.title, author_name: dossier.author_name, eval_hash: dossier.eval_hash,
-            piq: dossier.piq, tx_hash: dossier.tx_hash, zk_proof: dossier.zk_proof,
-            warnings: [], consensus_raw: dossier.consensus_raw, evidence_report_text: dossier.evidence_report_text,
-          });
-        } catch (e) { /* ignore */ }
-      });
+      tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
     });
 
     renderSortIndicators("#topPapersTable thead", topPapersState);
@@ -728,40 +1611,25 @@ async function loadTopPapers() {
   } catch (e) { /* ignore */ }
 }
 
-document.querySelectorAll("#topPapersTable thead th[data-sort]").forEach(th => {
-  th.addEventListener("click", () => {
-    const col = th.dataset.sort;
-    if (col === "none") return;
-    if (topPapersState.sort === col) {
-      topPapersState.order = topPapersState.order === "asc" ? "desc" : "asc";
-    } else {
-      topPapersState.sort = col;
-      topPapersState.order = "desc";
-    }
-    topPapersState.offset = 0;
-    loadTopPapers();
-  });
-});
-document.getElementById("topPapersSearch").addEventListener("input", (e) => {
-  clearTimeout(topPapersDebounce);
-  topPapersDebounce = setTimeout(() => {
-    topPapersState.q = e.target.value.trim();
-    topPapersState.offset = 0;
-    loadTopPapers();
-  }, 350);
-});
-document.getElementById("topPapersMinScore").addEventListener("input", (e) => {
-  clearTimeout(topPapersDebounce);
-  topPapersDebounce = setTimeout(() => {
-    topPapersState.minScore = e.target.value ? Number(e.target.value) : 0;
-    topPapersState.offset = 0;
-    loadTopPapers();
-  }, 350);
-});
+bindSortHeaders("#topPapersTable", topPapersState, loadTopPapers);
+document.getElementById("topPapersSearch").addEventListener("input", debounced((e) => {
+  topPapersState.q = e.target.value.trim();
+  topPapersState.offset = 0;
+  loadTopPapers();
+}));
+document.getElementById("topPapersMinScore").addEventListener("input", debounced((e) => {
+  topPapersState.minScore = e.target.value ? Number(e.target.value) : 0;
+  topPapersState.offset = 0;
+  loadTopPapers();
+}));
 
+let analyticsInitialized = false;
 async function initAnalyticsTab() {
-  applyMapSettingsToForm();
-  await loadMapFieldChecklist();
+  if (!analyticsInitialized) {
+    applyMapSettingsToForm();
+    await loadMapFieldChecklist();
+    analyticsInitialized = true;
+  }
   loadAnalyticsSummary();
   loadForecast();
   loadLeaderboard();
@@ -772,11 +1640,7 @@ async function initAnalyticsTab() {
 // ---------------------------------------------------------------------------
 // EXPLORER TAB
 // ---------------------------------------------------------------------------
-let explorerDebounce = null;
-document.getElementById("explorerSearch").addEventListener("input", () => {
-  clearTimeout(explorerDebounce);
-  explorerDebounce = setTimeout(loadExplorer, 350);
-});
+document.getElementById("explorerSearch").addEventListener("input", debounced(loadExplorer));
 
 async function loadExplorer() {
   const q = document.getElementById("explorerSearch").value.trim();
@@ -785,14 +1649,32 @@ async function loadExplorer() {
     if (q) {
       const res = await fetch(`${API}/api/explorer/search?q=${encodeURIComponent(q)}`);
       const data = await res.json();
-      if (!data.records.length) { container.innerHTML = `<div class="warning-box">No matching ledger records found.</div>`; return; }
-      container.innerHTML = `<h3>Search Results</h3>` + data.records.map(r => explorerRowHtml(r)).join("");
+      if (!data.records.length) {
+        container.innerHTML = `<div class="warning-box">No matching ledger records found.</div>`;
+        return;
+      }
+      container.innerHTML = `<h3>Search Results</h3>` + data.records.map(explorerRowHtml).join("");
+      container.querySelectorAll("[data-dossier-hash]").forEach(btn => {
+        btn.addEventListener("click", () => openDossierByHash(btn.dataset.dossierHash));
+      });
     } else {
       const res = await fetch(`${API}/api/explorer/latest`);
       const data = await res.json();
-      container.innerHTML = `<h3>Latest Assessed Papers</h3><table class="data-table"><thead><tr><th>Title</th><th>Author</th><th>Score</th><th>Hash</th></tr></thead><tbody>` +
-        data.records.map(r => `<tr><td>${escapeHtml(r.title)}</td><td>${escapeHtml(r.author || "")}</td><td>${(r.score || 0).toFixed(2)}</td><td><code>${escapeHtml((r.eval_hash || "").slice(0, 10))}...</code></td></tr>`).join("") +
-        `</tbody></table>`;
+      container.innerHTML = `<h3>Latest Assessed Papers</h3>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Title</th><th>Author</th><th class="num">piX</th><th>Eval Hash</th>
+        </tr></thead><tbody>` +
+        data.records.map(r =>
+          `<tr class="clickable-row" data-hash="${escapeHtml(r.eval_hash || "")}">
+            <td class="cell-primary">${escapeHtml(r.title)}</td>
+            <td class="cell-muted">${escapeHtml(r.author || "—")}</td>
+            <td class="num strong">${(r.score || 0).toFixed(2)}</td>
+            <td><code>${escapeHtml((r.eval_hash || "").slice(0, 12))}…</code></td>
+          </tr>`).join("") +
+        `</tbody></table></div>`;
+      container.querySelectorAll(".clickable-row").forEach(tr => {
+        tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
+      });
     }
   } catch (e) {
     container.innerHTML = `<div class="warning-box">Error loading ledger.</div>`;
@@ -800,12 +1682,203 @@ async function loadExplorer() {
 }
 
 function explorerRowHtml(r) {
-  const id = `dossier_${r.eval_hash}`;
-  window[`__dossier_${r.eval_hash}`] = r;
   return `<div class="result-card">
-    <div><strong>${escapeHtml(r.title)}</strong> — ${escapeHtml(r.author_name || "")} (Score: ${(r.score || 0).toFixed(2)})<br><code>${escapeHtml(r.eval_hash)}</code></div>
-    <div class="result-actions"><button class="btn" onclick='renderDossierModal(window["__dossier_${r.eval_hash}"])'>Full Dossier</button></div>
+    <div class="result-main">
+      <div class="result-title">${escapeHtml(r.title)}</div>
+      <div class="result-author">${escapeHtml(r.author_name || "—")}</div>
+      <div class="result-pills">
+        <span class="pill p-score">piX ${(r.score || 0).toFixed(1)}</span>
+        <span class="pill p-piq">piQ ${Number(r.piq || 0).toFixed(2)}</span>
+        ${qualityPill(r.judge_metadata || {})}
+      </div>
+      <code class="hash-line">${escapeHtml(r.eval_hash)}</code>
+    </div>
+    <div class="result-actions">
+      <button class="btn btn-primary" data-dossier-hash="${escapeHtml(r.eval_hash)}">Full Report &amp; Dossier</button>
+    </div>
   </div>`;
+}
+
+// ---------------------------------------------------------------------------
+// ARCHITECTURE DIAGRAMS (Mermaid)
+// ---------------------------------------------------------------------------
+const ARCH_FLOWCHART = `
+flowchart TB
+  classDef intake fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#0f172a
+  classDef extract fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#0f172a
+  classDef panel fill:#fef3c7,stroke:#d97706,stroke-width:1.5px,color:#0f172a
+  classDef judge fill:#ede9fe,stroke:#7c3aed,stroke-width:1.5px,color:#0f172a
+  classDef chain fill:#e0f2fe,stroke:#0891b2,stroke-width:1.5px,color:#0f172a
+  classDef ui fill:#fce7f3,stroke:#db2777,stroke-width:1.5px,color:#0f172a
+  classDef gate fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#0f172a
+
+  subgraph S1["1 · Intake and Identity"]
+    direction LR
+    U["Researcher"]:::intake
+    IDENT{{"Identity<br/>ORCID iD · W3C DID · Wallet"}}:::intake
+    FEE{"piQ balance<br/>≥ 0.10?"}:::gate
+    UP["Local PDF Upload"]:::intake
+    DOI["DOI Lookup<br/>Unpaywall → S2 → CORE"]:::intake
+    DISC["Auto-Discover<br/>OpenAlex search"]:::intake
+    ZK1["ZK double-blind<br/>assignment"]:::intake
+  end
+
+  subgraph S2["2 · Extraction and Deterministic Scoring"]
+    direction LR
+    PARSE["PyMuPDF<br/>layout-aware extraction"]:::extract
+    MDAR["MDAR adherence<br/>+ RRID validation"]:::extract
+    REPRO["Reproducibility markers<br/>code · data · license · container"]:::extract
+    DENS["Empirical density<br/>statistics · sample sizes"]:::extract
+    TOPO["Citation topology<br/>entropy"]:::extract
+  end
+
+  subgraph S3["3 · Independent Model Panel"]
+    direction LR
+    L1["Llama 3.3 70B"]:::panel
+    L2["Mistral Large"]:::panel
+    L3["Qwen 2.5 72B"]:::panel
+    L4["Gemini 2.0 Flash"]:::panel
+    L5["Scilem Local<br/>Neural Engine"]:::panel
+  end
+
+  subgraph S4["4 · Pidyne Adjudication"]
+    direction TB
+    SYN["Evidence synthesis<br/>across all jurors"]:::judge
+    AGREE["Inter-model<br/>agreement measure"]:::judge
+    QUAL["Judgement quality grade<br/>High · Moderate · Limited"]:::judge
+    CRIT["8 criteria scores<br/>C1 – C8"]:::judge
+    LOGIC["Adversarial logic<br/>integrity matrix"]:::judge
+  end
+
+  subgraph S5["5 · Proof-of-Research and Tokenomics"]
+    direction TB
+    PIX["piX composite score"]:::chain
+    GATE{"piX ≥ 50<br/>AND logic ≥ 50?"}:::gate
+    MINT["Mint soulbound piQ<br/>piX / 10"]:::chain
+    ZERO["No piQ minted"]:::chain
+    ZK2["zk-SNARK proof"]:::chain
+    BLOCK["PoR block<br/>+ epoch weights"]:::chain
+    ETH["Sepolia Ethereum<br/>settlement"]:::chain
+  end
+
+  subgraph S6["6 · Outputs"]
+    direction LR
+    DOSS["Full report<br/>and CoARA dossier"]:::ui
+    FORE["Pidyne LSTM<br/>epoch forecast"]:::ui
+    MAPS["Global map<br/>of science"]:::ui
+    BOARD["piX and piQ<br/>leaderboards"]:::ui
+    DEF["Adversarial<br/>defence strategy"]:::ui
+  end
+
+  U --> IDENT --> FEE
+  FEE -->|"insufficient"| STOP["Run refused<br/>fee not charged"]:::gate
+  FEE -->|"charged 0.10 piQ"| UP & DOI & DISC
+  UP & DOI & DISC --> ZK1 --> PARSE
+  PARSE --> MDAR & REPRO & DENS & TOPO
+  PARSE --> L1 & L2 & L3 & L4 & L5
+  L1 & L2 & L3 & L4 & L5 --> SYN
+  SYN --> AGREE --> QUAL
+  MDAR & REPRO & DENS & TOPO --> CRIT
+  SYN --> CRIT --> LOGIC --> PIX
+  QUAL --> CRIT
+  PIX --> GATE
+  GATE -->|"yes"| MINT --> ZK2
+  GATE -->|"no"| ZERO --> ZK2
+  ZK2 --> BLOCK --> ETH
+  BLOCK --> FORE
+  CRIT --> DOSS
+  QUAL --> DOSS
+  ETH --> DOSS
+  CRIT --> MAPS & BOARD & DEF
+`;
+
+const SCORE_FLOWCHART = `
+flowchart LR
+  classDef sig fill:#dcfce7,stroke:#16a34a,color:#0f172a
+  classDef mid fill:#fef3c7,stroke:#d97706,color:#0f172a
+  classDef out fill:#ede9fe,stroke:#7c3aed,color:#0f172a
+  classDef gate fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#0f172a
+  classDef tok fill:#e0f2fe,stroke:#0891b2,color:#0f172a
+
+  A["Adjudicated<br/>AI rating"]:::mid
+  B["MDAR adherence"]:::sig
+  C["Reproducibility<br/>signal"]:::sig
+  D["Empirical density"]:::sig
+  E["Citation topology<br/>entropy"]:::sig
+  F["VAPRI<br/>report entropy"]:::sig
+
+  C1["C1 Semantic Originality"]:::out
+  C2["C2 Methodological Rigor"]:::out
+  C3["C3 Interdisciplinary Synergy"]:::out
+  C4["C4 Societal Impact"]:::out
+  C5["C5 Open Science"]:::out
+  C6["C6 Literature Integration"]:::out
+  C7["C7 Empirical Density"]:::out
+  C8["C8 Future Actionability"]:::out
+
+  A --> C1 & C3 & C4 & C6 & C7 & C8
+  F --> C1
+  B --> C2 & C6
+  C --> C5 & C8
+  D --> C7
+  E --> C3 & C4
+
+  C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 --> PIX["piX = mean(C1…C8)"]:::mid
+  A --> LG["Logic integrity<br/>adversarial penalty"]:::mid
+  E --> LG
+
+  PIX --> G{"piX ≥ 50<br/>AND<br/>logic ≥ 50?"}:::gate
+  LG --> G
+  G -->|"yes"| M["Mint piQ = piX / 10"]:::tok
+  G -->|"no"| N["0.00 piQ<br/>threshold warning raised"]:::gate
+  C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 --> W["Epoch weights<br/>→ PoR block"]:::tok
+  W --> FC["Pidyne LSTM<br/>forecast"]:::tok
+`;
+
+let mermaidReady = false;
+let diagramsRendered = false;
+
+async function renderArchitectureDiagrams() {
+  if (diagramsRendered || typeof mermaid === "undefined") return;
+  if (!mermaidReady) {
+    mermaid.initialize({
+      startOnLoad: false,
+      theme: "base",
+      securityLevel: "strict",
+      flowchart: { curve: "basis", nodeSpacing: 45, rankSpacing: 55, htmlLabels: true, useMaxWidth: true },
+      themeVariables: {
+        fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif',
+        fontSize: "13px",
+        primaryColor: "#eff6ff",
+        primaryTextColor: "#0f172a",
+        primaryBorderColor: "#2563eb",
+        lineColor: "#64748b",
+        clusterBkg: "#f8fafc",
+        clusterBorder: "#cbd5e1",
+      },
+    });
+    mermaidReady = true;
+  }
+  // Rendered independently: a parse failure in one diagram shouldn't leave
+  // the other one blank.
+  const results = await Promise.all([
+    renderOneDiagram("archSvg", ARCH_FLOWCHART, "archDiagram"),
+    renderOneDiagram("scoreSvg", SCORE_FLOWCHART, "scoreDiagram"),
+  ]);
+  diagramsRendered = results.every(Boolean);
+}
+
+async function renderOneDiagram(svgId, definition, targetId) {
+  const target = document.getElementById(targetId);
+  if (!target) return false;
+  try {
+    const { svg } = await mermaid.render(svgId, definition);
+    target.innerHTML = svg;
+    return true;
+  } catch (e) {
+    target.innerHTML = `<div class="warning-box">This diagram could not be rendered in your browser.</div>`;
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -822,3 +1895,5 @@ function escapeHtml(s) {
 bootstrapFromQueryParams();
 renderSidebar();
 loadTotalAnalyzed();
+loadChainStatus();
+setInterval(loadChainStatus, 60000);

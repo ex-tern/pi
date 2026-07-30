@@ -1,4 +1,18 @@
 import os
+
+# Must happen BEFORE numpy/torch are imported below — these libraries read
+# these env vars once, at import time, to size their internal thread pools.
+# On a memory-constrained host (e.g. a 512MB container), the default thread
+# count (based on the host's *reported* CPU count, which is often
+# misleading in shared/containerized environments) allocates far more
+# thread-local memory than a small instance can spare. Capping at 1 is a
+# meaningful, low-risk memory reduction for this app's actual workload
+# (small MLP/LSTM forward passes, not large batch training).
+os.environ.setdefault("OMP_NUM_THREADS", "1")
+os.environ.setdefault("MKL_NUM_THREADS", "1")
+os.environ.setdefault("OPENBLAS_NUM_THREADS", "1")
+os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
+
 import json
 import time
 import math
@@ -18,6 +32,8 @@ import torch.optim as optim
 from torch.utils.data import Dataset
 from openai import OpenAI
 from functools import lru_cache
+
+torch.set_num_threads(1)  # belt-and-suspenders; some backends don't fully honor the env vars above
 
 try:
     from openrouter import OpenRouter
@@ -343,7 +359,10 @@ def run_multi_llm_consensus(paper_text):
         "scilem": extract_with_scilem
     }
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=5) as executor:
+    # 3 rather than one-per-provider: each thread reserves its own stack,
+    # which adds up on a memory-constrained host. 5 short-lived HTTP calls
+    # finishing slightly less in parallel is a good trade for not OOMing.
+    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(func, paper_text): name for name, func in llm_funcs.items()}
         for future in concurrent.futures.as_completed(futures):
             provider, data = future.result()
@@ -351,7 +370,10 @@ def run_multi_llm_consensus(paper_text):
     return results
 
 def generate_merged_evidence_report(consensus_results):
-    successful_llms = [k for k, v in consensus_results.items() if not v.get("api_failed", False)]
+    successful_llms = [
+        k for k, v in consensus_results.items()
+        if not k.startswith("_") and isinstance(v, dict) and not v.get("api_failed", False)
+    ]
     if not successful_llms:
         return "Synthesized Evidence Report (Unified Consensus)\n\nExternal APIs offline. Local Scilem neural analysis active."
     
@@ -364,17 +386,132 @@ def generate_merged_evidence_report(consensus_results):
         report_md += f"- **Criteria Assessment:** {data.get('opinion', 'N/A')}\n\n"
     return report_md
 
+MODEL_REGISTRY = {
+    "llama": {"label": "Llama 3.3 70B", "role": "Panel Juror", "kind": "external"},
+    "mistral": {"label": "Mistral Large", "role": "Panel Juror", "kind": "external"},
+    "qwen": {"label": "Qwen 2.5 72B", "role": "Panel Juror", "kind": "external"},
+    "gemini": {"label": "Gemini 2.0 Flash", "role": "Panel Juror", "kind": "external"},
+    "scilem": {"label": "Scilem Local Neural Engine", "role": "Deterministic Structural Analyst", "kind": "local"},
+}
+
+
+def _title_agreement(consensus_results) -> float:
+    """Pairwise similarity of the titles independently extracted by each
+    participating model. High agreement means the panel converged on the
+    same document interpretation, which is the strongest available signal
+    that the consensus is trustworthy."""
+    titles = [
+        str(v.get("title", "")).strip().lower()
+        for k, v in consensus_results.items()
+        if k in MODEL_REGISTRY and not v.get("api_failed", False)
+        and v.get("title") and "n/a" not in str(v.get("title", "")).lower()
+    ]
+    if len(titles) < 2:
+        return 0.0
+    ratios = []
+    for i in range(len(titles)):
+        for j in range(i + 1, len(titles)):
+            ratios.append(difflib.SequenceMatcher(None, titles[i], titles[j]).ratio())
+    return sum(ratios) / len(ratios) if ratios else 0.0
+
+
+def assess_judgement_quality(consensus_results) -> dict:
+    """Grades the reliability of the panel's verdict.
+
+    The core claim the Pidyne engine makes is that a verdict corroborated by
+    several *independent* LLMs is materially higher quality than one produced
+    by a single model: independent errors tend not to correlate, so agreement
+    across providers is evidence, while a lone model's confidence is not.
+    This function turns that into an explicit, reportable grade.
+    """
+    participating, failed = [], []
+    for key, meta in MODEL_REGISTRY.items():
+        entry = consensus_results.get(key)
+        if entry is None:
+            continue
+        record = {
+            "key": key,
+            "label": meta["label"],
+            "role": meta["role"],
+            "kind": meta["kind"],
+            "status": "failed" if entry.get("api_failed", False) else "active",
+            "detail": str(entry.get("opinion", ""))[:400],
+        }
+        (failed if entry.get("api_failed", False) else participating).append(record)
+
+    external_active = [m for m in participating if m["kind"] == "external"]
+    n_external = len(external_active)
+    agreement = _title_agreement(consensus_results)
+
+    if n_external >= 3:
+        tier, confidence = "High", 0.90 + min(0.08, 0.02 * (n_external - 3))
+        rationale = (
+            f"{n_external} independent external LLMs plus the local Scilem engine each assessed this "
+            f"manuscript separately, and the Pidyne engine adjudicated their combined evidence. "
+            f"Because the jurors come from different providers, model families and training corpora, "
+            f"their errors are largely uncorrelated — agreement between them is therefore strong "
+            f"evidence rather than repetition. Judgement quality for this assessment is HIGH."
+        )
+    elif n_external == 2:
+        tier, confidence = "High", 0.82
+        rationale = (
+            "Two independent external LLMs cross-checked this manuscript alongside the local Scilem "
+            "engine. Cross-provider corroboration was achieved, so the Pidyne verdict is treated as "
+            "high quality, though a third juror would further tighten the confidence interval."
+        )
+    elif n_external == 1:
+        tier, confidence = "Moderate", 0.65
+        rationale = (
+            "Only one external LLM was reachable for this assessment. The verdict is usable but was "
+            "not corroborated across independent providers, so single-model bias cannot be ruled out. "
+            "Judgement quality is MODERATE."
+        )
+    else:
+        tier, confidence = "Limited", 0.40
+        rationale = (
+            "No external LLM was reachable. The verdict rests on the local Scilem neural engine and "
+            "deterministic MDAR/RRID/reproducibility heuristics alone. These are reproducible and "
+            "unbiased, but they cannot perform qualitative reasoning about novelty or argumentation. "
+            "Judgement quality is LIMITED — treat the score as indicative only."
+        )
+
+    if n_external >= 2:
+        if agreement >= 0.75:
+            rationale += f" Inter-model agreement on document identification was strong ({agreement * 100:.0f}%)."
+        elif agreement > 0:
+            rationale += (
+                f" Note: inter-model agreement on document identification was only {agreement * 100:.0f}%, "
+                f"indicating the jurors diverged on how to read the manuscript's front matter."
+            )
+            if agreement < 0.4:
+                tier, confidence = "Moderate", min(confidence, 0.60)
+
+    return {
+        "tier": tier,
+        "confidence": round(confidence, 2),
+        "rationale": rationale,
+        "participating_models": participating,
+        "failed_models": failed,
+        "external_juror_count": n_external,
+        "total_juror_count": len(participating),
+        "inter_model_agreement": round(agreement, 3),
+        "multi_llm": n_external >= 2,
+    }
+
+
 def generate_pidyne_judgement(consensus_results, text=None):
     prompt = "You are the Pidyne Assessment Engine. Review these independent model assessments:\n\n"
     active_count = 0
     for provider, data in consensus_results.items():
+        if provider.startswith("_"):
+            continue
         if not data.get("api_failed", False):
             active_count += 1
             prompt += f"### {provider.upper()} Assessment:\n"
             prompt += f"- Extracted Title: {data.get('title', 'N/A')}\n"
             prompt += f"- Extracted Authors: {data.get('authors', 'N/A')}\n"
             prompt += f"- Criteria Assessment: {data.get('opinion', 'N/A')}\n\n"
-            
+
     prompt += """
 Generate a comprehensive, structured Markdown Evidence Report and provide an overall AI Rating (0.0 to 100.0).
 Respond strictly in JSON with keys:
@@ -386,16 +523,17 @@ Respond strictly in JSON with keys:
     
     if GROQ_API_KEY:
         model_name = PRIMARY_MODEL
-        judge_provider = f"Groq Cloud (Model: {PRIMARY_MODEL})"
+        judge_platform = "Groq Cloud"
     elif OR_API_KEY:
         model_name = "meta-llama/llama-3.3-70b-instruct"
-        judge_provider = f"OpenRouter (Model: {model_name})"
+        judge_platform = "OpenRouter"
     elif GEMINI_API_KEY:
         model_name = "gemini-2.0-flash"
-        judge_provider = f"Google Gemini (Model: {model_name})"
+        judge_platform = "Google Gemini"
     else:
         model_name = "Scilem Local Neural Engine"
-        judge_provider = "Scilem Local Neural Engine (API Fallback)"
+        judge_platform = "Local (API Fallback)"
+    judge_provider = f"{judge_platform} (Model: {model_name})"
 
     data = None
     if api_key and active_count > 0:
@@ -403,17 +541,39 @@ Respond strictly in JSON with keys:
         if data.get("api_failed", True):
             data = None
 
+    quality = assess_judgement_quality(consensus_results)
+    judge_succeeded = data is not None
+
     consensus_results["_judge_metadata"] = {
         "judge_provider": judge_provider,
+        "judge_platform": judge_platform,
         "model_name": model_name,
-        "timestamp": datetime.now().isoformat()
+        "judge_succeeded": judge_succeeded,
+        "final_judge_label": (
+            f"{model_name} via {judge_platform}" if judge_succeeded
+            else "Scilem Local Neural Engine (deterministic fallback)"
+        ),
+        "timestamp": datetime.now().isoformat(),
+        **quality,
     }
 
-    header_prefix = f"### ⚖️ Final Verdict & Evidence Synthesized By\n**Primary Judge LLM Engine:** `{judge_provider}`\n\n---\n\n"
+    juror_line = ", ".join(
+        f"{m['label']}" for m in quality["participating_models"]
+    ) or "none"
+    header_prefix = (
+        "### Final Verdict & Evidence Synthesis\n\n"
+        f"| Field | Value |\n| --- | --- |\n"
+        f"| Final Judge | `{consensus_results['_judge_metadata']['final_judge_label']}` |\n"
+        f"| Jury Panel | {juror_line} |\n"
+        f"| Independent External Jurors | {quality['external_juror_count']} |\n"
+        f"| Judgement Quality | **{quality['tier']}** (confidence {quality['confidence']:.2f}) |\n"
+        f"| Inter-Model Agreement | {quality['inter_model_agreement'] * 100:.0f}% |\n\n"
+        f"> {quality['rationale']}\n\n---\n\n"
+    )
 
     if not data:
         fallback_rep = generate_merged_evidence_report(consensus_results)
-        evidence_report = header_prefix + f"**Note:** External API judge limit reached; generated via unified fallback consensus.\n\n" + fallback_rep
+        evidence_report = header_prefix + "**Note:** The external judge model was unavailable; this verdict was synthesized via the unified fallback consensus path.\n\n" + fallback_rep
         scilem_score = consensus_results.get("scilem", {}).get("scilem_score", 75.0)
         rating = float(scilem_score)
     else:
@@ -551,6 +711,82 @@ def compute_formulaic_criteria(reproducibility_score, sciscore_adherence=0.8, to
         "C8_Future_Actionability_FAIR": min(100.0, max(0.0, c8))
     }
 
+CRITERIA_ORDER = [
+    "C1_Semantic_Originality",
+    "C2_Methodological_Rigor_SciScore",
+    "C3_Interdisciplinary_Entropy",
+    "C4_Societal_Impact",
+    "C5_Open_Science_Repro",
+    "C6_Literature_Integration",
+    "C7_Empirical_Density",
+    "C8_Future_Actionability_FAIR",
+]
+
+WEIGHT_INERTIA = 0.72  # how much of the previous epoch's weighting carries forward
+
+
+def derive_epoch_weights(scores_dict, previous_weights=None):
+    """Turn one manuscript's C1-C8 profile into the next block's criteria
+    weights.
+
+    This is the fix for the previously meaningless forecast: every block used
+    to be written as a hard-coded [1.0] * 8, so the weight series was a flat
+    line and the LSTM had literally no signal to learn from. Now each block
+    records where the corpus's evidence actually concentrated.
+
+    The mapping is: a criterion that manuscripts consistently score well on
+    is well-evidenced and carries more weight; one they score poorly on is
+    sparsely evidenced and is down-weighted. An exponential moving average
+    against the previous block keeps the series a smooth, genuinely
+    forecastable trajectory instead of per-paper noise, and the result is
+    renormalized so the eight weights always sum to 8.0.
+    """
+    raw = []
+    for key in CRITERIA_ORDER:
+        val = scores_dict.get(key, 50.0)
+        try:
+            val = float(val)
+        except (TypeError, ValueError):
+            val = 50.0
+        raw.append(max(1.0, min(100.0, val)))
+
+    total = sum(raw)
+    if total <= 0:
+        observed = [1.0] * 8
+    else:
+        observed = [(v / total) * 8.0 for v in raw]
+
+    if previous_weights and len(previous_weights) == 8:
+        prev = []
+        for p in previous_weights:
+            try:
+                prev.append(float(p))
+            except (TypeError, ValueError):
+                prev.append(1.0)
+        blended = [
+            (WEIGHT_INERTIA * p) + ((1.0 - WEIGHT_INERTIA) * o)
+            for p, o in zip(prev, observed)
+        ]
+    else:
+        blended = observed
+
+    # Clip and renormalize fight each other, so alternate until the vector
+    # both sums to 8.0 and respects the per-criterion floor/ceiling. The
+    # ceiling is the largest value feasible while the other seven hold their
+    # floor — a tighter cap could not survive renormalization.
+    w_min = 0.05
+    w_max = 8.0 - (7 * w_min)
+    for _ in range(12):
+        blended = [max(w_min, min(w_max, w)) for w in blended]
+        total = sum(blended)
+        if total <= 0:
+            return [1.0] * 8
+        blended = [w * (8.0 / total) for w in blended]
+        if all(w_min - 1e-9 <= w <= w_max + 1e-9 for w in blended):
+            break
+    return [round(w, 6) for w in blended]
+
+
 def generate_rebuttal_strategy(scores_dict):
     lowest_criterion = min(scores_dict.items(), key=lambda x: x[1])
     return (
@@ -593,7 +829,8 @@ def process_single_pdf(
         cursor.execute(
             """SELECT title, author_name, final_score, logic_score, c1, c2, c3, c4, c5, c6, c7, c8,
                       piq_minted, tx_hash, zk_proof, mdar_adherence_score, rrid_valid_count,
-                      reproducibility_score, consensus_data, evidence_report, scilem_score
+                      reproducibility_score, consensus_data, evidence_report, scilem_score,
+                      warnings_json
                FROM papers_assessment WHERE eval_hash = ?""",
             (file_hash,),
         )
@@ -608,7 +845,17 @@ def process_single_pdf(
                 (
                     e_title, e_author, e_score, e_logic, e_c1, e_c2, e_c3, e_c4, e_c5, e_c6, e_c7, e_c8,
                     e_piq, e_tx, e_zk, e_mdar, e_rrid, e_repro, e_consensus, e_report, e_scilem,
+                    e_warnings,
                 ) = existing
+                try:
+                    cached_warnings = json.loads(e_warnings) if e_warnings else []
+                except Exception:
+                    cached_warnings = []
+                cached_warnings = list(cached_warnings) + [
+                    "CACHED RECORD: This manuscript was already assessed previously; the stored, "
+                    "already-minted record is being returned instead of re-processing. No new "
+                    "processing fee was charged."
+                ]
                 e_scores_dict = {
                     "C1_Semantic_Originality": e_c1, "C2_Methodological_Rigor_SciScore": e_c2,
                     "C3_Interdisciplinary_Entropy": e_c3, "C4_Societal_Impact": e_c4,
@@ -619,7 +866,7 @@ def process_single_pdf(
                     e_title, e_author, e_score, e_logic, "N/A", "N/A",
                     ["Computer Science"], ["Core Research Domain"], e_scores_dict, file_hash,
                     e_piq, e_tx, e_zk, active_weights, e_mdar, e_rrid, e_repro, True,
-                    ["This manuscript was already assessed previously; returning the cached, already-minted record instead of re-processing."],
+                    cached_warnings,
                     json.loads(e_consensus) if e_consensus else {}, e_report or "", e_scilem,
                 )
 
@@ -675,7 +922,10 @@ def process_single_pdf(
             piq_minted = round((final_score / 100.0) * 10.0, 2)
         else:
             piq_minted = 0.00
-            warnings_list.append("⚠️ **MINIMUM piQ THRESHOLD UNMET:** Manuscript score or logic integrity fell below 50.0%. piQ reward set to 0.00.")
+            warnings_list.append(
+                "MINIMUM piQ THRESHOLD UNMET: Manuscript score or logic integrity fell below 50.0%. "
+                "piQ reward set to 0.00."
+            )
 
         zk_proof = generate_zk_snark_proof(file_hash, pidyne_ai_rating, logic_integrity, "None")
         
@@ -684,17 +934,59 @@ def process_single_pdf(
         else:
             tx_hash = "Simulated_Ledger_Record"
 
+        judge_meta = consensus_raw.get("_judge_metadata", {})
         if not external_active:
-            warnings_list.append("⚠️ **NOTICE:** Assessment completed using local Scilem neural model & heuristics due to external API limits.")
+            warnings_list.append(
+                "NOTICE: No external LLM juror was reachable. This assessment was completed using the "
+                "local Scilem neural model and deterministic heuristics only; judgement quality is LIMITED."
+            )
+        elif judge_meta.get("external_juror_count", 0) == 1:
+            warnings_list.append(
+                "NOTICE: Only one external LLM juror participated. The verdict was not corroborated "
+                "across independent providers; judgement quality is MODERATE."
+            )
+        if judge_meta.get("failed_models"):
+            warnings_list.append(
+                "MODEL AVAILABILITY: " + "; ".join(
+                    f"{m['label']} did not return a verdict" for m in judge_meta["failed_models"]
+                ) + "."
+            )
+        if not judge_meta.get("judge_succeeded", True):
+            warnings_list.append(
+                "JUDGE FALLBACK: The final adjudicating model was unavailable; the verdict was "
+                "synthesized from the unified fallback consensus path instead."
+            )
+        agreement = judge_meta.get("inter_model_agreement", 0.0)
+        if judge_meta.get("external_juror_count", 0) >= 2 and agreement < 0.4:
+            warnings_list.append(
+                f"LOW INTER-MODEL AGREEMENT: Jurors converged on the document's identity only "
+                f"{agreement * 100:.0f}% of the time, suggesting ambiguous or poorly structured front matter."
+            )
+        if not full_text.strip():
+            warnings_list.append(
+                "TEXT EXTRACTION EMPTY: No machine-readable text could be extracted from this PDF "
+                "(it may be a scanned image). Scores derive from limited signal."
+            )
+        elif len(full_text) < 2000:
+            warnings_list.append(
+                f"SHORT DOCUMENT: Only {len(full_text)} characters of text were extracted; "
+                f"criteria coverage may be incomplete."
+            )
+        if rrid_count == 0:
+            warnings_list.append(
+                "NO VALID RRIDs: No Research Resource Identifiers were detected, which caps the "
+                "achievable C2 Methodological Rigor score."
+            )
 
         cursor.execute(
             """INSERT OR REPLACE INTO papers_assessment (
                 eval_hash, user_id, title, filename, scope, c1, c2, c3, c4, c5, c6, c7, c8, 
                 logic_score, scope_alignment, subfields, fields, author_name, final_score, 
                 timestamp, eth_book, piq_minted, tx_hash, zk_proof, did, zk_email_proof, 
-                gaming_penalty, mdar_adherence_score, rrid_valid_count, credit_taxonomy_roles, 
-                reproducibility_score, doi, consensus_data, evidence_report, scilem_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                gaming_penalty, mdar_adherence_score, rrid_valid_count, credit_taxonomy_roles,
+                reproducibility_score, doi, consensus_data, evidence_report, scilem_score,
+                warnings_json, judge_metadata
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
                 logic_integrity, 0.0, json.dumps(["Core Research Domain"]),
@@ -702,7 +994,8 @@ def process_single_pdf(
                 datetime.now().isoformat(), book_address, piq_minted,
                 tx_hash, zk_proof, user_id, "None", 0.0,
                 mdar_score, rrid_count, json.dumps(["Data Curation"]), reproducibility_score,
-                provided_doi, json.dumps(consensus_raw), evidence_report, scilem_score
+                provided_doi, json.dumps(consensus_raw), evidence_report, scilem_score,
+                json.dumps(warnings_list), json.dumps(judge_meta)
             ),
         )
 
@@ -710,9 +1003,19 @@ def process_single_pdf(
         count_row = cursor.fetchone()
         block_count = count_row[0] if count_row else 1
 
-        cursor.execute("SELECT block_hash FROM blockchain_por_weights ORDER BY block_height DESC LIMIT 1")
+        cursor.execute(
+            """SELECT block_hash, w1, w2, w3, w4, w5, w6, w7, w8
+               FROM blockchain_por_weights ORDER BY block_height DESC LIMIT 1"""
+        )
         hash_row = cursor.fetchone()
         prev_hash = hash_row[0] if hash_row and hash_row[0] else "0" * 64
+        prev_weights = list(hash_row[1:9]) if hash_row else None
+
+        # Each block now records the criteria weighting this manuscript's
+        # evidence profile implies, instead of a constant [1.0] * 8. Without
+        # this the Pidyne forecast has a perfectly flat input series and
+        # cannot produce a meaningful prediction.
+        active_weights = derive_epoch_weights(scores_dict, prev_weights)
 
         new_height = block_count + 1
         ts = datetime.now().isoformat()
