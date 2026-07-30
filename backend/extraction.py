@@ -94,6 +94,23 @@ def looks_like_affiliation(text: str) -> bool:
     return any(marker in lowered for marker in _AFFILIATION_MARKERS)
 
 
+def dehyphenate(text: str) -> str:
+    """Rejoin words split across a line break by a hyphen.
+
+    PDF text extraction preserves the typesetter's hyphenation, so a title
+    wrapping mid-word arrives as "Ap- proaches". Left alone that corrupts the
+    stored title and, worse, breaks the inter-model title agreement measure,
+    since only some jurors see the artefact.
+    """
+    if not text:
+        return ""
+    # Hyphen followed by whitespace, between two lowercase letters, is a wrap
+    # artefact. A hyphen between two words that are both capitalised, or
+    # followed by a digit, is usually real ("SARS-CoV-2", "Cas9-mediated").
+    joined = re.sub(r"([a-z])-\s+([a-z])", r"\1\2", text)
+    return re.sub(r"\s+", " ", joined).strip()
+
+
 def score_title_candidate(text: str, size: float, body_size: float, y: float,
                           page_height: float, is_bold: bool = False) -> float:
     """Score how title-like a text block is, from several weak signals.
@@ -112,13 +129,17 @@ def score_title_candidate(text: str, size: float, body_size: float, y: float,
     words = t.split()
 
     # Relative size is the strongest single signal, but capped so an enormous
-    # banner cannot dominate on size alone.
-    if body_size > 0:
+    # banner cannot dominate on size alone. When body size is unknown or
+    # nonsensical, award the neutral middle rather than silently zeroing this
+    # component — absence of evidence is not evidence of a small title.
+    if body_size and body_size > 0:
         ratio = size / body_size
         score += min(0.40, max(0.0, (ratio - 1.0) * 0.55))
+    else:
+        score += 0.15
 
     # Titles sit in the upper portion of page one, below any journal furniture.
-    if page_height > 0:
+    if page_height and page_height > 0:
         relative_y = y / page_height
         if 0.04 <= relative_y <= 0.42:
             score += 0.22
@@ -126,6 +147,8 @@ def score_title_candidate(text: str, size: float, body_size: float, y: float,
             score += 0.06     # very top is usually a banner
         elif relative_y <= 0.60:
             score += 0.10
+    else:
+        score += 0.11   # geometry unavailable: neutral, not penalised
 
     # Typical academic titles run 8-20 words.
     if 8 <= len(words) <= 20:
@@ -179,10 +202,17 @@ def score_title_candidate(text: str, size: float, body_size: float, y: float,
 def _plausible_title(text: str) -> bool:
     """A title is a phrase, not a sentence fragment, a URL or a heading."""
     t = (text or "").strip()
-    if not (12 <= len(t) <= 320):
+    if not (8 <= len(t) <= 320):
         return False
     words = t.split()
-    if not (3 <= len(words) <= 45):
+    # A one- or two-word title is unusual but real ("CRISPR-Cas9",
+    # "Attention Is All You Need" is five, but plenty are shorter). The
+    # character floor above already excludes fragments, so requiring three
+    # words was rejecting valid titles for no benefit.
+    if not (1 <= len(words) <= 45):
+        return False
+    # A single word must be substantial to qualify — "Abstract" should not.
+    if len(words) == 1 and (len(t) < 10 or t.lower().rstrip(":") in _SECTION_HEADINGS):
         return False
     if _looks_like_banner(t):
         return False
@@ -266,7 +296,7 @@ def extract_from_pdf_layout(file_bytes: bytes) -> Dict:
 
         scored = []
         for chunk in candidates[:25]:   # titles are near the top
-            joined = re.sub(r"\s+", " ", " ".join(c["text"] for c in chunk)).strip()
+            joined = dehyphenate(" ".join(c["text"] for c in chunk))
             size = max(c["size"] for c in chunk)
             bold = any(c["bold"] for c in chunk)
             value = score_title_candidate(joined, size, body_size, chunk[0]["y"],
@@ -481,9 +511,11 @@ def reconcile_bibliographic_record(*, registry: Dict, layout: Dict,
         if value and value.lower() not in ("n/a", "none", "untitled", "unidentified"):
             sources[field].append({"value": value, "basis": basis, "confidence": confidence})
 
-    consider("title", registry.get("title"), registry.get("basis", "registry"), registry.get("confidence", 0.0))
-    consider("title", layout.get("title"), "pdf-layout", layout.get("confidence", 0.0))
-    consider("title", model_title, "model-consensus", 0.55)
+    consider("title", dehyphenate(registry.get("title", "")),
+             registry.get("basis", "registry"), registry.get("confidence", 0.0))
+    consider("title", dehyphenate(layout.get("title", "")), "pdf-layout",
+             layout.get("confidence", 0.0))
+    consider("title", dehyphenate(model_title or ""), "model-consensus", 0.55)
     if filename:
         cleaned = re.sub(r"\.pdf$", "", filename, flags=re.IGNORECASE).replace("_", " ").strip()
         if _plausible_title(cleaned):

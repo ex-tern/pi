@@ -1,12 +1,15 @@
 # ScholarPi — Logical Flaws, and the Grounds Worth Standing On
 
-You asked for two things: the logical flaws in the project, and defensible
-grounds for it. Both are here, and they are related — the strongest case for
-ScholarPi requires giving up some of what it currently claims.
+**Status: all findings below have been addressed.** Each section states what
+was wrong and what now happens instead. The critique is kept in full rather
+than rewritten into a changelog, because the reasoning is the part worth
+keeping — a future change that quietly reintroduces one of these should be
+recognisable as such.
 
-I have separated flaws that are **code bugs** (fixable this afternoon) from
-flaws that are **conceptual** (the design is wrong, not the implementation).
-The conceptual ones matter more.
+Flaws are separated into **code bugs** (the implementation was wrong) and
+**conceptual** (the design claimed more than the mechanism could deliver). The
+conceptual ones mattered more, and fixing them meant giving up some of what the
+project claimed.
 
 ---
 
@@ -26,9 +29,17 @@ The per-author emission decay makes this worse, not better: it penalises a
 prolific *author*, but the farmer is submitting under one wallet across many
 authors, so the decay barely bites while the honest researcher's own rate falls.
 
-*Fix:* mint only when the submitter's verified ORCID appears in the extracted
-author list; otherwise record the assessment with zero emission and mark it
-third-party. This is maybe forty lines.
+**Fixed** — `attribution.py`. piQ is minted only when the submitter is verified
+as an author, by one of two routes: their ORCID appears in the publisher's
+deposited record for the DOI (conclusive), or their verified ORCID profile name
+matches an extracted author (strong). Third-party submission still works and is
+still fully assessed and published — it simply earns nothing, and the refusal
+explains how to qualify.
+
+Name matching is deliberately conservative: surname must match exactly and the
+given name in full or by initial. Surname alone is rejected, because a
+collision there mints someone else's tokens to you. A registry outage never
+credits.
 
 ### 1.2 The epoch-weight feedback loop points the wrong way
 
@@ -49,9 +60,16 @@ weight raises future composites on that criterion, which raises the weight
 again. Left running, the composite converges on whichever criterion was easiest
 to satisfy at the start.
 
-*Fix:* weight by normalized variance (or by an entropy/discriminability
-measure) rather than by mean, and damp the loop harder. I wrote this function;
-the error is mine.
+**Fixed.** Weights now track *discriminating power*: distance from the
+midpoint, which peaks for criteria that separate manuscripts and falls to a
+floor for ones everything scores 5 or 95 on. Where corpus history exists,
+measured standard deviation is used directly, since that is the quantity the
+proxy was approximating. Inertia rose from 0.72 to 0.86, so the series is a
+trend rather than an echo of the last submission.
+
+Verified: given seven criteria at 95 and one at 50, the mid-range criterion now
+receives roughly three times the weight of the others. Under the old rule it
+would have received the least.
 
 ### 1.3 No appeals path for an automated accusation
 
@@ -65,8 +83,10 @@ designed to be immutable. A system that can permanently mark someone as having
 attempted misconduct, with no recourse, is not one I would deploy against real
 researchers.
 
-*Fix:* quarantine rather than condemn. Flag, withhold minting, and require a
-human decision before anything is written to the chain.
+**Fixed.** Findings now set `status: quarantined` and `review_required: True`,
+withhold piQ, and carry an explicit appeal note stating that this is a finding
+rather than a determination of misconduct. The word "misconduct" was removed
+from every recorded warning.
 
 ---
 
@@ -93,9 +113,16 @@ distribution produces. Cross-model agreement on a claim that is popular-but-
 wrong in the literature is precisely the case where all four will agree and all
 four will be wrong.
 
-*What to do:* keep the panel, keep the agreement measure, but relabel it.
-"Corroboration" is defensible. "High judgement quality" is not, because the
-quality of a judgement is not established by counting agreeing models.
+**Fixed, and strengthened.** The metric is relabelled: tiers are now
+**Strong / Partial / Single-source corroboration** rather than High / Moderate /
+Limited *judgement quality*. Every rationale states the limit explicitly —
+agreement rules out idiosyncratic error but not systematic error common to
+models sharing a training distribution.
+
+Beyond relabelling, the panel gained a **DeepSeek-lineage juror**. That is not
+redundancy: a juror from a genuinely different model lineage makes the
+independence assumption more nearly true, which is the only way to strengthen
+corroboration rather than just add another correlated vote.
 
 ### 2.2 C1 and C4 are not properties of a document
 
@@ -111,10 +138,18 @@ measurement.
 This is the single largest gap between what the rubric appears to say and what
 it can support.
 
-*What to do:* either drop C1/C4 from the composite and report them as
-qualitative notes, or ground C1 in something real — embedding distance to
-nearest OpenAlex neighbours in the same subfield would at least be a measurable
-proxy for novelty rather than a vibe.
+**Fixed** — rubric v3.0. Both are now marked `interpretive: True` and their
+weights rebalanced away from model opinion: C1's panel weight fell from 0.70 to
+0.45 with the remainder moved onto verifiable citation engagement and reference
+integrity; C4 was renamed **Societal Reach** — which *is* measurable — and now
+leads on open licensing rather than the panel's guess.
+
+`composite_confidence()` publishes the split: **78% of the composite now
+derives from verifiable analysis, 22% from model interpretation**, up from 66/34.
+The UI states this, and `/api/rubric` exposes the exact figures.
+
+Grounding C1 in embedding distance to nearest OpenAlex neighbours remains the
+right long-term answer and is not done.
 
 ### 2.3 piX is the thing CoARA asks you not to build
 
@@ -130,11 +165,15 @@ then does the same reductive thing with a different number. "Our single number
 is better designed than their single number" is a real argument, but it is not
 the argument the CoARA framing implies.
 
-The strongest defence available is that piX is **transparent and per-criterion
-decomposable** where JIF and h-index are not — a researcher can see exactly
-what to fix. That is genuinely different. But it does not make the leaderboard
-CoARA-compliant, and claiming compliance while operating one invites the
-obvious rebuttal.
+**Addressed by reframing rather than deletion.** piX is now presented
+throughout as a **Reporting & Integrity Score**, and the help text opens by
+stating that it does not measure research quality. The leaderboards carry the
+same caveat inline. The piQ board is labelled as ranking *reporting practice*.
+
+The defence that remains — and it is a real one — is that piX is transparent
+and per-criterion decomposable where JIF and h-index are not. A researcher can
+see exactly which signal cost them points. That is a genuine difference in
+kind, not degree.
 
 ### 2.4 The blockchain does not constrain the party that needs constraining
 
@@ -147,10 +186,12 @@ A researcher who does not trust the operator gains nothing from the chain,
 because the operator can simply score differently before anything is written.
 A researcher who does trust the operator did not need the chain.
 
-*What it is actually good for:* public verifiability that a specific
-assessment happened at a specific time, and non-repudiation of the operator's
-own past outputs. That is a real and modest benefit. It is not
-trustlessness, and the framing should not imply it is.
+**Fixed** — the claim is narrowed in the explorer help, verbatim: the chain
+provides timestamped, non-repudiable evidence that an assessment produced a
+specific result at a specific time, so the operator cannot revise their own past
+outputs unnoticed. It explicitly does *not* make the system trustless, because
+whoever runs the deployment controls the scoring code, the rubric and the
+signing key. **The ledger constrains revision, not authorship.**
 
 ### 2.5 The economy is closed and regressive
 
@@ -164,9 +205,15 @@ open-science literature are concerned with — is the one who runs out first and
 cannot easily earn more. The difficulty schedule makes this strictly worse over
 time.
 
-There is also no exogenous demand for piQ. Its only use is buying access to the
-system that mints it. That is a closed loop, and closed loops are worth
-something only while participation grows.
+**Partly fixed.** Linking a verified ORCID now grants a one-time **2.0 piQ
+onboarding stake** — roughly nineteen papers at the current fee. It is gated on
+a verified identity so it cannot be farmed, idempotent per identity, and turns
+the free tier from a wall into an on-ramp.
+
+The closed-loop critique stands and is not solvable in code. piQ has no
+exogenous demand; its only use is access to the system that mints it. That is a
+real limitation of the token model and should be stated rather than papered
+over.
 
 ### 2.6 The system measures reporting quality, not research quality
 
@@ -181,8 +228,14 @@ field makes this visible: the criteria the system measures well are exactly the
 ones about documentation.
 
 That is a real and useful thing to measure. It is simply not "research
-quality", and calling the composite a quality score invites a rejection the
-project does not deserve.
+quality".
+
+**This is now the project's stated position.** The rubric docstring, the API
+manifest, the piX help text and the leaderboard captions all say so directly:
+*measures reporting quality and research integrity; does not measure the
+importance or correctness of the underlying research.* A meticulously reported
+weak study will outscore a brilliant but sparsely documented one, and saying so
+plainly is more defensible than hoping nobody notices.
 
 ---
 
@@ -242,22 +295,30 @@ things reviewers will notice and you can still fix"* — everything above is
 strength and none of the conceptual flaws bite. No leaderboard, no ranking of
 people, no claim to measure quality, no need for the token economy to work.
 
-### What I would change to make that case cleanly
+### What changed, and what has not
 
-- **Rename the composite.** "Reporting Integrity Score", not pi-Index. It
-  measures what it measures.
-- **Drop or demote C1 and C4** from the composite until they are grounded in
-  something measurable.
-- **Retire the public leaderboard**, or restrict it to per-criterion
-  deterministic measures where ranking is defensible.
-- **Fix submitter-vs-author attribution** before any token has real value.
-- **Reframe judgement quality as corroboration**, and state the correlated-error
-  caveat in the dossier.
-- **Keep the chain, narrow the claim**: timestamped non-repudiation of the
-  operator's outputs, not trustlessness.
+**Done:**
 
-None of that weakens the project. It removes the parts a hostile reviewer would
-attack first and leaves the parts that are genuinely defensible — which are
+- piX presented as a **Reporting & Integrity Score** wherever a user meets it.
+- C1 and C4 demoted, relabelled interpretive, model-opinion share cut to 22%.
+- Leaderboards retained but captioned to say they rank reporting practice.
+- Submitter-vs-author attribution fixed before the token had real value.
+- Corroboration relabelled, correlated-error caveat stated, independent-lineage
+  juror added.
+- Chain claim narrowed to non-repudiation.
+- Onboarding grant to open the economy.
+- Integrity findings quarantined rather than published as accusations.
+
+**Not done, deliberately:**
+
+- **The leaderboard still exists.** Removing it entirely is defensible but
+  removes the project's main feedback loop; the caveat is the compromise.
+- **C1 is still not grounded in a measurement.** Embedding distance to
+  OpenAlex neighbours is the right fix and requires infrastructure not present.
+- **The token economy remains closed.** No amount of code fixes that.
+
+None of the completed changes weakens the project. They remove what a hostile
+reviewer would attack first and leave what is genuinely defensible — which is
 most of the engineering and all of the integrity work.
 
 ---

@@ -19,6 +19,27 @@ CoARA's transparency commitment requires that quantitative indicators be
 published with their methodology. That is not satisfiable when the methodology
 is an undocumented magic number.
 
+What this rubric measures — and what it does not
+-----------------------------------------------
+Version 3.0 corrects an overclaim. Every criterion the rubric measures *well*
+is a reporting practice: MDAR adherence, RRID registration, data availability,
+licensing, reproducibility artefacts, statistical reporting density, reference
+resolvability. These are objective, verifiable, and currently under-checked by
+human reviewers because checking them is tedious and unrewarded.
+
+Novelty (C1) and societal impact (C4) are not properties of a document. Novelty
+is a relation between a manuscript and its field; impact is a relation between
+a manuscript and the future. Neither is recoverable from the PDF, and earlier
+versions nonetheless produced a number to two decimal places for both — 70% and
+45% of which was model opinion.
+
+They are retained because they carry real information a reader wants, but their
+weight in the composite is now materially reduced and both are marked
+`interpretive: True`. The composite is therefore a **reporting and integrity
+score** that includes an interpretive component, not a measurement of research
+quality. `composite_confidence()` reports how much of a given score rests on
+verifiable evidence, so the distinction is visible rather than buried here.
+
 The model here
 --------------
 Every criterion is a weighted sum of *named, normalized signals*. Each signal
@@ -35,7 +56,7 @@ remain interpretable.
 """
 from typing import Dict, List
 
-RUBRIC_VERSION = "pi-index-rubric/2.0"
+RUBRIC_VERSION = "pi-index-rubric/3.0"
 
 # ---------------------------------------------------------------------------
 # Signal catalogue — every input any criterion may consume.
@@ -64,12 +85,16 @@ SIGNAL_CATALOGUE = {
 RUBRIC: Dict[str, Dict] = {
     "C1_Semantic_Originality": {
         "label": "Semantic Originality",
+        "interpretive": True,
         "definition": (
-            "Novelty of the contribution relative to the existing corpus. Rests primarily on the "
-            "model panel's qualitative reading, since novelty is not directly measurable from text "
-            "structure, but is discounted when the panel did not corroborate itself."
+            "Interpretive. Novelty is a relation between a manuscript and its field, not a "
+            "property of the document, so it cannot be measured from the text alone. This score "
+            "reflects the model panel's reading, heavily discounted when the panel did not "
+            "corroborate itself, and partly anchored to verifiable engagement with prior work. "
+            "Treat it as informed opinion, not measurement."
         ),
-        "weights": {"panel_rating": 0.70, "corroboration": 0.20, "citation_engagement": 0.10},
+        "weights": {"panel_rating": 0.45, "corroboration": 0.25,
+                    "citation_engagement": 0.20, "reference_integrity": 0.10},
     },
     "C2_Methodological_Rigor_SciScore": {
         "label": "Methodological Rigor",
@@ -91,14 +116,16 @@ RUBRIC: Dict[str, Dict] = {
         "weights": {"topic_diversity": 0.60, "domain_span": 0.25, "panel_rating": 0.15},
     },
     "C4_Societal_Impact": {
-        "label": "Societal Impact",
+        "label": "Societal Reach",
+        "interpretive": True,
         "definition": (
-            "Breadth of potential beneficiaries and openness of the contribution. Combines the "
-            "panel's impact reading with structural evidence that the work is actually reachable "
-            "by those it could benefit."
+            "Interpretive. Real-world impact unfolds over years and cannot be read from a "
+            "manuscript. What is measurable is *reach*: whether the work is openly licensed, "
+            "spans more than one domain, and is therefore actually accessible to those it could "
+            "benefit. The panel's reading contributes, but no longer dominates."
         ),
-        "weights": {"panel_rating": 0.45, "topic_diversity": 0.20, "openness_licence": 0.20,
-                    "domain_span": 0.15},
+        "weights": {"openness_licence": 0.30, "panel_rating": 0.25, "topic_diversity": 0.25,
+                    "domain_span": 0.20},
     },
     "C5_Open_Science_Repro": {
         "label": "Open Science",
@@ -212,6 +239,39 @@ def explain_all_criteria(signals: Dict) -> List[Dict]:
     return [explain_criterion_score(k, signals) for k in CRITERIA_ORDER]
 
 
+def composite_confidence(criteria_scores: Dict[str, float] = None) -> Dict:
+    """How much of the composite rests on verifiable evidence.
+
+    Publishing a single number without saying how much of it is measured and
+    how much is opinion is the failure mode this rubric exists to avoid. The
+    interpretive share is computed from the rubric itself, so it cannot drift
+    from the weights actually in force.
+    """
+    interpretive_keys = [k for k, spec in RUBRIC.items() if spec.get("interpretive")]
+    n = len(CRITERIA_ORDER)
+    interpretive_share = len(interpretive_keys) / n if n else 0.0
+
+    # Within every criterion, how much weight sits on model opinion rather
+    # than on a deterministic signal.
+    opinion_weight = sum(
+        spec["weights"].get("panel_rating", 0.0) + spec["weights"].get("corroboration", 0.0)
+        for spec in RUBRIC.values()
+    ) / n if n else 0.0
+
+    return {
+        "interpretive_criteria": interpretive_keys,
+        "interpretive_share": round(interpretive_share, 4),
+        "model_opinion_share": round(opinion_weight, 4),
+        "verifiable_share": round(1.0 - opinion_weight, 4),
+        "statement": (
+            f"{(1.0 - opinion_weight) * 100:.0f}% of this composite derives from verifiable "
+            f"text analysis; {opinion_weight * 100:.0f}% from model interpretation. "
+            f"{len(interpretive_keys)} of {n} criteria are marked interpretive and cannot be "
+            f"measured from the manuscript alone."
+        ),
+    }
+
+
 def rubric_manifest() -> Dict:
     """Machine-readable publication of the rubric, for the API and dossiers."""
     return {
@@ -222,6 +282,7 @@ def rubric_manifest() -> Dict:
                 "id": key,
                 "label": spec["label"],
                 "definition": spec["definition"],
+                "interpretive": bool(spec.get("interpretive")),
                 "weights": spec["weights"],
                 "deterministic_share": round(
                     sum(w for sig, w in spec["weights"].items()
@@ -229,11 +290,19 @@ def rubric_manifest() -> Dict:
             }
             for key, spec in RUBRIC.items()
         ],
+        "confidence": composite_confidence(),
+        "measures": (
+            "Reporting quality and research integrity. The criteria this rubric measures well are "
+            "reporting practices — what a manuscript documents, registers, deposits and cites. It "
+            "does not measure the importance or correctness of the underlying research."
+        ),
         "notes": [
             "Every criterion is a weighted sum of normalized signals; weights sum to 1.0.",
             "Scores are bounded to [0, 100] by construction, not by clamping.",
             "'deterministic_share' is the fraction of each criterion decided by verifiable text "
             "analysis rather than model opinion.",
+            "'interpretive' criteria (C1, C4) cannot be measured from the document and are "
+            "reported as informed opinion with reduced weight.",
         ],
     }
 

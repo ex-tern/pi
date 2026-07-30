@@ -72,6 +72,7 @@ from security import (
     apply_panel_integrity_verdict, redact_canary, detect_canary_in_panel_output,
 )
 from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
+from attribution import verify_authorship
 from providers import (
     build_routes, classify_provider_error, redact_provider_text, provider_configuration,
     is_route_cooling, record_rate_limit, record_success, parse_retry_after,
@@ -255,7 +256,11 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
         if is_openrouter:
             headers = {
                 "HTTP-Referer": OPENROUTER_SITE_URL,
+                # OpenRouter's documentation uses both spellings in different
+                # places; sending both costs nothing and avoids depending on
+                # which one the gateway is currently honouring.
                 "X-Title": OPENROUTER_SITE_NAME,
+                "X-OpenRouter-Title": OPENROUTER_SITE_NAME,
             }
             extra_body = {
                 "provider": {
@@ -503,6 +508,10 @@ def assess_with_gemini(paper_text, canary=""):
     return assess_with_route_chain("gemini", paper_text, canary)
 
 
+def assess_with_deepseek(paper_text, canary=""):
+    return assess_with_route_chain("deepseek", paper_text, canary)
+
+
 def collect_independent_model_assessments(paper_text, canary=""):
     results = {}
     llm_funcs = {
@@ -510,6 +519,7 @@ def collect_independent_model_assessments(paper_text, canary=""):
         "mistral": assess_with_mistral,
         "qwen": assess_with_qwen,
         "gemini": assess_with_gemini,
+        "deepseek": assess_with_deepseek,
         "scilem": assess_with_structural_analyzer
     }
 
@@ -544,7 +554,8 @@ MODEL_REGISTRY = {
     "llama": {"label": "Llama 3.3 70B", "role": "Panel Juror", "kind": "external"},
     "mistral": {"label": "Mistral Large", "role": "Panel Juror", "kind": "external"},
     "qwen": {"label": "Qwen 2.5 72B", "role": "Panel Juror", "kind": "external"},
-    "gemini": {"label": "Gemini 2.0 Flash", "role": "Panel Juror", "kind": "external"},
+    "gemini": {"label": "Gemini Flash", "role": "Panel Juror", "kind": "external"},
+    "deepseek": {"label": "DeepSeek (independent lineage)", "role": "Panel Juror", "kind": "external"},
     "scilem": {"label": "Scilem Local Neural Engine", "role": "Deterministic Structural Analyst", "kind": "local"},
 }
 
@@ -598,35 +609,38 @@ def grade_adjudication_quality(consensus_results) -> dict:
     agreement = measure_title_agreement(consensus_results)
 
     if n_external >= 3:
-        tier, confidence = "High", 0.90 + min(0.08, 0.02 * (n_external - 3))
+        tier, confidence = "Strong", 0.90 + min(0.08, 0.02 * (n_external - 3))
         rationale = (
             f"{n_external} independent external LLMs plus the local Scilem engine each assessed this "
             f"manuscript separately, and the Pidyne engine adjudicated their combined evidence. "
-            f"Because the jurors come from different providers, model families and training corpora, "
-            f"their errors are largely uncorrelated — agreement between them is therefore strong "
-            f"evidence rather than repetition. Judgement quality for this assessment is HIGH."
+            f"The jurors come from different providers and model families, so their errors are "
+            f"partly independent and agreement carries real information. Note the limit of this: "
+            f"these models share overlapping training corpora and architectures, so agreement "
+            f"rules out idiosyncratic error but not systematic error common to all of them. "
+            f"Corroboration for this assessment is STRONG."
         )
     elif n_external == 2:
-        tier, confidence = "High", 0.82
+        tier, confidence = "Strong", 0.82
         rationale = (
-            "Two independent external LLMs cross-checked this manuscript alongside the local Scilem "
-            "engine. Cross-provider corroboration was achieved, so the Pidyne verdict is treated as "
-            "high quality, though a third juror would further tighten the confidence interval."
+            "Two external LLMs cross-checked this manuscript alongside the local structural "
+            "analyser. Cross-provider corroboration was achieved, though a third juror from a "
+            "different model lineage would strengthen it — jurors trained on similar corpora can "
+            "agree on a shared error."
         )
     elif n_external == 1:
-        tier, confidence = "Moderate", 0.65
+        tier, confidence = "Partial", 0.65
         rationale = (
             "Only one external LLM was reachable for this assessment. The verdict is usable but was "
             "not corroborated across independent providers, so single-model bias cannot be ruled out. "
-            "Judgement quality is MODERATE."
+            "Corroboration is PARTIAL."
         )
     else:
-        tier, confidence = "Limited", 0.40
+        tier, confidence = "Single-source", 0.40
         rationale = (
             "No external LLM was reachable. The verdict rests on the local Scilem neural engine and "
             "deterministic MDAR/RRID/reproducibility heuristics alone. These are reproducible and "
             "unbiased, but they cannot perform qualitative reasoning about novelty or argumentation. "
-            "Judgement quality is LIMITED — treat the score as indicative only."
+            "Corroboration is SINGLE-SOURCE — treat the interpretive criteria as indicative only."
         )
 
     if n_external >= 2:
@@ -638,7 +652,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
                 f"indicating the jurors diverged on how to read the manuscript's front matter."
             )
             if agreement < 0.4:
-                tier, confidence = "Moderate", min(confidence, 0.60)
+                tier, confidence = "Partial", min(confidence, 0.60)
 
     return {
         "tier": tier,
@@ -811,7 +825,7 @@ Respond strictly in JSON with keys:
         f"| Final Judge | `{consensus_results['_judge_metadata']['final_judge_label']}` |\n"
         f"| Jury Panel | {juror_line} |\n"
         f"| Independent External Jurors | {quality['external_juror_count']} |\n"
-        f"| Judgement Quality | **{quality['tier']}** (confidence {quality['confidence']:.2f}) |\n"
+        f"| Corroboration | **{quality['tier']}** (confidence {quality['confidence']:.2f}) |\n"
         f"| Inter-Model Agreement | {quality['inter_model_agreement'] * 100:.0f}% |\n\n"
         f"> {quality['rationale']}\n\n"
         + criteria_table + claims_block + concerns_block +
@@ -1065,24 +1079,27 @@ CRITERIA_ORDER = [
     "C8_Future_Actionability_FAIR",
 ]
 
-WEIGHT_INERTIA = 0.72  # how much of the previous epoch's weighting carries forward
+WEIGHT_INERTIA = 0.86   # raised from 0.72: the loop needed heavier damping
 
 
-def derive_next_epoch_weights(scores_dict, previous_weights=None):
-    """Turn one manuscript's C1-C8 profile into the next block's criteria
-    weights.
+def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=None):
+    """Turn one manuscript's C1-C8 profile into the next block's weights.
 
-    This is the fix for the previously meaningless forecast: every block used
-    to be written as a hard-coded [1.0] * 8, so the weight series was a flat
-    line and the LSTM had literally no signal to learn from. Now each block
-    records where the corpus's evidence actually concentrated.
+    **Corrected in v3.** The earlier version weighted by the *mean*: a
+    criterion papers scored well on gained weight. That is backwards. A
+    criterion everyone satisfies carries almost no information — it cannot
+    discriminate between manuscripts at all. The criterion doing the real work
+    is the one with high variance across the corpus.
 
-    The mapping is: a criterion that manuscripts consistently score well on
-    is well-evidenced and carries more weight; one they score poorly on is
-    sparsely evidenced and is down-weighted. An exponential moving average
-    against the previous block keeps the series a smooth, genuinely
-    forecastable trajectory instead of per-paper noise, and the result is
-    renormalized so the eight weights always sum to 8.0.
+    Worse, mean-weighting was a positive feedback loop: high scores raised the
+    weight, the raised weight raised future composites on that criterion, which
+    raised the weight again. Left running it converged on whichever criterion
+    was easiest to satisfy.
+
+    Weights now track *discriminating power* — distance from the midpoint,
+    which is maximal for criteria that separate papers and minimal for ones
+    everything scores 0 or 100 on. Inertia is also raised so the series moves
+    slowly enough to be a trend rather than an echo of the last submission.
     """
     raw = []
     for key in CRITERIA_ORDER:
@@ -1091,13 +1108,36 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None):
             val = float(val)
         except (TypeError, ValueError):
             val = 50.0
-        raw.append(max(1.0, min(100.0, val)))
+        val = max(0.0, min(100.0, val))
+
+        # Discriminating power peaks at mid-range and falls off toward either
+        # extreme: a criterion everything scores 95 on is as uninformative as
+        # one everything scores 5 on.
+        informativeness = 1.0 - (abs(val - 50.0) / 50.0)
+        raw.append(0.25 + (informativeness * 0.75))
+
+    # Where corpus history is available, prefer measured variance — it is the
+    # direct quantity, and per-paper distance-from-midpoint is only a proxy.
+    if corpus_scores:
+        try:
+            variances = []
+            for idx in range(len(CRITERIA_ORDER)):
+                column = [float(row[idx]) for row in corpus_scores
+                          if row and len(row) > idx and row[idx] is not None]
+                if len(column) >= 3:
+                    mean = sum(column) / len(column)
+                    variance = sum((v - mean) ** 2 for v in column) / len(column)
+                    variances.append(variance ** 0.5)
+                else:
+                    variances.append(None)
+            if all(v is not None for v in variances) and max(variances) > 1e-6:
+                peak = max(variances)
+                raw = [0.25 + (v / peak) * 0.75 for v in variances]
+        except (TypeError, ValueError, IndexError):
+            pass
 
     total = sum(raw)
-    if total <= 0:
-        observed = [1.0] * 8
-    else:
-        observed = [(v / total) * 8.0 for v in raw]
+    observed = [(v / total) * 8.0 for v in raw] if total > 0 else [1.0] * 8
 
     if previous_weights and len(previous_weights) == 8:
         prev = []
@@ -1114,9 +1154,7 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None):
         blended = observed
 
     # Clip and renormalize fight each other, so alternate until the vector
-    # both sums to 8.0 and respects the per-criterion floor/ceiling. The
-    # ceiling is the largest value feasible while the other seven hold their
-    # floor — a tighter cap could not survive renormalization.
+    # both sums to 8.0 and respects the per-criterion floor/ceiling.
     w_min = 0.05
     w_max = 8.0 - (7 * w_min)
     for _ in range(12):
@@ -1127,7 +1165,10 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None):
         blended = [w * (8.0 / total) for w in blended]
         if all(w_min - 1e-9 <= w <= w_max + 1e-9 for w in blended):
             break
-    return [round(w, 6) for w in blended]
+    # Rounded to 8dp rather than 6: at 6dp the accumulated residue reaches
+    # 1e-6, which is exactly the tolerance the sum-to-8.0 invariant is
+    # asserted at elsewhere.
+    return [round(w, 8) for w in blended]
 
 
 def generate_rebuttal_strategy(scores_dict):
@@ -1504,8 +1545,19 @@ def process_single_pdf(
         # An attempt to manipulate the referee is disqualifying. Zeroing logic
         # integrity trips the existing minting gate below, so no piQ is issued
         # and the attempt is recorded permanently in the ledger dossier.
+        # Integrity findings withhold minting and flag for human review, but
+        # do not write a permanent misconduct record. An automated accusation
+        # with no appeals path is not something to publish immutably about a
+        # named researcher — the canary evidence is strong, not infallible.
         if integrity.get("compromised"):
             logic_integrity = 0.0
+            integrity["status"] = "quarantined"
+            integrity["review_required"] = True
+            integrity["appeal"] = (
+                "This finding withholds piQ and flags the submission for human review. It is not "
+                "a determination of misconduct and has not been published as one. If you believe "
+                "it is mistaken, the assessment can be re-run after review."
+            )
         warnings_list.extend(integrity.get("warnings", []))
 
         # --- piQ emission, difficulty-adjusted for adoption ---
@@ -1543,14 +1595,39 @@ def process_single_pdf(
         except Exception:
             author_paper_count = 0
 
+        # Authorship gate. piQ was previously minted to whoever submitted the
+        # paper, which meant the highest-yield strategy was submitting other
+        # people's work rather than writing your own. Third-party submission
+        # remains fully supported and is still assessed and published — it
+        # simply earns nothing.
+        attribution = guarded(
+            lambda: verify_authorship(
+                submitter_orcid=user_id if "-" in str(user_id) else "",
+                submitter_wallet=book_address,
+                extracted_authors=extracted_author,
+                doi=provided_doi,
+            ),
+            fallback={"verified": False, "tier": "unverified", "confidence": 0.0,
+                      "reason": "Authorship verification was unavailable for this assessment."},
+            label="authorship verification",
+        )
+
         emission = compute_piq_emission(
             pix_score=final_score,
             logic_integrity=logic_integrity,
             total_papers=corpus_size,
             author_paper_count=author_paper_count,
         )
-        piq_minted = emission["minted"]
-        if not emission["qualified"]:
+        piq_minted = emission["minted"] if attribution.get("verified") else 0.0
+        emission["attribution"] = attribution
+        if not attribution.get("verified"):
+            emission["minted"] = 0.0
+            emission["withheld_reason"] = "unverified_authorship"
+            warnings_list.append(
+                "piQ WITHHELD — AUTHORSHIP UNVERIFIED: " + attribution.get("reason", "")
+                + (" " + attribution["how_to_verify"] if attribution.get("how_to_verify") else "")
+            )
+        if not emission["qualified"] and attribution.get("verified"):
             warnings_list.append("piQ NOT MINTED: " + " ".join(emission["reasons"]))
         elif emission["halving_epoch"] > 0 or emission["author_factor"] < 1.0:
             warnings_list.append(
@@ -1621,8 +1698,8 @@ def process_single_pdf(
                 warnings_json, judge_metadata, integrity_report, reference_audit,
                 authorship_signal, topology_detail, classification, criteria_breakdown,
                 signal_vector, rubric_version, author_metrics, emission_record,
-                author_openalex_id, scoring_epoch, unweighted_score
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                author_openalex_id, scoring_epoch, unweighted_score, attribution
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
                 logic_integrity, 0.0,
@@ -1638,7 +1715,8 @@ def process_single_pdf(
                 json.dumps(authorship), json.dumps(topology_detail),
                 json.dumps(classification), json.dumps(criteria_breakdown),
                 json.dumps(signal_vector), RUBRIC_VERSION, json.dumps(author_metrics),
-                json.dumps(emission), author_key, scoring_epoch, unweighted_score
+                json.dumps(emission), author_key, scoring_epoch, unweighted_score,
+                json.dumps(attribution)
             ),
         )
 

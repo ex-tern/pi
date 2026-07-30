@@ -74,10 +74,17 @@ const HELP = {
     body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
       several large language models — Llama, Mistral, Qwen and Gemini — while the local Scilem
       engine performs deterministic structural analysis in parallel.</p>
-      <p>The <strong>Pidyne engine</strong> then acts as the judge: it reads all of the panel's
-      independent assessments and adjudicates a single verdict. Because the jurors come from
-      different providers and training corpora, their errors are largely uncorrelated, so
-      agreement between them is real evidence rather than repetition.</p>
+      <p>The <strong>Pidyne engine</strong> then adjudicates a single verdict from the panel's
+      independent assessments. Because the jurors come from different providers, agreement between
+      them carries real information.</p>
+      <p><strong>The limit of that claim, stated plainly:</strong> these models share overlapping
+      training corpora and broadly similar architectures, and are increasingly distilled from one
+      another. Their errors are only <em>partly</em> independent. Agreement rules out
+      idiosyncratic error — one model misreading the paper — but not systematic error common to
+      all of them. Where the literature holds a popular-but-wrong belief, every juror may agree
+      and every juror may be wrong. This is why the panel includes a juror from a different model
+      lineage, and why the metric is labelled <em>corroboration</em> rather than
+      <em>correctness</em>.</p>
       <p>Alongside the model panel, deterministic checks run on the extracted text: MDAR reporting
       adherence, RRID validity, open-science and reproducibility markers, and empirical density.
       These are reproducible and cannot be talked around by a persuasive abstract.</p>`,
@@ -155,12 +162,27 @@ const HELP = {
       <p>Use the legend table below the map to jump to and focus any individual field.</p>`,
   },
   pix: {
-    title: "pi-Index (piX) — Top Papers",
-    body: `<p><strong>piX</strong> is a manuscript's composite quality score, from 0 to 100. It is
-      the mean of the eight criteria scores (C1–C8), each independently computed from a blend of
-      the model panel's adjudicated verdict and deterministic textual analysis.</p>
-      <p>piX describes <em>a paper</em>. Its companion metric, piQ, describes <em>a researcher</em>.</p>
-      <p>Select any row to open the paper's full assessment report and dossier.</p>`,
+    title: "pi-Index (piX) — Reporting & Integrity Score",
+    body: `<p><strong>piX measures reporting quality and research integrity, not research
+      quality.</strong> This distinction is deliberate and worth understanding before you read
+      any score.</p>
+      <p>What the system measures well is what a manuscript <em>documents</em>: MDAR adherence,
+      RRID registration, data and code availability, licensing, reproducibility artefacts,
+      statistical reporting density, and whether cited works actually exist. These are objective,
+      verifiable, and currently under-checked by human reviewers because checking them is tedious
+      and unrewarded.</p>
+      <p>What it cannot measure is whether the research is important or correct. A meticulously
+      reported weak study will outscore a brilliant but sparsely documented one. That is a real
+      limitation, not a bug to be fixed — it follows from assessing a document rather than
+      replicating the work.</p>
+      <h4>The interpretive part</h4>
+      <p>Two criteria are marked <strong>interpretive</strong>. C1 Semantic Originality is a
+      relation between a manuscript and its field; C4 Societal Reach concerns effects that unfold
+      over years. Neither is recoverable from the PDF. They are reported because readers want
+      them, at reduced weight, and labelled so you know which part of the number is opinion.
+      Roughly 78% of the composite derives from verifiable analysis; <code>/api/rubric</code>
+      publishes the exact split.</p>
+      <p>Select any row to open the paper's full report and dossier.</p>`,
   },
   piq: {
     title: "pi-Quotient (piQ) — Top Authors",
@@ -168,15 +190,31 @@ const HELP = {
       manuscript clears the quality threshold. A paper earns <code>piX / 10</code> piQ, and only if
       both its piX score and its logic-integrity score reach 50.0 — below that, nothing is minted.</p>
       <p>piQ is non-transferable by design. It cannot be bought, sold or delegated, so it measures
-      contribution rather than capital. It is also the currency that pays the 0.1 piQ per-paper
-      processing fee, which means the system is funded by demonstrated research quality.</p>
+      contribution rather than capital.</p>
+      <h4>Only authors earn</h4>
+      <p>piQ is minted solely when the submitter is verified as an author of the work — through an
+      ORCID in the publisher's deposited record, or an ORCID profile name matching the byline.
+      Anyone may submit anyone's paper and it will be fully assessed and published, but it earns
+      nothing. Without this, the highest-yield strategy would be submitting other people's good
+      papers rather than writing your own.</p>
+      <h4>Getting started</h4>
+      <p>Linking a verified ORCID grants a one-time starting balance, so a researcher new to the
+      platform is not locked out after the free trial. piQ is earned by having your own work
+      assessed, which would otherwise make the system closed to exactly the researchers least
+      likely to already have any.</p>
       <p>Select a row to see that author's assessed papers.</p>`,
   },
   explorer: {
     title: "Proof-of-Research Ledger Explorer",
-    body: `<p>Every assessment writes an immutable block containing the evaluation hash, criteria
-      weights, validator signature and a zk-SNARK proof binding the score to the document without
-      revealing the document itself.</p>
+    body: `<p>Every assessment writes a block containing the evaluation hash, criteria weights,
+      validator signature and a zk-SNARK proof binding the score to the document without revealing
+      the document itself.</p>
+      <p><strong>What the chain does and does not give you.</strong> It provides timestamped,
+      non-repudiable evidence that a specific assessment produced a specific result at a specific
+      time — the operator cannot later revise their own past outputs unnoticed. It does
+      <em>not</em> make the system trustless: whoever runs this deployment controls the scoring
+      code, the rubric and the signing key, so they could always have scored differently before
+      anything reached the chain. The ledger constrains revision, not authorship.</p>
       <h4>Reading the chain</h4>
       <ul>
         <li><strong>Block</strong> — height in the Proof-of-Research chain.</li>
@@ -2771,7 +2809,17 @@ function explorerRowHtml(r) {
 // ---------------------------------------------------------------------------
 // ARCHITECTURE DIAGRAMS (Mermaid)
 // ---------------------------------------------------------------------------
-const ARCH_FLOWCHART = `
+function buildArchFlowchart(p) {
+  // Values come from /api/architecture, which reads the modules that actually
+  // govern behaviour. A diagram that disagrees with the running system is
+  // documentation that lies with authority, and every one of these numbers has
+  // already changed at least once.
+  const jurorNodes = (p.jurors || []).filter(j => j !== "scilem")
+    .map((j, i) => `    L${i}["${j.charAt(0).toUpperCase() + j.slice(1)}"]:::panel`).join("\n");
+  const jurorIds = (p.jurors || []).filter(j => j !== "scilem").map((_, i) => `L${i}`);
+  const jurorChain = jurorIds.length ? jurorIds.join(" & ") : "LX";
+
+  return `
 flowchart TB
   classDef intake fill:#dbeafe,stroke:#2563eb,stroke-width:1.5px,color:#0f172a
   classDef extract fill:#dcfce7,stroke:#16a34a,stroke-width:1.5px,color:#0f172a
@@ -2787,14 +2835,15 @@ flowchart TB
   subgraph S0["Admission control"]
     direction LR
     GUARD["Abuse guard<br/>velocity · automation · payload"]:::guard
-    TRIAL{"Free trial<br/>3 documents?"}:::gate
+    ${p.proof_of_work ? 'POW["Proof of work"]:::guard' : 'POW["Verification off"]:::guard'}
+    TRIAL{"Free trial<br/>${p.free_documents} documents?"}:::gate
     FEE{"piQ balance<br/>covers fee?"}:::gate
   end
-  IDENT --> GUARD --> TRIAL
+  IDENT --> GUARD --> POW --> TRIAL
   TRIAL -->|"allowance left"| INTAKE
   TRIAL -->|"exhausted"| FEE
   FEE -->|"insufficient"| STOP["Refused<br/>no fee charged"]:::gate
-  FEE -->|"fee debited"| INTAKE
+  FEE -->|"fee ${p.minimum_fee} piQ min, by length"| INTAKE
 
   subgraph S1["1 · Intake"]
     direction LR
@@ -2816,26 +2865,23 @@ flowchart TB
   end
   ZK1 --> PARSE --> BIB & REFS & DET & SEC
 
-  subgraph S3["3 · Independent panel"]
+  subgraph S3["3 · Independent panel (${p.juror_count} reachable)"]
     direction LR
-    L1["Llama 3.3"]:::panel
-    L2["Mistral Large"]:::panel
-    L3["Qwen 2.5"]:::panel
-    L4["Gemini 2.0"]:::panel
+${jurorNodes || '    LX["No external juror configured"]:::gate'}
     L5["Structural analyser<br/>deterministic"]:::panel
   end
   PARSE --> CANARY["Canary issued<br/>per evaluation"]:::guard
-  CANARY --> L1 & L2 & L3 & L4
+  CANARY --> ${jurorChain}
   PARSE --> L5
 
   subgraph S4["4 · Pidyne adjudication"]
     direction TB
     SYN["Evidence synthesis"]:::judge
     AGREE["Inter-model agreement"]:::judge
-    QUAL["Judgement quality<br/>High · Moderate · Limited"]:::judge
+    QUAL["Corroboration<br/>Strong · Partial · Single-source"]:::judge
     TRIP{"Canary emitted?"}:::gate
   end
-  L1 & L2 & L3 & L4 & L5 --> SYN --> AGREE --> QUAL
+  ${jurorChain} & L5 --> SYN --> AGREE --> QUAL
   SYN --> TRIP
   TRIP -->|"yes — injection"| ZERO["Logic integrity = 0"]:::gate
   SEC --> TRIP
@@ -2843,7 +2889,7 @@ flowchart TB
   subgraph S5["5 · Scoring"]
     direction TB
     SIG["Signal vector<br/>13 normalized inputs"]:::judge
-    RUB["Versioned rubric<br/>weights sum to 1.0"]:::judge
+    RUB["Rubric ${p.rubric_version}<br/>${Math.round((p.verifiable_share || 0) * 100)}% verifiable"]:::judge
     PIX["piX composite<br/>epoch-weighted"]:::judge
     LOGIC["Logic integrity"]:::judge
   end
@@ -2854,14 +2900,17 @@ flowchart TB
 
   subgraph S6["6 · Emission and settlement"]
     direction TB
-    GATE{"piX ≥ threshold<br/>AND logic ≥ floor?"}:::gate
-    EMIT["Difficulty-adjusted emission<br/>halving · author decay"]:::chain
+    AUTH{"Submitter verified<br/>as an author?"}:::gate
+    GATE{"piX ≥ ${p.quality_threshold}<br/>AND logic ≥ ${p.logic_floor}?"}:::gate
+    EMIT["Emission<br/>halving epoch ${p.halving_epoch} · author decay"]:::chain
     NONE["0 piQ"]:::gate
     ZK2["zk-SNARK proof"]:::chain
     BLOCK["PoR block<br/>+ epoch weights"]:::chain
-    ETH["Sepolia settlement"]:::chain
+    ETH["${p.chain_name} settlement"]:::chain
   end
-  PIX & LOGIC --> GATE
+  PIX & LOGIC --> AUTH
+  AUTH -->|"no — third party"| NONE
+  AUTH -->|"yes"| GATE
   GATE -->|"yes"| EMIT --> ZK2
   GATE -->|"no"| NONE --> ZK2
   ZK2 --> BLOCK --> ETH
@@ -2881,8 +2930,19 @@ flowchart TB
   ETH --> DOSS --> FAIR
   BIB --> MAPS & BOARD
 `;
+}
 
-const SCORE_FLOWCHART = `
+// Rendered from live parameters; falls back to sensible defaults if the
+// endpoint is unavailable so the tab never shows a blank panel.
+const ARCH_FALLBACK = {
+  free_documents: 3, minimum_fee: 0.1, quality_threshold: 40, logic_floor: 35,
+  halving_epoch: 0, jurors: ["llama", "mistral", "qwen", "gemini", "deepseek"],
+  juror_count: 5, rubric_version: "pi-index-rubric/3.0", verifiable_share: 0.78,
+  chain_name: "Sepolia", proof_of_work: true,
+};
+
+function buildScoreFlowchart(p) {
+  return `
 flowchart LR
   classDef sig fill:#dcfce7,stroke:#16a34a,color:#0f172a
   classDef mid fill:#fef3c7,stroke:#d97706,color:#0f172a
@@ -2917,13 +2977,14 @@ flowchart LR
   A --> LG["Logic integrity<br/>adversarial penalty"]:::mid
   E --> LG
 
-  PIX --> G{"piX ≥ 50<br/>AND<br/>logic ≥ 50?"}:::gate
+  PIX --> G{"piX ≥ ${p.quality_threshold}<br/>AND<br/>logic ≥ ${p.logic_floor}?"}:::gate
   LG --> G
   G -->|"yes"| M["Mint piQ = piX / 10"]:::tok
   G -->|"no"| N["0.00 piQ<br/>threshold warning raised"]:::gate
   C1 & C2 & C3 & C4 & C5 & C6 & C7 & C8 --> W["Epoch weights<br/>→ PoR block"]:::tok
-  W --> FC["Pidyne LSTM<br/>forecast"]:::tok
+  W --> FC["Epoch forecast"]:::tok
 `;
+}
 
 let mermaidReady = false;
 let diagramsRendered = false;
@@ -2951,11 +3012,26 @@ async function renderArchitectureDiagrams() {
   }
   // Rendered independently: a parse failure in one diagram shouldn't leave
   // the other one blank.
+  let params = ARCH_FALLBACK;
+  try {
+    const res = await fetch(`${API}/api/architecture`);
+    if (res.ok) params = { ...ARCH_FALLBACK, ...(await res.json()) };
+  } catch (e) { /* fall back to defaults */ }
+
   const results = await Promise.all([
-    renderOneDiagram("archSvg", ARCH_FLOWCHART, "archDiagram"),
-    renderOneDiagram("scoreSvg", SCORE_FLOWCHART, "scoreDiagram"),
+    renderOneDiagram("archSvg", buildArchFlowchart(params), "archDiagram"),
+    renderOneDiagram("scoreSvg", buildScoreFlowchart(params), "scoreDiagram"),
   ]);
   diagramsRendered = results.every(Boolean);
+
+  const caption = document.querySelector(".diagram-caption");
+  if (caption) {
+    caption.innerHTML = `End-to-end processing flow, rendered from the running configuration:
+      ${params.juror_count} reachable juror(s), rubric <code>${escapeHtml(params.rubric_version)}</code>,
+      free tier ${params.free_documents} documents, minimum fee ${params.minimum_fee} piQ,
+      current minting threshold piX ${params.quality_threshold}.
+      <strong>This diagram updates when those values change.</strong>`;
+  }
 }
 
 async function renderOneDiagram(svgId, definition, targetId) {

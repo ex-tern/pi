@@ -168,6 +168,17 @@ def build_routes(juror: str) -> List[Dict]:
             _route("qwen/qwen-2.5-7b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("qwen/qwq-32b-preview", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
+        # A juror from a different model lineage. This is not redundancy: the
+        # panel's whole epistemic claim rests on juror errors being
+        # uncorrelated, and four models trained on overlapping corpora with
+        # similar architectures do not satisfy that well. A DeepSeek-lineage
+        # juror is genuinely more independent than a fourth Western
+        # instruction-tuned model, which strengthens corroboration rather than
+        # just adding another vote.
+        "deepseek": [
+            _route("deepseek/deepseek-chat", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
+            _route("openai/gpt-oss-120b", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
+        ],
         # Gemini's free tier rate-limits hard, so the chain is ordered by
         # decreasing quota pressure: flash-lite models have the most generous
         # free allowances, and OpenRouter provides a route that does not draw
@@ -181,7 +192,18 @@ def build_routes(juror: str) -> List[Dict]:
             _route("google/gemma-2-9b-it", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
     }
-    return [r for r in chains.get(juror, []) if r]
+    routes = [r for r in chains.get(juror, []) if r]
+
+    # Universal last resort: OpenRouter's Auto Router selects whichever model
+    # is actually available to this account right now. It is the correct
+    # answer to "no endpoints available matching your data policy" — rather
+    # than naming a model the account may not reach, it asks OpenRouter to
+    # pick one it can. Placed last so a named, known-quality model is always
+    # preferred when one is reachable.
+    if OR_API_KEY:
+        routes.append({"model": "openrouter/auto", "key": OR_API_KEY,
+                       "base": OPENROUTER_BASE, "provider": "OpenRouter"})
+    return routes
 
 
 # ---------------------------------------------------------------------------
@@ -272,7 +294,7 @@ def provider_configuration() -> Dict:
         "Google Gemini": bool(GEMINI_API_KEY),
     }
     jurors = {}
-    for juror in ("llama", "mistral", "qwen", "gemini"):
+    for juror in ("llama", "mistral", "qwen", "gemini", "deepseek"):
         routes = build_routes(juror)
         jurors[juror] = {
             "route_count": len(routes),

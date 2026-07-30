@@ -185,6 +185,35 @@ def compute_piq_emission(pix_score: float, logic_integrity: float, total_papers:
     }
 
 
+# --- New-participant grant -------------------------------------------------
+# The economy was regressive: piQ funds assessment and is earned by scoring
+# well, so the researchers most able to use the system were those already
+# producing well-resourced work. A newcomer without institutional support —
+# precisely the constituency CoARA and the open-science literature care about —
+# hit the wall first and had no route out.
+#
+# Linking a verified ORCID now grants a one-time starting balance. It costs
+# nothing real (piQ is minted, not bought), it is gated on a verified identity
+# so it cannot be farmed, and it converts the free tier from a hard wall into
+# an on-ramp.
+NEW_PARTICIPANT_GRANT = 2.0
+
+
+def onboarding_grant(base_fee: float = None) -> Dict:
+    """One-time piQ grant for a newly verified identity."""
+    fee = base_fee if base_fee is not None else BASE_FEE
+    return {
+        "amount": NEW_PARTICIPANT_GRANT,
+        "covers_papers": int(NEW_PARTICIPANT_GRANT // fee) if fee > 0 else 0,
+        "reason": "Verified-identity onboarding grant",
+        "rationale": (
+            "piQ is earned by having your own work assessed, which means a researcher new to the "
+            "platform would otherwise be unable to participate at all after the free trial. This "
+            "grant is one-time, requires a verified ORCID, and cannot be repeated."
+        ),
+    }
+
+
 # --- Processing fee -------------------------------------------------------
 # The fee must track emission, or the economy stalls. Held flat at 0.1 piQ, it
 # would exceed what even a perfect paper mints from epoch 5 onward: every user
@@ -194,6 +223,78 @@ def compute_piq_emission(pix_score: float, logic_integrity: float, total_papers:
 # constant, so difficulty rises in absolute terms while the system stays usable.
 BASE_FEE = 0.1
 MIN_FEE = 0.001
+
+# --- Size-proportional pricing ---------------------------------------------
+# A flat per-paper fee charged a four-page note the same as an eighty-page
+# monograph, while the second genuinely costs several times more inference —
+# the assessment prompt is bounded, but extraction, reference verification and
+# structural analysis all scale with the document.
+#
+# The fee therefore scales with length, with a floor of MINIMUM_FEE so a
+# trivial submission still carries a real cost (that floor is what stops
+# someone probing the system with one-page files for free), and a ceiling so a
+# thesis cannot become unaffordable.
+MINIMUM_FEE = 0.1               # never below this, whatever the size
+FEE_CEILING_MULTIPLE = 5.0      # never more than 5x the minimum
+BASELINE_WORDS = 6000.0         # a typical research article
+
+
+def size_multiplier(word_count: int) -> float:
+    """Fee multiplier for a document of this length.
+
+    Sub-linear in length: cost grows with the document but a paper twice as
+    long is not twice as expensive to assess, because the model prompt is
+    truncated to a token budget while only the deterministic passes scale
+    fully. A square-root curve matches that shape closely enough and is
+    predictable enough to explain.
+    """
+    try:
+        words = max(0, int(word_count or 0))
+    except (TypeError, ValueError):
+        words = 0
+    if words <= 0:
+        return 1.0
+    ratio = words / BASELINE_WORDS
+    return max(1.0, min(FEE_CEILING_MULTIPLE, math.sqrt(ratio)))
+
+
+def compute_document_fee(word_count: int, total_papers: int = 0,
+                         base_fee: float = None) -> Dict:
+    """Fee for one manuscript: size-proportional, difficulty-scaled, floored."""
+    difficulty_fee = compute_processing_fee(total_papers, base_fee)
+    multiplier = size_multiplier(word_count)
+    raw = difficulty_fee * multiplier
+    fee = round(max(MINIMUM_FEE, raw), 4)
+
+    words = max(0, int(word_count or 0))
+    if words == 0:
+        band = "unknown length"
+    elif words < 2000:
+        band = "short (under 2,000 words)"
+    elif words < 10000:
+        band = "standard article"
+    elif words < 25000:
+        band = "long article"
+    else:
+        band = "thesis or monograph"
+
+    return {
+        "fee": fee,
+        "minimum": MINIMUM_FEE,
+        "word_count": words,
+        "size_band": band,
+        "size_multiplier": round(multiplier, 3),
+        "difficulty_fee": difficulty_fee,
+        "at_minimum": fee <= MINIMUM_FEE + 1e-9,
+        "explanation": (
+            f"{fee:.4f} piQ for a {band} ({words:,} words). Longer documents cost more because "
+            f"extraction, reference verification and structural analysis all scale with length. "
+            f"The floor is {MINIMUM_FEE:.2f} piQ and the ceiling "
+            f"{FEE_CEILING_MULTIPLE:.0f}x that."
+            if words else
+            f"{fee:.4f} piQ. Length was not known in advance, so the minimum fee applies."
+        ),
+    }
 
 
 def compute_processing_fee(total_papers: int, base_fee: float = BASE_FEE) -> float:
@@ -206,12 +307,19 @@ def compute_processing_fee(total_papers: int, base_fee: float = BASE_FEE) -> flo
 
 
 def fee_manifest(total_papers: int, base_fee: float = BASE_FEE) -> Dict:
-    fee = compute_processing_fee(total_papers, base_fee)
+    fee = max(MINIMUM_FEE, compute_processing_fee(total_papers, base_fee))
     # What a paper exactly at the qualifying threshold nets after the fee.
     floor_pix = compute_quality_threshold(total_papers)
     marginal = (floor_pix / BASE_DIVISOR) * compute_supply_factor(total_papers)
     return {
         "fee": fee,
+        "minimum_fee": MINIMUM_FEE,
+        "size_scaled": True,
+        "size_note": (
+            f"This is the fee for a typical article. Longer documents cost proportionally more "
+            f"(square-root of length, capped at {FEE_CEILING_MULTIPLE:.0f}x), never less than "
+            f"{MINIMUM_FEE:.2f} piQ."
+        ),
         "base_fee": base_fee,
         "supply_factor": round(compute_supply_factor(total_papers), 6),
         "marginal_paper_mints": round(marginal, 6),
