@@ -1,0 +1,37 @@
+# Example systemd unit for running ScholarPi as a service without Docker.
+#
+# Install:
+#   sudo cp deploy/scholarpi.service /etc/systemd/system/
+#   sudo systemctl daemon-reload
+#   sudo systemctl enable --now scholarpi
+#
+# Adjust User/Group/WorkingDirectory/paths to match your deployment.
+# Assumes you've already run `python -m venv venv && pip install -r
+# requirements.txt` inside backend/, and created backend/.env.
+
+[Unit]
+Description=ScholarPi — Pi-Index Assessment Engine
+After=network.target
+
+[Service]
+Type=simple
+User=scholarpi
+Group=scholarpi
+WorkingDirectory=/opt/scholarpi_webapp/backend
+Environment=ENVIRONMENT=production
+Environment=SCHOLARPI_DATA_DIR=/opt/scholarpi_webapp/data
+EnvironmentFile=/opt/scholarpi_webapp/backend/.env
+ExecStart=/opt/scholarpi_webapp/backend/venv/bin/gunicorn api:app -c gunicorn.conf.py
+Restart=on-failure
+RestartSec=5
+StandardOutput=append:/var/log/scholarpi/scholarpi.log
+StandardError=append:/var/log/scholarpi/scholarpi.log
+
+# Basic hardening
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ReadWritePaths=/opt/scholarpi_webapp /home/scholarpi
+
+[Install]
+WantedBy=multi-user.target
