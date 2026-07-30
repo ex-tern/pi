@@ -52,9 +52,25 @@ from ledger import (
     validate_block_por, generate_blockchain_pi
 )
 from integrations import (
-    clean_author_name, is_likely_institution, fetch_author_coara_metrics, 
+    clean_author_name, is_likely_institution, fetch_author_coara_metrics,
     calculate_citation_topology
 )
+from scientometrics import (
+    calculate_hierarchical_topology, audit_references, analyze_authorship_signal,
+    classify_manuscript, compute_corroboration_index, compute_citation_engagement,
+    compute_reference_integrity, detect_open_licence, detect_persistent_identifiers,
+    fetch_author_bibliometrics,
+)
+from rubric import (
+    score_criteria, explain_all, composite_score, CRITERIA_ORDER as RUBRIC_CRITERIA_ORDER,
+    RUBRIC_VERSION,
+)
+from security import (
+    build_canary, build_guard_instruction, assess_manuscript_integrity,
+    finalize_integrity, strip_canary, scan_outputs_for_canary,
+)
+from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
+from emission import compute_emission, emission_manifest
 
 class ScilemNetwork(nn.Module):
     def __init__(self, vocab_size=10000, embed_dim=64, hidden_dim=32):
@@ -94,7 +110,7 @@ def evaluate_scilem_analysis_report(raw_text):
     except Exception as e:
         return f"Scilem Local Neural Engine initialization failed: {e}"
 
-def extract_with_scilem(paper_text):
+def extract_with_scilem(paper_text, canary=""):
     scilem_model, scilem_optimizer = get_scilem_engine()
     scilem_weights_path = os.path.join(BASE_DIR, "scilem_weights.pt")
     if os.path.exists(scilem_weights_path):
@@ -147,7 +163,16 @@ def extract_with_scilem(paper_text):
         "scilem_score": scilem_numeric_score,
     }
 
-def train_scilem_on_input_and_report(raw_text, evidence_report):
+def train_scilem_on_input_and_report(raw_text, evidence_report, target_quality=None):
+    """Update the local Scilem network from the adjudicated verdict.
+
+    The regression target used to be ``md5(evidence_report) % 1000 / 1000`` —
+    the network was being trained to predict a hash digest, which is by
+    construction unlearnable. Any apparent convergence was the model memorising
+    noise. The target is now the adjudicated quality of the manuscript
+    (0-1), which is a genuine supervised signal, so training actually
+    transfers to unseen documents.
+    """
     scilem_model, scilem_optimizer = get_scilem_engine()
     scilem_weights_path = os.path.join(BASE_DIR, "scilem_weights.pt")
     if os.path.exists(scilem_weights_path):
@@ -166,18 +191,27 @@ def train_scilem_on_input_and_report(raw_text, evidence_report):
     paper_tensor = torch.tensor(tokens, dtype=torch.long).unsqueeze(0)
 
     features = scilem_model(paper_tensor)
-    
-    vapri = (int(hashlib.md5(evidence_report.encode()).hexdigest(), 16) % 1000) / 1000.0
-    target_tensor = torch.tensor([[vapri]], dtype=torch.float32)
+
+    if target_quality is None:
+        # No adjudicated rating available: skip the update rather than
+        # training on a fabricated target.
+        return ("Scilem Local Neural Engine: no adjudicated target available for this "
+                "manuscript; weights left unchanged.")
+
+    # The network's head is tanh, so the target must live in [-1, 1]. Map the
+    # 0-100 quality rating onto that range.
+    target = max(-1.0, min(1.0, (float(target_quality) / 50.0) - 1.0))
+    target_tensor = torch.tensor([[target]], dtype=torch.float32)
 
     loss_function = nn.MSELoss()
     loss = loss_function(features, target_tensor)
     loss.backward()
     scilem_optimizer.step()
-    
+
     torch.save(scilem_model.state_dict(), scilem_weights_path)
 
-    return "Scilem Local Neural Engine Integration: Model weights updated dynamically via RLHF backpropagation from Pidyne synthesized consensus matrix."
+    return (f"Scilem Local Neural Engine: weights updated by backpropagation against the "
+            f"adjudicated quality rating (target {target:+.3f}, loss {loss.item():.5f}).")
 
 def reset_scilem():
     scilem_weights_path = os.path.join(BASE_DIR, "scilem_weights.pt")
@@ -292,7 +326,7 @@ def query_llm_json(provider_name, model_name, api_key, base_url, prompt):
             "api_failed": True
         }
 
-def build_multi_llm_prompt(paper_text):
+def build_multi_llm_prompt(paper_text, canary=""):
     front_matter = paper_text[:3000]
     lower_text = paper_text.lower()
     ref_section = ""
@@ -304,7 +338,12 @@ def build_multi_llm_prompt(paper_text):
     if not ref_section:
         ref_section = paper_text[-4000:]
 
-    return f"""
+    # The security directive is prepended so it establishes precedence before
+    # the model ever reaches untrusted manuscript text, and the manuscript is
+    # explicitly delimited as data.
+    guard = build_guard_instruction(canary) if canary else ""
+
+    return guard + f"""
 Analyze the manuscript excerpts below and respond strictly in JSON format.
 Evaluate across the 8 core Pi-Index criteria (C1: Semantic Originality, C2: Methodological Rigor, C3: Interdisciplinary Entropy, C4: Societal Impact, C5: Open Science, C6: Literature Integration, C7: Empirical Density, and C8: Future Actionability).
 
@@ -321,35 +360,35 @@ Keys required in JSON:
 {ref_section}
 """
 
-def extract_with_llama(paper_text):
-    prompt = build_multi_llm_prompt(paper_text)
+def extract_with_llama(paper_text, canary=""):
+    prompt = build_multi_llm_prompt(paper_text, canary)
     if GROQ_API_KEY:
         return query_llm_json("llama", PRIMARY_MODEL, GROQ_API_KEY, "https://api.groq.com/openai/v1", prompt)
     elif OR_API_KEY:
         return query_llm_json("llama", "meta-llama/llama-3.3-70b-instruct", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
     return "llama", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
 
-def extract_with_mistral(paper_text):
-    prompt = build_multi_llm_prompt(paper_text)
+def extract_with_mistral(paper_text, canary=""):
+    prompt = build_multi_llm_prompt(paper_text, canary)
     if OR_API_KEY:
         return query_llm_json("mistral", "mistralai/mistral-large", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
     return "mistral", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
 
-def extract_with_qwen(paper_text):
-    prompt = build_multi_llm_prompt(paper_text)
+def extract_with_qwen(paper_text, canary=""):
+    prompt = build_multi_llm_prompt(paper_text, canary)
     if OR_API_KEY:
         return query_llm_json("qwen", "qwen/qwen-2.5-72b-instruct", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
     return "qwen", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
 
-def extract_with_gemini(paper_text):
-    prompt = build_multi_llm_prompt(paper_text)
+def extract_with_gemini(paper_text, canary=""):
+    prompt = build_multi_llm_prompt(paper_text, canary)
     if GEMINI_API_KEY:
         return query_llm_json("gemini", "gemini-2.0-flash", GEMINI_API_KEY, "https://generativelanguage.googleapis.com/v1beta/openai/", prompt)
     elif OR_API_KEY:
         return query_llm_json("gemini", "google/gemini-2.0-flash-001", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
     return "gemini", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
 
-def run_multi_llm_consensus(paper_text):
+def run_multi_llm_consensus(paper_text, canary=""):
     results = {}
     llm_funcs = {
         "llama": extract_with_llama,
@@ -363,7 +402,7 @@ def run_multi_llm_consensus(paper_text):
     # which adds up on a memory-constrained host. 5 short-lived HTTP calls
     # finishing slightly less in parallel is a good trade for not OOMing.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(func, paper_text): name for name, func in llm_funcs.items()}
+        futures = {executor.submit(func, paper_text, canary): name for name, func in llm_funcs.items()}
         for future in concurrent.futures.as_completed(futures):
             provider, data = future.result()
             results[provider] = data
@@ -648,68 +687,158 @@ def adaptive_chunking(text, max_tokens):
     back_matter = text[-int(max_tokens * 0.6) :]
     return front_matter + "\n...[TRUNCATED FOR TOKEN LIMITS]...\n" + back_matter
 
-def evaluate_pdf_text_ensemble(text, model, text_limit, file_hash="unknown"):
-    text = adaptive_chunking(text, text_limit)
-    consensus_results = run_multi_llm_consensus(text)
-    
-    evidence_report, pidyne_ai_rating = generate_pidyne_judgement(consensus_results, text)
-    scilem_opinion = train_scilem_on_input_and_report(text, evidence_report)
+def _consensus_field(consensus_results, field):
+    """Pick the value the largest share of jurors agree on.
 
-    best_title = "Parsed via Local Heuristics"
-    best_author = "Independent Research Scholar"
-    title_found, author_found = False, False
-    for l_key in ["llama", "mistral", "qwen", "gemini", "scilem"]:
-        entry = consensus_results.get(l_key, {})
-        t_val = entry.get("title", "")
-        a_val = entry.get("authors", "")
-        if not title_found and t_val and "N/A" not in t_val:
-            best_title = t_val
-            title_found = True
-        if not author_found and a_val and "N/A" not in a_val:
-            best_author = a_val
-            author_found = True
-        if title_found and author_found:
-            break
+    Values are clustered by fuzzy similarity rather than exact equality, since
+    models differ on capitalisation, subtitle inclusion and trailing
+    punctuation while extracting the same underlying title. Returns the
+    representative value and the fraction of jurors supporting it, which
+    doubles as a confidence measure.
+    """
+    candidates = []
+    for key, entry in (consensus_results or {}).items():
+        if key.startswith("_") or not isinstance(entry, dict):
+            continue
+        if entry.get("api_failed"):
+            continue
+        val = str(entry.get(field, "") or "").strip()
+        if not val or "n/a" in val.lower() or val.lower() in ("unconfigured key", "none"):
+            continue
+        candidates.append(val)
+
+    if not candidates:
+        return ("Untitled Manuscript" if field == "title" else "Unidentified"), 0.0
+    if len(candidates) == 1:
+        return candidates[0], 1.0 / max(1, len(consensus_results))
+
+    clusters = []
+    for val in candidates:
+        placed = False
+        for cluster in clusters:
+            if difflib.SequenceMatcher(None, val.lower(), cluster[0].lower()).ratio() >= 0.80:
+                cluster.append(val)
+                placed = True
+                break
+        if not placed:
+            clusters.append([val])
+
+    winner = max(clusters, key=len)
+    # Within the winning cluster, prefer the longest form — models truncate
+    # more often than they invent, so the fullest variant is usually correct.
+    representative = max(winner, key=len)
+    return representative, round(len(winner) / len(candidates), 4)
+
+
+def evaluate_pdf_text_ensemble(text, model, text_limit, file_hash="unknown", canary=""):
+    text = adaptive_chunking(text, text_limit)
+    consensus_results = run_multi_llm_consensus(text, canary)
+
+    evidence_report, pidyne_ai_rating = generate_pidyne_judgement(consensus_results, text)
+
+    # Scan for the canary BEFORE stripping it — order matters here, since
+    # stripping first would erase the very signal we are looking for.
+    canary_result = scan_outputs_for_canary(consensus_results, canary) if canary else \
+        {"detected": False, "models": [], "confidence": "none"}
+
+    # The canary is an internal control signal. Remove it from anything that
+    # will be stored or displayed, so it cannot be harvested from a published
+    # dossier and pre-empted by a later submitter.
+    if canary:
+        evidence_report = strip_canary(evidence_report, canary)
+        for key, entry in consensus_results.items():
+            if key.startswith("_") or not isinstance(entry, dict):
+                continue
+            if isinstance(entry.get("opinion"), str):
+                entry["opinion"] = strip_canary(entry["opinion"], canary)
+
+    scilem_opinion = train_scilem_on_input_and_report(text, evidence_report, pidyne_ai_rating)
+
+    # Consensus extraction by agreement, not first-past-the-post. The previous
+    # implementation took the first juror in a fixed provider order that
+    # returned anything non-"N/A", so one model's misreading of the front
+    # matter became the record even when three others agreed on something else.
+    best_title, title_support = _consensus_field(consensus_results, "title")
+    best_author, author_support = _consensus_field(consensus_results, "authors")
 
     scilem_score = consensus_results.get("scilem", {}).get("scilem_score", pidyne_ai_rating)
+
+    # Confidence was hardcoded at 0.85 regardless of what actually happened.
+    # It now reflects the panel: how many jurors returned a verdict and how
+    # strongly they agreed on what they were reading.
+    quality = (consensus_results.get("_judge_metadata") or {})
+    agreement = float(quality.get("inter_model_agreement") or 0.0)
+    jurors = int(quality.get("total_juror_count") or 0)
+    confidence = round(min(0.99, (agreement * 0.5) + (min(jurors, 5) / 5.0 * 0.35)
+                           + (title_support * 0.15)), 4)
 
     return {
         "Extracted_Title": best_title,
         "Extracted_Author": best_author,
-        "Extracted_Topics": "Core Research Domain",
-        "Overall_Confidence": 0.85,
+        "Overall_Confidence": confidence,
+        "_title_support": title_support,
+        "_author_support": author_support,
         "_consensus_raw": consensus_results,
         "_evidence_report": evidence_report,
         "_pidyne_rating": pidyne_ai_rating,
         "_scilem_score": scilem_score,
+        "_canary_result": canary_result,
     }
 
 def get_formulas_hash():
     return hashlib.sha256(b"Pi-Index-Formula-State-v2.0").hexdigest()
 
-def compute_formulaic_criteria(reproducibility_score, sciscore_adherence=0.8, topological_entropy=0.5, ai_rating=75.0, vapri=0.0, empirical_density=None):
-    c1 = (ai_rating * 0.9) + (vapri * 10)
-    c4 = ai_rating * 0.95 + (topological_entropy * 5)
-    c6 = ai_rating * 0.88 + (sciscore_adherence * 12)
-    
-    tanh_component = math.tanh((ai_rating / 100.0) * 1.5) * 100.0
-    if empirical_density is None:
-        c7 = tanh_component
-    else:
-        c7 = (empirical_density * 100.0 * 0.6) + (tanh_component * 0.4)
-    
-    c8 = (ai_rating * 0.8) + (reproducibility_score * 20.0)
+def build_signal_vector(*, panel_rating, corroboration, mdar_adherence, rrid_count,
+                        reproducibility, empirical_density, topology_detail,
+                        reference_audit, text, text_complete=True):
+    """Assemble the normalized [0, 1] signal vector the rubric consumes.
 
+    This is the single place raw measurements become rubric inputs, so every
+    normalization is visible in one function rather than scattered through
+    scoring arithmetic.
+    """
+    topo = topology_detail or {}
     return {
-        "C1_Semantic_Originality": min(100.0, max(0.0, c1)),
-        "C2_Methodological_Rigor_SciScore": min(100.0, max(0.0, sciscore_adherence * 100.0)),
-        "C3_Interdisciplinary_Entropy": min(100.0, max(0.0, (ai_rating * 0.85) + (topological_entropy * 15.0))),
-        "C4_Societal_Impact": min(100.0, max(0.0, c4)),
-        "C5_Open_Science_Repro": min(100.0, max(0.0, reproducibility_score * 100.0)),
-        "C6_Literature_Integration": min(100.0, max(0.0, c6)),
-        "C7_Empirical_Density": min(100.0, max(0.0, c7)),
-        "C8_Future_Actionability_FAIR": min(100.0, max(0.0, c8))
+        "panel_rating": (panel_rating or 0.0) / 100.0,
+        "corroboration": corroboration,
+        "mdar_adherence": mdar_adherence,
+        # Saturates at 5 RRIDs: registering five distinct resources already
+        # demonstrates the practice; the twentieth adds nothing.
+        "rrid_density": min(1.0, (rrid_count or 0) / 5.0),
+        "reproducibility": reproducibility,
+        "empirical_density": empirical_density,
+        "topic_diversity": topo.get("score", 0.35),
+        "domain_span": 1.0 if topo.get("spans_domains") else 0.0,
+        "citation_engagement": compute_citation_engagement(text, reference_audit),
+        "reference_integrity": compute_reference_integrity(reference_audit),
+        "openness_licence": detect_open_licence(text),
+        "persistent_identifiers": detect_persistent_identifiers(text),
+        "text_completeness": 1.0 if text_complete else 0.0,
     }
+
+
+def compute_formulaic_criteria(**kwargs):
+    """Backwards-compatible shim over the versioned rubric.
+
+    The historical signature took loose keyword arguments and applied
+    undocumented coefficients. Scoring now lives in rubric.py; this wrapper
+    keeps older call sites (and the test suite) working.
+    """
+    signals = kwargs.get("signals")
+    if signals is None:
+        signals = build_signal_vector(
+            panel_rating=kwargs.get("ai_rating", 75.0),
+            corroboration=kwargs.get("corroboration", 0.5),
+            mdar_adherence=kwargs.get("sciscore_adherence", 0.8),
+            rrid_count=kwargs.get("rrid_count", 0),
+            reproducibility=kwargs.get("reproducibility_score", 0.0),
+            empirical_density=kwargs.get("empirical_density") or 0.0,
+            topology_detail=kwargs.get("topology_detail")
+            or {"score": kwargs.get("topological_entropy", 0.5)},
+            reference_audit=kwargs.get("reference_audit"),
+            text=kwargs.get("text", ""),
+        )
+    return score_criteria(signals)
 
 CRITERIA_ORDER = [
     "C1_Semantic_Originality",
@@ -788,12 +917,62 @@ def derive_epoch_weights(scores_dict, previous_weights=None):
 
 
 def generate_rebuttal_strategy(scores_dict):
-    lowest_criterion = min(scores_dict.items(), key=lambda x: x[1])
-    return (
-        f"**Adversarial Defense Strategy:** Focus on strengthening `{lowest_criterion[0]}` "
-        f"(Current score: {lowest_criterion[1]:.1f}/100). Explicitly state methodology, "
-        f"register active RRIDs, and upload raw experimental artifacts to open repositories."
-    )
+    """Delegates to the genetic-algorithm optimiser in rebuttal.py.
+
+    The previous implementation returned one generic sentence naming the
+    lowest criterion — the "lazy review" failure mode. Feedback is now evolved
+    against an explicit fitness function rewarding actionability and
+    specificity while penalising sycophantic and off-task language.
+    """
+    return _optimized_rebuttal_strategy(scores_dict)
+
+# CRediT contributor roles, detected from what the manuscript actually
+# describes. Previously every record was written as ["Data Curation"]
+# unconditionally, which made the field meaningless.
+_CREDIT_PATTERNS = {
+    "Conceptualization": r"\b(conceptuali[sz]ation|study design|research question|hypothes[ei]s)\b",
+    "Methodology": r"\b(methodolog|experimental design|protocol|procedure)\b",
+    "Software": r"\b(github\.com|gitlab\.com|source code|implementation|we implemented|codebase)\b",
+    "Validation": r"\b(validat|cross-validation|replicat|verified|robustness check)\b",
+    "Formal Analysis": r"\b(statistical analys|regression|anova|significance test|formal analysis)\b",
+    "Investigation": r"\b(we (conducted|performed|carried out)|experiment(s)? (were|was)|fieldwork)\b",
+    "Data Curation": r"\b(dataset|data availability|data collection|curat|repositor)\b",
+    "Writing": r"\b(this (paper|manuscript|article)|we (present|report|describe))\b",
+    "Funding Acquisition": r"\b(funded by|grant no|financial support|acknowledge.{0,40}funding)\b",
+}
+
+
+def infer_credit_roles(text: str):
+    """Detect CRediT taxonomy roles evidenced in the manuscript text."""
+    if not text:
+        return ["Unspecified"]
+    lowered = text.lower()
+    roles = [role for role, pattern in _CREDIT_PATTERNS.items()
+             if re.search(pattern, lowered, re.IGNORECASE)]
+    return roles or ["Unspecified"]
+
+
+def _EMPTY_INTEGRITY():
+    return {"compromised": False, "severity": "none", "techniques": [], "findings": [],
+            "warnings": [], "hidden_text_detected": False, "scanned": False,
+            "canary": {"detected": False, "models": [], "confidence": "none"}}
+
+
+def _EMPTY_REFERENCE_AUDIT():
+    return {"checked": 0, "verified": 0, "fabricated": 0, "unverified": 0, "total_found": 0,
+            "fabricated_dois": [], "unverified_dois": [], "hallucination_ratio": 0.0,
+            "verdict": "not_assessed", "warnings": [], "penalty_applied": False}
+
+
+def _EMPTY_AUTHORSHIP():
+    return {"assessed": False, "flag": "not_assessed", "confidence": "none",
+            "indicators": [], "note": "", "affects_score": False}
+
+
+def _EMPTY_TOPOLOGY():
+    return {"score": 0.50, "basis": "unavailable", "topic_count": 0, "domains": [],
+            "fields": [], "subfields": [], "spans_domains": False}
+
 
 def process_single_pdf(
     file_bytes,
@@ -807,8 +986,6 @@ def process_single_pdf(
 ):
     active_weights = [1.0] * 8
     warnings_list = []
-    drift = "N/A"
-    rec = "N/A"
 
     if file_bytes is None or len(file_bytes) == 0:
         empty_scores = {k: 0.0 for k in [
@@ -818,7 +995,11 @@ def process_single_pdf(
             "C7_Empirical_Density", "C8_Future_Actionability_FAIR"
         ]}
         warnings_list.append("Binary payload is empty or download/extraction failed.")
-        return ("Download/Extraction Failed", "Independent Research Scholar", 0.0, 75.0, drift, rec, ["Unspecified Domain"], ["Unspecified Sub-domain"], empty_scores, "Failed", 0.0, "None", "None", active_weights, 0.0, 0, 0.0, False, warnings_list, {}, "", "N/A")
+        return ("Download/Extraction Failed", "Independent Research Scholar", 0.0, 0.0,
+                {}, [],
+                ["Unclassified"], ["Unclassified"], empty_scores, "Failed", 0.0,
+                "None", "None", active_weights, 0.0, 0, 0.0, False, warnings_list, {}, "", "N/A",
+                _EMPTY_INTEGRITY(), _EMPTY_REFERENCE_AUDIT(), _EMPTY_AUTHORSHIP(), _EMPTY_TOPOLOGY(), {}, {})
 
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
@@ -830,7 +1011,9 @@ def process_single_pdf(
             """SELECT title, author_name, final_score, logic_score, c1, c2, c3, c4, c5, c6, c7, c8,
                       piq_minted, tx_hash, zk_proof, mdar_adherence_score, rrid_valid_count,
                       reproducibility_score, consensus_data, evidence_report, scilem_score,
-                      warnings_json
+                      warnings_json, integrity_report, reference_audit, authorship_signal,
+                      topology_detail, classification, criteria_breakdown, fields, subfields,
+                      author_metrics, emission_record
                FROM papers_assessment WHERE eval_hash = ?""",
             (file_hash,),
         )
@@ -845,11 +1028,20 @@ def process_single_pdf(
                 (
                     e_title, e_author, e_score, e_logic, e_c1, e_c2, e_c3, e_c4, e_c5, e_c6, e_c7, e_c8,
                     e_piq, e_tx, e_zk, e_mdar, e_rrid, e_repro, e_consensus, e_report, e_scilem,
-                    e_warnings,
+                    e_warnings, e_integrity, e_refaudit, e_authorship, e_topology,
+                    e_classification, e_breakdown, e_fields, e_subfields, e_authormetrics,
+                    e_emission,
                 ) = existing
-                try:
-                    cached_warnings = json.loads(e_warnings) if e_warnings else []
-                except Exception:
+
+                def _load(raw, fallback):
+                    try:
+                        parsed = json.loads(raw) if raw else None
+                        return parsed if parsed else fallback
+                    except Exception:
+                        return fallback
+
+                cached_warnings = _load(e_warnings, [])
+                if not isinstance(cached_warnings, list):
                     cached_warnings = []
                 cached_warnings = list(cached_warnings) + [
                     "CACHED RECORD: This manuscript was already assessed previously; the stored, "
@@ -863,11 +1055,19 @@ def process_single_pdf(
                     "C7_Empirical_Density": e_c7, "C8_Future_Actionability_FAIR": e_c8,
                 }
                 return (
-                    e_title, e_author, e_score, e_logic, "N/A", "N/A",
-                    ["Computer Science"], ["Core Research Domain"], e_scores_dict, file_hash,
+                    e_title, e_author, e_score, e_logic,
+                    _load(e_classification, {}), _load(e_breakdown, []),
+                    _load(e_fields, ["Unclassified"]), _load(e_subfields, ["Unclassified"]),
+                    e_scores_dict, file_hash,
                     e_piq, e_tx, e_zk, active_weights, e_mdar, e_rrid, e_repro, True,
                     cached_warnings,
-                    json.loads(e_consensus) if e_consensus else {}, e_report or "", e_scilem,
+                    _load(e_consensus, {}), e_report or "", e_scilem,
+                    _load(e_integrity, _EMPTY_INTEGRITY()),
+                    _load(e_refaudit, _EMPTY_REFERENCE_AUDIT()),
+                    _load(e_authorship, _EMPTY_AUTHORSHIP()),
+                    _load(e_topology, _EMPTY_TOPOLOGY()),
+                    _load(e_authormetrics, {}),
+                    _load(e_emission, {}),
                 )
 
         try:
@@ -880,18 +1080,59 @@ def process_single_pdf(
             full_text = ""
 
         mdar_score, rrid_count = calculate_deterministic_mdar(full_text)
-        topological_entropy = calculate_citation_topology(provided_doi)
         reproducibility_score, _repro_flags = calculate_reproducibility_score(full_text)
         empirical_density = calculate_empirical_density(full_text)
 
-        raw_data = evaluate_pdf_text_ensemble(full_text, PRIMARY_MODEL, MAX_TEXT_TOKENS, file_hash)
-        
+        # --- Interdisciplinarity, via the current OpenAlex topic hierarchy ---
+        # The legacy flat `concepts` taxonomy was deprecated in 2024 and cannot
+        # distinguish breadth within a subfield from genuine cross-domain work.
+        topology_detail = calculate_hierarchical_topology(provided_doi)
+        topological_entropy = topology_detail.get("score", 0.50)
+        if topology_detail.get("basis") == "legacy-concepts":
+            warnings_list.append(
+                "TOPIC TAXONOMY: OpenAlex has not yet reprocessed this work under its current topic "
+                "hierarchy, so interdisciplinarity was measured from the legacy concept taxonomy. "
+                "C3 and C4 are correspondingly less precise."
+            )
+        elif topology_detail.get("basis") == "unavailable" and provided_doi not in ("None", "", None):
+            warnings_list.append(
+                "TOPIC LOOKUP FAILED: this work could not be resolved in OpenAlex, so "
+                "interdisciplinarity fell back to a neutral prior rather than measured evidence."
+            )
+
+        # --- Static adversarial integrity scan (pre-model) ---
+        integrity = assess_manuscript_integrity(file_bytes, full_text)
+
+        # --- Reference integrity ("Baseline Scout") ---
+        reference_audit = audit_references(full_text)
+        warnings_list.extend(reference_audit.get("warnings", []))
+
+        # --- Advisory authorship signal (never affects the score) ---
+        authorship = analyze_authorship_signal(full_text)
+
+        # Single-use trigger for the inject-and-detect defence.
+        canary = build_canary(file_hash)
+
+        raw_data = evaluate_pdf_text_ensemble(full_text, PRIMARY_MODEL, MAX_TEXT_TOKENS, file_hash, canary)
+
         pidyne_ai_rating = raw_data.get("_pidyne_rating", 75.0)
         scilem_score = raw_data.get("_scilem_score", pidyne_ai_rating)
         consensus_raw = raw_data.get("_consensus_raw", {})
         evidence_report = raw_data.get("_evidence_report", "")
 
-        vapri = (int(hashlib.md5(evidence_report.encode()).hexdigest(), 16) % 1000) / 1000.0 if evidence_report else 0.5
+        judge_meta_early = consensus_raw.get("_judge_metadata", {})
+
+        # Replaces VAPRI. The old term was md5(evidence_report) % 1000 / 1000 —
+        # a hash digest used as a score input. This measures how well the
+        # evaluation actually corroborated itself.
+        corroboration_detail = compute_corroboration_index(judge_meta_early, evidence_report)
+        corroboration = corroboration_detail["index"]
+
+        # Real field classification. Every paper was previously written to the
+        # database as ["Computer Science"] / ["Core Research Domain"], which
+        # made the Global Map of Science a map of two string literals.
+        classification = classify_manuscript(full_text, topology_detail.get("_topics"))
+        topology_detail.pop("_topics", None)
 
         external_active = any(
             not v.get("api_failed", False) 
@@ -902,29 +1143,94 @@ def process_single_pdf(
         title = raw_data.get("Extracted_Title", filename.replace(".pdf", "").replace("_", " ").title())
         extracted_author = raw_data.get("Extracted_Author", pdf_meta_author if pdf_meta_author else "Independent Research Scholar")
         
-        scores_dict = compute_formulaic_criteria(
-            reproducibility_score=reproducibility_score,
-            sciscore_adherence=mdar_score,
-            topological_entropy=topological_entropy,
-            ai_rating=pidyne_ai_rating,
-            vapri=vapri,
-            empirical_density=empirical_density
+        signal_vector = build_signal_vector(
+            panel_rating=pidyne_ai_rating,
+            corroboration=corroboration,
+            mdar_adherence=mdar_score,
+            rrid_count=rrid_count,
+            reproducibility=reproducibility_score,
+            empirical_density=empirical_density,
+            topology_detail=topology_detail,
+            reference_audit=reference_audit,
+            text=full_text,
+            text_complete=bool(full_text.strip()),
         )
-        
-        final_score = sum(scores_dict.values()) / 8.0
-        
-        premise_gap = 1.0 - (pidyne_ai_rating / 100.0)
-        adversarial_penalty = math.exp(-(2 * max(0, topological_entropy - 0.5) + 1.5 * premise_gap))
-        logic_integrity = (pidyne_ai_rating * adversarial_penalty) + (vapri * 5.0)
-        logic_integrity = min(100.0, max(0.0, logic_integrity))
+        # Real author bibliometrics (h-index, i10-index). Reported for context;
+        # deliberately NOT part of the signal vector, per CoARA's commitment to
+        # abandon publication-based metrics in quality assessment.
+        author_metrics = fetch_author_bibliometrics(extracted_author)
 
-        if final_score >= 50.0 and logic_integrity >= 50.0:
-            piq_minted = round((final_score / 100.0) * 10.0, 2)
-        else:
-            piq_minted = 0.00
+        scores_dict = score_criteria(signal_vector)
+        criteria_breakdown = explain_all(signal_vector)
+
+        # Fabricated citations invalidate the methodology section outright: a
+        # methods claim resting on works that do not exist cannot be rigorous.
+        if reference_audit.get("penalty_applied"):
+            scores_dict["C2_Methodological_Rigor_SciScore"] = 0.0
+            for entry in criteria_breakdown:
+                if entry["id"] == "C2_Methodological_Rigor_SciScore":
+                    entry["score"] = 0.0
+                    entry["override"] = "Zeroed: fabricated references detected."
+
+        final_score = composite_score(scores_dict)
+
+        # Logic integrity: how far the adjudicated verdict survives adversarial
+        # discounting. The premise gap is the panel's own uncertainty; weak
+        # corroboration compounds it, because an uncorroborated verdict is a
+        # weaker premise than a corroborated one.
+        premise_gap = 1.0 - (pidyne_ai_rating / 100.0)
+        corroboration_gap = 1.0 - corroboration
+        adversarial_penalty = math.exp(-(1.5 * premise_gap + 0.6 * corroboration_gap))
+        logic_integrity = min(100.0, max(0.0, pidyne_ai_rating * adversarial_penalty))
+
+        # --- Fold in the model panel's canary verdict ---
+        integrity = finalize_integrity(integrity, consensus_raw, canary)
+
+        # An attempt to manipulate the referee is disqualifying. Zeroing logic
+        # integrity trips the existing minting gate below, so no piQ is issued
+        # and the attempt is recorded permanently in the ledger dossier.
+        if integrity.get("compromised"):
+            logic_integrity = 0.0
+        warnings_list.extend(integrity.get("warnings", []))
+
+        # --- piQ emission, difficulty-adjusted for adoption ---
+        # A flat piX/10 reward meant the hundred-thousandth paper earned what
+        # the first did: unbounded supply, and early contributors diluted by
+        # later volume at no disadvantage. Emission now hardens as the corpus
+        # grows (halving schedule), the qualifying bar rises with it, and an
+        # individual author's rate decays with their own output so piQ tracks
+        # quality rather than volume.
+        cursor.execute("SELECT COUNT(*) FROM papers_assessment")
+        corpus_row = cursor.fetchone()
+        corpus_size = corpus_row[0] if corpus_row else 0
+
+        author_paper_count = 0
+        if extracted_author:
+            try:
+                cursor.execute(
+                    "SELECT COUNT(*) FROM papers_assessment WHERE author_name = ? AND eval_hash != ?",
+                    (extracted_author, file_hash),
+                )
+                row = cursor.fetchone()
+                author_paper_count = row[0] if row else 0
+            except Exception:
+                author_paper_count = 0
+
+        emission = compute_emission(
+            pix_score=final_score,
+            logic_integrity=logic_integrity,
+            total_papers=corpus_size,
+            author_paper_count=author_paper_count,
+        )
+        piq_minted = emission["minted"]
+        if not emission["qualified"]:
+            warnings_list.append("piQ NOT MINTED: " + " ".join(emission["reasons"]))
+        elif emission["halving_epoch"] > 0 or emission["author_factor"] < 1.0:
             warnings_list.append(
-                "MINIMUM piQ THRESHOLD UNMET: Manuscript score or logic integrity fell below 50.0%. "
-                "piQ reward set to 0.00."
+                f"EMISSION DIFFICULTY: minted {piq_minted:.4f} piQ at halving epoch "
+                f"{emission['halving_epoch']} (supply factor {emission['supply_factor']:.4f}, "
+                f"author factor {emission['author_factor']:.4f}). Emission hardens as the "
+                f"platform grows."
             )
 
         zk_proof = generate_zk_snark_proof(file_hash, pidyne_ai_rating, logic_integrity, "None")
@@ -985,17 +1291,26 @@ def process_single_pdf(
                 timestamp, eth_book, piq_minted, tx_hash, zk_proof, did, zk_email_proof, 
                 gaming_penalty, mdar_adherence_score, rrid_valid_count, credit_taxonomy_roles,
                 reproducibility_score, doi, consensus_data, evidence_report, scilem_score,
-                warnings_json, judge_metadata
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                warnings_json, judge_metadata, integrity_report, reference_audit,
+                authorship_signal, topology_detail, classification, criteria_breakdown,
+                signal_vector, rubric_version, author_metrics, emission_record
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
-                logic_integrity, 0.0, json.dumps(["Core Research Domain"]),
-                json.dumps(["Computer Science"]), extracted_author, final_score,
+                logic_integrity, 0.0,
+                json.dumps(classification.get("subfields", ["Unclassified"])),
+                json.dumps(classification.get("fields", ["Unclassified"])),
+                extracted_author, final_score,
                 datetime.now().isoformat(), book_address, piq_minted,
                 tx_hash, zk_proof, user_id, "None", 0.0,
-                mdar_score, rrid_count, json.dumps(["Data Curation"]), reproducibility_score,
+                mdar_score, rrid_count, json.dumps(infer_credit_roles(full_text)), reproducibility_score,
                 provided_doi, json.dumps(consensus_raw), evidence_report, scilem_score,
-                json.dumps(warnings_list), json.dumps(judge_meta)
+                json.dumps(warnings_list), json.dumps(judge_meta),
+                json.dumps(integrity), json.dumps(reference_audit),
+                json.dumps(authorship), json.dumps(topology_detail),
+                json.dumps(classification), json.dumps(criteria_breakdown),
+                json.dumps(signal_vector), RUBRIC_VERSION, json.dumps(author_metrics),
+                json.dumps(emission)
             ),
         )
 
@@ -1038,8 +1353,12 @@ def process_single_pdf(
     backup_state_to_web3()
 
     return (
-        title, extracted_author, final_score, logic_integrity, drift, rec,
-        ["Computer Science"], ["Core Research Domain"], scores_dict, file_hash, piq_minted, tx_hash, zk_proof,
+        title, extracted_author, final_score, logic_integrity,
+        classification, criteria_breakdown,
+        classification.get("fields", ["Unclassified"]),
+        classification.get("subfields", ["Unclassified"]),
+        scores_dict, file_hash, piq_minted, tx_hash, zk_proof,
         active_weights, mdar_score, rrid_count, reproducibility_score, False, warnings_list,
-        consensus_raw, evidence_report, scilem_score
+        consensus_raw, evidence_report, scilem_score,
+        integrity, reference_audit, authorship, topology_detail, author_metrics, emission
     )

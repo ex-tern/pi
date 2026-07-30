@@ -66,6 +66,11 @@
       </form>
     </details>
 
+    <details class="sidebar-expander">
+      <summary>Minting Difficulty</summary>
+      <div id="difficultyPanel" class="hidden"></div>
+    </details>
+
     <hr>
 
     <div class="donate-card">
@@ -91,7 +96,6 @@
     <section id="tab-assess" class="tab-panel active">
       <div class="page-header">
         <h1>Manuscript Intake &amp; Processing<button class="help-btn" data-help="intake" aria-label="About manuscript intake">?</button></h1>
-        <div class="count-badge">Total Analyzed: <span id="totalAnalyzed">–</span></div>
       </div>
 
       <div class="card">
@@ -142,7 +146,10 @@
         </div>
 
         <div id="estimatedCost" class="est-cost hidden"></div>
-        <button id="runPipelineBtn" class="btn btn-primary btn-block">Run Assessment Pipeline</button>
+        <div class="run-row">
+          <button id="runPipelineBtn" class="btn btn-primary">Run Assessment Pipeline</button>
+          <button id="stopPipelineBtn" class="btn btn-secondary hidden">Stop</button>
+        </div>
         <div id="pipelineStatus" class="status-box hidden"></div>
       </div>
 
@@ -218,26 +225,53 @@
 
           <details class="sidebar-expander">
             <summary>Map Settings</summary>
-            <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Physics simulation</label>
-            <label class="filter-label">Node sizing</label>
+
+            <div class="slider-row">
+              <label for="mapMaxNodes">Nodes shown <output id="mapMaxNodesOut">20</output></label>
+              <input type="range" id="mapMaxNodes" min="5" max="60" step="1" value="20">
+            </div>
+            <div class="slider-row">
+              <label for="mapNodeScale">Bubble size <output id="mapNodeScaleOut">1.0×</output></label>
+              <input type="range" id="mapNodeScale" min="0.4" max="2.5" step="0.1" value="1">
+            </div>
+            <div class="slider-row">
+              <label for="mapRepulsion">Spread <output id="mapRepulsionOut">50</output></label>
+              <input type="range" id="mapRepulsion" min="0" max="100" step="1" value="50">
+            </div>
+            <div class="slider-row">
+              <label for="mapLinkStrength">Clustering <output id="mapLinkStrengthOut">50</output></label>
+              <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="50">
+            </div>
+            <div class="slider-row">
+              <label for="mapLabelSize">Labels <output id="mapLabelSizeOut">On</output></label>
+              <input type="range" id="mapLabelSize" min="0" max="22" step="1" value="13">
+            </div>
+
+            <label class="filter-label" style="margin-top:8px;">Bubble size represents</label>
             <select id="mapSizeMode">
-              <option value="frequency">By frequency</option>
-              <option value="avg_score">By average score</option>
+              <option value="frequency">Paper count</option>
+              <option value="avg_score">Average piX</option>
+              <option value="uniform">Uniform</option>
             </select>
-            <label class="filter-label">Max nodes shown</label>
-            <select id="mapMaxNodes">
-              <option value="10">10</option>
-              <option value="20" selected>20</option>
-              <option value="30">30</option>
-              <option value="50">50</option>
-            </select>
+
+            <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
+            <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Group by domain</label>
+            <button id="mapResetSettingsBtn" class="btn btn-ghost btn-block">Reset to defaults</button>
           </details>
 
-          <div id="mapNetwork" class="map-network"></div>
+          <div class="map-shell">
+            <div id="mapNetwork" class="map-network"></div>
+            <div class="map-toolbar">
+              <button id="mapFitBtn" class="map-tool" title="Fit to view">Fit</button>
+              <button id="mapFreezeBtn" class="map-tool" title="Freeze layout">Freeze</button>
+            </div>
+            <div id="mapDomainLegend" class="map-domain-legend"></div>
+            <div id="mapStabilizing" class="map-stabilizing hidden">Settling layout…</div>
+          </div>
           <div id="mapEmptyState" class="hint hidden">No papers match these filters.</div>
           <details class="sidebar-expander" open>
             <summary>Map Legend &amp; Data <span class="hint">(click a row to focus it)</span></summary>
-            <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Freq</th><th class="num">Avg Weight</th></tr></thead><tbody></tbody></table>
+            <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead><tbody></tbody></table>
           </details>
         </div>
       </div>

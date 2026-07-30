@@ -5,13 +5,42 @@ from config import DB_PATH, GENESIS_BLOCK_CONFIG
 
 _schema_initialized = False
 
+# Columns added after the original schema. Checked cheaply on every connection
+# so a long-running process can never serve queries against a stale schema.
+REQUIRED_ASSESSMENT_COLUMNS = {
+    "warnings_json", "judge_metadata", "integrity_report", "reference_audit",
+    "authorship_signal", "topology_detail", "classification", "criteria_breakdown",
+    "signal_vector", "rubric_version", "author_metrics", "emission_record",
+}
+
 def reset_schema_cache():
     global _schema_initialized
     _schema_initialized = False
 
 def enforce_database_schema(conn: sqlite3.Connection):
+    """Bring the database up to the current schema.
+
+    The in-process cache below is a performance optimisation, not a guarantee.
+    It is deliberately guarded by a cheap column check: if the running process
+    cached `_schema_initialized = True` before a new column was introduced, the
+    ALTER TABLE would otherwise never execute, and every query naming that
+    column would fail with "no such column" until the process was restarted.
+    That failure mode is invisible in development (where you restart
+    constantly) and total in production.
+    """
     global _schema_initialized
-    if _schema_initialized: return
+    if _schema_initialized:
+        try:
+            cursor = conn.cursor()
+            cursor.execute("PRAGMA table_info(papers_assessment)")
+            existing = {row[1] for row in cursor.fetchall()}
+            if existing and REQUIRED_ASSESSMENT_COLUMNS.issubset(existing):
+                return
+            # Schema drifted since this process cached its state — fall through
+            # and re-run the migration.
+            logging.info("Schema drift detected; re-running migration.")
+        except sqlite3.Error:
+            return
 
     cursor = conn.cursor()
     
@@ -93,6 +122,22 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # dossier can be reconstructed later from the ledger explorer, not just
         # from the in-memory result of the run that produced it.
         "warnings_json": "TEXT DEFAULT '[]'", "judge_metadata": "TEXT DEFAULT '{}'",
+        # Adversarial-integrity verdict, reference-verification audit, advisory
+        # authorship signal, and the hierarchical topic breakdown behind C3/C4.
+        # Persisted so a dossier retrieved months later still explains itself.
+        "integrity_report": "TEXT DEFAULT '{}'", "reference_audit": "TEXT DEFAULT '{}'",
+        "authorship_signal": "TEXT DEFAULT '{}'", "topology_detail": "TEXT DEFAULT '{}'",
+        # Real field classification (with its provenance), the per-criterion
+        # rubric breakdown, the normalized signal vector that produced it, and
+        # the rubric version — so any historical score can be re-derived and
+        # audited even after the rubric changes.
+        "classification": "TEXT DEFAULT '{}'", "criteria_breakdown": "TEXT DEFAULT '[]'",
+        "signal_vector": "TEXT DEFAULT '{}'", "rubric_version": "TEXT DEFAULT ''",
+        # Real h-index / i10-index from OpenAlex. Reported as author context;
+        # excluded from scoring per CoARA.
+        "author_metrics": "TEXT DEFAULT '{}'",
+        # Difficulty-adjusted emission record: what was minted and why.
+        "emission_record": "TEXT DEFAULT '{}'",
     }
     cursor.execute("PRAGMA table_info(papers_assessment)")
     existing_cols = [row[1] for row in cursor.fetchall()]

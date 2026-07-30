@@ -57,6 +57,9 @@ from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, reset_scilem, evaluate_scilem_analysis_report,
 )
+from rubric import rubric_manifest, RUBRIC_VERSION
+from emission import emission_manifest, current_fee, fee_manifest
+from scientometrics import FIELD_TO_DOMAIN, fetch_trending_topics
 
 import numpy as np
 import torch
@@ -285,6 +288,19 @@ def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
         return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error={urllib.parse.quote(str(e))}")
 
 
+def _current_corpus_size() -> int:
+    conn = get_db_connection()
+    try:
+        return conn.execute("SELECT COUNT(*) FROM papers_assessment").fetchone()[0] or 0
+    finally:
+        conn.close()
+
+
+def _active_fee() -> float:
+    """Processing fee at the corpus's current difficulty epoch."""
+    return current_fee(_current_corpus_size(), PIQ_PROCESSING_FEE)
+
+
 def _normalize_identity(wallet: Optional[str], orcid: Optional[str]):
     clean_wallet = w3.to_checksum_address(wallet) if wallet and w3.is_address(wallet) else ""
     return clean_wallet, (orcid or "").strip()
@@ -298,16 +314,17 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
     if not clean_wallet and not clean_orcid:
         return {
             "total_piq": 0.0, "minted": 0.0, "fees_paid": 0.0, "balance": 0.0,
-            "fee_per_paper": PIQ_PROCESSING_FEE, "papers_affordable": 0,
+            "fee_per_paper": _active_fee(), "papers_affordable": 0,
         }
     bal = get_piq_balance(clean_wallet, clean_orcid)
+    fee = _active_fee()
     return {
         "total_piq": bal["minted"],
         "minted": bal["minted"],
         "fees_paid": bal["fees_paid"],
         "balance": bal["balance"],
-        "fee_per_paper": PIQ_PROCESSING_FEE,
-        "papers_affordable": int(bal["balance"] // PIQ_PROCESSING_FEE) if PIQ_PROCESSING_FEE > 0 else 0,
+        "fee_per_paper": fee,
+        "papers_affordable": int(bal["balance"] // fee) if fee > 0 else 0,
     }
 
 
@@ -365,8 +382,18 @@ def stats_count():
 def _item_from_result(res, filename):
     consensus = res[19] if isinstance(res[19], dict) else {}
     scores = res[8] or {}
+
+    def opt(idx, default):
+        return res[idx] if len(res) > idx and res[idx] is not None else default
+
     return {
         "judge_metadata": consensus.get("_judge_metadata", {}),
+        "integrity": opt(22, {}),
+        "reference_audit": opt(23, {}),
+        "authorship_signal": opt(24, {}),
+        "topology_detail": opt(25, {}),
+        "author_metrics": opt(26, {}),
+        "emission": opt(27, {}),
         "criteria_detail": [
             {"id": f"C{i + 1}", "title": CRITERIA_TITLES.get(f"C{i + 1}", ""), "score": safe_float(v, 0.0)}
             for i, v in enumerate(scores.values())
@@ -378,19 +405,28 @@ def _item_from_result(res, filename):
         "author_name": clean_author_name(res[1]),
         "score": res[2],
         "logic_integrity": res[3],
+        # Positions 4-7 carry the real classification and rubric breakdown.
+        # They previously held two literal "N/A" placeholders and two
+        # hardcoded field strings.
+        "classification": opt(4, {}),
+        "criteria_breakdown": opt(5, []),
+        "fields": opt(6, []),
+        "subfields": opt(7, []),
         "scores_dict": res[8],
         "eval_hash": res[9],
         "piq": res[10],
         "tx_hash": res[11],
         "zk_proof": res[12],
-        "h_idx": res[14],
-        "i10_idx": res[15],
+        # res[14]/res[15] are MDAR adherence and the RRID count. They were
+        # surfaced as "h_idx" and "i10_idx" — bibliometric names for data that
+        # is neither, which would have been actively misleading in a dossier.
         "repro_score": res[16],
         "filename": filename,
         "warnings": res[18],
         "consensus_raw": res[19],
         "evidence_report_text": res[20],
         "scilem_rating": res[21],
+        "rubric_version": RUBRIC_VERSION,
     }
 
 
@@ -424,7 +460,8 @@ def _resolve_pdf_bytes(doi: str = "", pdf_url: str = ""):
 
 def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: bool,
                             discover_papers: List[dict], user_id: str, book_address: str,
-                            fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False):
+                            fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False,
+                            active_fee: float = PIQ_PROCESSING_FEE):
     """Generator yielding NDJSON status/result lines, mirroring the old
     st.status(...) 'Analyzing X...' live progress box.
 
@@ -438,7 +475,7 @@ def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: 
     def line(obj):
         return json.dumps(obj) + "\n"
 
-    fee = PIQ_PROCESSING_FEE
+    fee = active_fee
 
     def take_fee(label: str):
         """Returns (ok, ndjson_lines_to_emit)."""
@@ -621,22 +658,23 @@ async def assess_stream(
     # they have no balance yet and the trial exists precisely to let them earn
     # their first piQ.
     fee_wallet, fee_orcid = _normalize_identity(wallet, orcid)
-    charge_fees = bool((fee_wallet or fee_orcid) and not free_trial_active and PIQ_PROCESSING_FEE > 0)
+    active_fee = _active_fee()
+    charge_fees = bool((fee_wallet or fee_orcid) and not free_trial_active and active_fee > 0)
 
     if charge_fees and paper_count:
         bal = get_piq_balance(fee_wallet, fee_orcid)
-        required = round(PIQ_PROCESSING_FEE * paper_count, 4)
-        if bal["balance"] + 1e-9 < PIQ_PROCESSING_FEE:
+        required = round(active_fee * paper_count, 4)
+        if bal["balance"] + 1e-9 < active_fee:
             raise HTTPException(
                 status_code=402,
                 detail=(
-                    f"Insufficient piQ balance. Processing costs {PIQ_PROCESSING_FEE:.2f} piQ per paper "
+                    f"Insufficient piQ balance. Processing costs {active_fee:.4f} piQ per paper "
                     f"and your balance is {bal['balance']:.2f} piQ. Earn piQ by having your own "
                     f"manuscripts assessed."
                 ),
             )
         if bal["balance"] + 1e-9 < required:
-            affordable = int(bal["balance"] // PIQ_PROCESSING_FEE)
+            affordable = int(bal["balance"] // active_fee)
             add_log(
                 f"Partial batch: balance {bal['balance']:.2f} piQ covers {affordable}/{paper_count} papers."
             )
@@ -648,6 +686,7 @@ async def assess_stream(
         yield from _run_assessment_stream(
             file_payload, doi, include_doi, discover_list, user_id, book_address,
             fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
+            active_fee=active_fee,
         )
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
@@ -659,7 +698,18 @@ async def assess_stream(
 # ---------------------------------------------------------------------------
 @app.get("/api/discover/hot-topics")
 def discover_hot_topics():
-    return {"topics": HOT_TOPICS}
+    """Currently active research topics, pulled live from OpenAlex.
+
+    The previous implementation returned a hand-written list frozen at
+    authoring time, which would have silently aged into a set of stale
+    suggestions. HOT_TOPICS survives only as a last-resort seed for when
+    OpenAlex is unreachable, and the response says which source was used so
+    the UI never implies staleness is freshness.
+    """
+    result = fetch_trending_topics(limit=10)
+    if result["topics"]:
+        return result
+    return {"topics": HOT_TOPICS, "source": "fallback-seed", "cached": False}
 
 
 @app.get("/api/discover/search")
@@ -957,11 +1007,29 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 # ---------------------------------------------------------------------------
 # 7. ANALYTICS — leaderboard, top papers, map-of-science bubble network
 # ---------------------------------------------------------------------------
-MAJOR_SCIENCE_FIELDS = [
-    "Computer Science", "Physics", "Chemistry", "Life Sciences",
-    "Medical Sciences", "Earth Sciences", "Social Sciences",
-    "Mathematics & Statistics", "Engineering & Technology",
-]
+def _corpus_fields():
+    """Fields actually present in the assessed corpus, most common first.
+
+    Replaces a hardcoded nine-item list that bore no relation to what had been
+    assessed. The filter now offers exactly the fields a user can actually
+    filter by, so selecting one always returns something.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT fields FROM papers_assessment").fetchall()
+    finally:
+        conn.close()
+
+    counts = defaultdict(int)
+    for (raw,) in rows:
+        try:
+            for f in json.loads(raw) if raw else []:
+                if f and f != "Unclassified":
+                    counts[f] += 1
+        except Exception:
+            continue
+    ranked = sorted(counts.items(), key=lambda kv: (-kv[1], kv[0]))
+    return [f for f, _ in ranked], dict(ranked)
 
 
 def _aggregate_authors(rows):
@@ -1012,7 +1080,39 @@ def analytics_summary():
 
 @app.get("/api/analytics/fields")
 def analytics_fields():
-    return {"fields": MAJOR_SCIENCE_FIELDS}
+    fields, counts = _corpus_fields()
+    return {"fields": fields, "counts": counts, "source": "assessed-corpus"}
+
+
+@app.get("/api/emission")
+def get_emission_policy():
+    """Publish the piQ emission policy and the corpus's current position on it.
+
+    Difficulty that nobody can inspect is indistinguishable from difficulty
+    that is arbitrary, so the whole schedule is published: where the corpus
+    sits, what the current factors are, and exactly what happens next.
+    """
+    conn = get_db_connection()
+    try:
+        total = conn.execute("SELECT COUNT(*) FROM papers_assessment").fetchone()[0]
+        minted = conn.execute("SELECT COALESCE(SUM(piq_minted), 0) FROM papers_assessment").fetchone()[0]
+    finally:
+        conn.close()
+    manifest = emission_manifest(total)
+    manifest["total_piq_minted"] = round(safe_float(minted, 0.0), 4)
+    manifest["fee"] = fee_manifest(total, PIQ_PROCESSING_FEE)
+    return manifest
+
+
+@app.get("/api/rubric")
+def get_rubric():
+    """Publish the scoring rubric.
+
+    CoARA's transparency commitment requires quantitative indicators be
+    published with their methodology. Exposing the rubric as data — rather
+    than leaving it implicit in code — is what makes every score auditable.
+    """
+    return rubric_manifest()
 
 
 @app.get("/api/analytics/leaderboard")
@@ -1085,31 +1185,22 @@ def analytics_top_papers(
     return {"papers": papers, "total": total}
 
 
-def refine_science_field(s):
-    s_lower = s.lower()
-    mapping = [
-        (["blockchain", "smart contract", "crypto", "ledger"], "Computer Science > Blockchain & Distributed Systems"),
-        (["machine learning", "deep learning", "neural", "ai", "artificial intelligence"], "Computer Science > Artificial Intelligence & Machine Learning"),
-        (["algorithm", "software", "computation", "cyber", "data", "information"], "Computer Science > Algorithms & Software Engineering"),
-        (["quantum", "optics", "photonics"], "Physics > Quantum Mechanics & Optics"),
-        (["energy", "mechanics", "thermodynamics", "physics"], "Physics > Applied Mechanics & Energy Systems"),
-        (["polymer", "catalysis", "molecule", "chemical", "chemistry"], "Chemistry > Chemical Synthesis & Molecular Catalysis"),
-        (["genetics", "genomics", "gene", "biology"], "Life Sciences > Genetics & Genomics"),
-        (["cellular", "protein", "molecular biology"], "Life Sciences > Molecular & Cellular Biology"),
-        (["ecology", "ecosystem", "biodiversity"], "Life Sciences > Ecology & Evolutionary Biology"),
-        (["clinical", "hospital", "patient", "disease", "pharmac", "medical", "medicine"], "Medical Sciences > Clinical Medicine & Pharmacology"),
-        (["biomedical", "neuroscience", "cardiac"], "Medical Sciences > Biomedical Research"),
-        (["climate", "carbon", "atmosphere", "meteorology", "earth"], "Earth Sciences > Climate Science & Meteorology"),
-        (["geology", "ocean", "seismic"], "Earth Sciences > Geology & Earth Systems"),
-        (["economics", "finance", "market", "social"], "Social Sciences > Economics & Quantitative Finance"),
-        (["sociology", "psychology", "policy", "management"], "Social Sciences > Behavioral & Policy Studies"),
-        (["math", "statistics", "algebra", "probability", "calculus"], "Mathematics & Statistics > Applied Mathematics & Statistics"),
-        (["engineering", "robotics", "materials", "civil", "electrical"], "Engineering & Technology > Applied Engineering & Materials Science"),
-    ]
-    for keywords, label in mapping:
-        if any(k in s_lower for k in keywords):
-            return label
-    return f"Engineering & Technology > Applied Technical Research ({s.title()})"
+def build_topic_path(field: str, subfield: str) -> str:
+    """Compose a 'Domain > Field' path from stored classification data.
+
+    This replaces a keyword-matching function that ran over the hardcoded
+    strings every record was written with. Because those strings were always
+    the same two literals, the mapping's seventeen branches were decorative:
+    every paper fell through to the same terminal label. Fields now come from
+    OpenAlex (or the text classifier), so the real hierarchy is already known
+    and simply needs formatting.
+    """
+    field = (field or "").strip() or "Unclassified"
+    subfield = (subfield or "").strip()
+    domain = FIELD_TO_DOMAIN.get(field, "Other")
+    if subfield and subfield.lower() != field.lower():
+        return f"{domain} > {field} > {subfield}"
+    return f"{domain} > {field}"
 
 
 @app.get("/api/analytics/map")
@@ -1132,7 +1223,7 @@ def analytics_map(
         conn.close()
 
     topic_aggregates = {}
-    exclude_terms = {"general", "general science", "unspecified domain", "unspecified sub-domain", "core research topic"}
+    exclude_terms = {"unclassified", "unspecified", "none", ""}
     for fields_json, subfields_json, final_score, author_str in rows:
         cleaned_author = clean_author_name(author_str)
         if author and author != "All Authors" and author not in cleaned_author:
@@ -1141,18 +1232,30 @@ def analytics_map(
         if score < min_score or score > max_score:
             continue
         try:
-            raw_subfields = [s.title().strip() for s in json.loads(subfields_json)]
+            paper_fields = [f.strip() for f in json.loads(fields_json or "[]") if f]
+            paper_subfields = [s.strip() for s in json.loads(subfields_json or "[]") if s]
         except Exception:
             continue
-        for rs in raw_subfields:
-            if rs and rs.lower() not in exclude_terms:
-                s = refine_science_field(rs)
-                major = s.split(">")[0].strip()
-                if selected_fields and major not in selected_fields:
-                    continue
-                agg = topic_aggregates.setdefault(s, {"weight_sum": 0.0, "frequency": 0})
-                agg["weight_sum"] += score
-                agg["frequency"] += 1
+
+        # Pair each field with its corresponding subfield where the classifier
+        # produced both; fall back to the field alone otherwise.
+        pairs = []
+        for i, f in enumerate(paper_fields):
+            sub = paper_subfields[i] if i < len(paper_subfields) else ""
+            pairs.append((f, sub))
+        if not pairs:
+            pairs = [(s, "") for s in paper_subfields]
+
+        for field, subfield in pairs:
+            if not field or field.lower() in exclude_terms:
+                continue
+            # The filter operates on the field, which is what the UI offers.
+            if selected_fields and field not in selected_fields:
+                continue
+            path = build_topic_path(field, subfield)
+            agg = topic_aggregates.setdefault(path, {"weight_sum": 0.0, "frequency": 0})
+            agg["weight_sum"] += score
+            agg["frequency"] += 1
 
     if not topic_aggregates:
         return {"nodes": [], "edges": [], "legend": [], "empty": True}
@@ -1211,7 +1314,10 @@ EXPLORER_COLUMNS = """p.title, p.author_name, p.filename, p.final_score, p.logic
    p.piq_minted, p.tx_hash, p.zk_proof, p.mdar_adherence_score,
    p.rrid_valid_count, p.reproducibility_score, p.eval_hash,
    p.consensus_data, p.evidence_report, p.scilem_score,
-   p.warnings_json, p.judge_metadata, p.timestamp, p.doi, p.user_id, p.eth_book"""
+   p.warnings_json, p.judge_metadata, p.timestamp, p.doi, p.user_id, p.eth_book,
+   p.integrity_report, p.reference_audit, p.authorship_signal, p.topology_detail,
+   p.classification, p.criteria_breakdown, p.author_metrics, p.rubric_version,
+   p.emission_record"""
 
 CRITERIA_TITLES = {
     "C1": "Semantic Originality", "C2": "Methodological Rigor", "C3": "Interdisciplinary Synergy",
@@ -1248,8 +1354,17 @@ def _row_to_dossier(r):
         "warnings": _safe_json(r[23], []),
         "judge_metadata": judge_meta,
         "timestamp": r[25], "doi": r[26], "submitted_by": r[27], "eth_book": r[28],
+        "integrity": _safe_json(r[29], {}),
+        "reference_audit": _safe_json(r[30], {}),
+        "authorship_signal": _safe_json(r[31], {}),
+        "topology_detail": _safe_json(r[32], {}),
+        "classification": _safe_json(r[33], {}),
+        "criteria_breakdown": _safe_json(r[34], []),
+        "author_metrics": _safe_json(r[35], {}),
+        "rubric_version": r[36],
+        "emission": _safe_json(r[37], {}),
         "explorer_url": get_sepolia_explorer_url(r[14], "tx"),
-        "fee_charged": PIQ_PROCESSING_FEE,
+        "fee_charged": _active_fee(),
     }
 
 
@@ -1296,6 +1411,292 @@ def explorer_dossier(eval_hash: str):
     if not row:
         raise HTTPException(status_code=404, detail="Record not found.")
     return _row_to_dossier(row)
+
+
+# ---------------------------------------------------------------------------
+# 8b. INTEROPERABILITY — EOSC / FAIR-aligned dossier export
+#
+# For the platform to federate into the European Open Science Cloud and be
+# consumable by institutional repositories and reference managers, its
+# assessments must be retrievable as structured, self-describing metadata
+# rather than only as rendered HTML. These endpoints expose exactly that:
+# stable identifiers, explicit provenance, an open licence, and a schema
+# version — the machine-actionability half of FAIR.
+# ---------------------------------------------------------------------------
+DOSSIER_SCHEMA_VERSION = "scholarpi-dossier/1.0"
+DOSSIER_LICENSE = "https://creativecommons.org/licenses/by/4.0/"
+
+CRITERION_DEFINITIONS = {
+    "C1": ("Semantic Originality", "Novelty relative to the existing corpus, penalized by generative-AI laundering heuristics."),
+    "C2": ("Methodological Rigor", "Deterministic MDAR reporting adherence and RRID validity."),
+    "C3": ("Interdisciplinary Synergy", "Hierarchical topic diversity across the OpenAlex domain/field/subfield ontology."),
+    "C4": ("Societal Impact", "Broader societal and open-infrastructure contribution."),
+    "C5": ("Open Science", "Open data, open code, licensing and containerized reproducibility."),
+    "C6": ("Literature Integration", "Citation polarity and integration with foundational literature."),
+    "C7": ("Empirical Density", "Empirical sample strength, statistical reporting and baseline variance."),
+    "C8": ("Future Actionability", "Future research actionability and adherence to FAIR principles."),
+}
+
+
+def _build_fair_dossier(d: dict) -> dict:
+    """Assemble a self-describing, CoARA-aligned assessment record."""
+    integrity = d.get("integrity") or {}
+    ref_audit = d.get("reference_audit") or {}
+    authorship = d.get("authorship_signal") or {}
+    topology = d.get("topology_detail") or {}
+    judge = d.get("judge_metadata") or {}
+
+    doi = d.get("doi")
+    if doi in ("None", "", None):
+        doi = None
+
+    return {
+        "@context": {
+            "schema": "https://schema.org/",
+            "coara": "https://www.coara.org/agreement/the-commitments/",
+            "eosc": "https://eosc.eu/interoperability-framework/",
+        },
+        "schema_version": DOSSIER_SCHEMA_VERSION,
+        "license": DOSSIER_LICENSE,
+        "generated_at": datetime.now().isoformat(),
+
+        "identifiers": {
+            "evaluation_hash": d.get("eval_hash"),
+            "doi": doi,
+            "transaction_hash": d.get("tx_hash") if (d.get("tx_hash") or "").startswith("0x") else None,
+            "zk_proof": d.get("zk_proof"),
+            "explorer_url": d.get("explorer_url"),
+        },
+        "resource": {
+            "type": "schema:ScholarlyArticle",
+            "title": d.get("title"),
+            "authors": [a.strip() for a in (d.get("author_name") or "").split(",") if a.strip()],
+            "assessed_at": d.get("timestamp"),
+        },
+        "assessment": {
+            "framework": "Pi-Index",
+            "alignment": ["CoARA", "DORA", "RRA"],
+            "composite_score_piX": d.get("score"),
+            "logic_integrity": d.get("logic_integrity"),
+            "piq_minted": d.get("piq"),
+            "criteria": [
+                {
+                    "id": cid,
+                    "name": CRITERION_DEFINITIONS[cid][0],
+                    "definition": CRITERION_DEFINITIONS[cid][1],
+                    "score": safe_float((d.get("scores_dict") or {}).get(cid), 0.0),
+                    "scale": {"min": 0.0, "max": 100.0},
+                }
+                for cid in CRITERION_DEFINITIONS
+            ],
+        },
+        # CoARA asks that quantitative indicators be published with their
+        # provenance and limitations, not as bare numbers.
+        "qualitative_basis": {
+            "final_judge": judge.get("final_judge_label"),
+            "independent_jurors": judge.get("external_juror_count"),
+            "juror_models": [m.get("label") for m in (judge.get("participating_models") or [])],
+            "judgement_quality": judge.get("tier"),
+            "judgement_confidence": judge.get("confidence"),
+            "inter_model_agreement": judge.get("inter_model_agreement"),
+            "rationale": judge.get("rationale"),
+        },
+        "open_science_indicators": {
+            "mdar_adherence": d.get("mdar_score"),
+            "valid_rrid_count": d.get("rrid_count"),
+            "reproducibility_signal": d.get("repro_score"),
+        },
+        "interdisciplinarity": {
+            "score": topology.get("score"),
+            "basis": topology.get("basis"),
+            "spans_domains": topology.get("spans_domains"),
+            "domains": topology.get("domains", []),
+            "fields": topology.get("fields", []),
+            "topic_count": topology.get("topic_count"),
+        },
+        "research_integrity": {
+            "adversarial_scan_performed": integrity.get("scanned", False),
+            "manipulation_detected": integrity.get("compromised", False),
+            "severity": integrity.get("severity", "none"),
+            "techniques": integrity.get("techniques", []),
+            "model_panel_confirmed": (integrity.get("canary") or {}).get("detected", False),
+            "reference_audit": {
+                "verdict": ref_audit.get("verdict"),
+                "checked": ref_audit.get("checked"),
+                "verified": ref_audit.get("verified"),
+                "unresolvable": ref_audit.get("fabricated"),
+                "unverifiable": ref_audit.get("unverified"),
+            },
+            "authorship_signal": {
+                "flag": authorship.get("flag"),
+                "confidence": authorship.get("confidence"),
+                "affects_score": False,
+                "caveat": authorship.get("bias_statement"),
+            },
+        },
+        "warnings": d.get("warnings", []),
+        "limitations": [
+            "Automated assessment is decision support for human peer review, not a replacement for it.",
+            "Criteria scores derive from the submitted text; claims not stated in the manuscript cannot be credited.",
+            "The authorship signal is advisory, never affects any score, and cannot establish misconduct.",
+            "Reference verification distinguishes unresolvable from unverifiable identifiers; only the former is penalized.",
+        ],
+    }
+
+
+@app.get("/api/dossier/{eval_hash}/fair")
+def fair_dossier(eval_hash: str):
+    """EOSC-aligned, machine-actionable assessment record."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Record not found.")
+    return _build_fair_dossier(_row_to_dossier(row))
+
+
+@app.get("/api/dossier/by-doi")
+def dossier_by_doi(doi: str = Query(..., min_length=4, max_length=200)):
+    """Look up an assessment by DOI.
+
+    This is the integration point for reference managers (a Zotero plugin can
+    resolve a library item straight to its assessment) and for institutional
+    repositories surfacing dossiers alongside faculty publications.
+    """
+    clean = doi.replace("https://doi.org/", "").replace("doi.org/", "").strip()
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT {EXPLORER_COLUMNS} FROM papers_assessment p
+                WHERE LOWER(p.doi) = LOWER(?) ORDER BY p.timestamp DESC LIMIT 1""",
+            (clean,),
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        return {"found": False, "doi": clean,
+                "message": "No ScholarPi assessment exists for this DOI yet."}
+    dossier = _row_to_dossier(row)
+    return {
+        "found": True,
+        "doi": clean,
+        "eval_hash": dossier["eval_hash"],
+        "title": dossier["title"],
+        "piX": dossier["score"],
+        "piQ": dossier["piq"],
+        "judgement_quality": (dossier.get("judge_metadata") or {}).get("tier"),
+        "integrity_flag": (dossier.get("integrity") or {}).get("compromised", False),
+        "dossier_url": f"/api/dossier/{dossier['eval_hash']}/fair",
+    }
+
+
+@app.get("/api/dossier/{eval_hash}/coara.html", response_class=HTMLResponse)
+def coara_dossier_html(eval_hash: str):
+    """Printable CoARA/DORA dossier for inclusion in evaluation portfolios."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"SELECT {EXPLORER_COLUMNS} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
+        ).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="Record not found.")
+
+    d = _row_to_dossier(row)
+    fair = _build_fair_dossier(d)
+    judge = d.get("judge_metadata") or {}
+    integrity = d.get("integrity") or {}
+
+    def esc(v):
+        return (str(v) if v is not None else "—").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+    rows = "".join(
+        f"<tr><td><strong>{c['id']}</strong></td><td>{esc(c['name'])}"
+        f"<div class='def'>{esc(c['definition'])}</div></td>"
+        f"<td class='num'>{c['score']:.1f}</td></tr>"
+        for c in fair["assessment"]["criteria"]
+    )
+    warn_html = "".join(f"<li>{esc(w)}</li>" for w in d.get("warnings", [])) or "<li>None raised.</li>"
+    jurors = ", ".join(fair["qualitative_basis"]["juror_models"] or []) or "—"
+
+    integrity_banner = ""
+    if integrity.get("compromised"):
+        integrity_banner = (
+            "<div class='alert'><strong>Research integrity alert.</strong> This manuscript was found to "
+            "contain content designed to manipulate an automated reviewer. Logic integrity was set to "
+            "0.0 and no piQ was minted.</div>"
+        )
+
+    return HTMLResponse(f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
+<title>CoARA Assessment Dossier — {esc(d.get('title'))}</title>
+<style>
+ body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:820px;
+   margin:40px auto;padding:0 24px;color:#0f172a;line-height:1.6}}
+ h1{{font-size:1.5rem;margin-bottom:4px}} h2{{font-size:1.05rem;margin-top:28px;
+   border-bottom:1px solid #e2e8f0;padding-bottom:6px}}
+ .sub{{color:#64748b;margin-bottom:20px}}
+ table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}}
+ th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}}
+ th{{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}}
+ .num{{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}}
+ .def{{color:#64748b;font-size:11.5px;margin-top:2px}}
+ .kv{{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}}
+ .kv span:first-child{{color:#64748b}}
+ .alert{{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;
+   padding:12px 14px;border-radius:6px;margin:16px 0;font-size:13px}}
+ .note{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;
+   font-size:12px;color:#475569;margin-top:12px}}
+ code{{background:#f1f5f9;padding:2px 5px;border-radius:4px;font-size:11px;word-break:break-all}}
+ ul{{padding-left:20px;font-size:13px}} li{{margin-bottom:6px}}
+ @media print{{body{{margin:0}} h2{{page-break-after:avoid}}}}
+</style></head><body>
+<h1>{esc(d.get('title'))}</h1>
+<div class="sub">{esc(d.get('author_name'))}</div>
+{integrity_banner}
+
+<h2>Assessment Summary</h2>
+<div class="kv"><span>Composite pi-Index (piX)</span><strong>{safe_float(d.get('score'),0):.1f} / 100</strong></div>
+<div class="kv"><span>Logic integrity</span><strong>{safe_float(d.get('logic_integrity'),0):.1f} / 100</strong></div>
+<div class="kv"><span>pi-Quotient minted</span><strong>{safe_float(d.get('piq'),0):.2f} piQ</strong></div>
+<div class="kv"><span>Assessed</span><strong>{esc(d.get('timestamp'))}</strong></div>
+
+<h2>Qualitative Basis</h2>
+<p style="font-size:13px">CoARA requires quantitative indicators be published with their provenance.
+This assessment was adjudicated by <strong>{esc(judge.get('final_judge_label'))}</strong> over the
+independent evaluations of {esc(jurors)}.</p>
+<div class="kv"><span>Independent external jurors</span><strong>{esc(judge.get('external_juror_count'))}</strong></div>
+<div class="kv"><span>Judgement quality</span><strong>{esc(judge.get('tier'))}</strong></div>
+<div class="kv"><span>Inter-model agreement</span><strong>{esc(judge.get('inter_model_agreement'))}</strong></div>
+<div class="note">{esc(judge.get('rationale'))}</div>
+
+<h2>Criteria Assessment</h2>
+<table><thead><tr><th>ID</th><th>Criterion</th><th class="num">Score</th></tr></thead><tbody>{rows}</tbody></table>
+
+<h2>Open Science Indicators</h2>
+<div class="kv"><span>MDAR adherence</span><strong>{safe_float(d.get('mdar_score'),0)*100:.1f}%</strong></div>
+<div class="kv"><span>Valid RRIDs detected</span><strong>{esc(d.get('rrid_count'))}</strong></div>
+<div class="kv"><span>Reproducibility signal</span><strong>{safe_float(d.get('repro_score'),0)*100:.1f}%</strong></div>
+
+<h2>Processing Warnings</h2>
+<ul>{warn_html}</ul>
+
+<h2>Verification</h2>
+<div class="kv"><span>Evaluation hash</span><code>{esc(d.get('eval_hash'))}</code></div>
+<div class="kv"><span>zk-SNARK proof</span><code>{esc(d.get('zk_proof'))}</code></div>
+<div class="kv"><span>Transaction</span><code>{esc(d.get('tx_hash'))}</code></div>
+
+<h2>Limitations</h2>
+<ul>{''.join(f'<li>{esc(l)}</li>' for l in fair['limitations'])}</ul>
+
+<div class="note">Machine-readable equivalent: <code>/api/dossier/{esc(eval_hash)}/fair</code> ·
+Schema <code>{DOSSIER_SCHEMA_VERSION}</code> · Licensed CC BY 4.0.<br>
+Pi-Index is decision support aligned with CoARA and DORA. It does not replace peer review.</div>
+</body></html>""")
 
 
 @app.get("/api/explorer/tx-url")
