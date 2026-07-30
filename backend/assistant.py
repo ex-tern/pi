@@ -262,12 +262,7 @@ def _match_concept(question: str) -> Optional[str]:
 # Optional cloud phrasing
 # ---------------------------------------------------------------------------
 def _cloud_answer(question: str, grounding: str) -> Optional[str]:
-    """Route a free-form question to the configured cloud model.
-
-    Local memory cost is zero because inference happens elsewhere. The grounded
-    facts are supplied as context and the model is instructed not to invent
-    beyond them — this is phrasing assistance, not an independent authority.
-    """
+    """Route a free-form question to the configured cloud model."""
     if not (GROQ_API_KEY or OR_API_KEY):
         return None
     try:
@@ -277,7 +272,8 @@ def _cloud_answer(question: str, grounding: str) -> Optional[str]:
             model = PRIMARY_MODEL
         else:
             client = OpenAI(api_key=OR_API_KEY, base_url="https://openrouter.ai/api/v1")
-            model = "meta-llama/llama-3.1-8b-instruct"
+            # FIX: Use openrouter/auto instead of the hardcoded 8b-instruct
+            model = "openrouter/auto"
 
         system = (
             "You are Scilem, the assistant for ScholarPi, a decentralised research-assessment "

@@ -84,14 +84,6 @@ from extraction import (
 )
 from http_client import guarded, run_bounded
 
-# The ScilemNetwork LSTM that lived here has been removed. It embedded
-# md5-hashed token IDs — arbitrary integers with no relation to word meaning
-# and frequent collisions — and was trained to regress a hash digest. Neither
-# its inputs nor its target carried learnable signal, so its output was noise
-# with a neural network wrapped around it. `compute_structural_quality()`
-# replaces it with the deterministic checks that were doing the real work.
-
-
 @lru_cache(maxsize=1)
 def load_local_language_model():
     from transformers import pipeline
@@ -108,31 +100,14 @@ def generate_assistant_reply(raw_text):
         return f"Scilem Local Neural Engine initialization failed: {e}"
 
 def compute_structural_quality(paper_text: str) -> float:
-    """Deterministic structural quality in [0, 1].
-
-    This replaced the Scilem neural score, which was not capable of measuring
-    anything. That network hashed each word to an arbitrary integer in
-    [0, 10000) and embedded the result: token IDs bore no relation to meaning,
-    unrelated words collided constantly, and the whole thing was trained on a
-    hash digest. Its output was a deterministic function of the text with no
-    learned structure — noise with a neural network wrapped around it.
-
-    What remains is the part that was always doing the real work: the
-    deterministic reporting, reproducibility and empirical-density checks. They
-    are transparent, reproducible, explainable to a researcher, and cost
-    nothing to run.
-    """
     if not paper_text or not paper_text.strip():
         return 0.0
     mdar, rrid_count = measure_mdar_adherence(paper_text)
     repro, _ = measure_reproducibility_markers(paper_text)
     density = measure_empirical_density(paper_text)
     rrid_component = min(1.0, rrid_count / 5.0)
-    # Weighted to match the rubric's emphasis: methodology and evidence
-    # dominate, open-science artefacts contribute, RRIDs are a bonus signal.
     return round(min(1.0, max(0.0,
         (mdar * 0.35) + (density * 0.30) + (repro * 0.25) + (rrid_component * 0.10))), 6)
-
 
 def assess_with_structural_analyzer(paper_text, canary=""):
     scilem_numeric_score = compute_structural_quality(paper_text) * 100.0
@@ -171,18 +146,9 @@ def assess_with_structural_analyzer(paper_text, canary=""):
     }
 
 def update_structural_analyzer(raw_text, evidence_report, target_quality=None):
-    """Retained as a no-op for call-site compatibility.
-
-    The local network this trained has been removed: it embedded md5-hashed
-    token IDs, so there was no learnable relationship between its inputs and
-    any target. Structural quality is now computed deterministically by
-    `compute_structural_quality`, which needs no training and is explainable.
-    """
     return ("Scilem structural analysis is deterministic; no model training is performed.")
 
-
 def clear_structural_analyzer_state():
-    """Clear any weights left over from the removed neural scorer."""
     stale = os.path.join(BASE_DIR, "scilem_weights.pt")
     if os.path.exists(stale):
         try:
@@ -225,23 +191,7 @@ class PiBrainLSTM(nn.Module):
 PidyneLSTM = PiBrainLSTM
 
 def request_model_assessment(provider_name, model_name, api_key, base_url, prompt):
-    """Call one model and parse its JSON verdict.
-
-    OpenRouter specifics, all three of which were wrong before:
-
-    1. The third-party ``openrouter`` SDK was used instead of the documented
-       OpenAI-compatible endpoint. That path could not set ``response_format``,
-       could not send attribution headers, and could not express routing
-       preferences — so it was strictly less capable than the standard client.
-    2. ``HTTP-Referer`` and ``X-Title`` were never sent. OpenRouter uses these
-       for attribution, and requests without them are treated as anonymous.
-    3. No provider routing preferences were sent. This is the important one:
-       an account whose privacy policy forbids prompt logging has no *default*
-       endpoint for many models, which is what produces "no endpoints available
-       matching your data policy". Declaring ``data_collection: deny`` asks
-       OpenRouter to *select a compliant endpoint* instead of failing, and
-       ``allow_fallbacks`` lets it substitute an equivalent provider.
-    """
+    """Call one model and parse its JSON verdict."""
     if not api_key or not str(api_key).strip():
         return provider_name, {
             "title": "N/A", "authors": "N/A",
@@ -254,23 +204,22 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
         headers = {}
         extra_body = {}
         if is_openrouter:
-            headers = {
-                "HTTP-Referer": OPENROUTER_SITE_URL,
-                # OpenRouter's documentation uses both spellings in different
-                # places; sending both costs nothing and avoids depending on
-                # which one the gateway is currently honouring.
-                "X-Title": OPENROUTER_SITE_NAME,
-                "X-OpenRouter-Title": OPENROUTER_SITE_NAME,
+            # FIX: Filter out None values to prevent httpx TypeErrors
+            if OPENROUTER_SITE_URL:
+                headers["HTTP-Referer"] = str(OPENROUTER_SITE_URL)
+            if OPENROUTER_SITE_NAME:
+                headers["X-Title"] = str(OPENROUTER_SITE_NAME)
+                headers["X-OpenRouter-Title"] = str(OPENROUTER_SITE_NAME)
+            
+            # FIX: Only send data_collection if it matches the strict string enum
+            provider_prefs = {
+                "allow_fallbacks": True,
+                "require_parameters": False,
             }
-            extra_body = {
-                "provider": {
-                    # Honour the account's privacy stance by routing to an
-                    # endpoint that satisfies it, rather than erroring.
-                    "data_collection": OPENROUTER_DATA_COLLECTION,
-                    "allow_fallbacks": True,
-                    "require_parameters": False,
-                },
-            }
+            if OPENROUTER_DATA_COLLECTION in ("allow", "deny"):
+                provider_prefs["data_collection"] = OPENROUTER_DATA_COLLECTION
+                
+            extra_body = {"provider": provider_prefs}
 
         client = OpenAI(api_key=api_key.strip(), base_url=base_url,
                         default_headers=headers or None, timeout=45.0, max_retries=1)
@@ -283,9 +232,6 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
         if extra_body:
             request_args["extra_body"] = extra_body
 
-        # Structured output is requested, then retried without it: not every
-        # model on every route supports response_format, and a model that can
-        # still produce valid JSON unprompted is better than no juror at all.
         try:
             response = client.chat.completions.create(
                 response_format={"type": "json_object"}, **request_args)
@@ -304,11 +250,6 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
         return provider_name, data
 
     except Exception as e:
-        # The raw provider message is retained internally for the operator
-        # diagnostics endpoint and the logs, but never becomes user-visible
-        # text: these strings routinely name vendors, accounts and settings
-        # URLs that are not a researcher's concern and are useful to an
-        # attacker probing the deployment.
         raw = str(e)
         classified = classify_provider_error(raw)
         logging.warning("Provider call failed for %s/%s [%s]: %s",
@@ -320,14 +261,7 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
             "failure_category": classified["category"], "_raw_error": raw,
         }
 
-
 def parse_model_json(content: str):
-    """Extract a JSON object from a model response.
-
-    Models wrap JSON in fenced blocks, prepend explanations, or emit trailing
-    commas. Discarding an otherwise-valid verdict over formatting would cost a
-    juror — and therefore cross-model corroboration — for no reason.
-    """
     if not content:
         return None
 
@@ -335,7 +269,6 @@ def parse_model_json(content: str):
     fenced = re.search(r"```(?:json)?\s*(.+?)```", content, re.DOTALL | re.IGNORECASE)
     if fenced:
         candidates.insert(0, fenced.group(1).strip())
-    # Outermost braces, for prose wrapped around an object.
     first, last = content.find("{"), content.rfind("}")
     if first != -1 and last > first:
         candidates.append(content[first:last + 1])
@@ -351,7 +284,6 @@ def parse_model_json(content: str):
                 continue
     return None
 
-
 def build_assessment_prompt(paper_text, canary=""):
     front_matter = paper_text[:3000]
     lower_text = paper_text.lower()
@@ -364,9 +296,6 @@ def build_assessment_prompt(paper_text, canary=""):
     if not ref_section:
         ref_section = paper_text[-4000:]
 
-    # The security directive is prepended so it establishes precedence before
-    # the model ever reaches untrusted manuscript text, and the manuscript is
-    # explicitly delimited as data.
     guard = build_security_directive(canary) if canary else ""
 
     return guard + f"""You are one of several independent expert reviewers assessing a manuscript.
@@ -409,18 +338,6 @@ Required JSON keys:
 """
 
 def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
-    """Try each configured route for a juror until one returns a verdict.
-
-    Previously each juror had exactly one route, so a single provider-side
-    restriction removed it from the panel permanently — which is how a
-    four-juror panel silently became a one-juror panel. Walking a chain means a
-    blocked or rate-limited route degrades to the next rather than to nothing.
-
-    Only errors that another route could plausibly fix are retried. An
-    authentication failure or a credit exhaustion is an account-level fact and
-    will recur identically on the next attempt, so retrying wastes the time
-    budget without improving the outcome.
-    """
     prompt = build_assessment_prompt(paper_text, canary)
     routes = build_routes(juror)
     if not routes:
@@ -434,9 +351,6 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
     attempts = []
     classified = None
     for route in routes:
-        # Skip routes already known to be rate-limited. Calling one anyway
-        # burns request time and, on quota-metered tiers, can extend the very
-        # limit we are waiting out.
         cooling, remaining = is_route_cooling(route["model"], route["provider"])
         if cooling:
             attempts.append({
@@ -461,11 +375,8 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
         })
 
         if classified["category"] == "rate_limit":
-            # Honour the provider's own Retry-After when it supplies one.
             record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
         elif classified["category"] in ("credit", "auth"):
-            # Account-level facts recur identically; back off hard rather than
-            # walking the rest of a chain that shares the same account.
             record_rate_limit(route["model"], route["provider"], 600)
 
         logging.warning("Juror %s route %s (%s) failed [%s]: %s",
@@ -484,7 +395,6 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
     last = classified
     return juror, {
         "title": "N/A", "authors": "N/A",
-        # Public-safe: names no vendor, no account, no configuration URL.
         "opinion": last["public"],
         "references": [], "api_failed": True,
         "failure_category": last["category"],
@@ -495,22 +405,17 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
 def assess_with_llama(paper_text, canary=""):
     return assess_with_route_chain("llama", paper_text, canary)
 
-
 def assess_with_mistral(paper_text, canary=""):
     return assess_with_route_chain("mistral", paper_text, canary)
-
 
 def assess_with_qwen(paper_text, canary=""):
     return assess_with_route_chain("qwen", paper_text, canary)
 
-
 def assess_with_gemini(paper_text, canary=""):
     return assess_with_route_chain("gemini", paper_text, canary)
 
-
 def assess_with_deepseek(paper_text, canary=""):
     return assess_with_route_chain("deepseek", paper_text, canary)
-
 
 def collect_independent_model_assessments(paper_text, canary=""):
     results = {}
@@ -523,9 +428,6 @@ def collect_independent_model_assessments(paper_text, canary=""):
         "scilem": assess_with_structural_analyzer
     }
 
-    # 3 rather than one-per-provider: each thread reserves its own stack,
-    # which adds up on a memory-constrained host. 5 short-lived HTTP calls
-    # finishing slightly less in parallel is a good trade for not OOMing.
     with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
         futures = {executor.submit(func, paper_text, canary): name for name, func in llm_funcs.items()}
         for future in concurrent.futures.as_completed(futures):
@@ -559,12 +461,7 @@ MODEL_REGISTRY = {
     "scilem": {"label": "Scilem Local Neural Engine", "role": "Deterministic Structural Analyst", "kind": "local"},
 }
 
-
 def measure_title_agreement(consensus_results) -> float:
-    """Pairwise similarity of the titles independently extracted by each
-    participating model. High agreement means the panel converged on the
-    same document interpretation, which is the strongest available signal
-    that the consensus is trustworthy."""
     titles = [
         str(v.get("title", "")).strip().lower()
         for k, v in consensus_results.items()
@@ -579,16 +476,7 @@ def measure_title_agreement(consensus_results) -> float:
             ratios.append(difflib.SequenceMatcher(None, titles[i], titles[j]).ratio())
     return sum(ratios) / len(ratios) if ratios else 0.0
 
-
 def grade_adjudication_quality(consensus_results) -> dict:
-    """Grades the reliability of the panel's verdict.
-
-    The core claim the Pidyne engine makes is that a verdict corroborated by
-    several *independent* LLMs is materially higher quality than one produced
-    by a single model: independent errors tend not to correlate, so agreement
-    across providers is evidence, while a lone model's confidence is not.
-    This function turns that into an explicit, reportable grade.
-    """
     participating, failed = [], []
     for key, meta in MODEL_REGISTRY.items():
         entry = consensus_results.get(key)
@@ -666,14 +554,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
         "multi_llm": n_external >= 2,
     }
 
-
 def summarize_panel_criteria(consensus_results) -> str:
-    """Render per-criterion scores across jurors, with their spread.
-
-    Divergence between independent jurors on a specific criterion is exactly
-    the signal a human reviewer should look at first, so it is surfaced as a
-    column rather than buried in prose.
-    """
     labels = {
         "C1": "Semantic Originality", "C2": "Methodological Rigor",
         "C3": "Interdisciplinary Synergy", "C4": "Societal Impact",
@@ -732,9 +613,7 @@ def summarize_panel_criteria(consensus_results) -> str:
         rows.extend(detail[:8])
     return "\n".join(rows) + "\n"
 
-
 def collect_panel_lists(consensus_results, field: str, heading: str) -> str:
-    """Merge a list-valued field across jurors, de-duplicated."""
     seen, items = set(), []
     for provider, data in (consensus_results or {}).items():
         if provider.startswith("_") or not isinstance(data, dict) or data.get("api_failed"):
@@ -748,7 +627,6 @@ def collect_panel_lists(consensus_results, field: str, heading: str) -> str:
     if not items:
         return ""
     return f"\n#### {heading}\n\n" + "\n".join(items[:8]) + "\n"
-
 
 def adjudicate_panel_verdict(consensus_results, text=None):
     prompt = "You are the Pidyne Assessment Engine. Review these independent model assessments:\n\n"
@@ -776,7 +654,8 @@ Respond strictly in JSON with keys:
         model_name = PRIMARY_MODEL
         judge_platform = "Groq Cloud"
     elif OR_API_KEY:
-        model_name = "meta-llama/llama-3.3-70b-instruct"
+        # FIX: Use openrouter/auto to ensure it routes to an available/free model
+        model_name = "openrouter/auto"
         judge_platform = "OpenRouter"
     elif GEMINI_API_KEY:
         model_name = "gemini-2.0-flash"
@@ -812,10 +691,6 @@ Respond strictly in JSON with keys:
         f"{m['label']}" for m in quality["participating_models"]
     ) or "none"
 
-    # Aggregate the panel's structured per-criterion judgements. Previously the
-    # report carried only free prose, so a reader could not see where the
-    # jurors agreed and where they diverged — which is the most useful thing a
-    # multi-model panel produces.
     criteria_table = summarize_panel_criteria(consensus_results)
     claims_block = collect_panel_lists(consensus_results, "key_claims", "Claims identified")
     concerns_block = collect_panel_lists(consensus_results, "concerns", "Concerns raised")
@@ -910,14 +785,6 @@ def truncate_to_token_budget(text, max_tokens):
     return front_matter + "\n...[TRUNCATED FOR TOKEN LIMITS]...\n" + back_matter
 
 def select_consensus_value(consensus_results, field):
-    """Pick the value the largest share of jurors agree on.
-
-    Values are clustered by fuzzy similarity rather than exact equality, since
-    models differ on capitalisation, subtitle inclusion and trailing
-    punctuation while extracting the same underlying title. Returns the
-    representative value and the fraction of jurors supporting it, which
-    doubles as a confidence measure.
-    """
     candidates = []
     for key, entry in (consensus_results or {}).items():
         if key.startswith("_") or not isinstance(entry, dict):
@@ -946,11 +813,8 @@ def select_consensus_value(consensus_results, field):
             clusters.append([val])
 
     winner = max(clusters, key=len)
-    # Within the winning cluster, prefer the longest form — models truncate
-    # more often than they invent, so the fullest variant is usually correct.
     representative = max(winner, key=len)
     return representative, round(len(winner) / len(candidates), 4)
-
 
 def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary=""):
     text = truncate_to_token_budget(text, text_limit)
@@ -958,14 +822,9 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
 
     evidence_report, pidyne_ai_rating = adjudicate_panel_verdict(consensus_results, text)
 
-    # Scan for the canary BEFORE stripping it — order matters here, since
-    # stripping first would erase the very signal we are looking for.
     canary_result = detect_canary_in_panel_output(consensus_results, canary) if canary else \
         {"detected": False, "models": [], "confidence": "none"}
 
-    # The canary is an internal control signal. Remove it from anything that
-    # will be stored or displayed, so it cannot be harvested from a published
-    # dossier and pre-empted by a later submitter.
     for _k, _entry in consensus_results.items():
         if isinstance(_entry, dict):
             _entry.pop("_raw_error", None)
@@ -977,23 +836,15 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
                 continue
             if isinstance(entry.get("opinion"), str):
                 entry["opinion"] = redact_provider_text(redact_canary(entry["opinion"], canary))
-            # Raw provider errors must never reach the persisted record.
             entry.pop("_raw_error", None)
 
     scilem_opinion = update_structural_analyzer(text, evidence_report, pidyne_ai_rating)
 
-    # Consensus extraction by agreement, not first-past-the-post. The previous
-    # implementation took the first juror in a fixed provider order that
-    # returned anything non-"N/A", so one model's misreading of the front
-    # matter became the record even when three others agreed on something else.
     best_title, title_support = select_consensus_value(consensus_results, "title")
     best_author, author_support = select_consensus_value(consensus_results, "authors")
 
     scilem_score = consensus_results.get("scilem", {}).get("scilem_score", pidyne_ai_rating)
 
-    # Confidence was hardcoded at 0.85 regardless of what actually happened.
-    # It now reflects the panel: how many jurors returned a verdict and how
-    # strongly they agreed on what they were reading.
     quality = (consensus_results.get("_judge_metadata") or {})
     agreement = float(quality.get("inter_model_agreement") or 0.0)
     jurors = int(quality.get("total_juror_count") or 0)
@@ -1019,19 +870,11 @@ def compute_rubric_fingerprint():
 def build_signal_vector(*, panel_rating, corroboration, mdar_adherence, rrid_count,
                         reproducibility, empirical_density, topology_detail,
                         reference_audit, text, text_complete=True):
-    """Assemble the normalized [0, 1] signal vector the rubric consumes.
-
-    This is the single place raw measurements become rubric inputs, so every
-    normalization is visible in one function rather than scattered through
-    scoring arithmetic.
-    """
     topo = topology_detail or {}
     return {
         "panel_rating": (panel_rating or 0.0) / 100.0,
         "corroboration": corroboration,
         "mdar_adherence": mdar_adherence,
-        # Saturates at 5 RRIDs: registering five distinct resources already
-        # demonstrates the practice; the twentieth adds nothing.
         "rrid_density": min(1.0, (rrid_count or 0) / 5.0),
         "reproducibility": reproducibility,
         "empirical_density": empirical_density,
@@ -1044,14 +887,7 @@ def build_signal_vector(*, panel_rating, corroboration, mdar_adherence, rrid_cou
         "text_completeness": 1.0 if text_complete else 0.0,
     }
 
-
 def score_criteria_from_legacy_args(**kwargs):
-    """Backwards-compatible shim over the versioned rubric.
-
-    The historical signature took loose keyword arguments and applied
-    undocumented coefficients. Scoring now lives in rubric.py; this wrapper
-    keeps older call sites (and the test suite) working.
-    """
     signals = kwargs.get("signals")
     if signals is None:
         signals = build_signal_vector(
@@ -1079,28 +915,9 @@ CRITERIA_ORDER = [
     "C8_Future_Actionability_FAIR",
 ]
 
-WEIGHT_INERTIA = 0.86   # raised from 0.72: the loop needed heavier damping
-
+WEIGHT_INERTIA = 0.86
 
 def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=None):
-    """Turn one manuscript's C1-C8 profile into the next block's weights.
-
-    **Corrected in v3.** The earlier version weighted by the *mean*: a
-    criterion papers scored well on gained weight. That is backwards. A
-    criterion everyone satisfies carries almost no information — it cannot
-    discriminate between manuscripts at all. The criterion doing the real work
-    is the one with high variance across the corpus.
-
-    Worse, mean-weighting was a positive feedback loop: high scores raised the
-    weight, the raised weight raised future composites on that criterion, which
-    raised the weight again. Left running it converged on whichever criterion
-    was easiest to satisfy.
-
-    Weights now track *discriminating power* — distance from the midpoint,
-    which is maximal for criteria that separate papers and minimal for ones
-    everything scores 0 or 100 on. Inertia is also raised so the series moves
-    slowly enough to be a trend rather than an echo of the last submission.
-    """
     raw = []
     for key in CRITERIA_ORDER:
         val = scores_dict.get(key, 50.0)
@@ -1110,14 +927,9 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=
             val = 50.0
         val = max(0.0, min(100.0, val))
 
-        # Discriminating power peaks at mid-range and falls off toward either
-        # extreme: a criterion everything scores 95 on is as uninformative as
-        # one everything scores 5 on.
         informativeness = 1.0 - (abs(val - 50.0) / 50.0)
         raw.append(0.25 + (informativeness * 0.75))
 
-    # Where corpus history is available, prefer measured variance — it is the
-    # direct quantity, and per-paper distance-from-midpoint is only a proxy.
     if corpus_scores:
         try:
             variances = []
@@ -1153,8 +965,6 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=
     else:
         blended = observed
 
-    # Clip and renormalize fight each other, so alternate until the vector
-    # both sums to 8.0 and respects the per-criterion floor/ceiling.
     w_min = 0.05
     w_max = 8.0 - (7 * w_min)
     for _ in range(12):
@@ -1165,25 +975,11 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=
         blended = [w * (8.0 / total) for w in blended]
         if all(w_min - 1e-9 <= w <= w_max + 1e-9 for w in blended):
             break
-    # Rounded to 8dp rather than 6: at 6dp the accumulated residue reaches
-    # 1e-6, which is exactly the tolerance the sum-to-8.0 invariant is
-    # asserted at elsewhere.
     return [round(w, 8) for w in blended]
 
-
 def generate_rebuttal_strategy(scores_dict):
-    """Delegates to the genetic-algorithm optimiser in rebuttal.py.
-
-    The previous implementation returned one generic sentence naming the
-    lowest criterion — the "lazy review" failure mode. Feedback is now evolved
-    against an explicit fitness function rewarding actionability and
-    specificity while penalising sycophantic and off-task language.
-    """
     return _optimized_rebuttal_strategy(scores_dict)
 
-# CRediT contributor roles, detected from what the manuscript actually
-# describes. Previously every record was written as ["Data Curation"]
-# unconditionally, which made the field meaningless.
 _CREDIT_PATTERNS = {
     "Conceptualization": r"\b(conceptuali[sz]ation|study design|research question|hypothes[ei]s)\b",
     "Methodology": r"\b(methodolog|experimental design|protocol|procedure)\b",
@@ -1196,9 +992,7 @@ _CREDIT_PATTERNS = {
     "Funding Acquisition": r"\b(funded by|grant no|financial support|acknowledge.{0,40}funding)\b",
 }
 
-
 def infer_credit_taxonomy_roles(text: str):
-    """Detect CRediT taxonomy roles evidenced in the manuscript text."""
     if not text:
         return ["Unspecified"]
     lowered = text.lower()
@@ -1206,28 +1000,23 @@ def infer_credit_taxonomy_roles(text: str):
              if re.search(pattern, lowered, re.IGNORECASE)]
     return roles or ["Unspecified"]
 
-
 def _EMPTY_INTEGRITY():
     return {"compromised": False, "severity": "none", "techniques": [], "findings": [],
             "warnings": [], "hidden_text_detected": False, "scanned": False,
             "canary": {"detected": False, "models": [], "confidence": "none"}}
-
 
 def _EMPTY_REFERENCE_AUDIT():
     return {"checked": 0, "verified": 0, "fabricated": 0, "unverified": 0, "total_found": 0,
             "fabricated_dois": [], "unverified_dois": [], "hallucination_ratio": 0.0,
             "verdict": "not_assessed", "warnings": [], "penalty_applied": False}
 
-
 def _EMPTY_AUTHORSHIP():
     return {"assessed": False, "flag": "not_assessed", "confidence": "none",
             "indicators": [], "note": "", "affects_score": False}
 
-
 def _EMPTY_TOPOLOGY():
     return {"score": 0.50, "basis": "unavailable", "topic_count": 0, "domains": [],
             "fields": [], "subfields": [], "spans_domains": False}
-
 
 def process_single_pdf(
     file_bytes,
@@ -1338,13 +1127,6 @@ def process_single_pdf(
         reproducibility_score, _repro_flags = measure_reproducibility_markers(full_text)
         empirical_density = measure_empirical_density(full_text)
 
-        # --- External enrichment, bounded and fault-isolated -------------
-        # Topic lookup, reference verification and author bibliometrics each
-        # call third-party APIs. Run sequentially they could occupy the request
-        # for minutes when a registry is slow, which surfaced as an unexplained
-        # gateway timeout with the paper's fee already charged. They now run
-        # concurrently under one budget, and any step that fails or overruns
-        # degrades its own field rather than aborting the assessment.
         enrichment = run_bounded([
             ("topology", lambda: fetch_topic_diversity_for_doi(provided_doi)),
             ("references", lambda: audit_citation_integrity(full_text, budget_seconds=8.0)),
@@ -1378,15 +1160,12 @@ def process_single_pdf(
             )
         warnings_list.extend(reference_audit.get("warnings", []))
 
-        # --- Static adversarial integrity scan (pre-model, local only) ---
         integrity = guarded(lambda: run_static_integrity_scan(file_bytes, full_text),
                             fallback=_EMPTY_INTEGRITY(), label="integrity scan")
 
-        # --- Advisory authorship signal (local only; never affects the score) ---
         authorship = guarded(lambda: assess_authorship_consistency(full_text),
                              fallback=_EMPTY_AUTHORSHIP(), label="authorship signal")
 
-        # Single-use trigger for the inject-and-detect defence.
         canary = issue_integrity_canary(file_hash)
 
         raw_data = run_evaluation_pipeline(full_text, PRIMARY_MODEL, MAX_TEXT_TOKENS, file_hash, canary)
@@ -1398,15 +1177,9 @@ def process_single_pdf(
 
         judge_meta_early = consensus_raw.get("_judge_metadata", {})
 
-        # Replaces VAPRI. The old term was md5(evidence_report) % 1000 / 1000 —
-        # a hash digest used as a score input. This measures how well the
-        # evaluation actually corroborated itself.
         corroboration_detail = measure_panel_corroboration(judge_meta_early, evidence_report)
         corroboration = corroboration_detail["index"]
 
-        # Real field classification. Every paper was previously written to the
-        # database as ["Computer Science"] / ["Core Research Domain"], which
-        # made the Global Map of Science a map of two string literals.
         classification = classify_manuscript_fields(full_text, topology_detail.get("_topics"))
         topology_detail.pop("_topics", None)
 
@@ -1416,11 +1189,6 @@ def process_single_pdf(
             if k != "scilem" and k != "_judge_metadata"
         )
         
-        # Bibliographic reconciliation. Registry metadata beats PDF typography,
-        # which beats the model panel's reading, which beats the filename.
-        # Previously the title was whichever juror answered first, with a local
-        # fallback of "line one of the PDF" — which on a published paper is
-        # usually a journal banner rather than the title.
         registry_meta = guarded(lambda: fetch_registry_metadata(provided_doi),
                                 fallback={}, label="registry metadata") or {}
         layout_meta = guarded(lambda: extract_from_pdf_layout(file_bytes),
@@ -1455,15 +1223,11 @@ def process_single_pdf(
                 f"so verify it before relying on the leaderboard entry."
             )
 
-        # Structured reference parsing, independent of DOI presence.
         reference_entries = guarded(lambda: parse_reference_entries(full_text),
                                     fallback=[], label="reference parsing") or []
         reference_summary = summarize_references(reference_entries)
         reference_audit["parsed_entries"] = len(reference_entries)
         reference_audit["summary"] = reference_summary
-        # Keep a bounded sample so the dossier can show what was actually
-        # parsed rather than only a count — a count alone gives the researcher
-        # no way to tell a parsing failure from a thin bibliography.
         reference_audit["entries"] = reference_entries[:40]
         reference_audit["bibliographic"] = {
             "title_basis": bibliographic["title_basis"],
@@ -1496,17 +1260,12 @@ def process_single_pdf(
             text=full_text,
             text_complete=bool(full_text.strip()),
         )
-        # Real author bibliometrics (h-index, i10-index). Reported for context;
-        # deliberately NOT part of the signal vector, per CoARA's commitment to
-        # abandon publication-based metrics in quality assessment.
         author_metrics = guarded(lambda: fetch_author_metrics(extracted_author),
                                  fallback={}, label="author bibliometrics")
 
         scores_dict = apply_scoring_rubric(signal_vector)
         criteria_breakdown = explain_all_criteria(signal_vector)
 
-        # Fabricated citations invalidate the methodology section outright: a
-        # methods claim resting on works that do not exist cannot be rigorous.
         if reference_audit.get("penalty_applied"):
             scores_dict["C2_Methodological_Rigor_SciScore"] = 0.0
             for entry in criteria_breakdown:
@@ -1514,11 +1273,6 @@ def process_single_pdf(
                     entry["score"] = 0.0
                     entry["override"] = "Zeroed: fabricated references detected."
 
-        # The Pidyne forecast previously predicted criteria weights that
-        # affected nothing, because the composite was a flat mean. The current
-        # epoch's weights now genuinely reweight it, and the epoch is recorded
-        # alongside the score so historical results stay interpretable when the
-        # weighting moves.
         cursor.execute(
             """SELECT block_height, w1, w2, w3, w4, w5, w6, w7, w8
                FROM blockchain_por_weights ORDER BY block_height DESC LIMIT 1"""
@@ -1530,25 +1284,13 @@ def process_single_pdf(
         final_score = compute_composite_score(scores_dict, epoch_weights)
         unweighted_score = compute_composite_score(scores_dict)
 
-        # Logic integrity: how far the adjudicated verdict survives adversarial
-        # discounting. The premise gap is the panel's own uncertainty; weak
-        # corroboration compounds it, because an uncorroborated verdict is a
-        # weaker premise than a corroborated one.
         premise_gap = 1.0 - (pidyne_ai_rating / 100.0)
         corroboration_gap = 1.0 - corroboration
         adversarial_penalty = math.exp(-(1.5 * premise_gap + 0.6 * corroboration_gap))
         logic_integrity = min(100.0, max(0.0, pidyne_ai_rating * adversarial_penalty))
 
-        # --- Fold in the model panel's canary verdict ---
         integrity = apply_panel_integrity_verdict(integrity, consensus_raw, canary)
 
-        # An attempt to manipulate the referee is disqualifying. Zeroing logic
-        # integrity trips the existing minting gate below, so no piQ is issued
-        # and the attempt is recorded permanently in the ledger dossier.
-        # Integrity findings withhold minting and flag for human review, but
-        # do not write a permanent misconduct record. An automated accusation
-        # with no appeals path is not something to publish immutably about a
-        # named researcher — the canary evidence is strong, not infallible.
         if integrity.get("compromised"):
             logic_integrity = 0.0
             integrity["status"] = "quarantined"
@@ -1560,21 +1302,10 @@ def process_single_pdf(
             )
         warnings_list.extend(integrity.get("warnings", []))
 
-        # --- piQ emission, difficulty-adjusted for adoption ---
-        # A flat piX/10 reward meant the hundred-thousandth paper earned what
-        # the first did: unbounded supply, and early contributors diluted by
-        # later volume at no disadvantage. Emission now hardens as the corpus
-        # grows (halving schedule), the qualifying bar rises with it, and an
-        # individual author's rate decays with their own output so piQ tracks
-        # quality rather than volume.
         cursor.execute("SELECT COUNT(*) FROM papers_assessment")
         corpus_row = cursor.fetchone()
         corpus_size = corpus_row[0] if corpus_row else 0
 
-        # Author identity resolves by OpenAlex ID where available. Matching on
-        # the raw name string treated "J. Smith" and "John Smith" as different
-        # researchers, which made per-author emission decay trivially evadable
-        # by varying the byline.
         author_key = (author_metrics or {}).get("openalex_id") or ""
         author_paper_count = 0
         try:
@@ -1595,11 +1326,6 @@ def process_single_pdf(
         except Exception:
             author_paper_count = 0
 
-        # Authorship gate. piQ was previously minted to whoever submitted the
-        # paper, which meant the highest-yield strategy was submitting other
-        # people's work rather than writing your own. Third-party submission
-        # remains fully supported and is still assessed and published — it
-        # simply earns nothing.
         attribution = guarded(
             lambda: verify_authorship(
                 submitter_orcid=user_id if "-" in str(user_id) else "",
@@ -1732,10 +1458,6 @@ def process_single_pdf(
         prev_hash = hash_row[0] if hash_row and hash_row[0] else "0" * 64
         prev_weights = list(hash_row[1:9]) if hash_row else None
 
-        # Each block now records the criteria weighting this manuscript's
-        # evidence profile implies, instead of a constant [1.0] * 8. Without
-        # this the Pidyne forecast has a perfectly flat input series and
-        # cannot produce a meaningful prediction.
         active_weights = derive_next_epoch_weights(scores_dict, prev_weights)
 
         new_height = block_count + 1
