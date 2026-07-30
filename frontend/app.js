@@ -700,9 +700,90 @@ async function pollLogs() {
 setInterval(pollLogs, 4000);
 pollLogs();
 
-// The Scilem assistant is disabled on this deployment; the form is inert but
-// we intercept submission so a stray Enter keypress can't reload the page.
-document.getElementById("scilemForm").addEventListener("submit", (e) => e.preventDefault());
+// --- Scilem assistant -------------------------------------------------------
+// Grounded rather than generative: it answers from the live database and a
+// knowledge base built from the running rubric, so it cannot invent a balance.
+const SCILEM_SUGGESTIONS = [
+  "What is piQ?", "How much does it cost?", "My balance",
+  "How can I improve my score?", "How is judgement made?", "Current difficulty",
+];
+
+function renderScilemSuggestions() {
+  const box = document.getElementById("scilemSuggestions");
+  if (!box) return;
+  box.innerHTML = SCILEM_SUGGESTIONS.map(q =>
+    `<button type="button" class="scilem-chip">${escapeHtml(q)}</button>`).join("");
+  box.querySelectorAll(".scilem-chip").forEach(chip => {
+    chip.addEventListener("click", () => askScilem(chip.textContent));
+  });
+}
+
+async function askScilem(question) {
+  const box = document.getElementById("scilemChatBox");
+  const input = document.getElementById("scilemInput");
+  const prompt = (question || input.value).trim();
+  if (!prompt) return;
+  input.value = "";
+
+  box.insertAdjacentHTML("beforeend",
+    `<div class="chat-msg user">${escapeHtml(prompt)}</div>
+     <div class="chat-msg ai" id="scilemPending">Thinking…</div>`);
+  box.scrollTop = box.scrollHeight;
+
+  try {
+    const res = await fetch(`${API}/api/scilem/chat`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ prompt, wallet: Session.wallet, orcid: Session.orcid }),
+    });
+    const pending = document.getElementById("scilemPending");
+    if (!res.ok) {
+      let detail = "The assistant is unavailable right now.";
+      try { detail = (await res.json()).detail || detail; } catch (e) { /* not JSON */ }
+      pending.innerHTML = escapeHtml(detail);
+      pending.removeAttribute("id");
+      return;
+    }
+    const data = await res.json();
+    const label = { "live-data": "from your data", "knowledge-base": "from the framework",
+                    "cloud-model": "model-assisted", "no-match": "no grounded answer",
+                    "help": "" }[data.source] || "";
+    pending.innerHTML = renderLightMarkdown(data.response) +
+      (label ? `<span class="chat-src">${escapeHtml(label)}</span>` : "");
+    pending.removeAttribute("id");
+  } catch (e) {
+    const pending = document.getElementById("scilemPending");
+    if (pending) {
+      pending.textContent = "Could not reach the assistant.";
+      pending.removeAttribute("id");
+    }
+  }
+  box.scrollTop = box.scrollHeight;
+}
+
+document.getElementById("scilemForm").addEventListener("submit", (e) => {
+  e.preventDefault();
+  askScilem();
+});
+
+async function initScilem() {
+  try {
+    const status = await (await fetch(`${API}/api/scilem/status`)).json();
+    const badge = document.getElementById("scilemBadge");
+    const input = document.getElementById("scilemInput");
+    if (!status.enabled) {
+      badge.textContent = "Off";
+      badge.className = "pill pill-muted";
+      input.disabled = true;
+      input.placeholder = "Assistant disabled";
+      return;
+    }
+    badge.textContent = status.cloud_phrasing ? "Ready" : "Grounded";
+    badge.className = "pill q-high";
+    renderScilemSuggestions();
+    document.getElementById("scilemChatBox").insertAdjacentHTML("beforeend",
+      `<div class="chat-msg ai">${escapeHtml(status.capabilities)}</div>`);
+  } catch (e) { /* leave the form usable; the endpoint will report failures */ }
+}
 
 // ---------------------------------------------------------------------------
 // Tabs
@@ -1636,6 +1717,15 @@ async function loadForecast() {
 
   try {
     const res = await fetch(`${API}/api/forecast?lookback=${lookback}`);
+    if (!res.ok) {
+      msg.textContent = "";
+      empty.classList.remove("hidden");
+      let detail = "";
+      try { detail = (await res.json()).detail || ""; } catch (e) { /* not JSON */ }
+      empty.innerHTML = `<div class="empty-title">Forecast unavailable</div>
+        <p>${escapeHtml(detail || `The forecasting service returned an error (HTTP ${res.status}).`)}</p>`;
+      return;
+    }
     const data = await res.json();
 
     if (!data.ready) {
@@ -1724,7 +1814,8 @@ async function loadForecast() {
     metaBox.innerHTML = `
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
       <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
-      <div class="fm-item"><span>Training loss</span><strong>${Number(data.training_loss).toFixed(5)}</strong></div>
+      <div class="fm-item"><span>Method</span><strong>${
+        data.method === "holt-linear-trend" ? "Statistical" : "Pidyne LSTM"}</strong></div>
       <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>`;
 
     if (data.interpretation) {
@@ -1753,7 +1844,16 @@ async function loadForecast() {
   } catch (e) {
     msg.textContent = "";
     empty.classList.remove("hidden");
-    empty.innerHTML = `<div class="empty-title">Forecast unavailable</div><p>Could not reach the forecasting service.</p>`;
+    // A thrown fetch means the connection itself failed — the server is down,
+    // restarting, or the request exceeded a gateway timeout. Say which, rather
+    // than reporting a generic "unavailable" that gives nothing to act on.
+    empty.innerHTML = `<div class="empty-title">Could not reach the forecasting service</div>
+      <p>The connection failed or timed out. This usually means the server is restarting, or the
+      forecast exceeded the host's request limit. It is cached once computed, so a retry shortly
+      after the server settles should succeed.</p>
+      <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
+    const retry = document.getElementById("forecastRetryBtn");
+    if (retry) retry.addEventListener("click", loadForecast);
   }
 }
 
@@ -1793,8 +1893,20 @@ async function loadAnalyticsSummary() {
 // unreadable clump that never settled; nodes carried no labels, so the map
 // could only be read via the legend table.
 const MAP_DEFAULTS = {
-  maxNodes: 20, nodeScale: 1.0, repulsion: 50, linkStrength: 50,
-  labelSize: 13, sizeMode: "frequency", physics: true, clusterByDomain: true,
+  maxNodes: 20, nodeScale: 1.0, gravity: 30, repulsion: 50, linkStrength: 50,
+  damping: 45, overlap: 85, labelSize: 13, sizeMode: "frequency",
+  physics: true, clusterByDomain: true,
+};
+
+// Named force configurations. Each is a coherent combination rather than a
+// single slider: "compact" needs high gravity AND low repulsion together, and
+// exposing that as one click is far more usable than asking someone to
+// discover the pairing.
+const MAP_PRESETS = {
+  compact:   { gravity: 75, repulsion: 20, linkStrength: 70, damping: 60, overlap: 55, maxNodes: 20 },
+  balanced:  { gravity: 30, repulsion: 50, linkStrength: 50, damping: 45, overlap: 85, maxNodes: 20 },
+  spacious:  { gravity: 8,  repulsion: 85, linkStrength: 25, damping: 40, overlap: 100, maxNodes: 30 },
+  clustered: { gravity: 45, repulsion: 35, linkStrength: 95, damping: 55, overlap: 70, maxNodes: 25 },
 };
 
 const MapSettings = {
@@ -1804,12 +1916,20 @@ const MapSettings = {
   set maxNodes(v) { this._set("max_nodes", v); },
   get nodeScale() { return parseFloat(this._get("node_scale", MAP_DEFAULTS.nodeScale)); },
   set nodeScale(v) { this._set("node_scale", v); },
+  get gravity() { return parseInt(this._get("gravity", MAP_DEFAULTS.gravity), 10); },
+  set gravity(v) { this._set("gravity", v); },
   get repulsion() { return parseInt(this._get("repulsion", MAP_DEFAULTS.repulsion), 10); },
   set repulsion(v) { this._set("repulsion", v); },
+  get damping() { return parseInt(this._get("damping", MAP_DEFAULTS.damping), 10); },
+  set damping(v) { this._set("damping", v); },
+  get overlap() { return parseInt(this._get("overlap", MAP_DEFAULTS.overlap), 10); },
+  set overlap(v) { this._set("overlap", v); },
+  get preset() { return this._get("preset", "balanced"); },
+  set preset(v) { this._set("preset", v); },
   get linkStrength() { return parseInt(this._get("link_strength", MAP_DEFAULTS.linkStrength), 10); },
   set linkStrength(v) { this._set("link_strength", v); },
-  get labelSize() { return parseInt(this._get("label_size", MAP_DEFAULTS.labelSize), 10); },
-  set labelSize(v) { this._set("label_size", v); },
+  get showLabels() { return this._get("show_labels", "true") !== "false"; },
+  set showLabels(v) { this._set("show_labels", v); },
   get sizeMode() { return this._get("size_mode", MAP_DEFAULTS.sizeMode); },
   set sizeMode(v) { this._set("size_mode", v); },
   get physics() { return this._get("physics", "true") !== "false"; },
@@ -1970,10 +2090,18 @@ function applyMapSettingsToForm() {
   };
   set("mapMaxNodes", MapSettings.maxNodes, "mapMaxNodesOut");
   set("mapNodeScale", MapSettings.nodeScale, "mapNodeScaleOut", v => `${Number(v).toFixed(1)}×`);
+  set("mapGravity", MapSettings.gravity, "mapGravityOut");
   set("mapRepulsion", MapSettings.repulsion, "mapRepulsionOut");
   set("mapLinkStrength", MapSettings.linkStrength, "mapLinkStrengthOut");
-  set("mapLabelSize", MapSettings.labelSize, "mapLabelSizeOut", v => (Number(v) < 6 ? "Off" : `${v}px`));
+  set("mapDamping", MapSettings.damping, "mapDampingOut", v => (Number(v) / 100).toFixed(2));
+  set("mapOverlap", MapSettings.overlap, "mapOverlapOut", v => (Number(v) / 100).toFixed(2));
+  document.querySelectorAll(".preset-btn").forEach(b =>
+    b.classList.toggle("active", b.dataset.preset === MapSettings.preset));
+  const summary = document.getElementById("mapPhysicsSummary");
+  if (summary) summary.textContent = MapSettings.preset.charAt(0).toUpperCase() + MapSettings.preset.slice(1);
+
   document.getElementById("mapSizeMode").value = MapSettings.sizeMode;
+  document.getElementById("mapLabelToggle").checked = MapSettings.showLabels;
   document.getElementById("mapPhysicsToggle").checked = MapSettings.physics;
   document.getElementById("mapClusterByDomain").checked = MapSettings.clusterByDomain;
 }
@@ -2053,8 +2181,10 @@ async function loadMap() {
 function renderMapNetwork(data) {
   const mode = MapSettings.sizeMode;
   const scale = MapSettings.nodeScale;
-  const labelSize = MapSettings.labelSize;
-  const showLabels = labelSize >= 6;
+  const showLabels = MapSettings.showLabels;
+  // Label size tracks bubble scale so text stays proportionate to the node it
+  // sits on, rather than needing a second slider to keep them in step.
+  const labelSize = Math.round(11 * Math.max(0.8, Math.min(1.5, scale)));
   const maxFreq = Math.max(...data.nodes.map(n => n.frequency || 1));
   const maxScore = Math.max(...data.nodes.map(n => n.avg_score || 0), 1);
   const stabilizing = document.getElementById("mapStabilizing");
@@ -2089,16 +2219,30 @@ function renderMapNetwork(data) {
 
   // Edges connect same-domain fields. Rendered faintly so structure is
   // suggested rather than drawn as a cage over the bubbles.
-  const edges = new vis.DataSet(data.edges.map(e => ({
-    from: e.from, to: e.to,
-    color: { color: "rgba(100,116,139,0.16)", highlight: "rgba(30,58,138,0.35)" },
-    width: 1, smooth: { type: "continuous", roundness: 0.35 },
-  })));
+  // Same-domain links pull harder, which is what makes disciplines settle into
+  // visible clusters rather than one undifferentiated cloud.
+  const clusterOn = MapSettings.clusterByDomain;
+  const edges = new vis.DataSet(data.edges.map(e => {
+    const sameDomain = domainOf(e.from) === domainOf(e.to);
+    return {
+      from: e.from, to: e.to,
+      color: {
+        color: sameDomain ? "rgba(100,116,139,0.22)" : "rgba(148,163,184,0.10)",
+        highlight: "rgba(30,58,138,0.40)",
+      },
+      width: sameDomain ? 1.2 : 0.6,
+      length: clusterOn && sameDomain ? 70 : undefined,
+      smooth: { type: "continuous", roundness: 0.3 },
+    };
+  }));
 
   // Sliders map to physics in a way that stays stable across the whole range:
   // repulsion widens spacing, clustering tightens same-domain grouping.
   const rep = MapSettings.repulsion / 100;
   const link = MapSettings.linkStrength / 100;
+  const grav = MapSettings.gravity / 100;
+  const damp = MapSettings.damping / 100;
+  const overlap = MapSettings.overlap / 100;
   const physicsOn = MapSettings.physics;
 
   const options = {
@@ -2108,19 +2252,24 @@ function renderMapNetwork(data) {
     physics: physicsOn ? {
       solver: "barnesHut",
       barnesHut: {
-        // Damping at 1.0 (the previous value) is critical damping: motion dies
-        // instantly and the layout never relaxes into a readable arrangement.
-        gravitationalConstant: -2000 - (rep * 12000),
-        centralGravity: 0.30 - (rep * 0.22),
-        springLength: 90 + (rep * 210),
-        springConstant: 0.01 + (link * 0.07),
-        damping: 0.45,
-        avoidOverlap: 0.85,
+        // Repulsion pushes nodes apart; gravity pulls the whole graph toward
+        // the centre. They are separate forces because the useful layouts need
+        // them varied independently — a compact map is high gravity AND low
+        // repulsion, which one combined slider cannot express.
+        gravitationalConstant: -800 - (rep * 14000),
+        centralGravity: 0.02 + (grav * 0.75),
+        springLength: 60 + (rep * 240) - (grav * 40),
+        springConstant: 0.008 + (link * 0.09),
+        // Damping below ~0.2 oscillates indefinitely; above ~0.9 the layout
+        // freezes before it has relaxed. The slider range is clamped to the
+        // band where the simulation actually settles.
+        damping: Math.max(0.15, Math.min(0.9, damp)),
+        avoidOverlap: overlap,
       },
       stabilization: { enabled: true, iterations: 400, updateInterval: 40, fit: true },
-      maxVelocity: 28,
-      minVelocity: 0.6,
-      timestep: 0.4,
+      maxVelocity: 30,
+      minVelocity: 0.7,
+      timestep: 0.38,
     } : false,
     interaction: {
       hover: true, tooltipDelay: 120, zoomView: true, dragView: true,
@@ -2212,10 +2361,24 @@ function bindMapSlider(id, outId, setter, { refetch = false, fmt = null } = {}) 
 bindMapSlider("mapMaxNodes", "mapMaxNodesOut", v => { MapSettings.maxNodes = v; }, { refetch: true });
 bindMapSlider("mapNodeScale", "mapNodeScaleOut", v => { MapSettings.nodeScale = v; },
               { fmt: v => `${Number(v).toFixed(1)}×` });
-bindMapSlider("mapRepulsion", "mapRepulsionOut", v => { MapSettings.repulsion = v; });
-bindMapSlider("mapLinkStrength", "mapLinkStrengthOut", v => { MapSettings.linkStrength = v; });
-bindMapSlider("mapLabelSize", "mapLabelSizeOut", v => { MapSettings.labelSize = v; },
-              { fmt: v => (Number(v) < 6 ? "Off" : `${v}px`) });
+bindMapSlider("mapGravity", "mapGravityOut", v => { MapSettings.gravity = v; markCustomPreset(); });
+bindMapSlider("mapRepulsion", "mapRepulsionOut", v => { MapSettings.repulsion = v; markCustomPreset(); });
+bindMapSlider("mapLinkStrength", "mapLinkStrengthOut", v => { MapSettings.linkStrength = v; markCustomPreset(); });
+bindMapSlider("mapDamping", "mapDampingOut", v => { MapSettings.damping = v; markCustomPreset(); },
+              { fmt: v => (Number(v) / 100).toFixed(2) });
+bindMapSlider("mapOverlap", "mapOverlapOut", v => { MapSettings.overlap = v; markCustomPreset(); },
+              { fmt: v => (Number(v) / 100).toFixed(2) });
+
+function markCustomPreset() {
+  MapSettings.preset = "custom";
+  document.querySelectorAll(".preset-btn").forEach(b => b.classList.remove("active"));
+  const summary = document.getElementById("mapPhysicsSummary");
+  if (summary) summary.textContent = "Custom";
+}
+document.getElementById("mapLabelToggle").addEventListener("change", e => {
+  MapSettings.showLabels = e.target.checked;
+  if (mapLastData) renderMapNetwork(mapLastData); else loadMap();
+});
 
 document.getElementById("mapSizeMode").addEventListener("change", e => {
   MapSettings.sizeMode = e.target.value;
@@ -2229,6 +2392,17 @@ document.getElementById("mapClusterByDomain").addEventListener("change", e => {
   MapSettings.clusterByDomain = e.target.checked;
   if (mapLastData) renderMapNetwork(mapLastData); else loadMap();
 });
+document.querySelectorAll(".preset-btn").forEach(btn => {
+  btn.addEventListener("click", () => {
+    const preset = MAP_PRESETS[btn.dataset.preset];
+    if (!preset) return;
+    Object.entries(preset).forEach(([k, v]) => { MapSettings[k] = v; });
+    MapSettings.preset = btn.dataset.preset;
+    applyMapSettingsToForm();
+    loadMap();
+  });
+});
+
 document.getElementById("mapResetSettingsBtn").addEventListener("click", () => {
   MapSettings.reset();
   applyMapSettingsToForm();
@@ -2792,4 +2966,5 @@ bootstrapFromQueryParams();
 renderSidebar();
 loadChainStatus();
 loadEmissionStatus();
+initScilem();
 setInterval(loadChainStatus, 60000);

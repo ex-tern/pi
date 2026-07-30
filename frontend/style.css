@@ -247,6 +247,27 @@ input::placeholder { color: var(--faint); }
 .trend-flat { color: var(--faint); }
 
 /* ---------- Map of Science ---------- */
+/* Compact by default: controls are collapsed, the canvas is the content. */
+/* Legend can grow long; keep it scrollable with a pinned header so the map
+   stays visible rather than being pushed off-screen. */
+.legend-scroll {
+  max-height: 210px; overflow-y: auto; border: 1px solid var(--border);
+  border-radius: 9px; margin-top: 8px;
+}
+.legend-scroll .data-table { margin: 0; border: none; border-radius: 0; }
+.legend-scroll thead th {
+  position: sticky; top: 0; z-index: 2; background: #f8fafc;
+  box-shadow: inset 0 -1px 0 var(--border);
+}
+.preset-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-bottom: 12px; }
+.preset-btn {
+  background: #f1f5f9; border: 1px solid var(--border); border-radius: 7px;
+  padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
+  cursor: pointer; font-family: inherit;
+}
+.preset-btn:hover { border-color: var(--border-strong); color: var(--text); }
+.preset-btn.active { background: var(--accent); color: #fff; border-color: var(--accent); }
+
 /* Unified author/field search — a checklist does not scale with the corpus. */
 .map-search-wrap { position: relative; }
 .map-search { margin-bottom: 0; padding-right: 30px; }
@@ -325,7 +346,7 @@ input::placeholder { color: var(--faint); }
 
 .map-shell { position: relative; }
 .map-network {
-  height: 440px; border: 1px solid var(--border); border-radius: 10px;
+  height: 380px; border: 1px solid var(--border); border-radius: 10px;
   background:
     radial-gradient(circle at 30% 25%, rgba(219,234,254,0.55) 0%, transparent 55%),
     radial-gradient(circle at 72% 70%, rgba(237,233,254,0.5) 0%, transparent 55%),
@@ -598,5 +619,26 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .pillar-list li { margin-bottom: 10px; font-size: 13px; line-height: 1.65; color: #334155; }
 .footer-note { text-align: center; color: var(--faint); font-size: 12px; margin-top: 22px; }
 
+.scilem-chat-box {
+  max-height: 260px; overflow-y: auto; background: #fbfcfe; border: 1px solid var(--border);
+  border-radius: 8px; padding: 9px; font-size: 12px; line-height: 1.6; margin: 8px 0;
+}
+.scilem-chat-box:empty { display: none; }
+.chat-msg { margin-bottom: 9px; padding-bottom: 9px; border-bottom: 1px solid #f1f5f9; }
+.chat-msg:last-child { margin-bottom: 0; padding-bottom: 0; border-bottom: none; }
+.chat-msg.user { font-weight: 600; color: var(--accent); }
+.chat-msg.ai { color: #334155; }
+.chat-msg.ai strong { color: var(--text); }
+.chat-msg.ai code { font-size: 10.5px; }
+.chat-msg.ai ul { padding-left: 16px; margin: 5px 0; }
+.chat-src { display: inline-block; font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--faint); margin-top: 5px; }
+.scilem-suggestions { display: flex; flex-wrap: wrap; gap: 4px; margin-bottom: 8px; }
+.scilem-chip {
+  background: var(--accent-soft); color: var(--accent); border: 1px solid #dbeafe;
+  border-radius: 14px; padding: 3px 9px; font-size: 10.5px; font-weight: 600;
+  cursor: pointer; font-family: inherit;
+}
+.scilem-chip:hover { background: #dbeafe; }
 .scilem-form { display: flex; gap: 6px; }
 .scilem-form input { margin-bottom: 0; }

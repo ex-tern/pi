@@ -136,11 +136,15 @@ def _env_bool(key: str, default: bool) -> bool:
 SCILEM_LOCAL_MODEL_DEFAULT = False
 ENABLE_SCILEM_LOCAL_MODEL = _env_bool("ENABLE_SCILEM_LOCAL_MODEL", SCILEM_LOCAL_MODEL_DEFAULT)
 
+# The assistant itself is ON by default and needs no local model. It answers
+# from the live database and a knowledge base built from the running rubric and
+# emission policy, so it cannot hallucinate a balance or a score. The heavy
+# local model above remains optional and off; it was never what made the
+# assistant useful.
+ENABLE_SCILEM_ASSISTANT = _env_bool("ENABLE_SCILEM_ASSISTANT", True)
+
 SCILEM_DISABLED_NOTICE = (
-    "Due to server limitations, the local language model is inactive. "
-    "The Scilem conversational assistant is unavailable on this deployment. "
-    "Manuscript assessment is unaffected — the Scilem deterministic structural "
-    "analyser still runs on every paper as part of the evaluation panel."
+    "The Scilem assistant is disabled on this deployment."
 )
 
 
