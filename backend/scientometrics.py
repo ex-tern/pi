@@ -415,13 +415,39 @@ _TRENDING_CACHE = {"topics": [], "fetched_at": 0.0}
 _TRENDING_TTL = 6 * 3600  # OpenAlex topic rankings move slowly; 6h is ample.
 
 
-def fetch_active_research_topics(limit: int = 10) -> Dict:
-    """Pull currently high-activity research topics from OpenAlex.
+# Generic buckets OpenAlex assigns to work it cannot classify precisely. They
+# dominate any volume ranking while being useless as a search suggestion.
+_GENERIC_TOPIC_PATTERNS = [
+    r"^(diverse|various|miscellaneous|general|other)\b",
+    r"\b(and (other|related|various)|studies|topics|research)$",
+    r"^(topic modeling|bibliometric|scientometric)",
+    r"\beducation, innovation\b",
+    r"\bdiverse (scientific|academic)\b",
+]
 
-    Replaces a hardcoded list that was frozen at authoring time and would have
-    silently aged into irrelevance. Ranked by works count, restricted to the
-    current and previous year so 'hot' means genuinely active rather than
-    historically large.
+
+def _is_generic_topic(name: str) -> bool:
+    lowered = (name or "").strip().lower()
+    if not lowered or len(lowered) < 8 or len(lowered) > 62:
+        return True
+    if lowered.count(" and ") >= 2:      # "A and B and C" catch-all buckets
+        return True
+    if any(re.search(p, lowered) for p in _GENERIC_TOPIC_PATTERNS):
+        return True
+    return False
+
+
+def fetch_active_research_topics(limit: int = 10) -> Dict:
+    """Currently *accelerating* research topics, from OpenAlex.
+
+    Ranking purely by publication volume returns the largest historical
+    buckets — "Topic Modeling", "Diverse Scientific and Economic Studies" —
+    which are neither current nor useful as a starting point for discovery.
+
+    This ranks by growth instead: the ratio of this year's output to the prior
+    year's, restricted to topics with enough volume for that ratio to be
+    meaningful. A topic doubling from a real base is genuinely hot; one that is
+    merely large is not. Generic catch-all buckets are filtered out entirely.
     """
     import time as _time
     now = _time.time()
@@ -430,32 +456,51 @@ def fetch_active_research_topics(limit: int = 10) -> Dict:
 
     try:
         year = __import__("datetime").datetime.now().year
-        status, payload = fetch_json(
-            f"{OPENALEX_BASE}/works",
-            params={
-                "filter": f"from_publication_date:{year - 1}-01-01,is_oa:true",
-                "group_by": "primary_topic.id",
-                "per_page": 100,
-            },
-        )
-        if status == 200 and payload:
-            groups = payload.get("group_by", [])
-            names = []
-            for g in groups:
-                name = (g.get("key_display_name") or "").strip()
-                # Skip OpenAlex's catch-all buckets, which are not topics.
-                if name and name.lower() not in ("unknown", "other") and len(name) < 70:
-                    names.append(name)
-                if len(names) >= limit:
-                    break
+
+        def topic_counts(from_year, to_year):
+            status, payload = fetch_json(
+                f"{OPENALEX_BASE}/works",
+                params={
+                    "filter": (f"from_publication_date:{from_year}-01-01,"
+                               f"to_publication_date:{to_year}-12-31,is_oa:true"),
+                    "group_by": "primary_topic.id",
+                    "per_page": 200,
+                },
+            )
+            if status != 200 or not payload:
+                return {}
+            return {
+                (g.get("key_display_name") or "").strip(): int(g.get("count") or 0)
+                for g in payload.get("group_by", [])
+                if g.get("key_display_name")
+            }
+
+        current = topic_counts(year - 1, year)
+        previous = topic_counts(year - 3, year - 2)
+
+        if current:
+            scored = []
+            # A floor on absolute volume keeps a topic that went from 2 papers
+            # to 8 from outranking one that went from 400 to 1,200.
+            volume_floor = max(40, sorted(current.values(), reverse=True)[
+                min(len(current) - 1, 60)] if current else 40)
+            for name, count in current.items():
+                if _is_generic_topic(name) or count < volume_floor:
+                    continue
+                base = previous.get(name, 0)
+                growth = (count / base) if base >= 10 else (2.0 if count >= volume_floor * 2 else 1.0)
+                scored.append((name, growth, count))
+
+            scored.sort(key=lambda x: (x[1], x[2]), reverse=True)
+            names = [name for name, _, _ in scored[:limit]]
             if names:
                 _TRENDING_CACHE["topics"] = names
                 _TRENDING_CACHE["fetched_at"] = now
-                return {"topics": names, "source": "openalex", "cached": False}
+                return {"topics": names, "source": "openalex-growth", "cached": False,
+                        "ranked_by": "publication growth vs. two years prior"}
     except Exception as e:
         logging.debug("Trending topics lookup failed: %s", e)
 
-    # Stale cache beats no data; an empty list beats inventing one.
     if _TRENDING_CACHE["topics"]:
         return {"topics": _TRENDING_CACHE["topics"], "source": "openalex-stale", "cached": True}
     return {"topics": [], "source": "unavailable", "cached": False}
