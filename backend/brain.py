@@ -15,6 +15,7 @@ os.environ.setdefault("NUMEXPR_NUM_THREADS", "1")
 
 import json
 import time
+import logging
 import math
 import random
 import hashlib
@@ -70,6 +71,9 @@ from security import (
     apply_panel_integrity_verdict, redact_canary, detect_canary_in_panel_output,
 )
 from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
+from providers import (
+    build_routes, classify_provider_error, redact_provider_text, provider_configuration,
+)
 from emission import compute_piq_emission, emission_manifest
 from extraction import (
     extract_from_pdf_layout, fetch_registry_metadata, reconcile_bibliographic_record,
@@ -257,20 +261,23 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
             return provider_name, data
             
     except Exception as e:
-        err_str = str(e)
-        if "402" in err_str or "insufficient credits" in err_str.lower():
-            opinion = f"[{provider_name.upper()} Insufficient Credits]: Account requires credit top-up."
-        elif "429" in err_str or "RESOURCE_EXHAUSTED" in err_str or "rate_limit_exceeded" in err_str.lower():
-            opinion = f"[{provider_name.upper()} Rate Limit / Quota Exceeded]: Limit reached."
-        else:
-            opinion = f"Error querying {provider_name.upper()}: {err_str}."
-            
+        # The raw provider message is retained internally for the operator
+        # diagnostics endpoint and the logs, but never becomes user-visible
+        # text: these strings routinely name vendors, accounts and settings
+        # URLs that are not a researcher's concern and are useful to an
+        # attacker probing the deployment.
+        raw = str(e)
+        classified = classify_provider_error(raw)
+        logging.warning("Provider call failed for %s/%s [%s]: %s",
+                        provider_name, model_name, classified["category"], raw[:300])
         return provider_name, {
-            "title": "N/A (API Limit)",
+            "title": "N/A",
             "authors": "N/A",
-            "opinion": opinion,
+            "opinion": classified["public"],
             "references": [],
-            "api_failed": True
+            "api_failed": True,
+            "failure_category": classified["category"],
+            "_raw_error": raw,
         }
 
 def build_assessment_prompt(paper_text, canary=""):
@@ -329,33 +336,75 @@ Required JSON keys:
 {ref_section}
 """
 
-def assess_with_llama(paper_text, canary=""):
+def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
+    """Try each configured route for a juror until one returns a verdict.
+
+    Previously each juror had exactly one route, so a single provider-side
+    restriction removed it from the panel permanently — which is how a
+    four-juror panel silently became a one-juror panel. Walking a chain means a
+    blocked or rate-limited route degrades to the next rather than to nothing.
+
+    Only errors that another route could plausibly fix are retried. An
+    authentication failure or a credit exhaustion is an account-level fact and
+    will recur identically on the next attempt, so retrying wastes the time
+    budget without improving the outcome.
+    """
     prompt = build_assessment_prompt(paper_text, canary)
-    if GROQ_API_KEY:
-        return request_model_assessment("llama", PRIMARY_MODEL, GROQ_API_KEY, "https://api.groq.com/openai/v1", prompt)
-    elif OR_API_KEY:
-        return request_model_assessment("llama", "meta-llama/llama-3.3-70b-instruct", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
-    return "llama", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
+    routes = build_routes(juror)
+    if not routes:
+        return juror, {
+            "title": "N/A", "authors": "N/A",
+            "opinion": "This model is not configured on this deployment.",
+            "references": [], "api_failed": True,
+            "failure_category": "not_configured",
+        }
+
+    attempts = []
+    for route in routes:
+        provider, data = request_model_assessment(
+            juror, route["model"], route["key"], route["base"], prompt)
+        if not data.get("api_failed"):
+            data["route"] = {"model": route["model"], "provider": route["provider"]}
+            data["route_attempts"] = attempts
+            return juror, data
+
+        classified = classify_provider_error(data.get("_raw_error") or data.get("opinion", ""))
+        attempts.append({
+            "model": route["model"], "provider": route["provider"],
+            "category": classified["category"],
+        })
+        logging.warning("Juror %s route %s (%s) failed [%s]: %s",
+                        juror, route["model"], route["provider"],
+                        classified["category"], classified["internal"][:200])
+        if not classified["retryable"]:
+            break
+
+    last = classified if attempts else {"public": "No route was reachable.", "category": "unknown"}
+    return juror, {
+        "title": "N/A", "authors": "N/A",
+        # Public-safe: names no vendor, no account, no configuration URL.
+        "opinion": last["public"],
+        "references": [], "api_failed": True,
+        "failure_category": last["category"],
+        "route_attempts": attempts,
+    }
+
+
+def assess_with_llama(paper_text, canary=""):
+    return assess_with_route_chain("llama", paper_text, canary)
+
 
 def assess_with_mistral(paper_text, canary=""):
-    prompt = build_assessment_prompt(paper_text, canary)
-    if OR_API_KEY:
-        return request_model_assessment("mistral", "mistralai/mistral-large", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
-    return "mistral", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
+    return assess_with_route_chain("mistral", paper_text, canary)
+
 
 def assess_with_qwen(paper_text, canary=""):
-    prompt = build_assessment_prompt(paper_text, canary)
-    if OR_API_KEY:
-        return request_model_assessment("qwen", "qwen/qwen-2.5-72b-instruct", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
-    return "qwen", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
+    return assess_with_route_chain("qwen", paper_text, canary)
+
 
 def assess_with_gemini(paper_text, canary=""):
-    prompt = build_assessment_prompt(paper_text, canary)
-    if GEMINI_API_KEY:
-        return request_model_assessment("gemini", "gemini-2.0-flash", GEMINI_API_KEY, "https://generativelanguage.googleapis.com/v1beta/openai/", prompt)
-    elif OR_API_KEY:
-        return request_model_assessment("gemini", "google/gemini-2.0-flash-001", OR_API_KEY, "https://openrouter.ai/api/v1", prompt)
-    return "gemini", {"title": "N/A", "authors": "N/A", "opinion": "API not configured.", "references": [], "api_failed": True}
+    return assess_with_route_chain("gemini", paper_text, canary)
+
 
 def collect_independent_model_assessments(paper_text, canary=""):
     results = {}
@@ -806,13 +855,19 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
     # The canary is an internal control signal. Remove it from anything that
     # will be stored or displayed, so it cannot be harvested from a published
     # dossier and pre-empted by a later submitter.
+    for _k, _entry in consensus_results.items():
+        if isinstance(_entry, dict):
+            _entry.pop("_raw_error", None)
+
     if canary:
         evidence_report = redact_canary(evidence_report, canary)
         for key, entry in consensus_results.items():
             if key.startswith("_") or not isinstance(entry, dict):
                 continue
             if isinstance(entry.get("opinion"), str):
-                entry["opinion"] = redact_canary(entry["opinion"], canary)
+                entry["opinion"] = redact_provider_text(redact_canary(entry["opinion"], canary))
+            # Raw provider errors must never reach the persisted record.
+            entry.pop("_raw_error", None)
 
     scilem_opinion = update_structural_analyzer(text, evidence_report, pidyne_ai_rating)
 

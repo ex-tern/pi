@@ -44,6 +44,7 @@ from config import (
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, PIQ_PROCESSING_FEE, DONATION_WALLET,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
+    TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
@@ -61,12 +62,14 @@ from brain import (
     PidyneBlockchainDataset, clear_structural_analyzer_state, generate_assistant_reply,
     derive_next_epoch_weights,
 )
+from providers import provider_configuration
 from rubric import (
     rubric_manifest, RUBRIC_VERSION, apply_scoring_rubric, compute_composite_score,
     CRITERIA_ORDER as BRAIN_CRITERIA_ORDER,
 )
 from emission import emission_manifest, compute_processing_fee, fee_manifest
 import abuse_guard
+import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
 import numpy as np
@@ -463,6 +466,29 @@ def donate_info():
 # 3. INTAKE / ASSESSMENT PIPELINE  (streams NDJSON progress like the old
 #    st.status(...) live box, then a final line with all results)
 # ---------------------------------------------------------------------------
+@app.get("/api/challenge")
+def get_challenge(request: Request):
+    """Issue a proof-of-work challenge for an anonymous submission."""
+    ip = get_client_ip(request)
+    payload = pow_challenge.issue_challenge(ip)
+    payload["turnstile_site_key"] = TURNSTILE_SITE_KEY or None
+    payload["required"] = REQUIRE_PROOF_OF_WORK
+    return payload
+
+
+@app.get("/api/providers/status")
+def providers_status(wallet: str = Query(default="")):
+    """Operator view of which jurors can actually reach a model.
+
+    Restricted to the owner wallet: it enumerates configured vendors, which is
+    deployment information rather than something a researcher needs.
+    """
+    if not wallet or wallet.lower() != OWNER_ID.lower():
+        raise HTTPException(status_code=403,
+                            detail="Provider diagnostics are restricted to the owner wallet.")
+    return provider_configuration()
+
+
 @app.get("/api/trial/status")
 def trial_status(request: Request):
     """How much free allowance this visitor has left, and why."""
@@ -745,6 +771,12 @@ async def assess_stream(
     discover_papers: str = Form(default=""),  # JSON-encoded array of {title, doi, pdf_url}
     wallet: str = Form(default=""),
     orcid: str = Form(default=""),
+    pow_challenge_id: str = Form(default=""),
+    pow_issued_at: str = Form(default="0"),
+    pow_difficulty: str = Form(default="0"),
+    pow_signature: str = Form(default=""),
+    pow_solution: str = Form(default=""),
+    turnstile_token: str = Form(default=""),
 ):
     client_ip = get_client_ip(request)
     check_rate_limit(client_ip, bucket="assess")
@@ -807,6 +839,19 @@ async def assess_stream(
     # Layered abuse controls. Velocity limits apply to everyone; free-tier
     # metering and automation heuristics apply only to unidentified visitors,
     # since identified users pay in piQ and that is its own control.
+    # Proof of work, for anonymous submissions only. Identified users have
+    # already paid in piQ, which is a stronger control than any puzzle.
+    if REQUIRE_PROOF_OF_WORK and not (has_web3 or orcid):
+        ok, why = pow_challenge.verify_solution(
+            ip=client_ip, challenge=pow_challenge_id, issued_at=pow_issued_at,
+            difficulty=pow_difficulty, signature=pow_signature, solution=pow_solution,
+        )
+        if not ok:
+            raise HTTPException(status_code=428, detail=f"Verification required: {why}")
+        ok, why = pow_challenge.verify_turnstile(turnstile_token, client_ip)
+        if not ok:
+            raise HTTPException(status_code=428, detail=why)
+
     verdict = abuse_guard.evaluate_request(
         ip=client_ip,
         headers={k.lower(): v for k, v in request.headers.items()},

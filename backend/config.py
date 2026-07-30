@@ -61,6 +61,15 @@ PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
 # Wallet that receives Support & Donate contributions.
 DONATION_WALLET = os.getenv("DONATION_WALLET", "0x1Af8D9A120b02D0983590587364F8705e6942356")
 
+# ---------------------------------------------------------------------------
+# Free-tier challenge
+# ---------------------------------------------------------------------------
+# Proof-of-work is always on for anonymous submissions and needs no keys.
+# Cloudflare Turnstile is an optional additional signal; leave blank to skip it.
+TURNSTILE_SITE_KEY = os.getenv("TURNSTILE_SITE_KEY", "")
+TURNSTILE_SECRET_KEY = os.getenv("TURNSTILE_SECRET_KEY", "")
+REQUIRE_PROOF_OF_WORK = os.getenv("REQUIRE_PROOF_OF_WORK", "true").strip().lower() not in ("false", "0", "no")
+
 # Data directory (SQLite DB + PyTorch weights). Overridable so production
 # deployments (Docker, systemd) can point it at a persistent volume instead
 # of the service account's home directory.

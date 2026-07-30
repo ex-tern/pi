@@ -782,6 +782,54 @@ document.getElementById("includeDoiCheckbox").addEventListener("change", updateE
 // AUTO-DISCOVER subtab
 // ---------------------------------------------------------------------------
 let pipelineAbort = null;
+let pipelineProof = null;
+
+/** Solve the server's proof-of-work challenge.
+ *
+ *  Chosen over an image CAPTCHA deliberately: modern multimodal models solve
+ *  visual puzzles more reliably than many humans, so those mostly tax
+ *  legitimate users — especially anyone using assistive technology — while
+ *  barely inconveniencing an automated agent. A hash search inverts that: it
+ *  costs a browser about a second, and costs a bulk submitter linearly in CPU.
+ *  It also needs no third-party script, sets no cookies, and collects nothing.
+ */
+async function solveProofOfWork(onProgress) {
+  const res = await fetch(`${API}/api/challenge`);
+  if (!res.ok) return null;
+  const c = await res.json();
+  if (!c.required) return c;
+
+  const encoder = new TextEncoder();
+  const target = c.difficulty;
+  let nonce = 0;
+  const started = performance.now();
+
+  const leadingZeroBits = bytes => {
+    let bits = 0;
+    for (const b of bytes) {
+      if (b === 0) { bits += 8; continue; }
+      for (let shift = 7; shift >= 0; shift--) {
+        if (b >> shift) return bits;
+        bits++;
+      }
+      break;
+    }
+    return bits;
+  };
+
+  while (true) {
+    const digest = new Uint8Array(await crypto.subtle.digest(
+      "SHA-256", encoder.encode(`${c.challenge}:${nonce}`)));
+    if (leadingZeroBits(digest) >= target) break;
+    nonce++;
+    // Yield periodically so the tab stays responsive during the search.
+    if (nonce % 2000 === 0) {
+      if (onProgress) onProgress(nonce, (performance.now() - started) / 1000);
+      await new Promise(r => setTimeout(r, 0));
+    }
+  }
+  return { ...c, solution: String(nonce), elapsed: (performance.now() - started) / 1000 };
+}
 
 document.getElementById("stopPipelineBtn").addEventListener("click", () => {
   if (!pipelineAbort) return;
@@ -929,8 +977,34 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
   statusBox.classList.remove("hidden");
   statusBox.innerHTML = `<div class="status-line">Initializing assessment pipeline…</div>`;
 
+  // Anonymous submissions must clear the proof-of-work challenge first.
+  if (!Session.hasIdentity()) {
+    statusBox.innerHTML = `<div class="status-line">Verifying you're not an automated agent…</div>`;
+    try {
+      const proof = await solveProofOfWork((n, secs) => {
+        statusBox.innerHTML = `<div class="status-line">Verifying… ${n.toLocaleString()} attempts (${secs.toFixed(1)}s)</div>`;
+      });
+      if (proof && proof.solution) {
+        pipelineProof = proof;
+        statusBox.innerHTML = `<div class="status-line">Verified in ${proof.elapsed.toFixed(1)}s. Starting assessment…</div>`;
+      }
+    } catch (e) {
+      statusBox.innerHTML += `<div class="status-line status-error">Verification failed. Please reload and try again.</div>`;
+      runBtn.disabled = false; runBtn.textContent = "Run Assessment Pipeline";
+      stopBtn.classList.add("hidden");
+      return;
+    }
+  }
+
   const formData = new FormData();
   for (const f of fileInput.files) formData.append("files", f);
+  if (pipelineProof) {
+    formData.append("pow_challenge_id", pipelineProof.challenge);
+    formData.append("pow_issued_at", pipelineProof.issued_at);
+    formData.append("pow_difficulty", pipelineProof.difficulty);
+    formData.append("pow_signature", pipelineProof.signature);
+    formData.append("pow_solution", pipelineProof.solution);
+  }
   formData.append("doi", doi);
   formData.append("include_doi", includeDoi);
   formData.append("discover_papers", JSON.stringify(selectedDiscoveryPapers));
@@ -978,6 +1052,7 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     }
   } finally {
     pipelineAbort = null;
+    pipelineProof = null;   // single-use: a solved challenge cannot be replayed
     stopBtn.classList.add("hidden");
     runBtn.disabled = false; runBtn.textContent = "Run Assessment Pipeline";
     fileInput.value = "";
@@ -1133,6 +1208,17 @@ function renderJudgePanel(meta, consensus) {
     html += `<div class="quality-rationale">${escapeHtml(meta.rationale)}</div>`;
   }
 
+  // When most of the panel is unavailable, say so plainly rather than
+  // presenting a one-model verdict as if it were a panel verdict.
+  const active = models.filter(m => m.status === "active" && m.key !== "scilem").length;
+  if (active <= 1) {
+    html += `<div class="advisory-box">
+      <strong>Limited panel.</strong> ${active === 0 ? "No" : "Only one"} external model
+      contributed to this assessment, so cross-model corroboration was not available and the
+      judgement quality reflects that. This is a deployment configuration matter, not a property
+      of the manuscript.</div>`;
+  }
+
   html += `<table class="data-table"><thead><tr>
       <th>Model</th><th>Role</th><th>Status</th></tr></thead><tbody>`;
   models.forEach(m => {
@@ -1142,7 +1228,9 @@ function renderJudgePanel(meta, consensus) {
       <td>${escapeHtml(m.role)}</td>
       <td>${m.status === "active"
         ? `<span class="pill q-high">Participated</span>`
-        : `<span class="pill q-low">Unavailable</span>`}</td>
+        : `<span class="pill q-low">Unavailable</span>`}
+        ${m.status !== "active" && m.detail
+          ? `<div class="cr-sigdesc">${escapeHtml(m.detail.slice(0, 90))}</div>` : ""}</td>
     </tr>`;
   });
   html += `</tbody></table>`;
