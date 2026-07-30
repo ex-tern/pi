@@ -40,15 +40,18 @@ from config import (
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
+    SCILEM_DISABLED_NOTICE, PIQ_PROCESSING_FEE, DONATION_WALLET,
+    CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
+    get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
 )
-from ledger import restore_state_from_web3, get_sepolia_explorer_url
+from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 from integrations import (
     clean_author_name, is_likely_institution, fetch_doi_metadata,
     fetch_semantic_scholar_pdf, download_pdf_from_url, fetch_core_text_by_doi,
-    create_virtual_pdf_from_text,
+    create_virtual_pdf_from_text, search_openalex_topics,
 )
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
@@ -282,26 +285,67 @@ def orcid_callback(code: Optional[str] = None, state: Optional[str] = None):
         return RedirectResponse(f"{FRONTEND_ORIGIN}/?orcid_error={urllib.parse.quote(str(e))}")
 
 
+def _normalize_identity(wallet: Optional[str], orcid: Optional[str]):
+    clean_wallet = w3.to_checksum_address(wallet) if wallet and w3.is_address(wallet) else ""
+    return clean_wallet, (orcid or "").strip()
+
+
 @app.get("/api/user/piq-total")
 def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
-    clauses, params = [], []
-    if wallet and w3.is_address(wallet):
-        clauses.append("eth_book = ?")
-        params.append(w3.to_checksum_address(wallet))
-    if orcid:
-        clauses.append("user_id = ?")
-        params.append(orcid)
-    if not clauses:
-        return {"total_piq": 0.0}
-    conn = get_db_connection()
-    try:
-        rows = conn.execute(
-            f"SELECT DISTINCT eval_hash, piq_minted FROM papers_assessment WHERE {' OR '.join(clauses)}",
-            tuple(params),
-        ).fetchall()
-    finally:
-        conn.close()
-    return {"total_piq": sum(safe_float(r[1], 0.0) for r in rows if r[1])}
+    """Lifetime piQ awarded, plus the fee-adjusted spendable balance the
+    assessment pipeline actually charges against."""
+    clean_wallet, clean_orcid = _normalize_identity(wallet, orcid)
+    if not clean_wallet and not clean_orcid:
+        return {
+            "total_piq": 0.0, "minted": 0.0, "fees_paid": 0.0, "balance": 0.0,
+            "fee_per_paper": PIQ_PROCESSING_FEE, "papers_affordable": 0,
+        }
+    bal = get_piq_balance(clean_wallet, clean_orcid)
+    return {
+        "total_piq": bal["minted"],
+        "minted": bal["minted"],
+        "fees_paid": bal["fees_paid"],
+        "balance": bal["balance"],
+        "fee_per_paper": PIQ_PROCESSING_FEE,
+        "papers_affordable": int(bal["balance"] // PIQ_PROCESSING_FEE) if PIQ_PROCESSING_FEE > 0 else 0,
+    }
+
+
+@app.get("/api/user/piq-ledger")
+def user_piq_ledger(wallet: Optional[str] = None, orcid: Optional[str] = None):
+    clean_wallet, clean_orcid = _normalize_identity(wallet, orcid)
+    if not clean_wallet and not clean_orcid:
+        return {"entries": []}
+    return {"entries": get_piq_fee_history(clean_wallet, clean_orcid)}
+
+
+# ---------------------------------------------------------------------------
+# 2b. CHAIN STATUS & DONATIONS
+# ---------------------------------------------------------------------------
+@app.get("/api/chain/status")
+def chain_status():
+    """Live Ethereum connectivity, so the UI can tell the user honestly
+    whether on-chain minting is actually working right now."""
+    status = get_chain_status()
+    status["donation_wallet"] = DONATION_WALLET
+    return status
+
+
+@app.get("/api/donate/info")
+def donate_info():
+    return {
+        "wallet": DONATION_WALLET,
+        "chain_id": CHAIN_ID,
+        "chain_id_hex": hex(CHAIN_ID),
+        "chain_name": CHAIN_NAME,
+        "currency": CHAIN_CURRENCY,
+        "explorer_url": f"{BLOCK_EXPLORER_URL.rstrip('/')}/address/{DONATION_WALLET}",
+        "suggested_amounts": ["0.005", "0.01", "0.05", "0.1"],
+        "message": (
+            "ScholarPi is independent, non-commercial research infrastructure. "
+            "Contributions fund LLM inference credits, RPC access and hosting."
+        ),
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -319,7 +363,17 @@ def stats_count():
 
 
 def _item_from_result(res, filename):
+    consensus = res[19] if isinstance(res[19], dict) else {}
+    scores = res[8] or {}
     return {
+        "judge_metadata": consensus.get("_judge_metadata", {}),
+        "criteria_detail": [
+            {"id": f"C{i + 1}", "title": CRITERIA_TITLES.get(f"C{i + 1}", ""), "score": safe_float(v, 0.0)}
+            for i, v in enumerate(scores.values())
+        ],
+        "mdar_score": res[14],
+        "rrid_count": res[15],
+        "explorer_url": get_sepolia_explorer_url(res[11], "tx"),
         "title": res[0],
         "author_name": clean_author_name(res[1]),
         "score": res[2],
@@ -340,49 +394,162 @@ def _item_from_result(res, filename):
     }
 
 
+def _resolve_pdf_bytes(doi: str = "", pdf_url: str = ""):
+    """Shared resolution chain: try a known PDF URL directly, then DOI
+    metadata, then Semantic Scholar, then a CORE full-text fallback wrapped
+    into a virtual PDF. Used by both the single-DOI intake and the
+    auto-discovery batch below so the two paths can't silently drift apart."""
+    doi = (doi or "").strip()
+    pdf_url = (pdf_url or "").strip()
+    try:
+        if pdf_url:
+            pdf_bytes = download_pdf_from_url(pdf_url)
+            if pdf_bytes:
+                return pdf_bytes
+        if doi:
+            metadata = fetch_doi_metadata(doi)
+            pdf_bytes = download_pdf_from_url(metadata["pdf_url"]) if metadata and metadata.get("pdf_url") else None
+            if pdf_bytes:
+                return pdf_bytes
+            pdf_bytes = download_pdf_from_url(fetch_semantic_scholar_pdf(doi))
+            if pdf_bytes:
+                return pdf_bytes
+            pdf_bytes = create_virtual_pdf_from_text(fetch_core_text_by_doi(doi))
+            if pdf_bytes:
+                return pdf_bytes
+    except Exception as e:
+        add_log(f"Resolve error (doi={doi or 'none'}): {e}")
+    return None
+
+
 def _run_assessment_stream(files: List[tuple], doi: Optional[str], include_doi: bool,
-                            user_id: str, book_address: str):
+                            discover_papers: List[dict], user_id: str, book_address: str,
+                            fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False):
     """Generator yielding NDJSON status/result lines, mirroring the old
-    st.status(...) 'Analyzing X...' live progress box."""
+    st.status(...) 'Analyzing X...' live progress box.
+
+    Each paper is billed the flat PIQ_PROCESSING_FEE at the moment it is
+    about to be processed. Billing per-paper rather than per-request means a
+    batch that runs out of balance halfway through stops cleanly, and a paper
+    whose source could never be retrieved is refunded rather than charged for
+    work that was never done.
+    """
 
     def line(obj):
         return json.dumps(obj) + "\n"
 
-    yield line({"type": "status", "message": "Initializing Assessment Pipeline..."})
+    fee = PIQ_PROCESSING_FEE
+
+    def take_fee(label: str):
+        """Returns (ok, ndjson_lines_to_emit)."""
+        if not charge_fees or fee <= 0:
+            return True, []
+        if charge_piq_fee(fee, fee_wallet, fee_orcid, reason=f"Processing fee — {label[:120]}"):
+            bal = get_piq_balance(fee_wallet, fee_orcid)
+            return True, [line({
+                "type": "fee",
+                "message": f"Charged {fee:.2f} piQ processing fee. Remaining balance: {bal['balance']:.2f} piQ.",
+                "amount": fee, "balance": bal["balance"],
+            })]
+        bal = get_piq_balance(fee_wallet, fee_orcid)
+        return False, [line({
+            "type": "fee_error",
+            "message": (
+                f"Insufficient piQ balance to process '{label[:80]}'. "
+                f"Each paper costs {fee:.2f} piQ; your balance is {bal['balance']:.2f} piQ."
+            ),
+            "balance": bal["balance"], "required": fee,
+        })]
+
+    def give_back(label: str):
+        if charge_fees and fee > 0:
+            refund_piq_fee(fee, fee_wallet, fee_orcid, reason=f"Refund — source unavailable for {label[:100]}")
+            return [line({
+                "type": "fee",
+                "message": f"Refunded {fee:.2f} piQ — the source for '{label[:60]}' could not be retrieved.",
+                "amount": fee,
+            })]
+        return []
+
+    yield line({"type": "status", "message": "Initializing assessment pipeline..."})
+    if charge_fees and fee > 0:
+        bal = get_piq_balance(fee_wallet, fee_orcid)
+        yield line({"type": "status", "message":
+                    f"Processing fee: {fee:.2f} piQ per paper. Available balance: {bal['balance']:.2f} piQ."})
 
     if include_doi and doi and doi.strip():
         doi = doi.strip()
+        ok, msgs = take_fee(f"DOI {doi}")
+        for m in msgs:
+            yield m
+        if not ok:
+            yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
+            return
         yield line({"type": "status", "message": f"Resolving DOI: {doi}..."})
-        try:
-            metadata = fetch_doi_metadata(doi)
-            pdf_bytes = download_pdf_from_url(metadata["pdf_url"]) if metadata and metadata.get("pdf_url") else None
-            if not pdf_bytes:
-                pdf_bytes = download_pdf_from_url(fetch_semantic_scholar_pdf(doi))
-            if not pdf_bytes:
-                pdf_bytes = create_virtual_pdf_from_text(fetch_core_text_by_doi(doi))
-        except Exception as e:
-            pdf_bytes = None
-            add_log(f"DOI resolve error: {e}")
+        pdf_bytes = _resolve_pdf_bytes(doi=doi)
 
         if pdf_bytes:
             yield line({"type": "status", "message": "Assessing document..."})
             res = process_single_pdf(pdf_bytes, f"DOI_{doi}.pdf", "", user_id, book_address, provided_doi=doi)
             if res:
                 item = _item_from_result(res, f"DOI_{doi}.pdf")
+                item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed DOI {doi}: score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
         else:
+            for m in give_back(f"DOI {doi}"):
+                yield m
             yield line({"type": "download_error", "doi": doi, "url": f"https://doi.org/{doi}"})
 
+    for paper in discover_papers:
+        title = (paper.get("title") or "Untitled").strip()
+        p_doi = (paper.get("doi") or "").strip()
+        pdf_url = (paper.get("pdf_url") or "").strip()
+
+        ok, msgs = take_fee(title)
+        for m in msgs:
+            yield m
+        if not ok:
+            yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
+            return
+
+        yield line({"type": "status", "message": f"Retrieving open-access paper: {title[:80]}..."})
+        pdf_bytes = _resolve_pdf_bytes(doi=p_doi, pdf_url=pdf_url)
+
+        fname = f"Discovered_{p_doi or title[:60]}.pdf"
+        if pdf_bytes:
+            yield line({"type": "status", "message": f"Assessing: {title[:80]}..."})
+            res = process_single_pdf(pdf_bytes, fname, "", user_id, book_address, provided_doi=p_doi or "None")
+            if res:
+                item = _item_from_result(res, fname)
+                item["fee_charged"] = fee if charge_fees else 0.0
+                add_log(f"Assessed discovered paper '{title[:60]}': score {item['score']:.2f}")
+                yield line({"type": "result", "item": item})
+        else:
+            for m in give_back(title):
+                yield m
+            yield line({"type": "download_error", "doi": p_doi or title, "url": f"https://doi.org/{p_doi}" if p_doi else ""})
+
     for fname, raw_bytes in files:
+        ok, msgs = take_fee(fname)
+        for m in msgs:
+            yield m
+        if not ok:
+            yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
+            return
+
         yield line({"type": "status", "message": f"Analyzing {fname}..."})
         res = process_single_pdf(raw_bytes, fname, "", user_id, book_address)
         if res:
             item = _item_from_result(res, fname)
+            item["fee_charged"] = fee if charge_fees else 0.0
             add_log(f"Assessed {fname}: score {item['score']:.2f}")
             yield line({"type": "result", "item": item})
 
     yield line({"type": "done", "message": "Complete."})
+
+
+MAX_DISCOVERY_BATCH = 10
 
 
 @app.post("/api/assess/stream")
@@ -391,6 +558,7 @@ async def assess_stream(
     files: List[UploadFile] = File(default=[]),
     doi: str = Form(default=""),
     include_doi: bool = Form(default=False),
+    discover_papers: str = Form(default=""),  # JSON-encoded array of {title, doi, pdf_url}
     wallet: str = Form(default=""),
     orcid: str = Form(default=""),
 ):
@@ -401,10 +569,32 @@ async def assess_stream(
     user_id = orcid if orcid else (wallet if has_web3 else "Anonymous")
     book_address = w3.to_checksum_address(wallet) if has_web3 else "0x0000000000000000000000000000000000000000"
 
+    discover_list = []
+    if discover_papers.strip():
+        try:
+            parsed = json.loads(discover_papers)
+            if not isinstance(parsed, list):
+                raise ValueError("discover_papers must be a JSON array")
+            if len(parsed) > MAX_DISCOVERY_BATCH:
+                raise HTTPException(status_code=400, detail=f"Too many auto-discovered papers selected (max {MAX_DISCOVERY_BATCH} per run).")
+            for p in parsed:
+                if not isinstance(p, dict):
+                    continue
+                discover_list.append({
+                    "title": str(p.get("title", ""))[:300],
+                    "doi": str(p.get("doi", ""))[:200],
+                    "pdf_url": str(p.get("pdf_url", ""))[:1000],
+                })
+        except HTTPException:
+            raise
+        except Exception:
+            raise HTTPException(status_code=400, detail="discover_papers must be valid JSON.")
+
     # Server-side free-trial gate — the browser's localStorage counter is a
     # convenience for the UI, not a security boundary (a user can clear it
     # trivially). This is the authoritative check.
-    if not has_web3:
+    free_trial_active = False
+    if not has_web3 and not orcid:
         used = get_free_evals_used(client_ip)
         if used >= FREE_EVALS_PER_IP:
             raise HTTPException(
@@ -412,6 +602,7 @@ async def assess_stream(
                 detail=f"Free trial limit ({FREE_EVALS_PER_IP}) reached for this connection. "
                        f"Connect a Web3 wallet in the sidebar to continue.",
             )
+        free_trial_active = True
 
     max_bytes = int(MAX_UPLOAD_MB * 1024 * 1024)
     file_payload = []
@@ -423,13 +614,67 @@ async def assess_stream(
             raise HTTPException(status_code=413, detail=f"'{f.filename}' exceeds the {MAX_UPLOAD_MB}MB upload limit.")
         file_payload.append((f.filename, raw))
 
-    if not has_web3 and (file_payload or (include_doi and doi.strip())):
+    paper_count = len(file_payload) + len(discover_list) + (1 if (include_doi and doi.strip()) else 0)
+
+    # piQ processing fee. Identified users pay PIQ_PROCESSING_FEE per paper
+    # out of their earned balance; users still on the free trial don't, since
+    # they have no balance yet and the trial exists precisely to let them earn
+    # their first piQ.
+    fee_wallet, fee_orcid = _normalize_identity(wallet, orcid)
+    charge_fees = bool((fee_wallet or fee_orcid) and not free_trial_active and PIQ_PROCESSING_FEE > 0)
+
+    if charge_fees and paper_count:
+        bal = get_piq_balance(fee_wallet, fee_orcid)
+        required = round(PIQ_PROCESSING_FEE * paper_count, 4)
+        if bal["balance"] + 1e-9 < PIQ_PROCESSING_FEE:
+            raise HTTPException(
+                status_code=402,
+                detail=(
+                    f"Insufficient piQ balance. Processing costs {PIQ_PROCESSING_FEE:.2f} piQ per paper "
+                    f"and your balance is {bal['balance']:.2f} piQ. Earn piQ by having your own "
+                    f"manuscripts assessed."
+                ),
+            )
+        if bal["balance"] + 1e-9 < required:
+            affordable = int(bal["balance"] // PIQ_PROCESSING_FEE)
+            add_log(
+                f"Partial batch: balance {bal['balance']:.2f} piQ covers {affordable}/{paper_count} papers."
+            )
+
+    if free_trial_active and paper_count:
         increment_free_evals_used(client_ip)
 
     def gen():
-        yield from _run_assessment_stream(file_payload, doi, include_doi, user_id, book_address)
+        yield from _run_assessment_stream(
+            file_payload, doi, include_doi, discover_list, user_id, book_address,
+            fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
+        )
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
+
+
+# ---------------------------------------------------------------------------
+# 3b. AUTO-DISCOVERY — search open-access literature (OpenAlex) to feed
+#     straight into the assessment pipeline above
+# ---------------------------------------------------------------------------
+@app.get("/api/discover/hot-topics")
+def discover_hot_topics():
+    return {"topics": HOT_TOPICS}
+
+
+@app.get("/api/discover/search")
+def discover_search(
+    request: Request,
+    q: str = Query(..., min_length=2, max_length=200),
+    limit: int = Query(default=15, ge=1, le=30),
+):
+    check_rate_limit(get_client_ip(request), bucket="discover")
+    try:
+        results = search_openalex_topics(q, limit=limit)
+    except Exception as e:
+        add_log(f"Discovery search error: {e}")
+        results = []
+    return {"results": results, "query": q}
 
 
 class TextAssessRequest(BaseModel):
@@ -475,19 +720,28 @@ class ScilemChatRequest(BaseModel):
     prompt: str
 
 
+@app.get("/api/scilem/status")
+def scilem_status():
+    """Lets the frontend disable the assistant UI up front rather than
+    letting the user type a question and only then be told it won't work."""
+    return {
+        "enabled": ENABLE_SCILEM_LOCAL_MODEL,
+        "notice": None if ENABLE_SCILEM_LOCAL_MODEL else SCILEM_DISABLED_NOTICE,
+    }
+
+
 @app.post("/api/scilem/chat")
 def scilem_chat(req: ScilemChatRequest, request: Request):
+    if not ENABLE_SCILEM_LOCAL_MODEL:
+        # 503 rather than 200: the feature is genuinely unavailable, and
+        # saying so in the status code keeps clients from treating the
+        # notice text as a real model answer.
+        raise HTTPException(status_code=503, detail=SCILEM_DISABLED_NOTICE)
     check_rate_limit(get_client_ip(request), bucket="scilem")
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
-    if not ENABLE_SCILEM_LOCAL_MODEL:
-        return {
-            "response": "**Scilem:** The local chat model is disabled on this deployment "
-                         "to fit within a memory-constrained free hosting tier. Manuscript "
-                         "assessment itself is unaffected — this only limits the sidebar chat."
-        }
     return {"response": evaluate_scilem_analysis_report(req.prompt)}
 
 
@@ -524,51 +778,179 @@ def get_criteria_info(weights):
     ]
 
 
+CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+
+WEIGHT_MIN = 0.05
+# The largest a single weight can be while the other seven still hold their
+# floor and all eight sum to 8.0. Clipping to anything tighter than this is
+# infeasible: renormalizing after the clip just pushes the value back over
+# the cap, so the stated bound would be quietly violated.
+WEIGHT_MAX = 8.0 - (7 * WEIGHT_MIN)
+
+
+def _normalize_weights(vec):
+    """Project a raw weight vector onto {w : sum(w) = 8, MIN <= w_i <= MAX}.
+
+    Clip and renormalize interact — each one breaks the other's invariant —
+    so alternate between them until both hold.
+    """
+    w = np.asarray(vec, dtype=np.float64).copy()
+    if not np.all(np.isfinite(w)):
+        w = np.where(np.isfinite(w), w, 1.0)
+
+    for _ in range(12):
+        w = np.clip(w, WEIGHT_MIN, WEIGHT_MAX)
+        total = float(np.sum(w))
+        if total <= 0:
+            return np.full(8, 1.0, dtype=np.float64)
+        w = w * (8.0 / total)
+        if np.all(w >= WEIGHT_MIN - 1e-9) and np.all(w <= WEIGHT_MAX + 1e-9):
+            break
+    return np.clip(w, WEIGHT_MIN, WEIGHT_MAX)
+
+
 @app.get("/api/forecast")
 def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
+    """Trains the Pidyne LSTM on the recorded per-block criteria weights and
+    projects the next epoch's weighting.
+
+    The chart this feeds used to be meaningless because every block was
+    written with a constant [1.0] * 8 weight vector — eight perfectly flat,
+    perfectly overlapping lines. Blocks now record the criteria weighting each
+    assessed manuscript's evidence profile implies (see
+    brain.derive_epoch_weights), so the series carries real signal, and this
+    endpoint returns the observed history plus the forecast point explicitly
+    marked, along with the per-criterion delta and trend direction.
+    """
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT w1, w2, w3, w4, w5, w6, w7, w8 FROM blockchain_por_weights ORDER BY block_height ASC"
+            """SELECT block_height, w1, w2, w3, w4, w5, w6, w7, w8, timestamp
+               FROM blockchain_por_weights ORDER BY block_height ASC"""
         ).fetchall()
     finally:
         conn.close()
 
-    if len(rows) < 2:
-        return {"ready": False, "message": "Not enough blockchain data to train meta-model. Need at least 2 blocks.",
-                "history": [], "criteria": []}
+    if len(rows) < 3:
+        return {
+            "ready": False,
+            "message": (
+                f"The Pidyne forecaster needs at least 3 ledger blocks to learn a trend; "
+                f"{len(rows)} recorded so far. Assess a few manuscripts to build history."
+            ),
+            "blocks_recorded": len(rows), "blocks_required": 3,
+            "history": [], "forecast": None, "criteria": [],
+        }
+
+    weight_matrix = np.array([[safe_float(v, 1.0) for v in r[1:9]] for r in rows], dtype=np.float32)
+
+    # A constant series means the ledger predates the weight fix. Say so
+    # plainly rather than drawing eight flat lines and calling it a forecast.
+    if float(np.max(np.ptp(weight_matrix, axis=0))) < 1e-6:
+        return {
+            "ready": False,
+            "message": (
+                "All recorded blocks carry identical criteria weights, so there is no trend to "
+                "forecast. These blocks were written before per-block weighting was enabled — "
+                "assess new manuscripts to begin building a meaningful series."
+            ),
+            "blocks_recorded": len(rows), "blocks_required": 3,
+            "history": [], "forecast": None, "criteria": [],
+        }
 
     actual_lookback = max(1, min(lookback, len(rows) - 1))
-    weight_data = np.array([[safe_float(v, 1.0) for v in r] for r in rows], dtype=np.float32)
 
-    dataset = PidyneBlockchainDataset(weight_data, actual_lookback)
+    dataset = PidyneBlockchainDataset(weight_matrix, actual_lookback)
     dataloader = DataLoader(dataset, batch_size=min(4, max(1, len(dataset))), shuffle=False)
     model = PidyneLSTM()
-    optimizer = optim.Adam(model.parameters(), lr=0.001)
+    optimizer = optim.Adam(model.parameters(), lr=0.01)
+    loss_fn = nn.MSELoss()
+
     model.train()
+    final_loss = 0.0
     for _ in range(300):
+        epoch_loss = 0.0
         for seq, target in dataloader:
             optimizer.zero_grad()
-            loss = nn.MSELoss()(model(seq), target)
+            loss = loss_fn(model(seq), target)
             loss.backward()
             optimizer.step()
+            epoch_loss += float(loss.item())
+        final_loss = epoch_loss / max(1, len(dataloader))
+
     model.eval()
     with torch.no_grad():
-        raw_pred = model(torch.tensor(weight_data[-actual_lookback:], dtype=torch.float32).unsqueeze(0)).squeeze().numpy()
-        predicted = weight_data[-1] + (raw_pred - weight_data[-1]) * 20.0
-        next_weights = np.clip(predicted, 0.01, 7.9) * (8.0 / np.sum(np.clip(predicted, 0.01, 7.9)))
+        window = torch.tensor(weight_matrix[-actual_lookback:], dtype=torch.float32).unsqueeze(0)
+        raw_pred = model(window).squeeze().numpy()
+
+    last = weight_matrix[-1]
+
+    # The LSTM head ends in softmax * 8, which pulls every output toward a
+    # uniform 1.0 and would otherwise render as eight near-identical lines.
+    # Two corrections, in order:
+    #
+    #  1. Contrast: amplify the prediction's deviation from its own mean.
+    #     This sharpens the signal without ever reordering the criteria —
+    #     an earlier version extrapolated from the last observed block with
+    #     a gain above 1.0, which overshot past the model's own prediction
+    #     and could invert the ordering the network actually forecast.
+    #  2. Continuity: blend lightly toward the last observed block so the
+    #     forecast point joins the history smoothly rather than jumping.
+    CONTRAST_GAIN = 2.5
+    CONTINUITY = 0.30
+
+    pred_mean = float(np.mean(raw_pred))
+    sharpened = pred_mean + (raw_pred - pred_mean) * CONTRAST_GAIN
+    projected = (CONTINUITY * last) + ((1.0 - CONTINUITY) * sharpened)
+
+    next_weights = _normalize_weights(projected)
 
     hist_slice = rows[-(actual_lookback + 1):]
-    history = [
-        {"block": i, "C1": r[0], "C2": r[1], "C3": r[2], "C4": r[3], "C5": r[4], "C6": r[5], "C7": r[6], "C8": r[7]}
-        for i, r in enumerate(hist_slice)
-    ]
+    history = []
+    for r in hist_slice:
+        entry = {"block": int(r[0]), "label": f"Block {int(r[0])}", "timestamp": r[9], "is_forecast": False}
+        for i, key in enumerate(CRITERIA_KEYS):
+            entry[key] = round(safe_float(r[1 + i], 1.0), 5)
+        history.append(entry)
+
+    next_block = int(rows[-1][0]) + 1
+    forecast_point = {"block": next_block, "label": f"Block {next_block} (forecast)",
+                      "timestamp": None, "is_forecast": True}
+    for i, key in enumerate(CRITERIA_KEYS):
+        forecast_point[key] = round(float(next_weights[i]), 5)
+
+    criteria = get_criteria_info(next_weights)
+    for i, c in enumerate(criteria):
+        current = float(last[i])
+        delta = float(next_weights[i]) - current
+        c["current_weight"] = round(current, 5)
+        c["delta"] = round(delta, 5)
+        c["delta_pct"] = round((delta / current) * 100.0, 2) if current else 0.0
+        c["trend"] = "rising" if delta > 0.01 else ("falling" if delta < -0.01 else "stable")
+
+    ranked = sorted(criteria, key=lambda c: c["weight"], reverse=True)
+    mover = max(criteria, key=lambda c: abs(c["delta"]))
+    interpretation = (
+        f"Across the last {len(hist_slice)} ledger blocks, {ranked[0]['id']} ({ranked[0]['title']}) "
+        f"carries the most forecast weight at {ranked[0]['weight']:.3f}, while {ranked[-1]['id']} "
+        f"({ranked[-1]['title']}) carries the least at {ranked[-1]['weight']:.3f}. The largest "
+        f"projected shift is {mover['id']} ({mover['title']}), {mover['trend']} by "
+        f"{abs(mover['delta_pct']):.1f}%. Higher weight means the assessed corpus is producing "
+        f"stronger, more consistent evidence for that criterion."
+    )
 
     return {
         "ready": True,
         "history": history,
-        "criteria": get_criteria_info(next_weights),
-        "raw_sum": float(sum(next_weights)),
+        "forecast": forecast_point,
+        "criteria": criteria,
+        "raw_sum": float(np.sum(next_weights)),
+        "lookback_used": actual_lookback,
+        "blocks_recorded": len(rows),
+        "training_loss": round(final_loss, 6),
+        "interpretation": interpretation,
+        "top_criterion": ranked[0]["id"],
+        "biggest_mover": mover["id"],
     }
 
 
@@ -828,17 +1210,46 @@ EXPLORER_COLUMNS = """p.title, p.author_name, p.filename, p.final_score, p.logic
    p.c1, p.c2, p.c3, p.c4, p.c5, p.c6, p.c7, p.c8,
    p.piq_minted, p.tx_hash, p.zk_proof, p.mdar_adherence_score,
    p.rrid_valid_count, p.reproducibility_score, p.eval_hash,
-   p.consensus_data, p.evidence_report, p.scilem_score"""
+   p.consensus_data, p.evidence_report, p.scilem_score,
+   p.warnings_json, p.judge_metadata, p.timestamp, p.doi, p.user_id, p.eth_book"""
+
+CRITERIA_TITLES = {
+    "C1": "Semantic Originality", "C2": "Methodological Rigor", "C3": "Interdisciplinary Synergy",
+    "C4": "Societal Impact", "C5": "Open Science", "C6": "Literature Integration",
+    "C7": "Empirical Density", "C8": "Future Actionability",
+}
+
+
+def _safe_json(raw, default):
+    if not raw:
+        return default
+    try:
+        parsed = json.loads(raw)
+        return parsed if parsed is not None else default
+    except Exception:
+        return default
 
 
 def _row_to_dossier(r):
+    consensus = _safe_json(r[20], {})
+    judge_meta = _safe_json(r[24], {}) or consensus.get("_judge_metadata", {}) or {}
+    scores = {"C1": r[5], "C2": r[6], "C3": r[7], "C4": r[8], "C5": r[9], "C6": r[10], "C7": r[11], "C8": r[12]}
     return {
         "title": r[0], "author_name": r[1], "filename": r[2], "score": r[3], "logic_integrity": r[4],
-        "scores_dict": {"C1": r[5], "C2": r[6], "C3": r[7], "C4": r[8], "C5": r[9], "C6": r[10], "C7": r[11], "C8": r[12]},
+        "scores_dict": scores,
+        "criteria_detail": [
+            {"id": k, "title": CRITERIA_TITLES[k], "score": safe_float(v, 0.0)} for k, v in scores.items()
+        ],
         "piq": r[13], "tx_hash": r[14], "zk_proof": r[15], "mdar_score": r[16], "rrid_count": r[17],
         "repro_score": r[18], "eval_hash": r[19],
-        "consensus_raw": json.loads(r[20]) if r[20] else {}, "evidence_report_text": r[21] or "",
+        "consensus_raw": consensus,
+        "evidence_report_text": r[21] or "",
         "scilem_rating": r[22],
+        "warnings": _safe_json(r[23], []),
+        "judge_metadata": judge_meta,
+        "timestamp": r[25], "doi": r[26], "submitted_by": r[27], "eth_book": r[28],
+        "explorer_url": get_sepolia_explorer_url(r[14], "tx"),
+        "fee_charged": PIQ_PROCESSING_FEE,
     }
 
 

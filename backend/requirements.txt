@@ -15,6 +15,11 @@ python-multipart~=0.0.12
 pydantic~=2.9
 
 # --- Core ML / scoring engine ---
+# CPU-only PyTorch build: free/small hosts have no GPU, and the default
+# PyPI build pulls in ~2GB of CUDA libraries you'd never use. This index is
+# tried first for torch specifically; pip falls back to PyPI for everything
+# else listed below.
+--extra-index-url https://download.pytorch.org/whl/cpu
 numpy~=1.26
 torch~=2.4
 transformers~=4.45

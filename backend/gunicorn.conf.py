@@ -12,9 +12,12 @@ bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 worker_class = "uvicorn.workers.UvicornWorker"
 
 # SQLite (even in WAL mode) is happiest with a small number of writer
-# processes. Default to 2; raise via WEB_CONCURRENCY if you migrate to a
-# server-based DB (Postgres, etc.) later.
-workers = int(os.getenv("WEB_CONCURRENCY", "2"))
+# processes, and this app loads a full copy of PyTorch into every worker
+# process — on a memory-constrained host (e.g. Render's free 512MB tier),
+# more than 1 worker will OOM. Default to 1; raise via WEB_CONCURRENCY only
+# once you've confirmed the host has enough RAM to spare (roughly 300-400MB
+# per additional worker).
+workers = int(os.getenv("WEB_CONCURRENCY", "1"))
 
 timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))  # PDF assessment can take a while
 graceful_timeout = 30
