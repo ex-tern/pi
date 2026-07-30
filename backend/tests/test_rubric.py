@@ -176,3 +176,38 @@ def test_epoch_weighting_shifts_the_composite():
 
 def test_empty_scores_are_safe():
     assert rubric.compute_composite_score({}) == 0.0
+
+
+# --------------------------------------------------------------------------
+# v3 — honest framing of what the composite measures
+# --------------------------------------------------------------------------
+def test_interpretive_criteria_are_marked():
+    """C1 and C4 are relations to a field and to the future, not document
+    properties. They must be labelled so, not silently averaged in."""
+    interpretive = [k for k, spec in rubric.RUBRIC.items() if spec.get("interpretive")]
+    assert "C1_Semantic_Originality" in interpretive
+    assert "C4_Societal_Impact" in interpretive
+
+
+def test_interpretive_criteria_no_longer_dominated_by_model_opinion():
+    for key in ("C1_Semantic_Originality", "C4_Societal_Impact"):
+        panel = rubric.RUBRIC[key]["weights"].get("panel_rating", 0.0)
+        assert panel <= 0.45, f"{key} still leans too heavily on model opinion"
+
+
+def test_the_verifiable_share_is_published():
+    confidence = rubric.composite_confidence()
+    assert confidence["verifiable_share"] > 0.7, \
+        "most of the composite must rest on verifiable analysis"
+    assert confidence["statement"]
+
+
+def test_the_manifest_states_what_is_measured():
+    manifest = rubric.rubric_manifest()
+    assert "reporting" in manifest["measures"].lower()
+    assert "does not measure" in manifest["measures"].lower()
+
+
+def test_model_opinion_share_fell_from_v2():
+    """v2 carried ~34% model opinion; v3 materially reduces it."""
+    assert rubric.composite_confidence()["model_opinion_share"] < 0.30

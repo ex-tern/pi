@@ -383,8 +383,8 @@ def run_static_integrity_scan(file_bytes: bytes, full_text: str) -> Dict:
                 "ADVERSARIAL PROMPT INJECTION DETECTED: this manuscript contains reviewer-directed "
                 "instructions concealed from human readers via "
                 f"{', '.join(pdf_scan['techniques']) or 'hidden rendering'}. "
-                "Attempting to manipulate an automated referee is research misconduct. "
-                "Logic integrity has been set to 0.0 and no piQ has been minted."
+                "Logic integrity has been set to 0.0, piQ is withheld, and the submission is "
+                "flagged for human review. This is a finding, not a determination of misconduct."
             )
         else:
             # Hidden text without an obvious payload is still worth reporting;
@@ -405,7 +405,8 @@ def run_static_integrity_scan(file_bytes: bytes, full_text: str) -> Dict:
         verdict["warnings"].append(
             f"ADVERSARIAL METADATA DETECTED: reviewer-directed instructions were embedded in the PDF "
             f"metadata ({fields}). This text is invisible in the rendered document but is read by "
-            f"automated pipelines. Logic integrity has been set to 0.0 and no piQ has been minted."
+            f"automated pipelines. Logic integrity has been set to 0.0, piQ is withheld, and the "
+            f"submission is flagged for human review."
         )
 
     # Visible-body directives. Lower confidence on its own, since a paper may
@@ -421,7 +422,8 @@ def run_static_integrity_scan(file_bytes: bytes, full_text: str) -> Dict:
             verdict["warnings"].append(
                 "ADVERSARIAL PROMPT INJECTION DETECTED: the manuscript body contains explicit "
                 f"instructions directed at an automated reviewer ({', '.join(body_probe['categories'])}). "
-                "Logic integrity has been set to 0.0 and no piQ has been minted."
+                "Logic integrity has been set to 0.0, piQ is withheld, and the submission is "
+                "flagged for human review."
             )
         elif body_probe["severity"] == "informational":
             verdict["severity"] = "informational"
@@ -457,8 +459,8 @@ def apply_panel_integrity_verdict(verdict: Dict, consensus_results: dict, canary
                 f"ADVERSARIAL PROMPT INJECTION CONFIRMED BY MODEL PANEL: {models} independently reported "
                 f"that this manuscript attempted to alter their evaluation behaviour, emitting the "
                 f"single-use integrity trigger issued for this assessment. The trigger is cryptographically "
-                f"unguessable and cannot appear by chance. Logic integrity has been set to 0.0 and no piQ "
-                f"has been minted."
+                f"unguessable and cannot appear by chance. Logic integrity has been set to 0.0, piQ "
+                f"is withheld, and the submission is flagged for human review."
             )
         else:
             verdict["warnings"].append(

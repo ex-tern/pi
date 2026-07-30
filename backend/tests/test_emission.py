@@ -160,3 +160,17 @@ def test_no_countdown_at_the_final_epoch():
 def test_manifest_is_json_serialisable():
     import json
     assert json.dumps(emission.emission_manifest(100))
+
+
+# --------------------------------------------------------------------------
+# Onboarding grant — the economy was regressive without it
+# --------------------------------------------------------------------------
+def test_a_new_participant_can_afford_real_work():
+    grant = emission.onboarding_grant()
+    assert grant["amount"] > 0
+    assert grant["covers_papers"] >= 5, \
+        "a grant that covers almost nothing does not open the door"
+
+
+def test_the_grant_is_explained():
+    assert emission.onboarding_grant()["rationale"]

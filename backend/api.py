@@ -43,12 +43,14 @@ from config import (
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, PIQ_PROCESSING_FEE, DONATION_WALLET,
+    GROQ_API_KEY, OR_API_KEY,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
     TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK, USE_LSTM_FORECAST,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
+    award_onboarding_grant, has_received_grant,
 )
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 from integrations import (
@@ -67,7 +69,10 @@ from rubric import (
     rubric_manifest, RUBRIC_VERSION, apply_scoring_rubric, compute_composite_score,
     CRITERIA_ORDER as BRAIN_CRITERIA_ORDER,
 )
-from emission import emission_manifest, compute_processing_fee, fee_manifest
+from emission import (
+    emission_manifest, compute_processing_fee, fee_manifest,
+    onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
+)
 import forecast as forecast_engine
 import assistant as scilem
 import abuse_guard
@@ -372,6 +377,12 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
             "total_piq": 0.0, "minted": 0.0, "fees_paid": 0.0, "balance": 0.0,
             "fee_per_paper": resolve_active_fee(), "papers_affordable": 0,
         }
+    # A verified ORCID earns a one-time onboarding stake, so the free tier is
+    # an on-ramp rather than a wall for researchers without existing piQ.
+    if clean_orcid and not has_received_grant(clean_wallet, clean_orcid):
+        if award_onboarding_grant(NEW_PARTICIPANT_GRANT, clean_wallet, clean_orcid):
+            add_log(f"Onboarding grant of {NEW_PARTICIPANT_GRANT} piQ issued to {clean_orcid}.")
+
     bal = get_piq_balance(clean_wallet, clean_orcid)
     fee = resolve_active_fee()
     return {
@@ -628,6 +639,32 @@ def retrieve_manuscript_bytes(doi: str = "", pdf_url: str = "", candidates: List
     return None, attempts
 
 
+def estimate_word_count(pdf_bytes: bytes) -> int:
+    """Approximate word count without a full parse.
+
+    Used only for pricing, so a cheap estimate is right: opening every page
+    with PyMuPDF purely to set a fee would double the parsing cost of the
+    thing being priced. Falls back to a byte-size heuristic if extraction is
+    unavailable, and pricing floors at the minimum either way.
+    """
+    if not pdf_bytes:
+        return 0
+    try:
+        import fitz
+        doc = fitz.open(stream=pdf_bytes, filetype="pdf")
+        try:
+            pages = min(doc.page_count, 6)
+            sampled = sum(len(doc[i].get_text("text").split()) for i in range(pages))
+            if pages == 0:
+                return 0
+            return int((sampled / pages) * doc.page_count)
+        finally:
+            doc.close()
+    except Exception:
+        # ~2.5KB of PDF per 100 words is a rough but serviceable fallback.
+        return int(len(pdf_bytes) / 25)
+
+
 def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_doi: bool,
                             discover_papers: List[dict], user_id: str, book_address: str,
                             fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False,
@@ -647,36 +684,41 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
 
     fee = active_fee
 
-    def take_fee(label: str):
-        """Returns (ok, ndjson_lines_to_emit)."""
+    def take_fee(label: str, word_count: int = 0):
+        """Returns (ok, ndjson_lines_to_emit).
+
+        Priced per document: a thesis costs more to process than a four-page
+        note, and charging both the same was neither honest nor sustainable.
+        The floor keeps a trivial submission from being free.
+        """
+        nonlocal fee
+        pricing = compute_document_fee(word_count, count_assessed_papers(), PIQ_PROCESSING_FEE)
+        fee = pricing["fee"]
         if not charge_fees or fee <= 0:
             return True, []
         if charge_piq_fee(fee, fee_wallet, fee_orcid, reason=f"Processing fee — {label[:120]}"):
             bal = get_piq_balance(fee_wallet, fee_orcid)
             return True, [line({
                 "type": "fee",
-                "message": f"Charged {fee:.2f} piQ processing fee. Remaining balance: {bal['balance']:.2f} piQ.",
-                "amount": fee, "balance": bal["balance"],
+                "message": (f"Charged {fee:.4f} piQ ({pricing['size_band']}). "
+                            f"Remaining balance: {bal['balance']:.2f} piQ."),
+                "amount": fee, "balance": bal["balance"], "pricing": pricing,
             })]
         bal = get_piq_balance(fee_wallet, fee_orcid)
         return False, [line({
             "type": "fee_error",
             "message": (
                 f"Insufficient piQ balance to process '{label[:80]}'. "
-                f"Each paper costs {fee:.2f} piQ; your balance is {bal['balance']:.2f} piQ."
+                f"This paper costs {fee:.4f} piQ ({pricing['size_band']}); "
+                f"your balance is {bal['balance']:.2f} piQ."
             ),
             "balance": bal["balance"], "required": fee,
         })]
 
-    def give_back(label: str):
-        if charge_fees and fee > 0:
-            refund_piq_fee(fee, fee_wallet, fee_orcid, reason=f"Refund — source unavailable for {label[:100]}")
-            return [line({
-                "type": "fee",
-                "message": f"Refunded {fee:.2f} piQ — the source for '{label[:60]}' could not be retrieved.",
-                "amount": fee,
-            })]
-        return []
+    # No refund path is needed any more: a paper is priced and charged only
+    # after its bytes have been retrieved, so a retrieval failure never
+    # incurred a fee in the first place. Refunding something never charged was
+    # the previous design and was one accounting step more than necessary.
 
     yield line({"type": "status", "message": "Initializing assessment pipeline..."})
     if charge_fees and fee > 0:
@@ -686,16 +728,18 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
 
     if include_doi and doi and doi.strip():
         doi = doi.strip()
-        ok, msgs = take_fee(f"DOI {doi}")
-        for m in msgs:
-            yield m
-        if not ok:
-            yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
-            return
         yield line({"type": "status", "message": f"Resolving DOI: {doi}..."})
         pdf_bytes, attempts = retrieve_manuscript_bytes(doi=doi)
 
         if pdf_bytes:
+            # Priced after retrieval so the fee reflects the actual document,
+            # and so nothing is charged for a paper that could not be fetched.
+            ok, msgs = take_fee(f"DOI {doi}", estimate_word_count(pdf_bytes))
+            for m in msgs:
+                yield m
+            if not ok:
+                yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
+                return
             yield line({"type": "status", "message": "Assessing document..."})
             res = process_single_pdf(pdf_bytes, f"DOI_{doi}.pdf", "", user_id, book_address, provided_doi=doi)
             if res:
@@ -704,8 +748,6 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 add_log(f"Assessed DOI {doi}: score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
         else:
-            for m in give_back(f"DOI {doi}"):
-                yield m
             yield line({"type": "download_error", "doi": doi,
                         "url": f"https://doi.org/{doi}", "attempts": attempts})
 
@@ -714,19 +756,18 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         p_doi = (paper.get("doi") or "").strip()
         pdf_url = (paper.get("pdf_url") or "").strip()
 
-        ok, msgs = take_fee(title)
-        for m in msgs:
-            yield m
-        if not ok:
-            yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
-            return
-
         yield line({"type": "status", "message": f"Retrieving open-access paper: {title[:80]}..."})
         pdf_bytes, attempts = retrieve_manuscript_bytes(
             doi=p_doi, pdf_url=pdf_url, candidates=paper.get("pdf_candidates"))
 
         fname = f"Discovered_{p_doi or title[:60]}.pdf"
         if pdf_bytes:
+            ok, msgs = take_fee(title, estimate_word_count(pdf_bytes))
+            for m in msgs:
+                yield m
+            if not ok:
+                yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
+                return
             yield line({"type": "status", "message": f"Assessing: {title[:80]}..."})
             res = process_single_pdf(pdf_bytes, fname, "", user_id, book_address, provided_doi=p_doi or "None")
             if res:
@@ -735,15 +776,13 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 add_log(f"Assessed discovered paper '{title[:60]}': score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
         else:
-            for m in give_back(title):
-                yield m
             yield line({"type": "download_error", "doi": p_doi or title,
                         "title": title,
                         "url": f"https://doi.org/{p_doi}" if p_doi else "",
                         "attempts": attempts})
 
     for fname, raw_bytes in files:
-        ok, msgs = take_fee(fname)
+        ok, msgs = take_fee(fname, estimate_word_count(raw_bytes))
         for m in msgs:
             yield m
         if not ok:
@@ -1376,6 +1415,7 @@ def get_emission_policy():
     manifest = emission_manifest(total)
     manifest["total_piq_minted"] = round(safe_float(minted, 0.0), 4)
     manifest["fee"] = fee_manifest(total, PIQ_PROCESSING_FEE)
+    manifest["onboarding_grant"] = onboarding_grant(PIQ_PROCESSING_FEE)
     return manifest
 
 
@@ -1457,6 +1497,41 @@ def rescore_corpus(req: RescoreRequest, wallet: str = Query(default="")):
             if req.dry_run else
             "Records updated in place. piQ already minted is not retroactively changed."
         ),
+    }
+
+
+@app.get("/api/architecture")
+def architecture_parameters():
+    """Live values the architecture diagram renders.
+
+    The diagram previously hardcoded "0.10 piQ", "piX >= 50" and a fixed juror
+    list. Every one of those has since changed at least once, and a diagram
+    that silently disagrees with the running system is worse than no diagram —
+    it is documentation that lies with authority. These are read from the
+    modules that actually govern behaviour, so the picture cannot drift.
+    """
+    corpus = count_assessed_papers()
+    jurors = provider_configuration()["jurors"]
+    reachable = [name for name, meta in jurors.items() if meta["reachable"]]
+
+    return {
+        "free_documents": abuse_guard.FREE_DOCUMENTS,
+        "minimum_fee": MINIMUM_FEE,
+        "current_fee": resolve_active_fee(),
+        "fee_is_size_scaled": True,
+        "quality_threshold": round(emission_manifest(corpus)["current_quality_floor"], 1),
+        "logic_floor": emission_manifest(corpus)["logic_floor"],
+        "halving_epoch": emission_manifest(corpus)["current_epoch"],
+        "corpus_size": corpus,
+        "jurors": reachable or ["structural analyser only"],
+        "juror_count": len(reachable),
+        "rubric_version": RUBRIC_VERSION,
+        "criteria_count": len(BRAIN_CRITERIA_ORDER),
+        "verifiable_share": rubric_manifest()["confidence"]["verifiable_share"],
+        "chain_name": CHAIN_NAME,
+        "proof_of_work": REQUIRE_PROOF_OF_WORK,
+        "authorship_required_for_minting": True,
+        "onboarding_grant": NEW_PARTICIPANT_GRANT,
     }
 
 
@@ -1673,7 +1748,7 @@ EXPLORER_COLUMNS = """p.title, p.author_name, p.filename, p.final_score, p.logic
    p.warnings_json, p.judge_metadata, p.timestamp, p.doi, p.user_id, p.eth_book,
    p.integrity_report, p.reference_audit, p.authorship_signal, p.topology_detail,
    p.classification, p.criteria_breakdown, p.author_metrics, p.rubric_version,
-   p.emission_record"""
+   p.emission_record, p.attribution"""
 
 CRITERIA_TITLES = {
     "C1": "Semantic Originality", "C2": "Methodological Rigor", "C3": "Interdisciplinary Synergy",

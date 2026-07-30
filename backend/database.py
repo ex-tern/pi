@@ -11,7 +11,7 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     "warnings_json", "judge_metadata", "integrity_report", "reference_audit",
     "authorship_signal", "topology_detail", "classification", "criteria_breakdown",
     "signal_vector", "rubric_version", "author_metrics", "emission_record",
-    "author_openalex_id", "scoring_epoch", "unweighted_score",
+    "author_openalex_id", "scoring_epoch", "unweighted_score", "attribution",
 }
 
 def reset_schema_cache():
@@ -142,6 +142,9 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # Author identity resolved to an OpenAlex ID, so per-author accounting
         # survives byline variation ("J. Smith" vs "John Smith").
         "author_openalex_id": "TEXT DEFAULT ''",
+        # Authorship verdict: piQ is minted only to verified authors, so the
+        # evidence behind that decision must be recorded with the assessment.
+        "attribution": "TEXT DEFAULT '{}'",
         # The epoch whose criteria weights produced final_score, plus the
         # unweighted mean, so a score stays interpretable after weights move.
         "scoring_epoch": "INTEGER DEFAULT 0", "unweighted_score": "REAL DEFAULT 0.0",
@@ -266,6 +269,43 @@ def get_piq_balance(wallet: str = "", orcid: str = "") -> dict:
         "fees_paid": round(max(0.0, -net), 4),
         "balance": round(minted + net, 4),
     }
+
+
+def has_received_grant(wallet: str = "", orcid: str = "") -> bool:
+    """Whether this identity has already been granted its onboarding stake."""
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return True   # no identity: nothing to grant against
+    placeholders = ", ".join("?" for _ in keys)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT COUNT(*) FROM piq_ledger
+                WHERE account IN ({placeholders}) AND reason LIKE '%onboarding grant%'""",
+            tuple(v for _, v in keys),
+        ).fetchone()
+        return bool(row and row[0])
+    finally:
+        conn.close()
+
+
+def award_onboarding_grant(amount: float, wallet: str = "", orcid: str = "") -> bool:
+    """Credit a one-time onboarding stake. Idempotent per identity."""
+    keys = _account_keys(wallet, orcid)
+    if not keys or has_received_grant(wallet, orcid):
+        return False
+    kind, account = keys[0]
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (account, kind, abs(float(amount)), "Verified-identity onboarding grant", ""),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return True
 
 
 def charge_piq_fee(amount: float, wallet: str = "", orcid: str = "",
