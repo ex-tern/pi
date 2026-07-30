@@ -1957,10 +1957,10 @@ const MAP_DEFAULTS = {
 // exposing that as one click is far more usable than asking someone to
 // discover the pairing.
 const MAP_PRESETS = {
-  compact:   { gravity: 75, repulsion: 20, linkStrength: 70, damping: 60, overlap: 55, maxNodes: 20 },
-  balanced:  { gravity: 30, repulsion: 50, linkStrength: 50, damping: 45, overlap: 85, maxNodes: 20 },
-  spacious:  { gravity: 8,  repulsion: 85, linkStrength: 25, damping: 40, overlap: 100, maxNodes: 30 },
-  clustered: { gravity: 45, repulsion: 35, linkStrength: 95, damping: 55, overlap: 70, maxNodes: 25 },
+  compact:   { spacing: 12, linkStrength: 75, maxNodes: 16 },
+  balanced:  { spacing: 40, linkStrength: 65, maxNodes: 18 },
+  spacious:  { spacing: 78, linkStrength: 35, maxNodes: 28 },
+  clustered: { spacing: 28, linkStrength: 95, maxNodes: 22 },
 };
 
 const MapSettings = {
@@ -1970,14 +1970,8 @@ const MapSettings = {
   set maxNodes(v) { this._set("max_nodes", v); },
   get nodeScale() { return parseFloat(this._get("node_scale", MAP_DEFAULTS.nodeScale)); },
   set nodeScale(v) { this._set("node_scale", v); },
-  get gravity() { return parseInt(this._get("gravity", MAP_DEFAULTS.gravity), 10); },
-  set gravity(v) { this._set("gravity", v); },
-  get repulsion() { return parseInt(this._get("repulsion", MAP_DEFAULTS.repulsion), 10); },
-  set repulsion(v) { this._set("repulsion", v); },
-  get damping() { return parseInt(this._get("damping", MAP_DEFAULTS.damping), 10); },
-  set damping(v) { this._set("damping", v); },
-  get overlap() { return parseInt(this._get("overlap", MAP_DEFAULTS.overlap), 10); },
-  set overlap(v) { this._set("overlap", v); },
+  get spacing() { return parseInt(this._get("spacing", MAP_DEFAULTS.spacing), 10); },
+  set spacing(v) { this._set("spacing", v); },
   get preset() { return this._get("preset", "balanced"); },
   set preset(v) { this._set("preset", v); },
   get linkStrength() { return parseInt(this._get("link_strength", MAP_DEFAULTS.linkStrength), 10); },
@@ -2144,11 +2138,8 @@ function applyMapSettingsToForm() {
   };
   set("mapMaxNodes", MapSettings.maxNodes, "mapMaxNodesOut");
   set("mapNodeScale", MapSettings.nodeScale, "mapNodeScaleOut", v => `${Number(v).toFixed(1)}×`);
-  set("mapGravity", MapSettings.gravity, "mapGravityOut");
-  set("mapRepulsion", MapSettings.repulsion, "mapRepulsionOut");
+  set("mapSpacing", MapSettings.spacing, "mapSpacingOut");
   set("mapLinkStrength", MapSettings.linkStrength, "mapLinkStrengthOut");
-  set("mapDamping", MapSettings.damping, "mapDampingOut", v => (Number(v) / 100).toFixed(2));
-  set("mapOverlap", MapSettings.overlap, "mapOverlapOut", v => (Number(v) / 100).toFixed(2));
   document.querySelectorAll(".preset-btn").forEach(b =>
     b.classList.toggle("active", b.dataset.preset === MapSettings.preset));
   const summary = document.getElementById("mapPhysicsSummary");
@@ -2281,22 +2272,18 @@ function renderMapNetwork(data) {
     return {
       from: e.from, to: e.to,
       color: {
-        color: sameDomain ? "rgba(100,116,139,0.22)" : "rgba(148,163,184,0.10)",
+        color: sameDomain ? "rgba(100,116,139,0.24)" : "rgba(148,163,184,0.09)",
         highlight: "rgba(30,58,138,0.40)",
       },
-      width: sameDomain ? 1.2 : 0.6,
-      length: clusterOn && sameDomain ? 70 : undefined,
+      width: sameDomain ? 1.2 : 0.5,
+      length: clusterOn && sameDomain ? Math.round(forces.springLength * 0.65) : undefined,
       smooth: { type: "continuous", roundness: 0.3 },
     };
   }));
 
   // Sliders map to physics in a way that stays stable across the whole range:
   // repulsion widens spacing, clustering tightens same-domain grouping.
-  const rep = MapSettings.repulsion / 100;
-  const link = MapSettings.linkStrength / 100;
-  const grav = MapSettings.gravity / 100;
-  const damp = MapSettings.damping / 100;
-  const overlap = MapSettings.overlap / 100;
+  const forces = derivedPhysics(MapSettings.spacing, MapSettings.linkStrength);
   const physicsOn = MapSettings.physics;
 
   const options = {
@@ -2305,21 +2292,7 @@ function renderMapNetwork(data) {
     edges: { hoverWidth: 0 },
     physics: physicsOn ? {
       solver: "barnesHut",
-      barnesHut: {
-        // Repulsion pushes nodes apart; gravity pulls the whole graph toward
-        // the centre. They are separate forces because the useful layouts need
-        // them varied independently — a compact map is high gravity AND low
-        // repulsion, which one combined slider cannot express.
-        gravitationalConstant: -800 - (rep * 14000),
-        centralGravity: 0.02 + (grav * 0.75),
-        springLength: 60 + (rep * 240) - (grav * 40),
-        springConstant: 0.008 + (link * 0.09),
-        // Damping below ~0.2 oscillates indefinitely; above ~0.9 the layout
-        // freezes before it has relaxed. The slider range is clamped to the
-        // band where the simulation actually settles.
-        damping: Math.max(0.15, Math.min(0.9, damp)),
-        avoidOverlap: overlap,
-      },
+      barnesHut: forces,
       stabilization: { enabled: true, iterations: 400, updateInterval: 40, fit: true },
       maxVelocity: 30,
       minVelocity: 0.7,
@@ -2341,6 +2314,14 @@ function renderMapNetwork(data) {
     mapNetworkInstance.once("stabilizationIterationsDone", () => {
       stabilizing.classList.add("hidden");
       mapNetworkInstance.fit({ animation: { duration: 400, easingFunction: "easeOutQuad" } });
+      // fit() frames the bounding box, which on a sparse graph leaves the
+      // nodes small in a large empty canvas. A modest zoom past that reads
+      // much better without clipping.
+      setTimeout(() => {
+        if (!mapNetworkInstance) return;
+        const scale = mapNetworkInstance.getScale();
+        if (scale < 1.0) mapNetworkInstance.moveTo({ scale: Math.min(1.15, scale * 1.35) });
+      }, 450);
     });
   } else if (stabilizing) {
     stabilizing.classList.add("hidden");
@@ -2415,13 +2396,8 @@ function bindMapSlider(id, outId, setter, { refetch = false, fmt = null } = {}) 
 bindMapSlider("mapMaxNodes", "mapMaxNodesOut", v => { MapSettings.maxNodes = v; }, { refetch: true });
 bindMapSlider("mapNodeScale", "mapNodeScaleOut", v => { MapSettings.nodeScale = v; },
               { fmt: v => `${Number(v).toFixed(1)}×` });
-bindMapSlider("mapGravity", "mapGravityOut", v => { MapSettings.gravity = v; markCustomPreset(); });
-bindMapSlider("mapRepulsion", "mapRepulsionOut", v => { MapSettings.repulsion = v; markCustomPreset(); });
+bindMapSlider("mapSpacing", "mapSpacingOut", v => { MapSettings.spacing = v; markCustomPreset(); });
 bindMapSlider("mapLinkStrength", "mapLinkStrengthOut", v => { MapSettings.linkStrength = v; markCustomPreset(); });
-bindMapSlider("mapDamping", "mapDampingOut", v => { MapSettings.damping = v; markCustomPreset(); },
-              { fmt: v => (Number(v) / 100).toFixed(2) });
-bindMapSlider("mapOverlap", "mapOverlapOut", v => { MapSettings.overlap = v; markCustomPreset(); },
-              { fmt: v => (Number(v) / 100).toFixed(2) });
 
 function markCustomPreset() {
   MapSettings.preset = "custom";

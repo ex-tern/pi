@@ -166,7 +166,7 @@
         <div class="stat-card"><div class="stat-value" id="statUniqueAuthors">–</div><div class="stat-label">Unique Authors</div></div>
       </div>
 
-      <div class="two-col">
+      <div class="full-col">
         <div class="card">
           <h2>Pidyne Forecast<button class="help-btn" data-help="pidyne" aria-label="About the Pidyne forecast">?</button></h2>
           <p class="hint">Projects how the eight Pi-Index criteria weights will shift in the next ledger epoch, learned from the weights recorded in every Proof-of-Research block.</p>
@@ -197,7 +197,10 @@
           </table>
         </div>
 
-        <div class="card">
+      </div>
+
+      <div class="full-col">
+        <div class="card map-card">
           <h2>Global Map of Science<button class="help-btn" data-help="map" aria-label="About the map of science">?</button></h2>
 
           <!-- Everything is collapsed by default: the map itself is the point,
@@ -262,25 +265,17 @@
                   <button class="preset-btn" data-preset="clustered">Clustered</button>
                 </div>
 
+                <!-- Two controls, not five. Damping, overlap and link
+                     strength only work in specific combinations, which the
+                     presets already encode — exposing them individually asked
+                     the user to rediscover that by trial and error. -->
                 <div class="slider-row">
-                  <label for="mapGravity">Gravity <output id="mapGravityOut">30</output></label>
-                  <input type="range" id="mapGravity" min="0" max="100" step="1" value="30">
+                  <label for="mapSpacing">Spacing <output id="mapSpacingOut">40</output></label>
+                  <input type="range" id="mapSpacing" min="0" max="100" step="1" value="40">
                 </div>
                 <div class="slider-row">
-                  <label for="mapRepulsion">Repulsion <output id="mapRepulsionOut">50</output></label>
-                  <input type="range" id="mapRepulsion" min="0" max="100" step="1" value="50">
-                </div>
-                <div class="slider-row">
-                  <label for="mapLinkStrength">Link strength <output id="mapLinkStrengthOut">50</output></label>
-                  <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="50">
-                </div>
-                <div class="slider-row">
-                  <label for="mapDamping">Damping <output id="mapDampingOut">0.45</output></label>
-                  <input type="range" id="mapDamping" min="10" max="95" step="1" value="45">
-                </div>
-                <div class="slider-row">
-                  <label for="mapOverlap">Overlap avoidance <output id="mapOverlapOut">0.85</output></label>
-                  <input type="range" id="mapOverlap" min="0" max="100" step="1" value="85">
+                  <label for="mapLinkStrength">Grouping <output id="mapLinkStrengthOut">65</output></label>
+                  <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="65">
                 </div>
 
                 <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
