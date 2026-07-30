@@ -52,17 +52,12 @@
     </details>
 
     <details class="sidebar-expander">
-      <summary>Scilem Assistant <span class="pill pill-muted">Inactive</span></summary>
-      <div class="notice-box" id="scilemNotice">
-        <strong>Local language model inactive.</strong>
-        Due to server limitations, the local language model powering the Scilem conversational
-        assistant is not running on this deployment.
-        <span class="notice-sub">Manuscript assessment is unaffected — the Scilem deterministic
-        structural analyser still evaluates every paper as part of the model panel.</span>
-      </div>
+      <summary>Scilem Assistant<span class="pill q-high" id="scilemBadge">Ready</span></summary>
+      <div id="scilemChatBox" class="scilem-chat-box"></div>
+      <div class="scilem-suggestions" id="scilemSuggestions"></div>
       <form id="scilemForm" class="scilem-form">
-        <input id="scilemInput" type="text" placeholder="Assistant unavailable" autocomplete="off" disabled>
-        <button type="submit" class="btn" disabled>Send</button>
+        <input id="scilemInput" type="text" placeholder="Ask about piX, piQ, fees…" autocomplete="off">
+        <button type="submit" class="btn btn-primary">Ask</button>
       </form>
     </details>
 
@@ -252,26 +247,44 @@
                   <label for="mapNodeScale">Bubble size <output id="mapNodeScaleOut">1.0×</output></label>
                   <input type="range" id="mapNodeScale" min="0.4" max="2.5" step="0.1" value="1">
                 </div>
-                <div class="slider-row">
-                  <label for="mapLabelSize">Labels <output id="mapLabelSizeOut">13px</output></label>
-                  <input type="range" id="mapLabelSize" min="0" max="22" step="1" value="13">
-                </div>
+                <label class="checkbox-row"><input type="checkbox" id="mapLabelToggle" checked> Show labels</label>
               </div>
             </details>
 
             <details class="ctl-group">
-              <summary><span class="ctl-title">Layout</span><span class="ctl-hint">Physics &amp; spacing</span></summary>
+              <summary><span class="ctl-title">Physics</span><span class="ctl-hint" id="mapPhysicsSummary">Balanced</span></summary>
               <div class="ctl-body">
+                <label class="filter-label">Preset</label>
+                <div class="preset-row">
+                  <button class="preset-btn" data-preset="compact">Compact</button>
+                  <button class="preset-btn active" data-preset="balanced">Balanced</button>
+                  <button class="preset-btn" data-preset="spacious">Spacious</button>
+                  <button class="preset-btn" data-preset="clustered">Clustered</button>
+                </div>
+
                 <div class="slider-row">
-                  <label for="mapRepulsion">Spread <output id="mapRepulsionOut">50</output></label>
+                  <label for="mapGravity">Gravity <output id="mapGravityOut">30</output></label>
+                  <input type="range" id="mapGravity" min="0" max="100" step="1" value="30">
+                </div>
+                <div class="slider-row">
+                  <label for="mapRepulsion">Repulsion <output id="mapRepulsionOut">50</output></label>
                   <input type="range" id="mapRepulsion" min="0" max="100" step="1" value="50">
                 </div>
                 <div class="slider-row">
-                  <label for="mapLinkStrength">Clustering <output id="mapLinkStrengthOut">50</output></label>
+                  <label for="mapLinkStrength">Link strength <output id="mapLinkStrengthOut">50</output></label>
                   <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="50">
                 </div>
+                <div class="slider-row">
+                  <label for="mapDamping">Damping <output id="mapDampingOut">0.45</output></label>
+                  <input type="range" id="mapDamping" min="10" max="95" step="1" value="45">
+                </div>
+                <div class="slider-row">
+                  <label for="mapOverlap">Overlap avoidance <output id="mapOverlapOut">0.85</output></label>
+                  <input type="range" id="mapOverlap" min="0" max="100" step="1" value="85">
+                </div>
+
                 <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
-                <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Group by domain</label>
+                <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Domain gravity wells</label>
                 <button id="mapResetSettingsBtn" class="btn btn-ghost btn-block">Reset to defaults</button>
               </div>
             </details>
@@ -288,8 +301,10 @@
           </div>
           <div id="mapEmptyState" class="hint hidden">No papers match these filters.</div>
           <details class="sidebar-expander" open>
-            <summary>Map Legend &amp; Data <span class="hint">(click a row to focus it)</span></summary>
-            <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead><tbody></tbody></table>
+            <summary>Map Legend &amp; Data <span class="hint">(select a row to focus it)</span></summary>
+            <div class="legend-scroll">
+              <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead><tbody></tbody></table>
+            </div>
           </details>
         </div>
       </div>

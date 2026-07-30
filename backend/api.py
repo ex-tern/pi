@@ -42,7 +42,7 @@ from config import (
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
-    SCILEM_DISABLED_NOTICE, PIQ_PROCESSING_FEE, DONATION_WALLET,
+    SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, PIQ_PROCESSING_FEE, DONATION_WALLET,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
     TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK,
 )
@@ -68,6 +68,8 @@ from rubric import (
     CRITERIA_ORDER as BRAIN_CRITERIA_ORDER,
 )
 from emission import emission_manifest, compute_processing_fee, fee_manifest
+import forecast as forecast_engine
+import assistant as scilem
 import abuse_guard
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
@@ -983,31 +985,37 @@ def defense_strategy(req: DefenseRequest):
 # ---------------------------------------------------------------------------
 class ScilemChatRequest(BaseModel):
     prompt: str
+    wallet: Optional[str] = ""
+    orcid: Optional[str] = ""
 
 
 @app.get("/api/scilem/status")
 def scilem_status():
-    """Lets the frontend disable the assistant UI up front rather than
-    letting the user type a question and only then be told it won't work."""
+    """Capabilities of the assistant, so the UI can describe it honestly."""
     return {
-        "enabled": ENABLE_SCILEM_LOCAL_MODEL,
-        "notice": None if ENABLE_SCILEM_LOCAL_MODEL else SCILEM_DISABLED_NOTICE,
+        "enabled": ENABLE_SCILEM_ASSISTANT,
+        "mode": "grounded",
+        "local_model": ENABLE_SCILEM_LOCAL_MODEL,
+        "cloud_phrasing": bool(GROQ_API_KEY or OR_API_KEY),
+        "capabilities": scilem.CAPABILITIES,
+        "notice": None if ENABLE_SCILEM_ASSISTANT else SCILEM_DISABLED_NOTICE,
     }
 
 
 @app.post("/api/scilem/chat")
 def scilem_chat(req: ScilemChatRequest, request: Request):
-    if not ENABLE_SCILEM_LOCAL_MODEL:
-        # 503 rather than 200: the feature is genuinely unavailable, and
-        # saying so in the status code keeps clients from treating the
-        # notice text as a real model answer.
+    if not ENABLE_SCILEM_ASSISTANT:
         raise HTTPException(status_code=503, detail=SCILEM_DISABLED_NOTICE)
     check_rate_limit(get_client_ip(request), bucket="scilem")
     if not req.prompt.strip():
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
-    return {"response": generate_assistant_reply(req.prompt)}
+
+    # Identity is taken from the verified request, not from the prompt, so a
+    # question cannot talk the assistant into reading someone else's balance.
+    clean_wallet, clean_orcid = normalize_identity(req.wallet, req.orcid)
+    return scilem.answer(req.prompt, wallet=clean_wallet, orcid=clean_orcid)
 
 
 class ScilemResetRequest(BaseModel):
@@ -1171,36 +1179,28 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 
     actual_lookback = max(1, min(lookback, len(rows) - 1))
 
-    dataset = PidyneBlockchainDataset(weight_matrix, actual_lookback)
-    dataloader = DataLoader(dataset, batch_size=min(4, max(1, len(dataset))), shuffle=False)
-    model = PidyneLSTM()
-    optimizer = optim.Adam(model.parameters(), lr=0.01)
-    loss_fn = nn.MSELoss()
+    # Cached on block count: the series only changes when a new block is
+    # written, so repeated views must not retrain the model.
+    key = forecast_engine.cache_key(len(rows), actual_lookback, series_source)
+    cached = forecast_engine.get_cached(key)
+    if cached:
+        return cached
 
-    model.train()
+    # Train under a wall-clock budget; fall back to a statistical projection
+    # if PyTorch is unavailable or too slow on this host. A forecast that
+    # always returns is worth more than a neural one that times out.
+    raw_pred = forecast_engine.train_lstm_forecast(
+        weight_matrix, actual_lookback,
+        model_factory=PidyneLSTM,
+        dataset_factory=PidyneBlockchainDataset,
+        loader_factory=DataLoader,
+        torch_mod=torch, nn_mod=nn, optim_mod=optim,
+    )
+    method = "pidyne-lstm"
     final_loss = 0.0
-    for _ in range(300):
-        epoch_loss = 0.0
-        for seq, target in dataloader:
-            optimizer.zero_grad()
-            loss = loss_fn(model(seq), target)
-            loss.backward()
-            optimizer.step()
-            epoch_loss += float(loss.item())
-        final_loss = epoch_loss / max(1, len(dataloader))
-
-    try:
-        model.eval()
-        with torch.no_grad():
-            window = torch.tensor(weight_matrix[-actual_lookback:], dtype=torch.float32).unsqueeze(0)
-            raw_pred = model(window).squeeze().numpy()
-    except Exception as e:
-        logging.error("Pidyne forecast inference failed: %s", e)
-        return {"ready": False,
-                "message": "The forecasting model could not run on this server. This is usually a "
-                           "memory limit on small hosts.",
-                "blocks_recorded": len(rows), "blocks_required": 3,
-                "history": [], "forecast": None, "criteria": []}
+    if raw_pred is None:
+        raw_pred = forecast_engine.holt_linear_forecast(weight_matrix)
+        method = "holt-linear-trend"
 
     last = weight_matrix[-1]
 
@@ -1258,7 +1258,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         f"stronger, more consistent evidence for that criterion."
     )
 
-    return {
+    result = {
         "ready": True,
         "history": history,
         "forecast": forecast_point,
@@ -1267,11 +1267,15 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         "lookback_used": actual_lookback,
         "blocks_recorded": len(rows),
         "training_loss": round(final_loss, 6),
+        "method": method,
+        "cached": False,
         "series_source": series_source,
         "interpretation": interpretation,
         "top_criterion": ranked[0]["id"],
         "biggest_mover": mover["id"],
     }
+    forecast_engine.store_cached(key, result)
+    return result
 
 
 # ---------------------------------------------------------------------------
