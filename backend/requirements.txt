@@ -1,0 +1,37 @@
+# Pinned to compatible-release ranges for reproducible production installs.
+# Run `pip install -r requirements.txt` inside a virtualenv.
+#
+# Trimmed vs. the original list: pandas, torchvision, beautifulsoup4,
+# tabulate, and groq were listed but never imported anywhere in the
+# codebase (Groq is reached through the openai-compatible client, not the
+# `groq` SDK) — dropped to keep installs faster and the dependency surface
+# smaller. Everything below is a real import.
+
+# --- Web framework ---
+fastapi~=0.115
+uvicorn[standard]~=0.32
+gunicorn~=23.0
+python-multipart~=0.0.12
+pydantic~=2.9
+
+# --- Core ML / scoring engine ---
+numpy~=1.26
+torch~=2.4
+transformers~=4.45
+accelerate~=0.34
+
+# --- LLM providers ---
+openai~=1.51
+openrouter~=1.0
+
+# --- Blockchain / crypto ---
+web3~=7.4
+eth-account~=0.13
+cryptography~=43.0
+
+# --- PDF + web scraping ---
+pymupdf~=1.24
+cloudscraper~=1.2
+
+# --- HTTP ---
+requests~=2.32
