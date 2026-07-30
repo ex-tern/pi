@@ -202,7 +202,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
-    if (btn.dataset.tab === "analytics") { loadForecast(); loadMap(); loadLeaderboard(); loadTopPapers(); }
+    if (btn.dataset.tab === "analytics") { initAnalyticsTab(); }
     if (btn.dataset.tab === "explorer") loadExplorer();
   });
 });
@@ -472,23 +472,92 @@ function showCriterionModal(c) {
 
 document.getElementById("runForecastBtn").addEventListener("click", loadForecast);
 document.getElementById("lookbackSelect").addEventListener("change", loadForecast);
-document.getElementById("mapAuthorFilter").addEventListener("change", loadMap);
 
+// --- Summary stats bar ---
+async function loadAnalyticsSummary() {
+  try {
+    const res = await fetch(`${API}/api/analytics/summary`);
+    const data = await res.json();
+    document.getElementById("statTotalPapers").textContent = data.total_papers;
+    document.getElementById("statTotalPiq").textContent = data.total_piq.toFixed(2);
+    document.getElementById("statAvgScore").textContent = data.total_papers ? data.avg_score.toFixed(1) : "–";
+    document.getElementById("statUniqueAuthors").textContent = data.unique_authors;
+  } catch (e) { /* ignore */ }
+}
+
+// --- Map: settings persisted in localStorage, filters kept in memory ---
+const MapSettings = {
+  get physics() { return localStorage.getItem("sp_map_physics") !== "false"; },
+  set physics(v) { localStorage.setItem("sp_map_physics", String(v)); },
+  get sizeMode() { return localStorage.getItem("sp_map_size_mode") || "frequency"; },
+  set sizeMode(v) { localStorage.setItem("sp_map_size_mode", v); },
+  get maxNodes() { return localStorage.getItem("sp_map_max_nodes") || "20"; },
+  set maxNodes(v) { localStorage.setItem("sp_map_max_nodes", v); },
+};
+
+const mapFilterState = { minScore: 0, maxScore: 100, fields: [] };
 let mapNetworkInstance = null;
+
+async function loadMapFieldChecklist() {
+  try {
+    const res = await fetch(`${API}/api/analytics/fields`);
+    const data = await res.json();
+    const box = document.getElementById("mapFieldChecklist");
+    box.innerHTML = data.fields.map(f => `
+      <label class="checkbox-row">
+        <input type="checkbox" class="map-field-checkbox" value="${escapeHtml(f)}" checked> ${escapeHtml(f)}
+      </label>`).join("");
+    mapFilterState.fields = [...data.fields];
+    box.querySelectorAll(".map-field-checkbox").forEach(cb => {
+      cb.addEventListener("change", () => {
+        mapFilterState.fields = [...box.querySelectorAll(".map-field-checkbox:checked")].map(el => el.value);
+      });
+    });
+  } catch (e) { /* ignore */ }
+}
+
+function applyMapSettingsToForm() {
+  document.getElementById("mapPhysicsToggle").checked = MapSettings.physics;
+  document.getElementById("mapSizeMode").value = MapSettings.sizeMode;
+  document.getElementById("mapMaxNodes").value = MapSettings.maxNodes;
+}
 
 async function loadMap() {
   const author = document.getElementById("mapAuthorFilter").value;
+  const minScore = document.getElementById("mapMinScore").value || 0;
+  const maxScore = document.getElementById("mapMaxScore").value || 100;
+  const fieldsParam = mapFilterState.fields.join(",");
+  const maxNodes = document.getElementById("mapMaxNodes").value || 20;
+
+  const emptyState = document.getElementById("mapEmptyState");
   try {
-    const res = await fetch(`${API}/api/analytics/map?author=${encodeURIComponent(author)}`);
+    const qs = new URLSearchParams({
+      author, min_score: minScore, max_score: maxScore, fields: fieldsParam, max_nodes: maxNodes,
+    });
+    const res = await fetch(`${API}/api/analytics/map?${qs}`);
     const data = await res.json();
+
+    if (data.empty) {
+      emptyState.classList.remove("hidden");
+      if (mapNetworkInstance) { mapNetworkInstance.destroy(); mapNetworkInstance = null; }
+      document.querySelector("#mapLegendTable tbody").innerHTML = "";
+      return;
+    }
+    emptyState.classList.add("hidden");
+
+    const sizeMode = document.getElementById("mapSizeMode").value;
     const nodes = new vis.DataSet(data.nodes.map(n => ({
-      id: n.id, label: "", title: n.title, size: n.size,
+      id: n.id, label: "", title: n.title,
+      size: sizeMode === "avg_score" ? Math.max(20, 15 + n.avg_score * 0.3) : n.size,
       color: { background: n.color, border: "#1a1a1a" }, shape: "dot",
     })));
     const edges = new vis.DataSet(data.edges.map(e => ({ from: e.from, to: e.to, color: "rgba(150,150,150,0.2)" })));
     const container = document.getElementById("mapNetwork");
+    const physicsOn = document.getElementById("mapPhysicsToggle").checked;
     const options = {
-      physics: { barnesHut: { gravitationalConstant: -3000, centralGravity: 0.15, springLength: 180, springConstant: 0.005, damping: 1.0, avoidOverlap: 2.0 }, stabilization: { iterations: 500 } },
+      physics: physicsOn
+        ? { barnesHut: { gravitationalConstant: -3000, centralGravity: 0.15, springLength: 180, springConstant: 0.005, damping: 1.0, avoidOverlap: 2.0 }, stabilization: { iterations: 500 } }
+        : false,
       interaction: { hover: true },
     };
     if (mapNetworkInstance) mapNetworkInstance.destroy();
@@ -496,36 +565,208 @@ async function loadMap() {
 
     const tbody = document.querySelector("#mapLegendTable tbody");
     tbody.innerHTML = data.legend.map(row =>
-      `<tr><td><span class="color-box" style="background:${row.color};"></span></td><td>${escapeHtml(row.topic)}</td><td>${row.frequency}</td><td>${row.avg_weight}</td></tr>`
+      `<tr class="legend-row" data-topic="${escapeHtml(row.topic)}">
+        <td><span class="color-box" style="background:${row.color};"></span></td>
+        <td>${escapeHtml(row.topic)}</td><td>${row.frequency}</td><td>${row.avg_weight}</td>
+      </tr>`
     ).join("");
+    tbody.querySelectorAll(".legend-row").forEach(tr => {
+      tr.addEventListener("click", () => {
+        const topic = tr.dataset.topic;
+        if (!mapNetworkInstance) return;
+        mapNetworkInstance.selectNodes([topic]);
+        mapNetworkInstance.focus(topic, { scale: 1.4, animation: { duration: 400 } });
+      });
+    });
   } catch (e) { /* ignore */ }
+}
+
+document.getElementById("mapAuthorFilter").addEventListener("change", loadMap);
+document.getElementById("mapApplyFiltersBtn").addEventListener("click", loadMap);
+document.getElementById("mapPhysicsToggle").addEventListener("change", (e) => {
+  MapSettings.physics = e.target.checked;
+  loadMap();
+});
+document.getElementById("mapSizeMode").addEventListener("change", (e) => {
+  MapSettings.sizeMode = e.target.value;
+  loadMap();
+});
+document.getElementById("mapMaxNodes").addEventListener("change", (e) => {
+  MapSettings.maxNodes = e.target.value;
+  loadMap();
+});
+
+// --- Leaderboard: search, sort, pagination ---
+const leaderboardState = { q: "", sort: "piq", order: "desc", limit: 10, offset: 0, total: 0 };
+let leaderboardDebounce = null;
+
+function renderSortIndicators(theadSelector, state) {
+  document.querySelectorAll(`${theadSelector} th[data-sort]`).forEach(th => {
+    th.classList.remove("sorted-asc", "sorted-desc");
+    if (th.dataset.sort === state.sort) th.classList.add(state.order === "asc" ? "sorted-asc" : "sorted-desc");
+  });
+}
+
+function renderPagination(containerId, state, reload) {
+  const el = document.getElementById(containerId);
+  const totalPages = Math.max(1, Math.ceil(state.total / state.limit));
+  const currentPage = Math.floor(state.offset / state.limit) + 1;
+  el.innerHTML = `
+    <button class="btn" id="${containerId}-prev" ${currentPage <= 1 ? "disabled" : ""}>‹ Prev</button>
+    <span class="page-indicator">Page ${currentPage} of ${totalPages} (${state.total} total)</span>
+    <button class="btn" id="${containerId}-next" ${currentPage >= totalPages ? "disabled" : ""}>Next ›</button>
+  `;
+  document.getElementById(`${containerId}-prev`).addEventListener("click", () => {
+    state.offset = Math.max(0, state.offset - state.limit);
+    reload();
+  });
+  document.getElementById(`${containerId}-next`).addEventListener("click", () => {
+    if (state.offset + state.limit < state.total) { state.offset += state.limit; reload(); }
+  });
 }
 
 async function loadLeaderboard() {
   try {
-    const res = await fetch(`${API}/api/analytics/leaderboard`);
+    const qs = new URLSearchParams({
+      q: leaderboardState.q, sort: leaderboardState.sort, order: leaderboardState.order,
+      limit: leaderboardState.limit, offset: leaderboardState.offset,
+    });
+    const res = await fetch(`${API}/api/analytics/leaderboard?${qs}`);
     const data = await res.json();
-    document.getElementById("leaderboardBody").innerHTML = data.rankings.map(r =>
-      `<tr><td>${escapeHtml(r.author)}</td><td>${r.piq.toFixed(2)}</td></tr>`
-    ).join("");
+    leaderboardState.total = data.total;
 
-    const select = document.getElementById("mapAuthorFilter");
-    const current = select.value;
-    const authorOptions = data.rankings.map(r => r.author);
-    select.innerHTML = `<option value="All Authors">All Authors</option>` +
-      authorOptions.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
-    if (authorOptions.includes(current)) select.value = current;
+    document.getElementById("leaderboardBody").innerHTML = data.rankings.length
+      ? data.rankings.map(r =>
+          `<tr><td>${escapeHtml(r.author)}</td><td>${r.piq.toFixed(2)}</td><td>${r.papers}</td><td>${r.avg_score.toFixed(1)}</td></tr>`
+        ).join("")
+      : `<tr><td colspan="4" class="hint">No authors match this search.</td></tr>`;
+
+    renderSortIndicators("#leaderboardTable thead", leaderboardState);
+    renderPagination("leaderboardPagination", leaderboardState, loadLeaderboard);
+
+    // Keep the map's author filter populated from an unfiltered, unpaginated view
+    if (!leaderboardState.q && leaderboardState.offset === 0) {
+      const select = document.getElementById("mapAuthorFilter");
+      const current = select.value;
+      const authorOptions = data.rankings.map(r => r.author);
+      select.innerHTML = `<option value="All Authors">All Authors</option>` +
+        authorOptions.map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
+      if (authorOptions.includes(current)) select.value = current;
+    }
   } catch (e) { /* ignore */ }
 }
 
+document.querySelectorAll("#leaderboardTable thead th[data-sort]").forEach(th => {
+  th.addEventListener("click", () => {
+    const col = th.dataset.sort;
+    if (leaderboardState.sort === col) {
+      leaderboardState.order = leaderboardState.order === "asc" ? "desc" : "asc";
+    } else {
+      leaderboardState.sort = col;
+      leaderboardState.order = "desc";
+    }
+    leaderboardState.offset = 0;
+    loadLeaderboard();
+  });
+});
+document.getElementById("leaderboardSearch").addEventListener("input", (e) => {
+  clearTimeout(leaderboardDebounce);
+  leaderboardDebounce = setTimeout(() => {
+    leaderboardState.q = e.target.value.trim();
+    leaderboardState.offset = 0;
+    loadLeaderboard();
+  }, 350);
+});
+
+// --- Top Papers: search, score filter, sort, pagination ---
+const topPapersState = { q: "", minScore: 0, sort: "score", order: "desc", limit: 10, offset: 0, total: 0 };
+let topPapersDebounce = null;
+
 async function loadTopPapers() {
   try {
-    const res = await fetch(`${API}/api/analytics/top-papers`);
+    const qs = new URLSearchParams({
+      q: topPapersState.q, min_score: topPapersState.minScore, max_score: 100,
+      sort: topPapersState.sort, order: topPapersState.order,
+      limit: topPapersState.limit, offset: topPapersState.offset,
+    });
+    const res = await fetch(`${API}/api/analytics/top-papers?${qs}`);
     const data = await res.json();
-    document.getElementById("topPapersBody").innerHTML = data.papers.map(p =>
-      `<tr><td>${escapeHtml(p.title)}</td><td>${escapeHtml(p.author || "")}</td><td>${(p.score || 0).toFixed(1)}</td></tr>`
-    ).join("");
+    topPapersState.total = data.total;
+
+    document.getElementById("topPapersBody").innerHTML = data.papers.length
+      ? data.papers.map((p, idx) => `
+          <tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}">
+            <td>${escapeHtml(p.title)}</td>
+            <td>${escapeHtml(p.author || "")}</td>
+            <td>${(p.score || 0).toFixed(1)}</td>
+            <td>${(p.piq || 0).toFixed(2)}</td>
+            <td>${(p.logic_score || 0).toFixed(1)}</td>
+            <td>${p.date ? new Date(p.date).toLocaleDateString() : ""}</td>
+          </tr>`
+        ).join("")
+      : `<tr><td colspan="6" class="hint">No papers match these filters.</td></tr>`;
+
+    document.querySelectorAll("#topPapersBody .clickable-row").forEach(tr => {
+      tr.addEventListener("click", async () => {
+        const hash = tr.dataset.hash;
+        if (!hash) return;
+        try {
+          const r = await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}`);
+          if (!r.ok) return;
+          const dossier = await r.json();
+          renderDossierModal({
+            title: dossier.title, author_name: dossier.author_name, eval_hash: dossier.eval_hash,
+            piq: dossier.piq, tx_hash: dossier.tx_hash, zk_proof: dossier.zk_proof,
+            warnings: [], consensus_raw: dossier.consensus_raw, evidence_report_text: dossier.evidence_report_text,
+          });
+        } catch (e) { /* ignore */ }
+      });
+    });
+
+    renderSortIndicators("#topPapersTable thead", topPapersState);
+    renderPagination("topPapersPagination", topPapersState, loadTopPapers);
   } catch (e) { /* ignore */ }
+}
+
+document.querySelectorAll("#topPapersTable thead th[data-sort]").forEach(th => {
+  th.addEventListener("click", () => {
+    const col = th.dataset.sort;
+    if (col === "none") return;
+    if (topPapersState.sort === col) {
+      topPapersState.order = topPapersState.order === "asc" ? "desc" : "asc";
+    } else {
+      topPapersState.sort = col;
+      topPapersState.order = "desc";
+    }
+    topPapersState.offset = 0;
+    loadTopPapers();
+  });
+});
+document.getElementById("topPapersSearch").addEventListener("input", (e) => {
+  clearTimeout(topPapersDebounce);
+  topPapersDebounce = setTimeout(() => {
+    topPapersState.q = e.target.value.trim();
+    topPapersState.offset = 0;
+    loadTopPapers();
+  }, 350);
+});
+document.getElementById("topPapersMinScore").addEventListener("input", (e) => {
+  clearTimeout(topPapersDebounce);
+  topPapersDebounce = setTimeout(() => {
+    topPapersState.minScore = e.target.value ? Number(e.target.value) : 0;
+    topPapersState.offset = 0;
+    loadTopPapers();
+  }, 350);
+});
+
+async function initAnalyticsTab() {
+  applyMapSettingsToForm();
+  await loadMapFieldChecklist();
+  loadAnalyticsSummary();
+  loadForecast();
+  loadLeaderboard();
+  loadTopPapers();
+  loadMap();
 }
 
 // ---------------------------------------------------------------------------
