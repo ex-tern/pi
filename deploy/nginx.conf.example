@@ -1,0 +1,49 @@
+# Example nginx reverse-proxy config for ScholarPi.
+# Copy to /etc/nginx/sites-available/scholarpi, symlink into sites-enabled,
+# fill in your domain + cert paths, then `nginx -t && systemctl reload nginx`.
+#
+# Get certs quickly with Let's Encrypt: `certbot --nginx -d your-domain.com`
+
+limit_req_zone $binary_remote_addr zone=scholarpi_general:10m rate=20r/s;
+limit_req_zone $binary_remote_addr zone=scholarpi_assess:10m rate=2r/s;
+
+server {
+    listen 80;
+    server_name your-domain.com;
+    return 301 https://$host$request_uri;
+}
+
+server {
+    listen 443 ssl http2;
+    server_name your-domain.com;
+
+    ssl_certificate     /etc/letsencrypt/live/your-domain.com/fullchain.pem;
+    ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
+    ssl_protocols TLSv1.2 TLSv1.3;
+
+    client_max_body_size 30M;  # match/exceed MAX_UPLOAD_MB in backend/.env
+
+    # Tighter limit on the heavy assessment endpoint; the app also
+    # rate-limits itself in-process, this is a second layer in front of it.
+    location /api/assess/ {
+        limit_req zone=scholarpi_assess burst=5 nodelay;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+        proxy_read_timeout 180s;   # PDF assessment can take a while
+        proxy_buffering off;        # needed for the NDJSON progress stream
+    }
+
+    location / {
+        limit_req zone=scholarpi_general burst=40 nodelay;
+        proxy_pass http://127.0.0.1:8000;
+        proxy_http_version 1.1;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+}
