@@ -111,6 +111,13 @@
     <section id="tab-analytics" class="tab-panel">
       <div class="page-header"><h1>🌐 Map & Analytics</h1></div>
 
+      <div class="stats-bar">
+        <div class="stat-card"><div class="stat-value" id="statTotalPapers">–</div><div class="stat-label">Total Papers</div></div>
+        <div class="stat-card"><div class="stat-value" id="statTotalPiq">–</div><div class="stat-label">Total piQ Minted</div></div>
+        <div class="stat-card"><div class="stat-value" id="statAvgScore">–</div><div class="stat-label">Avg Score</div></div>
+        <div class="stat-card"><div class="stat-value" id="statUniqueAuthors">–</div><div class="stat-label">Unique Authors</div></div>
+      </div>
+
       <div class="two-col">
         <div class="card">
           <h2>Pidyne Forecast</h2>
@@ -128,10 +135,46 @@
 
         <div class="card">
           <h2>Global Map of Science</h2>
-          <select id="mapAuthorFilter"><option value="All Authors">All Authors</option></select>
-          <div id="mapNetwork" class="map-network"></div>
+
+          <div class="filter-panel">
+            <div class="filter-row">
+              <label class="filter-label">Author</label>
+              <select id="mapAuthorFilter"><option value="All Authors">All Authors</option></select>
+            </div>
+            <div class="filter-row">
+              <label class="filter-label">Score range</label>
+              <input type="number" id="mapMinScore" min="0" max="100" value="0" class="score-input">
+              <span>–</span>
+              <input type="number" id="mapMaxScore" min="0" max="100" value="100" class="score-input">
+            </div>
+            <div class="filter-row filter-row-top">
+              <label class="filter-label">Fields</label>
+              <div id="mapFieldChecklist" class="field-checklist"></div>
+            </div>
+            <button id="mapApplyFiltersBtn" class="btn btn-primary btn-block">Apply Filters</button>
+          </div>
+
           <details class="sidebar-expander">
-            <summary>Map Legend & Data</summary>
+            <summary>⚙️ Map Settings</summary>
+            <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Physics simulation</label>
+            <label class="filter-label">Node sizing</label>
+            <select id="mapSizeMode">
+              <option value="frequency">By frequency</option>
+              <option value="avg_score">By average score</option>
+            </select>
+            <label class="filter-label">Max nodes shown</label>
+            <select id="mapMaxNodes">
+              <option value="10">10</option>
+              <option value="20" selected>20</option>
+              <option value="30">30</option>
+              <option value="50">50</option>
+            </select>
+          </details>
+
+          <div id="mapNetwork" class="map-network"></div>
+          <div id="mapEmptyState" class="hint hidden">No papers match these filters.</div>
+          <details class="sidebar-expander" open>
+            <summary>Map Legend & Data <span class="hint">(click a row to focus it)</span></summary>
             <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th>Freq</th><th>Avg Weight</th></tr></thead><tbody></tbody></table>
           </details>
         </div>
@@ -140,11 +183,36 @@
       <div class="two-col">
         <div class="card">
           <h2>Pi Quotient (piQ) Leaderboard</h2>
-          <table class="data-table"><thead><tr><th>Author</th><th>piQ</th></tr></thead><tbody id="leaderboardBody"></tbody></table>
+          <input type="text" id="leaderboardSearch" placeholder="Search authors...">
+          <table class="data-table sortable-table" id="leaderboardTable">
+            <thead><tr>
+              <th data-sort="author">Author</th>
+              <th data-sort="piq">piQ</th>
+              <th data-sort="papers">Papers</th>
+              <th data-sort="avg_score">Avg Score</th>
+            </tr></thead>
+            <tbody id="leaderboardBody"></tbody>
+          </table>
+          <div class="pagination" id="leaderboardPagination"></div>
         </div>
         <div class="card">
           <h2>piX Top Papers</h2>
-          <table class="data-table"><thead><tr><th>Title</th><th>Author</th><th>Score</th></tr></thead><tbody id="topPapersBody"></tbody></table>
+          <div class="filter-row">
+            <input type="text" id="topPapersSearch" placeholder="Search title or author...">
+            <input type="number" id="topPapersMinScore" min="0" max="100" placeholder="Min score" class="score-input">
+          </div>
+          <table class="data-table sortable-table" id="topPapersTable">
+            <thead><tr>
+              <th data-sort="title">Title</th>
+              <th data-sort="none">Author</th>
+              <th data-sort="score">Score</th>
+              <th data-sort="piq">piQ</th>
+              <th data-sort="logic">Logic</th>
+              <th data-sort="date">Date</th>
+            </tr></thead>
+            <tbody id="topPapersBody"></tbody>
+          </table>
+          <div class="pagination" id="topPapersPagination"></div>
         </div>
       </div>
     </section>
