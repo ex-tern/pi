@@ -39,7 +39,7 @@ from config import (
     BASE_DIR, PIQ_CONTRACT_ADDRESS, REGISTRY_CONTRACT_ADDRESS, HOT_TOPICS,
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
-    RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, config_summary,
+    RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
@@ -482,6 +482,12 @@ def scilem_chat(req: ScilemChatRequest, request: Request):
         raise HTTPException(status_code=400, detail="Prompt cannot be empty.")
     if len(req.prompt) > 4000:
         raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
+    if not ENABLE_SCILEM_LOCAL_MODEL:
+        return {
+            "response": "**Scilem:** The local chat model is disabled on this deployment "
+                         "to fit within a memory-constrained free hosting tier. Manuscript "
+                         "assessment itself is unaffected — this only limits the sidebar chat."
+        }
     return {"response": evaluate_scilem_analysis_report(req.prompt)}
 
 
@@ -569,33 +575,132 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 # ---------------------------------------------------------------------------
 # 7. ANALYTICS — leaderboard, top papers, map-of-science bubble network
 # ---------------------------------------------------------------------------
-@app.get("/api/analytics/leaderboard")
-def analytics_leaderboard():
+MAJOR_SCIENCE_FIELDS = [
+    "Computer Science", "Physics", "Chemistry", "Life Sciences",
+    "Medical Sciences", "Earth Sciences", "Social Sciences",
+    "Mathematics & Statistics", "Engineering & Technology",
+]
+
+
+def _aggregate_authors(rows):
+    """rows: iterable of (author_name, piq_minted, final_score). Splits
+    comma-joined author strings, filters out institutions/unknowns, and
+    aggregates piQ/paper-count/avg-score per individual author name."""
+    authors = {}
+    for author_str, piq, score in rows:
+        ca = clean_author_name(author_str)
+        if not ca or ca.lower() in ("unidentified", "unknown") or is_likely_institution(ca):
+            continue
+        for a in [x.strip() for x in ca.split(",") if x.strip()]:
+            rec = authors.setdefault(a, {"author": a, "piq": 0.0, "papers": 0, "_score_sum": 0.0})
+            rec["piq"] += safe_float(piq, 0.0)
+            rec["papers"] += 1
+            rec["_score_sum"] += safe_float(score, 0.0)
+    results = []
+    for rec in authors.values():
+        rec["avg_score"] = round(rec["_score_sum"] / rec["papers"], 2) if rec["papers"] else 0.0
+        rec["piq"] = round(rec["piq"], 2)
+        del rec["_score_sum"]
+        results.append(rec)
+    return results
+
+
+@app.get("/api/analytics/summary")
+def analytics_summary():
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT author_name, piq_minted FROM papers_assessment").fetchall()
+        row = conn.execute(
+            """SELECT COUNT(*), COALESCE(SUM(piq_minted),0), COALESCE(AVG(final_score),0),
+                      MIN(timestamp), MAX(timestamp)
+               FROM papers_assessment"""
+        ).fetchone()
+        author_rows = conn.execute("SELECT author_name, 0, 0 FROM papers_assessment").fetchall()
     finally:
         conn.close()
-    author_piq = {}
-    for author_str, piq in rows:
-        ca = clean_author_name(author_str)
-        if ca and ca.lower() not in ["unidentified", "unknown"] and not is_likely_institution(ca):
-            for a in [x.strip() for x in ca.split(",")]:
-                author_piq[a] = author_piq.get(a, 0.0) + safe_float(piq, 0.0)
-    ranked = sorted(author_piq.items(), key=lambda x: x[1], reverse=True)[:20]
-    return {"rankings": [{"author": a, "piq": p} for a, p in ranked]}
+    unique_authors = {r["author"] for r in _aggregate_authors(author_rows)}
+    return {
+        "total_papers": row[0] or 0,
+        "total_piq": round(safe_float(row[1], 0.0), 2),
+        "avg_score": round(safe_float(row[2], 0.0), 2),
+        "unique_authors": len(unique_authors),
+        "earliest": row[3],
+        "latest": row[4],
+    }
+
+
+@app.get("/api/analytics/fields")
+def analytics_fields():
+    return {"fields": MAJOR_SCIENCE_FIELDS}
+
+
+@app.get("/api/analytics/leaderboard")
+def analytics_leaderboard(
+    q: str = Query(default=""),
+    sort: str = Query(default="piq", pattern="^(piq|papers|avg_score|author)$"),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    limit: int = Query(default=10, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT author_name, piq_minted, final_score FROM papers_assessment").fetchall()
+    finally:
+        conn.close()
+
+    results = _aggregate_authors(rows)
+    if q.strip():
+        q_lower = q.strip().lower()
+        results = [r for r in results if q_lower in r["author"].lower()]
+
+    results.sort(key=lambda r: r[sort], reverse=(order == "desc"))
+    total = len(results)
+    page = results[offset: offset + limit]
+    return {"rankings": page, "total": total}
 
 
 @app.get("/api/analytics/top-papers")
-def analytics_top_papers():
+def analytics_top_papers(
+    q: str = Query(default=""),
+    min_score: float = Query(default=0.0, ge=0.0, le=100.0),
+    max_score: float = Query(default=100.0, ge=0.0, le=100.0),
+    sort: str = Query(default="score", pattern="^(score|piq|date|title|logic)$"),
+    order: str = Query(default="desc", pattern="^(asc|desc)$"),
+    limit: int = Query(default=10, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+):
+    sort_col = {"score": "final_score", "piq": "piq_minted", "date": "timestamp",
+                "title": "title", "logic": "logic_score"}[sort]
+    order_sql = "DESC" if order == "desc" else "ASC"
+
+    clauses = ["final_score >= ?", "final_score <= ?"]
+    params = [min_score, max_score]
+    if q.strip():
+        clauses.append("(title LIKE ? OR author_name LIKE ?)")
+        like = f"%{q.strip()}%"
+        params.extend([like, like])
+    where_sql = " AND ".join(clauses)
+
     conn = get_db_connection()
     try:
+        total = conn.execute(f"SELECT COUNT(*) FROM papers_assessment WHERE {where_sql}", params).fetchone()[0]
         rows = conn.execute(
-            "SELECT title, author_name, final_score FROM papers_assessment ORDER BY final_score DESC LIMIT 20"
+            f"""SELECT title, author_name, final_score, piq_minted, logic_score,
+                       mdar_adherence_score, reproducibility_score, timestamp, eval_hash, tx_hash
+                FROM papers_assessment
+                WHERE {where_sql}
+                ORDER BY {sort_col} {order_sql}
+                LIMIT ? OFFSET ?""",
+            params + [limit, offset],
         ).fetchall()
     finally:
         conn.close()
-    return {"papers": [{"title": r[0], "author": r[1], "score": r[2]} for r in rows]}
+
+    papers = [{
+        "title": r[0], "author": clean_author_name(r[1]), "score": r[2], "piq": r[3],
+        "logic_score": r[4], "mdar_score": r[5], "repro_score": r[6], "date": r[7],
+        "eval_hash": r[8], "tx_hash": r[9],
+    } for r in rows]
+    return {"papers": papers, "total": total}
 
 
 def refine_science_field(s):
@@ -626,10 +731,18 @@ def refine_science_field(s):
 
 
 @app.get("/api/analytics/map")
-def analytics_map(author: str = Query(default="All Authors")):
+def analytics_map(
+    author: str = Query(default="All Authors"),
+    min_score: float = Query(default=0.0, ge=0.0, le=100.0),
+    max_score: float = Query(default=100.0, ge=0.0, le=100.0),
+    fields: str = Query(default=""),
+    max_nodes: int = Query(default=20, ge=5, le=50),
+):
     """Returns bubble/network data as JSON (nodes + edges + legend rows) so
     the frontend can render it with vis-network (loaded from CDN) instead of
     the old server-side PyVis-generated iframe HTML."""
+    selected_fields = {f.strip() for f in fields.split(",") if f.strip()} if fields.strip() else None
+
     conn = get_db_connection()
     try:
         rows = conn.execute("SELECT fields, subfields, final_score, author_name FROM papers_assessment").fetchall()
@@ -642,23 +755,28 @@ def analytics_map(author: str = Query(default="All Authors")):
         cleaned_author = clean_author_name(author_str)
         if author and author != "All Authors" and author not in cleaned_author:
             continue
+        score = safe_float(final_score, 50.0)
+        if score < min_score or score > max_score:
+            continue
         try:
             raw_subfields = [s.title().strip() for s in json.loads(subfields_json)]
         except Exception:
             continue
-        score = safe_float(final_score, 50.0)
         for rs in raw_subfields:
             if rs and rs.lower() not in exclude_terms:
                 s = refine_science_field(rs)
+                major = s.split(">")[0].strip()
+                if selected_fields and major not in selected_fields:
+                    continue
                 agg = topic_aggregates.setdefault(s, {"weight_sum": 0.0, "frequency": 0})
                 agg["weight_sum"] += score
                 agg["frequency"] += 1
 
     if not topic_aggregates:
-        topic_aggregates["Computer Science > Algorithms & Software Engineering"] = {"weight_sum": 50.0, "frequency": 1}
-    if len(topic_aggregates) > 15:
+        return {"nodes": [], "edges": [], "legend": [], "empty": True}
+    if len(topic_aggregates) > max_nodes:
         sorted_topics = sorted(topic_aggregates.items(), key=lambda x: (x[1]["frequency"], x[1]["weight_sum"]), reverse=True)
-        topic_aggregates = dict(sorted_topics[:15])
+        topic_aggregates = dict(sorted_topics[:max_nodes])
 
     unique_topics = list(topic_aggregates.keys())
     major_fields = {}
@@ -689,6 +807,7 @@ def analytics_map(author: str = Query(default="All Authors")):
         nodes.append({
             "id": topic, "label": "", "title": f"{topic} | Frequency: {metrics['frequency']} | Avg Score: {avg_weight:.1f}",
             "size": node_size, "color": color_map[topic],
+            "frequency": metrics["frequency"], "avg_score": round(avg_weight, 1),
         })
         legend.append({"topic": topic, "color": color_map[topic], "frequency": metrics["frequency"], "avg_weight": round(avg_weight, 1)})
 
@@ -699,7 +818,7 @@ def analytics_map(author: str = Query(default="All Authors")):
                 edges.append({"from": t1, "to": t2})
 
     legend.sort(key=lambda x: x["frequency"], reverse=True)
-    return {"nodes": nodes, "edges": edges, "legend": legend}
+    return {"nodes": nodes, "edges": edges, "legend": legend, "empty": False}
 
 
 # ---------------------------------------------------------------------------
