@@ -577,6 +577,15 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   margin-top: 10px; padding-top: 9px; border-top: 1px dashed var(--border);
   font-size: 11.5px; color: var(--muted); font-style: italic;
 }
+.ref-stats { display: flex; flex-wrap: wrap; gap: 6px 16px; font-size: 11.5px;
+  color: var(--muted); margin: 8px 0; padding-bottom: 8px; border-bottom: 1px solid var(--border); }
+.ref-stats strong { color: var(--text); }
+.ref-list { padding-left: 20px; margin: 6px 0 0; max-height: 260px; overflow-y: auto; }
+.ref-list li { margin-bottom: 6px; font-size: 11.5px; line-height: 1.5; }
+.ref-authors { color: #334155; }
+.ref-year { color: var(--muted); margin-left: 6px; }
+.ref-doi { margin-left: 6px; font-family: ui-monospace, Menlo, monospace; font-size: 10.5px; }
+.ref-nodoi { margin-left: 6px; color: var(--faint); font-size: 10.5px; font-style: italic; }
 .doi-list { padding-left: 18px; margin: 6px 0 0; }
 .doi-list li { margin-bottom: 4px; font-size: 11.5px; }
 

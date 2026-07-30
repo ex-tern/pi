@@ -17,6 +17,11 @@ if os.path.exists(_ENV_PATH):
             os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
 
 PRIMARY_MODEL = "llama-3.3-70b-versatile"
+
+# Gemini model to try first. Override if your account has access to a newer
+# one; the provider chain falls back through older flash models automatically,
+# which matters because the free tier rate-limits aggressively.
+GEMINI_PRIMARY_MODEL = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
 FALLBACK_MODEL = "llama-3.1-8b-instant"
 MAX_TEXT_TOKENS = 15000
 EPOCH_BLOCK_SIZE = 5
@@ -60,6 +65,38 @@ PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
 
 # Wallet that receives Support & Donate contributions.
 DONATION_WALLET = os.getenv("DONATION_WALLET", "0x1Af8D9A120b02D0983590587364F8705e6942356")
+
+# ---------------------------------------------------------------------------
+# Forecasting
+# ---------------------------------------------------------------------------
+# The Pidyne LSTM trains inside the HTTP request. On a memory-constrained host
+# that risks the worker being OOM-killed, which the browser sees as a dropped
+# connection — and an OOM kill terminates the process, so no in-process
+# fallback can catch it.
+#
+# DEFAULT: False. The statistical projection (Holt linear trend) is used
+# instead. On a series of a few dozen points the two largely agree, and one of
+# them cannot take the server down. Set to "true" on a host with real memory
+# headroom if you want the neural path.
+USE_LSTM_FORECAST = os.getenv("USE_LSTM_FORECAST", "false").strip().lower() in ("true", "1", "yes", "on")
+
+# ---------------------------------------------------------------------------
+# OpenRouter
+# ---------------------------------------------------------------------------
+# Attribution headers OpenRouter uses to identify the calling application.
+# Requests without them are treated as anonymous.
+OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://scholarpi.up.railway.app")
+OPENROUTER_SITE_NAME = os.getenv("OPENROUTER_SITE_NAME", "ScholarPi")
+
+# Provider routing policy. "deny" asks OpenRouter to route only to endpoints
+# that do not retain prompts — which is what an account with a restrictive
+# privacy setting requires. Declaring it lets OpenRouter *select* a compliant
+# endpoint instead of returning "no endpoints available matching your data
+# policy". Set to "allow" if your account permits prompt logging and you want
+# the widest possible model availability.
+OPENROUTER_DATA_COLLECTION = os.getenv("OPENROUTER_DATA_COLLECTION", "deny").strip().lower()
+if OPENROUTER_DATA_COLLECTION not in ("deny", "allow"):
+    OPENROUTER_DATA_COLLECTION = "deny"
 
 # ---------------------------------------------------------------------------
 # Free-tier challenge

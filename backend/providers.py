@@ -24,14 +24,110 @@ classified into a small set of neutral, public-safe categories, with the full
 provider text logged server-side and exposed only to the operator.
 """
 import re
+import time
 import logging
-from typing import Dict, List, Optional
+import threading
+from typing import Dict, List, Optional, Tuple
 
 try:
-    from config import GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL
+    from config import (GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL,
+                        GEMINI_PRIMARY_MODEL)
 except ImportError:
     GROQ_API_KEY = OR_API_KEY = GEMINI_API_KEY = ""
     PRIMARY_MODEL = "llama-3.3-70b-versatile"
+    GEMINI_PRIMARY_MODEL = "gemini-2.5-flash"
+
+# ---------------------------------------------------------------------------
+# Rate-limit circuit breaker
+# ---------------------------------------------------------------------------
+# A provider that has just returned 429 will almost certainly return 429 again
+# on the next paper. Retrying it regardless wastes the request's time budget,
+# and on quota-metered tiers each rejected call can still count against the
+# allowance — so hammering a rate-limited provider actively delays recovery.
+#
+# Once a route reports a rate limit it is placed in cooldown and skipped
+# entirely until the window expires. Cooldown grows with consecutive failures
+# and is reset by the first success, which is standard exponential backoff
+# applied per route rather than per request.
+_breaker_lock = threading.Lock()
+_cooldowns: Dict[str, Dict] = {}
+
+BASE_COOLDOWN_SECONDS = 45
+MAX_COOLDOWN_SECONDS = 900
+
+
+def _route_key(model: str, provider: str) -> str:
+    return f"{provider}:{model}"
+
+
+def is_route_cooling(model: str, provider: str) -> Tuple[bool, float]:
+    """Whether this route is in cooldown, and for how much longer."""
+    key = _route_key(model, provider)
+    with _breaker_lock:
+        entry = _cooldowns.get(key)
+        if not entry:
+            return False, 0.0
+        remaining = entry["until"] - time.time()
+        if remaining <= 0:
+            _cooldowns.pop(key, None)
+            return False, 0.0
+        return True, remaining
+
+
+def record_rate_limit(model: str, provider: str, retry_after: Optional[float] = None):
+    """Open the breaker for a route, honouring Retry-After when supplied."""
+    key = _route_key(model, provider)
+    with _breaker_lock:
+        entry = _cooldowns.get(key) or {"failures": 0}
+        entry["failures"] += 1
+        # The provider's own Retry-After is authoritative when present;
+        # guessing shorter than it asks for is how quota bans happen.
+        backoff = retry_after if retry_after and retry_after > 0 else \
+            BASE_COOLDOWN_SECONDS * (2 ** min(entry["failures"] - 1, 5))
+        entry["until"] = time.time() + min(MAX_COOLDOWN_SECONDS, backoff)
+        _cooldowns[key] = entry
+        logging.info("Route %s cooling down for %.0fs (failure %d).",
+                     key, entry["until"] - time.time(), entry["failures"])
+
+
+def record_success(model: str, provider: str):
+    """Close the breaker: one success clears the accumulated backoff."""
+    with _breaker_lock:
+        _cooldowns.pop(_route_key(model, provider), None)
+
+
+def parse_retry_after(error_text: str) -> Optional[float]:
+    """Pull a retry delay out of a provider error message.
+
+    Providers report this inconsistently — a Retry-After header, a
+    "retryDelay" field, or prose. Reading whichever is present is more
+    reliable than assuming a fixed backoff.
+    """
+    if not error_text:
+        return None
+    for pattern in (r"retry[- ]?after[\"':\s]+(\d+(?:\.\d+)?)",
+                    r"retryDelay[\"':\s]+(\d+(?:\.\d+)?)s?",
+                    r"try again in (\d+(?:\.\d+)?)\s*(?:second|sec|s)\b",
+                    r"wait (\d+(?:\.\d+)?)\s*(?:second|sec|s)\b"):
+        match = re.search(pattern, str(error_text), re.IGNORECASE)
+        if match:
+            try:
+                return float(match.group(1))
+            except ValueError:
+                continue
+    return None
+
+
+def cooldown_status() -> List[Dict]:
+    """Operator view of which routes are currently backed off."""
+    now = time.time()
+    with _breaker_lock:
+        return [
+            {"route": key, "seconds_remaining": round(entry["until"] - now, 1),
+             "consecutive_failures": entry["failures"]}
+            for key, entry in _cooldowns.items() if entry["until"] > now
+        ]
+
 
 GROQ_BASE = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
@@ -72,9 +168,15 @@ def build_routes(juror: str) -> List[Dict]:
             _route("qwen/qwen-2.5-7b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("qwen/qwq-32b-preview", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
+        # Gemini's free tier rate-limits hard, so the chain is ordered by
+        # decreasing quota pressure: flash-lite models have the most generous
+        # free allowances, and OpenRouter provides a route that does not draw
+        # on the Google quota at all.
         "gemini": [
+            _route(GEMINI_PRIMARY_MODEL, GEMINI_API_KEY, GEMINI_BASE, "Google"),
+            _route("gemini-2.5-flash", GEMINI_API_KEY, GEMINI_BASE, "Google"),
+            _route("gemini-2.5-flash-lite", GEMINI_API_KEY, GEMINI_BASE, "Google"),
             _route("gemini-2.0-flash", GEMINI_API_KEY, GEMINI_BASE, "Google"),
-            _route("gemini-1.5-flash", GEMINI_API_KEY, GEMINI_BASE, "Google"),
             _route("google/gemini-2.0-flash-001", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("google/gemma-2-9b-it", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
@@ -180,6 +282,13 @@ def provider_configuration() -> Dict:
         }
 
     advice = []
+    cooling = cooldown_status()
+    if cooling:
+        advice.append(
+            "Some routes are in rate-limit cooldown and are being skipped: "
+            + ", ".join(f"{c['route']} ({c['seconds_remaining']:.0f}s)" for c in cooling[:5])
+            + ". This is deliberate — retrying a rate-limited provider delays its recovery."
+        )
     if not keys["Groq"] and not keys["OpenRouter"]:
         advice.append(
             "No general-purpose provider key is configured. Set GROQ_API_KEY (free tier "
@@ -220,4 +329,5 @@ def provider_configuration() -> Dict:
         "expected_quality": ("High" if reachable_count >= 3 else
                              "Moderate" if reachable_count >= 1 else "Limited"),
         "advice": advice,
+        "cooldowns": cooling,
     }

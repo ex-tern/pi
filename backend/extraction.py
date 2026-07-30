@@ -94,6 +94,88 @@ def looks_like_affiliation(text: str) -> bool:
     return any(marker in lowered for marker in _AFFILIATION_MARKERS)
 
 
+def score_title_candidate(text: str, size: float, body_size: float, y: float,
+                          page_height: float, is_bold: bool = False) -> float:
+    """Score how title-like a text block is, from several weak signals.
+
+    Largest-font-wins alone is wrong often enough to matter: a journal banner,
+    a "RESEARCH ARTICLE" label or a large section heading can all outrank the
+    real title. Combining typography with position, length, capitalisation and
+    linguistic shape is markedly more robust, and returning a score rather than
+    a boolean lets close calls be resolved by weight instead of by ordering.
+    """
+    t = (text or "").strip()
+    if not _plausible_title(t):
+        return 0.0
+
+    score = 0.0
+    words = t.split()
+
+    # Relative size is the strongest single signal, but capped so an enormous
+    # banner cannot dominate on size alone.
+    if body_size > 0:
+        ratio = size / body_size
+        score += min(0.40, max(0.0, (ratio - 1.0) * 0.55))
+
+    # Titles sit in the upper portion of page one, below any journal furniture.
+    if page_height > 0:
+        relative_y = y / page_height
+        if 0.04 <= relative_y <= 0.42:
+            score += 0.22
+        elif relative_y < 0.04:
+            score += 0.06     # very top is usually a banner
+        elif relative_y <= 0.60:
+            score += 0.10
+
+    # Typical academic titles run 8-20 words.
+    if 8 <= len(words) <= 20:
+        score += 0.16
+    elif 5 <= len(words) <= 30:
+        score += 0.09
+    elif len(words) < 5:
+        score -= 0.05
+
+    if is_bold:
+        score += 0.06
+
+    # Title Case or sentence case; SHOUTING is usually a label.
+    letters = [c for c in t if c.isalpha()]
+    if letters:
+        upper_ratio = sum(1 for c in letters if c.isupper()) / len(letters)
+        if upper_ratio > 0.7:
+            score -= 0.18
+        elif 0.03 <= upper_ratio <= 0.35:
+            score += 0.08
+
+    # Titles are noun phrases: they rarely end in a full stop, and colons or
+    # question marks are common.
+    if not t.endswith("."):
+        score += 0.05
+    if ":" in t or t.endswith("?"):
+        score += 0.05
+
+    # Domain vocabulary is weak evidence, but it separates a real title from
+    # boilerplate of similar size and position.
+    if re.search(r"\b(using|via|towards?|based|analysis|study|model|framework|"
+                 r"approach|method|evaluation|effects?|role|impact|novel|review|"
+                 r"assessment|investigation|design|development|comparison)\b",
+                 t, re.IGNORECASE):
+        score += 0.07
+
+    # Strong negatives.
+    if re.search(r"\b(abstract|keywords|introduction|references|acknowledge)\b",
+                 t, re.IGNORECASE):
+        score -= 0.35
+    if looks_like_affiliation(t):
+        score -= 0.30
+    if re.search(r"\b(received|accepted|published|revised)\b.*\d{4}", t, re.IGNORECASE):
+        score -= 0.30
+    if "@" in t or re.search(r"\bhttps?://", t):
+        score -= 0.30
+
+    return max(0.0, min(1.0, score))
+
+
 def _plausible_title(text: str) -> bool:
     """A title is a phrase, not a sentence fragment, a URL or a heading."""
     t = (text or "").strip()
@@ -166,30 +248,43 @@ def extract_from_pdf_layout(file_bytes: bytes) -> Dict:
         sizes = [l["size"] for l in lines]
         body_size = max(set(sizes), key=sizes.count)
 
-        # Consecutive lines at the same large size belong to one title.
-        candidates = []
-        for size in sorted({s for s in sizes if s > body_size + 0.4}, reverse=True):
-            group, current = [], []
-            for line in lines:
-                if abs(line["size"] - size) < 0.3:
-                    current.append(line)
-                elif current:
-                    group.append(current)
-                    current = []
-            if current:
-                group.append(current)
-            for chunk in group:
-                joined = re.sub(r"\s+", " ", " ".join(c["text"] for c in chunk)).strip()
-                if _plausible_title(joined):
-                    candidates.append({"text": joined, "size": size, "y": chunk[0]["y"],
-                                       "end_y": chunk[-1]["y"]})
-        # Largest type first; ties broken by position on the page.
-        candidates.sort(key=lambda c: (-c["size"], c["y"]))
+        page_height = float(page.rect.height or 1)
 
-        if candidates:
-            best = candidates[0]
+        # Group consecutive lines of similar size into blocks — a title that
+        # wraps across two lines must be recovered whole, not truncated.
+        candidates, current = [], []
+        for line in lines:
+            if current and abs(line["size"] - current[-1]["size"]) < 0.35 and \
+                    (line["y"] - current[-1]["y"]) < line["size"] * 2.2:
+                current.append(line)
+            else:
+                if current:
+                    candidates.append(current)
+                current = [line]
+        if current:
+            candidates.append(current)
+
+        scored = []
+        for chunk in candidates[:25]:   # titles are near the top
+            joined = re.sub(r"\s+", " ", " ".join(c["text"] for c in chunk)).strip()
+            size = max(c["size"] for c in chunk)
+            bold = any(c["bold"] for c in chunk)
+            value = score_title_candidate(joined, size, body_size, chunk[0]["y"],
+                                          page_height, bold)
+            if value > 0:
+                scored.append({"text": joined, "size": size, "y": chunk[0]["y"],
+                               "end_y": chunk[-1]["y"], "score": value})
+
+        scored.sort(key=lambda c: c["score"], reverse=True)
+        if scored:
+            best = scored[0]
             result["title"] = best["text"]
-            result["confidence"] = 0.75 if best["size"] > body_size * 1.25 else 0.6
+            # Map the composite score onto a calibrated confidence, and record
+            # runners-up so a wrong pick is at least visible and correctable.
+            result["confidence"] = round(min(0.88, 0.35 + best["score"] * 0.6), 3)
+            result["alternatives"] = [
+                {"text": c["text"][:200], "score": round(c["score"], 3)} for c in scored[1:4]
+            ]
 
             # Byline: the next few lines below the title, before any abstract.
             byline_parts = []
