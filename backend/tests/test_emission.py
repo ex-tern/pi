@@ -23,9 +23,12 @@ import emission
 # The core requirement
 # --------------------------------------------------------------------------
 def test_identical_paper_earns_less_as_the_corpus_grows():
-    early = emission.compute_piq_emission(90.0, 80.0, total_papers=10)
-    mid = emission.compute_piq_emission(90.0, 80.0, total_papers=1200)
-    late = emission.compute_piq_emission(90.0, 80.0, total_papers=6000)
+    """Expressed in halving intervals so retuning the schedule cannot make
+    this pass vacuously by putting all three sizes in the same epoch."""
+    interval = emission.HALVING_INTERVAL
+    early = emission.compute_piq_emission(90.0, 80.0, total_papers=1)
+    mid = emission.compute_piq_emission(90.0, 80.0, total_papers=interval + 1)
+    late = emission.compute_piq_emission(90.0, 80.0, total_papers=(interval * 3) + 1)
     assert early["minted"] > mid["minted"] > late["minted"]
 
 
@@ -39,12 +42,16 @@ def test_quality_bar_never_becomes_unreachable():
 
 
 def test_a_borderline_paper_qualifies_early_but_not_later():
-    assert emission.compute_piq_emission(60.0, 80.0, 10)["qualified"] is True
-    assert emission.compute_piq_emission(60.0, 80.0, 50000)["qualified"] is False
+    """Calibrated against the thresholds themselves, so retuning the policy
+    doesn't silently invalidate the property being tested."""
+    borderline = (emission.FLOOR_PIX_INITIAL + emission.FLOOR_PIX_CEILING) / 2 - 1
+    assert emission.compute_piq_emission(borderline, 80.0, 10)["qualified"] is True
+    assert emission.compute_piq_emission(borderline, 80.0, 10 ** 6)["qualified"] is False
 
 
 def test_rejection_explains_the_rising_bar():
-    result = emission.compute_piq_emission(60.0, 80.0, 50000)
+    borderline = (emission.FLOOR_PIX_INITIAL + emission.FLOOR_PIX_CEILING) / 2 - 1
+    result = emission.compute_piq_emission(borderline, 80.0, 10 ** 6)
     assert any("risen" in reason for reason in result["reasons"])
 
 
@@ -85,9 +92,10 @@ def test_author_factor_is_monotonic_and_floored():
 # Gates and safety
 # --------------------------------------------------------------------------
 def test_logic_gate_blocks_minting_and_is_not_a_difficulty_setting():
-    result = emission.compute_piq_emission(95.0, 10.0, 10)
+    result = emission.compute_piq_emission(95.0, emission.LOGIC_FLOOR - 5, 10)
     assert result["minted"] == 0.0
-    assert result["logic_floor"] == emission.compute_piq_emission(95.0, 10.0, 99999)["logic_floor"]
+    assert result["logic_floor"] == emission.compute_piq_emission(
+        95.0, emission.LOGIC_FLOOR - 5, 99999)["logic_floor"]
 
 
 @pytest.mark.parametrize("pix", [-50, 0, 50, 100, 500, float("nan")])
@@ -95,7 +103,8 @@ def test_logic_gate_blocks_minting_and_is_not_a_difficulty_setting():
 def test_emission_is_always_bounded(pix, corpus):
     """An out-of-range piX must never translate into unbounded token supply."""
     minted = emission.compute_piq_emission(pix, 90.0, corpus)["minted"]
-    assert 0.0 <= minted <= 10.0
+    max_possible = 100.0 / emission.BASE_DIVISOR
+    assert 0.0 <= minted <= max_possible
 
 
 def test_garbage_input_mints_nothing():
@@ -109,7 +118,7 @@ def test_negative_corpus_is_safe():
 # --------------------------------------------------------------------------
 # Economic solvency
 # --------------------------------------------------------------------------
-@pytest.mark.parametrize("corpus", [0, 500, 1000, 2000, 4000, 20000, 10 ** 6])
+@pytest.mark.parametrize("corpus", [0, 500, 2500, 5000, 10000, 20000, 10 ** 6])
 def test_a_qualifying_paper_always_nets_positive(corpus):
     """Held flat, the fee would exceed emission at high corpus sizes and the
     economy would stall for accounting reasons rather than quality ones."""
@@ -119,7 +128,8 @@ def test_a_qualifying_paper_always_nets_positive(corpus):
 
 
 def test_fee_scales_down_with_difficulty():
-    assert emission.compute_processing_fee(0) > emission.compute_processing_fee(2000)
+    assert emission.compute_processing_fee(0) > \
+           emission.compute_processing_fee(emission.HALVING_INTERVAL * 2)
 
 
 def test_fee_never_reaches_zero():
@@ -130,7 +140,7 @@ def test_fee_never_reaches_zero():
 # Transparency
 # --------------------------------------------------------------------------
 def test_manifest_publishes_the_whole_schedule():
-    manifest = emission.emission_manifest(750)
+    manifest = emission.emission_manifest(emission.HALVING_INTERVAL + 10)
     assert manifest["current_epoch"] == 1
     assert len(manifest["schedule"]) == emission.MAX_HALVINGS + 1
     assert sum(1 for s in manifest["schedule"] if s["current"]) == 1
@@ -138,7 +148,9 @@ def test_manifest_publishes_the_whole_schedule():
 
 
 def test_countdown_to_next_halving_is_correct():
-    assert emission.compute_piq_emission(90.0, 90.0, 750)["papers_until_next_halving"] == 250
+    corpus = emission.HALVING_INTERVAL + 250
+    expected = (emission.HALVING_INTERVAL * 2) - corpus
+    assert emission.compute_piq_emission(90.0, 90.0, corpus)["papers_until_next_halving"] == expected
 
 
 def test_no_countdown_at_the_final_epoch():

@@ -93,7 +93,7 @@ MAX_UPLOAD_MB = float(os.getenv("MAX_UPLOAD_MB", "25"))
 
 # Free assessments allowed per client IP before a connected Web3 wallet is
 # required, enforced server-side (in addition to the client-side UI gate).
-FREE_EVALS_PER_IP = int(os.getenv("FREE_EVALS_PER_IP", "1"))
+FREE_EVALS_PER_IP = int(os.getenv("FREE_EVALS_PER_IP", "3"))
 
 # Rolling window (seconds) + max requests for the lightweight in-memory rate
 # limiter applied to the assessment endpoints.

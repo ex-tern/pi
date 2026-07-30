@@ -207,24 +207,30 @@
 
           <!-- Everything is collapsed by default: the map itself is the point,
                and controls should be available without competing with it. -->
+          <select id="mapAuthorFilter" class="hidden"><option value="All Authors">All Authors</option></select>
+          <div id="mapFieldChecklist" class="hidden"></div>
           <div class="map-controls">
             <details class="ctl-group">
               <summary><span class="ctl-title">Filters</span><span class="ctl-hint" id="mapFilterSummary">All authors · all fields</span></summary>
               <div class="ctl-body">
-                <div class="filter-row">
-                  <label class="filter-label">Author</label>
-                  <select id="mapAuthorFilter"><option value="All Authors">All Authors</option></select>
+                <!-- One search box for authors and fields alike: with a growing
+                     corpus a checklist of every field stops being usable. -->
+                <label class="filter-label" for="mapSearchInput">Search authors or fields</label>
+                <div class="map-search-wrap">
+                  <input type="text" id="mapSearchInput" class="map-search"
+                         placeholder="Type an author or field…" autocomplete="off">
+                  <button id="mapSearchClear" class="map-search-clear hidden" aria-label="Clear">×</button>
+                  <div id="mapSearchResults" class="map-search-results hidden"></div>
                 </div>
-                <div class="filter-row">
-                  <label class="filter-label">piX range</label>
-                  <input type="number" id="mapMinScore" min="0" max="100" value="0" class="score-input">
-                  <span>–</span>
-                  <input type="number" id="mapMaxScore" min="0" max="100" value="100" class="score-input">
+                <div id="mapActiveFilters" class="chip-row"></div>
+
+                <label class="filter-label" style="margin-top:12px;">piX range
+                  <output id="mapScoreOut">0 – 100</output></label>
+                <div class="dual-slider">
+                  <input type="range" id="mapMinScore" min="0" max="100" step="1" value="0">
+                  <input type="range" id="mapMaxScore" min="0" max="100" step="1" value="100">
                 </div>
-                <details class="ctl-subgroup">
-                  <summary>Fields</summary>
-                  <div id="mapFieldChecklist" class="field-checklist"></div>
-                </details>
+
                 <button id="mapApplyFiltersBtn" class="btn btn-primary btn-block">Apply Filters</button>
               </div>
             </details>

@@ -327,8 +327,8 @@ def compose_rebuttal_text(criterion_key: str, score: float, diag_i: int, remedy_
         joined = "; ".join(ordered[:-1]) + f"; and {ordered[-1]}"
         remedy_text = f"To address this: {joined}."
 
-    return (f"{meta['label']} is the weakest criterion, currently scored {score:.1f}/100. "
-            f"{diagnosis} {remedy_text} {commitment}")
+    return (f"{meta['label']} ({criterion_key}) is the weakest criterion, currently scored "
+            f"{score:.1f}/100. {diagnosis} {remedy_text} {commitment}")
 
 
 def random_rebuttal_genome(meta: dict, rng: random.Random) -> Dict:
@@ -494,9 +494,9 @@ def generate_rebuttal_strategy(scores_dict: dict) -> str:
     strongest_label = CRITERION_META.get(strongest_key, {}).get("label", strongest_key)
     parts += [
         "",
-        f"**Leverage your strength.** {strongest_label} is your strongest criterion at "
-        f"{strongest_score:.1f}/100. Lead with it in the cover letter so the editor encounters the "
-        f"paper's strongest dimension before its weakest.",
+        f"**Leverage your strength.** {strongest_label} ({strongest_key}) is your strongest "
+        f"criterion at {strongest_score:.1f}/100. Lead with it in the cover letter so the editor "
+        f"encounters the paper's strongest dimension before its weakest.",
         "",
         f"*Strategy optimised over {primary['generations']} generations "
         f"(fitness {primary['fitness']:.3f}), scored on actionability, specificity, conciseness "

@@ -39,23 +39,37 @@ import math
 from typing import Dict, Optional
 
 # --- Halving ---------------------------------------------------------------
-# Corpus size at which emission halves. Set so that the interesting dynamics
-# occur over a realistic adoption curve rather than immediately or never.
-HALVING_INTERVAL = 500          # papers per halving epoch
-MAX_HALVINGS = 8                # floor: emission never drops below 1/256
+# Corpus size at which emission halves.
+#
+# The first calibration was far too aggressive: a 500-paper interval with 8
+# halvings meant emission fell to 1/256 by 4,000 papers, so a strong paper
+# minted 0.035 piQ. That is scarcity long before the platform has enough
+# adoption to justify it, and it made the system feel punitive rather than
+# selective. The interval is now 2,500 with 4 halvings, so the floor is 1/16
+# and is not reached until roughly 10,000 assessed papers.
+HALVING_INTERVAL = 2500         # papers per halving epoch
+MAX_HALVINGS = 4                # floor: emission never drops below 1/16
 
 # --- Base emission ---------------------------------------------------------
-BASE_DIVISOR = 10.0             # piQ = piX / 10 at genesis difficulty
+# piQ = piX / 5 at genesis, so a strong paper (piX 80) mints 16 piQ rather
+# than 8. Generous early adoption is the point: piQ has to be earnable before
+# scarcity means anything.
+BASE_DIVISOR = 5.0
 
 # --- Quality bar -----------------------------------------------------------
-FLOOR_PIX_INITIAL = 50.0        # minimum piX to mint, at genesis
-FLOOR_PIX_CEILING = 75.0        # asymptotic maximum for that minimum
-FLOOR_GROWTH_SCALE = 2000.0     # corpus size over which the bar approaches its ceiling
-LOGIC_FLOOR = 50.0              # logic integrity gate; constant, it is a validity check
+# Starts low enough that a competent paper qualifies, and rises slowly. The
+# previous 50 -> 75 over 2,000 papers excluded solid work almost immediately.
+FLOOR_PIX_INITIAL = 40.0        # minimum piX to mint, at genesis
+FLOOR_PIX_CEILING = 62.0        # asymptotic maximum for that minimum
+FLOOR_GROWTH_SCALE = 12000.0    # corpus size over which the bar approaches its ceiling
+LOGIC_FLOOR = 35.0              # logic integrity gate; a validity check, not difficulty
 
 # --- Per-author decay ------------------------------------------------------
-AUTHOR_DECAY_HALFLIFE = 12.0    # papers, per author, per halving of their own rate
-AUTHOR_MIN_FACTOR = 0.25        # never below a quarter, so contribution always pays
+# Decay exists to stop volume farming, not to punish productive researchers.
+# A 12-paper halflife penalised a normal publication record; 50 with a 0.5
+# floor means a prolific author still earns at least half rate.
+AUTHOR_DECAY_HALFLIFE = 50.0    # papers, per author, per halving of their own rate
+AUTHOR_MIN_FACTOR = 0.50        # never below half, so contribution always pays
 
 
 def current_halving_epoch(total_papers: int) -> int:
@@ -255,8 +269,8 @@ def emission_manifest(total_papers: int = 0) -> Dict:
         "schedule": schedule,
         "explanation": [
             "piQ becomes harder to earn as the platform grows, by three independent mechanisms.",
-            f"Halving: emission halves every {HALVING_INTERVAL} assessed papers, for up to "
-            f"{MAX_HALVINGS} halvings.",
+            f"Halving: emission halves every {HALVING_INTERVAL:,} assessed papers, for up to "
+            f"{MAX_HALVINGS} halvings (a floor of 1/{2 ** MAX_HALVINGS} of the base rate).",
             f"Rising bar: the minimum piX needed to mint starts at {FLOOR_PIX_INITIAL:.0f} and "
             f"rises asymptotically toward {FLOOR_PIX_CEILING:.0f} as the corpus grows.",
             f"Author decay: an individual's emission halves roughly every "
