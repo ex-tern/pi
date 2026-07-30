@@ -1420,6 +1420,60 @@ function renderIntegrityPanel(item) {
 
   html += `</tbody></table>`;
 
+  // Extracted bibliography. A count alone can't distinguish a thin reference
+  // list from a parsing failure, so the entries themselves are shown.
+  const summary = refs.summary || {};
+  if (refs.entries && refs.entries.length) {
+    html += `<details class="dossier-details">
+      <summary>Extracted references (${refs.entries.length}${
+        summary.total && summary.total > refs.entries.length ? ` of ${summary.total}` : ""})</summary>
+      <div class="ref-stats">
+        <span><strong>${summary.total ?? refs.entries.length}</strong> parsed</span>
+        <span><strong>${summary.with_doi ?? 0}</strong> with DOI</span>
+        ${typeof summary.doi_coverage === "number"
+          ? `<span><strong>${(summary.doi_coverage * 100).toFixed(0)}%</strong> DOI coverage</span>` : ""}
+        ${summary.median_year ? `<span>median year <strong>${summary.median_year}</strong></span>` : ""}
+        ${summary.year_range ? `<span>range <strong>${summary.year_range[0]}–${summary.year_range[1]}</strong></span>` : ""}
+      </div>
+      <ol class="ref-list">${refs.entries.map(e => `
+        <li>
+          <span class="ref-authors">${escapeHtml((e.authors || "").slice(0, 110) || "—")}</span>
+          ${e.year ? `<span class="ref-year">${escapeHtml(e.year)}</span>` : ""}
+          ${e.doi ? `<a class="ref-doi" href="https://doi.org/${escapeHtml(e.doi)}"
+             target="_blank" rel="noopener">${escapeHtml(e.doi)}</a>`
+            : `<span class="ref-nodoi">no DOI</span>`}
+        </li>`).join("")}</ol>
+    </details>`;
+  }
+
+  // Bibliographic provenance: how the title and authors were determined.
+  const bib = refs.bibliographic || {};
+  if (bib.title_basis) {
+    const basisLabel = b => ({
+      crossref: "Crossref (publisher record)", openalex: "OpenAlex",
+      "pdf-layout": "PDF typography", "pdf-metadata": "PDF metadata",
+      "model-consensus": "model panel", filename: "filename",
+      unavailable: "not determined",
+    }[b] || b);
+    const conf = c => c >= 0.9 ? "q-high" : c >= 0.5 ? "q-mod" : "q-low";
+    html += `<h3>Bibliographic Provenance</h3><table class="data-table"><tbody>
+      <tr><td>Title source</td><td><span class="pill ${conf(bib.title_confidence)}">${
+        escapeHtml(basisLabel(bib.title_basis))}</span>
+        <span class="hint"> confidence ${((bib.title_confidence || 0) * 100).toFixed(0)}%</span></td></tr>
+      <tr><td>Authors source</td><td><span class="pill ${conf(bib.authors_confidence)}">${
+        escapeHtml(basisLabel(bib.authors_basis))}</span>
+        <span class="hint"> confidence ${((bib.authors_confidence || 0) * 100).toFixed(0)}%</span></td></tr>
+      ${bib.journal ? `<tr><td>Journal</td><td>${escapeHtml(bib.journal)}</td></tr>` : ""}
+      ${bib.year ? `<tr><td>Year</td><td>${escapeHtml(String(bib.year))}</td></tr>` : ""}
+      </tbody></table>`;
+    if (bib.title_alternatives && bib.title_alternatives.length) {
+      html += `<details class="dossier-details"><summary>Other title candidates considered</summary>
+        <ul class="doi-list">${bib.title_alternatives.map(a =>
+          `<li>${escapeHtml(a.value || a.text || "")} <span class="hint">(${escapeHtml(a.basis || "")})</span></li>`
+        ).join("")}</ul></details>`;
+    }
+  }
+
   if (refs.fabricated_dois && refs.fabricated_dois.length) {
     html += `<details class="dossier-details"><summary>Unresolvable DOIs (${refs.fabricated_dois.length})</summary>
       <ul class="doi-list">${refs.fabricated_dois.map(d => `<li><code>${escapeHtml(d)}</code></li>`).join("")}</ul>

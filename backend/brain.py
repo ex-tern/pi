@@ -45,6 +45,7 @@ except Exception:
 
 from config import (
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY,
+    OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
     PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR
 )
 from database import get_db_connection
@@ -73,6 +74,7 @@ from security import (
 from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
 from providers import (
     build_routes, classify_provider_error, redact_provider_text, provider_configuration,
+    is_route_cooling, record_rate_limit, record_success, parse_retry_after,
 )
 from emission import compute_piq_emission, emission_manifest
 from extraction import (
@@ -222,44 +224,80 @@ class PiBrainLSTM(nn.Module):
 PidyneLSTM = PiBrainLSTM
 
 def request_model_assessment(provider_name, model_name, api_key, base_url, prompt):
+    """Call one model and parse its JSON verdict.
+
+    OpenRouter specifics, all three of which were wrong before:
+
+    1. The third-party ``openrouter`` SDK was used instead of the documented
+       OpenAI-compatible endpoint. That path could not set ``response_format``,
+       could not send attribution headers, and could not express routing
+       preferences — so it was strictly less capable than the standard client.
+    2. ``HTTP-Referer`` and ``X-Title`` were never sent. OpenRouter uses these
+       for attribution, and requests without them are treated as anonymous.
+    3. No provider routing preferences were sent. This is the important one:
+       an account whose privacy policy forbids prompt logging has no *default*
+       endpoint for many models, which is what produces "no endpoints available
+       matching your data policy". Declaring ``data_collection: deny`` asks
+       OpenRouter to *select a compliant endpoint* instead of failing, and
+       ``allow_fallbacks`` lets it substitute an equivalent provider.
+    """
     if not api_key or not str(api_key).strip():
         return provider_name, {
-            "title": "N/A",
-            "authors": "Unconfigured Key",
-            "opinion": f"API key for {provider_name.upper()} is missing.",
-            "references": [],
-            "api_failed": True
+            "title": "N/A", "authors": "N/A",
+            "opinion": "This model is not configured on this deployment.",
+            "references": [], "api_failed": True, "failure_category": "not_configured",
         }
+
+    is_openrouter = "openrouter" in base_url.lower()
     try:
-        if "openrouter" in base_url.lower() and OPENROUTER_SDK_AVAILABLE:
-            with OpenRouter(api_key=api_key.strip()) as client:
-                response = client.chat.send(
-                    model=model_name,
-                    messages=[{"role": "user", "content": prompt}],
-                )
-                
-                content = response.choices[0].message.content
-                if content.startswith("```json"):
-                    content = content.split("```json")[1].split("```")[0].strip()
-                elif content.startswith("```"):
-                    content = content.split("```")[1].split("```")[0].strip()
-                    
-                data = json.loads(content)
-                data["api_failed"] = False
-                return provider_name, data
-        
-        else:
-            client = OpenAI(api_key=api_key.strip(), base_url=base_url)
+        headers = {}
+        extra_body = {}
+        if is_openrouter:
+            headers = {
+                "HTTP-Referer": OPENROUTER_SITE_URL,
+                "X-Title": OPENROUTER_SITE_NAME,
+            }
+            extra_body = {
+                "provider": {
+                    # Honour the account's privacy stance by routing to an
+                    # endpoint that satisfies it, rather than erroring.
+                    "data_collection": OPENROUTER_DATA_COLLECTION,
+                    "allow_fallbacks": True,
+                    "require_parameters": False,
+                },
+            }
+
+        client = OpenAI(api_key=api_key.strip(), base_url=base_url,
+                        default_headers=headers or None, timeout=45.0, max_retries=1)
+
+        request_args = {
+            "model": model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "temperature": 0.1,
+        }
+        if extra_body:
+            request_args["extra_body"] = extra_body
+
+        # Structured output is requested, then retried without it: not every
+        # model on every route supports response_format, and a model that can
+        # still produce valid JSON unprompted is better than no juror at all.
+        try:
             response = client.chat.completions.create(
-                model=model_name,
-                messages=[{"role": "user", "content": prompt}],
-                response_format={"type": "json_object"},
-                temperature=0.1
-            )
-            data = json.loads(response.choices[0].message.content)
-            data["api_failed"] = False
-            return provider_name, data
-            
+                response_format={"type": "json_object"}, **request_args)
+        except Exception as e:
+            if not re.search(r"response_format|json_object|not support", str(e), re.IGNORECASE):
+                raise
+            logging.info("%s/%s rejected response_format; retrying without it.",
+                         provider_name, model_name)
+            response = client.chat.completions.create(**request_args)
+
+        content = (response.choices[0].message.content or "").strip()
+        data = parse_model_json(content)
+        if data is None:
+            raise ValueError("model returned no parseable JSON object")
+        data["api_failed"] = False
+        return provider_name, data
+
     except Exception as e:
         # The raw provider message is retained internally for the operator
         # diagnostics endpoint and the logs, but never becomes user-visible
@@ -271,14 +309,43 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
         logging.warning("Provider call failed for %s/%s [%s]: %s",
                         provider_name, model_name, classified["category"], raw[:300])
         return provider_name, {
-            "title": "N/A",
-            "authors": "N/A",
+            "title": "N/A", "authors": "N/A",
             "opinion": classified["public"],
-            "references": [],
-            "api_failed": True,
-            "failure_category": classified["category"],
-            "_raw_error": raw,
+            "references": [], "api_failed": True,
+            "failure_category": classified["category"], "_raw_error": raw,
         }
+
+
+def parse_model_json(content: str):
+    """Extract a JSON object from a model response.
+
+    Models wrap JSON in fenced blocks, prepend explanations, or emit trailing
+    commas. Discarding an otherwise-valid verdict over formatting would cost a
+    juror — and therefore cross-model corroboration — for no reason.
+    """
+    if not content:
+        return None
+
+    candidates = [content]
+    fenced = re.search(r"```(?:json)?\s*(.+?)```", content, re.DOTALL | re.IGNORECASE)
+    if fenced:
+        candidates.insert(0, fenced.group(1).strip())
+    # Outermost braces, for prose wrapped around an object.
+    first, last = content.find("{"), content.rfind("}")
+    if first != -1 and last > first:
+        candidates.append(content[first:last + 1])
+
+    for candidate in candidates:
+        text = candidate.strip()
+        for attempt in (text, re.sub(r",\s*([}\]])", r"\1", text)):
+            try:
+                parsed = json.loads(attempt)
+                if isinstance(parsed, dict):
+                    return parsed
+            except (json.JSONDecodeError, ValueError):
+                continue
+    return None
+
 
 def build_assessment_prompt(paper_text, canary=""):
     front_matter = paper_text[:3000]
@@ -360,26 +427,56 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
         }
 
     attempts = []
+    classified = None
     for route in routes:
+        # Skip routes already known to be rate-limited. Calling one anyway
+        # burns request time and, on quota-metered tiers, can extend the very
+        # limit we are waiting out.
+        cooling, remaining = is_route_cooling(route["model"], route["provider"])
+        if cooling:
+            attempts.append({
+                "model": route["model"], "provider": route["provider"],
+                "category": "cooling", "seconds_remaining": round(remaining, 1),
+            })
+            continue
+
         provider, data = request_model_assessment(
             juror, route["model"], route["key"], route["base"], prompt)
         if not data.get("api_failed"):
+            record_success(route["model"], route["provider"])
             data["route"] = {"model": route["model"], "provider": route["provider"]}
             data["route_attempts"] = attempts
             return juror, data
 
-        classified = classify_provider_error(data.get("_raw_error") or data.get("opinion", ""))
+        raw = data.get("_raw_error") or data.get("opinion", "")
+        classified = classify_provider_error(raw)
         attempts.append({
             "model": route["model"], "provider": route["provider"],
             "category": classified["category"],
         })
+
+        if classified["category"] == "rate_limit":
+            # Honour the provider's own Retry-After when it supplies one.
+            record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
+        elif classified["category"] in ("credit", "auth"):
+            # Account-level facts recur identically; back off hard rather than
+            # walking the rest of a chain that shares the same account.
+            record_rate_limit(route["model"], route["provider"], 600)
+
         logging.warning("Juror %s route %s (%s) failed [%s]: %s",
                         juror, route["model"], route["provider"],
                         classified["category"], classified["internal"][:200])
         if not classified["retryable"]:
             break
 
-    last = classified if attempts else {"public": "No route was reachable.", "category": "unknown"}
+    if classified is None:
+        cooling_only = attempts and all(a["category"] == "cooling" for a in attempts)
+        classified = {
+            "public": ("Every route for this model is temporarily rate-limited and was skipped."
+                       if cooling_only else "No route was reachable."),
+            "category": "cooling" if cooling_only else "unknown",
+        }
+    last = classified
     return juror, {
         "title": "N/A", "authors": "N/A",
         # Public-safe: names no vendor, no account, no configuration URL.
@@ -1323,6 +1420,19 @@ def process_single_pdf(
         reference_summary = summarize_references(reference_entries)
         reference_audit["parsed_entries"] = len(reference_entries)
         reference_audit["summary"] = reference_summary
+        # Keep a bounded sample so the dossier can show what was actually
+        # parsed rather than only a count — a count alone gives the researcher
+        # no way to tell a parsing failure from a thin bibliography.
+        reference_audit["entries"] = reference_entries[:40]
+        reference_audit["bibliographic"] = {
+            "title_basis": bibliographic["title_basis"],
+            "title_confidence": bibliographic["title_confidence"],
+            "authors_basis": bibliographic["authors_basis"],
+            "authors_confidence": bibliographic["authors_confidence"],
+            "journal": bibliographic.get("journal", ""),
+            "year": bibliographic.get("year"),
+            "title_alternatives": bibliographic.get("title_alternatives", [])[:3],
+        }
         if registry_meta.get("reference_count") and reference_summary["total"]:
             declared = registry_meta["reference_count"]
             found = reference_summary["total"]

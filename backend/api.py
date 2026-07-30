@@ -44,7 +44,7 @@ from config import (
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, PIQ_PROCESSING_FEE, DONATION_WALLET,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
-    TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK,
+    TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK, USE_LSTM_FORECAST,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
@@ -1189,18 +1189,19 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     # Train under a wall-clock budget; fall back to a statistical projection
     # if PyTorch is unavailable or too slow on this host. A forecast that
     # always returns is worth more than a neural one that times out.
-    raw_pred = forecast_engine.train_lstm_forecast(
-        weight_matrix, actual_lookback,
-        model_factory=PidyneLSTM,
-        dataset_factory=PidyneBlockchainDataset,
-        loader_factory=DataLoader,
-        torch_mod=torch, nn_mod=nn, optim_mod=optim,
-    )
-    method = "pidyne-lstm"
-    final_loss = 0.0
+    raw_pred, method, final_loss = None, "holt-linear-trend", 0.0
+    if USE_LSTM_FORECAST:
+        raw_pred = forecast_engine.train_lstm_forecast(
+            weight_matrix, actual_lookback,
+            model_factory=PidyneLSTM,
+            dataset_factory=PidyneBlockchainDataset,
+            loader_factory=DataLoader,
+            torch_mod=torch, nn_mod=nn, optim_mod=optim,
+        )
+        if raw_pred is not None:
+            method = "pidyne-lstm"
     if raw_pred is None:
         raw_pred = forecast_engine.holt_linear_forecast(weight_matrix)
-        method = "holt-linear-trend"
 
     last = weight_matrix[-1]
 

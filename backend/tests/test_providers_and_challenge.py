@@ -213,3 +213,88 @@ def test_difficulty_is_bounded():
 def test_a_first_time_visitor_gets_the_base_tier():
     challenge._recent_solves.pop("203.0.113.77", None)
     assert challenge.issue_challenge("203.0.113.77")["difficulty"] == challenge.BASE_DIFFICULTY
+
+
+# --------------------------------------------------------------------------
+# Rate-limit circuit breaker
+# --------------------------------------------------------------------------
+@pytest.fixture(autouse=True)
+def clear_breaker():
+    providers._cooldowns.clear()
+    yield
+
+
+def test_a_route_is_not_cooling_by_default():
+    assert providers.is_route_cooling("gemini-2.5-flash", "Google")[0] is False
+
+
+def test_a_rate_limited_route_enters_cooldown():
+    providers.record_rate_limit("gemini-2.5-flash", "Google")
+    cooling, remaining = providers.is_route_cooling("gemini-2.5-flash", "Google")
+    assert cooling and remaining > 0
+
+
+def test_the_providers_own_retry_after_is_honoured():
+    """Guessing shorter than the provider asks for is how quota bans happen."""
+    providers.record_rate_limit("gemini-2.5-flash", "Google", retry_after=25)
+    _, remaining = providers.is_route_cooling("gemini-2.5-flash", "Google")
+    assert 20 <= remaining <= 26
+
+
+def test_cooldown_grows_with_consecutive_failures():
+    providers.record_rate_limit("m", "P")
+    _, first = providers.is_route_cooling("m", "P")
+    providers.record_rate_limit("m", "P")
+    _, second = providers.is_route_cooling("m", "P")
+    assert second > first
+
+
+def test_cooldown_is_capped():
+    for _ in range(20):
+        providers.record_rate_limit("m", "P")
+    _, remaining = providers.is_route_cooling("m", "P")
+    assert remaining <= providers.MAX_COOLDOWN_SECONDS + 1
+
+
+def test_a_success_clears_the_backoff():
+    providers.record_rate_limit("m", "P")
+    providers.record_success("m", "P")
+    assert providers.is_route_cooling("m", "P")[0] is False
+
+
+def test_cooldowns_do_not_leak_between_routes():
+    providers.record_rate_limit("model-a", "Google")
+    assert providers.is_route_cooling("model-b", "Google")[0] is False
+
+
+@pytest.mark.parametrize("text,expected", [
+    ("Retry-After: 42", 42.0),
+    ('"retryDelay": "17s"', 17.0),
+    ("429 Too Many Requests", None),
+    ("", None),
+])
+def test_retry_after_is_parsed_from_varied_formats(text, expected):
+    assert providers.parse_retry_after(text) == expected
+
+
+def test_cooldowns_are_reported_to_the_operator():
+    providers.record_rate_limit("gemini-2.5-flash", "Google")
+    status = providers.cooldown_status()
+    assert any("gemini-2.5-flash" in c["route"] for c in status)
+
+
+def test_diagnostics_explain_active_cooldowns(monkeypatch):
+    monkeypatch.setattr(providers, "GEMINI_API_KEY", "k")
+    providers.record_rate_limit("gemini-2.5-flash", "Google")
+    advice = " ".join(providers.provider_configuration()["advice"])
+    assert "cooldown" in advice.lower()
+
+
+def test_gemini_has_multiple_free_tier_fallbacks(monkeypatch):
+    """The free tier rate-limits hard, so one model is not enough."""
+    monkeypatch.setattr(providers, "GEMINI_API_KEY", "k")
+    monkeypatch.setattr(providers, "OR_API_KEY", "k")
+    routes = providers.build_routes("gemini")
+    assert len(routes) >= 4
+    assert any(r["provider"] == "OpenRouter" for r in routes), \
+        "needs a route that doesn't draw on the Google quota"
