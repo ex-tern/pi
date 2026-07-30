@@ -109,11 +109,23 @@ RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "10"))
 # by the host's out-of-memory limit. Manuscript assessment itself does not
 # use this model and is unaffected either way.
 #
-# Currently defaults to DISABLED: the deployment target does not have the
-# memory headroom to host the local language model, so the sidebar assistant
-# is switched off and the UI explains why. Set ENABLE_SCILEM_LOCAL_MODEL=true
-# on a machine with sufficient RAM to turn it back on.
-ENABLE_SCILEM_LOCAL_MODEL = os.getenv("ENABLE_SCILEM_LOCAL_MODEL", "false").strip().lower() not in ("false", "0", "no")
+# DEFAULT: False. The current deployment target does not have the memory
+# headroom to host the local language model, so the sidebar assistant is
+# switched off and the UI explains why. Override with the environment
+# variable ENABLE_SCILEM_LOCAL_MODEL=true on a machine with enough RAM.
+
+
+def _env_bool(key: str, default: bool) -> bool:
+    """Read a boolean from the environment, falling back to `default` when
+    the variable is unset or blank."""
+    raw = os.getenv(key)
+    if raw is None or not raw.strip():
+        return default
+    return raw.strip().lower() in ("true", "1", "yes", "on")
+
+
+SCILEM_LOCAL_MODEL_DEFAULT = False
+ENABLE_SCILEM_LOCAL_MODEL = _env_bool("ENABLE_SCILEM_LOCAL_MODEL", SCILEM_LOCAL_MODEL_DEFAULT)
 
 SCILEM_DISABLED_NOTICE = (
     "Due to server limitations, the local language model is inactive. "
