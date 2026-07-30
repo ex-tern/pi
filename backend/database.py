@@ -11,6 +11,7 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     "warnings_json", "judge_metadata", "integrity_report", "reference_audit",
     "authorship_signal", "topology_detail", "classification", "criteria_breakdown",
     "signal_vector", "rubric_version", "author_metrics", "emission_record",
+    "author_openalex_id", "scoring_epoch", "unweighted_score",
 }
 
 def reset_schema_cache():
@@ -138,6 +139,12 @@ def enforce_database_schema(conn: sqlite3.Connection):
         "author_metrics": "TEXT DEFAULT '{}'",
         # Difficulty-adjusted emission record: what was minted and why.
         "emission_record": "TEXT DEFAULT '{}'",
+        # Author identity resolved to an OpenAlex ID, so per-author accounting
+        # survives byline variation ("J. Smith" vs "John Smith").
+        "author_openalex_id": "TEXT DEFAULT ''",
+        # The epoch whose criteria weights produced final_score, plus the
+        # unweighted mean, so a score stays interpretable after weights move.
+        "scoring_epoch": "INTEGER DEFAULT 0", "unweighted_score": "REAL DEFAULT 0.0",
     }
     cursor.execute("PRAGMA table_info(papers_assessment)")
     existing_cols = [row[1] for row in cursor.fetchall()]
@@ -148,6 +155,10 @@ def enforce_database_schema(conn: sqlite3.Connection):
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eval_hash ON papers_assessment(eval_hash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eth_book ON papers_assessment(eth_book)")
+    try:
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_author_oa ON papers_assessment(author_openalex_id)")
+    except sqlite3.Error:
+        pass
     conn.commit()
     _schema_initialized = True
 

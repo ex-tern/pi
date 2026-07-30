@@ -247,6 +247,29 @@ input::placeholder { color: var(--faint); }
 .trend-flat { color: var(--faint); }
 
 /* ---------- Map of Science ---------- */
+/* Collapsed control groups: the map is the content, controls are on demand. */
+.map-controls { display: flex; flex-direction: column; gap: 6px; margin-bottom: 12px; }
+.ctl-group { border: 1px solid var(--border); border-radius: 9px; background: #fff; }
+.ctl-group > summary {
+  display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; cursor: pointer;
+  list-style: none; font-size: 12.5px; border-radius: 9px;
+}
+.ctl-group > summary::-webkit-details-marker { display: none; }
+.ctl-group > summary::before {
+  content: "›"; color: var(--faint); font-size: 15px; line-height: 1;
+  transition: transform 0.15s ease; display: inline-block; align-self: center;
+}
+.ctl-group[open] > summary::before { transform: rotate(90deg); }
+.ctl-group > summary:hover { background: var(--accent-soft); }
+.ctl-title { font-weight: 650; }
+.ctl-hint { font-size: 11px; color: var(--faint); margin-left: auto; text-align: right; }
+.ctl-body { padding: 4px 12px 12px; border-top: 1px solid #f1f5f9; }
+.ctl-body > .filter-row:first-child { margin-top: 10px; }
+.ctl-subgroup { margin: 8px 0; border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; }
+.ctl-subgroup > summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: var(--muted);
+  text-transform: uppercase; letter-spacing: 0.04em; }
+.ctl-subgroup[open] > summary { margin-bottom: 7px; }
+
 .map-shell { position: relative; }
 .map-network {
   height: 440px; border: 1px solid var(--border); border-radius: 10px;

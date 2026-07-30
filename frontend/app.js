@@ -1710,6 +1710,7 @@ async function loadMapFieldChecklist() {
     box.querySelectorAll(".map-field-checkbox").forEach(cb => {
       cb.addEventListener("change", () => {
         mapFilterState.fields = [...box.querySelectorAll(".map-field-checkbox:checked")].map(el => el.value);
+        updateMapFilterSummary();
       });
     });
   } catch (e) { /* ignore */ }
@@ -1753,7 +1754,22 @@ function fieldOf(path) {
   return parts[1] || parts[0] || "Unclassified";
 }
 
+function updateMapFilterSummary() {
+  const el = document.getElementById("mapFilterSummary");
+  if (!el) return;
+  const author = document.getElementById("mapAuthorFilter").value;
+  const min = document.getElementById("mapMinScore").value || 0;
+  const max = document.getElementById("mapMaxScore").value || 100;
+  const total = document.querySelectorAll(".map-field-checkbox").length;
+  const on = document.querySelectorAll(".map-field-checkbox:checked").length;
+  const parts = [author === "All Authors" ? "All authors" : author];
+  parts.push(total && on < total ? `${on} of ${total} fields` : "all fields");
+  if (Number(min) > 0 || Number(max) < 100) parts.push(`piX ${min}–${max}`);
+  el.textContent = parts.join(" · ");
+}
+
 async function loadMap() {
+  updateMapFilterSummary();
   const author = document.getElementById("mapAuthorFilter").value;
   const minScore = document.getElementById("mapMinScore").value || 0;
   const maxScore = document.getElementById("mapMaxScore").value || 100;

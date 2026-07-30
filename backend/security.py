@@ -14,13 +14,13 @@ inflating LLM-generated review scores.
 Two independent, complementary defences are implemented here. Independence
 matters: an attacker who evades one should still be caught by the other.
 
-1. Static analysis (`scan_pdf_for_hidden_text`)
+1. Static analysis (`detect_concealed_text`)
    Inspects the PDF's own rendering instructions for text a human cannot see:
    colour matching the background, negligible font size, coordinates outside
    the page, or adversarial strings in document metadata. This runs before any
    model sees the document and costs nothing.
 
-2. Inject-and-detect canary (`build_canary`, `scan_outputs_for_canary`)
+2. Inject-and-detect canary (`issue_integrity_canary`, `detect_canary_in_panel_output`)
    A per-evaluation cryptographic trigger phrase is issued to the model panel
    with instructions to emit it verbatim if — and only if — the manuscript text
    attempts to alter the model's reviewing behaviour. The trigger is
@@ -31,7 +31,7 @@ On a confirmed detection the caller zeroes logic integrity, which trips the
 existing minting gate in process_single_pdf and blocks piQ issuance.
 
 False positives are taken seriously: a legitimate paper *about* prompt
-injection will naturally discuss these strings. `scan_text_for_injection`
+injection will naturally discuss these strings. `detect_injection_directives`
 therefore requires imperative instruction patterns directed at the reviewer,
 not mere topical mention, and callers are expected to treat the static text
 scan as corroborating rather than conclusive on its own.
@@ -62,7 +62,7 @@ except ImportError:
 CANARY_PREFIX = "PIDYNE-INTEGRITY"
 
 
-def build_canary(eval_hash: str = "") -> str:
+def issue_integrity_canary(eval_hash: str = "") -> str:
     """Mint a single-use trigger phrase for one evaluation.
 
     Derived from a fresh 128-bit random nonce keyed with the server secret, so
@@ -77,7 +77,7 @@ def build_canary(eval_hash: str = "") -> str:
     return f"{CANARY_PREFIX}-{digest[:24].upper()}"
 
 
-def build_guard_instruction(canary: str) -> str:
+def build_security_directive(canary: str) -> str:
     """The system-level guard prepended to every panel prompt.
 
     Deliberately explicit about precedence. The manuscript is data to be
@@ -104,7 +104,7 @@ def build_guard_instruction(canary: str) -> str:
     )
 
 
-def scan_outputs_for_canary(consensus_results: dict, canary: str) -> Dict:
+def detect_canary_in_panel_output(consensus_results: dict, canary: str) -> Dict:
     """Look for the trigger phrase across every juror's output.
 
     A single model emitting the canary is meaningful; several emitting it
@@ -133,7 +133,7 @@ def scan_outputs_for_canary(consensus_results: dict, canary: str) -> Dict:
     }
 
 
-def strip_canary(text: str, canary: str) -> str:
+def redact_canary(text: str, canary: str) -> str:
     """Remove the trigger from user-visible text.
 
     The canary is an internal control signal. Leaking it into a stored evidence
@@ -183,7 +183,7 @@ _ACADEMIC_CONTEXT_MARKERS = [
 ]
 
 
-def scan_text_for_injection(text: str, visible_text: Optional[str] = None) -> Dict:
+def detect_injection_directives(text: str, visible_text: Optional[str] = None) -> Dict:
     """Find reviewer-directed imperatives in extracted text.
 
     `visible_text`, when supplied, is the subset a human would actually see. A
@@ -239,14 +239,14 @@ def scan_text_for_injection(text: str, visible_text: Optional[str] = None) -> Di
 # ---------------------------------------------------------------------------
 # 3. Hidden-text detection at the PDF rendering layer
 # ---------------------------------------------------------------------------
-def _luminance(rgb_int: int) -> float:
+def relative_luminance(rgb_int: int) -> float:
     r = ((rgb_int >> 16) & 255) / 255.0
     g = ((rgb_int >> 8) & 255) / 255.0
     b = (rgb_int & 255) / 255.0
     return 0.2126 * r + 0.7152 * g + 0.0722 * b
 
 
-def scan_pdf_for_hidden_text(file_bytes: bytes) -> Dict:
+def detect_concealed_text(file_bytes: bytes) -> Dict:
     """Inspect the PDF's rendering instructions for human-invisible text.
 
     Catches the concealment techniques actually observed in the wild: text
@@ -296,7 +296,7 @@ def scan_pdf_for_hidden_text(file_bytes: bytes) -> Dict:
                         if size < 1.0:
                             reasons.append("font size under 1pt")
                             techniques.add("microscopic font")
-                        if _luminance(color) > 0.95:
+                        if relative_luminance(color) > 0.95:
                             reasons.append("text colour matches white page background")
                             techniques.add("white-on-white text")
                         try:
@@ -324,7 +324,7 @@ def scan_pdf_for_hidden_text(file_bytes: bytes) -> Dict:
             value = meta.get(field) or ""
             if not value.strip():
                 continue
-            probe = scan_text_for_injection(value)
+            probe = detect_injection_directives(value)
             if probe["detected"]:
                 techniques.add("metadata injection")
                 result["metadata_findings"].append({
@@ -349,10 +349,10 @@ def scan_pdf_for_hidden_text(file_bytes: bytes) -> Dict:
 # ---------------------------------------------------------------------------
 # 4. Combined verdict
 # ---------------------------------------------------------------------------
-def assess_manuscript_integrity(file_bytes: bytes, full_text: str) -> Dict:
+def run_static_integrity_scan(file_bytes: bytes, full_text: str) -> Dict:
     """Run the static half of the defence and produce a verdict.
 
-    The canary result is folded in later by `finalize_integrity`, once the
+    The canary result is folded in later by `apply_panel_integrity_verdict`, once the
     model panel has actually run.
     """
     verdict = {
@@ -366,13 +366,13 @@ def assess_manuscript_integrity(file_bytes: bytes, full_text: str) -> Dict:
         "scanned": False,
     }
 
-    pdf_scan = scan_pdf_for_hidden_text(file_bytes)
+    pdf_scan = detect_concealed_text(file_bytes)
     verdict["scanned"] = pdf_scan["available"]
     visible = pdf_scan.get("visible_text") or None
 
     # Instructions concealed in the rendering layer.
     if pdf_scan.get("hidden_spans"):
-        hidden_probe = scan_text_for_injection(pdf_scan["hidden_text"])
+        hidden_probe = detect_injection_directives(pdf_scan["hidden_text"])
         verdict["hidden_text_detected"] = True
         if hidden_probe["detected"]:
             verdict["compromised"] = True
@@ -411,7 +411,7 @@ def assess_manuscript_integrity(file_bytes: bytes, full_text: str) -> Dict:
     # Visible-body directives. Lower confidence on its own, since a paper may
     # legitimately quote these strings — reported, but only decisive when the
     # scan is unambiguous.
-    body_probe = scan_text_for_injection(full_text or "", visible_text=visible)
+    body_probe = detect_injection_directives(full_text or "", visible_text=visible)
     if body_probe["detected"] and not verdict["compromised"]:
         verdict["findings"].extend(body_probe["matches"])
         if body_probe["severity"] in ("critical", "high"):
@@ -442,9 +442,9 @@ def assess_manuscript_integrity(file_bytes: bytes, full_text: str) -> Dict:
     return verdict
 
 
-def finalize_integrity(verdict: Dict, consensus_results: dict, canary: str) -> Dict:
+def apply_panel_integrity_verdict(verdict: Dict, consensus_results: dict, canary: str) -> Dict:
     """Fold the canary result into the verdict after the panel has run."""
-    canary_hit = scan_outputs_for_canary(consensus_results, canary)
+    canary_hit = detect_canary_in_panel_output(consensus_results, canary)
     verdict["canary"] = canary_hit
 
     if canary_hit["detected"]:
