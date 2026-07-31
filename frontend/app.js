@@ -209,9 +209,17 @@ const HELP = {
   },
   arcade: {
     title: "The Global Map of Science",
-    body: `<p>Each bubble is a field of science, sized by how much of the literature it accounts
-      for. You start small: absorb fields smaller than you to grow, and avoid the ones larger
-      than you until you outgrow them.</p>
+    body: `<p>One surface with two modes over the same data.</p>
+      <p><strong>Explore</strong> is the graph. Each bubble is a field of science, sized by how
+      many assessed papers it holds in this deployment's corpus. Fields containing real papers
+      are drawn solid and labelled with their counts; the rest of the taxonomy sits faint behind
+      them, so the map has shape even before the first paper is assessed. Drag to pan, scroll or
+      pinch to zoom, click a field for its detail.</p>
+      <p><strong>Play</strong> drops a player bubble into that same field. Absorb fields smaller
+      than you to grow, and avoid larger ones until you outgrow them. Absorbing a field also
+      selects it, so playing is a way of reading the map rather than a detour from it.</p>
+      <p>As papers are assessed, their fields grow here — the map and the game develop together
+      because they are the same object.</p>
       <p><strong>Why it grants free assessments.</strong> Assessment costs real compute, so the
       free tier has to be finite. Rather than a hard wall, a completed run earns additional
       allowance — capped, and rate-limited, so it supplements the free tier without replacing
@@ -862,10 +870,12 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
     if (btn.dataset.tab === "explorer") loadExplorer();
     if (btn.dataset.tab === "diagram") renderArchitectureDiagrams();
-    // Leaving the arcade mid-run must stop the animation loop, or it keeps
-    // burning a frame budget (and battery) behind a hidden panel forever.
-    if (btn.dataset.tab !== "arcade" && window.ScholarPiArcade) {
-      window.ScholarPiArcade.exit("");
+    // The map renders continuously, so it must be started when its tab opens
+    // and stopped when it closes — otherwise it burns a frame budget (and
+    // battery) behind a hidden panel forever.
+    if (window.ScholarPiArcade) {
+      if (btn.dataset.tab === "arcade") window.ScholarPiArcade.open();
+      else window.ScholarPiArcade.exit();
     }
   });
 });

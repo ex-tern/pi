@@ -657,31 +657,59 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .scilem-form { display: flex; gap: 6px; }
 .scilem-form input { margin-bottom: 0; }
 
-/* ===================== Science Map Arcade ===================== */
-.arcade-intro { overflow: hidden; position: relative; }
-.arcade-hero { display: flex; gap: 26px; align-items: center; }
-.arcade-hero > div:last-child { flex: 1; min-width: 0; }
-.arcade-hero h2 { margin-bottom: 8px; }
+/* ===================== Science Map (graph + game) ===================== */
+.arcade-corpus { margin: 0 0 14px; }
 
-/* The orb is the pk910-style depth cue: a slowly rotating conic sweep behind
-   a soft radial core. Pure CSS so it costs no JS frame time next to the game. */
-.arcade-hero-orb {
-  width: 132px; height: 132px; flex-shrink: 0; border-radius: 50%;
-  position: relative; background: radial-gradient(circle at 34% 30%, #7dd3fc, #0369a1 58%, #082f49);
-  box-shadow: 0 0 0 1px rgba(56,189,248,0.35), 0 0 46px -6px rgba(56,189,248,0.65);
-}
-.arcade-hero-orb::before {
-  content: ""; position: absolute; inset: -18px; border-radius: 50%;
-  background: conic-gradient(from 0deg, rgba(56,189,248,0), rgba(56,189,248,0.5), rgba(168,85,247,0.45), rgba(56,189,248,0));
-  animation: arcade-spin 7s linear infinite; filter: blur(9px); z-index: -1;
-}
-@keyframes arcade-spin { to { transform: rotate(360deg); } }
+.arcade-layout { display: grid; grid-template-columns: minmax(0, 1fr) 264px; gap: 16px; align-items: start; }
 
-.arcade-wallet { font-size: 12.5px; color: var(--muted); background: var(--accent-soft);
-  border: 1px solid #dbeafe; border-radius: 8px; padding: 9px 11px; margin: 12px 0; }
-.arcade-actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 12px; }
-.arcade-play { font-size: 14px; padding: 11px 30px; }
-.arcade-controls { font-size: 11.5px; color: var(--faint); line-height: 1.7; margin: 14px 0 0; }
+.arcade-canvas-wrap {
+  position: relative; width: 100%; height: min(72vh, 640px);
+  border-radius: var(--radius); overflow: hidden; background: #070b1c;
+  border: 1px solid #1e293b; box-shadow: 0 0 60px -20px rgba(56,189,248,0.5);
+}
+#arcadeCanvas { display: block; width: 100%; height: 100%; cursor: grab; touch-action: none; }
+#arcadeCanvas:active { cursor: grabbing; }
+
+.arcade-toolbar {
+  position: absolute; top: 12px; right: 12px; left: 12px; z-index: 3;
+  display: flex; align-items: center; gap: 8px; justify-content: flex-end;
+  pointer-events: none;
+}
+.arcade-hint {
+  margin-right: auto; font-size: 11.5px; color: #94a3b8;
+  background: rgba(8,12,28,0.72); border: 1px solid #1e293b; border-radius: 8px;
+  padding: 6px 10px; backdrop-filter: blur(4px);
+}
+.arcade-tool {
+  pointer-events: auto; background: rgba(8,12,28,0.82); color: #e2e8f0;
+  border: 1px solid #334155; border-radius: 8px; padding: 7px 13px;
+  font-size: 12px; font-weight: 600; cursor: pointer; font-family: inherit;
+  backdrop-filter: blur(4px);
+}
+.arcade-tool:hover { background: #1e293b; border-color: #475569; }
+.arcade-tool-play { background: #0284c7; border-color: #0284c7; color: #fff; }
+.arcade-tool-play:hover { background: #0369a1; border-color: #0369a1; }
+.arcade-tool-exit:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
+
+.arcade-side { display: flex; flex-direction: column; gap: 12px; }
+.arcade-panel {
+  background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius);
+  padding: 14px; min-height: 150px; box-shadow: var(--shadow);
+}
+.arcade-detail-empty { font-size: 12.5px; color: var(--faint); margin: 0; }
+.arcade-detail-head { display: flex; align-items: center; gap: 8px; font-size: 14px; margin-bottom: 10px; }
+.arcade-swatch { width: 12px; height: 12px; border-radius: 50%; flex-shrink: 0; }
+.arcade-detail-rows { margin: 0 0 10px; font-size: 12.5px; }
+.arcade-detail-rows > div { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; border-bottom: 1px solid var(--border); }
+.arcade-detail-rows dt { color: var(--muted); margin: 0; }
+.arcade-detail-rows dd { margin: 0; font-weight: 600; }
+.arcade-detail-note { font-size: 11.5px; color: var(--faint); line-height: 1.6; margin: 0; }
+
+.arcade-wallet {
+  font-size: 12.5px; color: var(--muted); background: var(--accent-soft);
+  border: 1px solid #dbeafe; border-radius: 8px; padding: 9px 11px; margin: 0;
+}
+.arcade-controls { font-size: 11.5px; color: var(--faint); line-height: 1.7; margin: 0; }
 .arcade-controls kbd {
   background: #f1f5f9; border: 1px solid var(--border-strong); border-bottom-width: 2px;
   border-radius: 4px; padding: 1px 5px; font-size: 10.5px; font-family: ui-monospace, monospace;
@@ -694,21 +722,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .arcade-message.arcade-info { background: var(--accent-soft); border-color: #dbeafe; color: var(--accent); }
 
 .arcade-stage { position: relative; }
-.arcade-canvas-wrap {
-  position: relative; width: 100%; height: min(72vh, 660px);
-  border-radius: var(--radius); overflow: hidden; background: #070b1c;
-  border: 1px solid #1e293b; box-shadow: 0 0 60px -20px rgba(56,189,248,0.5);
-}
-#arcadeCanvas { display: block; width: 100%; height: 100%; cursor: crosshair; touch-action: none; }
-
-.arcade-exit {
-  position: absolute; top: 12px; right: 12px; z-index: 3;
-  background: rgba(8,12,28,0.82); color: #e2e8f0; border: 1px solid #334155;
-  border-radius: 8px; padding: 7px 13px; font-size: 12px; font-weight: 600;
-  cursor: pointer; font-family: inherit; backdrop-filter: blur(4px);
-}
-.arcade-exit:hover { background: var(--danger); border-color: var(--danger); color: #fff; }
-
 .arcade-overlay {
   position: absolute; inset: 0; z-index: 5; display: flex;
   align-items: center; justify-content: center; padding: 20px;
@@ -719,19 +732,11 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   max-width: 420px; width: 100%; text-align: center; box-shadow: 0 24px 60px -12px rgba(0,0,0,0.5);
 }
 .arcade-overlay-card p { font-size: 13px; color: var(--muted); margin: 8px 0; }
-.arcade-overlay-card .arcade-actions { justify-content: center; }
+.arcade-actions { display: flex; gap: 10px; flex-wrap: wrap; justify-content: center; margin-top: 14px; }
 .arcade-reward { color: var(--success); font-weight: 700; }
 
-@media (max-width: 720px) {
-  .arcade-hero { flex-direction: column; text-align: center; gap: 18px; }
-  .arcade-hero-orb { width: 96px; height: 96px; }
-  .arcade-actions { justify-content: center; }
-  .arcade-canvas-wrap { height: min(64vh, 520px); }
-  .arcade-play { width: 100%; }
-}
-
-/* Respect a reduced-motion preference: the orb sweep is decorative, and the
-   game itself is opt-in, so stopping the ambient animation costs nothing. */
-@media (prefers-reduced-motion: reduce) {
-  .arcade-hero-orb::before { animation: none; }
+@media (max-width: 900px) {
+  .arcade-layout { grid-template-columns: minmax(0, 1fr); }
+  .arcade-canvas-wrap { height: min(60vh, 480px); }
+  .arcade-hint { display: none; }
 }
