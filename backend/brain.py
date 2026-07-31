@@ -30,6 +30,7 @@ import numpy as np
 from openai import OpenAI
 from functools import lru_cache
 import scilem_learning
+import authorship_challenge
 
 # ---------------------------------------------------------------------------
 # PyTorch is loaded on demand, not at import time.
@@ -1788,6 +1789,7 @@ def process_single_pdf(
                 submitter_wallet=book_address,
                 extracted_authors=extracted_author,
                 doi=provided_doi,
+                title=title,
             ),
             fallback={"verified": False, "tier": "unverified", "confidence": 0.0,
                       "reason": "Authorship verification was unavailable for this assessment."},
@@ -1800,9 +1802,16 @@ def process_single_pdf(
             total_papers=corpus_size,
             author_paper_count=author_paper_count,
         )
-        piq_minted = emission["minted"] if attribution.get("verified") else 0.0
+        # Minted vs escrowed. `piq_minted` remains the settled figure — it is
+        # what the leaderboard ranks and what settles on-chain — so holding an
+        # unverified claim can never inflate it. The escrow records what the
+        # paper earned so it is visible and claimable rather than silently lost.
+        verified = bool(attribution.get("verified"))
+        piq_minted = emission["minted"] if verified else 0.0
+        piq_escrowed = 0.0 if verified else emission["minted"]
         emission["attribution"] = attribution
-        if not attribution.get("verified"):
+        emission["escrowed"] = piq_escrowed
+        if not verified:
             emission["minted"] = 0.0
             emission["withheld_reason"] = "unverified_authorship"
             warnings_list.append(
@@ -1881,8 +1890,8 @@ def process_single_pdf(
                 authorship_signal, topology_detail, classification, criteria_breakdown,
                 signal_vector, rubric_version, author_metrics, emission_record,
                 author_openalex_id, scoring_epoch, unweighted_score, attribution,
-                scilem_signals
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                scilem_signals, piq_escrowed, contact_emails
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
                 logic_integrity, 0.0,
@@ -1903,6 +1912,9 @@ def process_single_pdf(
                 # Stored so a correction submitted later can be learned from
                 # without this deployment having to retain manuscript text.
                 json.dumps(measure_structural_signals(full_text)),
+                piq_escrowed,
+                json.dumps([e["email"] for e in
+                            authorship_challenge.extract_candidate_emails(full_text)]),
             ),
         )
 

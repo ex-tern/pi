@@ -2827,50 +2827,6 @@ function buildForecastChartConfig(data, view) {
     };
   }
 
-  // "Ranking" — each criterion's position, epoch by epoch.
-  //
-  // Replaces the grouped bars, which put eight series in every cluster and
-  // were unreadable past two blocks. Rank is what the weighting is actually
-  // saying: which criteria the corpus is producing the strongest evidence for,
-  // relative to the others. Crossing lines show reordering at a glance.
-  if (view.type === "ranking") {
-    const ranked = points.map(p => {
-      const order = CRITERIA_KEYS
-        .map(k => ({ k, v: p[k] ?? 0 }))
-        .sort((a, b) => b.v - a.v);
-      const pos = {};
-      order.forEach((o, i) => { pos[o.k] = i + 1; });
-      return pos;
-    });
-    return {
-      type: "line",
-      data: {
-        labels,
-        datasets: CRITERIA_KEYS.map((k, i) => ({
-          label: (data.criteria?.[i]?.title) || k,
-          data: ranked.map(r => r[k]),
-          borderColor: CRITERIA_COLORS[i], backgroundColor: CRITERIA_COLORS[i],
-          borderWidth: 2, tension: 0.3, pointRadius: 4, pointHoverRadius: 6, fill: false,
-        })),
-      },
-      options: {
-        responsive: true, maintainAspectRatio: false,
-        interaction: { mode: "nearest", intersect: false },
-        plugins: {
-          legend: { labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 10 } } },
-          tooltip: { callbacks: { label: c => ` ${c.dataset.label}: rank ${c.parsed.y}` } },
-        },
-        scales: {
-          // Reversed so rank 1 sits at the top, which is how a ranking reads.
-          y: { reverse: true, min: 1, max: 8, ticks: { stepSize: 1 },
-               title: { display: true, text: "Rank (1 = highest weight)", font: { size: 11 } },
-               grid: { color: "rgba(148,163,184,0.18)" } },
-          x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
-        },
-      },
-    };
-  }
-
   const datasets = [];
   CRITERIA_KEYS.forEach((k, i) => {
     const color = CRITERIA_COLORS[i];
@@ -3173,8 +3129,6 @@ async function loadForecast() {
     metaBox.innerHTML = `
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
       <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
-      <div class="fm-item"><span>Method</span><strong>${
-        data.method === "holt-linear-trend" ? "Statistical" : "pi-Dyne LSTM"}</strong></div>
       <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>
       ${data.settings ? `<div class="fm-item"><span>Smoothing</span><strong>&alpha; ${
         data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}`;
@@ -3600,6 +3554,21 @@ async function loadExplorer() {
   }
 }
 
+
+/** The Author-published badge.
+ *
+ *  Deliberately NOT labelled just "Published". On a research platform an
+ *  unqualified "Published" badge is read as peer-reviewed journal publication,
+ *  which this is not — it means the verified author chose to stand behind this
+ *  assessment. Naming it precisely costs one word and prevents the framework
+ *  from making a claim it cannot support.
+ */
+function publishedBadge(item) {
+  if (!item || !item.published) return "";
+  return `<span class="pill p-published" title="The verified author has attached their name to
+this assessment. This is an authorship endorsement, not journal publication.">Author-published</span>`;
+}
+
 function explorerRowHtml(r) {
   return `<div class="result-card">
     <div class="result-main">
@@ -3608,6 +3577,7 @@ function explorerRowHtml(r) {
       <div class="result-pills">
         <span class="pill p-score">piX ${(r.score || 0).toFixed(1)}</span>
         <span class="pill p-piq">piQ ${Number(r.piq || 0).toFixed(2)}</span>
+        ${publishedBadge(r)}
         ${qualityPill(r.judge_metadata || {})}
         ${integrityPills(r)}
       </div>
@@ -4002,13 +3972,25 @@ async function loadAssessmentHistory() {
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => `
         <tr>
-          <td><div class="hist-title">${escapeHtml(a.title)}</div>
+          <td><div class="hist-title">${escapeHtml(a.title)} ${publishedBadge(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
           <td class="num">${a.score.toFixed(1)}</td>
-          <td class="num">${a.piq_minted.toFixed(2)}</td>
-          <td><button class="btn-icon-danger" data-remove-hash="${escapeHtml(a.hash)}"
-                title="Withdraw this paper">Remove</button></td>
+          <td class="num">${a.piq_minted.toFixed(2)}${
+            a.escrowed && !a.claimed
+              ? `<div class="hist-held" title="Earned but held until authorship is verified">+${a.escrowed.toFixed(2)} held</div>`
+              : ""}</td>
+          <td class="hist-actions">
+            ${a.escrowed && !a.claimed
+              ? `<button class="btn-icon" data-claim-hash="${escapeHtml(a.hash)}"
+                   title="Verify authorship and release the held piQ">Claim</button>` : ""}
+            <button class="btn-icon" data-publish-hash="${escapeHtml(a.hash)}"
+              data-published="${a.published ? "1" : "0"}"
+              title="${a.published ? "Withdraw your endorsement" : "Attach your name publicly"}">${
+                a.published ? "Withdraw" : "Publish"}</button>
+            <button class="btn-icon-danger" data-remove-hash="${escapeHtml(a.hash)}"
+              title="Withdraw this paper">Remove</button>
+          </td>
         </tr>`).join("") + `</tbody></table>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
@@ -4016,9 +3998,79 @@ async function loadAssessmentHistory() {
 
     body.querySelectorAll("[data-remove-hash]").forEach(b =>
       b.addEventListener("click", () => removeAssessment(b.dataset.removeHash)));
+    body.querySelectorAll("[data-claim-hash]").forEach(b =>
+      b.addEventListener("click", () => claimEscrow(b.dataset.claimHash)));
+    body.querySelectorAll("[data-publish-hash]").forEach(b =>
+      b.addEventListener("click", () =>
+        togglePublish(b.dataset.publishHash, b.dataset.published !== "1")));
   } catch (e) {
     body.innerHTML = `<p class="hint">Could not load your history.</p>`;
   }
+}
+
+
+/** Release piQ held against an unverified authorship claim. */
+async function claimEscrow(hash) {
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/claim?${qs}`,
+                            { method: "POST" });
+    const data = await res.json().catch(() => ({}));
+    if (data.claimed) {
+      alert(data.message);
+    } else {
+      // The fix instructions matter more than the refusal: "not verified" is
+      // only actionable if it says what would verify it.
+      alert((data.message || data.detail || "Could not claim.")
+            + (data.how_to_fix ? "\n\n" + data.how_to_fix : ""));
+    }
+  } catch (e) {
+    alert(`Could not claim: ${e.message}`);
+  }
+  loadAssessmentHistory();
+  loadEmissionStatus();
+}
+
+/** Attach or withdraw the author's public endorsement. */
+async function togglePublish(hash, publish) {
+  const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+  if (publish) {
+    // State the cost before charging it, never after.
+    let fee = null;
+    try {
+      const st = await (await fetch(
+        `${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`)).json();
+      if (!st.may_publish) {
+        alert((st.reason || "Authorship is not verified for this paper.")
+              + (st.how_to_fix ? "\n\n" + st.how_to_fix : ""));
+        return;
+      }
+      fee = st.fee_already_paid ? 0 : (st.fee && st.fee.fee) || 0;
+      const msg = fee > 0
+        ? `Publish this assessment?\n\nThis costs ${fee.toFixed(2)} piQ, charged once. `
+          + `Your balance is ${Number(st.balance || 0).toFixed(2)} piQ.\n\n`
+          + `The fee is not refunded if you withdraw, but re-publishing is free.`
+        : `Publish this assessment?\n\nThe fee for this paper has already been paid, so this is free.`;
+      if (!confirm(msg)) return;
+    } catch (_) { /* fall through and let the server decide */ }
+  } else if (!confirm("Withdraw your endorsement?\n\nThe badge is removed. "
+                      + "Re-publishing later is free.")) {
+    return;
+  }
+
+  try {
+    const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ published: publish, wallet: Session.wallet, orcid: Session.orcid }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    alert(data.message || (publish ? "Published." : "Withdrawn."));
+  } catch (e) {
+    alert(`Could not update: ${e.message}`);
+  }
+  loadAssessmentHistory();
+  loadEmissionStatus();
 }
 
 async function removeAssessment(hash) {
