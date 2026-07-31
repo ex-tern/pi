@@ -2254,7 +2254,16 @@ def project_weights_onto_simplex(vec):
 
 
 @app.get("/api/forecast")
-def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
+def run_forecast(
+    lookback: int = Query(default=3, ge=1, le=5),
+    # Holt's smoothing constants, exposed so the projection can be interrogated
+    # rather than taken on faith. Bounded well inside (0, 1): at the extremes
+    # the method degenerates — alpha near 0 ignores the data, near 1 ignores
+    # the history — and neither produces a forecast worth showing.
+    alpha: float = Query(default=0.6, ge=0.05, le=0.95),
+    beta: float = Query(default=0.3, ge=0.05, le=0.95),
+    gain: float = Query(default=2.5, ge=1.0, le=4.0),
+):
     """Public wrapper: never lets an internal fault look like a dead connection.
 
     A 500 and a dropped socket render identically in the browser ("could not
@@ -2263,7 +2272,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
     UI gets a structured answer with a log reference either way.
     """
     try:
-        return _run_forecast_impl(lookback)
+        return _run_forecast_impl(lookback, alpha=alpha, beta=beta, gain=gain)
     except Exception as exc:
         ref = uuid.uuid4().hex[:8]
         logging.exception("Forecast failed [ref %s]", ref)
@@ -2278,7 +2287,8 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
         }
 
 
-def _run_forecast_impl(lookback: int = 3):
+def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
+                       beta: float = 0.3, gain: float = 2.5):
     """Trains the pi-Dyne LSTM on the recorded per-block criteria weights and
     projects the next epoch's weighting.
 
@@ -2430,7 +2440,9 @@ def _run_forecast_impl(lookback: int = 3):
     actual_lookback = max(1, min(lookback, len(rows) - 1))
 
     try:
-        key = forecast_engine.cache_key(len(rows), actual_lookback, series_source)
+        key = forecast_engine.cache_key(
+            len(rows), actual_lookback,
+            f"{series_source}:a{alpha:.2f}:b{beta:.2f}:g{gain:.2f}")
     except TypeError:
         key = forecast_engine.cache_key(len(rows), actual_lookback)
         
@@ -2459,7 +2471,7 @@ def _run_forecast_impl(lookback: int = 3):
                 method = "pidyne-lstm"
             
     if raw_pred is None:
-        raw_pred = forecast_engine.holt_linear_forecast(weight_matrix)
+        raw_pred = forecast_engine.holt_linear_forecast(weight_matrix, alpha=alpha, beta=beta)
 
     last = weight_matrix[-1]
 
@@ -2474,7 +2486,7 @@ def _run_forecast_impl(lookback: int = 3):
     #     and could invert the ordering the network actually forecast.
     #  2. Continuity: blend lightly toward the last observed block so the
     #     forecast point joins the history smoothly rather than jumping.
-    CONTRAST_GAIN = 2.5
+    CONTRAST_GAIN = float(gain)
     CONTINUITY = 0.30
 
     pred_mean = float(np.mean(raw_pred))
@@ -2527,6 +2539,8 @@ def _run_forecast_impl(lookback: int = 3):
         "blocks_recorded": len(rows),
         "training_loss": round(final_loss, 6),
         "method": method,
+        "settings": {"alpha": round(alpha, 3), "beta": round(beta, 3),
+                     "gain": round(gain, 3), "lookback": actual_lookback},
         "cached": False,
         "series_source": series_source,
         "interpretation": interpretation,

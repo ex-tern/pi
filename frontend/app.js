@@ -236,7 +236,7 @@ const HELP = {
   },
   buddy: {
     title: "Research Buddy",
-    body: `<p>A short, tailored plan derived from your saved profile — career stage, how many
+    body: `<p>A short, tailored plan derived from your saved profile — your fields, how many
       fields you work across, and whether you have articulated a core claim.</p>
       <p><strong>It is heuristics, not analysis.</strong> Research Buddy reads what you typed
       about yourself; it has not read your publications. It says so at the bottom of every
@@ -1186,7 +1186,7 @@ function renderResearchBuddy(profile) {
 
   const idea = (profile.idea || "").trim();
 
-  const filled = [fields.length, goal, stage, idea].filter(Boolean).length;
+  const filled = [fields.length, goal, idea].filter(Boolean).length;
   if (filled < 2) {
     // An empty state should show what the feature does, not just report that
     // it is empty. "Fill in your profile" gives no reason to; a checklist of
@@ -1211,8 +1211,8 @@ function renderResearchBuddy(profile) {
           <div class="buddy-progress-track">
             <div class="buddy-progress-fill" style="width:${(done / checklist.length) * 100}%"></div>
           </div>
-          <span class="buddy-progress-label">${done} of ${checklist.length} filled —
-          ${Math.max(0, 2 - filled)} more to activate</span>
+          <span class="buddy-progress-label">${done} of ${checklist.length} filled${
+            filled >= 2 ? "" : ` — ${2 - filled} more to activate`}</span>
         </div>
 
         <ul class="buddy-checklist">
@@ -2693,6 +2693,125 @@ function renderForecastTable(data) {
     figures are exactly those the chart would have plotted.</p>`;
 }
 
+
+/** Current state of the forecast visualisation controls. */
+function readForecastControls() {
+  const val = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.value : fallback;
+  };
+  const checked = (id, fallback) => {
+    const el = document.getElementById(id);
+    return el ? el.checked : fallback;
+  };
+  return {
+    type: val("forecastChartType", "line"),
+    xaxis: val("forecastXAxis", "block"),
+    alpha: Number(val("forecastAlpha", 0.6)),
+    beta: Number(val("forecastBeta", 0.3)),
+    gain: Number(val("forecastGain", 2.5)),
+    showForecast: checked("forecastShowForecast", true),
+  };
+}
+
+/** Build the Chart.js config for the projection view.
+ *
+ *  One function for four chart types because they plot the SAME numbers —
+ *  only the encoding differs. Keeping them in separate branches invited the
+ *  data preparation to drift between views, which is how two charts of one
+ *  dataset end up disagreeing.
+ */
+function buildForecastChartConfig(data, view) {
+  const history = data.history || [];
+  const points = view.showForecast && data.forecast
+    ? history.concat([data.forecast]) : history.slice();
+  const lastIdx = history.length - 1;
+
+  // Real elapsed time, not evenly spaced blocks. Two assessments a minute
+  // apart and two a month apart are not the same trend, and block ordering
+  // hides that entirely.
+  const labels = points.map((p, i) => {
+    if (view.xaxis === "time" && p.timestamp) {
+      return new Date(p.timestamp).toLocaleString(undefined,
+        { month: "short", day: "numeric", hour: "2-digit", minute: "2-digit" });
+    }
+    if (view.xaxis === "time" && !p.timestamp) return "projected";
+    return p.label;
+  });
+
+  if (view.type === "radar") {
+    // Radar compares the shape of one epoch against another, which a line
+    // chart cannot show — eight criteria as a profile rather than eight
+    // independent series.
+    const first = history[0];
+    const latest = history[history.length - 1];
+    const sets = [];
+    if (first) sets.push({ label: first.label, data: CRITERIA_KEYS.map(k => first[k]),
+                           borderColor: "#94a3b8", backgroundColor: "rgba(148,163,184,0.12)" });
+    if (latest && latest !== first) sets.push({ label: latest.label,
+                           data: CRITERIA_KEYS.map(k => latest[k]),
+                           borderColor: "#2563eb", backgroundColor: "rgba(37,99,235,0.14)" });
+    if (view.showForecast && data.forecast) sets.push({ label: "Projected",
+                           data: CRITERIA_KEYS.map(k => data.forecast[k]),
+                           borderColor: "#dc2626", backgroundColor: "rgba(220,38,38,0.10)",
+                           borderDash: [6, 4] });
+    return {
+      type: "radar",
+      data: { labels: CRITERIA_KEYS.map((k, i) => (data.criteria?.[i]?.title) || k), datasets: sets },
+      options: { responsive: true, maintainAspectRatio: false,
+                 elements: { line: { borderWidth: 2 } },
+                 scales: { r: { beginAtZero: true, suggestedMax: 1.6,
+                                pointLabels: { font: { size: 10 } } } } },
+    };
+  }
+
+  const datasets = [];
+  CRITERIA_KEYS.forEach((k, i) => {
+    const color = CRITERIA_COLORS[i];
+    if (view.type === "bar") {
+      datasets.push({ label: k, data: points.map(p => p[k]),
+                      backgroundColor: color, borderWidth: 0, borderRadius: 2 });
+      return;
+    }
+    const isArea = view.type === "area";
+    datasets.push({
+      label: k,
+      data: points.map((p, idx) => (view.showForecast || idx <= lastIdx ? p[k] : null)),
+      borderColor: color, backgroundColor: isArea ? color + "cc" : color,
+      borderWidth: isArea ? 1 : 2, fill: isArea ? (i === 0 ? "origin" : "-1") : false,
+      tension: 0.25, pointRadius: isArea ? 0 : 3, pointHoverRadius: 5,
+      // The projected point is drawn distinctly on the line view so a
+      // prediction is never mistaken for a measurement.
+      segment: view.type === "line" && view.showForecast ? {
+        borderDash: ctx => (ctx.p1DataIndex > lastIdx ? [6, 4] : undefined),
+      } : undefined,
+    });
+  });
+
+  return {
+    type: view.type === "bar" ? "bar" : "line",
+    data: { labels, datasets },
+    options: {
+      responsive: true, maintainAspectRatio: false,
+      interaction: { mode: "index", intersect: false },
+      plugins: {
+        legend: { labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 11 } } },
+        tooltip: { callbacks: {
+          label: c => (c.parsed.y === null ? null : `${c.dataset.label}: ${c.parsed.y.toFixed(4)}`),
+        } },
+      },
+      scales: {
+        y: { stacked: view.type === "area", beginAtZero: view.type !== "line",
+             title: { display: true, text: view.type === "area"
+                        ? "Cumulative weight" : "Criterion weight (Σ = 8.0)", font: { size: 11 } },
+             grid: { color: "rgba(148,163,184,0.18)" } },
+        x: { stacked: view.type === "area", grid: { display: false },
+             ticks: { maxRotation: 45, autoSkip: true } },
+      },
+    },
+  };
+}
+
 async function loadForecast() {
   // Chart.js comes from a CDN. When that fetch is blocked — corporate proxy,
   // ad blocker, offline — every chart in the app silently fails, and the
@@ -2711,11 +2830,15 @@ async function loadForecast() {
   const heading = document.getElementById("criteriaHeading");
 
   const lookback = document.getElementById("lookbackSelect").value;
+  const view = readForecastControls();
   msg.textContent = "Training pi-Dyne LSTM on recorded ledger weights…";
   [empty, chartWrap, metaBox, insight, table, heading].forEach(el => el.classList.add("hidden"));
 
   try {
-    const res = await fetch(`${API}/api/forecast?lookback=${lookback}`);
+    const qs = new URLSearchParams({
+      lookback, alpha: view.alpha, beta: view.beta, gain: view.gain,
+    });
+    const res = await fetch(`${API}/api/forecast?${qs}`);
     if (!res.ok) {
       msg.textContent = "";
       empty.classList.remove("hidden");
@@ -2942,39 +3065,10 @@ async function loadForecast() {
     if (!canvas) throw new Error("forecast canvas is missing from the page");
     const ctx = canvas.getContext("2d");
     if (forecastChart) forecastChart.destroy();
-    forecastChart = new Chart(ctx, {
-      type: "line",
-      data: { labels, datasets },
-      options: {
-        responsive: true,
-        interaction: { mode: "index", intersect: false },
-        plugins: {
-          legend: {
-            labels: {
-              boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 11 },
-              // Only the solid observed series appear in the legend; the
-              // dashed forecast twins would just double every entry.
-              filter: (l) => !l.text.includes("forecast"),
-            },
-          },
-          tooltip: {
-            callbacks: {
-              title: (items) => items[0].label,
-              label: (c) => (c.parsed.y === null ? null : `${c.dataset.label.replace(" forecast", "")}: ${c.parsed.y.toFixed(4)}`),
-            },
-            filter: (item) => item.parsed.y !== null && !item.dataset.label.includes("forecast"),
-          },
-        },
-        scales: {
-          y: {
-            beginAtZero: false,
-            title: { display: true, text: "Criterion weight (Σ = 8.0)", font: { size: 11 } },
-            grid: { color: "rgba(148,163,184,0.18)" },
-          },
-          x: { grid: { display: false } },
-        },
-      },
-    });
+    // Line, stacked area, grouped bars or radar — one config builder, so the
+    // views cannot disagree about the underlying numbers.
+    chartWrap.classList.add("chart-sized");
+    forecastChart = new Chart(ctx, buildForecastChartConfig(data, view));
 
     metaBox.classList.remove("hidden");
     metaBox.innerHTML = `
@@ -2982,13 +3076,16 @@ async function loadForecast() {
       <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
       <div class="fm-item"><span>Method</span><strong>${
         data.method === "holt-linear-trend" ? "Statistical" : "pi-Dyne LSTM"}</strong></div>
-      <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>`;
+      <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>
+      ${data.settings ? `<div class="fm-item"><span>Smoothing</span><strong>&alpha; ${
+        data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}`;
 
     if (data.interpretation) {
       insight.classList.remove("hidden");
       insight.innerHTML = `<strong>What this shows:</strong> ${escapeHtml(data.interpretation)}`;
     }
 
+    lastForecastData = data;
     lastForecastCriteria = data.criteria;
     heading.classList.remove("hidden");
     table.classList.remove("hidden");
@@ -3047,6 +3144,35 @@ function showCriterionModal(c) {
 
 document.getElementById("runForecastBtn").addEventListener("click", loadForecast);
 document.getElementById("lookbackSelect").addEventListener("change", loadForecast);
+
+// alpha/beta/gain change what the SERVER computes, so they refetch. Chart type
+// and axis only change how the same response is drawn, so they redraw locally —
+// re-querying for a presentation change would make the controls feel sluggish
+// and would burn a request per slider tick.
+["forecastChartType", "forecastXAxis", "forecastShowForecast"].forEach(id => {
+  const el = document.getElementById(id);
+  if (el) el.addEventListener("change", () => redrawForecast());
+});
+[["forecastAlpha", "forecastAlphaOut", v => Number(v).toFixed(2)],
+ ["forecastBeta", "forecastBetaOut", v => Number(v).toFixed(2)],
+ ["forecastGain", "forecastGainOut", v => Number(v).toFixed(2) + "\u00d7"]].forEach(([id, outId, fmt]) => {
+  const el = document.getElementById(id), out = document.getElementById(outId);
+  if (!el) return;
+  el.addEventListener("input", () => { if (out) out.textContent = fmt(el.value); });
+  el.addEventListener("change", debounced(loadForecast, 250));
+});
+
+/** Redraw the last response under new presentation settings. */
+let lastForecastData = null;
+function redrawForecast() {
+  if (!lastForecastData || typeof Chart === "undefined") return loadForecast();
+  const view = readForecastControls();
+  const canvas = document.getElementById("forecastChart");
+  if (!canvas) return;
+  if (forecastChart) forecastChart.destroy();
+  forecastChart = new Chart(canvas.getContext("2d"),
+                            buildForecastChartConfig(lastForecastData, view));
+}
 
 // --- Summary stats bar ---
 async function loadAnalyticsSummary() {

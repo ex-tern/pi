@@ -297,10 +297,53 @@
               <option value="3" selected>Lookback: 3 epochs</option>
               <option value="5">Lookback: 5 epochs</option>
             </select>
+
+            <select id="forecastChartType" class="inline-select"
+                    title="How to draw the same numbers">
+              <option value="line" selected>Line</option>
+              <option value="area">Stacked area</option>
+              <option value="bar">Grouped bars</option>
+              <option value="radar">Radar</option>
+            </select>
+
+            <select id="forecastXAxis" class="inline-select"
+                    title="Space blocks evenly, or by when they were actually recorded">
+              <option value="block" selected>X: block order</option>
+              <option value="time">X: real time</option>
+            </select>
+
             <button id="runForecastBtn" class="btn btn-primary">Run Neural Forecast</button>
           </div>
 
           <div id="forecastMsg" class="hint"></div>
+          <details class="forecast-modifiers">
+            <summary>Modifiers</summary>
+            <div class="fm-grid">
+              <label class="fm-ctl">Level responsiveness (&alpha;)
+                <input type="range" id="forecastAlpha" min="0.05" max="0.95" step="0.05" value="0.6">
+                <output id="forecastAlphaOut">0.60</output>
+                <span class="fm-note">Higher follows recent blocks more closely; lower smooths them.</span>
+              </label>
+              <label class="fm-ctl">Trend responsiveness (&beta;)
+                <input type="range" id="forecastBeta" min="0.05" max="0.95" step="0.05" value="0.3">
+                <output id="forecastBetaOut">0.30</output>
+                <span class="fm-note">Higher lets the direction of travel change faster.</span>
+              </label>
+              <label class="fm-ctl">Projection sharpening
+                <input type="range" id="forecastGain" min="1" max="4" step="0.25" value="2.5">
+                <output id="forecastGainOut">2.5&times;</output>
+                <span class="fm-note">Amplifies differences between criteria. Never reorders them.</span>
+              </label>
+              <label class="fm-ctl fm-ctl-check">
+                <input type="checkbox" id="forecastShowForecast" checked>
+                Show the projected point
+                <span class="fm-note">Turn off to see only what was actually recorded.</span>
+              </label>
+            </div>
+            <p class="fm-caveat">These change how the projection is computed and drawn, not what
+            was measured. The recorded blocks are the same in every view.</p>
+          </details>
+
           <div id="forecastEmpty" class="empty-state hidden"></div>
 
           <div id="forecastChartWrap" class="chart-wrap hidden">
