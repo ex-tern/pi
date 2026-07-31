@@ -1,31 +1,25 @@
 # Railway build configuration.
 #
-# Railway prefers a Dockerfile whenever one is present at the repository root.
-# Setting the builder explicitly overrides that, so the Dockerfile can stay in
-# the repo for local development and for anyone deploying elsewhere, without
-# Railway using it.
+# Back on the Dockerfile. The Nixpacks switch was made to sidestep a volume
+# permission error, but that error is now fixed properly by
+# docker-entrypoint.sh, which takes ownership of the mount at container start
+# and then drops privileges. Meanwhile the Docker image is known to boot on
+# this platform — the earlier logs show gunicorn listening — whereas the
+# Nixpacks build has not yet served a request.
 #
-# Why move off Docker here: the image ran as a non-root user, and a mounted
-# volume arrives owned by root and replaces whatever the image prepared at that
-# path. The build-time `chown` was therefore undone at runtime and the worker
-# died with EACCES before serving a request. Nixpacks images run as root, so
-# that mismatch does not arise. The container is the security boundary on this
-# platform regardless.
-#
-# To go back to Docker: delete this file, or change the builder value below.
+# Debugging one unknown at a time: keep the builder that has worked, and fix
+# the remaining application faults against it. To try Nixpacks again, set
+# builder = "NIXPACKS" and add:
+#     startCommand = "gunicorn api:app -c backend/gunicorn.conf.py"
+# (no `cd` — Railway runs this without a shell, so shell builtins fail).
 
 [build]
-builder = "NIXPACKS"
+builder = "DOCKERFILE"
 
 [deploy]
-# No shell here. Railway executes this directly, so shell builtins are not
-# available — `cd backend && ...` fails with "The executable `cd` could not be
-# found". The config file chdirs into backend/ itself instead.
-startCommand = "gunicorn api:app -c backend/gunicorn.conf.py"
+# No startCommand: the image's ENTRYPOINT + CMD handle it, so there is one
+# definition of how this app starts rather than two that can drift.
 healthcheckPath = "/api/health"
-# Generous: a cold start installs nothing but does open the database, run any
-# pending schema migration, and optionally restore state. 120s was tight enough
-# that a slow restore failed the deploy outright.
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 3
