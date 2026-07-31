@@ -97,6 +97,9 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE TABLE IF NOT EXISTS global_eval_counter (count INTEGER)")
     cursor.execute("CREATE TABLE IF NOT EXISTS desci_attestations (attestation_id TEXT PRIMARY KEY, eval_hash TEXT, attester_id TEXT, stake_amount REAL, stance TEXT, timestamp DATETIME)")
     cursor.execute("CREATE TABLE IF NOT EXISTS auto_ip_tracking (ip_address TEXT PRIMARY KEY, first_seen DATETIME)")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
+                        account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
+                        goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
 
     cursor.execute("SELECT COUNT(*) FROM global_eval_counter")
     if cursor.fetchone()[0] == 0: cursor.execute("INSERT INTO global_eval_counter (count) VALUES (0)")
@@ -450,6 +453,63 @@ def get_free_evals_used(ip_address: str) -> int:
         return int(row[0]) if row and row[0] is not None else 0
     finally:
         conn.close()
+
+
+def save_researcher_profile(account_key: str, profile: dict) -> dict:
+    """Stores the researcher's stated field, goal and abstract.
+
+    Keyed by ORCID or wallet — an anonymous visitor has nowhere durable to put
+    this, so the frontend keeps their draft in localStorage instead and only
+    persists once an identity exists. Free-text is length-capped on the way in
+    so a profile cannot be used as unbounded storage.
+    """
+    if not account_key:
+        return {}
+    fields = {
+        "field": str(profile.get("field", ""))[:120],
+        "career_stage": str(profile.get("career_stage", ""))[:60],
+        "goal": str(profile.get("goal", ""))[:600],
+        "idea": str(profile.get("idea", ""))[:1500],
+        "abstract": str(profile.get("abstract", ""))[:4000],
+    }
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO researcher_profiles
+                 (account_key, field, career_stage, goal, idea, abstract, updated_at)
+               VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(account_key) DO UPDATE SET
+                 field=excluded.field, career_stage=excluded.career_stage,
+                 goal=excluded.goal, idea=excluded.idea, abstract=excluded.abstract,
+                 updated_at=CURRENT_TIMESTAMP""",
+            (account_key, fields["field"], fields["career_stage"],
+             fields["goal"], fields["idea"], fields["abstract"]),
+        )
+        conn.commit()
+    finally:
+        conn.close()
+    return fields
+
+
+def get_researcher_profile(account_key: str) -> dict:
+    """The stored profile for an identity, or an empty dict."""
+    if not account_key:
+        return {}
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT field, career_stage, goal, idea, abstract, updated_at
+               FROM researcher_profiles WHERE account_key = ?""",
+            (account_key,),
+        ).fetchone()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    return {"field": row[0] or "", "career_stage": row[1] or "", "goal": row[2] or "",
+            "idea": row[3] or "", "abstract": row[4] or "", "updated_at": row[5]}
 
 
 def get_field_corpus_stats(limit: int = 20) -> list:

@@ -52,9 +52,10 @@ from database import (
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
-    get_field_corpus_stats,
+    get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
 )
 import arcade
+import diagnostics
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 from integrations import (
     normalize_doi, collect_pdf_candidates,
@@ -605,14 +606,58 @@ def stats_count():
     return {"total_analyzed": n}
 
 
-def build_result_payload(res, filename):
+def _profile_key(wallet: str = "", orcid: str = "") -> str:
+    """One stable key per identity. ORCID wins when both are present, since it
+    survives a wallet change and is the more durable research identity."""
+    if orcid:
+        return f"orcid:{orcid}"
+    if wallet:
+        return f"wallet:{wallet.lower()}"
+    return ""
+
+
+class ResearcherProfile(BaseModel):
+    wallet: str = ""
+    orcid: str = ""
+    field: str = ""
+    career_stage: str = ""
+    goal: str = ""
+    idea: str = ""
+    abstract: str = ""
+
+
+@app.get("/api/profile")
+def read_profile(wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """The stored researcher profile for this identity."""
+    key = _profile_key(wallet, orcid)
+    if not key:
+        return {"stored": False, "profile": {},
+                "reason": "Connect a wallet or link ORCID to save a profile."}
+    profile = get_researcher_profile(key)
+    return {"stored": bool(profile), "profile": profile}
+
+
+@app.post("/api/profile")
+def write_profile(payload: ResearcherProfile):
+    """Saves the researcher profile used to frame diagnostics."""
+    key = _profile_key(payload.wallet, payload.orcid)
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="A wallet or ORCID is required to save a profile. Your draft is kept in "
+                   "this browser until you connect one.")
+    saved = save_researcher_profile(key, payload.dict())
+    return {"stored": True, "profile": saved}
+
+
+def build_result_payload(res, filename, profile=None):
     consensus = res[19] if isinstance(res[19], dict) else {}
     scores = res[8] or {}
 
     def opt(idx, default):
         return res[idx] if len(res) > idx and res[idx] is not None else default
 
-    return {
+    payload = {
         "judge_metadata": consensus.get("_judge_metadata", {}),
         "integrity": opt(22, {}),
         "reference_audit": opt(23, {}),
@@ -648,6 +693,17 @@ def build_result_payload(res, filename):
         "scilem_rating": res[21],
         "rubric_version": RUBRIC_VERSION,
     }
+
+    # Reception diagnostic: why this work is or isn't landing. Deterministic
+    # and derived entirely from signals already in the payload, so it adds no
+    # latency and no provider cost. Wrapped because a diagnostic failure must
+    # never cost the user the assessment they just paid for.
+    try:
+        payload["diagnostics"] = diagnostics.build_report(payload, profile)
+    except Exception as e:
+        logging.warning("Diagnostic report failed for %s: %s", payload.get("eval_hash"), e)
+        payload["diagnostics"] = {"available": False, "reason": "Diagnostic unavailable."}
+    return payload
 
 
 def retrieve_manuscript_bytes(doi: str = "", pdf_url: str = "", candidates: List[str] = None):
@@ -816,7 +872,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             yield line({"type": "status", "message": "Assessing document..."})
             res = process_single_pdf(pdf_bytes, f"DOI_{doi}.pdf", "", user_id, book_address, provided_doi=doi)
             if res:
-                item = build_result_payload(res, f"DOI_{doi}.pdf")
+                item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed DOI {doi}: score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
@@ -844,7 +900,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             yield line({"type": "status", "message": f"Assessing: {title[:80]}..."})
             res = process_single_pdf(pdf_bytes, fname, "", user_id, book_address, provided_doi=p_doi or "None")
             if res:
-                item = build_result_payload(res, fname)
+                item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed discovered paper '{title[:60]}': score {item['score']:.2f}")
                 yield line({"type": "result", "item": item})
@@ -865,7 +921,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         yield line({"type": "status", "message": f"Analyzing {fname}..."})
         res = process_single_pdf(raw_bytes, fname, "", user_id, book_address)
         if res:
-            item = build_result_payload(res, fname)
+            item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
             add_log(f"Assessed {fname}: score {item['score']:.2f}")
             yield line({"type": "result", "item": item})
@@ -898,6 +954,17 @@ async def assess_stream(
     has_web3 = bool(wallet and w3.is_address(wallet))
     user_id = orcid if orcid else (wallet if has_web3 else "Anonymous")
     book_address = w3.to_checksum_address(wallet) if has_web3 else "0x0000000000000000000000000000000000000000"
+
+    # Loaded once per submission rather than per paper: it frames the wording
+    # of the diagnostic summary, and re-reading it for every paper in a batch
+    # would be a query per document for a value that cannot change mid-run.
+    # A missing profile is normal (anonymous users have none) and simply
+    # leaves the diagnostic unframed — it never changes the findings.
+    try:
+        researcher_profile = get_researcher_profile(_profile_key(wallet, orcid))
+    except Exception as e:
+        logging.debug("Profile lookup failed, continuing without it: %s", e)
+        researcher_profile = {}
 
     discover_list = []
     if discover_papers.strip():

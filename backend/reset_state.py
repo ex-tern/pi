@@ -40,6 +40,7 @@ DATA_TABLES = [
     "desci_attestations",
     "ingestion_queue",
     "blockchain_por_weights",
+    "researcher_profiles",
 ]
 
 MODEL_FILES = ["scilem_model.pt", "scilem_weights.pt", "pidyne_model.pt"]
