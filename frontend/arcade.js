@@ -61,7 +61,7 @@
     edges: [],
     grabbed: null,
     filters: { search: "", minPapers: 0, liveOnly: false, author: "" },
-    look: { labels: true, mesh: true, scale: 1, gravity: true },
+    look: { labels: true, mesh: true, scale: 1, gravity: false },
   };
 
   // Filters DIM bubbles rather than removing them. Removal would change what

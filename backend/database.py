@@ -258,12 +258,28 @@ def _warn_on_genesis_mismatch(conn):
     )
 
 
+def normalize_account(value: str) -> str:
+    """Case-fold an account identifier for comparison.
+
+    Ethereum addresses are case-insensitive — the mixed case in a checksummed
+    address (EIP-55) is a checksum, not identity. The assessment path stores
+    `eth_book` checksummed via `to_checksum_address`, while the browser sends
+    whatever case the wallet reports, so exact string matching silently failed
+    to find a user's own papers: balances read 0.00 while piQ plainly existed,
+    and the fee check then refused to run the assessment at all.
+
+    Everything is compared case-folded now. ORCID iDs are digits plus a
+    possible trailing X, so folding them is harmless.
+    """
+    return (value or "").strip().lower()
+
+
 def _account_keys(wallet: str = "", orcid: str = ""):
     keys = []
     if orcid:
-        keys.append(("orcid", orcid))
+        keys.append(("orcid", normalize_account(orcid)))
     if wallet:
-        keys.append(("wallet", wallet))
+        keys.append(("wallet", normalize_account(wallet)))
     return keys
 
 
@@ -274,11 +290,13 @@ def get_piq_minted_total(wallet: str = "", orcid: str = "") -> float:
         return 0.0
     clauses, params = [], []
     if orcid:
-        clauses.append("user_id = ?")
-        params.append(orcid)
+        clauses.append("LOWER(user_id) = ?")
+        params.append(normalize_account(orcid))
     if wallet:
-        clauses.append("eth_book = ?")
-        params.append(wallet)
+        # LOWER() on both sides: eth_book is stored checksummed, the caller's
+        # wallet arrives in whatever case the browser wallet reported.
+        clauses.append("LOWER(eth_book) = ?")
+        params.append(normalize_account(wallet))
     conn = get_db_connection()
     try:
         rows = conn.execute(
@@ -310,7 +328,7 @@ def get_piq_ledger_net(wallet: str = "", orcid: str = "") -> float:
     conn = get_db_connection()
     try:
         row = conn.execute(
-            f"SELECT COALESCE(SUM(delta), 0) FROM piq_ledger WHERE account IN ({placeholders})",
+            f"SELECT COALESCE(SUM(delta), 0) FROM piq_ledger WHERE LOWER(account) IN ({placeholders})",
             tuple(v for _, v in keys),
         ).fetchone()
     finally:
@@ -352,7 +370,7 @@ def has_received_grant(wallet: str = "", orcid: str = "") -> bool:
     try:
         row = conn.execute(
             f"""SELECT COUNT(*) FROM piq_ledger
-                WHERE account IN ({placeholders}) AND reason LIKE '%onboarding grant%'""",
+                WHERE LOWER(account) IN ({placeholders}) AND reason LIKE '%onboarding grant%'""",
             tuple(v for _, v in keys),
         ).fetchone()
         return bool(row and row[0])
@@ -428,7 +446,7 @@ def get_piq_fee_history(wallet: str = "", orcid: str = "", limit: int = 25) -> l
     try:
         rows = conn.execute(
             f"""SELECT delta, reason, eval_hash, timestamp FROM piq_ledger
-                WHERE account IN ({placeholders}) ORDER BY entry_id DESC LIMIT ?""",
+                WHERE LOWER(account) IN ({placeholders}) ORDER BY entry_id DESC LIMIT ?""",
             tuple(v for _, v in keys) + (limit,),
         ).fetchall()
     finally:
