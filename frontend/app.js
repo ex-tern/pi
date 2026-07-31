@@ -595,10 +595,25 @@ async function loadChainStatus() {
     badge.className = "chain-badge " + (
       chainState.minting_enabled ? "chain-ok" : (chainState.connected ? "chain-warn" : "chain-down")
     );
-    if (chainState.connected) {
-      text.textContent = `${chainState.chain_name} · block ${chainState.block_number ?? "—"}`;
-    } else {
+    // The three colours mean three different things, and only one of them is
+    // a problem the operator can act on — but the distinction lived solely in
+    // a `title` tooltip, so an amber badge looked like an unexplained warning.
+    //
+    //   green  — connected AND able to write: minting transactions will settle.
+    //   amber  — connected and reading fine, but NOT able to write. The ledger,
+    //            balances and scoring all work; only on-chain settlement is off.
+    //            Almost always a missing ETH_ADMIN_PRIVATE_KEY.
+    //   red    — no Sepolia RPC responded at all.
+    //
+    // Amber is a normal, fully functional configuration for a deployment that
+    // has not been given a signing key, so the badge now says which of the
+    // three it is instead of leaving the colour to be guessed at.
+    if (!chainState.connected) {
       text.textContent = `${chainState.chain_name} unreachable`;
+    } else if (chainState.minting_enabled) {
+      text.textContent = `${chainState.chain_name} · block ${chainState.block_number ?? "—"} · minting live`;
+    } else {
+      text.textContent = `${chainState.chain_name} · block ${chainState.block_number ?? "—"} · read-only`;
     }
     badge.title = chainState.reason || "";
   } catch (e) {
@@ -929,7 +944,8 @@ async function initScilem() {
     // rather than "Ready" is what stops the badge from contradicting the
     // assistant's own account of what it can do.
     badge.textContent = status.badge || (status.cloud_phrasing ? "Ready" : "Grounded");
-    badge.className = status.cloud_phrasing ? "pill q-high" : "pill q-mod";
+    badge.className = status.mode === "grounded+phrasing" ? "pill q-high"
+      : status.mode === "limited" ? "pill q-low" : "pill q-mod";
     badge.title = status.notice || "Answers from live deployment state and the built-in knowledge base.";
     renderScilemSuggestions();
     const intro = status.notice
@@ -1091,6 +1107,11 @@ function syncProfileVisibility() {
   if (card) card.classList.toggle("hidden", !signedIn);
   if (notice) notice.classList.toggle("hidden", signedIn);
   if (buddy) buddy.classList.toggle("hidden", !signedIn);
+  // History follows identity: connecting or disconnecting must take effect
+  // immediately, not on the next page load.
+  const history = document.getElementById("historyCard");
+  if (history) history.classList.toggle("hidden", !signedIn);
+  if (signedIn && typeof loadAssessmentHistory === "function") loadAssessmentHistory();
 }
 
 /** Research Buddy — concrete next actions derived from the saved profile.
@@ -1710,6 +1731,7 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     document.querySelectorAll(".discover-checkbox").forEach(cb => { cb.checked = false; });
     loadEmissionStatus();
     renderSidebar();
+    loadAssessmentHistory();
   }
 });
 
@@ -3251,6 +3273,180 @@ function escapeHtml(s) {
 // ---------------------------------------------------------------------------
 // Init
 // ---------------------------------------------------------------------------
+
+// ---------------------------------------------------------------------------
+// PROFILE RESET / ASSESSMENT HISTORY / BUG REPORTS
+// ---------------------------------------------------------------------------
+
+/** Clear the stored profile, server-side and locally.
+ *
+ *  Both copies must go. Clearing only the server row leaves the localStorage
+ *  draft to repopulate the form on the next load, which reads as the reset
+ *  having silently failed; clearing only the draft leaves the server still
+ *  framing diagnostics with a profile the user believes is gone.
+ */
+async function resetProfile() {
+  const btn = document.getElementById("profileResetBtn");
+  const msg = document.getElementById("profileMsg");
+  if (!confirm("Clear your saved research profile?\n\nYour field, goal, ideas and abstract will "
+             + "be deleted. Assessments you have already run are not affected.")) return;
+
+  btn.disabled = true;
+  const prev = btn.textContent;
+  btn.textContent = "Clearing…";
+  try {
+    if (Session.hasIdentity()) {
+      const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+      const res = await fetch(`${API}/api/profile?${qs}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      msg.textContent = data.message || "Profile cleared.";
+    } else {
+      msg.textContent = "Local draft cleared.";
+    }
+    localStorage.removeItem("sp_profile");
+    writeProfileForm({ field: "", career_stage: "", goal: "", idea: "", abstract: "" });
+    loadBuddyCorpus();
+  } catch (e) {
+    msg.textContent = `Could not clear the profile: ${e.message}`;
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prev;
+  }
+}
+
+/** Assessment history for a signed-in identity. */
+async function loadAssessmentHistory() {
+  const card = document.getElementById("historyCard");
+  const body = document.getElementById("historyBody");
+  const count = document.getElementById("historyCount");
+  if (!card || !body) return;
+
+  // Anonymous runs are not linked to any identity, so there is genuinely
+  // nothing to list. Hiding the card is more honest than showing an empty one.
+  if (!Session.hasIdentity()) { card.classList.add("hidden"); return; }
+
+  card.classList.remove("hidden");
+  body.innerHTML = `<p class="hint">Loading…</p>`;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/assessments/mine?${qs}`);
+    const data = await res.json();
+    if (!data.signed_in) { card.classList.add("hidden"); return; }
+
+    count.textContent = data.count;
+    if (!data.count) {
+      body.innerHTML = `<p class="hint">Nothing assessed under this identity yet. Papers you
+        assess while signed in appear here.</p>`;
+      return;
+    }
+    body.innerHTML = `<table class="data-table history-table"><thead><tr>
+        <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
+      </tr></thead><tbody>` + data.assessments.map(a => `
+        <tr>
+          <td><div class="hist-title">${escapeHtml(a.title)}</div>
+              <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
+                a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
+          <td class="num">${a.score.toFixed(1)}</td>
+          <td class="num">${a.piq_minted.toFixed(2)}</td>
+          <td><button class="btn-icon-danger" data-remove-hash="${escapeHtml(a.hash)}"
+                title="Withdraw this paper">Remove</button></td>
+        </tr>`).join("") + `</tbody></table>
+      <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
+      Proof-of-Research block remains — the chain is append-only, so deleting a block would
+      invalidate every block after it.</p>`;
+
+    body.querySelectorAll("[data-remove-hash]").forEach(b =>
+      b.addEventListener("click", () => removeAssessment(b.dataset.removeHash)));
+  } catch (e) {
+    body.innerHTML = `<p class="hint">Could not load your history.</p>`;
+  }
+}
+
+async function removeAssessment(hash) {
+  if (!hash) return;
+  if (!confirm("Withdraw this paper?\n\nIt is removed from the corpus, the leaderboard and the "
+             + "research buddy. Its ledger block stays, because the Proof-of-Research chain is "
+             + "append-only.")) return;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}?${qs}`,
+                            { method: "DELETE" });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    // Drop it from the in-memory results too, or the card stays on screen and
+    // looks like the delete failed.
+    evaluatedBuffer = evaluatedBuffer.filter(it => (it.hash || it.eval_hash) !== hash);
+    renderResults();
+    loadAssessmentHistory();
+    loadBuddyCorpus();
+  } catch (e) {
+    alert(`Could not remove that paper: ${e.message}`);
+  }
+}
+
+/** Bug report dialog. */
+async function openBugReport() {
+  let status = { email_enabled: false, recipient: "", note: "" };
+  try {
+    status = await (await fetch(`${API}/api/bug-report/status`)).json();
+  } catch (_) { /* the form still works; it just cannot promise email */ }
+
+  openModal(`
+    <h2>Report a bug</h2>
+    <p class="hint">${escapeHtml(status.note || "")}</p>
+    <label>What went wrong?
+      <textarea id="bugMessage" rows="6" maxlength="5000"
+        placeholder="What were you doing, what did you expect, and what happened instead? If you saw an error reference, paste it here."></textarea>
+    </label>
+    <label>Your email <span class="hint-inline">(optional — only so you can be replied to)</span>
+      <input type="email" id="bugContact" maxlength="200" placeholder="you@example.com">
+    </label>
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="bugSendBtn">Send report</button>
+      <span class="profile-msg" id="bugMsg"></span>
+    </div>`);
+
+  document.getElementById("bugSendBtn").addEventListener("click", submitBugReport);
+}
+
+async function submitBugReport() {
+  const btn = document.getElementById("bugSendBtn");
+  const msg = document.getElementById("bugMsg");
+  const message = document.getElementById("bugMessage").value.trim();
+  const contact = document.getElementById("bugContact").value.trim();
+
+  if (message.length < 10) {
+    msg.textContent = "Please add a little more detail (at least 10 characters).";
+    return;
+  }
+  btn.disabled = true;
+  btn.textContent = "Sending…";
+  try {
+    const res = await fetch(`${API}/api/bug-report`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        message, contact,
+        // Which tab they were on is the single most useful piece of context
+        // for reproducing a report, and the cheapest to collect.
+        page: (document.querySelector(".tab-btn.active") || {}).dataset?.tab || "",
+        wallet: Session.wallet, orcid: Session.orcid,
+      }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    document.getElementById("modalBody").innerHTML = `
+      <h2>Report sent</h2>
+      <p>${escapeHtml(data.message || "Thank you.")}</p>
+      <p class="hint">Reference <code>#${escapeHtml(String(data.id))}</code> — quote this if you
+      follow up.</p>`;
+  } catch (e) {
+    msg.textContent = `Could not send: ${e.message}`;
+    btn.disabled = false;
+    btn.textContent = "Send report";
+  }
+}
+
 bootstrapFromQueryParams();
 renderSidebar();
 loadChainStatus();
@@ -3259,6 +3455,9 @@ refreshTrialStatus();
 syncProfileVisibility();
 loadProfile();
 document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
+document.getElementById("profileResetBtn").addEventListener("click", resetProfile);
+document.getElementById("bugReportBtn").addEventListener("click", openBugReport);
+loadAssessmentHistory();
 
 // Referral. Uses the native share sheet where it exists (mobile), falls back to
 // the clipboard, and falls back again to a selectable text box — navigator.share

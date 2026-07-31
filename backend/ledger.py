@@ -2,6 +2,7 @@ import os
 import json
 import time
 import hmac
+import threading
 import hashlib
 import zipfile
 import tempfile
@@ -355,53 +356,176 @@ def restore_state_from_web3():
     except Exception as e:
         logging.error(f"Restore warning: {e}")
 
-def backup_state_to_web3() -> bool:
-    w3 = get_web3()
-    if not WEB3_AVAILABLE or not FERNET_AVAILABLE or not w3 or not w3.is_connected() or not PINATA_API_KEY or not REGISTRY_CONTRACT_ADDRESS or not ETH_ADMIN_PRIVATE_KEY:
-        return False
-    
+# ---------------------------------------------------------------------------
+# Durable state: IPFS pinning, with on-chain anchoring as an optional extra
+# ---------------------------------------------------------------------------
+# Previously this was a single function that refused to do ANYTHING unless a
+# registry contract was configured — so a deployment with working Pinata
+# credentials and no second contract got no backups at all, even though
+# pinning is the part that actually provides durability. The on-chain CID
+# anchor is a tamper-evidence mechanism layered on top of that, not a
+# precondition for it, so the two are now separate steps: pin always, anchor
+# when there is somewhere to anchor to.
+#
+# Throttling matters as much as the split. This ran synchronously inside the
+# assessment request, once per paper, zipping and uploading the entire
+# database each time. On a small host that is a multi-second stall on the
+# critical path and a large transient memory spike — precisely the conditions
+# that were getting the worker OOM-killed mid-assessment.
+_BACKUP_MIN_INTERVAL = int(os.getenv("BACKUP_MIN_INTERVAL_SECONDS", "900"))
+_last_backup_at = 0.0
+_backup_lock = threading.Lock()
+
+
+def _encryption_seed() -> str:
+    """Secret used to derive the backup encryption key.
+
+    Falls back to a dedicated BACKUP_ENCRYPTION_KEY so that a deployment can
+    have encrypted, durable backups without also holding a funded signing key
+    on the server — those are very different risk profiles and should not have
+    been the same setting.
+    """
+    return ETH_ADMIN_PRIVATE_KEY or os.getenv("BACKUP_ENCRYPTION_KEY", "")
+
+
+def ipfs_backup_available() -> bool:
+    return bool(FERNET_AVAILABLE and PINATA_API_KEY and PINATA_SECRET_API_KEY
+                and _encryption_seed())
+
+
+def pin_state_to_ipfs():
+    """Encrypt the local state and pin it to IPFS. Returns a CID or None.
+
+    The payload is encrypted before it leaves the host. IPFS is public
+    content-addressed storage: anything pinned unencrypted is readable by
+    anyone who learns the CID, and this archive contains the full assessment
+    database.
+    """
+    if not ipfs_backup_available():
+        return None
+
     temp_dir = tempfile.mkdtemp()
     try:
         safe_items = ["pi_index_main.db", "scilem_rlhf_dataset.jsonl", "pidyne_weights.pt"]
+        copied = 0
         for item in safe_items:
             src = os.path.join(BASE_DIR, item)
             if os.path.exists(src):
                 shutil.copy(src, os.path.join(temp_dir, item))
+                copied += 1
+        if not copied:
+            return None
 
         raw_zip_path = os.path.join(temp_dir, "sanitized_state.zip")
-        with zipfile.ZipFile(raw_zip_path, 'w', zipfile.ZIP_DEFLATED) as zipf:
+        with zipfile.ZipFile(raw_zip_path, "w", zipfile.ZIP_DEFLATED) as zipf:
             for root, _, files in os.walk(temp_dir):
                 for f in files:
                     if f != "sanitized_state.zip":
                         fp = os.path.join(root, f)
                         zipf.write(fp, os.path.relpath(fp, temp_dir))
 
-        fernet = Fernet(derive_encryption_key(ETH_ADMIN_PRIVATE_KEY))
-        with open(raw_zip_path, 'rb') as fp:
+        fernet = Fernet(derive_encryption_key(_encryption_seed()))
+        with open(raw_zip_path, "rb") as fp:
             encrypted_payload = fernet.encrypt(fp.read())
 
         enc_zip_path = os.path.join(temp_dir, "payload.enc")
-        with open(enc_zip_path, 'wb') as fp:
+        with open(enc_zip_path, "wb") as fp:
             fp.write(encrypted_payload)
 
-        headers = {
-            "pinata_api_key": PINATA_API_KEY, 
-            "pinata_secret_api_key": PINATA_SECRET_API_KEY
-        }
-        with open(enc_zip_path, 'rb') as fp:
-            res = requests.post(
-                "https://api.pinata.cloud/pinning/pinFileToIPFS", 
-                files={"file": fp}, 
-                headers=headers
-            )
-        cid = res.json().get("IpfsHash")
-        if not cid:
-            return False
+        headers = {"pinata_api_key": PINATA_API_KEY,
+                   "pinata_secret_api_key": PINATA_SECRET_API_KEY}
+        with open(enc_zip_path, "rb") as fp:
+            res = requests.post("https://api.pinata.cloud/pinning/pinFileToIPFS",
+                                files={"file": fp}, headers=headers, timeout=90)
+        if res.status_code != 200:
+            logging.warning("Pinata rejected the backup (HTTP %s).", res.status_code)
+            return None
+        return res.json().get("IpfsHash")
+    except Exception as e:
+        logging.error("IPFS backup failed: %s", e)
+        return None
+    finally:
+        shutil.rmtree(temp_dir, ignore_errors=True)
 
-        abi = '[{"inputs":[{"internalType":"string","name":"_cid","type":"string"}],"name":"updateCID","outputs":[],"stateMutability":"nonpayable","type":"function"}]'
-        contract = w3.eth.contract(address=w3.to_checksum_address(REGISTRY_CONTRACT_ADDRESS), abi=json.loads(abi))
+
+def registry_contract_usable() -> dict:
+    """Does the configured registry address actually behave like a registry?
+
+    A configured address is not evidence of a working registry. The most
+    likely mistake — and the one that was actually made here — is to point
+    this at the piQ token contract, which is a real, deployed, perfectly valid
+    contract that simply has no CID storage. Anchoring calls against it revert
+    during gas estimation, and because the caller swallows that failure to
+    avoid breaking backups, the result is a deployment that reports healthy
+    while never anchoring anything.
+
+    So the address is probed rather than trusted: is there code at it, and does
+    it answer getCID()? Both questions are cheap, read-only, and answerable
+    before a single transaction is signed.
+    """
+    result = {"configured": bool(REGISTRY_CONTRACT_ADDRESS), "usable": False, "reason": ""}
+    if not REGISTRY_CONTRACT_ADDRESS:
+        result["reason"] = "No registry contract is configured."
+        return result
+
+    w3 = get_web3()
+    if not WEB3_AVAILABLE or not w3 or not w3.is_connected():
+        result["reason"] = "Cannot reach the chain to check the registry contract."
+        return result
+    try:
+        address = w3.to_checksum_address(REGISTRY_CONTRACT_ADDRESS)
+    except Exception:
+        result["reason"] = "The registry address is not a valid Ethereum address."
+        return result
+
+    try:
+        if w3.eth.get_code(address) in (b"", b"0x", None):
+            result["reason"] = "There is no contract deployed at that address on this chain."
+            return result
+    except Exception as e:
+        result["reason"] = f"Could not read code at that address: {e}"
+        return result
+
+    try:
+        abi = ('[{"inputs":[],"name":"getCID","outputs":[{"internalType":"string",'
+               '"name":"","type":"string"}],"stateMutability":"view","type":"function"}]')
+        contract = w3.eth.contract(address=address, abi=json.loads(abi))
+        contract.functions.getCID().call()
+        result["usable"] = True
+        result["reason"] = "Registry contract responds to getCID()."
+    except Exception:
+        result["reason"] = (
+            "A contract exists at that address, but it does not implement getCID()/updateCID(). "
+            "This is what happens when the piQ token address is used as the registry: the token "
+            "is a valid contract, it just has nowhere to store a CID. Backups will still be "
+            "pinned to IPFS and recorded locally; they will not be anchored on-chain."
+        )
+    return result
+
+
+def anchor_cid_on_chain(cid: str) -> str:
+    """Write the CID to the registry contract. Returns a tx hash, or "".
+
+    Optional by design: with no registry configured the backup is still pinned
+    and still restorable, it simply has no on-chain tamper-evidence trail.
+    """
+    if not cid or not REGISTRY_CONTRACT_ADDRESS or not ETH_ADMIN_PRIVATE_KEY:
+        return ""
+    w3 = get_web3()
+    if not WEB3_AVAILABLE or not w3 or not w3.is_connected():
+        return ""
+    # Probe before signing. Sending a transaction to a contract that cannot
+    # accept it burns gas on a guaranteed revert, and does so on every backup.
+    probe = registry_contract_usable()
+    if not probe["usable"]:
+        logging.warning("Skipping on-chain anchor: %s", probe["reason"])
+        return ""
+    try:
+        abi = ('[{"inputs":[{"internalType":"string","name":"_cid","type":"string"}],'
+               '"name":"updateCID","outputs":[],"stateMutability":"nonpayable","type":"function"}]')
+        contract = w3.eth.contract(
+            address=w3.to_checksum_address(REGISTRY_CONTRACT_ADDRESS), abi=json.loads(abi))
         account = w3.eth.account.from_key(ETH_ADMIN_PRIVATE_KEY)
-        
         estimated_gas = contract.functions.updateCID(cid).estimate_gas({"from": account.address})
         tx = contract.functions.updateCID(cid).build_transaction({
             "from": account.address,
@@ -410,13 +534,53 @@ def backup_state_to_web3() -> bool:
             "gasPrice": w3.eth.gas_price,
         })
         signed_tx = w3.eth.account.sign_transaction(tx, private_key=ETH_ADMIN_PRIVATE_KEY)
-        w3.eth.send_raw_transaction(signed_tx.raw_transaction)
-        return True
+        tx_hash = w3.eth.send_raw_transaction(signed_tx.raw_transaction)
+        return tx_hash.hex()
     except Exception as e:
-        logging.error(f"Failed to backup state to Web3: {e}")
+        logging.error("Could not anchor backup CID on-chain: %s", e)
+        return ""
+
+
+def run_backup(force: bool = False) -> dict:
+    """Pin, then anchor. Safe to call from anywhere; throttled internally."""
+    global _last_backup_at
+    if not ipfs_backup_available():
+        return {"backed_up": False, "reason": "IPFS backup is not configured."}
+
+    with _backup_lock:
+        elapsed = time.time() - _last_backup_at
+        if not force and elapsed < _BACKUP_MIN_INTERVAL:
+            return {"backed_up": False, "throttled": True,
+                    "reason": f"Last backup was {int(elapsed)}s ago."}
+        _last_backup_at = time.time()
+
+    cid = pin_state_to_ipfs()
+    if not cid:
+        return {"backed_up": False, "reason": "The state could not be pinned to IPFS."}
+
+    tx_hash = anchor_cid_on_chain(cid)
+    try:
+        from database import record_backup_cid
+        record_backup_cid(cid, tx_hash)
+    except Exception as e:
+        logging.warning("Backup succeeded but the CID could not be recorded locally: %s", e)
+
+    logging.info("State backed up to IPFS: %s%s", cid,
+                 f" (anchored {tx_hash})" if tx_hash else " (not anchored on-chain)")
+    return {"backed_up": True, "cid": cid, "anchored": bool(tx_hash), "tx_hash": tx_hash}
+
+
+def backup_state_to_web3() -> bool:
+    """Fire-and-forget backup, off the caller's thread.
+
+    Called from the assessment path, which must not wait on a zip, an upload
+    and possibly a chain write before returning a result to the user.
+    """
+    if not ipfs_backup_available():
         return False
-    finally:
-        shutil.rmtree(temp_dir, ignore_errors=True)
+    threading.Thread(target=run_backup, name="state-backup", daemon=True).start()
+    return True
+
 
 def validate_block_por(
     block_index: int,
