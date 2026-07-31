@@ -29,7 +29,7 @@ import fitz
 import numpy as np
 from openai import OpenAI
 from functools import lru_cache
-import scilem_learning
+import sim_engine as scilem_learning
 import authorship_challenge
 
 # ---------------------------------------------------------------------------
@@ -146,15 +146,15 @@ def load_local_language_model():
 def generate_assistant_reply(raw_text):
     try:
         scilem_nlp = load_local_language_model()
-        prompt = f"<|system|>\nYou are Scilem, the AI assistant for the Pi-Index Framework.\n<|user|>\n{raw_text}\n<|assistant|>"
+        prompt = f"<|system|>\nYou are SciLM (siM), the AI assistant for the Pi-Index Framework.\n<|user|>\n{raw_text}\n<|assistant|>"
         response = scilem_nlp(prompt, max_new_tokens=150, truncation=True)
         generated_text = response[0]['generated_text'].split("<|assistant|>")[-1].strip()
-        return f"**Scilem:** {generated_text}"
+        return f"**SciLM (siM):** {generated_text}"
     except Exception as e:
-        return f"Scilem Local Neural Engine initialization failed: {e}"
+        return f"SciLM (siM) Local Neural Engine initialization failed: {e}"
 
 def measure_structural_signals(paper_text: str) -> dict:
-    """The four deterministic measurements Scilem is built on.
+    """The four deterministic measurements SciLM (siM) is built on.
 
     Kept separate from the scoring step because these are the auditable part:
     identical text always produces identical signals, and nothing learned is
@@ -183,7 +183,7 @@ def compute_structural_quality(paper_text: str) -> float:
     except Exception as e:
         # A learning failure must never take down scoring. Fall back to the
         # authored weights, which is exactly what the model started from.
-        logging.warning("Scilem learned weighting unavailable, using defaults: %s", e)
+        logging.warning("SciLM (siM) learned weighting unavailable, using defaults: %s", e)
         return round(min(1.0, max(0.0,
             (signals["mdar"] * 0.35) + (signals["density"] * 0.30)
             + (signals["repro"] * 0.25) + (signals["rrid"] * 0.10))), 6)
@@ -192,7 +192,7 @@ def assess_with_structural_analyzer(paper_text, canary=""):
     scilem_numeric_score = compute_structural_quality(paper_text) * 100.0
 
     lines = [l.strip() for l in paper_text.split("\n") if l.strip()]
-    cand_title = lines[0] if lines else "Scilem Neural Extraction"
+    cand_title = lines[0] if lines else "SciLM (siM) Neural Extraction"
     cand_author = "Independent Research Scholar"
     for line in lines[1:10]:
         if any(kw in line.lower() for kw in ["by", "author", "university", "department", "@"]):
@@ -205,7 +205,7 @@ def assess_with_structural_analyzer(paper_text, canary=""):
     detected_markers = [k.replace("_", " ") for k, v in repro_flags.items() if v]
 
     opinion = (
-        f"Scilem Structural Analysis: composite structural quality = "
+        f"SciLM (siM) Structural Analysis: composite structural quality = "
         f"{scilem_numeric_score:.1f}/100, computed deterministically from the checks below. "
         f"Deterministic MDAR/RRID adherence measured at {mdar_signal * 100:.1f}% ({rrid_signal} valid RRID token(s)). "
         f"Empirical density signal (statistics, sample sizes, quantitative results) measured at {density_signal * 100:.1f}%. "
@@ -229,7 +229,7 @@ def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
     """Learn from this assessment: nudge the signal weighting toward the panel.
 
     Called once per assessed manuscript. The panel's verdict is the target and
-    Scilem's own composite is the prediction; the gap between them is the
+    SciLM (siM)'s own composite is the prediction; the gap between them is the
     learning signal. Gated on genuine corroboration inside
     scilem_learning.observe — an uncorroborated verdict teaches imitation of
     one model rather than assessment of research, so it is refused there.
@@ -245,13 +245,13 @@ def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
             independent_sources=independent_sources, eval_hash=eval_hash,
         )
     except Exception as e:
-        logging.warning("Scilem learning step failed: %s", e)
-        return "Scilem could not update its calibration from this assessment."
+        logging.warning("SciLM (siM) learning step failed: %s", e)
+        return "SciLM (siM) could not update its calibration from this assessment."
 
     if not report.get("learned"):
-        return f"Scilem did not learn from this assessment: {report.get('reason', 'update rejected.')}"
+        return f"SciLM (siM) did not learn from this assessment: {report.get('reason', 'update rejected.')}"
     return (
-        f"Scilem calibration updated from panel consensus: predicted "
+        f"SciLM (siM) calibration updated from panel consensus: predicted "
         f"{report['predicted'] * 100:.1f}, panel {report['target'] * 100:.1f} "
         f"(error {abs(report['error']) * 100:.1f} points). "
         f"{report['observations']} observation(s) learned to date."
@@ -271,8 +271,8 @@ def clear_structural_analyzer_state():
     try:
         scilem_learning.reset()
     except Exception as e:
-        return f"Could not reset Scilem's learned state: {e}"
-    return ("Scilem reset to its authored default weighting; all learned calibration and "
+        return f"Could not reset SciLM (siM)'s learned state: {e}"
+    return ("SciLM (siM) reset to its authored default weighting; all learned calibration and "
             "observation history has been discarded." + removed_note)
 
 # The two torch-dependent classes are defined inside factories so that
@@ -703,7 +703,7 @@ def merge_assessments_into_report(consensus_results):
         if not k.startswith("_") and isinstance(v, dict) and not v.get("api_failed", False)
     ]
     if not successful_llms:
-        return "Synthesized Evidence Report (Unified Consensus)\n\nExternal APIs offline. Local Scilem neural analysis active."
+        return "Synthesized Evidence Report (Unified Consensus)\n\nExternal APIs offline. Local SciLM (siM) neural analysis active."
     
     report_md = "Synthesized Evidence Report (Unified Consensus)\n\n"
     for provider in successful_llms:
@@ -720,7 +720,7 @@ MODEL_REGISTRY = {
     "qwen": {"label": "Qwen 2.5 72B", "role": "Panel Juror", "kind": "external"},
     "gemini": {"label": "Gemini Flash", "role": "Panel Juror", "kind": "external"},
     "deepseek": {"label": "DeepSeek (independent lineage)", "role": "Panel Juror", "kind": "external"},
-    "scilem": {"label": "Scilem Local Neural Engine", "role": "Deterministic Structural Analyst", "kind": "local"},
+    "scilem": {"label": "SciLM (siM) Local Neural Engine", "role": "Deterministic Structural Analyst", "kind": "local"},
 }
 
 def measure_title_agreement(consensus_results) -> float:
@@ -779,7 +779,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
     if n_independent >= 3:
         tier, confidence = "Strong", 0.90 + min(0.08, 0.02 * (n_external - 3))
         rationale = (
-            f"{n_external} independent external LLMs plus the local Scilem engine each assessed this "
+            f"{n_external} independent external LLMs plus the local SciLM (siM) engine each assessed this "
             f"manuscript separately, and the pi-Dyne engine adjudicated their combined evidence. "
             f"The jurors come from different providers and model families, so their errors are "
             f"partly independent and agreement carries real information. Note the limit of this: "
@@ -805,7 +805,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
     else:
         tier, confidence = "Single-source", 0.40
         rationale = (
-            "No external LLM was reachable. The verdict rests on the local Scilem neural engine and "
+            "No external LLM was reachable. The verdict rests on the local SciLM (siM) neural engine and "
             "deterministic MDAR/RRID/reproducibility heuristics alone. These are reproducible and "
             "unbiased, but they cannot perform qualitative reasoning about novelty or argumentation. "
             "Corroboration is SINGLE-SOURCE — treat the interpretive criteria as indicative only."
@@ -944,7 +944,7 @@ Respond strictly in JSON with keys:
     # demotes the judge to the next, rather than collapsing the whole
     # adjudication step to the local deterministic fallback.
     judge_routes = build_routes("judge")
-    model_name = "Scilem Local Neural Engine"
+    model_name = "SciLM (siM) Local Neural Engine"
     judge_platform = "Local (API Fallback)"
     judge_attempts = []
     data = None
@@ -999,7 +999,7 @@ Respond strictly in JSON with keys:
         "judge_routes_available": len(judge_routes),
         "final_judge_label": (
             f"{model_name} via {judge_platform}" if judge_succeeded
-            else "Scilem Local Neural Engine (deterministic fallback)"
+            else "SciLM (siM) Local Neural Engine (deterministic fallback)"
         ),
         "timestamp": datetime.now().isoformat(),
         **quality,
@@ -1045,7 +1045,7 @@ Respond strictly in JSON with keys:
 
 def generate_scilem_fallback_report(text):
     scilem_rep = generate_assistant_reply(text)
-    return f"Synthesized Evidence Report (Unified Consensus)\n\n### Scilem Neural Assessment\n{scilem_rep}"
+    return f"Synthesized Evidence Report (Unified Consensus)\n\n### SciLM (siM) Neural Assessment\n{scilem_rep}"
 
 def measure_mdar_adherence(text: str) -> Tuple[float, int]:
     text_lower = text.lower()
@@ -1839,7 +1839,7 @@ def process_single_pdf(
         if not external_active:
             warnings_list.append(
                 "NOTICE: No external LLM juror was reachable. This assessment was completed using the "
-                "local Scilem neural model and deterministic heuristics only; judgement quality is LIMITED."
+                "local SciLM (siM) neural model and deterministic heuristics only; judgement quality is LIMITED."
             )
         elif judge_meta.get("external_juror_count", 0) == 1:
             warnings_list.append(

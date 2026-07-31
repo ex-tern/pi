@@ -7,7 +7,7 @@ What this destroys
 * The entire piQ ledger — all balances anyone ever earned (``piq_ledger``)
 * Free-trial counters, arcade winnings and IP tracking (``auto_ip_tracking``)
 * The global evaluation counter, attestations, and the ingestion queue
-* The trained Scilem model weights, so the judge starts from scratch
+* The trained SciLM (siM) model weights, so the judge starts from scratch
 
 There is no undo. This is intentional — it exists to wipe a testnet deployment
 back to zero before a real launch — but because it lives permanently in the
@@ -63,7 +63,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Report what would be deleted and exit.")
     parser.add_argument("--keep-model", action="store_true",
-                        help="Preserve trained Scilem/pi-Dyne weights.")
+                        help="Preserve trained SciLM (siM)/pi-Dyne weights.")
     args = parser.parse_args()
 
     conn = get_db_connection()

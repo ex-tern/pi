@@ -92,13 +92,14 @@ from emission import (
     compute_curation_reward, publication_fee,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
-import forecast as forecast_engine
+import pid_engine as forecast_engine
 import assistant as scilem
 import abuse_guard
 import bugreport
+import rib_engine
 import auth
 import authorship_challenge
-import scilem_learning
+import sim_engine as scilem_learning
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
@@ -805,7 +806,7 @@ def require_owner(request: Request, wallet: str = "") -> dict:
     Every owner endpoint previously compared OWNER_ID to an unauthenticated
     query parameter — and OWNER_ID is published at /api/chain/status. Reading
     one public field was therefore sufficient to obtain provider diagnostics,
-    other users' bug reports, backup control, corpus rescoring and Scilem
+    other users' bug reports, backup control, corpus rescoring and SciLM (siM)
     reset. This requires a session token minted only after a valid EIP-191
     signature from that wallet.
     """
@@ -1052,88 +1053,40 @@ class ResearcherProfile(BaseModel):
 
 @app.get("/api/buddy")
 def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="")):
-    """Tailored guidance: the researcher's stated fields against the live corpus.
+    """riB — the researcher's stated fields against the live corpus.
 
-    This is the part the frontend cannot compute on its own. It compares the
-    fields the researcher says they work in against what has actually been
-    assessed here — which of their fields are crowded, which are empty, and how
-    their own assessed papers score relative to the corpus mean.
-
-    Everything returned is grounded in a real count or a real mean. Where there
-    is no data, it says so rather than generating plausible-sounding advice,
-    because a researcher cannot distinguish a grounded suggestion from an
-    invented one and should not have to.
+    The analysis lives in rib_engine, which takes data and returns a report.
+    This handler only fetches and hands over, so the engine can be tested
+    without a database and its output is a pure function of its input.
     """
     key = _profile_key(wallet, orcid)
     if not key:
         return {"available": False, "reason": "Sign in to get tailored guidance."}
 
     profile = get_researcher_profile(key)
-    fields = [f.strip() for f in str(profile.get("field", "")).split(",") if f.strip()]
-
     try:
         corpus = get_field_corpus_stats(limit=60)
     except Exception as e:
-        logging.warning("Buddy corpus read failed: %s", e)
+        logging.warning("riB corpus read failed: %s", e)
         corpus = []
-    by_field = {row["field"].lower(): row for row in corpus}
-    total_papers = sum(r["papers"] for r in corpus)
-    corpus_mean = (
-        round(sum(r["avg_score"] * r["papers"] for r in corpus) / total_papers, 1)
-        if total_papers else None
-    )
 
-    field_reports = []
-    for name in fields:
-        row = by_field.get(name.lower())
-        if row:
-            delta = (round(row["avg_score"] - corpus_mean, 1)
-                     if corpus_mean is not None else None)
-            field_reports.append({
-                "field": name, "in_corpus": True,
-                "papers": row["papers"], "avg_score": row["avg_score"],
-                "vs_corpus": delta,
-            })
-        else:
-            field_reports.append({"field": name, "in_corpus": False,
-                                  "papers": 0, "avg_score": None, "vs_corpus": None})
-
-    # Fields with assessed work that the researcher did not list. These are the
-    # most useful suggestions available without external data: they are areas
-    # this deployment demonstrably has material in.
-    listed = {f.lower() for f in fields}
-    adjacent = [
-        {"field": r["field"], "papers": r["papers"], "avg_score": r["avg_score"]}
-        for r in corpus if r["field"].lower() not in listed
-    ][:5]
-
-    # Scilem's reading picks. Scoped to the researcher's fields when they have
-    # listed any and those fields contain assessed work; otherwise drawn from
-    # the whole corpus, since a recommendation from an adjacent field is more
-    # useful than an empty list.
+    fields = rib_engine.parse_fields(profile)
     try:
         candidates = get_papers_for_recommendation(fields=fields)
+        scope = "your fields" if fields else "corpus"
         if not candidates and fields:
             candidates = get_papers_for_recommendation(fields=None)
             scope = "corpus"
-        else:
-            scope = "your fields" if fields else "corpus"
         picks = diagnostics.recommend_papers(candidates)
         picks["scope"] = scope
     except Exception as e:
-        logging.warning("Buddy recommendations failed: %s", e)
+        logging.warning("riB recommendations failed: %s", e)
         picks = {"available": False, "reason": "Recommendations unavailable.",
                  "recommended": [], "caution": []}
 
-    return {
-        "available": True,
-        "profile": profile,
-        "fields": field_reports,
-        "adjacent": adjacent,
-        "picks": picks,
-        "corpus": {"total_papers": total_papers, "mean_score": corpus_mean,
-                   "fields_assessed": len(corpus)},
-    }
+    report = rib_engine.build_report(profile, corpus, picks)
+    report["profile"] = profile
+    return report
 
 
 @app.get("/api/profile")
@@ -2473,7 +2426,7 @@ def scilem_status():
 @app.get("/api/scilem/learning")
 def scilem_learning_status(request: Request, wallet: str = Query(default=""),
                            observations: int = Query(default=0, ge=0, le=200)):
-    """What Scilem has learned, and from what.
+    """What SciLM (siM) has learned, and from what.
 
     Public by design. This model contributes to a research-assessment score,
     so how it is weighted, how far it has drifted from its authored defaults
@@ -2551,9 +2504,9 @@ def scilem_feedback(payload: ScilemFeedback, request: Request):
         signals, max(0.0, min(1.0, payload.corrected_score / 100.0)),
         source="feedback", independent_sources=99, eval_hash=payload.eval_hash,
     )
-    add_log(f"Scilem correction on {payload.eval_hash[:12]}… by {key[:16]}…: {report.get('learned')}")
+    add_log(f"SciLM (siM) correction on {payload.eval_hash[:12]}… by {key[:16]}…: {report.get('learned')}")
     return {"accepted": bool(report.get("learned")), "report": report,
-            "message": ("Correction applied. Scilem's weighting has been adjusted."
+            "message": ("Correction applied. SciLM (siM)'s weighting has been adjusted."
                         if report.get("learned") else
                         f"Correction not applied: {report.get('reason', 'rejected.')}")}
 
