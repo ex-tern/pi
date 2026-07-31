@@ -31,6 +31,13 @@
   <aside class="sidebar" id="appSidebar">
     <h2 class="sidebar-title">System Access &amp; Sync
       <span class="pill pill-muted" id="authBadge">Not signed in</span></h2>
+    <!-- Who is signed in, and how to stop being signed in. A session that
+         persists for hours with no visible holder and no way to end it is a
+         problem on any shared machine. -->
+    <div class="session-row hidden" id="sessionRow">
+      <span class="session-who" id="sessionWho"></span>
+      <button class="btn-link" id="signOutBtn" type="button">Sign out</button>
+    </div>
 
     <div id="chainBadge" class="chain-badge chain-unknown">
       <span class="chain-dot"></span><span id="chainBadgeText">Checking network…</span>

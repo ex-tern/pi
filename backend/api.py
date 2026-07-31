@@ -16,6 +16,7 @@ import uuid
 import decimal
 import time
 import hashlib
+import hmac
 import logging
 import logging.handlers
 import colorsys
@@ -270,6 +271,31 @@ except Exception as _e:
     PERSISTENCE_REPORT = {"verdict": "unknown", "warning": None}
 
 
+# Which build is actually running.
+#
+# Diagnosing this deployment repeatedly came down to one unanswerable question:
+# is the code I am looking at the code that is running? Inferring it from
+# whether some endpoint happens to 404 is slow and easy to get wrong. Railway
+# injects the commit SHA, so the answer can simply be reported.
+BUILD_SHA = (os.getenv("RAILWAY_GIT_COMMIT_SHA")
+             or os.getenv("SOURCE_COMMIT")
+             or os.getenv("GIT_COMMIT") or "")
+BUILD_INFO = {
+    "commit": BUILD_SHA[:12] or "unknown",
+    "branch": os.getenv("RAILWAY_GIT_BRANCH", "") or None,
+    "deployed_at": datetime.now().isoformat(timespec="seconds"),
+    # Bumped by hand when a change must be verifiable as live. Cheap, and it
+    # works even where the platform injects no git metadata at all.
+    "app_version": "2026.07.31",
+}
+
+
+@app.get("/api/build")
+def build_info():
+    """Public, and deliberately so: it identifies a build, not its contents."""
+    return BUILD_INFO
+
+
 @app.get("/api/health")
 def health_check():
     db_ok = True
@@ -281,6 +307,7 @@ def health_check():
         db_ok = False
     return {
         "status": "ok" if db_ok else "degraded",
+        "build": BUILD_INFO,
         "environment": ENVIRONMENT,
         "database": "ok" if db_ok else "unreachable",
         "storage": {
@@ -296,8 +323,31 @@ def health_check():
 # 1. LOGS
 # ---------------------------------------------------------------------------
 @app.get("/api/logs")
-def get_logs():
-    return {"logs": list(APP_LOGS)}
+def get_logs(request: Request, wallet: str = Query(default="")):
+    """Operational log. Owner only.
+
+    This was public. It carries wallet addresses, ORCIDs, authentication
+    events, assessment failures and provider error categories — an operator's
+    view of who used the deployment and what broke, served to anyone who
+    guessed the path. It was genuinely useful for diagnosing this deployment
+    remotely, which is precisely the problem: what helps a maintainer debug
+    also helps anyone else map the system and its users.
+
+    A break-glass token exists deliberately. Owner authorisation needs a signed
+    session, and the situations where these logs matter most are exactly the
+    ones where signing in may not work — a failed deploy, a missing
+    SESSION_SECRET, a broken frontend. Locking the only diagnostic behind the
+    thing that might be broken is how an operator ends up with no way in.
+    """
+    break_glass = os.getenv("LOG_ACCESS_TOKEN", "").strip()
+    if break_glass:
+        supplied = auth.token_from_request(request)
+        # compare_digest so a wrong guess cannot be refined from timing.
+        if supplied and hmac.compare_digest(supplied, break_glass):
+            return {"logs": list(APP_LOGS), "access": "break-glass"}
+
+    require_owner(request, wallet)
+    return {"logs": list(APP_LOGS), "access": "owner"}
 
 
 # ---------------------------------------------------------------------------
