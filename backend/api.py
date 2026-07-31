@@ -1017,20 +1017,42 @@ def arcade_finish(payload: ArcadeRun, request: Request):
                             f"Next reward available in {hours:.1f}h.")}
 
     grant = grant_bonus_evals(ip, arcade.REWARD_PER_WIN, arcade.BONUS_CAP)
-    if grant["granted"] == 0:
+    
+    # --- New piQ Reward Logic ---
+    piq_reward = 0.00
+    if result["won"] and (payload.wallet or payload.orcid):
+        piq_reward = 1.0  # Award exactly 1 piQ 
+        fee_wallet, fee_orcid = normalize_identity(payload.wallet, payload.orcid)
+        account_val = fee_orcid if fee_orcid else fee_wallet
+        account_kind = "orcid" if fee_orcid else "wallet"
+        
+        conn = get_db_connection()
+        try:
+            conn.execute(
+                "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) VALUES (?, ?, ?, ?, ?)",
+                (account_val, account_kind, piq_reward, "Science Map Arcade Victory", "")
+            )
+            conn.commit()
+            add_log(f"Arcade win from {ip} granted {piq_reward} piQ.")
+        except Exception as e:
+            logging.warning(f"Failed to grant piQ for arcade win: {e}")
+        finally:
+            conn.close()
+
+    if grant["granted"] == 0 and piq_reward == 0.0:
         return {**result, "granted": 0, "bonus_total": grant["bonus"],
                 "message": (f"You won, but this connection has already earned the maximum "
                             f"{arcade.BONUS_CAP} bonus assessments. Connect a wallet or link "
                             f"ORCID to keep going.")}
 
-    logging.info("Arcade win from %s granted %s free assessments (difficulty now %s)",
-                 ip, grant["granted"], progress["difficulty_level"])
+    logging.info("Arcade win from %s granted %s free assessments and %s piQ (difficulty now %s)",
+                 ip, grant["granted"], piq_reward, progress["difficulty_level"])
+                 
     return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
-            "message": (f"Victory. {grant['granted']} free assessment"
-                        f"{'s' if grant['granted'] != 1 else ''} added to this connection. "
+            "message": (f"Victory! {grant['granted']} free assessment"
+                        f"{'s' if grant['granted'] != 1 else ''} and {piq_reward} piQ added to your balance. "
                         f"Difficulty is now level {progress['difficulty_level']} — assess a "
                         f"manuscript to reset it.")}
-
 
 @app.get("/api/stats/count")
 def stats_count():
