@@ -237,6 +237,20 @@ PINATA_SECRET_API_KEY = get_secret("PINATA_SECRET_API_KEY")
 REGISTRY_CONTRACT_ADDRESS = get_secret("REGISTRY_CONTRACT_ADDRESS")
 OR_API_KEY = get_secret("OR_API_KEY")
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
+
+# Additional direct providers. Each is OpenAI-compatible, so it slots into the
+# existing route machinery unchanged, and each has a genuinely free tier.
+#
+# These exist because the juror panel was structurally fragile: every juror
+# except "llama" reached its model only through OpenRouter, so a single
+# OpenRouter policy rejection silently collapsed four of five jurors at once.
+# Cross-model corroboration is the panel's entire epistemic claim, and it
+# cannot rest on one intermediary.
+CEREBRAS_API_KEY = get_secret("CEREBRAS_API_KEY")
+MISTRAL_API_KEY = get_secret("MISTRAL_API_KEY")
+DEEPSEEK_API_KEY = get_secret("DEEPSEEK_API_KEY")
+TOGETHER_API_KEY = get_secret("TOGETHER_API_KEY")
+GITHUB_MODELS_TOKEN = get_secret("GITHUB_MODELS_TOKEN")
 ORCID_CLIENT_ID = get_secret("ORCID_CLIENT_ID")
 ORCID_CLIENT_SECRET = get_secret("ORCID_CLIENT_SECRET")
 # Must point at the backend's own callback route, e.g. http://localhost:8000/api/auth/orcid/callback

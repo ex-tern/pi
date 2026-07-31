@@ -61,7 +61,7 @@
     edges: [],
     grabbed: null,
     filters: { search: "", minPapers: 0, liveOnly: false, author: "" },
-    look: { labels: true, mesh: true, scale: 1 },
+    look: { labels: true, mesh: true, scale: 1, gravity: true },
   };
 
   // Filters DIM bubbles rather than removing them. Removal would change what
@@ -127,7 +127,22 @@
     const body = document.querySelector("#arcadeLegendTable tbody");
     if (!body) return;
     const visible = new Set(state.bubbles.filter(b => !b.dimmed).map(b => b.domain));
-    const rows = state.legend.filter(r => visible.has(r.field));
+    let rows = state.legend.filter(r => visible.has(r.field));
+
+    // Only list fields that actually hold papers. Listing the whole base
+    // taxonomy at zero fills the table with rows that carry no information
+    // and read as real data — the map already shows unexplored fields, faint,
+    // where their emptiness is the point.
+    const withPapers = rows.filter(r => r.papers > 0);
+    if (withPapers.length) {
+      rows = withPapers;
+    } else {
+      body.innerHTML = `<tr><td colspan="4" class="arcade-detail-empty">
+        No assessed papers yet — nothing to tabulate. Assess a manuscript and its field
+        appears here with its paper count and mean piX.</td></tr>`;
+      return;
+    }
+
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="4" class="arcade-detail-empty">No fields match.</td></tr>`;
       return;
@@ -475,13 +490,79 @@
   // ---------------------------------------------------------------------
   // Simulation
   // ---------------------------------------------------------------------
+  /** Domain gravity: same-field bubbles attract, all bubbles repel on contact.
+   *
+   *  Random drift alone scatters related fields to opposite corners, which is
+   *  the opposite of what a map of science should show. Attraction along the
+   *  precomputed domain edges pulls each field into a visible cluster, while
+   *  short-range repulsion stops those clusters collapsing into one unreadable
+   *  pile. Forces are applied to velocity and damped, so the layout settles
+   *  instead of oscillating. */
+  function applyGravity(dt) {
+    if (!state.look.gravity) return;
+    const ATTRACT = 0.9;
+    const REST_SCALE = 2.6;      // preferred separation, in radii
+    const REPEL = 26;
+    const DAMP = 0.86;
+
+    for (const e of state.edges) {
+      const a = e.a, b = e.b;
+      if (a.eaten || b.eaten) continue;
+      if (state.grabbed && (state.grabbed.bubble === a || state.grabbed.bubble === b)) continue;
+      const dx = b.x - a.x, dy = b.y - a.y;
+      const d = Math.hypot(dx, dy) || 1;
+      const rest = (a.mass + b.mass) * REST_SCALE;
+      // Hooke-style spring toward the rest length, normalised so distant
+      // pairs don't get an enormous impulse on the first frame.
+      const force = ((d - rest) / d) * ATTRACT * dt;
+      a.vx += dx * force; a.vy += dy * force;
+      b.vx -= dx * force; b.vy -= dy * force;
+    }
+
+    // Overlap resolution. O(n^2) over ~90 bubbles is ~4k checks per frame,
+    // which is negligible next to the render, and it is what keeps labels
+    // legible.
+    const list = state.bubbles;
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (a.eaten) continue;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (b.eaten) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const min = (a.mass + b.mass) * 1.15;
+        if (d >= min) continue;
+        const push = ((min - d) / d) * REPEL * dt;
+        a.vx -= dx * push; a.vy -= dy * push;
+        b.vx += dx * push; b.vy += dy * push;
+      }
+    }
+
+    for (const b of list) {
+      if (b.eaten) continue;
+      b.vx *= DAMP; b.vy *= DAMP;
+      // Terminal velocity: without it a long-settling layout can build up
+      // enough speed to shoot bubbles across the world.
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > 6) { b.vx = (b.vx / sp) * 6; b.vy = (b.vy / sp) * 6; }
+    }
+  }
+
   function drift(dt) {
+    applyGravity(dt);
     for (const b of state.bubbles) {
       if (b.eaten) continue;
+      if (state.grabbed && state.grabbed.bubble === b) continue;
       b.x += b.vx * dt * 60;
       b.y += b.vy * dt * 60;
-      if (b.x < b.mass || b.x > WORLD_W - b.mass) b.vx *= -1;
-      if (b.y < b.mass || b.y > WORLD_H - b.mass) b.vy *= -1;
+      // Clamp and bounce at the world edge. Clamping as well as reversing
+      // matters: a bubble pushed past the boundary by gravity would otherwise
+      // sit outside and flip its velocity every frame, vibrating in place.
+      if (b.x < b.mass) { b.x = b.mass; b.vx = Math.abs(b.vx); }
+      else if (b.x > WORLD_W - b.mass) { b.x = WORLD_W - b.mass; b.vx = -Math.abs(b.vx); }
+      if (b.y < b.mass) { b.y = b.mass; b.vy = Math.abs(b.vy); }
+      else if (b.y > WORLD_H - b.mass) { b.y = WORLD_H - b.mass; b.vy = -Math.abs(b.vy); }
       b.pulse += dt * 1.6;
     }
   }
@@ -975,6 +1056,8 @@
     liveOnly.addEventListener("change", () => { state.filters.liveOnly = liveOnly.checked; applyFilters(); });
     labels.addEventListener("change", () => { state.look.labels = labels.checked; });
     mesh.addEventListener("change", () => { state.look.mesh = mesh.checked; });
+    const gravity = document.getElementById("arcadeGravity");
+    gravity.addEventListener("change", () => { state.look.gravity = gravity.checked; });
     scale.addEventListener("input", () => {
       state.look.scale = parseFloat(scale.value) || 1;
       scaleOut.textContent = state.look.scale.toFixed(1) + "×";
