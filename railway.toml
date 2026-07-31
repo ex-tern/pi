@@ -18,8 +18,10 @@
 builder = "NIXPACKS"
 
 [deploy]
-# gunicorn.conf.py lives in backend/ and reads $PORT, which Railway injects.
-startCommand = "cd backend && gunicorn api:app -c gunicorn.conf.py"
+# No shell here. Railway executes this directly, so shell builtins are not
+# available — `cd backend && ...` fails with "The executable `cd` could not be
+# found". The config file chdirs into backend/ itself instead.
+startCommand = "gunicorn api:app -c backend/gunicorn.conf.py"
 healthcheckPath = "/api/health"
 healthcheckTimeout = 120
 restartPolicyType = "ON_FAILURE"
