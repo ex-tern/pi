@@ -3235,7 +3235,18 @@ async function loadAnalyticsSummary() {
     const res = await fetch(`${API}/api/analytics/summary`);
     const data = await res.json();
     document.getElementById("statTotalPapers").textContent = data.total_papers;
-    document.getElementById("statTotalPiq").textContent = data.total_piq.toFixed(2);
+    // Show what the corpus has earned, and how much of it is still held.
+    // "0.00 minted" on a corpus that has earned piQ reads as a broken system;
+    // the honest figure is the total, annotated with what is unclaimed.
+    const piqEl = document.getElementById("statTotalPiq");
+    const held = Number(data.total_piq_escrowed || 0);
+    piqEl.textContent = Number(data.total_piq_earned ?? data.total_piq).toFixed(2);
+    const label = piqEl.parentElement && piqEl.parentElement.querySelector(".stat-label");
+    if (label) {
+      label.innerHTML = held > 0
+        ? `Total piQ Earned<br><span class="stat-sub">${data.total_piq.toFixed(2)} settled · ${held.toFixed(2)} held</span>`
+        : "Total piQ Minted";
+    }
     document.getElementById("statAvgScore").textContent = data.total_papers ? data.avg_score.toFixed(1) : "–";
     document.getElementById("statUniqueAuthors").textContent = data.unique_authors;
   } catch (e) { /* ignore */ }
