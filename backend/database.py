@@ -526,7 +526,7 @@ def get_field_corpus_stats(limit: int = 20) -> list:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT fields, final_score FROM papers_assessment"
+            "SELECT fields, final_score, author_name FROM papers_assessment"
         ).fetchall()
     except sqlite3.Error:
         return []
@@ -536,7 +536,7 @@ def get_field_corpus_stats(limit: int = 20) -> list:
     import json as _json
     exclude = {"unclassified", "unspecified", "none", ""}
     agg = {}
-    for fields_json, score in rows:
+    for fields_json, score, author_name in rows:
         try:
             names = [f.strip() for f in _json.loads(fields_json or "[]") if f and f.strip()]
         except Exception:
@@ -548,14 +548,23 @@ def get_field_corpus_stats(limit: int = 20) -> list:
         for name in names:
             if name.lower() in exclude:
                 continue
-            entry = agg.setdefault(name, {"papers": 0, "score_sum": 0.0})
+            entry = agg.setdefault(name, {"papers": 0, "score_sum": 0.0, "authors": set()})
             entry["papers"] += 1
             entry["score_sum"] += score_val
+            # Authors per field power the map's author filter. Stored as a set
+            # so one prolific author doesn't appear once per paper, and capped
+            # on the way out so a large corpus can't bloat the response.
+            if author_name:
+                for part in str(author_name).replace(" and ", ",").split(","):
+                    cleaned = part.strip()
+                    if len(cleaned) > 2:
+                        entry["authors"].add(cleaned)
 
     ranked = sorted(agg.items(), key=lambda kv: kv[1]["papers"], reverse=True)[:limit]
     return [
         {"field": name, "papers": v["papers"],
-         "avg_score": round(v["score_sum"] / v["papers"], 1) if v["papers"] else 0.0}
+         "avg_score": round(v["score_sum"] / v["papers"], 1) if v["papers"] else 0.0,
+         "authors": sorted(v["authors"])[:40]}
         for name, v in ranked
     ]
 

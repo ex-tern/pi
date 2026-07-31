@@ -57,7 +57,10 @@
     particles: [], stars: [],
     submitting: false, over: false,
     legend: [],
-    filters: { search: "", minPapers: 0, liveOnly: false },
+    authors: [],
+    edges: [],
+    grabbed: null,
+    filters: { search: "", minPapers: 0, liveOnly: false, author: "" },
     look: { labels: true, mesh: true, scale: 1 },
   };
 
@@ -69,21 +72,55 @@
   function applyFilters() {
     const f = state.filters;
     const needle = f.search.trim().toLowerCase();
+    const author = f.author.trim().toLowerCase();
+
+    // Which fields the chosen author actually publishes in. Built from the
+    // legend rather than the bubbles, because authorship is a property of the
+    // corpus, not of an individual bubble — several bubbles share a domain.
+    let authorFields = null;
+    if (author) {
+      authorFields = new Set(
+        state.legend
+          .filter(r => (r.authors || []).some(a => a.toLowerCase().includes(author)))
+          .map(r => r.field)
+      );
+    }
+
     let shown = 0;
     for (const b of state.bubbles) {
       const matches =
         (!needle || b.domain.toLowerCase().includes(needle)) &&
         b.papers >= f.minPapers &&
-        (!f.liveOnly || b.live);
+        (!f.liveOnly || b.live) &&
+        (!authorFields || authorFields.has(b.domain));
       b.dimmed = !matches;
       if (matches) shown++;
     }
+
     const summary = document.getElementById("arcadeFilterSummary");
     if (summary) {
       const total = state.bubbles.length;
-      summary.textContent = shown === total ? "All fields" : `${shown} of ${total}`;
+      const active = [];
+      if (needle) active.push(`"${f.search.trim()}"`);
+      if (author) active.push(f.author.trim());
+      if (f.minPapers) active.push(`≥${f.minPapers} papers`);
+      if (f.liveOnly) active.push("corpus only");
+      summary.textContent = shown === total && !active.length
+        ? "All fields"
+        : `${shown} of ${total}${active.length ? " · " + active.join(", ") : ""}`;
     }
     renderLegend();
+  }
+
+  function renderAuthorOptions() {
+    const list = document.getElementById("arcadeAuthorList");
+    if (!list) return;
+    list.innerHTML = state.authors
+      .map(a => `<option value="${escapeHtml(a)}"></option>`).join("");
+    const wrap = document.getElementById("arcadeAuthorWrap");
+    // Hiding the control when the corpus has no authors is more honest than
+    // showing a filter that can only ever return nothing.
+    if (wrap) wrap.classList.toggle("hidden", state.authors.length === 0);
   }
 
   function renderLegend() {
@@ -208,6 +245,9 @@
       eaten: false, dimmed: false, pulse: Math.random() * Math.PI * 2,
     }));
     state.legend = data.legend || [];
+    state.authors = data.authors || [];
+    buildEdges();
+    renderAuthorOptions();
     applyFilters();
 
     seedStars();
@@ -531,22 +571,62 @@
     }
   }
 
-  function drawMesh(ctx) {
-    const live = state.bubbles.filter(b => !b.eaten);
-    const limit = effectsQuality === 1 ? 260 : 150;
-    ctx.lineWidth = 1;
-    for (let i = 0; i < live.length; i++) {
-      const a = live[i], sa = worldToScreen(a.x, a.y);
-      if (sa.x < -200 || sa.x > viewW() + 200 || sa.y < -200 || sa.y > viewH() + 200) continue;
-      for (let j = i + 1; j < live.length; j++) {
-        const b = live[j];
-        if (a.domain !== b.domain) continue;
-        const d = Math.hypot(a.x - b.x, a.y - b.y);
-        if (d > limit) continue;
-        const sb = worldToScreen(b.x, b.y);
-        ctx.strokeStyle = rgba(colorFor(a.domain), 0.16 * (1 - d / limit));
-        ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
+  /** Precompute the domain constellations once per field.
+   *
+   *  The previous version linked same-domain bubbles within a fixed 260px
+   *  radius, recomputed every frame. On a 3400x2200 world with ~6 bubbles per
+   *  domain scattered at random, that yielded about five edges in the entire
+   *  map — so the connections were, in practice, invisible. A fixed radius is
+   *  the wrong rule: whether two fields appear related should not depend on
+   *  where the layout happened to drop them.
+   *
+   *  Linking each bubble to its k nearest same-domain neighbours instead
+   *  guarantees every domain reads as a connected constellation at any
+   *  density, and doing it once at load rather than per frame removes an
+   *  O(n^2) pass from the render loop. */
+  function buildEdges() {
+    const byDomain = new Map();
+    for (const b of state.bubbles) {
+      if (!byDomain.has(b.domain)) byDomain.set(b.domain, []);
+      byDomain.get(b.domain).push(b);
+    }
+    const seen = new Set();
+    state.edges = [];
+    const K = 2;
+    for (const group of byDomain.values()) {
+      if (group.length < 2) continue;
+      for (const a of group) {
+        const nearest = group
+          .filter(b => b !== a)
+          .map(b => ({ b, d: Math.hypot(a.x - b.x, a.y - b.y) }))
+          .sort((p, q) => p.d - q.d)
+          .slice(0, K);
+        for (const { b, d } of nearest) {
+          const key = a.id < b.id ? `${a.id}-${b.id}` : `${b.id}-${a.id}`;
+          if (seen.has(key)) continue;
+          seen.add(key);
+          state.edges.push({ a, b, d });
+        }
       }
+    }
+  }
+
+  function drawMesh(ctx) {
+    ctx.lineWidth = 1;
+    const w = viewW(), h = viewH();
+    for (const e of state.edges) {
+      if (e.a.eaten || e.b.eaten) continue;
+      // Filtered-out fields fade their links too, so the constellation
+      // matches the selection rather than contradicting it.
+      const faded = e.a.dimmed || e.b.dimmed;
+      const sa = worldToScreen(e.a.x, e.a.y);
+      const sb = worldToScreen(e.b.x, e.b.y);
+      if ((sa.x < -100 && sb.x < -100) || (sa.x > w + 100 && sb.x > w + 100)) continue;
+      if ((sa.y < -100 && sb.y < -100) || (sa.y > h + 100 && sb.y > h + 100)) continue;
+      ctx.strokeStyle = faded
+        ? "rgba(148,163,184,0.07)"
+        : rgba(colorFor(e.a.domain), 0.3);
+      ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
     }
   }
 
@@ -708,13 +788,29 @@
 
     c.addEventListener("mousedown", e => {
       if (state.mode !== "explore") return;
+      // Grabbing a bubble takes precedence over panning the canvas: a press
+      // that starts on a node is almost always meant to move that node.
+      const p = canvasPos(e.clientX, e.clientY);
+      const hit = bubbleAt(p.x, p.y);
+      if (hit) {
+        state.grabbed = { bubble: hit, moved: false };
+        c.style.cursor = "grabbing";
+        return;
+      }
       state.drag = { sx: e.clientX, sy: e.clientY, cx: state.camera.x, cy: state.camera.y, moved: false };
     });
 
     window.addEventListener("mouseup", e => {
-      if (state.mode === "explore" && state.drag && !state.drag.moved) {
-        const p = canvasPos(e.clientX, e.clientY);
-        if (p.x >= 0 && p.y >= 0 && p.x <= viewW() && p.y <= viewH()) selectBubble(bubbleAt(p.x, p.y));
+      if (state.mode === "explore") {
+        if (state.grabbed) {
+          // A grab that never moved is a click, so it selects instead.
+          if (!state.grabbed.moved) selectBubble(state.grabbed.bubble);
+          state.grabbed = null;
+          c.style.cursor = "grab";
+        } else if (state.drag && !state.drag.moved) {
+          const p = canvasPos(e.clientX, e.clientY);
+          if (p.x >= 0 && p.y >= 0 && p.x <= viewW() && p.y <= viewH()) selectBubble(bubbleAt(p.x, p.y));
+        }
       }
       state.drag = null;
     });
@@ -724,6 +820,18 @@
         const p = canvasPos(e.clientX, e.clientY);
         const w = screenToWorld(p.x, p.y);
         state.pointer = { x: w.x, y: w.y, active: true };
+        return;
+      }
+      if (state.grabbed) {
+        const p = canvasPos(e.clientX, e.clientY);
+        const w = screenToWorld(p.x, p.y);
+        const b = state.grabbed.bubble;
+        b.x = Math.max(b.mass, Math.min(WORLD_W - b.mass, w.x));
+        b.y = Math.max(b.mass, Math.min(WORLD_H - b.mass, w.y));
+        // A dragged bubble stops drifting, otherwise it slides out from under
+        // the cursor and immediately undoes the arrangement being made.
+        b.vx = 0; b.vy = 0;
+        state.grabbed.moved = true;
         return;
       }
       if (state.drag) {
@@ -757,8 +865,12 @@
       if (state.mode === "play") { touchMove(e); return; }
       if (e.touches.length === 2) {
         pinch = { d: touchDist(e), zoom: state.camera.zoom };
+        state.grabbed = null;
       } else if (e.touches.length === 1) {
         const t = e.touches[0];
+        const p = canvasPos(t.clientX, t.clientY);
+        const hit = bubbleAt(p.x, p.y);
+        if (hit) { state.grabbed = { bubble: hit, moved: false }; return; }
         state.drag = { sx: t.clientX, sy: t.clientY, cx: state.camera.x, cy: state.camera.y, moved: false };
       }
     };
@@ -774,6 +886,14 @@
       if (e.touches.length === 2 && pinch) {
         state.camera.zoom = Math.max(0.18, Math.min(2.2, pinch.zoom * (touchDist(e) / pinch.d)));
         clampCamera();
+      } else if (state.grabbed) {
+        const p = canvasPos(e.touches[0].clientX, e.touches[0].clientY);
+        const w = screenToWorld(p.x, p.y);
+        const b = state.grabbed.bubble;
+        b.x = Math.max(b.mass, Math.min(WORLD_W - b.mass, w.x));
+        b.y = Math.max(b.mass, Math.min(WORLD_H - b.mass, w.y));
+        b.vx = 0; b.vy = 0;
+        state.grabbed.moved = true;
       } else if (state.drag) {
         const t = e.touches[0];
         const dx = t.clientX - state.drag.sx, dy = t.clientY - state.drag.sy;
@@ -785,6 +905,12 @@
     };
     const touchEnd = e => {
       if (state.mode === "play") { state.pointer.active = false; return; }
+      if (state.grabbed) {
+        if (!state.grabbed.moved) selectBubble(state.grabbed.bubble);
+        state.grabbed = null;
+        state.drag = null; pinch = null;
+        return;
+      }
       if (state.drag && !state.drag.moved && e.changedTouches.length) {
         const p = canvasPos(e.changedTouches[0].clientX, e.changedTouches[0].clientY);
         selectBubble(bubbleAt(p.x, p.y));
@@ -838,7 +964,9 @@
     const scale = document.getElementById("arcadeScale");
     const scaleOut = document.getElementById("arcadeScaleOut");
 
+    const author = document.getElementById("arcadeAuthor");
     search.addEventListener("input", () => { state.filters.search = search.value; applyFilters(); });
+    author.addEventListener("input", () => { state.filters.author = author.value; applyFilters(); });
     minPapers.addEventListener("input", () => {
       state.filters.minPapers = parseInt(minPapers.value, 10) || 0;
       minOut.textContent = state.filters.minPapers;
@@ -853,8 +981,9 @@
     });
 
     document.getElementById("arcadeResetFilters").addEventListener("click", () => {
-      state.filters = { search: "", minPapers: 0, liveOnly: false };
-      search.value = ""; minPapers.value = "0"; minOut.textContent = "0"; liveOnly.checked = false;
+      state.filters = { search: "", minPapers: 0, liveOnly: false, author: "" };
+      search.value = ""; author.value = "";
+      minPapers.value = "0"; minOut.textContent = "0"; liveOnly.checked = false;
       applyFilters();
     });
 

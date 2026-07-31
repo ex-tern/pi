@@ -5,16 +5,55 @@ import hashlib
 # ---------------------------------------------------------------------------
 # .env loading (lightweight, no external dependency required).
 # Put secrets in backend/.env (KEY=VALUE per line) or export real env vars.
+#
+# The parsing here is deliberately careful about two things that silently
+# destroy API keys, because the failure mode is invisible: the key is present,
+# so nothing reports it as missing, but its *value* is wrong and every request
+# fails authentication.
+#
+#   1. Inline comments.  `KEY=abc123 # my key` must yield "abc123", not
+#      "abc123 # my key". Only unquoted values are stripped this way, and only
+#      at whitespace, since '#' is a legal character inside a secret.
+#   2. `export KEY=value`.  Copied straight out of shell instructions, this
+#      previously parsed the name as "export KEY" and set nothing usable.
 # ---------------------------------------------------------------------------
+def _parse_env_line(line):
+    """Returns ``(key, value)`` for one .env line, or ``None`` to skip it."""
+    line = line.strip()
+    if not line or line.startswith("#") or "=" not in line:
+        return None
+    if line.startswith("export "):
+        line = line[len("export "):].lstrip()
+    key, value = line.split("=", 1)
+    key = key.strip()
+    if not key:
+        return None
+    value = value.strip()
+
+    if len(value) >= 2 and value[0] == value[-1] and value[0] in ("'", '"'):
+        # Quoted: take it verbatim. A '#' inside quotes belongs to the value.
+        value = value[1:-1]
+    else:
+        # Unquoted: an inline comment starts at the first whitespace-preceded
+        # '#'. Checking for the preceding space matters — a key may legally
+        # contain '#' with no space in front of it.
+        for i, ch in enumerate(value):
+            if ch == "#" and i > 0 and value[i - 1].isspace():
+                value = value[:i]
+                break
+        value = value.strip()
+    return key, value
+
+
 _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 if os.path.exists(_ENV_PATH):
     with open(_ENV_PATH, "r") as _f:
         for _line in _f:
-            _line = _line.strip()
-            if not _line or _line.startswith("#") or "=" not in _line:
-                continue
-            _k, _v = _line.split("=", 1)
-            os.environ.setdefault(_k.strip(), _v.strip().strip('"').strip("'"))
+            _parsed = _parse_env_line(_line)
+            if _parsed:
+                # setdefault: a real environment variable always beats the
+                # file, so container and CI configuration keeps precedence.
+                os.environ.setdefault(_parsed[0], _parsed[1])
 
 PRIMARY_MODEL = "llama-3.3-70b-versatile"
 
