@@ -366,9 +366,13 @@ def restore_state_from_web3():
     except OSError:
         pass
 
+    deadline = time.monotonic() + _RESTORE_BUDGET_SECONDS
     cid = _cid_from_registry() or find_latest_backup_cid()
     if not cid:
         logging.info("No state backup found to restore.")
+        return
+    if time.monotonic() >= deadline:
+        logging.warning("Restore budget spent locating a backup; skipping this boot.")
         return
 
     gateways = [
@@ -378,15 +382,19 @@ def restore_state_from_web3():
     ]
     payload = None
     for gw in gateways:
+        remaining = deadline - time.monotonic()
+        if remaining <= 1:
+            logging.warning("Restore budget exhausted before %s could be tried.", gw)
+            break
         try:
-            r = requests.get(gw, timeout=45)
+            r = requests.get(gw, timeout=min(_RESTORE_HTTP_TIMEOUT, remaining))
             if r.status_code == 200 and r.content:
                 payload = r.content
                 break
         except requests.RequestException:
             continue
     if not payload:
-        logging.warning("Backup %s could not be fetched from any IPFS gateway.", cid)
+        logging.warning("Backup %s could not be fetched within the restore budget.", cid)
         return
 
     zip_path = os.path.join(BASE_DIR, "_restore.zip")
@@ -434,6 +442,20 @@ def restore_state_from_web3():
 # critical path and a large transient memory spike — precisely the conditions
 # that were getting the worker OOM-killed mid-assessment.
 _BACKUP_MIN_INTERVAL = int(os.getenv("BACKUP_MIN_INTERVAL_SECONDS", "900"))
+
+# Total wall-clock budget for restoring state at boot.
+#
+# Restore runs inside the startup event, and an ASGI server does not accept
+# requests until startup returns. The previous timeouts — 30s to list pins plus
+# 45s for each of three IPFS gateways — allowed 165s of blocking network I/O
+# before the first request could be served, so the platform's healthcheck timed
+# out and the deploy was marked failed even though the application was fine.
+#
+# A restore that cannot finish quickly is not worth failing a deployment over:
+# the app starts correctly with an empty database, and the next scheduled
+# backup will repopulate IPFS from whatever state exists. Availability first.
+_RESTORE_BUDGET_SECONDS = int(os.getenv("RESTORE_BUDGET_SECONDS", "25"))
+_RESTORE_HTTP_TIMEOUT = 8
 _last_backup_at = 0.0
 _backup_lock = threading.Lock()
 
@@ -609,7 +631,7 @@ def find_latest_backup_cid():
                     {"deployment": {"value": DEPLOYMENT_FINGERPRINT[:32], "op": "eq"}}),
                 "pageLimit": 10,
             },
-            timeout=30,
+            timeout=_RESTORE_HTTP_TIMEOUT,
         )
         if res.status_code != 200:
             logging.warning("Pinata pin list unavailable (HTTP %s).", res.status_code)
