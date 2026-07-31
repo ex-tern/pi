@@ -74,7 +74,7 @@ def main():
 
     print("\nJurors")
     print("-" * 72)
-    for juror in ("llama", "mistral", "qwen", "gemini", "deepseek"):
+    for juror in ("llama", "mistral", "qwen", "gemini", "deepseek", "judge"):
         routes = build_routes(juror)
         if routes:
             vendors = sorted({r["provider"] for r in routes})

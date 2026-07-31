@@ -1648,6 +1648,11 @@ function handleStreamLine(obj, statusBox) {
     evaluatedBuffer.unshift(obj.item);
     Session.freeEvalsUsed = Session.freeEvalsUsed + 1;
     renderResults();
+  } else if (obj.type === "stream_error") {
+    // The run died mid-flight. Previously this looked like a silent hang.
+    statusBox.innerHTML += `<div class="status-line status-error">
+      <strong>Assessment stopped unexpectedly.</strong> ${escapeHtml(obj.message || "")}
+      ${obj.detail ? `<br><code>${escapeHtml(obj.detail)}</code>` : ""}</div>`;
   } else if (obj.type === "result_error") {
     // The paper was assessed and persisted, but its payload could not be
     // serialised. Say so plainly rather than letting it silently vanish.
@@ -2370,6 +2375,19 @@ async function loadForecast() {
       return;
     }
     const data = await res.json();
+
+    if (!data.ready && data.mode === "error") {
+      msg.textContent = "";
+      empty.classList.remove("hidden");
+      empty.innerHTML = `<div class="empty-title">Forecast failed</div>
+        <p>${escapeHtml(data.message || "")}</p>
+        ${data.detail ? `<p><code>${escapeHtml(data.detail)}</code></p>` : ""}
+        <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
+      const r = document.getElementById("forecastRetryBtn");
+      if (r) r.addEventListener("click", loadForecast);
+      if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
+      return;
+    }
 
     if (!data.ready) {
       msg.textContent = "";
