@@ -455,6 +455,56 @@ def get_free_evals_used(ip_address: str) -> int:
         conn.close()
 
 
+def get_papers_for_recommendation(fields: list = None, limit: int = 200) -> list:
+    """Assessed papers with their per-criterion scores, for Scilem's picks.
+
+    Returns the whole criteria vector rather than just the composite score,
+    because a recommendation is only useful if it can say *why* — "strong
+    empirical density, weak reproducibility" is actionable, "scored 71" is not.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT eval_hash, title, author_name, fields, final_score,
+                      c1, c2, c3, c4, c5, c6, c7, c8, timestamp
+               FROM papers_assessment
+               WHERE final_score IS NOT NULL
+               ORDER BY timestamp DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    import json as _json
+    wanted = {f.strip().lower() for f in (fields or []) if f and f.strip()}
+    out = []
+    for r in rows:
+        try:
+            paper_fields = [f.strip() for f in _json.loads(r[3] or "[]") if f and f.strip()]
+        except Exception:
+            paper_fields = []
+        if wanted and not any(f.lower() in wanted for f in paper_fields):
+            continue
+        try:
+            score = float(r[4])
+        except (TypeError, ValueError):
+            continue
+        criteria = {}
+        for i in range(8):
+            try:
+                criteria[f"c{i + 1}"] = float(r[5 + i]) if r[5 + i] is not None else None
+            except (TypeError, ValueError):
+                criteria[f"c{i + 1}"] = None
+        out.append({
+            "eval_hash": r[0], "title": r[1] or "Untitled", "author_name": r[2] or "",
+            "fields": paper_fields, "score": round(score, 1),
+            "criteria": criteria, "timestamp": r[13],
+        })
+    return out
+
+
 def save_researcher_profile(account_key: str, profile: dict) -> dict:
     """Stores the researcher's stated field, goal and abstract.
 

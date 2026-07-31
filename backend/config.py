@@ -127,15 +127,24 @@ USE_LSTM_FORECAST = os.getenv("USE_LSTM_FORECAST", "false").strip().lower() in (
 OPENROUTER_SITE_URL = os.getenv("OPENROUTER_SITE_URL", "https://scholarpi.up.railway.app")
 OPENROUTER_SITE_NAME = os.getenv("OPENROUTER_SITE_NAME", "ScholarPi")
 
-# Provider routing policy. "deny" asks OpenRouter to route only to endpoints
-# that do not retain prompts — which is what an account with a restrictive
-# privacy setting requires. Declaring it lets OpenRouter *select* a compliant
-# endpoint instead of returning "no endpoints available matching your data
-# policy". Set to "allow" if your account permits prompt logging and you want
-# the widest possible model availability.
-OPENROUTER_DATA_COLLECTION = os.getenv("OPENROUTER_DATA_COLLECTION", "deny").strip().lower()
+# Provider routing policy. Now UNSET by default, and this is a behaviour change
+# with a reason.
+#
+# The previous default was "deny", on the theory that declaring the policy lets
+# OpenRouter pick a compliant endpoint. That reasoning is backwards.
+# `data_collection: "deny"` is a *restriction*: it tells OpenRouter to route
+# only to providers that do not retain prompts. For any model served solely by
+# logging providers, that filter eliminates every endpoint and the request
+# fails with "No endpoints available matching your data policy" — the exact
+# error this setting was meant to avoid. Because it was the default, it applied
+# to every OpenRouter juror on every install.
+#
+# Sending nothing lets the account's own privacy setting govern, which is both
+# the widest-availability option and the one that respects what the operator
+# actually configured on OpenRouter. Set it explicitly only to override that.
+OPENROUTER_DATA_COLLECTION = os.getenv("OPENROUTER_DATA_COLLECTION", "").strip().lower()
 if OPENROUTER_DATA_COLLECTION not in ("deny", "allow"):
-    OPENROUTER_DATA_COLLECTION = "deny"
+    OPENROUTER_DATA_COLLECTION = ""
 
 # ---------------------------------------------------------------------------
 # Free-tier challenge

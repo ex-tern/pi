@@ -304,6 +304,71 @@ def _verdict(quality, visibility) -> str:
     return "quality" if quality else "visibility"
 
 
+def recommend_papers(papers: List[Dict], limit: int = 4) -> Dict:
+    """Scilem's picks: which assessed papers to read, which to treat with care.
+
+    Grounded entirely in the per-criterion scores the engine already produced.
+    Each verdict names the specific criteria driving it, because "recommended"
+    without a reason is just a ranking, and a researcher cannot act on a rank.
+
+    The negative list is framed as *read critically*, not *ignore*. A low piX
+    means weak methodological reporting, not that the findings are wrong, and
+    presenting it as a blacklist would be both unfair to the authors and
+    misleading about what the score measures.
+    """
+    if not papers:
+        return {"available": False, "reason": "No assessed papers to draw on yet.",
+                "recommended": [], "caution": []}
+
+    def strengths(criteria, high=True):
+        scored = [(k, v) for k, v in (criteria or {}).items() if isinstance(v, (int, float))]
+        if not scored:
+            return []
+        scored.sort(key=lambda kv: kv[1], reverse=high)
+        picked = [k for k, v in scored[:2] if (v >= 60 if high else v < 45)]
+        return [CRITERION_LABELS.get(k.upper(), k) for k in picked]
+
+    ranked = sorted(papers, key=lambda p: p["score"], reverse=True)
+
+    recommended = []
+    for p in ranked[:limit]:
+        if p["score"] < 55:
+            break                      # nothing above the bar; don't pad the list
+        good = strengths(p["criteria"], high=True)
+        recommended.append({
+            "eval_hash": p["eval_hash"], "title": p["title"],
+            "author_name": p["author_name"], "score": p["score"],
+            "fields": p["fields"],
+            "why": ("Strong on " + " and ".join(good) + ".") if good
+                   else "Scores consistently well across the rubric.",
+        })
+
+    caution = []
+    for p in reversed(ranked):
+        if len(caution) >= limit or p["score"] >= 45:
+            break
+        weak = strengths(p["criteria"], high=False)
+        caution.append({
+            "eval_hash": p["eval_hash"], "title": p["title"],
+            "author_name": p["author_name"], "score": p["score"],
+            "fields": p["fields"],
+            "why": ("Weak on " + " and ".join(weak) + ".") if weak
+                   else "Scores below the rubric threshold across several dimensions.",
+        })
+
+    return {
+        "available": bool(recommended or caution),
+        "recommended": recommended,
+        "caution": caution,
+        "considered": len(papers),
+        "note": (
+            "Ranked by Scilem's rubric scores, which measure how well work is reported and "
+            "reproducible — not whether its conclusions are correct. A low score means the "
+            "methods are hard to verify, so read critically rather than dismiss."
+        ),
+    }
+
+
 def _profile_context(profile: Optional[Dict]) -> str:
     if not profile:
         return ""

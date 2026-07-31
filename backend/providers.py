@@ -165,11 +165,18 @@ def build_routes(juror: str) -> List[Dict]:
     chains = {
         "llama": [
             _route(PRIMARY_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
+            _route("llama-3.3-70b", CEREBRAS_API_KEY, CEREBRAS_BASE, "Cerebras"),
             _route("llama-3.1-8b-instant", GROQ_API_KEY, GROQ_BASE, "Groq"),
+            _route("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
             _route("meta-llama/llama-3.3-70b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("meta-llama/llama-3.1-8b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
         "mistral": [
+            # Mistral's own free tier removes this juror's OpenRouter dependency
+            # entirely, which is the point: it was previously the juror most
+            # exposed to a single account's routing policy.
+            _route("mistral-small-latest", MISTRAL_API_KEY, MISTRAL_BASE, "Mistral"),
+            _route("open-mistral-nemo", MISTRAL_API_KEY, MISTRAL_BASE, "Mistral"),
             _route("mistralai/mistral-large", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("mistralai/mistral-nemo", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("mistralai/mistral-7b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
@@ -178,6 +185,8 @@ def build_routes(juror: str) -> List[Dict]:
             _route("mixtral-8x7b-32768", GROQ_API_KEY, GROQ_BASE, "Groq"),
         ],
         "qwen": [
+            _route("qwen-3-32b", CEREBRAS_API_KEY, CEREBRAS_BASE, "Cerebras"),
+            _route("Qwen/Qwen2.5-72B-Instruct-Turbo", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
             _route("qwen/qwen-2.5-72b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("qwen/qwen-2.5-7b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("qwen/qwq-32b-preview", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
@@ -190,6 +199,7 @@ def build_routes(juror: str) -> List[Dict]:
         # instruction-tuned model, which strengthens corroboration rather than
         # just adding another vote.
         "deepseek": [
+            _route("deepseek-chat", DEEPSEEK_API_KEY, DEEPSEEK_BASE, "DeepSeek"),
             _route("deepseek/deepseek-chat", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("openai/gpt-oss-120b", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
         ],
@@ -204,6 +214,10 @@ def build_routes(juror: str) -> List[Dict]:
             _route("gemini-2.0-flash", GEMINI_API_KEY, GEMINI_BASE, "Google"),
             _route("google/gemini-2.0-flash-001", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("google/gemma-2-9b-it", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
+            # GitHub Models is free with any GitHub token and serves a
+            # non-Google lineage, so it keeps this juror alive even when the
+            # Gemini quota is exhausted and OpenRouter is unavailable.
+            _route("gpt-4o-mini", GITHUB_MODELS_TOKEN, GITHUB_MODELS_BASE, "GitHub Models"),
         ],
     }
     routes = [r for r in chains.get(juror, []) if r]

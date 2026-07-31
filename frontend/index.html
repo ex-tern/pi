@@ -67,6 +67,30 @@
 
     <hr>
 
+    <details class="sidebar-expander" id="faucetPanel">
+      <summary>Need test ETH?</summary>
+      <p class="faucet-note">Sepolia ETH has <strong>no monetary value</strong> and cannot be
+      bought — anyone selling it is running a scam. It is free from faucets:</p>
+      <ul class="faucet-list">
+        <li><a href="https://sepolia-faucet.pk910.de" target="_blank" rel="noopener noreferrer">pk910 PoW faucet</a>
+          <span>Mine in-browser. No account, no balance requirement.</span></li>
+        <li><a href="https://www.alchemy.com/faucets/ethereum-sepolia" target="_blank" rel="noopener noreferrer">Alchemy faucet</a>
+          <span>Instant, needs a free Alchemy account.</span></li>
+        <li><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer">Google Cloud faucet</a>
+          <span>Instant, needs a Google account.</span></li>
+      </ul>
+      <p class="faucet-note faucet-warn">Never enter your seed phrase or private key on a faucet.
+      A faucet only ever needs your public address.</p>
+    </details>
+
+    <div class="referral-card">
+      <div class="donate-title">Invite a researcher</div>
+      <p class="donate-text">ScholarPi gets more useful as the corpus grows — every assessed
+      paper sharpens the map and the weighting.</p>
+      <button id="referBtn" class="btn btn-outline btn-block">Suggest to a friend</button>
+      <div class="referral-msg" id="referMsg"></div>
+    </div>
+
     <div class="donate-card">
       <div class="donate-title">Support ScholarPi</div>
       <p class="donate-text">
@@ -338,7 +362,10 @@
     <section id="tab-arcade" class="tab-panel">
       <div class="page-header"><h1>The Global Map of Science<button class="help-btn" data-help="arcade" aria-label="About the science map">?</button></h1></div>
 
-      <p class="lede arcade-corpus" id="arcadeCorpus">Loading the map…</p>
+      <div class="arcade-header">
+        <div class="arcade-hero-orb" aria-hidden="true"></div>
+        <p class="lede arcade-corpus" id="arcadeCorpus">Loading the map…</p>
+      </div>
 
       <div id="arcadeStage" class="arcade-stage">
         <div class="arcade-layout">
