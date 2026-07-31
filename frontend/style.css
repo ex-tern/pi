@@ -1300,3 +1300,41 @@ a.btn { text-decoration: none; display: inline-block; }
 .p-peer-reviewed { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
 .p-piq-held { background: var(--warn-bg); color: var(--warn); }
 .held-note { color: var(--warn); font-weight: 600; }
+
+/* --- Credential seals ----------------------------------------------------- */
+/* Four different claims, so four visually distinct seals. Each carries its own
+   mark as well as its own colour: colour alone is not available to every
+   reader, and these badges are not interchangeable. */
+.seal {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px 3px 4px; border-radius: 99px;
+  font-size: 11px; font-weight: 700; letter-spacing: 0.01em;
+  border: 1px solid transparent; white-space: nowrap; vertical-align: middle;
+  line-height: 1.5;
+}
+.seal-mark {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 16px; height: 16px; border-radius: 50%; flex-shrink: 0;
+}
+.seal-mark svg { width: 11px; height: 11px; display: block; }
+.seal-mark svg path, .seal-mark svg circle, .seal-mark svg rect { fill: currentColor; }
+
+/* Journal-published — a DOI resolves. The strongest claim, so the warmest seal. */
+.seal-journal { background: #fffbeb; border-color: #fcd34d; color: #92400e; }
+.seal-journal .seal-mark { background: #f59e0b; color: #fff; }
+
+/* Author-published — the author stands behind it. */
+.seal-author { background: #ecfdf5; border-color: #6ee7b7; color: #065f46; }
+.seal-author .seal-mark { background: #10b981; color: #fff; }
+
+/* Peer-reviewed — an independent researcher read it. */
+.seal-peer { background: #eff6ff; border-color: #93c5fd; color: #1e40af; }
+.seal-peer .seal-mark { background: #3b82f6; color: #fff; }
+
+/* LLM-reviewed — deliberately cooler and quieter than the human seal, because
+   it is a weaker claim and should not compete with it visually. */
+.seal-llm { background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6; }
+.seal-llm .seal-mark { background: #8b5cf6; color: #fff; }
+
+.hist-title .seal, .result-title .seal { margin-left: 6px; }
+@media (max-width: 620px) { .seal { font-size: 10px; padding: 2px 7px 2px 3px; } }

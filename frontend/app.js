@@ -61,7 +61,13 @@ function bootstrapFromQueryParams() {
     changed = true;
   }
   if (params.has("wallet")) {
-    Session.wallet = params.get("wallet");
+    // Only alongside a token. A bare ?wallet= in a link is an unverified
+    // claim, and accepting it painted "Web3 Linked: 0x…" into the sidebar for
+    // any address anyone cared to put in a URL. The token is signed by the
+    // server; the query parameter is not.
+    if (params.has("token")) {
+      Session.wallet = params.get("wallet");
+    }
     changed = true;
   }
   if (params.has("token")) {
@@ -480,10 +486,16 @@ async function renderSidebar() {
   const orcidLinked = document.getElementById("orcidLinked");
   const researcherPanel = document.getElementById("researcherPanel");
 
-  if (Session.hasWeb3()) {
+  // "Linked" is a claim about proof, so it follows the verified session rather
+  // than whatever address happens to be in localStorage. The two diverge
+  // exactly when something has gone wrong — a rejected signature, a revoked
+  // permission, an expired token — which is precisely when the sidebar must
+  // not keep asserting a connection.
+  const walletProven = !!(sessionState && sessionState.verified && sessionState.wallet);
+  if (Session.hasWeb3() && walletProven) {
     mmWrap.classList.add("hidden");
     mmLinked.classList.remove("hidden");
-    mmLinked.textContent = `Web3 Linked: ${Session.wallet.slice(0, 6)}…${Session.wallet.slice(-4)}`;
+    mmLinked.textContent = `Web3 signed in: ${Session.wallet.slice(0, 6)}…${Session.wallet.slice(-4)}`;
   } else {
     mmWrap.classList.remove("hidden");
     mmLinked.classList.add("hidden");
@@ -715,7 +727,12 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
   try {
     const accounts = await provider.request({ method: "eth_requestAccounts" });
     clearTimeout(hintTimer);
-    if (!accounts || !accounts.length) { statusEl.textContent = ""; return; }
+    if (!accounts || !accounts.length) {
+      // Approved the prompt but exposed no account: nothing has been linked.
+      signOut();
+      statusEl.textContent = "No account was shared.";
+      return;
+    }
     const account = accounts[0];
 
     statusEl.textContent = "Checking network…";
@@ -727,25 +744,37 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     let signature = null;
     try {
       signature = await provider.request({ method: "personal_sign", params: [message, account] });
-    } catch (e) { /* user may decline signing; still allow address-only link */ }
+    } catch (signErr) {
+      // Declining the signature is a decision, not a hiccup. An address with
+      // no signature proves nothing and now grants nothing, so there is no
+      // "address-only link" left to fall back to — treat it as signed out and
+      // say why, rather than showing a linked-looking sidebar that cannot act.
+      signOut();
+      statusEl.textContent = (signErr && signErr.code === 4001)
+        ? "Signing was rejected, so you are not signed in. Connecting proves you can name an "
+          + "address; signing proves you control it."
+        : "The signature could not be completed, so you are not signed in.";
+      return;
+    }
 
     const res = await fetch(`${API}/api/auth/wallet/verify`, {
       method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ address: account, message, signature }),
     });
-    const data = await res.json();
-    Session.wallet = data.address;
+    const data = await res.json().catch(() => ({}));
 
-    // The token is the only thing that grants access to your own records.
-    // Without a valid signature the server issues none, so say so plainly
-    // rather than showing a connected-looking sidebar that cannot do anything.
-    if (data.token) {
-      localStorage.setItem("sp_token", data.token);
+    // The address is stored ONLY when the server confirms the signature and
+    // issues a session. Storing it unconditionally is what produced
+    // "Web3 Linked" after a rejected request: the sidebar reported a link the
+    // server had explicitly refused to grant.
+    if (res.ok && data.authenticated && data.token) {
+      Session.wallet = data.address;
+      try { localStorage.setItem("sp_token", data.token); } catch (_) {}
       statusEl.textContent = "";
     } else {
-      localStorage.removeItem("sp_token");
+      signOut();
       statusEl.textContent = data.detail
-        || "Connected, but not signed in — signature verification failed.";
+        || "Signature verification failed, so you are not signed in.";
     }
     renderSidebar();
     loadChainStatus();
@@ -755,7 +784,9 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     if (e && e.code === -32002) {
       statusEl.textContent = "A MetaMask request is already open — click the fox icon in your toolbar to find it.";
     } else if (e && e.code === 4001) {
-      statusEl.textContent = "Connection request was rejected.";
+      // Rejecting must not leave a previously remembered address on screen.
+      signOut();
+      statusEl.textContent = "Connection request was rejected — you are not signed in.";
     } else {
       statusEl.textContent = "Connection failed.";
     }
@@ -2101,11 +2132,9 @@ function renderResultCard(item, idx) {
         </div>
       </div>
       <div class="result-actions">
-        <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
-        <button class="btn" onclick="showDefenseModal(${idx})">Suggest Defense</button>
-        <button class="btn" onclick="showReviewModal('${escapeHtml(item.eval_hash || "")}')">Review</button>
-        <button class="btn" onclick="showPublishModal('${escapeHtml(item.eval_hash || "")}')">Publish</button>
-        <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
+        ${assessmentActions({ ...item, idx }, "card")}
+        <button class="btn btn-ghost" onclick="removeResult(${idx})"
+                title="Hide this card. The assessment is kept." aria-label="Dismiss">×</button>
       </div>
     </div>`;
 }
@@ -2259,6 +2288,106 @@ async function showPublishModal(hash) {
       msg.textContent = e.message; btn.disabled = false;
     }
   });
+}
+
+
+// ---------------------------------------------------------------------------
+// ASSESSMENT ACTIONS — one definition, used everywhere
+// ---------------------------------------------------------------------------
+// A result card and a history row are the same assessment shown at two moments.
+// They had separate action markup and separate handlers, which drifted: the
+// history "Publish" was a bare confirm while the card's opened the
+// author/journal chooser, the card offered Review and the row did not, and the
+// row offered Claim and the card did not. Same object, different powers,
+// depending on where you happened to be looking at it.
+//
+// Both now render from this one function and dispatch through one delegated
+// handler, so a capability added in future appears in both places or neither.
+
+/** Normalise the two shapes into the fields the actions need. */
+function normalizeAssessment(x, idx) {
+  if (!x) return null;
+  const emission = x.emission || {};
+  return {
+    hash: x.hash || x.eval_hash || "",
+    title: x.title || "",
+    idx: typeof idx === "number" ? idx : null,
+    published: !!x.published,
+    // History reports these directly; a fresh result carries them on emission.
+    escrowed: Number(x.escrowed != null ? x.escrowed : (emission.escrowed || 0)),
+    claimed: x.claimed != null ? !!x.claimed : Number(x.piq || 0) > 0,
+  };
+}
+
+/** The action bar. `variant` only changes styling, never which actions exist. */
+function assessmentActions(item, variant = "card") {
+  const a = normalizeAssessment(item, item && item.idx);
+  if (!a || !a.hash) return "";
+  const cls = variant === "row" ? "btn-icon" : "btn";
+  const primary = variant === "row" ? "btn-icon" : "btn btn-primary";
+  const danger = variant === "row" ? "btn-icon-danger" : "btn btn-ghost";
+  const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
+
+  const claimable = a.escrowed > 0 && !a.claimed;
+  return `
+    <button class="${primary}" data-a="report" ${d}>Full Report &amp; Dossier</button>
+    <button class="${cls}" data-a="defense" ${d}>Suggest Defense</button>
+    <button class="${cls}" data-a="review" ${d}>Review</button>
+    ${claimable ? `<button class="${cls}" data-a="claim" ${d}
+        title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held for this paper"
+        >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
+    <button class="${cls}" data-a="${a.published ? "withdraw" : "publish"}" ${d}
+      title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}"
+      >${a.published ? "Withdraw" : "Publish"}</button>
+    <button class="${danger}" data-a="remove" ${d}
+      title="Withdraw this paper from the corpus">Remove</button>`;
+}
+
+// One delegated listener for every action bar on the page, however it was
+// rendered. Delegation matters here: the history table is replaced wholesale on
+// every refresh, and per-element listeners were being lost each time.
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-a]");
+  if (!btn) return;
+  const action = btn.dataset.a;
+  const hash = btn.dataset.aHash;
+  const idx = btn.dataset.aIdx != null ? Number(btn.dataset.aIdx) : null;
+  if (!hash && idx == null) return;
+  e.preventDefault();
+
+  switch (action) {
+    case "report":
+      // Prefer the in-memory result when we have it (richer payload), fall
+      // back to fetching the stored dossier by hash.
+      if (idx != null && evaluatedBuffer[idx]) showDetailsModal(idx);
+      else openDossierByHash(hash);
+      break;
+    case "defense":
+      if (idx != null && evaluatedBuffer[idx]) showDefenseModal(idx);
+      else openDefenseByHash(hash);
+      break;
+    case "review":   showReviewModal(hash); break;
+    case "publish":  showPublishModal(hash); break;
+    case "withdraw": await togglePublish(hash, false); break;
+    case "claim":    await claimEscrow(hash); break;
+    case "remove":   await removeAssessment(hash); break;
+  }
+});
+
+/** Defense strategy for a stored assessment, when it is not in memory. */
+async function openDefenseByHash(hash) {
+  try {
+    const d = await (await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}`)).json();
+    const scores = d.scores_dict || d.criteria_breakdown || {};
+    const res = await fetch(`${API}/api/defense-strategy`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ scores }),
+    });
+    const data = await res.json();
+    openModal(`<h2>Suggested defense</h2>${renderLightMarkdown(data.strategy || "")}`);
+  } catch (e) {
+    openModal(`<h2>Suggested defense</h2><p class="hint">Could not load: ${escapeHtml(e.message)}</p>`);
+  }
 }
 
 function removeResult(idx) { evaluatedBuffer.splice(idx, 1); renderResults(); }
@@ -3693,15 +3822,9 @@ async function loadJournal() {
               ${e.doi ? `<div class="hist-meta"><code>${escapeHtml(e.doi)}</code></div>` : ""}</td>
           <td class="cell-muted">${escapeHtml(e.author || "—")}</td>
           <td class="num strong">${e.score.toFixed(1)}</td>
-          <td>${e.published
-                ? (e.publish_kind === "journal"
-                    ? `<span class="pill p-published" title="A DOI for this work resolves in Crossref or OpenAlex.">Journal-published</span>`
-                    : `<span class="pill p-published" title="The verified author attached their name. Not journal publication.">Author-published</span>`)
-                : `<span class="cell-muted">—</span>`}</td>
-          <td>${[
-                e.peer_reviews ? `<span class="pill p-peer-reviewed" title="An independent researcher submitted a reasoned verdict.">Peer-reviewed${e.peer_reviews > 1 ? " ×" + e.peer_reviews : ""}</span>` : "",
-                e.llm_reviewed ? `<span class="pill p-llm-reviewed" title="A model panel wrote the review. No human read it.">LLM-reviewed</span>` : "",
-              ].filter(Boolean).join(" ") || `<span class="cell-muted">—</span>`}</td>
+          <td>${publishedBadge(e) || `<span class="cell-muted">—</span>`}</td>
+          <td>${[peerReviewBadge(e), llmReviewBadge(e)].filter(Boolean).join(" ")
+                || `<span class="cell-muted">—</span>`}</td>
           <td class="num cell-muted">${(e.published_at || e.assessed_at || "").slice(0, 10)}</td>
         </tr>`).join("") + `</tbody></table></div>
       <p class="hint">${escapeHtml(data.note || "")}</p>`;
@@ -3852,10 +3975,55 @@ async function loadExplorer() {
  *  assessment. Naming it precisely costs one word and prevents the framework
  *  from making a claim it cannot support.
  */
+/** Seal-style badges.
+ *
+ *  Each carries its own mark so the four claims are distinguishable at a
+ *  glance and never by colour alone — colour is not available to every reader,
+ *  and these badges make materially different claims. The mark is inline SVG
+ *  rather than an emoji: emoji render differently on every platform, and a
+ *  credential that looks like a different symbol depending on the reader's OS
+ *  is not a credential.
+ */
+const BADGE_MARKS = {
+  star: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 2.6l2.9 5.9 6.5.95-4.7 4.58 1.11 6.47L12 17.44l-5.81 3.06 1.11-6.47-4.7-4.58 6.5-.95z"/></svg>`,
+  check: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8l2.4 1.86 3-.35 1.2 2.79 2.79 1.2-.35 3L23.4 12.6l-1.86 2.4.35 3-2.79 1.2-1.2 2.79-3-.35L12 23.4l-2.4-1.86-3 .35-1.2-2.79-2.79-1.2.35-3L1.1 12.6l1.86-2.4-.35-3 2.79-1.2 1.2-2.79 3 .35z"/><path d="M10.6 15.4l-2.9-2.9 1.4-1.4 1.5 1.5 4-4 1.4 1.4z" fill="#fff"/></svg>`,
+  peer: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16" cy="9.5" r="2.6"/><path d="M2.6 20c0-3.2 2.6-5.4 5.9-5.4s5.9 2.2 5.9 5.4z"/><path d="M14.8 20c0-2.2 1.4-3.9 3.6-3.9 1.9 0 3.2 1.3 3.2 3.9z"/></svg>`,
+  chip: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/><path d="M9.6 2.8h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM9.6 18.2h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM2.8 9.6h3v1.5h-3zm0 3.3h3v1.5h-3zM18.2 9.6h3v1.5h-3zm0 3.3h3v1.5h-3z"/></svg>`,
+};
+
+function seal(kind, mark, label, title) {
+  return `<span class="seal seal-${kind}" title="${escapeHtml(title)}">`
+       + `<span class="seal-mark">${BADGE_MARKS[mark]}</span>`
+       + `<span class="seal-text">${escapeHtml(label)}</span></span>`;
+}
+
 function publishedBadge(item) {
   if (!item || !item.published) return "";
-  return `<span class="pill p-published" title="The verified author has attached their name to
-this assessment. This is an authorship endorsement, not journal publication.">Author-published</span>`;
+  if (item.publish_kind === "journal") {
+    return seal("journal", "star", "Journal-published",
+      "A DOI for this work resolves in Crossref or OpenAlex. Verified, not asserted.");
+  }
+  return seal("author", "check", "Author-published",
+    "The verified author attached their name to this assessment. "
+    + "An authorship endorsement, not journal publication.");
+}
+
+function peerReviewBadge(item) {
+  const n = Number((item && item.peer_reviews) || 0);
+  if (!n) return "";
+  return seal("peer", "peer", n > 1 ? `Peer-reviewed ×${n}` : "Peer-reviewed",
+    "An independent researcher — not an author — submitted a reasoned verdict.");
+}
+
+function llmReviewBadge(item) {
+  if (!item || !item.llm_reviewed) return "";
+  return seal("llm", "chip", "LLM-reviewed",
+    "A model panel wrote this review. No human read the paper.");
+}
+
+function allBadges(item) {
+  return [publishedBadge(item), peerReviewBadge(item), llmReviewBadge(item)]
+    .filter(Boolean).join(" ");
 }
 
 function explorerRowHtml(r) {
@@ -3866,7 +4034,7 @@ function explorerRowHtml(r) {
       <div class="result-pills">
         <span class="pill p-score">piX ${(r.score || 0).toFixed(1)}</span>
         <span class="pill p-piq">piQ ${Number(r.piq || 0).toFixed(2)}</span>
-        ${publishedBadge(r)}
+        ${allBadges(r)}
         ${qualityPill(r.judge_metadata || {})}
         ${integrityPills(r)}
       </div>
@@ -4269,29 +4437,14 @@ async function loadAssessmentHistory() {
             a.escrowed && !a.claimed
               ? `<div class="hist-held" title="Earned but held until authorship is verified">+${a.escrowed.toFixed(2)} held</div>`
               : ""}</td>
-          <td class="hist-actions">
-            ${a.escrowed && !a.claimed
-              ? `<button class="btn-icon" data-claim-hash="${escapeHtml(a.hash)}"
-                   title="Verify authorship and release the held piQ">Claim</button>` : ""}
-            <button class="btn-icon" data-publish-hash="${escapeHtml(a.hash)}"
-              data-published="${a.published ? "1" : "0"}"
-              title="${a.published ? "Withdraw your endorsement" : "Attach your name publicly"}">${
-                a.published ? "Withdraw" : "Publish"}</button>
-            <button class="btn-icon-danger" data-remove-hash="${escapeHtml(a.hash)}"
-              title="Withdraw this paper">Remove</button>
-          </td>
+          <td class="hist-actions">${assessmentActions(a, "row")}</td>
         </tr>`).join("") + `</tbody></table>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
       invalidate every block after it.</p>`;
 
-    body.querySelectorAll("[data-remove-hash]").forEach(b =>
-      b.addEventListener("click", () => removeAssessment(b.dataset.removeHash)));
-    body.querySelectorAll("[data-claim-hash]").forEach(b =>
-      b.addEventListener("click", () => claimEscrow(b.dataset.claimHash)));
-    body.querySelectorAll("[data-publish-hash]").forEach(b =>
-      b.addEventListener("click", () =>
-        togglePublish(b.dataset.publishHash, b.dataset.published !== "1")));
+    // Actions are handled by the delegated listener in assessmentActions(),
+    // which survives this table being replaced on every refresh.
   } catch (e) {
     body.innerHTML = `<p class="hint">Could not load your history.</p>`;
   }
@@ -4580,6 +4733,9 @@ async function refreshSessionState() {
   } catch (_) {
     sessionState = { verified: false, two_factor: false, is_owner: false };
   }
+  // The sidebar depends on sessionState, so it has to be redrawn once the
+  // answer arrives — otherwise it renders from a stale value on first paint.
+  try { renderSidebar(); } catch (_) {}
   const badge = document.getElementById("authBadge");
   if (!badge) return;
   if (!sessionState.verified) {
