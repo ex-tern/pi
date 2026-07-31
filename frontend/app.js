@@ -884,10 +884,13 @@ document.getElementById("connectOrcidBtn").addEventListener("click", async () =>
   window.location.href = data.url;
 });
 
-document.getElementById("unlinkBtn").addEventListener("click", () => {
-  Session.wallet = ""; Session.orcid = ""; Session.researcherName = "";
-  renderSidebar();
-});
+// One sign-out, and it clears the CREDENTIAL, not just the display.
+//
+// This button previously cleared Session.wallet/orcid only. The server-issued
+// token stayed in localStorage, so the sidebar looked signed out while every
+// subsequent request still carried a valid session — the app said one thing
+// and the wire said another. Now it calls the same signOut() used everywhere.
+document.getElementById("unlinkBtn").addEventListener("click", signOut);
 
 async function pollLogs() {
   try {
@@ -2717,7 +2720,7 @@ function readForecastControls() {
     return el ? el.checked : fallback;
   };
   return {
-    type: val("forecastChartType", "line"),
+    type: val("forecastChartType", "radar"),
     xaxis: val("forecastXAxis", "block"),
     alpha: Number(val("forecastAlpha", 0.6)),
     beta: Number(val("forecastBeta", 0.3)),
@@ -2777,15 +2780,101 @@ function buildForecastChartConfig(data, view) {
     };
   }
 
+  // "Change" — what actually moved, biggest first.
+  //
+  // Replaces the stacked area. Because the eight weights always sum to 8.0,
+  // a stacked area was a constant-height band in which nothing was legible;
+  // the question people were trying to answer from it was "which criteria are
+  // rising and which are falling", so ask that directly.
+  if (view.type === "change") {
+    const from = history.length > 1 ? history[history.length - 2] : history[0];
+    const to = view.showForecast && data.forecast
+      ? data.forecast : history[history.length - 1];
+    if (!from || !to) return { type: "bar", data: { labels: [], datasets: [] }, options: {} };
+
+    const rows = CRITERIA_KEYS.map((k, i) => ({
+      label: (data.criteria?.[i]?.title) || k,
+      delta: (to[k] ?? 0) - (from[k] ?? 0),
+      to: to[k] ?? 0,
+    })).sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+
+    return {
+      type: "bar",
+      data: {
+        labels: rows.map(r => r.label),
+        datasets: [{
+          label: `Change: ${from.label} → ${to.label}`,
+          data: rows.map(r => r.delta),
+          backgroundColor: rows.map(r => (r.delta > 0 ? "#15803d" : r.delta < 0 ? "#dc2626" : "#94a3b8")),
+          borderWidth: 0, borderRadius: 3, barThickness: 16,
+        }],
+      },
+      options: {
+        indexAxis: "y", responsive: true, maintainAspectRatio: false,
+        plugins: {
+          legend: { display: false },
+          tooltip: { callbacks: { label: c => {
+            const r = rows[c.dataIndex];
+            return ` ${r.delta >= 0 ? "+" : ""}${r.delta.toFixed(4)}  (now ${r.to.toFixed(4)})`;
+          } } },
+        },
+        scales: {
+          x: { title: { display: true, text: "Weight change" }, grid: { color: "#e2e8f0" },
+               ticks: { callback: v => (v > 0 ? "+" : "") + Number(v).toFixed(2) } },
+          y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+        },
+      },
+    };
+  }
+
+  // "Ranking" — each criterion's position, epoch by epoch.
+  //
+  // Replaces the grouped bars, which put eight series in every cluster and
+  // were unreadable past two blocks. Rank is what the weighting is actually
+  // saying: which criteria the corpus is producing the strongest evidence for,
+  // relative to the others. Crossing lines show reordering at a glance.
+  if (view.type === "ranking") {
+    const ranked = points.map(p => {
+      const order = CRITERIA_KEYS
+        .map(k => ({ k, v: p[k] ?? 0 }))
+        .sort((a, b) => b.v - a.v);
+      const pos = {};
+      order.forEach((o, i) => { pos[o.k] = i + 1; });
+      return pos;
+    });
+    return {
+      type: "line",
+      data: {
+        labels,
+        datasets: CRITERIA_KEYS.map((k, i) => ({
+          label: (data.criteria?.[i]?.title) || k,
+          data: ranked.map(r => r[k]),
+          borderColor: CRITERIA_COLORS[i], backgroundColor: CRITERIA_COLORS[i],
+          borderWidth: 2, tension: 0.3, pointRadius: 4, pointHoverRadius: 6, fill: false,
+        })),
+      },
+      options: {
+        responsive: true, maintainAspectRatio: false,
+        interaction: { mode: "nearest", intersect: false },
+        plugins: {
+          legend: { labels: { boxWidth: 10, boxHeight: 10, usePointStyle: true, font: { size: 10 } } },
+          tooltip: { callbacks: { label: c => ` ${c.dataset.label}: rank ${c.parsed.y}` } },
+        },
+        scales: {
+          // Reversed so rank 1 sits at the top, which is how a ranking reads.
+          y: { reverse: true, min: 1, max: 8, ticks: { stepSize: 1 },
+               title: { display: true, text: "Rank (1 = highest weight)", font: { size: 11 } },
+               grid: { color: "rgba(148,163,184,0.18)" } },
+          x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
+        },
+      },
+    };
+  }
+
   const datasets = [];
   CRITERIA_KEYS.forEach((k, i) => {
     const color = CRITERIA_COLORS[i];
-    if (view.type === "bar") {
-      datasets.push({ label: k, data: points.map(p => p[k]),
-                      backgroundColor: color, borderWidth: 0, borderRadius: 2 });
-      return;
-    }
-    const isArea = view.type === "area";
+    const isArea = false;
     datasets.push({
       label: k,
       data: points.map((p, idx) => (view.showForecast || idx <= lastIdx ? p[k] : null)),
@@ -2801,7 +2890,7 @@ function buildForecastChartConfig(data, view) {
   });
 
   return {
-    type: view.type === "bar" ? "bar" : "line",
+    type: "line",
     data: { labels, datasets },
     options: {
       responsive: true, maintainAspectRatio: false,
@@ -2813,12 +2902,10 @@ function buildForecastChartConfig(data, view) {
         } },
       },
       scales: {
-        y: { stacked: view.type === "area", beginAtZero: view.type !== "line",
-             title: { display: true, text: view.type === "area"
-                        ? "Cumulative weight" : "Criterion weight (Σ = 8.0)", font: { size: 11 } },
+        y: { beginAtZero: false,
+             title: { display: true, text: "Criterion weight (Σ = 8.0)", font: { size: 11 } },
              grid: { color: "rgba(148,163,184,0.18)" } },
-        x: { stacked: view.type === "area", grid: { display: false },
-             ticks: { maxRotation: 45, autoSkip: true } },
+        x: { grid: { display: false }, ticks: { maxRotation: 45, autoSkip: true } },
       },
     },
   };
@@ -3154,7 +3241,9 @@ function showCriterionModal(c) {
     this criterion is currently weighted more heavily than the neutral baseline.</p>`);
 }
 
-document.getElementById("runForecastBtn").addEventListener("click", loadForecast);
+// No "Run" button: every control below refetches or redraws on change, so an
+// explicit run step only offered a way to look at a chart that no longer
+// matched the settings above it.
 document.getElementById("lookbackSelect").addEventListener("change", loadForecast);
 
 // alpha/beta/gain change what the SERVER computes, so they refetch. Chart type
@@ -4224,10 +4313,7 @@ function signOut() {
 
 bootstrapFromQueryParams();
 refreshSessionState();
-{
-  const btn = document.getElementById("signOutBtn");
-  if (btn) btn.addEventListener("click", signOut);
-}
+
 renderSidebar();
 loadChainStatus();
 loadEmissionStatus();

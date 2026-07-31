@@ -436,16 +436,35 @@ def emission_manifest(total_papers: int = 0) -> Dict:
 #     both statements stay true, and keeps the leaderboard meaningful.
 CURATION_SHARE = 0.15           # fraction of the authorship emission
 CURATION_HALFLIFE = 5.0         # submissions before a curator earns half rate
-CURATION_DECAY_FLOOR = 0.20     # never falls below 20% of the base share
-CURATION_LIFETIME_CAP = 12.0    # total piQ any one identity may earn curating
 CURATION_MIN_AWARD = 0.01       # below this, award nothing rather than dust
+
+# There is deliberately no lifetime cap, and deliberately no decay floor.
+#
+# The two go together. Curation piQ is an unbacked credit — it is written into
+# the ledger, not drawn from a reserve — so something has to bound how much any
+# one identity can create. A hard cap did that with a wall: earn 12 piQ, then
+# get told "no" forever, which is a bad experience precisely at the moment
+# someone has proved they are a useful contributor.
+#
+# Removing the DECAY FLOOR does the same work without a wall. With the floor at
+# 0.20 the reward never fell below a fifth of base, so the total grew without
+# bound (44x base over 200 papers, and rising). With no floor the multiplier is
+# a clean geometric 0.5^(n/5), and the lifetime total converges:
+#
+#     sum = 1 / (1 - 0.5^(1/5)) = 7.73 x the first paper's reward
+#
+# So a prolific curator's total is finite and computable, the tenth submission
+# still pays something, and nobody is ever refused outright. The bound is a
+# property of the schedule rather than a rule bolted on top of it.
 
 
 def curation_decay(curation_count: int) -> float:
-    """Multiplier for a curator who has already submitted `curation_count`."""
+    """Multiplier for a curator who has already submitted `curation_count`.
+
+    Unfloored, so the lifetime sum converges (see the note above).
+    """
     n = max(0, int(curation_count or 0))
-    decay = 0.5 ** (n / CURATION_HALFLIFE)
-    return round(max(CURATION_DECAY_FLOOR, decay), 6)
+    return round(0.5 ** (n / CURATION_HALFLIFE), 6)
 
 
 def compute_curation_reward(pix_score: float, logic_integrity: float,
@@ -461,26 +480,18 @@ def compute_curation_reward(pix_score: float, logic_integrity: float,
         total_papers=total_papers, author_paper_count=0,
     )
 
-    remaining = max(0.0, CURATION_LIFETIME_CAP - float(curation_earned or 0.0))
     decay = curation_decay(curation_count)
-    raw = base["minted"] * CURATION_SHARE * decay
-    amount = round(min(raw, remaining), 4)
+    amount = round(base["minted"] * CURATION_SHARE * decay, 4)
 
     if not base["qualified"]:
         return {"awarded": 0.0, "eligible": False, "decay": decay,
-                "remaining_cap": round(remaining, 4),
                 "reason": ("This paper did not meet the quality threshold, so it earns no "
                            "curation reward. " + base.get("reason", ""))}
-    if remaining <= 0:
-        return {"awarded": 0.0, "eligible": False, "decay": decay, "remaining_cap": 0.0,
-                "reason": (f"You have reached the lifetime curation cap of "
-                           f"{CURATION_LIFETIME_CAP:.0f} piQ. Curation rewards are capped so "
-                           f"that submitting other people's work cannot become an income "
-                           f"stream; having your own work assessed is not capped.")}
     if amount < CURATION_MIN_AWARD:
         return {"awarded": 0.0, "eligible": False, "decay": decay,
-                "remaining_cap": round(remaining, 4),
-                "reason": "The curation reward for this paper rounds to zero."}
+                "reason": ("The curation reward for this paper rounds to zero — your curation "
+                           "rate has decayed with the number of papers you have submitted. "
+                           "Having your own work assessed is unaffected.")}
 
     return {
         "awarded": amount,
@@ -489,13 +500,14 @@ def compute_curation_reward(pix_score: float, logic_integrity: float,
         "base_emission": base["minted"],
         "share": CURATION_SHARE,
         "curation_count": int(curation_count or 0),
-        "remaining_cap": round(remaining - amount, 4),
+        "earned_to_date": round(float(curation_earned or 0.0), 4),
         "reason": (
             f"Curation reward: {amount:.4f} piQ. This is {CURATION_SHARE * 100:.0f}% of the "
             f"{base['minted']:.3f} piQ the paper would have earned its author, reduced to "
             f"{decay * 100:.0f}% by your curation decay ({int(curation_count or 0)} previous "
-            f"submissions). {max(0.0, remaining - amount):.2f} piQ of your "
-            f"{CURATION_LIFETIME_CAP:.0f} piQ lifetime curation allowance remains."
+            f"submissions). Curation piQ is credited to your spendable balance; it is not "
+            f"minted on-chain and does not count toward the piQ leaderboard, which records "
+            f"authored work only."
         ),
     }
 
@@ -505,8 +517,8 @@ def curation_manifest() -> Dict:
     return {
         "share_of_author_emission": CURATION_SHARE,
         "halflife_submissions": CURATION_HALFLIFE,
-        "decay_floor": CURATION_DECAY_FLOOR,
-        "lifetime_cap": CURATION_LIFETIME_CAP,
+        "lifetime_cap": None,
+        "lifetime_total_multiple": round(1 / (1 - 0.5 ** (1 / CURATION_HALFLIFE)), 3),
         "requires_identity": True,
         "on_chain": False,
         "schedule": [
