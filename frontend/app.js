@@ -2506,6 +2506,57 @@ async function loadForecast() {
     // render the measured shift from baseline as a table instead of forcing a
     // chart through a single point — a two-point line implying a trend would
     // be a claim the data does not support.
+    // Baseline: nothing assessed yet. Render the genesis weighting as a flat
+    // bar chart rather than an empty state — it is a real, defined starting
+    // point, and seeing it makes the first assessment's effect legible.
+    if (data.mode === "baseline") {
+      msg.textContent = "";
+      empty.classList.add("hidden");
+      chartWrap.classList.remove("hidden");
+      chartWrap.classList.add("chart-sized");
+
+      const labels = (data.criteria || []).map(c => c.title || c.id);
+      const values = (data.criteria || []).map(c => c.current);
+      if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
+      const ctx0 = document.getElementById("forecastChart").getContext("2d");
+      forecastChart = new Chart(ctx0, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Genesis weight", data: values,
+                                     backgroundColor: CRITERIA_COLORS.map(c => c + "cc"),
+                                     borderWidth: 0, borderRadius: 3, barThickness: 18 }] },
+        options: {
+          indexAxis: "y", responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: { callbacks: { label: c => ` weight ${Number(c.parsed.x).toFixed(3)} (uniform baseline)` } },
+          },
+          scales: {
+            x: { beginAtZero: true, suggestedMax: 2,
+                 title: { display: true, text: "Criterion weight (Σ = 8.0)" },
+                 grid: { color: "#e2e8f0" } },
+            y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+          },
+        },
+      });
+
+      const meta0 = document.getElementById("forecastMeta");
+      if (meta0) {
+        meta0.classList.remove("hidden");
+        meta0.innerHTML = `
+          <div class="fm-item"><span>Mode</span><strong>Baseline</strong></div>
+          <div class="fm-item"><span>Blocks recorded</span><strong>0</strong></div>
+          <div class="fm-item"><span>Projection</span><strong>needs ${data.blocks_required}</strong></div>
+          <div class="fm-item"><span>Weight sum</span><strong>8.000 / 8.0</strong></div>`;
+      }
+      const insight0 = document.getElementById("forecastInsight");
+      if (insight0) {
+        insight0.classList.remove("hidden");
+        insight0.innerHTML = `<p>${escapeHtml(data.insight || "")}</p>
+          <p class="forecast-insight-inline">${escapeHtml(data.message || "")}</p>`;
+      }
+      return;
+    }
+
     if (data.mode === "delta") {
       msg.textContent = "";
       empty.classList.add("hidden");
@@ -2855,11 +2906,9 @@ async function showAuthorPapers(author) {
 }
 
 bindSortHeaders("#leaderboardTable", leaderboardState, loadLeaderboard);
-document.getElementById("leaderboardSearch").addEventListener("input", debounced((e) => {
-  leaderboardState.q = e.target.value.trim();
-  leaderboardState.offset = 0;
-  loadLeaderboard();
-}));
+// Search/min-score inputs were removed from both leaderboards: filtering a
+// ranking stops it being a ranking. Those controls now live in the Explorer,
+// whose purpose is finding a specific record.
 
 // --- piX Leaderboard [Top Papers] ---
 const topPapersState = { q: "", minScore: 0, sort: "score", order: "desc", limit: 10, offset: 0, total: 0 };
@@ -2888,7 +2937,7 @@ async function loadTopPapers() {
             <td class="num cell-muted">${p.date ? new Date(p.date).toLocaleDateString() : "—"}</td>
           </tr>`;
         }).join("")
-      : `<tr><td colspan="7" class="empty-cell">No papers match these filters.</td></tr>`;
+      : `<tr><td colspan="7" class="empty-cell">No papers assessed yet.</td></tr>`;
 
     document.querySelectorAll("#topPapersBody .clickable-row").forEach(tr => {
       tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
@@ -2900,16 +2949,7 @@ async function loadTopPapers() {
 }
 
 bindSortHeaders("#topPapersTable", topPapersState, loadTopPapers);
-document.getElementById("topPapersSearch").addEventListener("input", debounced((e) => {
-  topPapersState.q = e.target.value.trim();
-  topPapersState.offset = 0;
-  loadTopPapers();
-}));
-document.getElementById("topPapersMinScore").addEventListener("input", debounced((e) => {
-  topPapersState.minScore = e.target.value ? Number(e.target.value) : 0;
-  topPapersState.offset = 0;
-  loadTopPapers();
-}));
+
 
 let analyticsInitialized = false;
 async function initAnalyticsTab() {
@@ -2928,7 +2968,35 @@ async function initAnalyticsTab() {
 // ---------------------------------------------------------------------------
 // EXPLORER TAB
 // ---------------------------------------------------------------------------
+const explorerState = { minScore: "", maxScore: "", field: "", sort: "date", order: "desc" };
+let explorerFieldsLoaded = false;
+
 document.getElementById("explorerSearch").addEventListener("input", debounced(loadExplorer));
+["explorerMinScore", "explorerMaxScore", "explorerField", "explorerSort", "explorerOrder"]
+  .forEach(id => {
+    const el = document.getElementById(id);
+    if (!el) return;
+    const handler = () => {
+      explorerState.minScore = document.getElementById("explorerMinScore").value;
+      explorerState.maxScore = document.getElementById("explorerMaxScore").value;
+      explorerState.field = document.getElementById("explorerField").value;
+      explorerState.sort = document.getElementById("explorerSort").value;
+      explorerState.order = document.getElementById("explorerOrder").value;
+      loadExplorer();
+    };
+    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", debounced(handler));
+  });
+
+document.getElementById("explorerResetBtn").addEventListener("click", () => {
+  Object.assign(explorerState, { minScore: "", maxScore: "", field: "", sort: "date", order: "desc" });
+  document.getElementById("explorerSearch").value = "";
+  document.getElementById("explorerMinScore").value = "";
+  document.getElementById("explorerMaxScore").value = "";
+  document.getElementById("explorerField").value = "";
+  document.getElementById("explorerSort").value = "date";
+  document.getElementById("explorerOrder").value = "desc";
+  loadExplorer();
+});
 
 async function loadExplorer() {
   const q = document.getElementById("explorerSearch").value.trim();
@@ -2946,15 +3014,51 @@ async function loadExplorer() {
         btn.addEventListener("click", () => openDossierByHash(btn.dataset.dossierHash));
       });
     } else {
-      const res = await fetch(`${API}/api/explorer/latest`);
+      const qs = new URLSearchParams({
+        // Blank inputs must fall back to the full range rather than 0/0,
+        // which would return nothing and look like a broken filter.
+        min_score: explorerState.minScore === "" ? 0 : Number(explorerState.minScore),
+        max_score: explorerState.maxScore === "" ? 100 : Number(explorerState.maxScore),
+        field: explorerState.field, sort: explorerState.sort, order: explorerState.order,
+        limit: 100,
+      });
+      const res = await fetch(`${API}/api/explorer/latest?${qs}`);
       if (!res.ok) {
         container.innerHTML = `<div class="warning-box">The ledger is unavailable. If the server was
           just updated, restart it so the schema migration can run.</div>`;
         return;
       }
       const data = await res.json();
+
+      // Populate the field filter once, from fields that actually exist in the
+      // corpus — an option that returns nothing is worse than no option.
+      const fieldSel = document.getElementById("explorerField");
+      if (fieldSel && !explorerFieldsLoaded && (data.available_fields || []).length) {
+        explorerFieldsLoaded = true;
+        const current = fieldSel.value;
+        fieldSel.innerHTML = `<option value="">All fields</option>` +
+          data.available_fields.map(f => {
+            const name = typeof f === "string" ? f : (f.field || f.name || "");
+            return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
+          }).join("");
+        fieldSel.value = current;
+      }
+
+      const countEl = document.getElementById("explorerCount");
+      const filtered = explorerState.minScore !== "" || explorerState.maxScore !== "" || explorerState.field;
+      if (countEl) {
+        countEl.textContent = data.count
+          ? `${data.count} record${data.count === 1 ? "" : "s"}${filtered ? " matching your filters" : ""}.`
+          : "";
+      }
+
       if (!data.records.length) {
-        container.innerHTML = `<div class="hint">No assessments recorded yet.</div>`;
+        // Distinguish "nothing assessed" from "nothing matches" — they call
+        // for completely different actions from the user.
+        container.innerHTML = filtered
+          ? `<div class="hint">No ledger records match these filters. Widen the score range or
+             choose a different field.</div>`
+          : `<div class="hint">No assessments recorded yet.</div>`;
         return;
       }
       const chain = data.chain || {};
@@ -3034,6 +3138,7 @@ flowchart TB
   classDef ui fill:#fce7f3,stroke:#db2777,stroke-width:1.5px,color:#0f172a
   classDef gate fill:#fee2e2,stroke:#dc2626,stroke-width:2px,color:#0f172a
   classDef guard fill:#f1f5f9,stroke:#475569,stroke-width:1.5px,color:#0f172a
+  classDef learn fill:#ecfeff,stroke:#0e7490,stroke-width:1.5px,color:#0f172a
 
   U["Researcher"]:::intake --> IDENT{{"Identity<br/>ORCID · DID · Wallet"}}:::intake
 
@@ -3063,8 +3168,8 @@ flowchart TB
   subgraph S2["2 · Extraction"]
     direction TB
     PARSE["PyMuPDF<br/>layout-aware text"]:::extract
-    BIB["Bibliographic reconciliation<br/>registry → typography → panel"]:::extract
-    REFS["Reference parsing<br/>+ registry verification"]:::extract
+    BIB["Title / author consensus<br/>medoid across distinct routes"]:::extract
+    REFS["Reference consensus<br/>≥2 independent jurors"]:::extract
     DET["Deterministic signals<br/>MDAR · RRID · repro · density"]:::extract
     SEC["Integrity scan<br/>hidden text · metadata"]:::guard
   end
@@ -3083,7 +3188,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
     direction TB
     SYN["Evidence synthesis"]:::judge
     AGREE["Inter-model agreement"]:::judge
-    QUAL["Corroboration<br/>Strong · Partial · Single-source"]:::judge
+    QUAL["Corroboration<br/>by distinct route, not headcount"]:::judge
     TRIP{"Canary emitted?"}:::gate
   end
   ${jurorChain} & L5 --> SYN --> AGREE --> QUAL
@@ -3102,6 +3207,18 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   QUAL --> SIG --> RUB --> PIX
   AGREE --> LOGIC
   ZERO --> LOGIC
+
+  subgraph S5b["5b · Scilem calibration (learned)"]
+    direction TB
+    LEARN["Weighting of 4 signals<br/>online, 5 parameters"]:::learn
+    GATE2{"≥2 independent<br/>sources?"}:::gate
+    FB["User correction<br/>signed-in only"]:::learn
+    STATE[("Learned state<br/>+ observation log")]:::chain
+  end
+  QUAL --> GATE2
+  GATE2 -->|"yes"| LEARN
+  GATE2 -->|"no — would learn imitation"| SKIP["Update refused"]:::gate
+  FB --> LEARN --> STATE --> DET
 
   subgraph S6["6 · Emission and settlement"]
     direction TB
@@ -3123,17 +3240,31 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   subgraph S7["7 · Outputs"]
     direction LR
     DOSS["Dossier<br/>per-signal attribution"]:::ui
-    FORE["Pidyne LSTM forecast"]:::ui
-    MAPS["Map of science"]:::ui
+    FORE["Pidyne forecast<br/>Holt default · LSTM optional"]:::ui
+    MAPS["Map of science<br/>fields from dossiers"]:::ui
     BOARD["piX / piQ boards"]:::ui
     DEF["GA rebuttal strategy"]:::ui
     FAIR["FAIR and CoARA export"]:::ui
+    HIST["Your assessments<br/>history · withdrawal"]:::ui
   end
   BLOCK --> FORE
   RUB --> DOSS & DEF
   QUAL --> DOSS
   ETH --> DOSS --> FAIR
   BIB --> MAPS & BOARD
+  ETH --> HIST
+
+  subgraph S8["8 · Durability and access"]
+    direction LR
+    PIN["Encrypted snapshot<br/>pinned to IPFS"]:::chain
+    CID["CID recorded locally"]:::chain
+    ANCH{"Registry contract<br/>implements getCID?"}:::gate
+    ARC["Science Map<br/>difficulty ramp"]:::ui
+  end
+  BLOCK --> PIN --> CID --> ANCH
+  ANCH -->|"yes"| ETH
+  ANCH -->|"no — token has no CID store"| CID
+  INTAKE --> ARC
 `;
 }
 
@@ -3395,29 +3526,74 @@ async function openBugReport() {
   openModal(`
     <h2>Report a bug</h2>
     <p class="hint">${escapeHtml(status.note || "")}</p>
-    <label>What went wrong?
-      <textarea id="bugMessage" rows="6" maxlength="5000"
+    <form class="bug-form" id="bugForm" novalidate>
+      <label class="bug-label" for="bugMessage">What went wrong?</label>
+      <textarea class="bug-input" id="bugMessage" rows="6" maxlength="5000" required
         placeholder="What were you doing, what did you expect, and what happened instead? If you saw an error reference, paste it here."></textarea>
-    </label>
-    <label>Your email <span class="hint-inline">(optional — only so you can be replied to)</span>
-      <input type="email" id="bugContact" maxlength="200" placeholder="you@example.com">
-    </label>
-    <div class="modal-actions">
-      <button class="btn btn-primary" id="bugSendBtn">Send report</button>
-      <span class="profile-msg" id="bugMsg"></span>
-    </div>`);
+      <div class="bug-counter"><span id="bugCount">0</span> / 5000</div>
 
-  document.getElementById("bugSendBtn").addEventListener("click", submitBugReport);
+      <label class="bug-label" for="bugContact">Your email
+        <span class="hint-inline">optional — only so you can be replied to</span></label>
+      <input class="bug-input" type="email" id="bugContact" maxlength="200"
+             placeholder="you@example.com" autocomplete="email">
+
+      <div class="modal-actions">
+        <button type="submit" class="btn btn-primary" id="bugSendBtn" disabled>Send report</button>
+        <button type="button" class="btn btn-outline" id="bugCancelBtn">Cancel</button>
+        <span class="profile-msg" id="bugMsg"></span>
+      </div>
+    </form>`);
+
+  const form = document.getElementById("bugForm");
+  const message = document.getElementById("bugMessage");
+  const sendBtn = document.getElementById("bugSendBtn");
+  const counter = document.getElementById("bugCount");
+
+  // Submit stays disabled until the report is actually submittable, so the
+  // button never accepts a click it is going to reject. The previous version
+  // let you press Send and only then told you the message was too short.
+  const sync = () => {
+    const len = message.value.trim().length;
+    counter.textContent = message.value.length;
+    sendBtn.disabled = len < 10;
+    sendBtn.title = len < 10 ? "Please describe the problem in a little more detail." : "";
+  };
+  message.addEventListener("input", sync);
+  sync();
+  message.focus();
+
+  // A <form> submit handler, not a bare click listener: this also catches
+  // Enter from the email field, which previously reloaded the page and threw
+  // the report away.
+  form.addEventListener("submit", e => { e.preventDefault(); submitBugReport(); });
+  document.getElementById("bugCancelBtn").addEventListener("click", () =>
+    document.getElementById("modalOverlay").classList.add("hidden"));
 }
 
 async function submitBugReport() {
   const btn = document.getElementById("bugSendBtn");
   const msg = document.getElementById("bugMsg");
-  const message = document.getElementById("bugMessage").value.trim();
-  const contact = document.getElementById("bugContact").value.trim();
+  const messageEl = document.getElementById("bugMessage");
+  const contactEl = document.getElementById("bugContact");
+  if (!btn || !messageEl) return;   // modal was closed mid-flight
 
+  const message = messageEl.value.trim();
+  const contact = contactEl.value.trim();
+
+  msg.textContent = "";
+  msg.className = "profile-msg";
   if (message.length < 10) {
     msg.textContent = "Please add a little more detail (at least 10 characters).";
+    msg.className = "profile-msg bug-msg-error";
+    return;
+  }
+  // Validated here as well as server-side: a bounced reply address means the
+  // report is effectively anonymous, and the user should find that out now
+  // rather than by never hearing back.
+  if (contact && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact)) {
+    msg.textContent = "That email address doesn't look right. Leave it blank to report anonymously.";
+    msg.className = "profile-msg bug-msg-error";
+    contactEl.focus();
     return;
   }
   btn.disabled = true;
@@ -3442,9 +3618,90 @@ async function submitBugReport() {
       follow up.</p>`;
   } catch (e) {
     msg.textContent = `Could not send: ${e.message}`;
+    msg.className = "profile-msg bug-msg-error";
     btn.disabled = false;
     btn.textContent = "Send report";
   }
+}
+
+
+// ---------------------------------------------------------------------------
+// SIDEBAR: collapse on desktop, drawer on mobile
+// ---------------------------------------------------------------------------
+// One control, two behaviours, because the sidebar means different things at
+// different widths. On a wide screen it is a persistent panel that can be
+// collapsed to reclaim reading width, and that preference is worth
+// remembering. On a phone it is a drawer over the content, and it must NOT be
+// remembered — restoring an open drawer on load would cover the page the user
+// came to read.
+const SIDEBAR_BREAKPOINT = 900;
+
+function isNarrow() {
+  return window.matchMedia(`(max-width: ${SIDEBAR_BREAKPOINT}px)`).matches;
+}
+
+function setSidebar(open, { persist = true } = {}) {
+  const shell = document.getElementById("appShell");
+  const toggle = document.getElementById("sidebarToggle");
+  const scrim = document.getElementById("sidebarScrim");
+  if (!shell || !toggle) return;
+
+  shell.classList.toggle("sidebar-collapsed", !open);
+  toggle.setAttribute("aria-expanded", String(open));
+  toggle.setAttribute("aria-label", open ? "Hide sidebar" : "Show sidebar");
+  if (scrim) scrim.classList.toggle("hidden", !(open && isNarrow()));
+
+  // The drawer state is per-visit; the desktop collapse is a preference.
+  if (persist && !isNarrow()) {
+    try { localStorage.setItem("sp_sidebar_open", open ? "1" : "0"); } catch (_) {}
+  }
+}
+
+function initSidebar() {
+  const toggle = document.getElementById("sidebarToggle");
+  const scrim = document.getElementById("sidebarScrim");
+  if (!toggle) return;
+
+  let open;
+  if (isNarrow()) {
+    open = false;   // never restore an open drawer over the content
+  } else {
+    let stored = null;
+    try { stored = localStorage.getItem("sp_sidebar_open"); } catch (_) {}
+    open = stored === null ? true : stored === "1";
+  }
+  setSidebar(open, { persist: false });
+
+  toggle.addEventListener("click", () => {
+    const nowOpen = toggle.getAttribute("aria-expanded") !== "true";
+    setSidebar(nowOpen);
+  });
+  if (scrim) scrim.addEventListener("click", () => setSidebar(false, { persist: false }));
+
+  // Escape closes the drawer, matching every other overlay in the app.
+  document.addEventListener("keydown", e => {
+    if (e.key === "Escape" && isNarrow()) setSidebar(false, { persist: false });
+  });
+
+  // Choosing a tab on mobile should reveal the tab, not leave the drawer over it.
+  document.querySelectorAll(".tab-btn").forEach(btn =>
+    btn.addEventListener("click", () => { if (isNarrow()) setSidebar(false, { persist: false }); }));
+
+  // Crossing the breakpoint re-applies the right default for the new width,
+  // otherwise a desktop collapse would persist into a phone-sized drawer.
+  let wasNarrow = isNarrow();
+  window.addEventListener("resize", debounced(() => {
+    const narrow = isNarrow();
+    if (narrow === wasNarrow) return;
+    wasNarrow = narrow;
+    if (narrow) {
+      setSidebar(false, { persist: false });
+    } else {
+      let stored = null;
+      try { stored = localStorage.getItem("sp_sidebar_open"); } catch (_) {}
+      setSidebar(stored === null ? true : stored === "1", { persist: false });
+    }
+  }, 150));
 }
 
 bootstrapFromQueryParams();
@@ -3457,6 +3714,7 @@ loadProfile();
 document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
 document.getElementById("profileResetBtn").addEventListener("click", resetProfile);
 document.getElementById("bugReportBtn").addEventListener("click", openBugReport);
+initSidebar();
 loadAssessmentHistory();
 
 // Referral. Uses the native share sheet where it exists (mobile), falls back to
@@ -3466,8 +3724,13 @@ loadAssessmentHistory();
 document.getElementById("referBtn").addEventListener("click", async () => {
   const msg = document.getElementById("referMsg");
   const url = window.location.origin + window.location.pathname;
-  const text = "ScholarPi assesses research manuscripts against CoARA-aligned criteria and "
-    + "tells you why a paper isn't landing — venue, coauthors, reproducibility. " + url;
+  // Warmer than the original, which read like a product datasheet and led
+  // with what the tool measures rather than what it does for the reader.
+  const text = "I've been using ScholarPi and I think you'd find it really useful. "
+    + "It reviews your manuscript against CoARA-aligned criteria and gives you clear, "
+    + "practical feedback on what's holding a paper back — reproducibility, venue fit, "
+    + "collaboration patterns — before a reviewer does. It's free to try, and genuinely "
+    + "helpful if you're preparing something for submission. Please give it a go: " + url;
 
   if (navigator.share) {
     try {
@@ -3532,4 +3795,7 @@ setInterval(loadChainStatus, 60000);
 // after a win. Kept explicit rather than leaking the whole module scope.
 window.ScholarPi = {
   refreshTrialStatus,
+  // The arcade needs the current identity to key difficulty and the
+  // leaderboard to a person rather than to an IP address.
+  identity: () => ({ wallet: Session.wallet || "", orcid: Session.orcid || "" }),
 };

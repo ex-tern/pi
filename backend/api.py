@@ -59,7 +59,8 @@ from database import (
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
     store_bug_report, mark_bug_report_delivered, list_bug_reports,
-    record_backup_cid, latest_backups,
+    get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
+    record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
 )
 import arcade
@@ -90,6 +91,7 @@ import forecast as forecast_engine
 import assistant as scilem
 import abuse_guard
 import bugreport
+import scilem_learning
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
@@ -637,8 +639,48 @@ def trial_status(request: Request):
 # The reward is real allowance, so the server replays every submitted run
 # rather than believing a reported score. See arcade.py for the reasoning.
 # --------------------------------------------------------------------------
+def _profile_key(wallet: str = "", orcid: str = "") -> str:
+    """One stable key per identity. ORCID wins when both are present, since it
+    survives a wallet change and is the more durable research identity."""
+    if orcid:
+        return f"orcid:{orcid}"
+    if wallet:
+        return f"wallet:{wallet.lower()}"
+    return ""
+
+
+def _display_name(wallet: str = "", orcid: str = "") -> str:
+    """A public label for a player that is not their full credential.
+
+    A leaderboard is public. Printing a full wallet address or ORCID on it
+    would publish a durable identifier next to a game score, which nobody
+    signing in to assess a paper agreed to.
+    """
+    if orcid:
+        return f"ORCID …{orcid[-4:]}" if len(orcid) > 4 else "ORCID researcher"
+    if wallet and len(wallet) > 12:
+        return f"{wallet[:6]}…{wallet[-4:]}"
+    return ""
+
+
+def _arcade_key(request: Request, wallet: str = "", orcid: str = ""):
+    """Who this run belongs to, and whether that is a real identity.
+
+    Difficulty must persist across refreshes, so it cannot live in the browser.
+    A signed-in player is keyed to their identity; everyone else falls back to
+    a hashed IP, which is enough to hold a ramp but is explicitly NOT treated
+    as a person for leaderboard purposes.
+    """
+    key = _profile_key(wallet, orcid)
+    if key:
+        return key, True
+    ip = get_client_ip(request)
+    return "ip:" + hashlib.sha256(f"arcade:{ip}".encode()).hexdigest()[:32], False
+
+
 @app.get("/api/arcade/start")
-def arcade_start(request: Request):
+def arcade_start(request: Request, wallet: str = Query(default=""),
+                 orcid: str = Query(default="")):
     """Issues a signed, seeded bubble field for one run."""
     ip = get_client_ip(request)
     # Snapshot the live corpus so the playfield reflects the real body of
@@ -654,12 +696,28 @@ def arcade_start(request: Request):
     except Exception as e:
         logging.warning("Corpus totals failed: %s", e)
         totals = {"papers": 0, "classified": 0, "unclassified": 0}
-    session = arcade.start_session(ip, corpus_stats=corpus, corpus_totals=totals)
+    player_key, is_identity = _arcade_key(request, wallet, orcid)
+    progress = get_arcade_progress(player_key)
+    session = arcade.start_session(ip, corpus_stats=corpus, corpus_totals=totals,
+                                   level=progress["difficulty_level"])
     state = get_bonus_award_state(ip)
     session["wallet_state"] = {
         "bonus_earned": state["bonus"],
         "cap": arcade.BONUS_CAP,
         "cooldown_remaining": arcade.cooldown_remaining(state["last_award"]),
+    }
+    session["progress"] = {
+        **progress,
+        "is_identity": is_identity,
+        # Said plainly rather than left for the player to infer from repeated
+        # failure. An unwinnable field is a designed state, not a bug, and it
+        # has an explicit way out.
+        "reset_hint": (
+            "This field can no longer be won at your current difficulty. Assess a manuscript "
+            "to reset it to level 0."
+            if not session["difficulty"]["winnable"] else
+            "Each win raises the difficulty. Assessing a manuscript resets it."
+        ),
     }
     return session
 
@@ -668,6 +726,17 @@ class ArcadeRun(BaseModel):
     token: str
     duration_ms: int
     absorbed: List[dict] = []
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.get("/api/arcade/leaderboard")
+def arcade_leaderboard_endpoint(limit: int = Query(default=20, ge=1, le=100)):
+    """Top Science Map players. Signed-in identities only."""
+    return {"leaderboard": arcade_leaderboard(limit=limit),
+            "note": ("Ranked by best run mass. Only signed-in players appear — an anonymous "
+                     "player is keyed to a hashed IP, which is not a person and changes when "
+                     "they reconnect.")}
 
 
 @app.post("/api/arcade/finish")
@@ -675,15 +744,26 @@ def arcade_finish(payload: ArcadeRun, request: Request):
     """Verifies a completed run and grants allowance if it was a legitimate win."""
     ip = get_client_ip(request)
     result = arcade.verify_run(ip, payload.token, payload.absorbed, payload.duration_ms)
+    player_key, is_identity = _arcade_key(request, payload.wallet, payload.orcid)
 
     if not result["valid"]:
         logging.info("Arcade run rejected from %s: %s", ip, result.get("reason"))
         return {**result, "granted": 0, "bonus_total": get_bonus_evals(ip)}
 
+    # Recorded before any reward logic. A run that was played happened,
+    # whether or not it won and whether or not a cooldown blocks the payout —
+    # and the difficulty ramp and the leaderboard both depend on that record.
+    progress = record_arcade_run(
+        player_key, won=result["won"], final_mass=result.get("final_mass", 0.0),
+        is_identity=is_identity, display_name=_display_name(payload.wallet, payload.orcid),
+        max_level=arcade.MAX_DIFFICULTY_LEVEL,
+    )
+    result["progress"] = progress
+
     if not result["won"]:
         return {**result, "granted": 0, "bonus_total": get_bonus_evals(ip),
                 "message": (f"Run recorded at mass {result['final_mass']}. "
-                            f"Reach {arcade.WIN_MASS} to earn free assessments.")}
+                            f"Reach {result['win_mass']} to earn free assessments.")}
 
     state = get_bonus_award_state(ip)
     remaining_cooldown = arcade.cooldown_remaining(state["last_award"])
@@ -702,10 +782,13 @@ def arcade_finish(payload: ArcadeRun, request: Request):
                             f"{arcade.BONUS_CAP} bonus assessments. Connect a wallet or link "
                             f"ORCID to keep going.")}
 
-    logging.info("Arcade win from %s granted %s free assessments", ip, grant["granted"])
+    logging.info("Arcade win from %s granted %s free assessments (difficulty now %s)",
+                 ip, grant["granted"], progress["difficulty_level"])
     return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
             "message": (f"Victory. {grant['granted']} free assessment"
-                        f"{'s' if grant['granted'] != 1 else ''} added to this connection.")}
+                        f"{'s' if grant['granted'] != 1 else ''} added to this connection. "
+                        f"Difficulty is now level {progress['difficulty_level']} — assess a "
+                        f"manuscript to reset it.")}
 
 
 @app.get("/api/stats/count")
@@ -718,14 +801,6 @@ def stats_count():
     return {"total_analyzed": n}
 
 
-def _profile_key(wallet: str = "", orcid: str = "") -> str:
-    """One stable key per identity. ORCID wins when both are present, since it
-    survives a wallet change and is the more durable research identity."""
-    if orcid:
-        return f"orcid:{orcid}"
-    if wallet:
-        return f"wallet:{wallet.lower()}"
-    return ""
 
 
 class ResearcherProfile(BaseModel):
@@ -1504,6 +1579,20 @@ async def assess_stream(
         for _ in range(max(1, len(fingerprints))):
             increment_free_evals_used(client_ip)
 
+    # Assessing resets the arcade difficulty ramp. This is the exchange the
+    # ramp exists to create: the game hands out assessment allowance, so the
+    # way to make it winnable again is to spend that allowance on an
+    # assessment. Reset happens at submission rather than on success, because
+    # the user has committed the paper by this point and a provider failure
+    # downstream is not their fault.
+    if paper_count:
+        try:
+            arcade_player_key, _ = _arcade_key(request, wallet, orcid)
+            if reset_arcade_difficulty(arcade_player_key):
+                add_log("Arcade difficulty reset to level 0 after an assessment.")
+        except Exception as e:
+            logging.debug("Arcade difficulty reset skipped: %s", e)
+
     def gen():
         """Wraps the assessment stream so a failure is *visible*.
 
@@ -1671,6 +1760,94 @@ def scilem_status():
         "capabilities": scilem.CAPABILITIES,
         "notice": notice,
     }
+
+
+@app.get("/api/scilem/learning")
+def scilem_learning_status(wallet: str = Query(default=""),
+                           observations: int = Query(default=0, ge=0, le=200)):
+    """What Scilem has learned, and from what.
+
+    Public by design. This model contributes to a research-assessment score,
+    so how it is weighted, how far it has drifted from its authored defaults
+    and how well calibrated it currently is are all things a reader is
+    entitled to check rather than take on trust.
+    """
+    payload = scilem_learning.status()
+    if observations:
+        # The raw observation log is owner-only: it pairs evaluation hashes
+        # with panel verdicts, which is more detail than a public endpoint
+        # should join up.
+        if wallet and OWNER_ID and wallet.lower() == OWNER_ID.lower():
+            payload["observations_log"] = list_scilem_observations(limit=observations)
+        else:
+            payload["observations_log"] = []
+            payload["observations_note"] = "The raw observation log is restricted to the owner wallet."
+    return payload
+
+
+class ScilemFeedback(BaseModel):
+    eval_hash: str
+    corrected_score: float
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.post("/api/scilem/feedback")
+def scilem_feedback(payload: ScilemFeedback, request: Request):
+    """A human correction to a structural score.
+
+    Weighted more heavily than panel consensus, because a person who has read
+    the manuscript is a better authority on it than a panel of models. Limited
+    to signed-in users and to one correction per paper per identity: an
+    anonymous, repeatable correction endpoint is a direct route to steering
+    the scoring model, and this is the one input that is not self-correcting.
+    """
+    check_rate_limit(get_client_ip(request), bucket="scilem")
+    key = _profile_key(payload.wallet, payload.orcid)
+    if not key:
+        raise HTTPException(
+            status_code=403,
+            detail="Sign in with a wallet or ORCID to submit a correction. Corrections adjust "
+                   "the scoring model, so they must be attributable.")
+    if not 0.0 <= payload.corrected_score <= 100.0:
+        raise HTTPException(status_code=400, detail="Corrected score must be between 0 and 100.")
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT title, scilem_signals FROM papers_assessment WHERE eval_hash = ?",
+            (payload.eval_hash,),
+        ).fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        conn.close()
+
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    # The signals were measured and stored at assessment time. Reusing them
+    # rather than re-deriving from text means a correction can be applied long
+    # after the manuscript itself is gone — and, more importantly, that the
+    # learning step uses exactly the measurements the original score used.
+    try:
+        signals = json.loads(row[1] or "{}")
+    except (ValueError, TypeError):
+        signals = {}
+    if not signals or not any(signals.values()):
+        return {"accepted": False,
+                "message": ("This assessment predates structural-signal storage, so there is "
+                            "nothing to learn from. Corrections work on assessments run after "
+                            "this version.")}
+    report = scilem_learning.observe(
+        signals, max(0.0, min(1.0, payload.corrected_score / 100.0)),
+        source="feedback", independent_sources=99, eval_hash=payload.eval_hash,
+    )
+    add_log(f"Scilem correction on {payload.eval_hash[:12]}… by {key[:16]}…: {report.get('learned')}")
+    return {"accepted": bool(report.get("learned")), "report": report,
+            "message": ("Correction applied. Scilem's weighting has been adjusted."
+                        if report.get("learned") else
+                        f"Correction not applied: {report.get('reason', 'rejected.')}")}
 
 
 @app.post("/api/scilem/chat")
@@ -1894,15 +2071,37 @@ def _run_forecast_impl(lookback: int = 3):
         }
 
     if len(rows) < 1:
+        # An empty state is not the same as no information. The rubric's
+        # genesis weighting is a real, defined starting point — it is what the
+        # forecast will move AWAY from — so it is rendered as a chart rather
+        # than withheld behind "come back when you have data". Showing the
+        # baseline also makes the first assessment's effect legible, because
+        # the user has already seen what it started from.
+        baseline = np.full(8, 1.0, dtype=np.float32)
+        criteria = []
+        for i, key_c in enumerate(CRITERIA_KEYS):
+            criteria.append({
+                "id": key_c,
+                "title": CRITERIA_TITLES.get(key_c, key_c),
+                "current": 1.0, "previous": 1.0, "delta": 0.0, "direction": "flat",
+            })
         return {
-            "ready": False,
-            "mode": "empty",
+            "ready": True,
+            "mode": "baseline",
+            "method": "genesis-baseline",
             "message": (
-                "No manuscripts assessed yet. The first assessment produces a criteria "
-                "weighting immediately; a projected trend needs three ledger blocks."
+                "This is the genesis weighting: all eight criteria weighted equally, which is "
+                "where every deployment starts. It is the baseline, not a prediction — assess a "
+                "manuscript and this chart shows how its evidence profile moves the weighting."
             ),
-            "blocks_recorded": len(rows), "blocks_required": 3,
-            "history": [], "forecast": None, "criteria": [],
+            "blocks_recorded": 0, "blocks_required": 3,
+            "history": [], "forecast": None,
+            "criteria": criteria,
+            "insight": (
+                "Nothing has been assessed yet, so no criterion carries more weight than any "
+                "other. The framework does not assume which criteria matter — it learns that "
+                "from the evidence profiles of the manuscripts it sees."
+            ),
         }
 
     weight_matrix = np.array([[safe_float(v, 1.0) for v in r[1:9]] for r in rows], dtype=np.float32)
@@ -2559,21 +2758,59 @@ def explorer_search(q: str = Query(default="")):
     return {"records": [build_dossier_from_row(r) for r in rows]}
 
 
+# Sortable columns, whitelisted. The sort key reaches an ORDER BY clause, so
+# it can never be interpolated from user input directly — a mapping is the
+# only safe way to expose sorting over a SQL query.
+_EXPLORER_SORTS = {
+    "date": "p.timestamp",
+    "score": "p.final_score",
+    "piq": "p.piq_minted",
+    "title": "p.title",
+    "author": "p.author_name",
+}
+
+
 @app.get("/api/explorer/latest")
-def explorer_latest():
+def explorer_latest(
+    min_score: float = Query(default=0.0, ge=0.0, le=100.0),
+    max_score: float = Query(default=100.0, ge=0.0, le=100.0),
+    field: str = Query(default="", max_length=120),
+    sort: str = Query(default="date"),
+    order: str = Query(default="desc"),
+    limit: int = Query(default=25, ge=1, le=200),
+):
+    """Ledger records, filtered and sorted.
+
+    The filtering controls moved here from the leaderboards. A leaderboard's
+    job is to show a ranking; the moment it is filtered it stops being one,
+    because "top papers scoring at least 80" is a search result wearing a
+    ranking's clothes. The explorer is the surface whose job IS finding a
+    particular record, so that is where the filters belong.
+    """
+    sort_column = _EXPLORER_SORTS.get(sort, _EXPLORER_SORTS["date"])
+    direction = "ASC" if str(order).lower() == "asc" else "DESC"
+
     conn = get_db_connection()
     try:
         # Joined against the Proof-of-Research chain so the explorer shows
         # actual ledger data — block height, validator, block hash, proof and
         # settlement transaction — rather than a plain list of titles.
+        #
+        # NULL scores sort last in both directions: a paper with no score is
+        # not the best paper, and it is not the worst either — it is absent
+        # from the ranking, and putting it at the top of an ascending sort
+        # would misrepresent it as a zero.
         rows = conn.execute(
-            """SELECT p.title, p.author_name, p.final_score, p.eval_hash, p.timestamp,
+            f"""SELECT p.title, p.author_name, p.final_score, p.eval_hash, p.timestamp,
                       p.tx_hash, p.zk_proof, p.piq_minted,
                       b.block_height, b.block_hash, b.previous_hash, b.validator_node,
-                      b.por_proof, b.model_used, b.formulas_hash
+                      b.por_proof, b.model_used, b.formulas_hash, p.fields
                FROM papers_assessment p
                LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
-               ORDER BY p.timestamp DESC LIMIT 25"""
+               WHERE COALESCE(p.final_score, 0) >= ? AND COALESCE(p.final_score, 0) <= ?
+               ORDER BY ({sort_column} IS NULL), {sort_column} {direction}
+               LIMIT ?""",
+            (min_score, max_score, int(limit)),
         ).fetchall()
     except sqlite3.Error as e:
         add_log(f"Ledger read failed: {e}")
@@ -2583,9 +2820,21 @@ def explorer_latest():
     finally:
         conn.close()
     records = []
+    wanted_field = (field or "").strip().lower()
     for r in rows:
+        # Field filtering is done here rather than in SQL because `fields` is a
+        # JSON array in a TEXT column; a LIKE against it would match substrings
+        # across element boundaries ("Biology" matching "Marine Biology" is
+        # fine, but "Bio" matching either is not).
+        try:
+            row_fields = [str(f).strip() for f in json.loads(r[15] or "[]") if str(f).strip()]
+        except (ValueError, TypeError):
+            row_fields = []
+        if wanted_field and not any(f.lower() == wanted_field for f in row_fields):
+            continue
         tx = r[5]
         records.append({
+            "fields": row_fields,
             "title": r[0], "author": clean_author_name(r[1]), "score": r[2],
             "eval_hash": r[3], "timestamp": r[4],
             "tx_hash": tx, "explorer_url": get_sepolia_explorer_url(tx, "tx"),
@@ -2595,9 +2844,18 @@ def explorer_latest():
             "validator_node": r[11], "por_proof": r[12], "model_used": r[13],
             "formulas_hash": r[14],
         })
-    return {"records": records, "chain": {
-        "network": CHAIN_NAME, "chain_id": CHAIN_ID, "explorer": BLOCK_EXPLORER_URL,
-    }}
+    return {
+        "records": records,
+        "count": len(records),
+        # The filter dropdown is built from fields that are actually present in
+        # the corpus, so selecting one always returns something.
+        "available_fields": list_corpus_fields(),
+        "filters": {"min_score": min_score, "max_score": max_score,
+                    "field": field, "sort": sort, "order": direction.lower()},
+        "chain": {
+            "network": CHAIN_NAME, "chain_id": CHAIN_ID, "explorer": BLOCK_EXPLORER_URL,
+        },
+    }
 
 
 @app.get("/api/explorer/dossier/{eval_hash}")

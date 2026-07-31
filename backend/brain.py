@@ -29,6 +29,7 @@ import fitz
 import numpy as np
 from openai import OpenAI
 from functools import lru_cache
+import scilem_learning
 
 # ---------------------------------------------------------------------------
 # PyTorch is loaded on demand, not at import time.
@@ -154,15 +155,40 @@ def generate_assistant_reply(raw_text):
     except Exception as e:
         return f"Scilem Local Neural Engine initialization failed: {e}"
 
-def compute_structural_quality(paper_text: str) -> float:
+def measure_structural_signals(paper_text: str) -> dict:
+    """The four deterministic measurements Scilem is built on.
+
+    Kept separate from the scoring step because these are the auditable part:
+    identical text always produces identical signals, and nothing learned is
+    allowed to change them. Only their relative WEIGHTING is learned.
+    """
     if not paper_text or not paper_text.strip():
-        return 0.0
+        return {"mdar": 0.0, "density": 0.0, "repro": 0.0, "rrid": 0.0}
     mdar, rrid_count = measure_mdar_adherence(paper_text)
     repro, _ = measure_reproducibility_markers(paper_text)
     density = measure_empirical_density(paper_text)
-    rrid_component = min(1.0, rrid_count / 5.0)
-    return round(min(1.0, max(0.0,
-        (mdar * 0.35) + (density * 0.30) + (repro * 0.25) + (rrid_component * 0.10))), 6)
+    return {
+        "mdar": float(mdar),
+        "density": float(density),
+        "repro": float(repro),
+        "rrid": min(1.0, rrid_count / 5.0),
+    }
+
+
+def compute_structural_quality(paper_text: str) -> float:
+    """Composite structural quality under the current learned weighting."""
+    signals = measure_structural_signals(paper_text)
+    if not any(signals.values()):
+        return 0.0
+    try:
+        return scilem_learning.predict(signals)
+    except Exception as e:
+        # A learning failure must never take down scoring. Fall back to the
+        # authored weights, which is exactly what the model started from.
+        logging.warning("Scilem learned weighting unavailable, using defaults: %s", e)
+        return round(min(1.0, max(0.0,
+            (signals["mdar"] * 0.35) + (signals["density"] * 0.30)
+            + (signals["repro"] * 0.25) + (signals["rrid"] * 0.10))), 6)
 
 def assess_with_structural_analyzer(paper_text, canary=""):
     scilem_numeric_score = compute_structural_quality(paper_text) * 100.0
@@ -200,18 +226,56 @@ def assess_with_structural_analyzer(paper_text, canary=""):
         "scilem_score": scilem_numeric_score,
     }
 
-def update_structural_analyzer(raw_text, evidence_report, target_quality=None):
-    return ("Scilem structural analysis is deterministic; no model training is performed.")
+def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
+                               independent_sources=0, eval_hash=""):
+    """Learn from this assessment: nudge the signal weighting toward the panel.
+
+    Called once per assessed manuscript. The panel's verdict is the target and
+    Scilem's own composite is the prediction; the gap between them is the
+    learning signal. Gated on genuine corroboration inside
+    scilem_learning.observe — an uncorroborated verdict teaches imitation of
+    one model rather than assessment of research, so it is refused there.
+    """
+    if target_quality is None:
+        return "No panel rating was available, so nothing was learned from this assessment."
+    signals = measure_structural_signals(raw_text)
+    try:
+        # The panel rates 0-100; the structural model works in 0-1.
+        target = max(0.0, min(1.0, float(target_quality) / 100.0))
+        report = scilem_learning.observe(
+            signals, target, source="consensus",
+            independent_sources=independent_sources, eval_hash=eval_hash,
+        )
+    except Exception as e:
+        logging.warning("Scilem learning step failed: %s", e)
+        return "Scilem could not update its calibration from this assessment."
+
+    if not report.get("learned"):
+        return f"Scilem did not learn from this assessment: {report.get('reason', 'update rejected.')}"
+    return (
+        f"Scilem calibration updated from panel consensus: predicted "
+        f"{report['predicted'] * 100:.1f}, panel {report['target'] * 100:.1f} "
+        f"(error {abs(report['error']) * 100:.1f} points). "
+        f"{report['observations']} observation(s) learned to date."
+    )
+
 
 def clear_structural_analyzer_state():
+    """Reset the learned weighting to its authored defaults."""
     stale = os.path.join(BASE_DIR, "scilem_weights.pt")
+    removed_note = ""
     if os.path.exists(stale):
         try:
             os.remove(stale)
-            return "Removed stale Scilem weights. Structural analysis is deterministic and needs no reset."
+            removed_note = " Removed a stale weights file from a previous implementation."
         except OSError as e:
-            return f"Could not remove stale weights file: {e}"
-    return "Nothing to reset: Scilem structural analysis is deterministic."
+            removed_note = f" Could not remove the stale weights file: {e}"
+    try:
+        scilem_learning.reset()
+    except Exception as e:
+        return f"Could not reset Scilem's learned state: {e}"
+    return ("Scilem reset to its authored default weighting; all learned calibration and "
+            "observation history has been discarded." + removed_note)
 
 # The two torch-dependent classes are defined inside factories so that
 # subclassing nn.Module / Dataset — which requires torch to be imported —
@@ -956,22 +1020,74 @@ def truncate_to_token_budget(text, max_tokens):
     back_matter = text[-int(max_tokens * 0.6) :]
     return front_matter + "\n...[TRUNCATED FOR TOKEN LIMITS]...\n" + back_matter
 
-def select_consensus_value(consensus_results, field):
+def _distinct_juror_values(consensus_results, field):
+    """Candidate values for a field, one vote per DISTINCT model route.
+
+    Deduplicating by route is the whole point. Every juror chain now ends in a
+    shared Groq Llama fallback, so four jurors can be four labels over one
+    model — and four identical strings from one model is not four jurors
+    agreeing on a title, it is the same extraction counted four times. Counting
+    it as corroboration would inflate confidence in exactly the cases where
+    the panel had collapsed.
+    """
+    seen_routes = set()
     candidates = []
     for key, entry in (consensus_results or {}).items():
         if key.startswith("_") or not isinstance(entry, dict):
             continue
         if entry.get("api_failed"):
             continue
-        val = str(entry.get(field, "") or "").strip()
-        if not val or "n/a" in val.lower() or val.lower() in ("unconfigured key", "none"):
+        route = entry.get("route") or {}
+        route_id = (route.get("provider"), route.get("model")) if route else ("?", key)
+        if route_id in seen_routes:
             continue
-        candidates.append(val)
+
+        val = entry.get(field, "")
+        if field == "references":
+            if not isinstance(val, list) or not val:
+                continue
+        else:
+            val = str(val or "").strip()
+            if not val or "n/a" in val.lower() or val.lower() in ("unconfigured key", "none"):
+                continue
+
+        seen_routes.add(route_id)
+        candidates.append({"juror": key, "route": route_id, "value": val})
+    return candidates
+
+
+def _medoid(values):
+    """The member most similar to all the others.
+
+    Previously the LONGEST member of the winning cluster was chosen, on the
+    assumption that longer meant more complete. For author strings that is
+    precisely backwards: the longest variant is usually the one that swallowed
+    an affiliation or a date, so "most verbose" selected for the most polluted
+    extraction. The medoid picks the variant the jurors actually agree on.
+    """
+    if len(values) == 1:
+        return values[0]
+    best, best_score = values[0], -1.0
+    for candidate in values:
+        score = sum(difflib.SequenceMatcher(None, candidate.lower(), other.lower()).ratio()
+                    for other in values if other is not candidate)
+        if score > best_score:
+            best, best_score = candidate, score
+    return best
+
+
+def select_consensus_value(consensus_results, field):
+    """Agree a single value for a scalar field across independent jurors."""
+    entries = _distinct_juror_values(consensus_results, field)
+    candidates = [e["value"] for e in entries]
 
     if not candidates:
         return ("Untitled Manuscript" if field == "title" else "Unidentified"), 0.0
     if len(candidates) == 1:
-        return candidates[0], 1.0 / max(1, len(consensus_results))
+        # One independent source is not consensus. Support is reported as a
+        # fraction of the panel that could have answered, so a lone extraction
+        # never claims agreement it does not have.
+        return candidates[0], round(1.0 / max(1, len(consensus_results)), 4)
 
     clusters = []
     for val in candidates:
@@ -985,8 +1101,85 @@ def select_consensus_value(consensus_results, field):
             clusters.append([val])
 
     winner = max(clusters, key=len)
-    representative = max(winner, key=len)
-    return representative, round(len(winner) / len(candidates), 4)
+    return _medoid(winner), round(len(winner) / len(candidates), 4)
+
+
+def _normalise_citation(ref):
+    """A comparison key for one reference.
+
+    Jurors format citations inconsistently — numbering, punctuation, author
+    order — so raw strings almost never match. Comparing on a normalised
+    author+year+title signature is what makes cross-juror agreement detectable
+    at all.
+    """
+    if isinstance(ref, dict):
+        parts = [str(ref.get("authors", "")), str(ref.get("year", "")),
+                 str(ref.get("title", "")), str(ref.get("citation", ""))]
+    else:
+        parts = [str(ref)]
+    text = " ".join(p for p in parts if p and p.lower() not in ("none", "n/a"))
+    text = re.sub(r"[^a-z0-9 ]+", " ", text.lower())
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def select_consensus_references(consensus_results, min_sources=2):
+    """References corroborated by more than one independent juror.
+
+    This is the field where consensus matters most. A fabricated reference is
+    the highest-cost extraction error the framework can make — it is the exact
+    failure the reference audit exists to catch — and a single model
+    hallucinating a plausible citation is the normal way it happens. A citation
+    that two independently-routed models both report is very unlikely to be an
+    invention of either.
+
+    Uncorroborated references are not discarded silently; they are returned
+    separately and flagged, because "only one juror saw this" is information
+    the reader needs rather than a reason to hide the entry.
+    """
+    entries = _distinct_juror_values(consensus_results, "references")
+    total_sources = len(entries)
+    if not entries:
+        return {"references": [], "corroborated": 0, "single_source": [],
+                "sources": 0, "agreement": 0.0}
+
+    buckets = {}
+    for entry in entries:
+        seen_here = set()
+        for ref in entry["value"][:30]:
+            key = _normalise_citation(ref)
+            if len(key) < 8 or key in seen_here:
+                continue
+            seen_here.add(key)
+            bucket = buckets.setdefault(key, {"ref": ref, "jurors": set()})
+            bucket["jurors"].add(entry["juror"])
+            # Prefer the richest structured form seen for this citation.
+            if isinstance(ref, dict) and len(str(ref)) > len(str(bucket["ref"])):
+                bucket["ref"] = ref
+
+    corroborated, single = [], []
+    threshold = min(min_sources, total_sources) if total_sources > 1 else 1
+    for bucket in buckets.values():
+        record = dict(bucket["ref"]) if isinstance(bucket["ref"], dict) else {"citation": str(bucket["ref"])}
+        record["sources"] = len(bucket["jurors"])
+        record["corroborated"] = len(bucket["jurors"]) >= threshold and total_sources > 1
+        (corroborated if record["corroborated"] else single).append(record)
+
+    corroborated.sort(key=lambda r: -r["sources"])
+    agreement = round(len(corroborated) / max(1, len(buckets)), 4)
+    return {
+        "references": corroborated + single,
+        "corroborated": len(corroborated),
+        "single_source": single,
+        "sources": total_sources,
+        "agreement": agreement,
+        "note": (
+            f"{len(corroborated)} of {len(buckets)} distinct references were reported by at least "
+            f"{threshold} independently-routed jurors."
+            if total_sources > 1 else
+            "Only one juror was reachable, so no reference could be cross-checked. Treat the "
+            "reference list as unverified."
+        ),
+    }
 
 def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary=""):
     text = truncate_to_token_budget(text, text_limit)
@@ -1010,10 +1203,19 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
                 entry["opinion"] = redact_provider_text(redact_canary(entry["opinion"], canary))
             entry.pop("_raw_error", None)
 
-    scilem_opinion = update_structural_analyzer(text, evidence_report, pidyne_ai_rating)
+    _quality_meta = (consensus_results.get("_judge_metadata") or {})
+    scilem_opinion = update_structural_analyzer(
+        text, evidence_report, pidyne_ai_rating,
+        independent_sources=int(_quality_meta.get("independent_source_count") or 0),
+    )
 
     best_title, title_support = select_consensus_value(consensus_results, "title")
     best_author, author_support = select_consensus_value(consensus_results, "authors")
+    # Authors pass through the same cleaner used on PDF bylines, so an
+    # affiliation or date that one juror folded into its author string is
+    # stripped before it reaches the ledger and the attribution key.
+    best_author = _truncate_author_list(clean_author_list(best_author) or best_author, 120)
+    reference_consensus = select_consensus_references(consensus_results)
 
     scilem_score = consensus_results.get("scilem", {}).get("scilem_score", pidyne_ai_rating)
 
@@ -1029,6 +1231,7 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
         "Overall_Confidence": confidence,
         "_title_support": title_support,
         "_author_support": author_support,
+        "_reference_consensus": reference_consensus,
         "_consensus_raw": consensus_results,
         "_evidence_report": evidence_report,
         "_pidyne_rating": pidyne_ai_rating,
@@ -1596,8 +1799,9 @@ def process_single_pdf(
                 warnings_json, judge_metadata, integrity_report, reference_audit,
                 authorship_signal, topology_detail, classification, criteria_breakdown,
                 signal_vector, rubric_version, author_metrics, emission_record,
-                author_openalex_id, scoring_epoch, unweighted_score, attribution
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                author_openalex_id, scoring_epoch, unweighted_score, attribution,
+                scilem_signals
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
                 logic_integrity, 0.0,
@@ -1614,7 +1818,10 @@ def process_single_pdf(
                 json.dumps(classification), json.dumps(criteria_breakdown),
                 json.dumps(signal_vector), RUBRIC_VERSION, json.dumps(author_metrics),
                 json.dumps(emission), author_key, scoring_epoch, unweighted_score,
-                json.dumps(attribution)
+                json.dumps(attribution),
+                # Stored so a correction submitted later can be learned from
+                # without this deployment having to retain manuscript text.
+                json.dumps(measure_structural_signals(full_text)),
             ),
         )
 

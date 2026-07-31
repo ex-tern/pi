@@ -16,6 +16,9 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     "authorship_signal", "topology_detail", "classification", "criteria_breakdown",
     "signal_vector", "rubric_version", "author_metrics", "emission_record",
     "author_openalex_id", "scoring_epoch", "unweighted_score", "attribution",
+    # The four deterministic structural measurements, stored so a later user
+    # correction can be learned from without retaining manuscript text.
+    "scilem_signals",
 }
 
 def reset_schema_cache():
@@ -103,6 +106,41 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         tx_hash TEXT DEFAULT '',
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
 
+    # Arcade progress and run history.
+    #
+    # Keyed by identity where one exists and by IP hash otherwise, because the
+    # difficulty ramp must survive a browser refresh — held client-side it
+    # would be a suggestion rather than a rule, and clearing localStorage would
+    # reset the ramp for free.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS arcade_progress (
+                        account_key TEXT PRIMARY KEY,
+                        is_identity INTEGER DEFAULT 0,
+                        difficulty_level INTEGER DEFAULT 0,
+                        wins INTEGER DEFAULT 0,
+                        runs INTEGER DEFAULT 0,
+                        best_mass REAL DEFAULT 0,
+                        display_name TEXT DEFAULT '',
+                        last_run_at DATETIME,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_arcade_best ON arcade_progress(best_mass DESC)")
+
+    # Scilem's learned calibration. One row of state plus an append-only
+    # observation log, so the current weights can always be recomputed from
+    # scratch and audited — a scoring model that cannot be reproduced or
+    # rolled back has no business scoring research.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS scilem_state (
+                        id INTEGER PRIMARY KEY CHECK (id = 1),
+                        state_json TEXT NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS scilem_observations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        eval_hash TEXT DEFAULT '',
+                        signals_json TEXT NOT NULL,
+                        predicted REAL,
+                        target REAL,
+                        source TEXT,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+
     # 3. New Ingestion Queue for Microservices
     cursor.execute("""CREATE TABLE IF NOT EXISTS ingestion_queue (
                         id INTEGER PRIMARY KEY AUTOINCREMENT, source_type TEXT, source_val TEXT, 
@@ -180,6 +218,10 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # audited even after the rubric changes.
         "classification": "TEXT DEFAULT '{}'", "criteria_breakdown": "TEXT DEFAULT '[]'",
         "signal_vector": "TEXT DEFAULT '{}'", "rubric_version": "TEXT DEFAULT ''",
+        # Scilem's four deterministic measurements for this paper. Persisted so
+        # a correction submitted weeks later can be turned into a learning step
+        # without the deployment having to retain manuscript text.
+        "scilem_signals": "TEXT DEFAULT '{}'",
         # Real h-index / i10-index from OpenAlex. Reported as author context;
         # excluded from scoring per CoARA.
         "author_metrics": "TEXT DEFAULT '{}'",
@@ -989,3 +1031,218 @@ def latest_backups(limit: int = 10) -> list:
         conn.close()
     return [{"cid": r[0], "tx_hash": r[1], "anchored": bool(r[1]), "created_at": r[2]}
             for r in rows]
+
+
+# ---------------------------------------------------------------------------
+# Arcade progress
+# ---------------------------------------------------------------------------
+def get_arcade_progress(account_key: str) -> dict:
+    """Difficulty level and record for one player."""
+    if not account_key:
+        return {"difficulty_level": 0, "wins": 0, "runs": 0, "best_mass": 0.0}
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT difficulty_level, wins, runs, best_mass, last_run_at
+               FROM arcade_progress WHERE account_key = ?""",
+            (account_key,),
+        ).fetchone()
+    except sqlite3.Error:
+        return {"difficulty_level": 0, "wins": 0, "runs": 0, "best_mass": 0.0}
+    finally:
+        conn.close()
+    if not row:
+        return {"difficulty_level": 0, "wins": 0, "runs": 0, "best_mass": 0.0}
+    return {"difficulty_level": int(row[0] or 0), "wins": int(row[1] or 0),
+            "runs": int(row[2] or 0), "best_mass": float(row[3] or 0.0),
+            "last_run_at": row[4]}
+
+
+def record_arcade_run(account_key: str, won: bool, final_mass: float,
+                      is_identity: bool = False, display_name: str = "",
+                      max_level: int = 12) -> dict:
+    """Record one run; a win raises the difficulty for the next.
+
+    best_mass uses MAX rather than assignment, so a later weaker run cannot
+    erase a personal best — a leaderboard that goes down when you play again
+    is not a leaderboard.
+    """
+    if not account_key:
+        return {"difficulty_level": 0, "wins": 0}
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO arcade_progress
+                 (account_key, is_identity, difficulty_level, wins, runs, best_mass,
+                  display_name, last_run_at, updated_at)
+               VALUES (?, ?, 0, 0, 0, 0, ?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+               ON CONFLICT(account_key) DO NOTHING""",
+            (account_key, 1 if is_identity else 0, display_name[:120]),
+        )
+        conn.execute(
+            """UPDATE arcade_progress
+                 SET runs = runs + 1,
+                     wins = wins + ?,
+                     difficulty_level = MIN(difficulty_level + ?, ?),
+                     best_mass = MAX(best_mass, ?),
+                     is_identity = ?,
+                     display_name = CASE WHEN ? <> '' THEN ? ELSE display_name END,
+                     last_run_at = CURRENT_TIMESTAMP,
+                     updated_at = CURRENT_TIMESTAMP
+               WHERE account_key = ?""",
+            (1 if won else 0, 1 if won else 0, int(max_level), float(final_mass or 0.0),
+             1 if is_identity else 0, display_name[:120], display_name[:120], account_key),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not record arcade run: %s", e)
+    finally:
+        conn.close()
+    return get_arcade_progress(account_key)
+
+
+def reset_arcade_difficulty(account_key: str) -> bool:
+    """Assessing a manuscript resets the ramp.
+
+    This is the exchange the ramp exists to create: the arcade hands out
+    assessment allowance, so the way to make it winnable again is to do the
+    thing the allowance is for.
+    """
+    if not account_key:
+        return False
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """UPDATE arcade_progress SET difficulty_level = 0, updated_at = CURRENT_TIMESTAMP
+               WHERE account_key = ? AND difficulty_level > 0""",
+            (account_key,),
+        )
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def arcade_leaderboard(limit: int = 20) -> list:
+    """Signed-in players only, ranked by personal best mass.
+
+    Anonymous players are excluded because their key is an IP hash: it is not
+    a person, it is shared by everyone behind a NAT, and it changes when they
+    reconnect. Ranking it would be ranking noise.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT display_name, account_key, best_mass, wins, runs, difficulty_level
+               FROM arcade_progress
+               WHERE is_identity = 1 AND runs > 0
+               ORDER BY best_mass DESC, wins DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    out = []
+    for i, r in enumerate(rows):
+        key = r[1] or ""
+        # Never expose a full wallet or ORCID on a public board.
+        label = r[0] or (f"{key[:6]}…{key[-4:]}" if len(key) > 12 else "Researcher")
+        out.append({"rank": i + 1, "player": label,
+                    "best_mass": round(float(r[2] or 0), 1), "wins": int(r[3] or 0),
+                    "runs": int(r[4] or 0), "difficulty_level": int(r[5] or 0)})
+    return out
+
+
+# ---------------------------------------------------------------------------
+# Scilem learned state
+# ---------------------------------------------------------------------------
+def get_scilem_state() -> dict:
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT state_json FROM scilem_state WHERE id = 1").fetchone()
+    except sqlite3.Error:
+        return None
+    finally:
+        conn.close()
+    if not row or not row[0]:
+        return None
+    try:
+        return json.loads(row[0])
+    except (ValueError, TypeError):
+        # Corrupt state falls back to the authored defaults rather than
+        # propagating a parse error into every assessment.
+        logging.warning("Scilem state is corrupt; falling back to defaults.")
+        return None
+
+
+def save_scilem_state(state: dict) -> None:
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO scilem_state (id, state_json, updated_at)
+               VALUES (1, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(id) DO UPDATE SET
+                 state_json = excluded.state_json, updated_at = CURRENT_TIMESTAMP""",
+            (json.dumps(state),),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not save Scilem state: %s", e)
+    finally:
+        conn.close()
+
+
+def record_scilem_observation(signals: dict, predicted: float, target: float,
+                              source: str, eval_hash: str = "") -> None:
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO scilem_observations
+                 (eval_hash, signals_json, predicted, target, source)
+               VALUES (?, ?, ?, ?, ?)""",
+            (eval_hash or "", json.dumps(signals), float(predicted), float(target), source),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.debug("Could not record Scilem observation: %s", e)
+    finally:
+        conn.close()
+
+
+def list_scilem_observations(limit: int = 50) -> list:
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT eval_hash, signals_json, predicted, target, source, created_at
+               FROM scilem_observations ORDER BY id DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        try:
+            signals = json.loads(r[1] or "{}")
+        except (ValueError, TypeError):
+            signals = {}
+        out.append({"eval_hash": r[0], "signals": signals,
+                    "predicted": r[2], "target": r[3],
+                    "error": round(abs((r[3] or 0) - (r[2] or 0)), 5),
+                    "source": r[4], "created_at": r[5]})
+    return out
+
+
+def clear_scilem_observations() -> None:
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM scilem_observations")
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not clear Scilem observations: %s", e)
+    finally:
+        conn.close()

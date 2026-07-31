@@ -4,16 +4,31 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ScholarPi — Pi-Index Assessment Engine</title>
+<link rel="icon" type="image/svg+xml" href="icon.svg">
+<link rel="apple-touch-icon" href="icon.svg">
+<link rel="manifest" href="manifest.webmanifest">
+<meta name="theme-color" content="#2563eb">
+<meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
 <link rel="stylesheet" href="style.css">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
 <body>
 
-<div class="app-shell">
+<div class="app-shell" id="appShell">
+
+  <!-- Toggle lives outside the sidebar so it stays reachable when the sidebar
+       is collapsed — a control that hides with the thing it controls is a
+       one-way door. -->
+  <button id="sidebarToggle" class="sidebar-toggle" aria-expanded="true"
+          aria-controls="appSidebar" aria-label="Hide sidebar">
+    <span class="sidebar-toggle-icon" aria-hidden="true">☰</span>
+    <span class="sidebar-toggle-text">Menu</span>
+  </button>
+  <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
 
   <!-- ===================== SIDEBAR ===================== -->
-  <aside class="sidebar">
+  <aside class="sidebar" id="appSidebar">
     <h2 class="sidebar-title">System Access &amp; Sync</h2>
 
     <div id="chainBadge" class="chain-badge chain-unknown">
@@ -65,14 +80,6 @@
       <div id="difficultyPanel" class="hidden"></div>
     </details>
 
-    <!-- Assessment history: only meaningful for a signed-in identity, since
-         anonymous runs are not linked to anything durable. -->
-    <details class="card history-card hidden" id="historyCard">
-      <summary><span><strong>Your assessments</strong>
-        <span class="pill pill-muted" id="historyCount">0</span></span></summary>
-      <div id="historyBody"></div>
-    </details>
-
     <hr>
 
     <div class="referral-card">
@@ -103,7 +110,7 @@
     <nav class="nav-tabs">
       <button class="tab-btn active" data-tab="assess">Assess Manuscript</button>
       <button class="tab-btn" data-tab="analytics">Analytics</button>
-      <button class="tab-btn" data-tab="explorer">Ledger Explorer</button>
+      <button class="tab-btn" data-tab="explorer">Explorer</button>
       <button class="tab-btn" data-tab="arcade">Science Map</button>
       <button class="tab-btn" data-tab="diagram">Architecture</button>
     </nav>
@@ -259,11 +266,24 @@
         <div id="downloadErrors"></div>
         <div id="resultsList"></div>
       </div>
+
+      <!-- Assessment history sits at the end of the page the work happens on,
+           where "what did I already submit?" is actually asked. In the sidebar
+           it competed with system status for attention and was easy to miss.
+           Signed-in identities only: anonymous runs are not linked to anything
+           durable, so there is genuinely nothing to list. -->
+      <div class="card history-card hidden" id="historyCard">
+        <div class="lb-head">
+          <h2>Your assessments <span class="pill pill-muted" id="historyCount">0</span></h2>
+          <p class="hint">Every manuscript assessed under your connected wallet or ORCID.</p>
+        </div>
+        <div id="historyBody"></div>
+      </div>
     </section>
 
     <!-- TAB: ANALYTICS -->
     <section id="tab-analytics" class="tab-panel">
-      <div class="page-header"><h1>Map &amp; Analytics<button class="help-btn" data-help="analytics" aria-label="About analytics">?</button></h1></div>
+      <div class="page-header"><h1>Performance &amp; Analytics<button class="help-btn" data-help="analytics" aria-label="About analytics">?</button></h1></div>
 
       <div class="stats-bar">
         <div class="stat-card"><div class="stat-value" id="statTotalPapers">–</div><div class="stat-label">Total Papers</div></div>
@@ -313,10 +333,6 @@
             <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Top Papers]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
             <p class="hint">Individual manuscripts ranked by their composite Pi-Index score. Select any row to open its full assessment report and dossier.</p>
           </div>
-          <div class="lb-toolbar">
-            <input type="text" id="topPapersSearch" class="lb-search" placeholder="Search title or author…">
-            <input type="number" id="topPapersMinScore" min="0" max="100" placeholder="Min score" class="score-input">
-          </div>
           <div class="table-scroll">
             <table class="data-table sortable-table" id="topPapersTable">
               <thead><tr>
@@ -340,9 +356,6 @@
             <h2>pi-Quotient (piQ) Leaderboard <span class="lb-scope">[Top Authors]</span><button class="help-btn" data-help="piq" aria-label="About the pi-Quotient leaderboard">?</button></h2>
             <p class="hint">Researchers ranked by total piQ earned across all of their assessed manuscripts. Select a row to see that author's papers.</p>
           </div>
-          <div class="lb-toolbar">
-            <input type="text" id="leaderboardSearch" class="lb-search" placeholder="Search authors…">
-          </div>
           <div class="table-scroll">
             <table class="data-table sortable-table" id="leaderboardTable">
               <thead><tr>
@@ -365,6 +378,34 @@
       <div class="page-header"><h1>Proof-of-Research Ledger Explorer<button class="help-btn" data-help="explorer" aria-label="About the ledger explorer">?</button></h1></div>
       <div class="card">
         <input type="text" id="explorerSearch" placeholder="Search by Eval Hash, Block Hash, Title, or Author…">
+        <div class="explorer-toolbar">
+          <label class="ex-ctl">Min piX
+            <input type="number" id="explorerMinScore" min="0" max="100" step="1" placeholder="0" class="score-input">
+          </label>
+          <label class="ex-ctl">Max piX
+            <input type="number" id="explorerMaxScore" min="0" max="100" step="1" placeholder="100" class="score-input">
+          </label>
+          <label class="ex-ctl">Field
+            <select id="explorerField"><option value="">All fields</option></select>
+          </label>
+          <label class="ex-ctl">Sort by
+            <select id="explorerSort">
+              <option value="date">Date</option>
+              <option value="score">piX score</option>
+              <option value="piq">piQ minted</option>
+              <option value="title">Title</option>
+              <option value="author">Author</option>
+            </select>
+          </label>
+          <label class="ex-ctl">Order
+            <select id="explorerOrder">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </label>
+          <button class="btn btn-outline" id="explorerResetBtn">Reset</button>
+        </div>
+        <div class="explorer-count hint" id="explorerCount"></div>
         <div id="explorerResults"></div>
       </div>
     </section>
@@ -433,6 +474,13 @@
                   <tbody></tbody>
                 </table>
               </div>
+            </details>
+
+            <div class="arcade-difficulty" id="arcadeDifficulty"></div>
+
+            <details class="arcade-controls-group" id="arcadeBoardGroup">
+              <summary>Science Map leaderboard</summary>
+              <div id="arcadeBoard"><p class="hint">Loading…</p></div>
             </details>
 
             <p class="arcade-wallet" id="arcadeWallet">Win a run to earn free assessments.</p>
