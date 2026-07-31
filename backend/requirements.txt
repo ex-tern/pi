@@ -27,7 +27,8 @@ accelerate~=0.34
 
 # --- LLM providers ---
 openai~=1.51
-openrouter~=1.0
+# `openrouter` removed: OpenRouter is an OpenAI-compatible endpoint and is
+# reached through the client above. The SDK was imported and never called.
 
 # --- Blockchain / crypto ---
 web3~=7.4

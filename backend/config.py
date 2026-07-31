@@ -1,6 +1,5 @@
 import os
 import logging
-import json
 import hashlib
 
 # ---------------------------------------------------------------------------
@@ -138,7 +137,7 @@ DONATION_WALLET = os.getenv("DONATION_WALLET", "0x6B89DD74DCa5d4DC98599206b1c2dE
 # ---------------------------------------------------------------------------
 # Forecasting
 # ---------------------------------------------------------------------------
-# The Pidyne LSTM trains inside the HTTP request. On a memory-constrained host
+# The pi-Dyne LSTM trains inside the HTTP request. On a memory-constrained host
 # that risks the worker being OOM-killed, which the browser sees as a dropped
 # connection — and an OOM kill terminates the process, so no in-process
 # fallback can catch it.

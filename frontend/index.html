@@ -29,7 +29,8 @@
 
   <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar" id="appSidebar">
-    <h2 class="sidebar-title">System Access &amp; Sync</h2>
+    <h2 class="sidebar-title">System Access &amp; Sync
+      <span class="pill pill-muted" id="authBadge">Not signed in</span></h2>
 
     <div id="chainBadge" class="chain-badge chain-unknown">
       <span class="chain-dot"></span><span id="chainBadgeText">Checking network…</span>
@@ -298,7 +299,7 @@
 
       <div class="full-col">
         <div class="card">
-          <h2>Pidyne Forecast<button class="help-btn" data-help="pidyne" aria-label="About the Pidyne forecast">?</button></h2>
+          <h2>pi-Dyne Forecast<button class="help-btn" data-help="pidyne" aria-label="About the pi-Dyne forecast">?</button></h2>
           <p class="hint">Projects how the eight Pi-Index criteria weights will shift in the next ledger epoch, learned from the weights recorded in every Proof-of-Research block.</p>
 
           <div class="forecast-toolbar">
@@ -449,8 +450,7 @@
               <input type="text" id="arcadeSearch" placeholder="e.g. Genomics">
               <div id="arcadeAuthorWrap" class="hidden">
                 <label class="arcade-ctl-label" for="arcadeAuthor">Author</label>
-                <input type="text" id="arcadeAuthor" list="arcadeAuthorList" placeholder="Any author">
-                <datalist id="arcadeAuthorList"></datalist>
+                <select id="arcadeAuthor"><option value="">Any author</option></select>
               </div>
               <label class="arcade-ctl-label">Minimum papers <output id="arcadeMinPapersOut">0</output></label>
               <input type="range" id="arcadeMinPapers" min="0" max="20" step="1" value="0">
@@ -525,7 +525,7 @@
           <span class="al-item"><span class="al-swatch sw-intake"></span>Intake &amp; Identity</span>
           <span class="al-item"><span class="al-swatch sw-extract"></span>Extraction &amp; Heuristics</span>
           <span class="al-item"><span class="al-swatch sw-panel"></span>Multi-LLM Panel</span>
-          <span class="al-item"><span class="al-swatch sw-judge"></span>Pidyne Judge</span>
+          <span class="al-item"><span class="al-swatch sw-judge"></span>pi-Dyne Judge</span>
           <span class="al-item"><span class="al-swatch sw-chain"></span>Ledger &amp; Chain</span>
           <span class="al-item"><span class="al-swatch sw-ui"></span>Outputs</span>
         </div>
@@ -534,7 +534,7 @@
           <div class="mermaid" id="archDiagram"></div>
         </div>
         <p class="hint diagram-caption">End-to-end processing flow: intake and identity, extraction and
-        deterministic scoring, the independent model panel, Pidyne adjudication, and Proof-of-Research
+        deterministic scoring, the independent model panel, pi-Dyne adjudication, and Proof-of-Research
         settlement on Sepolia.</p>
       </div>
 
@@ -572,9 +572,9 @@
             <tr><td><span class="stage-tag st-intake">1</span></td><td>Unified Intake &amp; ZK-Identity Registry</td><td>ORCID iD / W3C DID verification, local PDF, Unpaywall DOI resolution and OpenAlex discovery, ZK double-blind assignment.</td></tr>
             <tr><td><span class="stage-tag st-extract">2</span></td><td>Extraction &amp; Deterministic Scoring</td><td>PyMuPDF layout-aware text extraction, MDAR adherence, RRID validation, reproducibility markers, empirical density.</td></tr>
             <tr><td><span class="stage-tag st-panel">3</span></td><td>Independent Model Panel</td><td>Llama, Mistral, Qwen and Gemini each assess the manuscript separately, alongside the local Scilem structural analyser.</td></tr>
-            <tr><td><span class="stage-tag st-judge">4</span></td><td>Pidyne Adjudication</td><td>Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
+            <tr><td><span class="stage-tag st-judge">4</span></td><td>pi-Dyne Adjudication</td><td>Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
             <tr><td><span class="stage-tag st-chain">5</span></td><td>Proof-of-Research &amp; Tokenomics</td><td>Block validation, zk-SNARK proof generation, criteria-weight recording, soulbound piQ minting on Sepolia.</td></tr>
-            <tr><td><span class="stage-tag st-ui">6</span></td><td>Dossiers, Cartography &amp; Forecasting</td><td>CoARA/DORA dossiers, AI defence rebuttal strategy, global map of science, Pidyne LSTM epoch forecasting.</td></tr>
+            <tr><td><span class="stage-tag st-ui">6</span></td><td>Dossiers, Cartography &amp; Forecasting</td><td>CoARA/DORA dossiers, AI defence rebuttal strategy, global map of science, pi-Dyne LSTM epoch forecasting.</td></tr>
           </tbody>
         </table>
       </div>

@@ -69,8 +69,15 @@ DEFAULT_BIAS = 0.0
 # Learning rates. Deliberately small: the target is noisy (an LLM panel's view
 # of quality), and a large step would let one unusual paper swing the weighting
 # for every paper after it.
-LR_CONSENSUS = 0.015
-LR_FEEDBACK = 0.045
+# Calibrated by simulation rather than intuition. At 0.015 the model moved
+# only 0.35 -> 0.38 over 60 observations when the true weight was 0.75 — on a
+# corpus that grows by one paper per assessment, that is indistinguishable
+# from not learning at all, and a learning system nobody can see learn is one
+# nobody has reason to trust. 0.03 roughly doubles adaptation while staying
+# far inside the MAX_STEP clamp, so a single unusual paper still cannot swing
+# the weighting.
+LR_CONSENSUS = 0.03
+LR_FEEDBACK = 0.06
 
 # Consensus is only a teacher when it is actually corroborated. Below this,
 # the "panel verdict" may be a single model's opinion wearing a panel's label.
@@ -78,6 +85,20 @@ MIN_INDEPENDENT_SOURCES = 2
 
 # No single update may move a weight by more than this, whatever the error.
 MAX_STEP = 0.05
+
+# How many recent observations the learned model is judged over, and by how
+# much it must be worse than the authored defaults before it is suspended.
+# The margin exists so that noise cannot trip the breaker; the window exists so
+# that a handful of unusual manuscripts cannot either.
+EVAL_WINDOW = 25
+# Matched to the threshold `status()` uses to call the model "worse than
+# defaults". They were 10% and 5%, so there was a band where the status
+# endpoint reported the learned weighting as worse while the scorer went on
+# using it — a system telling you it is broken and not acting on it is worse
+# than one that stays quiet, because it trains you to ignore the warning.
+# Hysteresis lives on the reinstate side instead: suspension lifts only once
+# learning is genuinely ahead again, so this cannot flap.
+SUSPEND_MARGIN = 0.05
 # Weights are held above zero so a signal can be de-emphasised but never
 # switched off entirely — a zero weight would silently stop measuring
 # something the rubric claims to measure.
@@ -99,6 +120,18 @@ def default_state() -> Dict:
         "feedback_observations": 0,
         "mean_abs_error": None,
         "recent_errors": [],
+        # The counterfactual: what the error WOULD have been under the
+        # authored defaults, recorded on the same observations. Without this,
+        # "mean absolute error 0.14" is unreadable — there is nothing to
+        # compare it against, and a model that has learned its way to being
+        # worse looks identical to one that has learned nothing.
+        "baseline_errors": [],
+        "baseline_mean_abs_error": None,
+        # Set when learning is measurably worse than the defaults over a full
+        # evaluation window. Predictions then fall back to the defaults until
+        # the evidence changes.
+        "suspended": False,
+        "suspended_reason": "",
     }
 
 
@@ -171,9 +204,23 @@ def normalise_weights(weights: Dict[str, float]) -> Dict[str, float]:
     return {k: v / total for k, v in clipped.items()}
 
 
-def predict(signals: Dict[str, float], state: Optional[Dict] = None) -> float:
-    """Structural quality in [0, 1] from the four measured signals."""
+def predict(signals: Dict[str, float], state: Optional[Dict] = None,
+            force_defaults: bool = False) -> float:
+    """Structural quality in [0, 1] from the four measured signals.
+
+    Falls back to the authored defaults while learning is suspended. A model
+    that has demonstrably made itself worse should stop being used — silently
+    continuing to apply it, on the grounds that it is the newer number, is how
+    a learning system degrades a working heuristic.
+    """
     state = state or load_state()
+    if force_defaults or state.get("suspended"):
+        weights = dict(DEFAULT_WEIGHTS)
+        bias = DEFAULT_BIAS
+        value = bias
+        for key in SIGNAL_KEYS:
+            value += weights[key] * float(signals.get(key, 0.0) or 0.0)
+        return round(min(1.0, max(0.0, value)), 6)
     weights = normalise_weights(state["weights"])
     value = float(state.get("bias", 0.0))
     for key in SIGNAL_KEYS:
@@ -217,6 +264,12 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
     predicted = predict(signals, state)
     error = target - predicted
 
+    # Score the same observation under the authored defaults, before any
+    # update. This is the control condition, and it is what makes the claim
+    # "Scilem is learning" checkable rather than asserted.
+    baseline_predicted = predict(signals, state, force_defaults=True)
+    baseline_error = target - baseline_predicted
+
     # Squared-error gradient for a linear model: d/dw_i = -error * x_i.
     weights = dict(state["weights"])
     for key in SIGNAL_KEYS:
@@ -240,9 +293,33 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
     # fits a point it has just been fitted to.
     errors = list(state.get("recent_errors") or [])
     errors.append(round(abs(error), 5))
-    errors = errors[-50:]
+    errors = errors[-EVAL_WINDOW:]
     state["recent_errors"] = errors
     state["mean_abs_error"] = round(sum(errors) / len(errors), 5)
+
+    base_errors = list(state.get("baseline_errors") or [])
+    base_errors.append(round(abs(baseline_error), 5))
+    base_errors = base_errors[-EVAL_WINDOW:]
+    state["baseline_errors"] = base_errors
+    state["baseline_mean_abs_error"] = round(sum(base_errors) / len(base_errors), 5)
+
+    # Suspend only on a full window of evidence and a margin that a handful of
+    # unusual papers cannot manufacture. Reinstate the moment learning is
+    # ahead again — this is a circuit breaker, not a verdict.
+    if len(errors) >= EVAL_WINDOW:
+        learned_mae = state["mean_abs_error"]
+        default_mae = state["baseline_mean_abs_error"]
+        if learned_mae > default_mae * (1.0 + SUSPEND_MARGIN):
+            state["suspended"] = True
+            state["suspended_reason"] = (
+                f"Learned weighting is predicting worse than the authored defaults over the last "
+                f"{len(errors)} observations ({learned_mae:.3f} vs {default_mae:.3f} mean "
+                f"absolute error). Predictions have reverted to the defaults; learning continues "
+                f"in the background and will resume automatically if it overtakes them."
+            )
+        elif state.get("suspended") and learned_mae <= default_mae:
+            state["suspended"] = False
+            state["suspended_reason"] = ""
 
     save_state(state)
 
@@ -272,6 +349,30 @@ def status() -> Dict:
     drift = {k: round(weights[k] - DEFAULT_WEIGHTS[k], 4) for k in SIGNAL_KEYS}
     n = int(state.get("observations", 0))
 
+    learned_mae = state.get("mean_abs_error")
+    default_mae = state.get("baseline_mean_abs_error")
+    window = len(state.get("recent_errors") or [])
+
+    # Is learning actually helping? Stated as a comparison against the control,
+    # never as a bare error figure — an error with nothing to compare it to
+    # cannot be judged, and a model that has learned its way to being worse
+    # would read exactly like one that had improved.
+    verdict, improvement = "unknown", None
+    if learned_mae is not None and default_mae not in (None, 0):
+        improvement = round((default_mae - learned_mae) / default_mae * 100.0, 1)
+        # A 5% band, not 2%. Simulation with the defaults set to the exact
+        # truth still produced a 2.3% "improvement" from noise alone, and
+        # claiming to have learned something when nothing was learnable is the
+        # one failure this whole comparison exists to prevent.
+        if window < 10:
+            verdict = "too early to say"
+        elif improvement > 5.0:
+            verdict = "better than defaults"
+        elif improvement < -5.0:
+            verdict = "worse than defaults"
+        else:
+            verdict = "no better than defaults"
+
     if n == 0:
         summary = ("Scilem is running on its authored default weighting. It has not yet observed "
                    "a corroborated assessment, so nothing has been learned.")
@@ -285,10 +386,19 @@ def status() -> Dict:
             f"The largest shift is {moved}, weighted {direction} by "
             f"{abs(drift[moved]):.3f} from its authored default."
         )
-        if state.get("mean_abs_error") is not None:
-            summary += (f" Mean absolute calibration error over the last "
-                        f"{len(state.get('recent_errors') or [])} observations: "
-                        f"{state['mean_abs_error']:.3f}.")
+        if learned_mae is not None and default_mae is not None:
+            summary += (
+                f" Over the last {window} observation{'s' if window != 1 else ''} the learned "
+                f"weighting is off by {learned_mae:.3f} on average against {default_mae:.3f} for "
+                f"the authored defaults"
+            )
+            if improvement is not None:
+                summary += (f" — {abs(improvement):.1f}% "
+                            f"{'better' if improvement > 0 else 'worse'}.")
+            else:
+                summary += "."
+        if state.get("suspended"):
+            summary += " " + state.get("suspended_reason", "")
 
     return {
         "weights": {k: round(weights[k], 4) for k in SIGNAL_KEYS},
@@ -299,6 +409,13 @@ def status() -> Dict:
         "consensus_observations": state.get("consensus_observations", 0),
         "feedback_observations": state.get("feedback_observations", 0),
         "mean_abs_error": state.get("mean_abs_error"),
+        "baseline_mean_abs_error": state.get("baseline_mean_abs_error"),
+        "improvement_pct": improvement,
+        "verdict": verdict,
+        "evaluated_over": window,
+        "suspended": bool(state.get("suspended")),
+        "suspended_reason": state.get("suspended_reason", ""),
+        "active_weighting": "authored defaults" if state.get("suspended") else "learned",
         "learning": n > 0,
         "summary": summary,
         "policy": {

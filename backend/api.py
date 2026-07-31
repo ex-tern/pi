@@ -15,17 +15,15 @@ import json
 import uuid
 import decimal
 import time
-import math
 import hashlib
 import logging
 import logging.handlers
 import colorsys
-import tempfile
 import traceback
 import urllib.parse
 from datetime import datetime
 from collections import deque, defaultdict
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 import sqlite3
 
@@ -34,7 +32,7 @@ from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Quer
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, PlainTextResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from web3 import Web3
 from eth_account.messages import encode_defunct
@@ -42,7 +40,7 @@ from eth_account.messages import encode_defunct
 from config import (
     BASE_DIR, DB_PATH, PIQ_CONTRACT_ADDRESS, HOT_TOPICS,
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
-    ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
+    ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, SCILEM_MODE, SCILEM_LIMITED_NOTICE,
     PIQ_PROCESSING_FEE, DONATION_WALLET,
@@ -53,7 +51,7 @@ from config import (
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
-    get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
+    get_piq_balance, charge_piq_fee, get_piq_fee_history,
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
@@ -69,15 +67,15 @@ import diagnostics
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 import ledger as ledger_backup
 from integrations import (
-    normalize_doi, collect_pdf_candidates,
+    normalize_doi,
     clean_author_name, is_likely_institution, fetch_doi_metadata,
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
     build_pdf_from_text, search_open_access_works,
 )
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
-    PidyneBlockchainDataset, clear_structural_analyzer_state, generate_assistant_reply,
-    derive_next_epoch_weights, load_torch, torch_available,
+    PidyneBlockchainDataset, clear_structural_analyzer_state,
+    derive_next_epoch_weights, load_torch,
 )
 from providers import provider_configuration
 from rubric import (
@@ -86,13 +84,14 @@ from rubric import (
 )
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
-    compute_curation_reward, curation_manifest,
+    compute_curation_reward,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import forecast as forecast_engine
 import assistant as scilem
 import abuse_guard
 import bugreport
+import auth
 import scilem_learning
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
@@ -300,7 +299,11 @@ class WalletVerifyRequest(BaseModel):
 
 
 @app.post("/api/auth/wallet/verify")
-def verify_wallet(req: WalletVerifyRequest):
+def verify_wallet(req: WalletVerifyRequest, request: Request):
+    # An authentication surface, and ECDSA recovery is not free. Unlimited
+    # attempts let an attacker both burn CPU and grind signatures offline
+    # against a live oracle.
+    check_rate_limit(get_client_ip(request), bucket="auth")
     if not w3.is_address(req.address):
         raise HTTPException(status_code=400, detail="Not a valid Ethereum address.")
     clean_wallet = w3.to_checksum_address(req.address)
@@ -313,11 +316,24 @@ def verify_wallet(req: WalletVerifyRequest):
             authenticated = recovered.lower() == clean_wallet.lower()
         except Exception as e:
             add_log(f"SIWE signature verification fallback: {e}")
-    if authenticated:
-        add_log(f"MetaMask Identity Cryptographically Authenticated via SIWE: {clean_wallet}")
-    else:
-        add_log(f"MetaMask Linked (unsigned): {clean_wallet}")
-    return {"address": clean_wallet, "authenticated": authenticated}
+    if not authenticated:
+        # An unsigned "link" proves nothing and now grants nothing. Returning a
+        # session here would recreate the exact hole this replaces.
+        add_log(f"Wallet link attempted without a valid signature: {clean_wallet}")
+        return {
+            "address": clean_wallet, "authenticated": False, "token": "",
+            "detail": ("Signature required. Connecting an address proves you can type it, not "
+                       "that you control it."),
+        }
+
+    add_log(f"Wallet authenticated by EIP-191 signature: {clean_wallet}")
+    token = auth.issue_session(wallet=clean_wallet, methods={"wallet": "signature"})
+    return {
+        "address": clean_wallet, "authenticated": True, "token": token,
+        "expires_in": auth.SESSION_TTL_SECONDS,
+        "detail": None if token else ("Signature verified, but this deployment cannot sign "
+                                      "sessions. Set SESSION_SECRET to enable sign-in."),
+    }
 
 
 def resolve_orcid_redirect_uri(request: Request) -> str:
@@ -326,6 +342,30 @@ def resolve_orcid_redirect_uri(request: Request) -> str:
     if configured and "localhost" not in configured and "127.0.0.1" not in configured:
         return configured
     return f"{resolve_frontend_origin(request)}/api/auth/orcid/callback"
+
+
+@app.get("/api/auth/session")
+def auth_session(request: Request):
+    """What this caller has actually proven, and by which method.
+
+    The UI needs to distinguish "an address is typed into a box" from "control
+    of that address was demonstrated". Those looked identical before, which is
+    why an unsigned wallet appeared to confer the same access as a signed one.
+    """
+    identity = auth.identity_from_request(request)
+    return {
+        "verified": identity["verified"],
+        "wallet": identity["wallet"] or None,
+        "orcid": identity["orcid"] or None,
+        "methods": identity["methods"],
+        "is_owner": auth.is_owner(identity),
+        # Two independent proofs: a private key AND an ORCID account.
+        "two_factor": bool(identity["verified"]
+                           and identity["wallet"] and identity["orcid"]),
+        "sessions_enabled": auth.sessions_available(),
+        "note": (None if auth.sessions_available() else
+                 "Sign-in is disabled: set SESSION_SECRET so sessions can be signed."),
+    }
 
 
 @app.get("/api/auth/orcid/login-url")
@@ -400,9 +440,25 @@ def orcid_callback(request: Request, code: Optional[str] = None, state: Optional
             real_orcid = data.get("orcid")
             real_name = data.get("name") or (f"ORCID Scholar ({real_orcid[-4:]})" if real_orcid else "")
             if real_orcid:
-                add_log(f"ORCID Profile Successfully Authenticated: {real_orcid}")
+                add_log(f"ORCID authenticated via OAuth: {real_orcid}")
                 name_qs = urllib.parse.quote(real_name or "")
-                return RedirectResponse(f"{frontend}/?orcid={real_orcid}&orcid_name={name_qs}{wallet_qs}")
+
+                # The OAuth code exchange is the proof, so a session is minted
+                # here. The wallet from `state` is carried only if it was itself
+                # proven — a wallet that merely rode along in a query parameter
+                # is a claim, and folding it into a signed token would launder
+                # that claim into an assertion the server never verified.
+                proven_wallet = ""
+                methods = {"orcid": "oauth"}
+                existing = auth.verify_session(request.query_params.get("token", ""))
+                if existing and existing.get("wallet"):
+                    proven_wallet = existing["wallet"]
+                    methods["wallet"] = existing.get("methods", {}).get("wallet", "signature")
+
+                token = auth.issue_session(wallet=proven_wallet, orcid=real_orcid, methods=methods)
+                token_qs = f"&token={urllib.parse.quote(token)}" if token else ""
+                return RedirectResponse(
+                    f"{frontend}/?orcid={real_orcid}&orcid_name={name_qs}{wallet_qs}{token_qs}")
         err_desc = res.json().get("error_description", "Invalid Code") if res.content else "Invalid Code"
         add_log(f"ORCID Auth Error: {err_desc}")
         return RedirectResponse(f"{frontend}/?orcid_error={urllib.parse.quote(err_desc)}")
@@ -582,10 +638,9 @@ def backup_status():
 
 
 @app.post("/api/backup/run")
-def backup_run(wallet: str = Query(default="")):
+def backup_run(request: Request, wallet: str = Query(default="")):
     """Owner-triggered immediate backup, bypassing the throttle."""
-    if not wallet or not OWNER_ID or wallet.lower() != OWNER_ID.lower():
-        raise HTTPException(status_code=403, detail="Owner wallet required.")
+    require_owner(request, wallet)
     result = ledger_backup.run_backup(force=True)
     add_log(f"Manual backup: {result}")
     return result
@@ -632,15 +687,13 @@ def get_challenge(request: Request):
 
 
 @app.get("/api/providers/status")
-def providers_status(wallet: str = Query(default="")):
+def providers_status(request: Request, wallet: str = Query(default="")):
     """Operator view of which jurors can actually reach a model.
 
     Restricted to the owner wallet: it enumerates configured vendors, which is
     deployment information rather than something a researcher needs.
     """
-    if not wallet or wallet.lower() != OWNER_ID.lower():
-        raise HTTPException(status_code=403,
-                            detail="Provider diagnostics are restricted to the owner wallet.")
+    require_owner(request, wallet)
     return provider_configuration()
 
 
@@ -668,6 +721,50 @@ def trial_status(request: Request):
 # The reward is real allowance, so the server replays every submitted run
 # rather than believing a reported score. See arcade.py for the reasoning.
 # --------------------------------------------------------------------------
+def require_owner(request: Request, wallet: str = "") -> dict:
+    """Authorise an owner-only action against a PROVEN wallet.
+
+    Every owner endpoint previously compared OWNER_ID to an unauthenticated
+    query parameter — and OWNER_ID is published at /api/chain/status. Reading
+    one public field was therefore sufficient to obtain provider diagnostics,
+    other users' bug reports, backup control, corpus rescoring and Scilem
+    reset. This requires a session token minted only after a valid EIP-191
+    signature from that wallet.
+    """
+    identity = auth.identity_from_request(request, wallet)
+    if auth.is_owner(identity):
+        return identity
+    if not auth.sessions_available():
+        raise HTTPException(
+            status_code=503,
+            detail=("Owner actions are disabled: this deployment has no SESSION_SECRET or admin "
+                    "key, so a session cannot be signed and ownership cannot be proven."),
+        )
+    raise HTTPException(
+        status_code=403,
+        detail=("Owner authorisation requires a signed session. Connect the owner wallet and "
+                "sign the login message; passing the address alone is not proof of control."),
+    )
+
+
+def require_identity(request: Request, wallet: str = "", orcid: str = "") -> dict:
+    """Authorise an action on a user's own data against a PROVEN identity."""
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if identity["verified"] and (identity["wallet"] or identity["orcid"]):
+        return identity
+    if not auth.sessions_available():
+        raise HTTPException(
+            status_code=503,
+            detail=("Identity-scoped features are disabled: this deployment cannot sign "
+                    "sessions. Set SESSION_SECRET to enable them."),
+        )
+    raise HTTPException(
+        status_code=401,
+        detail=("Sign in to access your own records. Connect a wallet and sign the login "
+                "message, or link ORCID."),
+    )
+
+
 def _profile_key(wallet: str = "", orcid: str = "") -> str:
     """One stable key per identity. ORCID wins when both are present, since it
     survives a wallet change and is the more durable research identity."""
@@ -801,6 +898,10 @@ def arcade_leaderboard_endpoint(limit: int = Query(default=20, ge=1, le=100)):
 def arcade_finish(payload: ArcadeRun, request: Request):
     """Verifies a completed run and grants allowance if it was a legitimate win."""
     ip = get_client_ip(request)
+    # The reward is bounded by a cooldown and a lifetime cap, but the WORK was
+    # not: every submission makes the server regenerate a 90-bubble field and
+    # replay the run. Cheap once, a denial-of-service in a loop.
+    check_rate_limit(ip, bucket="arcade")
     result = arcade.verify_run(ip, payload.token, payload.absorbed, payload.duration_ms)
     player_key, is_identity = _arcade_key(request, payload.wallet, payload.orcid)
 
@@ -969,8 +1070,9 @@ def read_profile(wallet: str = Query(default=""), orcid: str = Query(default="")
 
 
 @app.post("/api/profile")
-def write_profile(payload: ResearcherProfile):
+def write_profile(payload: ResearcherProfile, request: Request):
     """Saves the researcher profile used to frame diagnostics."""
+    check_rate_limit(get_client_ip(request), bucket="profile")
     key = _profile_key(payload.wallet, payload.orcid)
     if not key:
         raise HTTPException(
@@ -982,7 +1084,8 @@ def write_profile(payload: ResearcherProfile):
 
 
 @app.delete("/api/profile")
-def reset_profile(wallet: str = Query(default=""), orcid: str = Query(default="")):
+def reset_profile(request: Request, wallet: str = Query(default=""),
+                  orcid: str = Query(default="")):
     """Delete the stored researcher profile for this identity.
 
     The row is removed rather than blanked. A profile whose fields are empty
@@ -990,6 +1093,7 @@ def reset_profile(wallet: str = Query(default=""), orcid: str = Query(default=""
     the research buddy's recommendations — so a "reset" that left one behind
     would keep shaping results the user believed they had cleared.
     """
+    check_rate_limit(get_client_ip(request), bucket="profile")
     key = _profile_key(wallet, orcid)
     if not key:
         raise HTTPException(
@@ -1006,7 +1110,8 @@ def reset_profile(wallet: str = Query(default=""), orcid: str = Query(default=""
 # Assessment history and withdrawal
 # ---------------------------------------------------------------------------
 @app.get("/api/assessments/mine")
-def my_assessments(wallet: str = Query(default=""), orcid: str = Query(default=""),
+def my_assessments(request: Request, wallet: str = Query(default=""),
+                   orcid: str = Query(default=""),
                    limit: int = Query(default=100, ge=1, le=300)):
     """Everything assessed under this identity.
 
@@ -1014,17 +1119,23 @@ def my_assessments(wallet: str = Query(default=""), orcid: str = Query(default="
     genuinely have no history to show, because nothing durable is keyed to
     them, and saying so is more useful than a 400.
     """
-    key = _profile_key(wallet, orcid)
+    # Proven, not claimed. This returns a person's private assessment history;
+    # accepting an unauthenticated ?orcid= made every user's record readable by
+    # anyone who knew their ORCID, which is a published identifier.
+    identity = auth.identity_from_request(request, wallet, orcid)
+    key = _profile_key(identity["wallet"], identity["orcid"]) if identity["verified"] else ""
     if not key:
         return {"signed_in": False, "assessments": [], "count": 0,
                 "reason": ("Sign in with a wallet or ORCID to keep a history of your "
                            "assessments. Anonymous runs are not linked to an identity.")}
-    rows = list_assessments_for_identity(_identity_values(wallet, orcid), limit=limit)
+    rows = list_assessments_for_identity(
+        _identity_values(identity["wallet"], identity["orcid"]), limit=limit)
     return {"signed_in": True, "assessments": rows, "count": len(rows)}
 
 
 @app.delete("/api/assessments/{file_hash}")
-def remove_assessment(file_hash: str, wallet: str = Query(default=""),
+def remove_assessment(file_hash: str, request: Request,
+                      wallet: str = Query(default=""),
                       orcid: str = Query(default="")):
     """Withdraw one paper from the corpus.
 
@@ -1038,10 +1149,12 @@ def remove_assessment(file_hash: str, wallet: str = Query(default=""),
     corpus and the listings; the record that it was once assessed remains, which
     is the only outcome consistent with the ledger's integrity claim.
     """
-    key = _profile_key(wallet, orcid)
-    is_owner = bool(wallet and OWNER_ID and wallet.lower() == OWNER_ID.lower())
-    result = delete_assessment(file_hash, identities=_identity_values(wallet, orcid),
-                               allow_any=is_owner)
+    identity = require_identity(request, wallet, orcid)
+    result = delete_assessment(
+        file_hash,
+        identities=_identity_values(identity["wallet"], identity["orcid"]),
+        allow_any=auth.is_owner(identity),
+    )
     if not result["deleted"]:
         raise HTTPException(status_code=404 if "not found" in result["reason"].lower() else 403,
                             detail=result["reason"])
@@ -1121,10 +1234,10 @@ def submit_bug_report(payload: BugReport, request: Request):
 
 
 @app.get("/api/bug-report/list")
-def bug_report_list(wallet: str = Query(default=""), limit: int = Query(default=100, ge=1, le=300)):
+def bug_report_list(request: Request, wallet: str = Query(default=""),
+                    limit: int = Query(default=100, ge=1, le=300)):
     """Owner-only. The reports that failed to send exist nowhere else."""
-    if not wallet or not OWNER_ID or wallet.lower() != OWNER_ID.lower():
-        raise HTTPException(status_code=403, detail="Owner wallet required.")
+    require_owner(request, wallet)
     reports = list_bug_reports(limit=limit)
     return {"reports": reports,
             "undelivered": sum(1 for r in reports if not r["delivered"]),
@@ -1864,7 +1977,10 @@ def assess_text(req: TextAssessRequest, request: Request):
 # 4. DEFENSE STRATEGY
 # ---------------------------------------------------------------------------
 class DefenseRequest(BaseModel):
-    scores: dict
+    # Bounded on the way in. The handler is deterministic and cheap, but an
+    # unbounded dict is still free server memory for anyone who asks, and
+    # validating shape at the edge is cheaper than defending it everywhere.
+    scores: Dict[str, float] = Field(default_factory=dict, max_length=64)
 
 
 @app.post("/api/defense-strategy")
@@ -1930,7 +2046,7 @@ def scilem_status():
 
 
 @app.get("/api/scilem/learning")
-def scilem_learning_status(wallet: str = Query(default=""),
+def scilem_learning_status(request: Request, wallet: str = Query(default=""),
                            observations: int = Query(default=0, ge=0, le=200)):
     """What Scilem has learned, and from what.
 
@@ -1944,7 +2060,7 @@ def scilem_learning_status(wallet: str = Query(default=""),
         # The raw observation log is owner-only: it pairs evaluation hashes
         # with panel verdicts, which is more detail than a public endpoint
         # should join up.
-        if wallet and OWNER_ID and wallet.lower() == OWNER_ID.lower():
+        if auth.is_owner(auth.identity_from_request(request, wallet)):
             payload["observations_log"] = list_scilem_observations(limit=observations)
         else:
             payload["observations_log"] = []
@@ -2038,9 +2154,8 @@ class ScilemResetRequest(BaseModel):
 
 
 @app.post("/api/scilem/reset")
-def scilem_reset(req: ScilemResetRequest):
-    if not req.wallet or req.wallet.lower() != OWNER_ID.lower():
-        raise HTTPException(status_code=403, detail="Only the Web3 owner wallet may reset Scilem.")
+def scilem_reset(req: ScilemResetRequest, request: Request):
+    require_owner(request, req.wallet)
     msg = clear_structural_analyzer_state()
     add_log(msg)
     return {"message": msg}
@@ -2153,7 +2268,7 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
 
 
 def _run_forecast_impl(lookback: int = 3):
-    """Trains the Pidyne LSTM on the recorded per-block criteria weights and
+    """Trains the pi-Dyne LSTM on the recorded per-block criteria weights and
     projects the next epoch's weighting.
 
     The chart this feeds used to be meaningless because every block was
@@ -2518,7 +2633,7 @@ class RescoreRequest(BaseModel):
 
 
 @app.post("/api/admin/rescore")
-def rescore_corpus(req: RescoreRequest, wallet: str = Query(default="")):
+def rescore_corpus(req: RescoreRequest, request: Request, wallet: str = Query(default="")):
     """Replay stored signal vectors through the current rubric.
 
     Scores were previously computed once and frozen, so a rubric change left
@@ -2528,8 +2643,7 @@ def rescore_corpus(req: RescoreRequest, wallet: str = Query(default="")):
 
     Defaults to a dry run that reports what would change without writing.
     """
-    if not wallet or wallet.lower() != OWNER_ID.lower():
-        raise HTTPException(status_code=403, detail="Only the owner wallet may re-score the corpus.")
+    require_owner(request, wallet)
 
     conn = get_db_connection()
     try:
@@ -3025,7 +3139,10 @@ def explorer_latest(
         "count": len(records),
         # The filter dropdown is built from fields that are actually present in
         # the corpus, so selecting one always returns something.
-        "available_fields": list_corpus_fields(),
+        # list_corpus_fields() returns (ordered_names, counts_by_name). Serialising
+        # the whole tuple sent the browser [[...names...], {...counts...}], so the
+        # filter rendered two nonsense entries instead of a field list.
+        "available_fields": list_corpus_fields()[0],
         "filters": {"min_score": min_score, "max_score": max_score,
                     "field": field, "sort": sort, "order": direction.lower()},
         "chain": {

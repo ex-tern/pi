@@ -41,14 +41,32 @@ from typing import Dict, Optional
 # --- Halving ---------------------------------------------------------------
 # Corpus size at which emission halves.
 #
-# The first calibration was far too aggressive: a 500-paper interval with 8
-# halvings meant emission fell to 1/256 by 4,000 papers, so a strong paper
-# minted 0.035 piQ. That is scarcity long before the platform has enough
-# adoption to justify it, and it made the system feel punitive rather than
-# selective. The interval is now 2,500 with 4 halvings, so the floor is 1/16
-# and is not reached until roughly 10,000 assessed papers.
-HALVING_INTERVAL = 2500         # papers per halving epoch
-MAX_HALVINGS = 4                # floor: emission never drops below 1/16
+# Calibration history, kept because this parameter has been wrong twice in
+# opposite directions and the reasoning matters more than the numbers.
+#
+#   500 papers / 8 halvings  — far too aggressive. Emission fell to 1/256 by
+#       4,000 papers, so a strong paper minted 0.035 piQ. Scarcity long before
+#       the platform had adoption to justify it; punitive rather than selective.
+#
+#   2,500 papers / 4 halvings — too slow in the other direction. At the
+#       corpus sizes this deployment will realistically see, the first halving
+#       was unreachable, so the schedule was invisible: a mechanism nobody ever
+#       observes is indistinguishable from one that does not exist.
+#
+#   250 papers / 10 halvings — current. The first halving arrives at a corpus
+#       size that is actually attainable, so the schedule is something a
+#       participant can watch happen, and there are enough epochs that each
+#       step is a halving rather than a cliff.
+#
+# The trade-off is deliberate and worth stating: the floor of 1/1024 is
+# reached at 2,500 papers, where a piX 60 manuscript mints about 0.012 piQ.
+# That is *very* scarce. It is defensible only because the base rate stays
+# generous early (piQ = piX / 5, so the same paper mints 12 piQ today) and
+# because piQ's purpose is to record contribution, not to fund anything. If
+# the intent ever becomes to keep piQ economically meaningful at scale, this
+# is the constant to revisit — not the quality floor, which does different work.
+HALVING_INTERVAL = 250          # papers per halving epoch
+MAX_HALVINGS = 10               # floor: emission never drops below 1/1024
 
 # --- Base emission ---------------------------------------------------------
 # piQ = piX / 5 at genesis, so a strong paper (piX 80) mints 16 piQ rather

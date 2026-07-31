@@ -101,7 +101,7 @@ def holt_linear_forecast(series: np.ndarray, alpha: float = 0.6,
 def train_lstm_forecast(weight_matrix: np.ndarray, lookback: int,
                         model_factory, dataset_factory, loader_factory,
                         torch_mod, nn_mod, optim_mod) -> Optional[np.ndarray]:
-    """Train the Pidyne LSTM under a wall-clock budget.
+    """Train the pi-Dyne LSTM under a wall-clock budget.
 
     Returns None on any failure or overrun, so the caller falls back to the
     statistical path rather than propagating an error to the user.

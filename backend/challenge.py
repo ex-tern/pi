@@ -35,7 +35,6 @@ configured, for operators who want a managed signal as well.
 """
 import time
 import hmac
-import base64
 import hashlib
 import logging
 import secrets
