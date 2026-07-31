@@ -372,31 +372,28 @@
     <section id="tab-arcade" class="tab-panel">
       <div class="page-header"><h1>The Global Map of Science<button class="help-btn" data-help="arcade" aria-label="About the science map">?</button></h1></div>
 
-      <div id="arcadeIntro" class="card arcade-intro">
-        <div class="arcade-hero">
-          <div class="arcade-hero-orb" aria-hidden="true"></div>
-          <div>
-            <h2>Absorb the field</h2>
-            <p class="lede">Every bubble is a field of science. Consume the ones smaller than you
-            to grow; touch one larger and the run ends. Absorb enough of the map and you earn
-            free manuscript assessments.</p>
-            <p class="arcade-wallet" id="arcadeWallet">Win a run to earn free assessments.</p>
-            <div class="arcade-actions">
-              <button class="btn btn-primary arcade-play" id="arcadeStartBtn">Play</button>
-            </div>
-            <p class="arcade-controls">
-              <strong>Desktop:</strong> move the mouse, or use WASD / arrow keys. <kbd>Esc</kbd> exits.<br>
-              <strong>Mobile:</strong> drag anywhere on the field.
-            </p>
-          </div>
-        </div>
-        <p class="arcade-message hidden" id="arcadeMessage"></p>
-      </div>
+      <p class="lede arcade-corpus" id="arcadeCorpus">Loading the map…</p>
 
-      <div id="arcadeStage" class="arcade-stage hidden">
-        <div class="arcade-canvas-wrap">
-          <canvas id="arcadeCanvas" aria-label="Science map arcade playfield"></canvas>
-          <button class="arcade-exit" id="arcadeExitBtn" aria-label="Exit the game">Exit ✕</button>
+      <div id="arcadeStage" class="arcade-stage">
+        <div class="arcade-layout">
+          <div class="arcade-canvas-wrap">
+            <canvas id="arcadeCanvas" aria-label="Interactive map of science. Drag to pan, scroll to zoom, click a field for detail."></canvas>
+            <div class="arcade-toolbar">
+              <span class="arcade-hint" id="arcadeModeHint">Drag to pan, scroll to zoom, click a field for detail.</span>
+              <button class="arcade-tool" id="arcadeRefreshBtn" aria-label="Reload the map from the corpus">Reload</button>
+              <button class="arcade-tool arcade-tool-play" id="arcadePlayBtn">Play ▶</button>
+              <button class="arcade-tool arcade-tool-exit hidden" id="arcadeExitBtn" aria-label="Exit the game">Exit ✕</button>
+            </div>
+          </div>
+
+          <aside class="arcade-side">
+            <div class="arcade-panel" id="arcadeDetail"></div>
+            <p class="arcade-wallet" id="arcadeWallet">Win a run to earn free assessments.</p>
+            <p class="arcade-controls">
+              <strong>Explore:</strong> drag to pan, scroll or pinch to zoom, tap a field.<br>
+              <strong>Play:</strong> move the pointer or use WASD / arrows. <kbd>Esc</kbd> exits.
+            </p>
+          </aside>
         </div>
 
         <div class="arcade-overlay hidden" id="arcadeOverlay">
@@ -405,11 +402,13 @@
             <div id="arcadeOverlayBody"></div>
             <div class="arcade-actions">
               <button class="btn btn-primary" id="arcadeOverlayAgain">Play again</button>
-              <button class="btn btn-outline" id="arcadeOverlayClose">Close</button>
+              <button class="btn btn-outline" id="arcadeOverlayClose">Back to map</button>
             </div>
           </div>
         </div>
       </div>
+
+      <p class="arcade-message hidden" id="arcadeMessage"></p>
     </section>
 
     <!-- TAB: DIAGRAM -->

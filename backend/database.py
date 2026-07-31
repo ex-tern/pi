@@ -397,6 +397,54 @@ def get_free_evals_used(ip_address: str) -> int:
         conn.close()
 
 
+def get_field_corpus_stats(limit: int = 20) -> list:
+    """Per-field aggregates over the assessed corpus, for the Science Map.
+
+    Returns ``[{"field", "papers", "avg_score"}]`` ordered by paper count. This
+    is what makes the map reflect the operator's *actual* corpus rather than a
+    fixed decorative taxonomy — a field nobody has published in stays small,
+    and one with fifty assessed papers dominates the map.
+
+    Returns an empty list on a fresh database, which callers must handle: the
+    map has to be usable before a single paper exists.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT fields, final_score FROM papers_assessment"
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+
+    import json as _json
+    exclude = {"unclassified", "unspecified", "none", ""}
+    agg = {}
+    for fields_json, score in rows:
+        try:
+            names = [f.strip() for f in _json.loads(fields_json or "[]") if f and f.strip()]
+        except Exception:
+            continue
+        try:
+            score_val = float(score) if score is not None else 50.0
+        except (TypeError, ValueError):
+            score_val = 50.0
+        for name in names:
+            if name.lower() in exclude:
+                continue
+            entry = agg.setdefault(name, {"papers": 0, "score_sum": 0.0})
+            entry["papers"] += 1
+            entry["score_sum"] += score_val
+
+    ranked = sorted(agg.items(), key=lambda kv: kv[1]["papers"], reverse=True)[:limit]
+    return [
+        {"field": name, "papers": v["papers"],
+         "avg_score": round(v["score_sum"] / v["papers"], 1) if v["papers"] else 0.0}
+        for name, v in ranked
+    ]
+
+
 def get_bonus_evals(ip_address: str) -> int:
     """Extra allowance this IP has earned from the Science Map arcade."""
     if not ip_address:

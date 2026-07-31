@@ -74,6 +74,10 @@ REWARD_PER_WIN = 3
 BONUS_CAP = 9              # lifetime ceiling on arcade-earned allowance per IP
 COOLDOWN_SECONDS = 6 * 3600
 
+# Cap on how many real corpus fields ride inside the signed token. Bounded so a
+# large corpus cannot inflate the token into an oversized request body.
+OVERLAY_MAX_FIELDS = 20
+
 TOKEN_TTL_SECONDS = MAX_RUN_MS // 1000 + 120
 _SECRET = (ETH_ADMIN_PRIVATE_KEY or "scholarpi_arcade_seed").encode("utf-8")
 
@@ -126,14 +130,44 @@ class _Rng:
         return self.next_u32() / 0x100000000
 
 
-def generate_field(seed: int) -> List[Dict]:
-    """Rebuilds the exact set of bubbles a given seed produces.
+def generate_field(seed: int, overlay: Optional[List] = None) -> List[Dict]:
+    """Rebuilds the exact set of bubbles a given seed and corpus snapshot produce.
 
     Masses are drawn on a curve that guarantees a playable opening: the first
     handful of bubbles are always smaller than ``START_MASS`` so the player is
     never spawned into a field it cannot bite into, while the tail grows large
     enough that reaching ``WIN_MASS`` requires actually working up the ladder.
+
+    ``overlay`` is the live corpus snapshot — ``[[field_name, paper_count], …]``
+    — which grows the bubbles for fields that actually contain assessed papers,
+    and appends bubbles for real fields outside the default taxonomy. This is
+    what fuses the game with the map: the thing you are eating is the operator's
+    real body of work, not decoration.
+
+    Critically, the overlay is passed in rather than read from the database
+    here. The database changes while people are playing; if verification
+    re-read it, a paper assessed mid-run would rebuild a different field and
+    reject an honest player. The snapshot is captured once at ``start_session``
+    and travels inside the signed token, so the field is frozen for the life of
+    the run while staying live from run to run.
     """
+    overlay = overlay or []
+    weights = {}
+    for entry in overlay:
+        try:
+            weights[str(entry[0])] = int(entry[1])
+        except (IndexError, TypeError, ValueError):
+            continue
+
+    # Domain list = default taxonomy, plus any real field the corpus contains
+    # that isn't already in it. Sorted so the ordering is deterministic.
+    domains = list(DOMAINS)
+    for name in sorted(weights):
+        if name not in domains:
+            domains.append(name)
+
+    busiest = max(weights.values()) if weights else 0
+
     rng = _Rng(seed)
     field = []
     for i in range(FIELD_SIZE):
@@ -141,11 +175,22 @@ def generate_field(seed: int) -> List[Dict]:
         t = i / max(1, FIELD_SIZE - 1)
         base = 6.0 + (t ** 1.6) * 78.0
         jitter = 0.7 + rng.next_float() * 0.6
-        mass = round(base * jitter, 3)
+        domain = domains[rng.next_u32() % len(domains)]
+
+        # A field carrying real papers is visibly heavier, scaled against the
+        # busiest field so the map is readable whether the corpus holds three
+        # papers or three thousand. Capped at +60% so a single dominant field
+        # cannot make the game unwinnable.
+        papers = weights.get(domain, 0)
+        boost = 1.0 + (0.6 * (papers / busiest)) if busiest else 1.0
+        mass = round(base * jitter * boost, 3)
+
         field.append({
             "id": i,
             "mass": mass,
-            "domain": DOMAINS[rng.next_u32() % len(DOMAINS)],
+            "domain": domain,
+            "papers": papers,
+            "live": papers > 0,
             "x": round(rng.next_float(), 5),
             "y": round(rng.next_float(), 5),
             "vx": round((rng.next_float() - 0.5) * 0.00035, 8),
@@ -154,19 +199,47 @@ def generate_field(seed: int) -> List[Dict]:
     return field
 
 
-def start_session(ip: str) -> Dict:
-    """Issues a signed seed the client can render and the server can replay."""
+def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
+    """Compacts corpus stats into the minimal form the token can carry.
+
+    Only the field name and paper count survive: those are the two inputs
+    ``generate_field`` needs, and keeping the payload small keeps the signed
+    token short enough to sit comfortably in a JSON body.
+    """
+    overlay = []
+    for row in (corpus_stats or [])[:OVERLAY_MAX_FIELDS]:
+        name = str(row.get("field", "")).strip()[:48]
+        if not name:
+            continue
+        try:
+            overlay.append([name, int(row.get("papers", 0))])
+        except (TypeError, ValueError):
+            continue
+    return overlay
+
+
+def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None) -> Dict:
+    """Issues a signed seed plus corpus snapshot the server can later replay."""
     seed = secrets.randbelow(0xFFFFFFFF) or 0x9E3779B9
     issued_at = int(time.time())
+    overlay = build_overlay(corpus_stats)
     payload = json.dumps(
-        {"seed": seed, "t": issued_at, "ip": hashlib.sha256((ip or "").encode()).hexdigest()[:16]},
+        {"seed": seed, "t": issued_at,
+         "ip": hashlib.sha256((ip or "").encode()).hexdigest()[:16],
+         "ov": overlay},
         separators=(",", ":"), sort_keys=True,
     )
     encoded = _b64(payload.encode("utf-8"))
+    field = generate_field(seed, overlay)
     return {
         "token": f"{encoded}.{_sign(encoded)}",
         "seed": seed,
-        "field": generate_field(seed),
+        "field": field,
+        "corpus": {
+            "fields_with_papers": sum(1 for b in field if b["live"]),
+            "total_papers": sum(int(e[1]) for e in overlay),
+            "is_empty": not overlay,
+        },
         "rules": {
             "start_mass": START_MASS,
             "absorb_ratio": ABSORB_RATIO,
@@ -181,8 +254,14 @@ def start_session(ip: str) -> Dict:
     }
 
 
-def _decode_token(ip: str, token: str) -> Tuple[Optional[int], Optional[str]]:
-    """Returns ``(seed, error)``. A tampered or stale token yields an error."""
+def _decode_token(ip: str, token: str) -> Tuple[Optional[Tuple[int, List]], Optional[str]]:
+    """Returns ``((seed, overlay), error)``.
+
+    A tampered or stale token yields an error. The overlay is recovered from
+    the signed payload, so the field is rebuilt exactly as it was issued even
+    if the corpus has changed since — the signature covers it, so a client
+    cannot substitute a weaker overlay to make bubbles easier to eat.
+    """
     if not token or "." not in token:
         return None, "Malformed game token."
     encoded, signature = token.rsplit(".", 1)
@@ -199,7 +278,10 @@ def _decode_token(ip: str, token: str) -> Tuple[Optional[int], Optional[str]]:
     expected_ip = hashlib.sha256((ip or "").encode()).hexdigest()[:16]
     if payload.get("ip") != expected_ip:
         return None, "This game session belongs to a different client."
-    return int(payload["seed"]), None
+    overlay = payload.get("ov") or []
+    if not isinstance(overlay, list):
+        return None, "Game token payload is malformed."
+    return (int(payload["seed"]), overlay), None
 
 
 def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> Dict:
@@ -210,9 +292,10 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
     it won, and the final mass the server computed — the client's own score is
     never read.
     """
-    seed, error = _decode_token(ip, token)
+    decoded, error = _decode_token(ip, token)
     if error:
         return {"valid": False, "won": False, "reason": error}
+    seed, overlay = decoded
 
     if not isinstance(absorbed, list):
         return {"valid": False, "won": False, "reason": "Run data is malformed."}
@@ -225,7 +308,7 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
     if duration_ms <= 0 or duration_ms > MAX_RUN_MS:
         return {"valid": False, "won": False, "reason": "Run duration is out of range."}
 
-    field = {b["id"]: b for b in generate_field(seed)}
+    field = {b["id"]: b for b in generate_field(seed, overlay)}
     mass = START_MASS
     seen = set()
     last_t = -MIN_EAT_INTERVAL_MS

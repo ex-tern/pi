@@ -52,6 +52,7 @@ from database import (
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
+    get_field_corpus_stats,
 )
 import arcade
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
@@ -532,7 +533,15 @@ def trial_status(request: Request):
 def arcade_start(request: Request):
     """Issues a signed, seeded bubble field for one run."""
     ip = get_client_ip(request)
-    session = arcade.start_session(ip)
+    # Snapshot the live corpus so the playfield reflects the real body of
+    # assessed work. On a fresh database this is empty and the map falls back
+    # to the default taxonomy — the game must be playable before paper one.
+    try:
+        corpus = get_field_corpus_stats(limit=arcade.OVERLAY_MAX_FIELDS)
+    except Exception as e:
+        logging.warning("Science Map corpus snapshot failed, using taxonomy only: %s", e)
+        corpus = []
+    session = arcade.start_session(ip, corpus_stats=corpus)
     state = get_bonus_award_state(ip)
     session["wallet_state"] = {
         "bonus_earned": state["bonus"],
