@@ -1035,6 +1035,7 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     // refresh left the tab insisting the trial was spent.
     if (btn.dataset.tab === "assess") refreshTrialStatus();
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
+    if (btn.dataset.tab === "journal") loadJournal();
     if (btn.dataset.tab === "explorer") loadExplorer();
     if (btn.dataset.tab === "diagram") {
       renderArchitectureDiagrams();
@@ -2030,9 +2031,148 @@ function renderResultCard(item, idx) {
       <div class="result-actions">
         <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
         <button class="btn" onclick="showDefenseModal(${idx})">Suggest Defense</button>
+        <button class="btn" onclick="showReviewModal('${escapeHtml(item.eval_hash || "")}')">Review</button>
+        <button class="btn" onclick="showPublishModal('${escapeHtml(item.eval_hash || "")}')">Publish</button>
         <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
       </div>
     </div>`;
+}
+
+
+/** Review options: an independent researcher, or a machine panel. */
+async function showReviewModal(hash) {
+  if (!hash) return;
+  let state = {};
+  try {
+    state = await (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+  } catch (_) { /* the modal still explains the options */ }
+
+  const peerFee = state.fee?.fee ?? 2;
+  const llmFee = state.llm_fee?.fee ?? 0.5;
+
+  openModal(`
+    <h2>Request a review</h2>
+    <p class="hint">Two different things, priced differently and badged differently. A reader can
+    tell them apart, which is the point.</p>
+
+    <div class="opt-card">
+      <div class="opt-head"><strong>Peer review</strong>
+        <span class="pill p-piq">${peerFee.toFixed(2)} piQ</span></div>
+      <p>Another researcher — signed in with both a wallet and an ORCID, and not you — reads the
+      paper and submits a reasoned verdict. The fee is a bounty paid to them on completion, not a
+      price for the badge. <strong>Peer-reviewed</strong> appears only once a review is actually
+      submitted.</p>
+      ${state.peer_reviewed
+        ? `<p class="opt-done">Already peer reviewed (${state.peer_review_count}).</p>`
+        : state.pending
+          ? `<p class="opt-done">A review is already open and awaiting a reviewer.</p>`
+          : `<button class="btn btn-primary" id="reqPeer">Request peer review</button>`}
+    </div>
+
+    <div class="opt-card">
+      <div class="opt-head"><strong>LLM review</strong>
+        <span class="pill p-piq">${llmFee.toFixed(2)} piQ</span></div>
+      <p>The model panel writes a critical review from the evidence it already gathered. Badged
+      <strong>LLM-reviewed</strong> — never peer-reviewed, because no human read it. Cheaper
+      because it buys inference, not someone's afternoon.</p>
+      ${state.llm_reviewed
+        ? `<p class="opt-done">Already LLM reviewed.</p>`
+        : `<button class="btn" id="reqLlm">Request LLM review</button>`}
+    </div>
+    <div class="profile-msg" id="reviewMsg"></div>`);
+
+  const post = async (path, label) => {
+    const msg = document.getElementById("reviewMsg");
+    msg.textContent = "Working…";
+    try {
+      const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}${path}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      msg.textContent = data.message || `${label} requested.`;
+      loadEmissionStatus();
+    } catch (e) { msg.textContent = `Could not request ${label}: ${e.message}`; }
+  };
+  const p1 = document.getElementById("reqPeer");
+  if (p1) p1.addEventListener("click", () => post("/review/request", "peer review"));
+  const p2 = document.getElementById("reqLlm");
+  if (p2) p2.addEventListener("click", () => post("/review/llm", "LLM review"));
+}
+
+/** Publish options. Submit stays disabled until authorship is proven. */
+async function showPublishModal(hash) {
+  if (!hash) return;
+  const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+  let st = {};
+  try {
+    st = await (await fetch(
+      `${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`)).json();
+  } catch (_) { /* fall through; the server still enforces */ }
+
+  const fee = st.fee_already_paid ? 0 : (st.fee?.fee ?? 1);
+  const may = !!st.may_publish;
+
+  openModal(`
+    <h2>Publish this assessment</h2>
+    <p class="hint">Publishing attaches your name to the assessment publicly. It is not a claim
+    of peer review.</p>
+
+    <div class="opt-card ${may ? "" : "opt-locked"}">
+      <label class="opt-radio"><input type="radio" name="pubkind" value="author" checked>
+        <span><strong>Author-published</strong> — you confirm this is your work and choose to
+        stand behind the assessment.</span></label>
+      <label class="opt-radio"><input type="radio" name="pubkind" value="journal">
+        <span><strong>Journal-published</strong> — the work appeared in a journal. Requires a DOI,
+        which is checked against Crossref/OpenAlex rather than taken on trust.</span></label>
+      <label class="bug-label" for="pubDoi">DOI <span class="hint-inline">for a journal claim</span></label>
+      <input class="bug-input" id="pubDoi" placeholder="10.1038/s41586-021-03819-2"
+             value="${escapeHtml(st.doi || "")}">
+    </div>
+
+    <div class="${may ? "opt-ok" : "opt-blocked"}">
+      ${may
+        ? `Authorship verified via <strong>${escapeHtml(st.authorship_tier || "")}</strong>.
+           Publishing costs <strong>${fee.toFixed(2)} piQ</strong>${
+             st.fee_already_paid ? " (already paid for this paper — free now)" : ""}.`
+        : `<strong>Names do not match yet.</strong> ${escapeHtml(st.reason || "")}
+           ${st.how_to_fix ? `<br>${escapeHtml(st.how_to_fix)}` : ""}`}
+    </div>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="pubSubmit" ${may ? "" : "disabled"}>Publish</button>
+      <span class="profile-msg" id="pubMsg"></span>
+    </div>`);
+
+  const btn = document.getElementById("pubSubmit");
+  if (!may) {
+    btn.title = "Publishing requires verified authorship — the submitter's name must match an "
+              + "author on the manuscript.";
+    return;
+  }
+  btn.addEventListener("click", async () => {
+    const kind = (document.querySelector('input[name="pubkind"]:checked') || {}).value || "author";
+    const doi = document.getElementById("pubDoi").value.trim();
+    const msg = document.getElementById("pubMsg");
+    if (kind === "journal" && !doi) {
+      msg.textContent = "A journal claim needs a DOI."; return;
+    }
+    btn.disabled = true; msg.textContent = "Publishing…";
+    try {
+      const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ published: true, kind, doi,
+                               wallet: Session.wallet, orcid: Session.orcid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      msg.textContent = data.message || "Published.";
+      loadAssessmentHistory(); loadEmissionStatus();
+    } catch (e) {
+      msg.textContent = e.message; btn.disabled = false;
+    }
+  });
 }
 
 function removeResult(idx) { evaluatedBuffer.splice(idx, 1); renderResults(); }
@@ -3438,6 +3578,58 @@ async function initAnalyticsTab() {
   loadForecast();
   loadLeaderboard();
   loadTopPapers();
+}
+
+
+// ---------------------------------------------------------------------------
+// JOURNAL TAB
+// ---------------------------------------------------------------------------
+async function loadJournal() {
+  const body = document.getElementById("journalBody");
+  const count = document.getElementById("journalCount");
+  if (!body) return;
+  const kind = (document.getElementById("journalKind") || {}).value || "all";
+  body.innerHTML = `<p class="hint">Loading…</p>`;
+  try {
+    const data = await (await fetch(`${API}/api/journal?kind=${kind}&limit=200`)).json();
+    if (count) count.textContent = data.count ? `${data.count} entr${data.count === 1 ? "y" : "ies"}` : "";
+    if (!data.entries || !data.entries.length) {
+      body.innerHTML = `<div class="hint">Nothing here yet. An assessment appears once its author
+        publishes it, or once it carries a peer or LLM review.</div>`;
+      return;
+    }
+    body.innerHTML = `<div class="table-scroll"><table class="data-table journal-table"><thead><tr>
+        <th>Paper</th><th>Author</th><th class="num">piX</th>
+        <th>Publication</th><th>Review</th><th class="num">Date</th>
+      </tr></thead><tbody>` + data.entries.map(e => `
+        <tr class="clickable-row" data-hash="${escapeHtml(e.hash)}">
+          <td><div class="hist-title">${escapeHtml(e.title)}</div>
+              ${e.doi ? `<div class="hist-meta"><code>${escapeHtml(e.doi)}</code></div>` : ""}</td>
+          <td class="cell-muted">${escapeHtml(e.author || "—")}</td>
+          <td class="num strong">${e.score.toFixed(1)}</td>
+          <td>${e.published
+                ? (e.publish_kind === "journal"
+                    ? `<span class="pill p-published" title="A DOI for this work resolves in Crossref or OpenAlex.">Journal-published</span>`
+                    : `<span class="pill p-published" title="The verified author attached their name. Not journal publication.">Author-published</span>`)
+                : `<span class="cell-muted">—</span>`}</td>
+          <td>${[
+                e.peer_reviews ? `<span class="pill p-peer-reviewed" title="An independent researcher submitted a reasoned verdict.">Peer-reviewed${e.peer_reviews > 1 ? " ×" + e.peer_reviews : ""}</span>` : "",
+                e.llm_reviewed ? `<span class="pill p-llm-reviewed" title="A model panel wrote the review. No human read it.">LLM-reviewed</span>` : "",
+              ].filter(Boolean).join(" ") || `<span class="cell-muted">—</span>`}</td>
+          <td class="num cell-muted">${(e.published_at || e.assessed_at || "").slice(0, 10)}</td>
+        </tr>`).join("") + `</tbody></table></div>
+      <p class="hint">${escapeHtml(data.note || "")}</p>`;
+
+    body.querySelectorAll(".clickable-row").forEach(tr =>
+      tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash)));
+  } catch (e) {
+    body.innerHTML = `<div class="hint">The journal index could not be loaded.</div>`;
+  }
+}
+
+{
+  const sel = document.getElementById("journalKind");
+  if (sel) sel.addEventListener("change", loadJournal);
 }
 
 // ---------------------------------------------------------------------------

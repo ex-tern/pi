@@ -596,3 +596,22 @@ def peer_review_fee() -> Dict:
             f"been submitted by someone other than the requester."
         ),
     }
+
+
+# LLM review costs less than peer review because it costs less to produce: it
+# buys inference, not a researcher's afternoon. Pricing them the same would
+# imply they are the same thing, and the whole point of having two badges is
+# that a reader can tell them apart.
+LLM_REVIEW_FEE = 0.5
+
+
+def llm_review_fee() -> Dict:
+    return {
+        "fee": LLM_REVIEW_FEE,
+        "rationale": (
+            f"An LLM review costs {LLM_REVIEW_FEE:.2f} piQ. A panel of models reads the "
+            f"manuscript again and writes a critical review. It is labelled LLM-reviewed, never "
+            f"peer-reviewed: no human read it, and a badge that blurred the two would mislead "
+            f"exactly the readers it is meant to inform."
+        ),
+    }
