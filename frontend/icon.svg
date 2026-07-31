@@ -1,0 +1,29 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 64 64" role="img" aria-label="ScholarPi">
+  <title>ScholarPi</title>
+  <defs>
+    <linearGradient id="sp-bg" x1="0" y1="0" x2="1" y2="1">
+      <stop offset="0%" stop-color="#2563eb"/>
+      <stop offset="100%" stop-color="#0891b2"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Rounded tile so the mark reads at 16px in a browser tab. -->
+  <rect width="64" height="64" rx="14" fill="url(#sp-bg)"/>
+
+  <!-- The pi glyph, drawn as strokes rather than text: a font-dependent
+       glyph would render differently (or not at all) wherever the font is
+       missing, and a favicon has no fallback. -->
+  <g stroke="#ffffff" stroke-width="5" stroke-linecap="round" fill="none">
+    <path d="M15 24 H49"/>
+    <path d="M25 24 V45"/>
+    <path d="M40 24 V40 a5 5 0 0 0 7 4"/>
+  </g>
+
+  <!-- Three ascending marks: the assessment ladder, and a nod to the
+       criteria-weighting chart that is the app's main visual. -->
+  <g fill="#ffffff" opacity="0.9">
+    <rect x="15" y="51" width="6" height="4" rx="1.5"/>
+    <rect x="25" y="49" width="6" height="6" rx="1.5"/>
+    <rect x="35" y="47" width="6" height="8" rx="1.5"/>
+  </g>
+</svg>

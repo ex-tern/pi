@@ -234,7 +234,11 @@
     setMessage("Loading the map…", "info");
     let data;
     try {
-      const res = await fetch("/api/arcade/start");
+      // Identity travels with the request so the server can key difficulty
+      // (and the leaderboard) to a person rather than to an IP.
+      const ident = (window.ScholarPi && window.ScholarPi.identity) ? window.ScholarPi.identity() : {};
+      const qs = new URLSearchParams({ wallet: ident.wallet || "", orcid: ident.orcid || "" });
+      const res = await fetch(`/api/arcade/start?${qs}`);
       if (!res.ok) throw new Error("server returned " + res.status);
       data = await res.json();
     } catch (err) {
@@ -267,6 +271,8 @@
 
     seedStars();
     renderWalletState(data.wallet_state, data.reward);
+    renderDifficulty(data.progress, data.difficulty, data.rules);
+    loadArcadeBoard();
     renderCorpusSummary(data.corpus);
     setMessage("", "");
     state.loading = false;
@@ -404,12 +410,16 @@
     if (state.submitting) return;
     state.submitting = true;
     const duration = Math.round(performance.now() - state.startedAt);
+    const ident2 = (window.ScholarPi && window.ScholarPi.identity) ? window.ScholarPi.identity() : {};
     setMessage(won ? "Verifying your run…" : "Recording your run…", "info");
     let data;
     try {
       const res = await fetch("/api/arcade/finish", {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ token: state.token, duration_ms: duration, absorbed: state.absorbed }),
+        body: JSON.stringify({
+          token: state.token, duration_ms: duration, absorbed: state.absorbed,
+          wallet: ident2.wallet || "", orcid: ident2.orcid || "",
+        }),
       });
       data = await res.json();
     } catch (err) {
@@ -427,7 +437,69 @@
     } else {
       setMessage(data.message || "Run recorded.", won ? "info" : "");
     }
+    if (data && data.progress) renderDifficulty(data.progress, null, state.rules);
+    loadArcadeBoard();
     showOverlay(won, data);
+  }
+
+  /** Difficulty panel.
+   *
+   *  Stated explicitly rather than left to be discovered through repeated
+   *  failure. A player who cannot win and is not told why concludes the game
+   *  is broken; a player told the level rose and how to reset it is being
+   *  offered a trade.
+   */
+  function renderDifficulty(progress, difficulty, rules) {
+    const el = document.getElementById("arcadeDifficulty");
+    if (!el || !progress) return;
+    const level = progress.difficulty_level || 0;
+    const winnable = difficulty ? difficulty.winnable !== false : true;
+    const target = rules && rules.win_mass ? rules.win_mass : null;
+
+    let cls = "arcade-diff";
+    if (!winnable) cls += " arcade-diff-blocked";
+    else if (level >= 4) cls += " arcade-diff-hard";
+
+    el.className = cls;
+    el.innerHTML = `
+      <div class="diff-row"><span>Difficulty</span><strong>Level ${level}</strong></div>
+      ${target ? `<div class="diff-row"><span>Target mass</span><strong>${Number(target).toFixed(0)}</strong></div>` : ""}
+      <div class="diff-row"><span>Wins</span><strong>${progress.wins || 0}</strong></div>
+      ${progress.best_mass ? `<div class="diff-row"><span>Your best</span><strong>${Number(progress.best_mass).toFixed(0)}</strong></div>` : ""}
+      <p class="diff-hint">${
+        !winnable
+          ? "This field cannot be won at your current level. Assess a manuscript to reset the difficulty to 0."
+          : "Each win raises the difficulty. Assessing a manuscript resets it."
+      }</p>`;
+  }
+
+  async function loadArcadeBoard() {
+    const el = document.getElementById("arcadeBoard");
+    if (!el) return;
+    try {
+      const res = await fetch("/api/arcade/leaderboard?limit=15");
+      const data = await res.json();
+      const rows = data.leaderboard || [];
+      if (!rows.length) {
+        el.innerHTML = `<p class="hint">No signed-in players have completed a run yet. Connect a
+          wallet or link ORCID to appear here.</p>`;
+        return;
+      }
+      el.innerHTML = `<table class="data-table"><thead><tr>
+          <th>#</th><th>Player</th><th class="num">Best</th><th class="num">Wins</th><th class="num">Lvl</th>
+        </tr></thead><tbody>` + rows.map(r => `
+          <tr><td>${r.rank}</td><td>${escapeHtmlLocal(r.player)}</td>
+            <td class="num">${r.best_mass.toFixed(0)}</td>
+            <td class="num">${r.wins}</td><td class="num">${r.difficulty_level}</td></tr>`).join("")
+        + `</tbody></table><p class="hint">${escapeHtmlLocal(data.note || "")}</p>`;
+    } catch (e) {
+      el.innerHTML = `<p class="hint">Leaderboard unavailable.</p>`;
+    }
+  }
+
+  function escapeHtmlLocal(v) {
+    return String(v == null ? "" : v).replace(/[&<>"']/g,
+      c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
   function showOverlay(won, data) {

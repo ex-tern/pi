@@ -74,6 +74,61 @@ REWARD_PER_WIN = 3
 BONUS_CAP = 9              # lifetime ceiling on arcade-earned allowance per IP
 COOLDOWN_SECONDS = 6 * 3600
 
+# --- Difficulty ramp ------------------------------------------------------
+# Each win makes the next run harder, until winning becomes arithmetically
+# impossible; assessing a manuscript resets the ramp to zero.
+#
+# The point is not to frustrate. The arcade exists to hand out assessment
+# allowance, and an unbounded win loop is an unbounded allowance faucet — the
+# lifetime cap alone handles the economics, but it does so by silently
+# refusing rewards, which reads as the game being broken. A ramp that visibly
+# tightens, and a reset that is earned by doing the thing the site is FOR, is
+# an honest exchange rather than a hidden ceiling.
+#
+# Difficulty is derived from a level integer and carried inside the signed
+# token, so the server replays each run against exactly the parameters the
+# client was given. It cannot be edited in the browser, and a token issued at
+# level 2 can never be verified as though it were level 0.
+DIFFICULTY_WIN_STEP = 1.18     # win threshold multiplier per level
+DIFFICULTY_ABSORB_STEP = 0.88  # absorb efficiency multiplier per level
+MAX_DIFFICULTY_LEVEL = 12      # hard ceiling; unwinnable well before this
+
+
+def difficulty_params(level: int) -> Dict:
+    """Game constants for a difficulty level."""
+    level = max(0, min(int(level or 0), MAX_DIFFICULTY_LEVEL))
+    return {
+        "level": level,
+        "win_mass": round(WIN_MASS * (DIFFICULTY_WIN_STEP ** level), 2),
+        "absorb_ratio": round(ABSORB_RATIO * (DIFFICULTY_ABSORB_STEP ** level), 5),
+        "start_mass": START_MASS,
+        "field_size": FIELD_SIZE,
+    }
+
+
+def max_attainable_mass(seed: int, overlay: Optional[List], level: int) -> float:
+    """Upper bound on the mass a perfect run could reach on this field.
+
+    Computed by eating every bubble that is ever smaller than the player, in
+    ascending size order — the optimal strategy. This is what makes
+    "unwinnable" a statement of fact rather than a guess: if the bound is below
+    the win threshold, no sequence of moves wins, and the UI can say so plainly
+    instead of letting the player grind at something impossible.
+    """
+    params = difficulty_params(level)
+    bubbles = sorted(generate_field(seed, overlay), key=lambda b: b["mass"])
+    mass = params["start_mass"]
+    for bubble in bubbles:
+        if bubble["mass"] >= mass:
+            continue
+        mass += bubble["mass"] * params["absorb_ratio"]
+    return round(mass, 2)
+
+
+def is_winnable(seed: int, overlay: Optional[List], level: int) -> bool:
+    return max_attainable_mass(seed, overlay, level) >= difficulty_params(level)["win_mass"]
+
+
 # Cap on how many real corpus fields ride inside the signed token. Bounded so a
 # large corpus cannot inflate the token into an oversized request body.
 OVERLAY_MAX_FIELDS = 20
@@ -219,15 +274,20 @@ def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
 
 
 def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
-                  corpus_totals: Optional[Dict] = None) -> Dict:
+                  corpus_totals: Optional[Dict] = None, level: int = 0) -> Dict:
     """Issues a signed seed plus corpus snapshot the server can later replay."""
     seed = secrets.randbelow(0xFFFFFFFF) or 0x9E3779B9
     issued_at = int(time.time())
     overlay = build_overlay(corpus_stats)
+    params = difficulty_params(level)
+    # The level is inside the signature. A client cannot replay a level-3 run
+    # as though it were level 0 to claim an easier win threshold, and cannot
+    # edit its own difficulty down between being issued a field and submitting
+    # a result.
     payload = json.dumps(
         {"seed": seed, "t": issued_at,
          "ip": hashlib.sha256((ip or "").encode()).hexdigest()[:16],
-         "ov": overlay},
+         "ov": overlay, "d": params["level"]},
         separators=(",", ":"), sort_keys=True,
     )
     encoded = _b64(payload.encode("utf-8"))
@@ -270,11 +330,19 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
             "unclassified_papers": int((corpus_totals or {}).get("unclassified", 0)),
             "is_empty": not (corpus_totals or {}).get("papers", 0),
         },
+        # The client renders and plays with these; the server replays with the
+        # same values derived from the signed level, so they cannot diverge.
         "rules": {
-            "start_mass": START_MASS,
-            "absorb_ratio": ABSORB_RATIO,
-            "win_mass": WIN_MASS,
-            "field_size": FIELD_SIZE,
+            "start_mass": params["start_mass"],
+            "absorb_ratio": params["absorb_ratio"],
+            "win_mass": params["win_mass"],
+            "field_size": params["field_size"],
+        },
+        "difficulty": {
+            "level": params["level"],
+            "base_win_mass": WIN_MASS,
+            "winnable": is_winnable(seed, overlay, params["level"]),
+            "max_attainable": max_attainable_mass(seed, overlay, params["level"]),
         },
         "reward": {
             "per_win": REWARD_PER_WIN,
@@ -284,7 +352,7 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
     }
 
 
-def _decode_token(ip: str, token: str) -> Tuple[Optional[Tuple[int, List]], Optional[str]]:
+def _decode_token(ip: str, token: str) -> Tuple[Optional[Tuple[int, List, int]], Optional[str]]:
     """Returns ``((seed, overlay), error)``.
 
     A tampered or stale token yields an error. The overlay is recovered from
@@ -311,7 +379,10 @@ def _decode_token(ip: str, token: str) -> Tuple[Optional[Tuple[int, List]], Opti
     overlay = payload.get("ov") or []
     if not isinstance(overlay, list):
         return None, "Game token payload is malformed."
-    return (int(payload["seed"]), overlay), None
+    # An older token with no "d" predates the difficulty ramp; treating it as
+    # level 0 keeps sessions that were in flight during a deploy playable
+    # rather than rejecting them with a signature-looking error.
+    return (int(payload["seed"]), overlay, int(payload.get("d", 0))), None
 
 
 def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> Dict:
@@ -325,7 +396,8 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
     decoded, error = _decode_token(ip, token)
     if error:
         return {"valid": False, "won": False, "reason": error}
-    seed, overlay = decoded
+    seed, overlay, level = decoded
+    params = difficulty_params(level)
 
     if not isinstance(absorbed, list):
         return {"valid": False, "won": False, "reason": "Run data is malformed."}
@@ -339,7 +411,7 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
         return {"valid": False, "won": False, "reason": "Run duration is out of range."}
 
     field = {b["id"]: b for b in generate_field(seed, overlay)}
-    mass = START_MASS
+    mass = params["start_mass"]
     seen = set()
     last_t = -MIN_EAT_INTERVAL_MS
 
@@ -368,15 +440,17 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
 
         seen.add(bid)
         last_t = t
-        mass += bubble["mass"] * ABSORB_RATIO
+        mass += bubble["mass"] * params["absorb_ratio"]
 
-    won = mass >= WIN_MASS
+    won = mass >= params["win_mass"]
     return {
         "valid": True,
         "won": won,
         "final_mass": round(mass, 2),
         "absorbed": len(seen),
-        "win_mass": WIN_MASS,
+        "win_mass": params["win_mass"],
+        "difficulty_level": params["level"],
+        "winnable": is_winnable(seed, overlay, params["level"]),
         "duration_ms": duration_ms,
     }
 
