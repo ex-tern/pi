@@ -923,3 +923,13 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .pick-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 4px; }
 .pick-meta { font-size: 11px; color: var(--faint); margin-bottom: 5px; }
 .pick-why { font-size: 12px; color: #334155; line-height: 1.55; margin: 0; }
+
+/* ---- Research Buddy: collapsible ---- */
+.buddy-card > summary {
+  cursor: pointer; display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; font-size: 14px;
+}
+.buddy-card > summary::marker { color: var(--faint); }
+.buddy-card[open] > summary {
+  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+}

@@ -912,6 +912,9 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
       if (btn.dataset.tab === "arcade") window.ScholarPiArcade.open();
       else window.ScholarPiArcade.exit();
     }
+    // Analytics caches its first load; without this, assessing a paper and
+    // switching back showed stale counts that disagreed with the Science Map.
+    if (btn.dataset.tab === "analytics") analyticsInitialized = false;
   });
 });
 
@@ -942,12 +945,21 @@ const PROFILE_INPUTS = { career_stage: "profileCareerStage", abstract: "profileA
 // across several of each. One generic implementation serves both, so the two
 // controls cannot drift apart in behaviour. Stored comma-joined, keeping the
 // backend columns plain strings.
+// `sep` is the character these tags are joined with for storage, and `split`
+// is what commits one while typing.
+//
+// Core ideas are sentences, and sentences contain commas — "We show X, which
+// implies Y" would be shredded into two meaningless fragments by a
+// comma-separated field. So ideas commit on Enter only and are stored
+// newline-separated, which prose does not contain. Fields and keywords are
+// single terms where comma is the natural separator, so they keep it.
 const TAG_GROUPS = {
-  field: { tags: [], listId: "profileFieldList", inputId: "profileFieldInput", wrapId: "profileFieldTags", max: 60 },
-  goal:  { tags: [], listId: "profileGoalList",  inputId: "profileGoalInput",  wrapId: "profileGoalTags",  max: 60 },
-  // Core ideas are short sentences rather than single terms, so they get a
-  // longer per-tag cap than a keyword does.
-  idea:  { tags: [], listId: "profileIdeaList",  inputId: "profileIdeaInput",  wrapId: "profileIdeaTags",  max: 120 },
+  field: { tags: [], listId: "profileFieldList", inputId: "profileFieldInput",
+           wrapId: "profileFieldTags", max: 60, sep: ", ", split: "," },
+  goal:  { tags: [], listId: "profileGoalList", inputId: "profileGoalInput",
+           wrapId: "profileGoalTags", max: 60, sep: ", ", split: "," },
+  idea:  { tags: [], listId: "profileIdeaList", inputId: "profileIdeaInput",
+           wrapId: "profileIdeaTags", max: 200, sep: "\n", split: "\n" },
 };
 const TAG_LIMIT = 12;
 
@@ -963,7 +975,7 @@ function renderTags(group) {
 
 function addTag(group, raw) {
   const g = TAG_GROUPS[group];
-  for (const piece of String(raw).split(",")) {
+  for (const piece of String(raw).split(g.split)) {
     const value = piece.trim();
     // Case-insensitive dedupe: "Genomics" and "genomics" are one entry, and
     // keeping both would split the same interest across two tags.
@@ -975,17 +987,18 @@ function addTag(group, raw) {
   renderTags(group);
 }
 
-function setTags(group, csv) {
-  TAG_GROUPS[group].tags = String(csv || "")
-    .split(",").map(s => s.trim()).filter(Boolean).slice(0, TAG_LIMIT);
+function setTags(group, stored) {
+  const g = TAG_GROUPS[group];
+  g.tags = String(stored || "")
+    .split(g.split).map(s => s.trim()).filter(Boolean).slice(0, TAG_LIMIT);
   renderTags(group);
 }
 
 function readProfileForm() {
   const out = {
-    field: TAG_GROUPS.field.tags.join(", "),
-    goal: TAG_GROUPS.goal.tags.join(", "),
-    idea: TAG_GROUPS.idea.tags.join(", "),
+    field: TAG_GROUPS.field.tags.join(TAG_GROUPS.field.sep),
+    goal: TAG_GROUPS.goal.tags.join(TAG_GROUPS.goal.sep),
+    idea: TAG_GROUPS.idea.tags.join(TAG_GROUPS.idea.sep),
   };
   for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
@@ -1635,6 +1648,12 @@ function handleStreamLine(obj, statusBox) {
     evaluatedBuffer.unshift(obj.item);
     Session.freeEvalsUsed = Session.freeEvalsUsed + 1;
     renderResults();
+  } else if (obj.type === "result_error") {
+    // The paper was assessed and persisted, but its payload could not be
+    // serialised. Say so plainly rather than letting it silently vanish.
+    statusBox.innerHTML += `<div class="status-line status-error">${escapeHtml(obj.label || "Paper")}:
+      ${escapeHtml(obj.message || "result could not be displayed.")}</div>`;
+    Session.freeEvalsUsed = Session.freeEvalsUsed + 1;
   } else if (obj.type === "download_error") {
     downloadErrors.unshift(obj);
     renderResults();
@@ -3181,7 +3200,7 @@ for (const group of Object.keys(TAG_GROUPS)) {
   if (!input) continue;
 
   input.addEventListener("keydown", e => {
-    if (e.key === "Enter" || e.key === ",") {
+    if (e.key === "Enter" || (e.key === "," && g.split === ",")) {
       e.preventDefault();
       addTag(group, input.value);
       input.value = "";

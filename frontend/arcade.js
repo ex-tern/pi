@@ -306,7 +306,10 @@
   // ---------------------------------------------------------------------
   async function enterExplore(force) {
     document.getElementById("arcadeStage").classList.remove("hidden");
-    if (force || !state.bubbles.length) {
+    // Always refetch when the tab is opened. The corpus changes as papers are
+    // assessed, and a cached field made the map disagree with Analytics about
+    // how many papers exist — the two must be reading the same corpus.
+    if (force || !state.bubbles.length || state.mode === "idle") {
       if (!await loadField()) return;
     }
     state.mode = "explore";
@@ -512,6 +515,11 @@
    *  pile. Forces are applied to velocity and damped, so the layout settles
    *  instead of oscillating. */
   function applyGravity(dt) {
+    // Never during play. Clustering drags fields toward each other while the
+    // player is moving between them, which makes the game unplayable — a gap
+    // you aimed for closes as you cross it. Gravity is a layout aid for
+    // reading the map, not a game mechanic.
+    if (state.mode === "play") return;
     if (!state.look.gravity) return;
     const ATTRACT = 0.9;
     const REST_SCALE = 2.6;      // preferred separation, in radii
