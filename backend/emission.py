@@ -59,7 +59,7 @@ BASE_DIVISOR = 5.0
 # --- Quality bar -----------------------------------------------------------
 # Starts low enough that a competent paper qualifies, and rises slowly. The
 # previous 50 -> 75 over 2,000 papers excluded solid work almost immediately.
-FLOOR_PIX_INITIAL = 40.0        # minimum piX to mint, at genesis
+FLOOR_PIX_INITIAL = 30.0        # minimum piX to mint, at genesis
 FLOOR_PIX_CEILING = 62.0        # asymptotic maximum for that minimum
 FLOOR_GROWTH_SCALE = 12000.0    # corpus size over which the bar approaches its ceiling
 LOGIC_FLOOR = 35.0              # logic integrity gate; a validity check, not difficulty
@@ -387,4 +387,118 @@ def emission_manifest(total_papers: int = 0) -> Dict:
             "Early contributors are therefore not diluted by later volume, and piQ remains a "
             "meaningful signal of contribution rather than of participation.",
         ],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Curation rewards
+# ---------------------------------------------------------------------------
+# Paying people to submit manuscripts they did not write is a growth lever, and
+# it is also the fastest way to destroy the meaning of the thing being paid in.
+# OpenAlex indexes hundreds of millions of open-access papers and this app has
+# a discovery feature, so an uncapped submitter reward is a script away from
+# being an infinite faucet. The per-author decay that normally prevents volume
+# farming does not help here either: it is keyed to the PAPER's author, so
+# someone submitting other people's work never accrues any decay at all.
+#
+# Curation is therefore paid as a deliberately different thing:
+#
+#   * Smaller — a fraction of what the same paper would have earned its author.
+#   * Decaying per SUBMITTER, so the tenth submission is worth much less than
+#     the first. This is the mechanism per-author decay cannot provide.
+#   * Lifetime capped per identity, so the total exposure is bounded and
+#     computable rather than open-ended.
+#   * Identity gated, so farming costs a verified ORCID or wallet rather than
+#     a fresh browser session.
+#   * Credited to the piQ LEDGER, never minted on-chain. This is the important
+#     one. On-chain piQ is soulbound and is claimed — in the app, in the
+#     whitepaper — to record who did assessed work. Minting it for uploads
+#     would make that claim false. Curation piQ is spendable service credit;
+#     authored piQ is a record. Keeping them in separate places is what lets
+#     both statements stay true, and keeps the leaderboard meaningful.
+CURATION_SHARE = 0.15           # fraction of the authorship emission
+CURATION_HALFLIFE = 5.0         # submissions before a curator earns half rate
+CURATION_DECAY_FLOOR = 0.20     # never falls below 20% of the base share
+CURATION_LIFETIME_CAP = 12.0    # total piQ any one identity may earn curating
+CURATION_MIN_AWARD = 0.01       # below this, award nothing rather than dust
+
+
+def curation_decay(curation_count: int) -> float:
+    """Multiplier for a curator who has already submitted `curation_count`."""
+    n = max(0, int(curation_count or 0))
+    decay = 0.5 ** (n / CURATION_HALFLIFE)
+    return round(max(CURATION_DECAY_FLOOR, decay), 6)
+
+
+def compute_curation_reward(pix_score: float, logic_integrity: float,
+                            total_papers: int, curation_count: int,
+                            curation_earned: float) -> Dict:
+    """What a submitter earns for a paper they did not author.
+
+    Returns a full explanation whether or not anything is awarded, because
+    "you earned nothing" is only actionable if it says why.
+    """
+    base = compute_piq_emission(
+        pix_score=pix_score, logic_integrity=logic_integrity,
+        total_papers=total_papers, author_paper_count=0,
+    )
+
+    remaining = max(0.0, CURATION_LIFETIME_CAP - float(curation_earned or 0.0))
+    decay = curation_decay(curation_count)
+    raw = base["minted"] * CURATION_SHARE * decay
+    amount = round(min(raw, remaining), 4)
+
+    if not base["qualified"]:
+        return {"awarded": 0.0, "eligible": False, "decay": decay,
+                "remaining_cap": round(remaining, 4),
+                "reason": ("This paper did not meet the quality threshold, so it earns no "
+                           "curation reward. " + base.get("reason", ""))}
+    if remaining <= 0:
+        return {"awarded": 0.0, "eligible": False, "decay": decay, "remaining_cap": 0.0,
+                "reason": (f"You have reached the lifetime curation cap of "
+                           f"{CURATION_LIFETIME_CAP:.0f} piQ. Curation rewards are capped so "
+                           f"that submitting other people's work cannot become an income "
+                           f"stream; having your own work assessed is not capped.")}
+    if amount < CURATION_MIN_AWARD:
+        return {"awarded": 0.0, "eligible": False, "decay": decay,
+                "remaining_cap": round(remaining, 4),
+                "reason": "The curation reward for this paper rounds to zero."}
+
+    return {
+        "awarded": amount,
+        "eligible": True,
+        "decay": decay,
+        "base_emission": base["minted"],
+        "share": CURATION_SHARE,
+        "curation_count": int(curation_count or 0),
+        "remaining_cap": round(remaining - amount, 4),
+        "reason": (
+            f"Curation reward: {amount:.4f} piQ. This is {CURATION_SHARE * 100:.0f}% of the "
+            f"{base['minted']:.3f} piQ the paper would have earned its author, reduced to "
+            f"{decay * 100:.0f}% by your curation decay ({int(curation_count or 0)} previous "
+            f"submissions). {max(0.0, remaining - amount):.2f} piQ of your "
+            f"{CURATION_LIFETIME_CAP:.0f} piQ lifetime curation allowance remains."
+        ),
+    }
+
+
+def curation_manifest() -> Dict:
+    """Published policy, so a curator can compute their own reward."""
+    return {
+        "share_of_author_emission": CURATION_SHARE,
+        "halflife_submissions": CURATION_HALFLIFE,
+        "decay_floor": CURATION_DECAY_FLOOR,
+        "lifetime_cap": CURATION_LIFETIME_CAP,
+        "requires_identity": True,
+        "on_chain": False,
+        "schedule": [
+            {"submissions": n, "multiplier": curation_decay(n)}
+            for n in (0, 1, 2, 5, 10, 20, 50)
+        ],
+        "note": (
+            "Curation piQ is credited to your spendable balance and is not minted on-chain. "
+            "On-chain piQ records authored work only, which is what makes it meaningful as a "
+            "contribution record. Curation rewards let you keep using the service; they do not "
+            "claim you wrote the paper."
+        ),
     }

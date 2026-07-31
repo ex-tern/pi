@@ -667,21 +667,34 @@ def get_field_corpus_stats(limit: int = 20) -> list:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT fields, final_score, author_name FROM papers_assessment"
+            "SELECT fields, final_score, author_name, subfields FROM papers_assessment"
         ).fetchall()
     except sqlite3.Error:
         return []
     finally:
         conn.close()
 
+    # Top-level domain per field, so the map can group and colour by domain
+    # rather than showing a flat list of field names with no hierarchy. The
+    # mapping is the same OpenAlex ontology the classifier assigns from, so a
+    # field can never be placed in a domain the classifier would not have.
+    try:
+        from scientometrics import FIELD_TO_DOMAIN
+    except Exception:
+        FIELD_TO_DOMAIN = {}
+
     import json as _json
     exclude = {"unclassified", "unspecified", "none", ""}
     agg = {}
-    for fields_json, score, author_name in rows:
+    for fields_json, score, author_name, subfields_json in rows:
         try:
             names = [f.strip() for f in _json.loads(fields_json or "[]") if f and f.strip()]
         except Exception:
             continue
+        try:
+            subs = [x.strip() for x in _json.loads(subfields_json or "[]") if x and x.strip()]
+        except Exception:
+            subs = []
         try:
             score_val = float(score) if score is not None else 50.0
         except (TypeError, ValueError):
@@ -689,9 +702,13 @@ def get_field_corpus_stats(limit: int = 20) -> list:
         for name in names:
             if name.lower() in exclude:
                 continue
-            entry = agg.setdefault(name, {"papers": 0, "score_sum": 0.0, "authors": set()})
+            entry = agg.setdefault(name, {"papers": 0, "score_sum": 0.0,
+                                          "authors": set(), "subfields": set()})
             entry["papers"] += 1
             entry["score_sum"] += score_val
+            for sub in subs:
+                if sub.lower() not in exclude and sub != name:
+                    entry["subfields"].add(sub)
             # Authors per field power the map's author filter. Stored as a set
             # so one prolific author doesn't appear once per paper, and capped
             # on the way out so a large corpus can't bloat the response.
@@ -703,8 +720,13 @@ def get_field_corpus_stats(limit: int = 20) -> list:
 
     ranked = sorted(agg.items(), key=lambda kv: kv[1]["papers"], reverse=True)[:limit]
     return [
-        {"field": name, "papers": v["papers"],
+        {"field": name,
+         # "Unassigned" rather than guessing: a field the ontology does not
+         # know is a classifier result worth seeing, not one to bucket blindly.
+         "domain": FIELD_TO_DOMAIN.get(name, "Unassigned"),
+         "papers": v["papers"],
          "avg_score": round(v["score_sum"] / v["papers"], 1) if v["papers"] else 0.0,
+         "subfields": sorted(v["subfields"])[:12],
          "authors": sorted(v["authors"])[:40]}
         for name, v in ranked
     ]
@@ -1263,5 +1285,85 @@ def clear_scilem_observations() -> None:
         conn.commit()
     except sqlite3.Error as e:
         logging.warning("Could not clear Scilem observations: %s", e)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Curation rewards
+# ---------------------------------------------------------------------------
+CURATION_REASON_PREFIX = "Curation reward"
+
+
+def get_curation_stats(wallet: str = "", orcid: str = "") -> dict:
+    """How much this identity has earned curating, and over how many papers.
+
+    Read from the piQ ledger rather than a counter column, so the number is
+    always the sum of entries that actually exist. A separate counter could
+    drift from the ledger, and the ledger is what the balance is computed
+    from — the cap must be enforced against the same source of truth the
+    money comes out of.
+    """
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return {"count": 0, "earned": 0.0}
+    accounts = [a for _, a in keys]
+    placeholders = ",".join("?" for _ in accounts)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT COUNT(*), COALESCE(SUM(delta), 0)
+                FROM piq_ledger
+                WHERE account IN ({placeholders}) AND reason LIKE ?""",
+            (*accounts, CURATION_REASON_PREFIX + "%"),
+        ).fetchone()
+    except sqlite3.Error:
+        return {"count": 0, "earned": 0.0}
+    finally:
+        conn.close()
+    return {"count": int(row[0] or 0), "earned": round(float(row[1] or 0.0), 4)}
+
+
+def credit_curation_reward(amount: float, wallet: str = "", orcid: str = "",
+                           eval_hash: str = "", note: str = "") -> bool:
+    """Credit a curation reward. One award per identity per paper.
+
+    The uniqueness check is what stops the obvious exploit: resubmitting the
+    same manuscript to collect the reward repeatedly. Assessment itself is
+    deliberately free on a resubmission, so without this the same paper would
+    be an unlimited faucet at no cost.
+    """
+    amount = round(float(amount or 0.0), 4)
+    if amount <= 0:
+        return False
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return False
+    kind, account = keys[0]
+    accounts = [a for _, a in keys]
+    placeholders = ",".join("?" for _ in accounts)
+
+    conn = get_db_connection()
+    try:
+        if eval_hash:
+            already = conn.execute(
+                f"""SELECT 1 FROM piq_ledger
+                    WHERE account IN ({placeholders}) AND eval_hash = ? AND reason LIKE ?
+                    LIMIT 1""",
+                (*accounts, eval_hash, CURATION_REASON_PREFIX + "%"),
+            ).fetchone()
+            if already:
+                return False
+        conn.execute(
+            "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (account, kind, amount,
+             f"{CURATION_REASON_PREFIX}{(' — ' + note[:120]) if note else ''}", eval_hash or ""),
+        )
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logging.warning("Curation reward could not be credited: %s", e)
+        return False
     finally:
         conn.close()

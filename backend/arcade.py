@@ -307,6 +307,11 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
         row = stats_by_field.get(name)
         legend.append({
             "field": name,
+            # Domain and subfields come straight from the assessed corpus's
+            # own classification, so the map describes what has actually been
+            # assessed rather than a decorative taxonomy.
+            "domain": (row.get("domain") or "Unassigned") if row else "Unassigned",
+            "subfields": list(row.get("subfields") or []) if row else [],
             "papers": int(row.get("papers", 0)) if row else 0,
             "avg_score": float(row.get("avg_score", 0.0)) if row else None,
             "authors": list(row.get("authors") or []) if row else [],

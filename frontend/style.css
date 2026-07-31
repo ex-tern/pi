@@ -1203,3 +1203,23 @@ a.btn { text-decoration: none; display: inline-block; }
 }
 .arcade-board-card table { margin: 0; }
 .arcade-board-card .hint { margin-top: 9px; }
+
+/* --- Research Buddy onboarding ------------------------------------------ */
+.buddy-onboard { padding: 2px 0; }
+.buddy-onboard-lede { font-size: 12.5px; line-height: 1.65; margin: 0 0 12px; color: var(--text); }
+.buddy-progress { margin-bottom: 12px; }
+.buddy-progress-track { height: 6px; background: #e2e8f0; border-radius: 99px; overflow: hidden; }
+.buddy-progress-fill { height: 100%; background: var(--accent); border-radius: 99px;
+  transition: width 0.25s ease; }
+.buddy-progress-label { display: block; font-size: 11px; color: var(--faint); margin-top: 5px; }
+.buddy-checklist { list-style: none; padding: 0; margin: 0 0 12px; }
+.buddy-checklist li { display: flex; gap: 8px; align-items: flex-start;
+  font-size: 12px; line-height: 1.55; margin-bottom: 7px; color: var(--muted); }
+.buddy-checklist .bc-mark { color: var(--faint); font-size: 12px; line-height: 1.5; flex-shrink: 0; }
+.buddy-checklist .bc-done { color: var(--text); }
+.buddy-checklist .bc-done .bc-mark { color: var(--success); font-weight: 700; }
+.buddy-onboard-foot { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
+
+/* --- Curation reward line in the assessment stream ----------------------- */
+.status-curation { color: #166534; background: var(--success-bg); border-radius: 6px;
+  padding: 7px 9px; margin: 3px 0; line-height: 1.55; }

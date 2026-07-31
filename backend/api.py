@@ -60,6 +60,7 @@ from database import (
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
     store_bug_report, mark_bug_report_delivered, list_bug_reports,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
+    get_curation_stats, credit_curation_reward,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
 )
@@ -85,6 +86,7 @@ from rubric import (
 )
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
+    compute_curation_reward, curation_manifest,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import forecast as forecast_engine
@@ -1401,6 +1403,57 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             "balance": bal["balance"], "required": fee,
         })]
 
+    def award_curation(item, label):
+        """Credit a curation reward when the submitter is not the author.
+
+        Runs only when authorship verification came back negative — that is
+        precisely the case where full emission is withheld, and where the
+        submitter has still done real work by putting a paper through the
+        pipeline. Returns the ndjson lines to emit, which is empty when
+        nothing is awarded.
+        """
+        if not (fee_wallet or fee_orcid):
+            return []
+        emission_rec = item.get("emission") or {}
+        attribution = emission_rec.get("attribution") or {}
+        # Authors get the full on-chain emission; this path is only for the
+        # unverified case, so the two rewards can never both apply.
+        if attribution.get("verified"):
+            return []
+
+        stats = get_curation_stats(fee_wallet, fee_orcid)
+        reward = compute_curation_reward(
+            pix_score=safe_float(item.get("score"), 0.0),
+            logic_integrity=safe_float(item.get("logic_integrity"), 0.0),
+            total_papers=count_assessed_papers(),
+            curation_count=stats["count"],
+            curation_earned=stats["earned"],
+        )
+        if not reward.get("eligible"):
+            item["curation"] = reward
+            return []
+
+        credited = credit_curation_reward(
+            reward["awarded"], fee_wallet, fee_orcid,
+            eval_hash=item.get("eval_hash", ""), note=str(label)[:80],
+        )
+        if not credited:
+            # Almost always a resubmission of a paper already rewarded.
+            reward = {**reward, "awarded": 0.0, "eligible": False,
+                      "reason": "You have already earned a curation reward for this manuscript."}
+            item["curation"] = reward
+            return []
+
+        item["curation"] = reward
+        bal = get_piq_balance(fee_wallet, fee_orcid)
+        add_log(f"Curation reward {reward['awarded']:.4f} piQ for {str(label)[:60]}")
+        return [line({
+            "type": "curation",
+            "amount": reward["awarded"],
+            "balance": bal["balance"],
+            "message": reward["reason"],
+        })]
+
     # No refund path is needed any more: a paper is priced and charged only
     # after its bytes have been retrieved, so a retrieval failure never
     # incurred a fee in the first place. Refunding something never charged was
@@ -1431,6 +1484,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
+                for m in award_curation(item, f"DOI {doi}"):
+                    yield m
                 add_log(f"Assessed DOI {doi}: score {_fmt_score(item.get('score'))}")
                 yield emit_result(item, f"DOI {doi}")
         else:
@@ -1459,6 +1514,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
+                for m in award_curation(item, title):
+                    yield m
                 add_log(f"Assessed discovered paper '{title[:60]}': score {_fmt_score(item.get('score'))}")
                 yield emit_result(item, fname)
         else:
@@ -1480,6 +1537,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         if res:
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
+            for m in award_curation(item, fname):
+                yield m
             add_log(f"Assessed {fname}: score {_fmt_score(item.get('score'))}")
             yield emit_result(item, fname)
 
@@ -2084,7 +2143,16 @@ def _run_forecast_impl(lookback: int = 3):
     # "no manuscripts assessed yet" branch and showed an empty state to a user
     # who had just assessed a manuscript. Both are handled as the same measured
     # shift, against a uniform baseline when there is no recorded predecessor.
-    if len(rows) in (1, 2):
+    # A single row that is only the genesis block is NOT one assessment — it is
+    # zero. Routing it to the delta branch compared the uniform genesis
+    # weighting against a uniform baseline, produced eight deltas of exactly
+    # 0.0, and drew eight zero-length bars: a chart that is present, correct,
+    # and completely invisible. That is the "forecast shows nothing" state a
+    # fresh deployment sits in.
+    only_genesis = len(rows) == 1 and all(
+        abs(safe_float(v, 1.0) - 1.0) < 1e-9 for v in rows[0][1:9])
+
+    if not only_genesis and len(rows) in (1, 2):
         if len(rows) == 2:
             baseline = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
             current = np.array([safe_float(v, 1.0) for v in rows[1][1:9]], dtype=np.float32)
@@ -2127,7 +2195,7 @@ def _run_forecast_impl(lookback: int = 3):
             ),
         }
 
-    if len(rows) < 1:
+    if only_genesis or len(rows) < 1:
         # An empty state is not the same as no information. The rubric's
         # genesis weighting is a real, defined starting point — it is what the
         # forecast will move AWAY from — so it is rendered as a chart rather
@@ -2151,7 +2219,7 @@ def _run_forecast_impl(lookback: int = 3):
                 "where every deployment starts. It is the baseline, not a prediction — assess a "
                 "manuscript and this chart shows how its evidence profile moves the weighting."
             ),
-            "blocks_recorded": 0, "blocks_required": 3,
+            "blocks_recorded": len(rows), "blocks_required": 3,
             "history": [], "forecast": None,
             "criteria": criteria,
             "insight": (

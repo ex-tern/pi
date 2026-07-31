@@ -1136,9 +1136,63 @@ function renderResearchBuddy(profile) {
 
   const filled = [fields.length, goal, stage, idea].filter(Boolean).length;
   if (filled < 2) {
-    body.innerHTML = `<p class="buddy-empty">Fill in your research fields and goals above, and
-      this becomes a tailored plan — which of your fields is most crowded, where your work is
-      most likely to be seen, and what to fix first.</p>`;
+    // An empty state should show what the feature does, not just report that
+    // it is empty. "Fill in your profile" gives no reason to; a checklist of
+    // what is still missing plus what each item unlocks does.
+    const checklist = [
+      ["Research fields", fields.length > 0,
+       "compares your fields against everything assessed here"],
+      ["Career stage", Boolean(stage),
+       "changes which advice is relevant — a PhD student and a PI need different things"],
+      ["Keywords and focuses", Boolean(goal),
+       "finds papers in the corpus worth reading"],
+      ["Core ideas", Boolean(idea),
+       "checks whether your framing is already crowded"],
+    ];
+    const done = checklist.filter(c => c[1]).length;
+
+    body.innerHTML = `
+      <div class="buddy-onboard">
+        <p class="buddy-onboard-lede">Your Research Buddy is <strong>not active yet</strong>.
+        It works from the profile above — without it there is nothing to reason from, and
+        inventing advice would be worse than saying so.</p>
+
+        <div class="buddy-progress">
+          <div class="buddy-progress-track">
+            <div class="buddy-progress-fill" style="width:${(done / checklist.length) * 100}%"></div>
+          </div>
+          <span class="buddy-progress-label">${done} of ${checklist.length} filled —
+          ${Math.max(0, 2 - filled)} more to activate</span>
+        </div>
+
+        <ul class="buddy-checklist">
+          ${checklist.map(([label, ok, why]) => `
+            <li class="${ok ? "bc-done" : ""}">
+              <span class="bc-mark" aria-hidden="true">${ok ? "✓" : "○"}</span>
+              <span><strong>${escapeHtml(label)}</strong> — ${escapeHtml(why)}</span>
+            </li>`).join("")}
+        </ul>
+
+        <p class="buddy-onboard-foot">Once two of these are filled it will tell you which of your
+        fields is most crowded, where your work is most likely to be seen, and what to fix first.
+        Nothing here is scored or shared — the profile only shapes advice.</p>
+
+        <button class="btn btn-primary" id="buddyGoProfile">Fill in your profile</button>
+      </div>`;
+
+    const btn = document.getElementById("buddyGoProfile");
+    if (btn) {
+      btn.addEventListener("click", () => {
+        const card = document.getElementById("profileCard");
+        if (!card) return;
+        // <details> — open it before scrolling, or the scroll lands on a
+        // collapsed summary and looks like nothing happened.
+        card.open = true;
+        card.scrollIntoView({ behavior: "smooth", block: "start" });
+        const first = document.getElementById("profileFieldInput");
+        if (first) setTimeout(() => first.focus(), 400);
+      });
+    }
     return;
   }
 
@@ -1747,6 +1801,11 @@ function handleStreamLine(obj, statusBox) {
     statusBox.innerHTML += `<div class="status-line">${escapeHtml(obj.message)}</div>`;
   } else if (obj.type === "fee") {
     statusBox.innerHTML += `<div class="status-line status-fee">${escapeHtml(obj.message)}</div>`;
+    if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
+  } else if (obj.type === "curation") {
+    statusBox.innerHTML += `<div class="status-line status-curation">
+      <strong>+${Number(obj.amount).toFixed(4)} piQ curation reward.</strong>
+      ${escapeHtml(obj.message || "")}</div>`;
     if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
   } else if (obj.type === "fee_error") {
     statusBox.innerHTML += `<div class="status-line status-error">${escapeHtml(obj.message)}</div>`;
@@ -2457,6 +2516,29 @@ const CRITERIA_COLORS = ["#2563eb", "#f97316", "#16a34a", "#a855f7", "#eab308", 
 let lastForecastCriteria = [];
 
 async function loadForecast() {
+  // Chart.js comes from a CDN. When that fetch is blocked — corporate proxy,
+  // ad blocker, offline — every chart in the app silently fails, and the
+  // forecast in particular ended up in the generic network catch below and
+  // reported "could not reach the forecasting service", which sent the
+  // operator to look at a backend that was working perfectly. Name the real
+  // cause instead.
+  if (typeof Chart === "undefined") {
+    const box = document.getElementById("forecastEmpty");
+    const m = document.getElementById("forecastMsg");
+    if (m) m.textContent = "";
+    if (box) {
+      box.classList.remove("hidden");
+      box.innerHTML = `<div class="empty-title">Charting library did not load</div>
+        <p>The forecast data is fine — the Chart.js library could not be fetched from the CDN,
+        so there is nothing to draw with. An ad blocker, a corporate proxy, or being offline
+        will all cause this.</p>
+        <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
+      const r = document.getElementById("forecastRetryBtn");
+      if (r) r.addEventListener("click", loadForecast);
+    }
+    return;
+  }
+
   const msg = document.getElementById("forecastMsg");
   const empty = document.getElementById("forecastEmpty");
   const chartWrap = document.getElementById("forecastChartWrap");
@@ -2580,7 +2662,12 @@ async function loadForecast() {
       const sorted = (data.criteria || []).slice()
         .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
       const labels = sorted.map(c => c.title || c.id);
-      const values = sorted.map(c => c.delta);
+
+      // If every delta is zero the bars have zero length and the chart renders
+      // as an empty box — visually identical to a failure. Fall back to the
+      // absolute weights, which are always non-zero, and say what is shown.
+      const allFlat = sorted.every(c => Math.abs(c.delta) < 1e-6);
+      const values = allFlat ? sorted.map(c => c.current) : sorted.map(c => c.delta);
       const colors = sorted.map(c =>
         c.direction === "up" ? "#15803d" : c.direction === "down" ? "#dc2626" : "#94a3b8");
 
@@ -2607,9 +2694,13 @@ async function loadForecast() {
             },
           },
           scales: {
-            x: { title: { display: true, text: "Shift from uniform baseline" },
+            x: { beginAtZero: allFlat,
+                 title: { display: true,
+                          text: allFlat ? "Criterion weight (no shift yet)"
+                                        : "Shift from uniform baseline" },
                  grid: { color: "#e2e8f0" },
-                 ticks: { callback: v => (v > 0 ? "+" : "") + Number(v).toFixed(2) } },
+                 ticks: { callback: v => (allFlat ? Number(v).toFixed(2)
+                                                  : (v > 0 ? "+" : "") + Number(v).toFixed(2)) } },
             y: { grid: { display: false }, ticks: { font: { size: 11 } } },
           },
         },
@@ -2671,7 +2762,9 @@ async function loadForecast() {
       });
     });
 
-    const ctx = document.getElementById("forecastChart").getContext("2d");
+    const canvas = document.getElementById("forecastChart");
+    if (!canvas) throw new Error("forecast canvas is missing from the page");
+    const ctx = canvas.getContext("2d");
     if (forecastChart) forecastChart.destroy();
     forecastChart = new Chart(ctx, {
       type: "line",
@@ -2741,14 +2834,21 @@ async function loadForecast() {
   } catch (e) {
     msg.textContent = "";
     empty.classList.remove("hidden");
-    // A thrown fetch means the connection itself failed — the server is down,
-    // restarting, or the request exceeded a gateway timeout. Say which, rather
-    // than reporting a generic "unavailable" that gives nothing to act on.
-    empty.innerHTML = `<div class="empty-title">Could not reach the forecasting service</div>
-      <p>The connection failed or timed out. This usually means the server is restarting, or the
-      forecast exceeded the host's request limit. It is cached once computed, so a retry shortly
-      after the server settles should succeed.</p>
-      <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
+    // Distinguish "the request never completed" from "the data arrived and
+    // rendering it threw". Previously both produced a network message, so a
+    // rendering bug was permanently misattributed to the server.
+    const networkish = (e instanceof TypeError) || /fetch|network|load failed/i.test(String(e && e.message));
+    empty.innerHTML = networkish
+      ? `<div class="empty-title">Could not reach the forecasting service</div>
+         <p>The connection failed or timed out. This usually means the server is restarting, or
+         the forecast exceeded the host's request limit. It is cached once computed, so a retry
+         shortly after the server settles should succeed.</p>
+         <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`
+      : `<div class="empty-title">The forecast could not be drawn</div>
+         <p>The data was received, but rendering the chart failed. This is a bug in the page
+         rather than a problem with the server or your corpus.</p>
+         <p><code>${escapeHtml(String(e && e.message ? e.message : e))}</code></p>
+         <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
     const retry = document.getElementById("forecastRetryBtn");
     if (retry) retry.addEventListener("click", loadForecast);
   }
