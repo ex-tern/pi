@@ -1,0 +1,18 @@
+// ScholarPi Assessment Circuit
+// Proves a manuscript passed assessment without revealing the exact scores on-chain.
+
+// Arguments:
+// 1. vapri (private): The calculated score from your Python backend.
+// 2. threshold (private): The minimum score required to pass.
+// 3. truncatedHashInt (public): Binds this proof to the specific manuscript hash.
+
+def main(private field vapri, private field threshold, field truncatedHashInt) {
+    
+    // Assert that the manuscript's score meets or exceeds the required threshold
+    assert(vapri >= threshold);
+    
+    // The circuit successfully completes. 
+    // Because truncatedHashInt is the only non-private argument, 
+    // it becomes the single public input expected by your smart contract.
+    return;
+}

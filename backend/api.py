@@ -51,7 +51,9 @@ from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
     award_onboarding_grant, has_received_grant,
+    get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
 )
+import arcade
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 from integrations import (
     normalize_doi, collect_pdf_candidates,
@@ -507,13 +509,81 @@ def trial_status(request: Request):
     """How much free allowance this visitor has left, and why."""
     ip = get_client_ip(request)
     used = get_free_evals_used(ip)
+    bonus = get_bonus_evals(ip)
+    allowed = abuse_guard.FREE_DOCUMENTS + bonus
     return {
-        "documents_allowed": abuse_guard.FREE_DOCUMENTS,
-        "documents_used": min(used, abuse_guard.FREE_DOCUMENTS),
-        "remaining": max(0, abuse_guard.FREE_DOCUMENTS - used),
+        "documents_allowed": allowed,
+        "base_allowance": abuse_guard.FREE_DOCUMENTS,
+        "bonus_allowance": bonus,
+        "documents_used": min(used, allowed),
+        "remaining": max(0, allowed - used),
         "note": ("Metered per distinct manuscript. Re-assessing a paper you have already "
                  "submitted does not consume allowance."),
     }
+
+
+# --------------------------------------------------------------------------
+# Science Map arcade
+#
+# The reward is real allowance, so the server replays every submitted run
+# rather than believing a reported score. See arcade.py for the reasoning.
+# --------------------------------------------------------------------------
+@app.get("/api/arcade/start")
+def arcade_start(request: Request):
+    """Issues a signed, seeded bubble field for one run."""
+    ip = get_client_ip(request)
+    session = arcade.start_session(ip)
+    state = get_bonus_award_state(ip)
+    session["wallet_state"] = {
+        "bonus_earned": state["bonus"],
+        "cap": arcade.BONUS_CAP,
+        "cooldown_remaining": arcade.cooldown_remaining(state["last_award"]),
+    }
+    return session
+
+
+class ArcadeRun(BaseModel):
+    token: str
+    duration_ms: int
+    absorbed: List[dict] = []
+
+
+@app.post("/api/arcade/finish")
+def arcade_finish(payload: ArcadeRun, request: Request):
+    """Verifies a completed run and grants allowance if it was a legitimate win."""
+    ip = get_client_ip(request)
+    result = arcade.verify_run(ip, payload.token, payload.absorbed, payload.duration_ms)
+
+    if not result["valid"]:
+        logging.info("Arcade run rejected from %s: %s", ip, result.get("reason"))
+        return {**result, "granted": 0, "bonus_total": get_bonus_evals(ip)}
+
+    if not result["won"]:
+        return {**result, "granted": 0, "bonus_total": get_bonus_evals(ip),
+                "message": (f"Run recorded at mass {result['final_mass']}. "
+                            f"Reach {arcade.WIN_MASS} to earn free assessments.")}
+
+    state = get_bonus_award_state(ip)
+    remaining_cooldown = arcade.cooldown_remaining(state["last_award"])
+    if remaining_cooldown > 0:
+        hours = remaining_cooldown / 3600
+        return {**result, "granted": 0, "bonus_total": state["bonus"],
+                "cooldown_remaining": remaining_cooldown,
+                "message": (f"You won — but arcade rewards are limited to one per "
+                            f"{arcade.COOLDOWN_SECONDS // 3600} hours. "
+                            f"Next reward available in {hours:.1f}h.")}
+
+    grant = grant_bonus_evals(ip, arcade.REWARD_PER_WIN, arcade.BONUS_CAP)
+    if grant["granted"] == 0:
+        return {**result, "granted": 0, "bonus_total": grant["bonus"],
+                "message": (f"You won, but this connection has already earned the maximum "
+                            f"{arcade.BONUS_CAP} bonus assessments. Connect a wallet or link "
+                            f"ORCID to keep going.")}
+
+    logging.info("Arcade win from %s granted %s free assessments", ip, grant["granted"])
+    return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
+            "message": (f"Victory. {grant['granted']} free assessment"
+                        f"{'s' if grant['granted'] != 1 else ''} added to this connection.")}
 
 
 @app.get("/api/stats/count")
@@ -893,6 +963,7 @@ async def assess_stream(
         documents_used=get_free_evals_used(client_ip),
         fingerprints=fingerprints,
         has_identity=bool(has_web3 or orcid),
+        bonus=get_bonus_evals(client_ip),
     )
     if not verdict["allowed"]:
         add_log(f"Blocked submission from {client_ip}: {verdict['reason'][:100]}")

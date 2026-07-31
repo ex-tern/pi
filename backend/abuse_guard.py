@@ -169,12 +169,18 @@ def check_velocity(ip: str) -> Tuple[bool, Optional[str]]:
     return True, None
 
 
-def check_free_tier(ip: str, documents_used: int, new_fingerprints: list) -> Tuple[bool, Optional[str]]:
+def check_free_tier(ip: str, documents_used: int, new_fingerprints: list,
+                    bonus: int = 0) -> Tuple[bool, Optional[str]]:
     """Free-tier allowance, metered in distinct documents.
 
     Metering documents rather than requests means a resubmission of something
     already assessed is free — which removes any incentive to retry, and means
     a genuine mistake does not cost the user their allowance.
+
+    ``bonus`` is additional allowance earned from the Science Map arcade. It
+    extends the per-IP entitlement but deliberately does *not* raise the
+    subnet-wide ceiling below: that ceiling exists to stop address rotation,
+    and letting earned credit lift it would reopen exactly that hole.
     """
     subnet = subnet_key(ip)
     with _lock:
@@ -184,11 +190,13 @@ def check_free_tier(ip: str, documents_used: int, new_fingerprints: list) -> Tup
     if not genuinely_new:
         return True, None
 
-    remaining = FREE_DOCUMENTS - documents_used
+    allowance = FREE_DOCUMENTS + max(0, int(bonus or 0))
+    remaining = allowance - documents_used
     if remaining <= 0:
+        earned = (f" (including {bonus} earned in the Science Map arcade)" if bonus else "")
         return False, (
-            f"Free trial complete: {FREE_DOCUMENTS} distinct manuscripts have been assessed from "
-            f"this connection. Connect an Ethereum wallet or link ORCID to continue. "
+            f"Free trial complete: {allowance} distinct manuscripts have been assessed from "
+            f"this connection{earned}. Connect an Ethereum wallet or link ORCID to continue. "
             f"Re-assessing a paper you have already submitted remains free."
         )
     if len(genuinely_new) > remaining:
@@ -241,7 +249,7 @@ def validate_upload(filename: str, raw: bytes, max_bytes: int) -> Tuple[bool, Op
 
 
 def evaluate_request(ip: str, headers: Dict[str, str], documents_used: int,
-                     fingerprints: list, has_identity: bool) -> Dict:
+                     fingerprints: list, has_identity: bool, bonus: int = 0) -> Dict:
     """Single entry point. Returns an allow/deny verdict with a reason.
 
     Identified users skip the free-tier and automation checks — they are paying
@@ -270,7 +278,7 @@ def evaluate_request(ip: str, headers: Dict[str, str], documents_used: int,
                        "Connect an Ethereum wallet or link ORCID for programmatic access."),
         }
 
-    ok, reason = check_free_tier(ip, documents_used, fingerprints)
+    ok, reason = check_free_tier(ip, documents_used, fingerprints, bonus=bonus)
     if not ok:
         return {"allowed": False, "reason": reason, "code": 402, "automation": automation}
 
