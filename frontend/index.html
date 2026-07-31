@@ -159,13 +159,13 @@
           <label for="profileIdeaInput">Core Ideas</label>
           <div class="tag-input" id="profileIdeaTags">
             <span class="tag-list" id="profileIdeaList"></span>
-            <input type="text" id="profileIdeaInput" maxlength="120"
+            <input type="text" id="profileIdeaInput" maxlength="200"
                    placeholder="Type an idea, press Enter">
           </div>
-          <span class="profile-hint">The claims your work is built around — press Enter or comma after each.</span>
+          <span class="profile-hint">The claims your work is built around — press Enter after each. Commas are kept, so full sentences are fine.</span>
         </div>
 
-        <label class="profile-block">Working abstract <span class="profile-optional">optional</span>
+        <label class="profile-block">Working abstract
           <textarea id="profileAbstract" rows="4" maxlength="4000"
                     placeholder="A draft abstract, if you have one."></textarea>
         </label>
@@ -177,10 +177,13 @@
       </details>
 
       <!-- Research Buddy: derived from the saved profile plus the live corpus. -->
-      <div class="card buddy-card hidden" id="buddyCard">
-        <h2>Research Buddy<button class="help-btn" data-help="buddy" aria-label="About Research Buddy">?</button></h2>
+      <details class="card buddy-card hidden" id="buddyCard" open>
+        <summary>
+          <span><strong>Research Buddy</strong></span>
+          <span class="profile-toggle-hint">Tailored to your profile</span>
+        </summary>
         <div id="buddyBody"></div>
-      </div>
+      </details>
 
       <div class="card">
         <h2>Assess a Manuscript<button class="help-btn" data-help="assess" aria-label="About assessment">?</button></h2>
@@ -293,7 +296,7 @@
         <!-- piX — Top Papers -->
         <div class="card leaderboard-card">
           <div class="lb-head">
-            <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Reporting &amp; Integrity]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
+            <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Top Papers]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
             <p class="hint">Individual manuscripts ranked by their composite Pi-Index score. Select any row to open its full assessment report and dossier.</p>
           </div>
           <div class="lb-toolbar">

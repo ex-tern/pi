@@ -12,6 +12,7 @@ Production:  gunicorn api:app -c gunicorn.conf.py   (see README)
 import os
 import io
 import json
+import decimal
 import time
 import math
 import hashlib
@@ -38,7 +39,7 @@ from web3 import Web3
 from eth_account.messages import encode_defunct
 
 from config import (
-    BASE_DIR, PIQ_CONTRACT_ADDRESS, REGISTRY_CONTRACT_ADDRESS, HOT_TOPICS,
+    BASE_DIR, DB_PATH, PIQ_CONTRACT_ADDRESS, REGISTRY_CONTRACT_ADDRESS, HOT_TOPICS,
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
@@ -209,6 +210,17 @@ def on_startup():
 # ---------------------------------------------------------------------------
 # 0. HEALTH CHECK  (for Docker HEALTHCHECK / load balancer / uptime monitors)
 # ---------------------------------------------------------------------------
+# Storage durability check, run once at startup. A container platform without a
+# mounted volume silently discards the ledger on every deploy, and the failure
+# is invisible because nothing errors — so this reports it loudly instead.
+try:
+    from persistence import check_persistence
+    PERSISTENCE_REPORT = check_persistence(BASE_DIR, DB_PATH)
+except Exception as _e:
+    logging.warning("Persistence check failed: %s", _e)
+    PERSISTENCE_REPORT = {"verdict": "unknown", "warning": None}
+
+
 @app.get("/api/health")
 def health_check():
     db_ok = True
@@ -222,6 +234,12 @@ def health_check():
         "status": "ok" if db_ok else "degraded",
         "environment": ENVIRONMENT,
         "database": "ok" if db_ok else "unreachable",
+        "storage": {
+            "verdict": PERSISTENCE_REPORT.get("verdict"),
+            "boot_count": PERSISTENCE_REPORT.get("boot_count"),
+            "data_dir": PERSISTENCE_REPORT.get("data_dir"),
+            "warning": PERSISTENCE_REPORT.get("warning"),
+        },
     }
 
 
@@ -742,6 +760,38 @@ def write_profile(payload: ResearcherProfile):
     return {"stored": True, "profile": saved}
 
 
+def _json_safe(value):
+    """Fallback encoder for values json.dumps cannot serialise natively.
+
+    Reached only for types the default encoder rejects. Everything the scoring
+    pipeline can produce is converted to its nearest JSON equivalent rather
+    than raising, because the alternative — an exception mid-stream — silently
+    destroys a result the user has already been charged for.
+    """
+    # numpy scalars and arrays expose .item()/.tolist() without importing numpy
+    # here, which keeps this working even if numpy is absent.
+    if hasattr(value, "item") and not isinstance(value, (str, bytes)):
+        try:
+            return value.item()
+        except Exception:
+            pass
+    if hasattr(value, "tolist"):
+        try:
+            return value.tolist()
+        except Exception:
+            pass
+    if isinstance(value, (set, frozenset, tuple)):
+        return list(value)
+    if isinstance(value, (bytes, bytearray)):
+        return value.decode("utf-8", errors="replace")
+    if isinstance(value, datetime):
+        return value.isoformat()
+    if isinstance(value, decimal.Decimal):
+        return float(value)
+    # Last resort: a string is always better than a dead stream.
+    return str(value)
+
+
 def _fmt_score(value) -> str:
     """Format a score for a log line without ever raising.
 
@@ -916,8 +966,33 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
     work that was never done.
     """
 
+    def emit_result(item, label):
+        """Serialise one result, degrading to a visible error rather than
+        killing the stream.
+
+        Belt and braces alongside `_json_safe`: any future field that cannot be
+        encoded costs the user *this* result's presentation, not the whole run
+        and not the results already delivered."""
+        try:
+            return line({"type": "result", "item": item})
+        except Exception as e:
+            logging.exception("Result serialisation failed for %s", label)
+            return line({"type": "result_error", "label": str(label),
+                         "message": ("This paper was assessed and saved to the ledger, but its "
+                                     "result could not be displayed. It appears in Analytics.")})
+
     def line(obj):
-        return json.dumps(obj) + "\n"
+        # json.dumps with the default encoder raises TypeError on numpy scalars
+        # (float32, int64, bool_), arrays, sets, datetimes and Decimals — all of
+        # which reach this payload from the scoring path, which is numpy-based.
+        #
+        # This generator has no exception handling around it, so that TypeError
+        # killed the stream *after* the paper was written to the database: the
+        # result appeared in the leaderboard and analytics while the Assessment
+        # Results panel stayed empty, with nothing in the browser to indicate
+        # anything had gone wrong. Serialisation must never be able to discard a
+        # completed assessment.
+        return json.dumps(obj, default=_json_safe) + "\n"
 
     fee = active_fee
 
@@ -983,7 +1058,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed DOI {doi}: score {_fmt_score(item.get('score'))}")
-                yield line({"type": "result", "item": item})
+                yield emit_result(item, f"DOI {doi}")
         else:
             yield line({"type": "download_error", "doi": doi,
                         "url": f"https://doi.org/{doi}", "attempts": attempts})
@@ -1011,7 +1086,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
                 add_log(f"Assessed discovered paper '{title[:60]}': score {_fmt_score(item.get('score'))}")
-                yield line({"type": "result", "item": item})
+                yield emit_result(item, fname)
         else:
             yield line({"type": "download_error", "doi": p_doi or title,
                         "title": title,
@@ -1032,7 +1107,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
             add_log(f"Assessed {fname}: score {_fmt_score(item.get('score'))}")
-            yield line({"type": "result", "item": item})
+            yield emit_result(item, fname)
 
     yield line({"type": "done", "message": "Complete."})
 

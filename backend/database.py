@@ -537,7 +537,10 @@ def save_researcher_profile(account_key: str, profile: dict) -> dict:
         "field": str(profile.get("field", ""))[:400],   # comma-joined list of fields
         "career_stage": str(profile.get("career_stage", ""))[:60],
         "goal": str(profile.get("goal", ""))[:600],
-        "idea": str(profile.get("idea", ""))[:1500],
+        # Newline-separated list of core ideas: up to 12 entries of 200 chars
+        # plus separators is ~2411, so 1500 would have truncated the last few
+        # mid-sentence with no warning.
+        "idea": str(profile.get("idea", ""))[:3000],
         "abstract": str(profile.get("abstract", ""))[:4000],
     }
     conn = get_db_connection()
