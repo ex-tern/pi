@@ -279,12 +279,25 @@
     if (corpus.is_empty) {
       el.innerHTML = `<strong>No papers assessed yet.</strong> The map is showing the base
         taxonomy of science. Assess a manuscript and its field grows here.`;
+    } else if (!corpus.classified_papers) {
+      // Papers exist but none carry a usable field. Saying "no papers
+      // assessed" here would be flatly untrue, and this state has a specific
+      // cause worth naming: classification degrades when the juror panel is
+      // unavailable, which is exactly when the operator needs to know their
+      // papers did land.
+      el.innerHTML = `<strong>${corpus.total_papers} paper${corpus.total_papers === 1 ? "" : "s"}
+        assessed, but none could be classified into a field.</strong> They are in the ledger and
+        the Analytics tables, they just cannot be placed on the map yet. This usually means the
+        model panel was unavailable during assessment — check the juror status, then re-assess.`;
     } else {
+      const unclassified = corpus.unclassified_papers
+        ? ` ${corpus.unclassified_papers} could not be classified and are not shown on the map.`
+        : "";
       el.innerHTML = `<strong>${corpus.total_papers}</strong> assessed
-        paper${corpus.total_papers === 1 ? "" : "s"} across
+        paper${corpus.total_papers === 1 ? "" : "s"}, ${corpus.classified_papers} placed across
         <strong>${corpus.fields_with_papers}</strong> live
         field${corpus.fields_with_papers === 1 ? "" : "s"}. Solid bubbles are your corpus;
-        faint ones are unexplored territory.`;
+        faint ones are unexplored territory.${unclassified}`;
     }
   }
 

@@ -637,6 +637,45 @@ def get_field_corpus_stats(limit: int = 20) -> list:
     ]
 
 
+def get_corpus_totals() -> dict:
+    """Distinct paper counts for the corpus.
+
+    Separate from ``get_field_corpus_stats`` because the two answer different
+    questions and conflating them produced a visible lie: a paper tagged with
+    three fields contributes to three per-field rows, so summing those rows
+    reported more papers than exist. Paper counts must come from counting
+    papers.
+
+    Also counts papers whose classification failed. Those are excluded from the
+    field map (they belong to no field), and silently dropping them meant a
+    corpus of unclassified papers rendered as "no papers assessed yet" — which
+    is exactly what happens when the juror panel is unavailable and
+    classification degrades, i.e. precisely when the operator most needs to see
+    that their papers did land.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT fields FROM papers_assessment").fetchall()
+    except sqlite3.Error:
+        return {"papers": 0, "classified": 0, "unclassified": 0}
+    finally:
+        conn.close()
+
+    import json as _json
+    exclude = {"unclassified", "unspecified", "none", ""}
+    total = classified = 0
+    for (fields_json,) in rows:
+        total += 1
+        try:
+            names = [f.strip() for f in _json.loads(fields_json or "[]") if f and f.strip()]
+        except Exception:
+            names = []
+        if any(n.lower() not in exclude for n in names):
+            classified += 1
+    return {"papers": total, "classified": classified,
+            "unclassified": total - classified}
+
+
 def get_bonus_evals(ip_address: str) -> int:
     """Extra allowance this IP has earned from the Science Map arcade."""
     if not ip_address:

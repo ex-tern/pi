@@ -155,9 +155,19 @@
           <span class="profile-hint">Topics and methods you focus on — press Enter or comma after each.</span>
         </div>
 
-        <label class="profile-block">Core Idea
-          <textarea id="profileIdea" rows="3" maxlength="1500"
-                    placeholder="The central claim your work is built around, in a few sentences."></textarea>
+        <div class="profile-block">
+          <label for="profileIdeaInput">Core Ideas</label>
+          <div class="tag-input" id="profileIdeaTags">
+            <span class="tag-list" id="profileIdeaList"></span>
+            <input type="text" id="profileIdeaInput" maxlength="120"
+                   placeholder="Type an idea, press Enter">
+          </div>
+          <span class="profile-hint">The claims your work is built around — press Enter or comma after each.</span>
+        </div>
+
+        <label class="profile-block">Working abstract <span class="profile-optional">optional</span>
+          <textarea id="profileAbstract" rows="4" maxlength="4000"
+                    placeholder="A draft abstract, if you have one."></textarea>
         </label>
 
         <div class="profile-actions">
