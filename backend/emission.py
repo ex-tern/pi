@@ -532,3 +532,40 @@ def curation_manifest() -> Dict:
             "claim you wrote the paper."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Publication fee
+# ---------------------------------------------------------------------------
+# Attaching your name publicly to an assessment costs piQ.
+#
+# Not as a revenue mechanism — piQ is not money — but because a free action is
+# a costless one, and the leaderboard's value depends on publication meaning
+# that an author considered the assessment worth standing behind. A button that
+# costs nothing gets pressed on everything, and the signal dies.
+#
+# Charged ONCE per paper. Withdrawing and re-publishing does not charge again:
+# the fee buys the right to attach your name, not each individual toggle, and
+# charging per toggle would penalise someone for reconsidering — which is
+# exactly the behaviour an honest system should leave free.
+PUBLICATION_FEE = 1.0
+
+
+def publication_fee(pix_score: float = 0.0) -> Dict:
+    """What publishing costs, and why.
+
+    Flat rather than proportional to piX. A fee that scales with score would
+    charge the strongest work the most, which inverts the incentive the
+    leaderboard exists to create.
+    """
+    return {
+        "fee": PUBLICATION_FEE,
+        "charged_once_per_paper": True,
+        "refundable": False,
+        "rationale": (
+            f"Publishing costs {PUBLICATION_FEE:.2f} piQ, charged once per manuscript. It is not "
+            f"refunded when you withdraw, and re-publishing the same paper is free. The fee "
+            f"exists so that a published assessment means an author judged it worth standing "
+            f"behind — a free action carries no such signal."
+        ),
+    }

@@ -60,6 +60,9 @@ from database import (
     store_bug_report, mark_bug_report_delivered, list_bug_reports,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
     get_curation_stats, credit_curation_reward,
+    list_escrowed_for_identity, total_escrowed, release_escrow,
+    store_challenge, get_challenge, record_challenge_attempt,
+    set_published, is_published, publication_fee_paid,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
 )
@@ -73,6 +76,7 @@ from integrations import (
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
     build_pdf_from_text, search_open_access_works,
 )
+from attribution import verify_authorship
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state,
@@ -85,7 +89,7 @@ from rubric import (
 )
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
-    compute_curation_reward,
+    compute_curation_reward, publication_fee,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import forecast as forecast_engine
@@ -93,6 +97,7 @@ import assistant as scilem
 import abuse_guard
 import bugreport
 import auth
+import authorship_challenge
 import scilem_learning
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
@@ -1204,6 +1209,353 @@ def my_assessments(request: Request, wallet: str = Query(default=""),
     rows = list_assessments_for_identity(
         _identity_values(identity["wallet"], identity["orcid"]), limit=limit)
     return {"signed_in": True, "assessments": rows, "count": len(rows)}
+
+
+@app.get("/api/assessments/escrow")
+def my_escrow(request: Request, wallet: str = Query(default=""),
+              orcid: str = Query(default="")):
+    """piQ this identity has earned but not yet been able to claim."""
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if not identity["verified"]:
+        return {"signed_in": False, "held": [], "total": 0.0}
+    rows = list_escrowed_for_identity(_identity_values(identity["wallet"], identity["orcid"]))
+    return {
+        "signed_in": True,
+        "held": rows,
+        "total": round(sum(r["escrowed"] for r in rows), 4),
+        "note": ("Held because authorship could not be linked to your identity. Claim a paper "
+                 "once its DOI is registered against your ORCID, or once your ORCID profile "
+                 "name matches the author line."),
+    }
+
+
+@app.post("/api/assessments/{file_hash}/claim")
+def claim_escrow(file_hash: str, request: Request, wallet: str = Query(default=""),
+                 orcid: str = Query(default="")):
+    """Re-run authorship verification and release the escrow if it now passes.
+
+    Deliberately re-verifies rather than trusting the original result: the
+    evidence changes over time. A preprint gets a DOI, a publisher deposits the
+    ORCID, a researcher adds the work to their profile. The paper that could
+    not be claimed in July may be claimable in September, and the claim should
+    be decided on the evidence available when it is made.
+    """
+    identity = require_identity(request, wallet, orcid)
+    check_rate_limit(get_client_ip(request), bucket="claim")
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT author_name, doi, piq_escrowed, piq_claimed_at, title "
+            "FROM papers_assessment WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+    if row[3]:
+        return {"claimed": False, "message": "This paper's piQ has already been claimed."}
+    if not row[2]:
+        return {"claimed": False, "message": "Nothing is held for this paper."}
+
+    attribution = verify_authorship(
+        submitter_orcid=identity["orcid"],
+        submitter_wallet=identity["wallet"],
+        extracted_authors=row[0] or "",
+        doi=row[1] or "",
+        title=row[4] or "",
+    )
+    if not attribution.get("verified"):
+        return {
+            "claimed": False,
+            "attribution": attribution,
+            "message": attribution.get("reason", "Authorship still could not be verified."),
+            "how_to_fix": attribution.get("how_to_verify"),
+        }
+
+    result = release_escrow(file_hash,
+                            _identity_values(identity["wallet"], identity["orcid"]),
+                            wallet=identity["wallet"], orcid=identity["orcid"])
+    if not result["released"]:
+        return {"claimed": False, "message": result["reason"]}
+
+    add_log(f"Escrow released: {result['released']:.4f} piQ for {file_hash[:12]}… "
+            f"(tier {attribution.get('tier')})")
+    return {
+        "claimed": True, "amount": result["released"],
+        "tier": attribution.get("tier"),
+        "message": (f"{result['released']:.4f} piQ released. Authorship confirmed via "
+                    f"{attribution.get('tier')}."),
+    }
+
+
+class ChallengeStart(BaseModel):
+    # An INDEX into the addresses found in the manuscript — never an address.
+    # Accepting an address here would reduce the whole mechanism to "type one
+    # you control", which is precisely the fraud it exists to prevent.
+    email_index: int = 0
+    wallet: str = ""
+    orcid: str = ""
+
+
+class ChallengeConfirm(BaseModel):
+    code: str
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.get("/api/assessments/{file_hash}/challenge")
+def challenge_options(file_hash: str, request: Request, wallet: str = Query(default=""),
+                      orcid: str = Query(default="")):
+    """Which addresses in the manuscript a code could be sent to.
+
+    Masked. This endpoint is reachable by anyone who can submit a paper, so
+    returning author emails in full would turn the feature into a scraper for
+    exactly the addresses researchers most want protected.
+    """
+    identity = require_identity(request, wallet, orcid)
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT contact_emails, piq_escrowed, piq_claimed_at "
+                           "FROM papers_assessment WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+    try:
+        emails = json.loads(row[0] or "[]")
+    except (ValueError, TypeError):
+        emails = []
+
+    existing = get_challenge(file_hash, _profile_key(identity["wallet"], identity["orcid"]))
+    return {
+        "options": [{"index": i, "masked": authorship_challenge.mask_email(e)}
+                    for i, e in enumerate(emails)],
+        "escrowed": round(float(row[1] or 0), 4),
+        "already_claimed": bool(row[2]),
+        "pending": bool(existing and not existing.get("verified_at")),
+        "note": ("A code is sent to an address printed in the manuscript. Addresses cannot be "
+                 "supplied here — that is what makes controlling the mailbox meaningful."
+                 if emails else
+                 "No contact address could be found in this manuscript, so this route is "
+                 "unavailable. Register the DOI against your ORCID instead."),
+    }
+
+
+@app.post("/api/assessments/{file_hash}/challenge")
+def challenge_start(file_hash: str, payload: ChallengeStart, request: Request):
+    """Send a one-time code to a manuscript-listed address."""
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="challenge")
+    key = _profile_key(identity["wallet"], identity["orcid"])
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT contact_emails, title, piq_escrowed, piq_claimed_at "
+                           "FROM papers_assessment WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+    if row[3]:
+        return {"sent": False, "message": "This paper's piQ has already been claimed."}
+    try:
+        emails = json.loads(row[0] or "[]")
+    except (ValueError, TypeError):
+        emails = []
+    if not emails:
+        return {"sent": False, "message": "No contact address was found in this manuscript."}
+    if not (0 <= payload.email_index < len(emails)):
+        raise HTTPException(status_code=400, detail="That is not one of the manuscript's addresses.")
+
+    address = emails[payload.email_index]
+    code = authorship_challenge.generate_code()
+    secret = os.getenv("SESSION_SECRET", "") or ETH_ADMIN_PRIVATE_KEY
+    store_challenge(
+        file_hash, key,
+        authorship_challenge.mask_email(address),
+        hashlib.sha256(address.lower().encode()).hexdigest(),
+        authorship_challenge.hash_code(code, file_hash, secret),
+    )
+    result = authorship_challenge.send_challenge(address, code, row[1] or "this manuscript")
+    add_log(f"Authorship challenge for {file_hash[:12]}… -> "
+            f"{authorship_challenge.mask_email(address)} (sent={result['sent']})")
+    if not result["sent"]:
+        return {"sent": False,
+                "message": ("The code could not be sent. Email is not configured on this "
+                            "deployment, so this route is unavailable.")}
+    return {
+        "sent": True,
+        "masked": authorship_challenge.mask_email(address),
+        "expires_in_minutes": authorship_challenge.CODE_TTL_MINUTES,
+        "message": (f"A confirmation code was sent to "
+                    f"{authorship_challenge.mask_email(address)}. It expires in "
+                    f"{authorship_challenge.CODE_TTL_MINUTES} minutes."),
+    }
+
+
+@app.post("/api/assessments/{file_hash}/challenge/confirm")
+def challenge_confirm(file_hash: str, payload: ChallengeConfirm, request: Request):
+    """Confirm the code and release the escrow."""
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="challenge")
+    key = _profile_key(identity["wallet"], identity["orcid"])
+
+    challenge = get_challenge(file_hash, key)
+    if not challenge:
+        return {"claimed": False, "message": "No code has been requested for this paper."}
+    if challenge.get("verified_at"):
+        return {"claimed": False, "message": "This challenge was already used."}
+    if challenge["attempts"] >= authorship_challenge.MAX_ATTEMPTS:
+        return {"claimed": False,
+                "message": ("Too many incorrect attempts. Request a new code — the previous one "
+                            "is no longer valid.")}
+    if authorship_challenge.is_expired(challenge["created_at"]):
+        return {"claimed": False, "message": "That code has expired. Request a new one."}
+
+    secret = os.getenv("SESSION_SECRET", "") or ETH_ADMIN_PRIVATE_KEY
+    supplied = authorship_challenge.hash_code(
+        (payload.code or "").strip(), file_hash, secret)
+    # compare_digest: a code must not be recoverable from response timing.
+    if not hmac.compare_digest(supplied, challenge["code_hash"]):
+        record_challenge_attempt(challenge["id"], verified=False)
+        remaining = authorship_challenge.MAX_ATTEMPTS - challenge["attempts"] - 1
+        return {"claimed": False,
+                "message": f"That code is not correct. {max(0, remaining)} attempt(s) remaining."}
+
+    record_challenge_attempt(challenge["id"], verified=True)
+    result = release_escrow(file_hash, _identity_values(identity["wallet"], identity["orcid"]),
+                            wallet=identity["wallet"], orcid=identity["orcid"])
+    if not result["released"]:
+        return {"claimed": False, "message": result["reason"]}
+    add_log(f"Escrow released by email challenge: {result['released']:.4f} piQ for {file_hash[:12]}…")
+    return {"claimed": True, "amount": result["released"], "tier": "corresponding-author-email",
+            "message": (f"{result['released']:.4f} piQ released. You confirmed control of an "
+                        f"address printed in the manuscript.")}
+
+
+class PublishRequest(BaseModel):
+    published: bool = True
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.get("/api/assessments/{file_hash}/publish")
+def publish_status(file_hash: str, request: Request, wallet: str = Query(default=""),
+                   orcid: str = Query(default="")):
+    """Whether this identity may publish this paper, and what it would cost."""
+    identity = auth.identity_from_request(request, wallet, orcid)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT author_name, doi, title, published_at, published_by, piq_claimed_at, "
+            "final_score FROM papers_assessment WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    already_paid = publication_fee_paid(
+        file_hash, _identity_values(identity["wallet"], identity["orcid"]))
+    fee = publication_fee(safe_float(row[6], 0.0))
+    published = bool(row[3])
+
+    if not identity["verified"]:
+        return {"published": published, "may_publish": False, "fee": fee,
+                "reason": "Sign in to publish an assessment."}
+
+    # Authorship must already be established. Publishing attaches a name to a
+    # public record, so it requires the same proof as claiming the piQ — the
+    # weaker "I typed this name" is exactly what the badge must not certify.
+    attribution = verify_authorship(
+        submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
+        extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
+    verified = bool(attribution.get("verified")) or bool(row[5])
+
+    return {
+        "published": published,
+        "published_at": row[3],
+        "may_publish": verified,
+        "authorship_tier": attribution.get("tier") if attribution.get("verified") else (
+            "escrow-claimed" if row[5] else "unverified"),
+        "fee": fee,
+        "fee_already_paid": already_paid,
+        "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+        "reason": ("" if verified else
+                   (attribution.get("reason") or "Authorship is not verified for this paper.")),
+        "how_to_fix": None if verified else attribution.get("how_to_verify"),
+    }
+
+
+@app.post("/api/assessments/{file_hash}/publish")
+def publish_assessment(file_hash: str, payload: PublishRequest, request: Request):
+    """Attach or withdraw an author's public endorsement of an assessment.
+
+    "Published" here means the verified author has chosen to stand behind this
+    assessment publicly. It is deliberately NOT a claim of journal publication,
+    and the badge says "Author-published" so the two cannot be conflated — on a
+    research platform, an unqualified "Published" badge would be read as peer
+    review, which this is not.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="publish")
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    identities = _identity_values(identity["wallet"], identity["orcid"])
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT author_name, doi, title, piq_claimed_at, final_score "
+            "FROM papers_assessment WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    # Withdrawal never requires re-proving authorship or paying anything. An
+    # endorsement that cannot be retracted is a trap, not an endorsement.
+    if not payload.published:
+        result = set_published(file_hash, identities, key, False)
+        if not result["ok"]:
+            raise HTTPException(status_code=403, detail=result["reason"])
+        add_log(f"Assessment {file_hash[:12]}… withdrawn from publication.")
+        return {"published": False,
+                "message": ("Withdrawn. The badge is removed; the assessment and its ledger "
+                            "block are unchanged. Re-publishing is free.")}
+
+    attribution = verify_authorship(
+        submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
+        extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
+    if not (attribution.get("verified") or row[3]):
+        raise HTTPException(
+            status_code=403,
+            detail=(attribution.get("reason") or "Authorship is not verified for this paper.")
+                   + (" " + attribution["how_to_verify"] if attribution.get("how_to_verify") else ""))
+
+    fee = publication_fee(safe_float(row[4], 0.0))["fee"]
+    if fee > 0 and not publication_fee_paid(file_hash, identities):
+        balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
+        if balance + 1e-9 < fee:
+            raise HTTPException(
+                status_code=402,
+                detail=(f"Publishing costs {fee:.2f} piQ and your balance is {balance:.2f} piQ. "
+                        f"Claim the piQ held for your assessed papers, or have more of your work "
+                        f"assessed."))
+        if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
+                              eval_hash=file_hash, reason="Publication fee"):
+            raise HTTPException(status_code=402, detail="The publication fee could not be charged.")
+
+    result = set_published(file_hash, identities, key, True)
+    if not result["ok"]:
+        raise HTTPException(status_code=403, detail=result["reason"])
+    add_log(f"Assessment {file_hash[:12]}… published by {key[:16]}… "
+            f"(tier {attribution.get('tier') or 'escrow-claimed'})")
+    return {
+        "published": True,
+        "charged": 0.0 if publication_fee_paid(file_hash, identities) and False else fee,
+        "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+        "message": ("Published. Your assessment now carries an Author-published badge wherever "
+                    "it appears. You can withdraw it at any time, free of charge."),
+    }
 
 
 @app.delete("/api/assessments/{file_hash}")
@@ -3181,7 +3533,8 @@ def explorer_latest(
             f"""SELECT p.title, p.author_name, p.final_score, p.eval_hash, p.timestamp,
                       p.tx_hash, p.zk_proof, p.piq_minted,
                       b.block_height, b.block_hash, b.previous_hash, b.validator_node,
-                      b.por_proof, b.model_used, b.formulas_hash, p.fields
+                      b.por_proof, b.model_used, b.formulas_hash, p.fields,
+                      p.published_at
                FROM papers_assessment p
                LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
                WHERE COALESCE(p.final_score, 0) >= ? AND COALESCE(p.final_score, 0) <= ?
@@ -3214,6 +3567,8 @@ def explorer_latest(
         tx = r[5]
         records.append({
             "fields": row_fields,
+            "published": bool(r[16]),
+            "published_at": r[16],
             "title": r[0], "author": clean_author_name(r[1]), "score": r[2],
             "eval_hash": r[3], "timestamp": r[4],
             "tx_hash": tx, "explorer_url": get_sepolia_explorer_url(tx, "tx"),

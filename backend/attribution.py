@@ -35,6 +35,7 @@ to the wrong person, which is worse than a false negative that merely denies a
 legitimate author their piQ until they link ORCID.
 """
 import re
+import difflib
 import logging
 import unicodedata
 from typing import Dict, List, Optional
@@ -144,8 +145,53 @@ def registry_orcids_for_doi(doi: str) -> List[str]:
     return found
 
 
+def orcid_lists_work(orcid: str, doi: str = "", title: str = "") -> Optional[str]:
+    """Does this ORCID record contain the work? Returns how it matched.
+
+    Sits between publisher-deposited ORCID (decisive) and name matching (weak).
+    The claim is self-asserted — the researcher added the work themselves — but
+    it is asserted on an authenticated, permanent, publicly auditable record
+    under their own name. Fabricating it means attaching someone else's paper
+    to your own research identity, traceably and durably, which is a far higher
+    cost than typing a name into a profile field.
+    """
+    orcid = (orcid or "").strip()
+    if not re.fullmatch(r"\d{4}-\d{4}-\d{4}-\d{3}[\dX]", orcid):
+        return None
+
+    status, payload = fetch_json(
+        f"https://pub.orcid.org/v3.0/{orcid}/works",
+        cache=work_cache, cache_key=("orcid-works", orcid))
+    if status != 200 or not payload:
+        return None
+
+    wanted_doi = (doi or "").strip().lower().replace("https://doi.org/", "")
+    wanted_title = re.sub(r"[^a-z0-9 ]+", " ", (title or "").lower()).strip()
+    wanted_title = re.sub(r"\s+", " ", wanted_title)
+
+    for group in (payload.get("group") or []):
+        for summary in (group.get("work-summary") or []):
+            # DOI match first: an identifier comparison is exact, whereas a
+            # title comparison is a judgement call.
+            for ext in ((summary.get("external-ids") or {}).get("external-id") or []):
+                if str(ext.get("external-id-type", "")).lower() != "doi":
+                    continue
+                value = str(ext.get("external-id-value", "")).lower().replace(
+                    "https://doi.org/", "").strip()
+                if value and wanted_doi and value == wanted_doi:
+                    return "doi"
+
+            if not wanted_title or len(wanted_title) < 20:
+                continue
+            listed = (((summary.get("title") or {}).get("title") or {}).get("value") or "")
+            listed = re.sub(r"\s+", " ", re.sub(r"[^a-z0-9 ]+", " ", listed.lower())).strip()
+            if listed and difflib.SequenceMatcher(None, listed, wanted_title).ratio() >= 0.92:
+                return "title"
+    return None
+
+
 def verify_authorship(*, submitter_orcid: str = "", submitter_wallet: str = "",
-                      extracted_authors: str = "", doi: str = "",
+                      extracted_authors: str = "", doi: str = "", title: str = "",
                       known_wallet_orcid: str = "") -> Dict:
     """Decide whether this submitter may be credited as an author.
 
@@ -189,7 +235,22 @@ def verify_authorship(*, submitter_orcid: str = "", submitter_wallet: str = "",
             })
             return result
 
-    # Tier 2 — verified ORCID profile name matches an extracted author.
+    # Tier 2 — the work appears on the claimant's own ORCID record.
+    try:
+        listed_via = orcid_lists_work(orcid, doi=doi, title=title)
+    except Exception as e:
+        logging.debug("ORCID works lookup failed for %s: %s", orcid, e)
+        listed_via = None
+    if listed_via:
+        result.update({
+            "verified": True, "tier": "orcid-listed-work", "confidence": 0.92,
+            "credited_identity": orcid,
+            "reason": (f"This work appears on your ORCID record (matched by {listed_via}). "
+                       f"Authorship is confirmed."),
+        })
+        return result
+
+    # Tier 3 — verified ORCID profile name matches an extracted author.
     profile_name = None
     try:
         profile_name = fetch_orcid_profile_name(orcid)

@@ -18,6 +18,13 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     # The four deterministic structural measurements, stored so a later user
     # correction can be learned from without retaining manuscript text.
     "scilem_signals",
+    # piQ earned by a paper whose authorship is not yet verified. Held, not
+    # discarded — see the note on the column definition below.
+    "piq_escrowed", "piq_claimed_at",
+    # Candidate corresponding-author addresses found in the manuscript.
+    "contact_emails",
+    # Author-published state. See the column notes below.
+    "published_at", "published_by",
 }
 
 def reset_schema_cache():
@@ -140,6 +147,21 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         source TEXT,
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
 
+    # Authorship challenges. Codes are stored hashed and salted per paper, so a
+    # database read never yields a live code.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS authorship_challenges (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        eval_hash TEXT NOT NULL,
+                        account_key TEXT NOT NULL,
+                        email_masked TEXT NOT NULL,
+                        email_hash TEXT NOT NULL,
+                        code_hash TEXT NOT NULL,
+                        attempts INTEGER DEFAULT 0,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        verified_at DATETIME)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_challenge_lookup "
+                   "ON authorship_challenges(eval_hash, account_key)")
+
     # 3. New Ingestion Queue for Microservices
     cursor.execute("""CREATE TABLE IF NOT EXISTS ingestion_queue (
                         id INTEGER PRIMARY KEY AUTOINCREMENT, source_type TEXT, source_val TEXT, 
@@ -221,6 +243,23 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # a correction submitted weeks later can be turned into a learning step
         # without the deployment having to retain manuscript text.
         "scilem_signals": "TEXT DEFAULT '{}'",
+        # Emission was previously computed and then thrown away when authorship
+        # could not be verified, so a researcher saw "0.00 piQ" with no
+        # indication that anything had been earned at all. The amount is now
+        # recorded and held: the work was done, the paper qualified, and only
+        # the link between submitter and author is missing. Claimable later.
+        "piq_escrowed": "REAL DEFAULT 0.0",
+        "piq_claimed_at": "DATETIME",
+        # Addresses the manuscript itself lists for its authors. Stored because
+        # the authorship challenge must send to an address the DOCUMENT names,
+        # never one the claimant supplies — and the document text is not kept.
+        "contact_emails": "TEXT DEFAULT '[]'",
+        # Set when a VERIFIED author chooses to attach their name publicly to
+        # an assessment. This is an authorship endorsement, not a claim about
+        # journal publication — see the badge wording, which is deliberately
+        # "Author-published" so the two cannot be confused.
+        "published_at": "DATETIME",
+        "published_by": "TEXT DEFAULT ''",
         # Real h-index / i10-index from OpenAlex. Reported as author context;
         # excluded from scoring per CoARA.
         "author_metrics": "TEXT DEFAULT '{}'",
@@ -973,7 +1012,7 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
     try:
         rows = conn.execute(
             f"""SELECT eval_hash, title, author_name, final_score, fields, timestamp,
-                      piq_minted, doi, filename
+                      piq_minted, doi, filename, published_at, piq_escrowed, piq_claimed_at
                FROM papers_assessment
                WHERE user_id IN ({placeholders})
                   OR author_openalex_id IN ({placeholders})
@@ -994,7 +1033,10 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
         out.append({"hash": r[0], "title": r[1] or "Untitled", "author": r[2] or "",
                     "score": round(float(r[3] or 0), 1), "fields": fields,
                     "timestamp": r[5], "piq_minted": float(r[6] or 0),
-                    "doi": r[7] or "", "filename": r[8] or ""})
+                    "doi": r[7] or "", "filename": r[8] or "",
+                    "published": bool(r[9]),
+                    "escrowed": round(float(r[10] or 0), 4),
+                    "claimed": bool(r[11])})
     return out
 
 
@@ -1363,6 +1405,235 @@ def credit_curation_reward(amount: float, wallet: str = "", orcid: str = "",
         return True
     except sqlite3.Error as e:
         logging.warning("Curation reward could not be credited: %s", e)
+        return False
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Escrowed piQ
+# ---------------------------------------------------------------------------
+def list_escrowed_for_identity(identities, limit: int = 100) -> list:
+    """Papers this identity submitted that earned piQ but could not claim it."""
+    values = [v for v in (identities or []) if v]
+    if not values:
+        return []
+    ph = ",".join("?" for _ in values)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            f"""SELECT eval_hash, title, author_name, final_score, piq_escrowed, doi, timestamp
+                FROM papers_assessment
+                WHERE piq_escrowed > 0 AND piq_claimed_at IS NULL
+                  AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))
+                ORDER BY timestamp DESC LIMIT ?""",
+            (*values, *values, int(limit)),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"hash": r[0], "title": r[1] or "Untitled", "author": r[2] or "",
+             "score": round(float(r[3] or 0), 1), "escrowed": round(float(r[4] or 0), 4),
+             "doi": r[5] or "", "timestamp": r[6]} for r in rows]
+
+
+def total_escrowed() -> float:
+    """Corpus-wide piQ earned but unclaimed. Reported in analytics."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT COALESCE(SUM(piq_escrowed), 0) FROM papers_assessment "
+            "WHERE piq_claimed_at IS NULL").fetchone()
+        return round(float(row[0] or 0.0), 4)
+    except sqlite3.Error:
+        return 0.0
+    finally:
+        conn.close()
+
+
+def release_escrow(eval_hash: str, identities, wallet: str = "", orcid: str = "") -> dict:
+    """Move an escrowed amount into the claimant's balance. Idempotent.
+
+    The claim is marked and the ledger credited inside one transaction. If the
+    two could drift, a retried claim would either pay twice or mark a payment
+    that never happened — and this is the one place in the system where a
+    double-write creates money.
+    """
+    values = [v for v in (identities or []) if v]
+    if not eval_hash or not values:
+        return {"released": 0.0, "reason": "No claim to release."}
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return {"released": 0.0, "reason": "No identity to credit."}
+    kind, account = keys[0]
+    ph = ",".join("?" for _ in values)
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT piq_escrowed FROM papers_assessment
+                WHERE eval_hash = ? AND piq_claimed_at IS NULL
+                  AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+            (eval_hash, *values, *values),
+        ).fetchone()
+        if not row or not row[0]:
+            return {"released": 0.0, "reason": "Nothing is held for this paper under your identity."}
+        amount = round(float(row[0]), 4)
+
+        conn.execute(
+            "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (account, kind, amount, "Authorship verified — escrow released", eval_hash))
+        conn.execute(
+            "UPDATE papers_assessment SET piq_claimed_at = CURRENT_TIMESTAMP WHERE eval_hash = ?",
+            (eval_hash,))
+        conn.commit()
+        return {"released": amount, "reason": ""}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Escrow release failed for %s: %s", eval_hash, e)
+        return {"released": 0.0, "reason": "The claim could not be completed."}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Authorship challenges
+# ---------------------------------------------------------------------------
+def store_challenge(eval_hash: str, account_key: str, email_masked: str,
+                    email_hash: str, code_hash: str) -> int:
+    """Record a new challenge, superseding any earlier one for this pair.
+
+    Superseding matters: without it, requesting a second code would leave the
+    first still valid, so every resend would widen the window an attacker has
+    to guess in rather than replacing it.
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "DELETE FROM authorship_challenges WHERE eval_hash = ? AND account_key = ? "
+            "AND verified_at IS NULL", (eval_hash, account_key))
+        cur = conn.execute(
+            """INSERT INTO authorship_challenges
+                 (eval_hash, account_key, email_masked, email_hash, code_hash)
+               VALUES (?, ?, ?, ?, ?)""",
+            (eval_hash, account_key, email_masked, email_hash, code_hash))
+        conn.commit()
+        return int(cur.lastrowid)
+    except sqlite3.Error as e:
+        logging.warning("Could not store authorship challenge: %s", e)
+        return 0
+    finally:
+        conn.close()
+
+
+def get_challenge(eval_hash: str, account_key: str) -> dict:
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT id, email_masked, code_hash, attempts, created_at, verified_at
+               FROM authorship_challenges
+               WHERE eval_hash = ? AND account_key = ?
+               ORDER BY id DESC LIMIT 1""", (eval_hash, account_key)).fetchone()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    return {"id": row[0], "email_masked": row[1], "code_hash": row[2],
+            "attempts": int(row[3] or 0), "created_at": row[4], "verified_at": row[5]}
+
+
+def record_challenge_attempt(challenge_id: int, verified: bool = False) -> None:
+    conn = get_db_connection()
+    try:
+        if verified:
+            conn.execute("UPDATE authorship_challenges SET verified_at = CURRENT_TIMESTAMP, "
+                         "attempts = attempts + 1 WHERE id = ?", (challenge_id,))
+        else:
+            conn.execute("UPDATE authorship_challenges SET attempts = attempts + 1 "
+                         "WHERE id = ?", (challenge_id,))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not record challenge attempt: %s", e)
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Author publishing
+# ---------------------------------------------------------------------------
+def set_published(eval_hash: str, identities, account_key: str, published: bool) -> dict:
+    """Attach or withdraw an author's public endorsement of an assessment.
+
+    Ownership is enforced in the UPDATE rather than by a prior SELECT, for the
+    same reason as deletion: evaluation hashes appear in the public leaderboard,
+    so a check-then-write would let anyone who can read one publish under
+    someone else's name.
+
+    Withdrawal is always permitted. An endorsement a researcher cannot retract
+    is not an endorsement, it is a trap — circumstances change, coauthors
+    object, a preprint gets retracted.
+    """
+    values = [v for v in (identities or []) if v]
+    if not eval_hash or not values:
+        return {"ok": False, "reason": "Sign in to publish an assessment."}
+    ph = ",".join("?" for _ in values)
+    conn = get_db_connection()
+    try:
+        if published:
+            cur = conn.execute(
+                f"""UPDATE papers_assessment
+                    SET published_at = CURRENT_TIMESTAMP, published_by = ?
+                    WHERE eval_hash = ? AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+                (account_key, eval_hash, *values, *values))
+        else:
+            cur = conn.execute(
+                f"""UPDATE papers_assessment
+                    SET published_at = NULL, published_by = ''
+                    WHERE eval_hash = ? AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+                (eval_hash, *values, *values))
+        conn.commit()
+        if cur.rowcount:
+            return {"ok": True, "reason": ""}
+        return {"ok": False, "reason": "That paper was not found under your identity."}
+    except sqlite3.Error as e:
+        logging.warning("Publish state change failed: %s", e)
+        return {"ok": False, "reason": "The change could not be saved."}
+    finally:
+        conn.close()
+
+
+def is_published(eval_hash: str) -> bool:
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT published_at FROM papers_assessment WHERE eval_hash = ?",
+                           (eval_hash,)).fetchone()
+        return bool(row and row[0])
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def publication_fee_paid(eval_hash: str, identities) -> bool:
+    """Has this paper's publication fee already been charged to this identity?
+
+    Read from the ledger rather than a flag, so the answer always agrees with
+    the account the money actually left.
+    """
+    values = [v for v in (identities or []) if v]
+    if not eval_hash or not values:
+        return False
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM piq_ledger WHERE eval_hash = ? AND reason LIKE ? LIMIT 1",
+            (eval_hash, "Publication fee%")).fetchone()
+        return bool(row)
+    except sqlite3.Error:
         return False
     finally:
         conn.close()
