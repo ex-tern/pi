@@ -102,7 +102,7 @@ const HELP = {
   assess: {
     title: "How Assessment Works",
     body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
-      several large language models — Llama, Mistral, Qwen and Gemini — while the local Scilem
+      several large language models — Llama, Mistral, Qwen and Gemini — while the local SciLM (siM)
       engine performs deterministic structural analysis in parallel.</p>
       <p>The <strong>pi-Dyne engine</strong> then adjudicates a single verdict from the panel's
       independent assessments. Because the jurors come from different providers, agreement between
@@ -235,10 +235,10 @@ const HELP = {
       <p>Select a row to see that author's assessed papers.</p>`,
   },
   buddy: {
-    title: "Research Buddy",
+    title: "Research Buddy (riB)",
     body: `<p>A short, tailored plan derived from your saved profile — your fields, how many
       fields you work across, and whether you have articulated a core claim.</p>
-      <p><strong>It is heuristics, not analysis.</strong> Research Buddy reads what you typed
+      <p><strong>It is heuristics, not analysis.</strong> Research Buddy (riB) reads what you typed
       about yourself; it has not read your publications. It says so at the bottom of every
       report, and it deliberately refuses to generate advice from an almost-empty profile —
       a buddy that invents suggestions from nothing is worse than one that stays quiet, because
@@ -915,7 +915,7 @@ async function pollLogs() {
 let logPollTimer = setInterval(pollLogs, 4000);
 pollLogs();
 
-// --- Scilem assistant -------------------------------------------------------
+// --- SciLM (siM) assistant -------------------------------------------------------
 // Grounded rather than generative: it answers from the live database and a
 // knowledge base built from the running rubric, so it cannot invent a balance.
 const SCILEM_SUGGESTIONS = [
@@ -1188,7 +1188,7 @@ function syncProfileVisibility() {
   if (signedIn && typeof refreshBuddy === "function") refreshBuddy();
 }
 
-/** Research Buddy — concrete next actions derived from the saved profile.
+/** Research Buddy (riB) — concrete next actions derived from the saved profile.
  *
  *  Deliberately states what it does not know. A "buddy" that invents advice
  *  from an empty profile is worse than one that says the profile is thin,
@@ -1218,7 +1218,7 @@ function renderResearchBuddy(profile) {
 
     body.innerHTML = `
       <div class="buddy-onboard">
-        <p class="buddy-onboard-lede">Your Research Buddy is <strong>not active yet</strong>.
+        <p class="buddy-onboard-lede">Your Research Buddy (riB) is <strong>not active yet</strong>.
         It works from the profile above — without it there is nothing to reason from, and
         inventing advice would be worse than saying so.</p>
 
@@ -1302,7 +1302,7 @@ function renderResearchBuddy(profile) {
   loadBuddyCorpus();
 }
 
-/** The grounded half of Research Buddy: the researcher's stated fields
+/** The grounded half of Research Buddy (riB): the researcher's stated fields
  *  measured against what has actually been assessed in this deployment. */
 async function loadBuddyCorpus() {
   const slot = document.getElementById("buddyCorpus");
@@ -1356,7 +1356,7 @@ async function loadBuddyCorpus() {
 
   const picks = data.picks;
   if (picks && picks.available) {
-    html += `<div class="buddy-picks"><h4>Scilem's reading picks
+    html += `<div class="buddy-picks"><h4>SciLM (siM)'s reading picks
       <span class="picks-scope">from ${escapeHtml(picks.scope || "corpus")}</span></h4>`;
 
     const list = (items, kind) => items.map(p => `
@@ -1408,7 +1408,7 @@ function refreshBuddy() {
   } catch (e) {
     const body = document.getElementById("buddyBody");
     if (body) {
-      body.innerHTML = `<p class="buddy-empty">The Research Buddy could not be rendered.
+      body.innerHTML = `<p class="buddy-empty">The Research Buddy (riB) could not be rendered.
         <code>${escapeHtml(String(e && e.message ? e.message : e))}</code></p>`;
     }
   }
@@ -2056,7 +2056,7 @@ function showDetailsModal(idx) { renderDossierModal(evaluatedBuffer[idx]); }
 // --- Full report & dossier -------------------------------------------------
 const MODEL_LABELS = {
   llama: "Llama 3.3 70B", mistral: "Mistral Large", qwen: "Qwen 2.5 72B",
-  gemini: "Gemini 2.0 Flash", scilem: "Scilem Local Neural Engine",
+  gemini: "Gemini 2.0 Flash", scilem: "SciLM (siM) Local Neural Engine",
 };
 
 function renderJudgePanel(meta, consensus) {
@@ -2482,7 +2482,7 @@ function renderDossierModal(item) {
   if (typeof item.mdar_score === "number") signals.push(["MDAR adherence", `${(item.mdar_score * 100).toFixed(1)}%`]);
   if (typeof item.rrid_count === "number") signals.push(["Valid RRIDs detected", item.rrid_count]);
   if (typeof item.repro_score === "number") signals.push(["Reproducibility signal", `${(item.repro_score * 100).toFixed(1)}%`]);
-  if (typeof item.scilem_rating === "number") signals.push(["Scilem structural rating", item.scilem_rating.toFixed(2)]);
+  if (typeof item.scilem_rating === "number") signals.push(["SciLM (siM) structural rating", item.scilem_rating.toFixed(2)]);
   if (signals.length) {
     html += `<h3>Deterministic Signals</h3><table class="data-table"><tbody>` +
       signals.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`).join("") +
@@ -3682,7 +3682,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   AGREE --> LOGIC
   ZERO --> LOGIC
 
-  subgraph S5b["5b · Scilem calibration (learned)"]
+  subgraph S5b["5b · SciLM (siM) calibration (learned)"]
     direction TB
     LEARN["Weighting of 4 signals<br/>online, 5 parameters"]:::learn
     GATE2{"≥2 independent<br/>sources?"}:::gate

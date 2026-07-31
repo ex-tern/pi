@@ -242,7 +242,7 @@ FREE_EVALS_PER_IP = int(os.getenv("FREE_EVALS_PER_IP", "3"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
 RATE_LIMIT_MAX_REQUESTS = int(os.getenv("RATE_LIMIT_MAX_REQUESTS", "10"))
 
-# The Scilem sidebar chat (/api/scilem/chat) lazily loads a ~1.1B parameter
+# The SciLM (siM) sidebar chat (/api/scilem/chat) lazily loads a ~1.1B parameter
 # TinyLlama model on first use — several hundred MB to a few GB of RAM.
 # That's fine on a real server, but it WILL crash a free-tier host with
 # ~512MB of RAM (Render's free web service, for example). Set this to
@@ -298,7 +298,7 @@ SCILEM_LIMITED_NOTICE = (
 )
 
 SCILEM_DISABLED_NOTICE = (
-    "The Scilem assistant is disabled on this deployment."
+    "The SciLM (siM) assistant is disabled on this deployment."
 )
 
 
@@ -336,7 +336,7 @@ ORCID_CLIENT_SECRET = get_secret("ORCID_CLIENT_SECRET")
 ORCID_REDIRECT_URI = get_secret("ORCID_REDIRECT_URI", "http://localhost:8000/api/auth/orcid/callback")
 # Where the frontend is served from, used to redirect the browser back after ORCID login
 FRONTEND_ORIGIN = get_secret("FRONTEND_ORIGIN", "http://localhost:8000")
-# Web3 owner wallet allowed to reset Scilem
+# Web3 owner wallet allowed to reset SciLM (siM)
 OWNER_ID = get_secret("OWNER_ID", "0x6B89DD74DCa5d4DC98599206b1c2dE614066ef40")
 
 if IS_PRODUCTION and not ALLOWED_ORIGINS:
@@ -360,12 +360,12 @@ def config_summary():
         f"IPFS backup (Pinata): {flag(PINATA_API_KEY and PINATA_SECRET_API_KEY)}",
         f"On-chain state registry: {flag(REGISTRY_CONTRACT_ADDRESS and ETH_ADMIN_PRIVATE_KEY)}",
         f"ORCID login: {flag(ORCID_CLIENT_ID and ORCID_CLIENT_SECRET)}",
-        f"Scilem local chat model: {'enabled' if ENABLE_SCILEM_LOCAL_MODEL else 'DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)'}",
+        f"SciLM (siM) local chat model: {'enabled' if ENABLE_SCILEM_LOCAL_MODEL else 'DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)'}",
     ]
     if not (GROQ_API_KEY or OR_API_KEY or GEMINI_API_KEY):
         lines.append(
             "NOTE: no external LLM keys configured — assessments will run "
-            "entirely on the local Scilem model + deterministic heuristics."
+            "entirely on the local SciLM (siM) model + deterministic heuristics."
         )
     return lines
 

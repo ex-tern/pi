@@ -1,4 +1,6 @@
 """
+piD — the pi-Dyne forecasting engine.
+
 Epoch-weight forecasting: cached, bounded, and degradable.
 
 The problem

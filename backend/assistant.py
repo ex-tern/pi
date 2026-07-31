@@ -1,9 +1,9 @@
 """
-Scilem: a grounded assistant that works without a local language model.
+SciLM (siM): a grounded assistant that works without a local language model.
 
 Why it was off, and why it need not be
 --------------------------------------
-Scilem previously required a ~1.1B-parameter TinyLlama loaded into process
+SciLM (siM) previously required a ~1.1B-parameter TinyLlama loaded into process
 memory. That is several hundred megabytes on a host that has none to spare, so
 it was disabled and the sidebar said so. But the memory was being spent on the
 wrong thing: a tiny local model is a weak generalist that hallucinates freely,
@@ -11,7 +11,7 @@ while almost every question a user actually asks here is about *this system* —
 their balance, why a paper scored what it did, what piQ is, how the fee works.
 Those have exact answers already present in the database and the rubric.
 
-So Scilem is now grounded rather than generative. It resolves a question to an
+So SciLM (siM) is now grounded rather than generative. It resolves a question to an
 intent, answers from real state — the live rubric, the emission policy, the
 user's own ledger — and says plainly when it does not know. That is more useful
 than a small model's fluent guess, costs no memory, cannot hallucinate a
@@ -276,7 +276,7 @@ def _cloud_answer(question: str, grounding: str) -> Optional[str]:
             model = "openrouter/auto"
 
         system = (
-            "You are Scilem, the assistant for ScholarPi, a decentralised research-assessment "
+            "You are SciLM (siM), the assistant for ScholarPi, a decentralised research-assessment "
             "platform. Answer only from the CONTEXT provided. If the context does not contain the "
             "answer, say so plainly and suggest where in the interface to look — never invent "
             "scores, balances, figures or policy. Be concise: three sentences unless more is "
@@ -292,7 +292,7 @@ def _cloud_answer(question: str, grounding: str) -> Optional[str]:
         )
         return (response.choices[0].message.content or "").strip() or None
     except Exception as e:
-        logging.info("Scilem cloud phrasing unavailable: %s", e)
+        logging.info("SciLM (siM) cloud phrasing unavailable: %s", e)
         return None
 
 

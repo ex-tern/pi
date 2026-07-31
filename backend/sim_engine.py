@@ -1,9 +1,11 @@
 """
-Scilem's learned calibration.
+siM — the SciLM learning engine.
+
+SciLM (siM)'s learned calibration.
 
 What this actually is
 ---------------------
-Scilem measures four deterministic structural signals in a manuscript — MDAR
+SciLM (siM) measures four deterministic structural signals in a manuscript — MDAR
 adherence, empirical density, reproducibility markers, and RRID coverage — and
 combines them into one structural-quality score. Those four signals are NOT
 learned and must never become learned: they are reproducible measurements, and
@@ -11,7 +13,7 @@ their value to the framework is precisely that they are auditable and identical
 for identical input.
 
 What is learned is how to *weigh* them. The original weights (0.35 / 0.30 /
-0.25 / 0.10) were assumed at authoring time and never revisited, so Scilem's
+0.25 / 0.10) were assumed at authoring time and never revisited, so SciLM (siM)'s
 composite was an opinion about the relative importance of four measurements,
 frozen before a single paper had been assessed. This module replaces that fixed
 opinion with a five-parameter linear model (four weights and a bias) fitted
@@ -31,10 +33,10 @@ The two teachers, and why they are not treated equally
 ------------------------------------------------------
 1. **Panel consensus** (automatic). After each assessment the LLM panel returns
    a verdict. Where several *independent* jurors corroborate each other, that
-   verdict is a usable target for what Scilem should have said.
+   verdict is a usable target for what SciLM (siM) should have said.
 
-   This is gated hard. Learning from a one-juror verdict would not teach Scilem
-   about research quality, it would teach Scilem to imitate whichever model
+   This is gated hard. Learning from a one-juror verdict would not teach SciLM (siM)
+   about research quality, it would teach SciLM (siM) to imitate whichever model
    happened to answer — and since every juror chain now falls back to a shared
    Llama, "four jurors agreed" can mean one model voting four times. So the
    consensus signal is only accepted when at least MIN_INDEPENDENT_SOURCES
@@ -145,7 +147,7 @@ def load_state() -> Dict:
         from database import get_scilem_state
         stored = get_scilem_state()
     except Exception as e:
-        logging.warning("Could not load Scilem state, using defaults: %s", e)
+        logging.warning("Could not load SciLM (siM) state, using defaults: %s", e)
         stored = None
 
     state = stored or default_state()
@@ -172,7 +174,7 @@ def save_state(state: Dict) -> None:
     except Exception as e:
         # A failed write must not lose the in-process value, or the next
         # assessment would silently learn from stale weights.
-        logging.warning("Could not persist Scilem state: %s", e)
+        logging.warning("Could not persist SciLM (siM) state: %s", e)
 
 
 def reset() -> Dict:
@@ -183,7 +185,7 @@ def reset() -> Dict:
         from database import clear_scilem_observations
         clear_scilem_observations()
     except Exception as e:
-        logging.warning("Could not clear Scilem observations: %s", e)
+        logging.warning("Could not clear SciLM (siM) observations: %s", e)
     return state
 
 
@@ -256,7 +258,7 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
             "reason": (
                 f"Consensus was backed by {independent_sources} independent source(s); "
                 f"{MIN_INDEPENDENT_SOURCES} are required. Learning from an uncorroborated "
-                f"verdict would teach Scilem to imitate one model, not to assess research."
+                f"verdict would teach SciLM (siM) to imitate one model, not to assess research."
             ),
         }
 
@@ -266,7 +268,7 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
 
     # Score the same observation under the authored defaults, before any
     # update. This is the control condition, and it is what makes the claim
-    # "Scilem is learning" checkable rather than asserted.
+    # "SciLM (siM) is learning" checkable rather than asserted.
     baseline_predicted = predict(signals, state, force_defaults=True)
     baseline_error = target - baseline_predicted
 
@@ -327,7 +329,7 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
         from database import record_scilem_observation
         record_scilem_observation(signals, predicted, target, source, eval_hash)
     except Exception as e:
-        logging.debug("Scilem observation not recorded: %s", e)
+        logging.debug("SciLM (siM) observation not recorded: %s", e)
 
     return {
         "learned": True, "source": source,
@@ -343,7 +345,7 @@ def observe(signals: Dict[str, float], target: float, source: str = "consensus",
 # Reporting
 # ---------------------------------------------------------------------------
 def status() -> Dict:
-    """A full, human-readable account of what Scilem has learned."""
+    """A full, human-readable account of what SciLM (siM) has learned."""
     state = load_state()
     weights = normalise_weights(state["weights"])
     drift = {k: round(weights[k] - DEFAULT_WEIGHTS[k], 4) for k in SIGNAL_KEYS}
@@ -374,7 +376,7 @@ def status() -> Dict:
             verdict = "no better than defaults"
 
     if n == 0:
-        summary = ("Scilem is running on its authored default weighting. It has not yet observed "
+        summary = ("SciLM (siM) is running on its authored default weighting. It has not yet observed "
                    "a corroborated assessment, so nothing has been learned.")
     else:
         moved = max(drift, key=lambda k: abs(drift[k]))
