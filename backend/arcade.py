@@ -248,14 +248,18 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None) -> Dict:
             "field": name,
             "papers": int(row.get("papers", 0)) if row else 0,
             "avg_score": float(row.get("avg_score", 0.0)) if row else None,
+            "authors": list(row.get("authors") or []) if row else [],
         })
     legend.sort(key=lambda r: (-r["papers"], r["field"]))
+
+    authors = sorted({a for r in legend for a in r["authors"]})
 
     return {
         "token": f"{encoded}.{_sign(encoded)}",
         "seed": seed,
         "field": field,
         "legend": legend,
+        "authors": authors,
         "corpus": {
             "fields_with_papers": sum(1 for b in field if b["live"]),
             "total_papers": sum(int(e[1]) for e in overlay),

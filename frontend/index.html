@@ -5,7 +5,6 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>ScholarPi — Pi-Index Assessment Engine</title>
 <link rel="stylesheet" href="style.css">
-<script src="https://cdnjs.cloudflare.com/ajax/libs/vis-network/9.1.9/standalone/umd/vis-network.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -82,7 +81,7 @@
   <main class="main">
     <nav class="nav-tabs">
       <button class="tab-btn active" data-tab="assess">Assess Manuscript</button>
-      <button class="tab-btn" data-tab="analytics">Analytics &amp; Map</button>
+      <button class="tab-btn" data-tab="analytics">Analytics</button>
       <button class="tab-btn" data-tab="explorer">Ledger Explorer</button>
       <button class="tab-btn" data-tab="arcade">Science Map</button>
       <button class="tab-btn" data-tab="diagram">Architecture</button>
@@ -249,110 +248,6 @@
 
       </div>
 
-      <div class="full-col">
-        <div class="card map-card">
-          <h2>Global Map of Science<button class="help-btn" data-help="map" aria-label="About the map of science">?</button></h2>
-
-          <!-- Everything is collapsed by default: the map itself is the point,
-               and controls should be available without competing with it. -->
-          <select id="mapAuthorFilter" class="hidden"><option value="All Authors">All Authors</option></select>
-          <div id="mapFieldChecklist" class="hidden"></div>
-          <div class="map-controls">
-            <details class="ctl-group">
-              <summary><span class="ctl-title">Filters</span><span class="ctl-hint" id="mapFilterSummary">All authors · all fields</span></summary>
-              <div class="ctl-body">
-                <!-- One search box for authors and fields alike: with a growing
-                     corpus a checklist of every field stops being usable. -->
-                <label class="filter-label" for="mapSearchInput">Search authors or fields</label>
-                <div class="map-search-wrap">
-                  <input type="text" id="mapSearchInput" class="map-search"
-                         placeholder="Type an author or field…" autocomplete="off">
-                  <button id="mapSearchClear" class="map-search-clear hidden" aria-label="Clear">×</button>
-                  <div id="mapSearchResults" class="map-search-results hidden"></div>
-                </div>
-                <div id="mapActiveFilters" class="chip-row"></div>
-
-                <label class="filter-label" style="margin-top:12px;">piX range
-                  <output id="mapScoreOut">0 – 100</output></label>
-                <div class="dual-slider">
-                  <input type="range" id="mapMinScore" min="0" max="100" step="1" value="0">
-                  <input type="range" id="mapMaxScore" min="0" max="100" step="1" value="100">
-                </div>
-
-                <button id="mapApplyFiltersBtn" class="btn btn-primary btn-block">Apply Filters</button>
-              </div>
-            </details>
-
-            <details class="ctl-group">
-              <summary><span class="ctl-title">Appearance</span><span class="ctl-hint">Size, labels, density</span></summary>
-              <div class="ctl-body">
-                <label class="filter-label">Bubble size represents</label>
-                <select id="mapSizeMode">
-                  <option value="frequency">Paper count</option>
-                  <option value="avg_score">Average piX</option>
-                  <option value="uniform">Uniform</option>
-                </select>
-                <div class="slider-row">
-                  <label for="mapMaxNodes">Nodes shown <output id="mapMaxNodesOut">20</output></label>
-                  <input type="range" id="mapMaxNodes" min="5" max="60" step="1" value="20">
-                </div>
-                <div class="slider-row">
-                  <label for="mapNodeScale">Bubble size <output id="mapNodeScaleOut">1.0×</output></label>
-                  <input type="range" id="mapNodeScale" min="0.4" max="2.5" step="0.1" value="1">
-                </div>
-                <label class="checkbox-row"><input type="checkbox" id="mapLabelToggle" checked> Show labels</label>
-              </div>
-            </details>
-
-            <details class="ctl-group">
-              <summary><span class="ctl-title">Physics</span><span class="ctl-hint" id="mapPhysicsSummary">Balanced</span></summary>
-              <div class="ctl-body">
-                <label class="filter-label">Preset</label>
-                <div class="preset-row">
-                  <button class="preset-btn" data-preset="compact">Compact</button>
-                  <button class="preset-btn active" data-preset="balanced">Balanced</button>
-                  <button class="preset-btn" data-preset="spacious">Spacious</button>
-                  <button class="preset-btn" data-preset="clustered">Clustered</button>
-                </div>
-
-                <!-- Two controls, not five. Damping, overlap and link
-                     strength only work in specific combinations, which the
-                     presets already encode — exposing them individually asked
-                     the user to rediscover that by trial and error. -->
-                <div class="slider-row">
-                  <label for="mapSpacing">Spacing <output id="mapSpacingOut">40</output></label>
-                  <input type="range" id="mapSpacing" min="0" max="100" step="1" value="40">
-                </div>
-                <div class="slider-row">
-                  <label for="mapLinkStrength">Grouping <output id="mapLinkStrengthOut">65</output></label>
-                  <input type="range" id="mapLinkStrength" min="0" max="100" step="1" value="65">
-                </div>
-
-                <label class="checkbox-row"><input type="checkbox" id="mapPhysicsToggle" checked> Live physics</label>
-                <label class="checkbox-row"><input type="checkbox" id="mapClusterByDomain" checked> Domain gravity wells</label>
-                <button id="mapResetSettingsBtn" class="btn btn-ghost btn-block">Reset to defaults</button>
-              </div>
-            </details>
-          </div>
-
-          <div class="map-shell">
-            <div id="mapNetwork" class="map-network"></div>
-            <div class="map-toolbar">
-              <button id="mapFitBtn" class="map-tool" title="Fit to view">Fit</button>
-              <button id="mapFreezeBtn" class="map-tool" title="Freeze layout">Freeze</button>
-            </div>
-            <div id="mapDomainLegend" class="map-domain-legend"></div>
-            <div id="mapStabilizing" class="map-stabilizing hidden">Settling layout…</div>
-          </div>
-          <div id="mapEmptyState" class="hint hidden">No papers match these filters.</div>
-          <details class="sidebar-expander" open>
-            <summary>Map Legend &amp; Data <span class="hint">(select a row to focus it)</span></summary>
-            <div class="legend-scroll">
-              <table class="data-table" id="mapLegendTable"><thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead><tbody></tbody></table>
-            </div>
-          </details>
-        </div>
-      </div>
 
       <div class="two-col">
         <!-- piX — Top Papers -->
@@ -438,8 +333,13 @@
           <aside class="arcade-side">
             <details class="arcade-controls-group" open>
               <summary>Filters <span class="arcade-filter-summary" id="arcadeFilterSummary">All fields</span></summary>
-              <label class="arcade-ctl-label" for="arcadeSearch">Search field</label>
-              <input type="text" id="arcadeSearch" placeholder="Filter by name…">
+              <label class="arcade-ctl-label" for="arcadeSearch">Field or domain</label>
+              <input type="text" id="arcadeSearch" placeholder="e.g. Genomics">
+              <div id="arcadeAuthorWrap" class="hidden">
+                <label class="arcade-ctl-label" for="arcadeAuthor">Author</label>
+                <input type="text" id="arcadeAuthor" list="arcadeAuthorList" placeholder="Any author">
+                <datalist id="arcadeAuthorList"></datalist>
+              </div>
               <label class="arcade-ctl-label">Minimum papers <output id="arcadeMinPapersOut">0</output></label>
               <input type="range" id="arcadeMinPapers" min="0" max="20" step="1" value="0">
               <label class="arcade-ctl-check">
