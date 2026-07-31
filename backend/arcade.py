@@ -231,10 +231,31 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None) -> Dict:
     )
     encoded = _b64(payload.encode("utf-8"))
     field = generate_field(seed, overlay)
+
+    # Legend rows carry the analytics the map UI needs (paper counts, mean piX)
+    # but that the *game* must not depend on. They travel outside the signed
+    # token deliberately: they do not affect bubble mass, so they cannot change
+    # what a run verifies to, and keeping them out keeps the token small.
+    stats_by_field = {}
+    for row in (corpus_stats or []):
+        name = str(row.get("field", "")).strip()
+        if name:
+            stats_by_field[name] = row
+    legend = []
+    for name in sorted({b["domain"] for b in field}):
+        row = stats_by_field.get(name)
+        legend.append({
+            "field": name,
+            "papers": int(row.get("papers", 0)) if row else 0,
+            "avg_score": float(row.get("avg_score", 0.0)) if row else None,
+        })
+    legend.sort(key=lambda r: (-r["papers"], r["field"]))
+
     return {
         "token": f"{encoded}.{_sign(encoded)}",
         "seed": seed,
         "field": field,
+        "legend": legend,
         "corpus": {
             "fields_with_papers": sum(1 for b in field if b["live"]),
             "total_papers": sum(int(e[1]) for e in overlay),

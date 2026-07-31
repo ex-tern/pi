@@ -1,7 +1,9 @@
 import sqlite3
 import hashlib
 import logging
-from config import DB_PATH, GENESIS_BLOCK_CONFIG
+from config import (
+    DB_PATH, GENESIS_BLOCK_CONFIG, DEPLOYMENT_FINGERPRINT, compute_genesis_hash,
+)
 
 _schema_initialized = False
 
@@ -193,11 +195,64 @@ def get_db_connection():
     cursor.execute("SELECT COUNT(*) FROM blockchain_por_weights")
     if cursor.fetchone()[0] == 0:
         g = GENESIS_BLOCK_CONFIG
-        block_hash = hashlib.sha256(f"{g['block_height']}{g['weights']}{g['timestamp']}{g['previous_hash']}{g['validator_node']}{g['por_proof']}{g['model_used']}{g['formulas_hash']}".encode("utf-8")).hexdigest()
+        block_hash = compute_genesis_hash(g)
         cursor.execute("""INSERT INTO blockchain_por_weights (block_height, w1, w2, w3, w4, w5, w6, w7, w8, timestamp, previous_hash, validator_node, block_hash, eval_hash, model_used, por_proof, formulas_hash) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (g["block_height"], *g["weights"], g["timestamp"], g["previous_hash"], g["validator_node"], block_hash, g["eval_hash"], g["model_used"], g["por_proof"], g["formulas_hash"]))
         conn.commit()
+    else:
+        _warn_on_genesis_mismatch(conn)
     return conn
+
+
+# Emitted once per process rather than on every connection: this runs on a hot
+# path and an unconditional warning would drown the log.
+_genesis_checked = False
+
+
+def _warn_on_genesis_mismatch(conn):
+    """Detects a chain whose root no longer matches this deployment's config.
+
+    The genesis block is derived from the owner wallet, token contract and
+    chain id. Those are configuration, and configuration changes — but the
+    chain root was written once, at first launch, and every later block hashes
+    onto it. So if someone rotates the owner or points at a new token contract
+    without resetting, the stored chain is still internally consistent while
+    silently belonging to the *previous* deployment identity.
+
+    That is exactly the ambiguity the derived genesis exists to remove, so it
+    must be surfaced loudly rather than passed over. This only reports; it
+    never rewrites history, because retroactively editing the root would
+    invalidate every block above it.
+    """
+    global _genesis_checked
+    if _genesis_checked:
+        return
+    _genesis_checked = True
+    try:
+        row = conn.execute(
+            "SELECT block_hash, por_proof FROM blockchain_por_weights "
+            "WHERE block_height = 1"
+        ).fetchone()
+    except sqlite3.Error:
+        return
+    if not row:
+        return
+
+    expected = compute_genesis_hash()
+    if row[0] == expected:
+        return
+
+    stored_fp = ""
+    if row[1] and ":" in str(row[1]):
+        stored_fp = str(row[1]).split(":", 1)[1][:16]
+    logging.warning(
+        "Proof-of-Research chain genesis does not match this deployment's configuration. "
+        "Stored root %s (deployment %s) vs expected %s (deployment %s). The existing chain "
+        "was created under a different owner wallet, token contract or network. History is "
+        "left untouched; run reset_state.py --yes to start a chain under the current identity.",
+        row[0][:16], stored_fp or "legacy",
+        expected[:16], DEPLOYMENT_FINGERPRINT[:16],
+    )
 
 
 def _account_keys(wallet: str = "", orcid: str = ""):

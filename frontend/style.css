@@ -740,3 +740,30 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   .arcade-canvas-wrap { height: min(60vh, 480px); }
   .arcade-hint { display: none; }
 }
+
+/* ---- Science Map side controls (merged from the analytics map) ---- */
+.arcade-controls-group {
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card-bg); padding: 10px 12px; box-shadow: var(--shadow);
+}
+.arcade-controls-group summary {
+  cursor: pointer; font-weight: 600; font-size: 12.5px;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.arcade-controls-group summary::marker { color: var(--faint); }
+.arcade-filter-summary { font-weight: 500; font-size: 11px; color: var(--faint); }
+.arcade-ctl-label {
+  display: flex; justify-content: space-between; align-items: center;
+  font-size: 11.5px; color: var(--muted); margin: 12px 0 4px;
+}
+.arcade-ctl-label output { font-weight: 600; color: var(--text); }
+.arcade-controls-group input[type="text"] { width: 100%; }
+.arcade-controls-group input[type="range"] { width: 100%; }
+.arcade-ctl-check {
+  display: flex; align-items: center; gap: 7px;
+  font-size: 12px; color: var(--text); margin: 10px 0;
+}
+.arcade-ctl-check input { margin: 0; }
+#arcadeLegendTable { font-size: 11.5px; margin-top: 8px; }
+#arcadeLegendTable tbody tr { cursor: pointer; }
+#arcadeLegendTable tbody tr:hover { background: var(--accent-soft); }

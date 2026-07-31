@@ -387,7 +387,42 @@
           </div>
 
           <aside class="arcade-side">
+            <details class="arcade-controls-group" open>
+              <summary>Filters <span class="arcade-filter-summary" id="arcadeFilterSummary">All fields</span></summary>
+              <label class="arcade-ctl-label" for="arcadeSearch">Search field</label>
+              <input type="text" id="arcadeSearch" placeholder="Filter by name…">
+              <label class="arcade-ctl-label">Minimum papers <output id="arcadeMinPapersOut">0</output></label>
+              <input type="range" id="arcadeMinPapers" min="0" max="20" step="1" value="0">
+              <label class="arcade-ctl-check">
+                <input type="checkbox" id="arcadeLiveOnly"> Only fields in my corpus
+              </label>
+              <button class="btn btn-outline btn-block" id="arcadeResetFilters">Reset filters</button>
+            </details>
+
+            <details class="arcade-controls-group">
+              <summary>Appearance</summary>
+              <label class="arcade-ctl-check">
+                <input type="checkbox" id="arcadeLabels" checked> Show field labels
+              </label>
+              <label class="arcade-ctl-check">
+                <input type="checkbox" id="arcadeMesh" checked> Show connections
+              </label>
+              <label class="arcade-ctl-label">Bubble scale <output id="arcadeScaleOut">1.0×</output></label>
+              <input type="range" id="arcadeScale" min="0.5" max="2" step="0.1" value="1">
+            </details>
+
             <div class="arcade-panel" id="arcadeDetail"></div>
+
+            <details class="arcade-controls-group" open>
+              <summary>Map legend &amp; data</summary>
+              <div class="table-wrap">
+                <table class="data-table" id="arcadeLegendTable">
+                  <thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </details>
+
             <p class="arcade-wallet" id="arcadeWallet">Win a run to earn free assessments.</p>
             <p class="arcade-controls">
               <strong>Explore:</strong> drag to pan, scroll or pinch to zoom, tap a field.<br>

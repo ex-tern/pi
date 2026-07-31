@@ -237,17 +237,68 @@ def config_summary():
         )
     return lines
 
+# ---------------------------------------------------------------------------
+# Genesis block
+#
+# The root of the Proof-of-Research chain is derived from the identity of this
+# deployment — its owner wallet, its piQ token contract, and the chain it
+# settles on — rather than being a fixed constant.
+#
+# Why: with a hardcoded genesis, every ScholarPi instance that ever existed
+# shares an identical chain root. Two exports from two different deployments
+# (or from the same deployment before and after a relaunch under a new owner
+# and a new token contract) are then cryptographically indistinguishable, and
+# the ledger cannot substantiate which instance produced a given record — which
+# is most of the point of keeping a chain at all.
+#
+# Deriving it means the root is still fully deterministic and reproducible by
+# anyone holding the same three public values, while being unique to this
+# deployment. Nothing secret goes into it: the admin private key is deliberately
+# excluded, so the fingerprint can be published and independently recomputed.
+DEPLOYMENT_FINGERPRINT = hashlib.sha256(
+    "|".join([
+        "ScholarPi-PoR-v1",
+        (OWNER_ID or "").lower(),
+        (PIQ_CONTRACT_ADDRESS or "").lower(),
+        str(CHAIN_ID),
+    ]).encode("utf-8")
+).hexdigest()
+
+RUBRIC_FORMULAS_HASH = hashlib.sha256(
+    b"C1:Semantic_Originality|C2:MDAR_Rigor|C3:Citation_Entropy|C4:Open_Infrastructure"
+    b"|C5:Containerized_Execution|C6:Citation_Polarity|C7:Empirical_Density"
+    b"|C8:Future_Actionability_FAIR|CoARA_Dossier_v2.0"
+).hexdigest()
+
 GENESIS_BLOCK_CONFIG = {
     "block_height": 1,
     "weights": [1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0, 1.0],
     "timestamp": "2026-01-01T00:00:00.000000",
+    # A genesis block has no parent, so the conventional all-zero parent hash
+    # is kept. Deployment identity lives in the fields below instead, which
+    # feed the block hash just the same.
     "previous_hash": "0" * 64,
-    "validator_node": "Validator_Pi_Genesis",
+    "validator_node": f"Validator_Pi_Genesis:{DEPLOYMENT_FINGERPRINT[:16]}",
     "eval_hash": "genesis",
     "model_used": "Genesis_Ensemble",
-    "por_proof": "Genesis_Proof_Anchor",
-    "formulas_hash": hashlib.sha256(b"C1:Semantic_Originality|C2:MDAR_Rigor|C3:Citation_Entropy|C4:Open_Infrastructure|C5:Containerized_Execution|C6:Citation_Polarity|C7:Empirical_Density|C8:Future_Actionability_FAIR|CoARA_Dossier_v2.0").hexdigest(),
+    "por_proof": f"Genesis_Proof_Anchor:{DEPLOYMENT_FINGERPRINT}",
+    "formulas_hash": RUBRIC_FORMULAS_HASH,
 }
+
+
+def compute_genesis_hash(g=None) -> str:
+    """The genesis block hash for a given config.
+
+    Kept here, next to the config it consumes, so the ledger writer and any
+    integrity check derive the hash from one definition instead of two copies
+    of the same concatenation drifting apart.
+    """
+    g = g or GENESIS_BLOCK_CONFIG
+    return hashlib.sha256(
+        f"{g['block_height']}{g['weights']}{g['timestamp']}{g['previous_hash']}"
+        f"{g['validator_node']}{g['por_proof']}{g['model_used']}{g['formulas_hash']}"
+        .encode("utf-8")
+    ).hexdigest()
 
 HOT_TOPICS = [
     "Quantum Error Correction", "Generative AI in Oncology", "CRISPR-Cas12 Therapeutics",
