@@ -7,6 +7,26 @@ let ownerWallet = "";
 // ---------------------------------------------------------------------------
 // Session state (replaces Streamlit's st.session_state, persisted in the browser)
 // ---------------------------------------------------------------------------
+// Every call to our own API carries the session token, so the server can act
+// on a PROVEN identity rather than a claimed one. Wrapping fetch is what makes
+// that unconditional — an endpoint added later cannot forget to send it.
+const _rawFetch = window.fetch.bind(window);
+window.fetch = function (input, init) {
+  try {
+    const url = typeof input === "string" ? input : (input && input.url) || "";
+    const sameOrigin = url.startsWith("/") || url.startsWith(API) ||
+                       url.startsWith(window.location.origin);
+    const token = localStorage.getItem("sp_token") || "";
+    if (token && sameOrigin && url.includes("/api/")) {
+      init = init || {};
+      const headers = new Headers(init.headers || (typeof input === "object" ? input.headers : undefined));
+      if (!headers.has("Authorization")) headers.set("Authorization", "Bearer " + token);
+      init = { ...init, headers };
+    }
+  } catch (_) { /* never let auth plumbing break a request */ }
+  return _rawFetch(input, init);
+};
+
 const Session = {
   get wallet() { return localStorage.getItem("sp_wallet") || ""; },
   set wallet(v) { v ? localStorage.setItem("sp_wallet", v) : localStorage.removeItem("sp_wallet"); },
@@ -44,6 +64,13 @@ function bootstrapFromQueryParams() {
     Session.wallet = params.get("wallet");
     changed = true;
   }
+  if (params.has("token")) {
+    // Stored, then stripped from the URL by the replaceState below, so a
+    // session token does not linger in browser history or get shared when
+    // someone copies the address bar.
+    localStorage.setItem("sp_token", params.get("token"));
+    changed = true;
+  }
   if (params.has("orcid_error")) {
     alert("ORCID authentication error: " + params.get("orcid_error"));
     changed = true;
@@ -54,7 +81,7 @@ function bootstrapFromQueryParams() {
 // ---------------------------------------------------------------------------
 // Contextual help. Every major section carries a circled "?" that explains
 // the idea behind it, so the interface is self-documenting rather than
-// assuming the reader already knows what piX, piQ or Pidyne mean.
+// assuming the reader already knows what piX, piQ or pi-Dyne mean.
 // ---------------------------------------------------------------------------
 const HELP = {
   intake: {
@@ -70,14 +97,14 @@ const HELP = {
           to ten papers at once.</li>
       </ul>
       <p>Every processed manuscript writes a Proof-of-Research block, which is what makes the
-      Pidyne forecast on the Analytics tab possible.</p>`,
+      pi-Dyne forecast on the Analytics tab possible.</p>`,
   },
   assess: {
     title: "How Assessment Works",
     body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
       several large language models — Llama, Mistral, Qwen and Gemini — while the local Scilem
       engine performs deterministic structural analysis in parallel.</p>
-      <p>The <strong>Pidyne engine</strong> then adjudicates a single verdict from the panel's
+      <p>The <strong>pi-Dyne engine</strong> then adjudicates a single verdict from the panel's
       independent assessments. Because the jurors come from different providers, agreement between
       them carries real information.</p>
       <p><strong>The limit of that claim, stated plainly:</strong> these models share overlapping
@@ -126,17 +153,17 @@ const HELP = {
   },
   analytics: {
     title: "Analytics & Map",
-    body: `<p>Corpus-level views of everything assessed so far: the Pidyne forecast of where
+    body: `<p>Corpus-level views of everything assessed so far: the pi-Dyne forecast of where
       evaluation weight is heading, a network map of the scientific fields represented, and the
       two leaderboards ranking papers by piX and authors by piQ.</p>`,
   },
   pidyne: {
-    title: "The Pidyne Forecast",
+    title: "The pi-Dyne Forecast",
     body: `<p>The eight Pi-Index criteria are not weighted equally forever. Every time a manuscript
       is assessed, a Proof-of-Research block records the criteria weighting that paper's evidence
       profile implies: criteria the corpus consistently evidences well gain weight, sparsely
       evidenced ones lose it.</p>
-      <p><strong>Pidyne</strong> is an LSTM neural network trained on that recorded sequence of
+      <p><strong>pi-Dyne</strong> is an LSTM neural network trained on that recorded sequence of
       block weights. It learns the trajectory the corpus is on and projects where the weighting
       lands in the next epoch.</p>
       <h4>Reading the chart</h4>
@@ -292,7 +319,7 @@ const HELP = {
     title: "Framework Architecture",
     body: `<p>The flowchart traces a manuscript end to end: intake and identity verification,
       text extraction and deterministic scoring, independent assessment by the model panel,
-      Pidyne adjudication, and Proof-of-Research settlement on Sepolia.</p>
+      pi-Dyne adjudication, and Proof-of-Research settlement on Sepolia.</p>
       <p>Colour indicates the stage a step belongs to; see the legend above the diagram.</p>`,
   },
   integrity: {
@@ -708,9 +735,21 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
     });
     const data = await res.json();
     Session.wallet = data.address;
-    statusEl.textContent = "";
+
+    // The token is the only thing that grants access to your own records.
+    // Without a valid signature the server issues none, so say so plainly
+    // rather than showing a connected-looking sidebar that cannot do anything.
+    if (data.token) {
+      localStorage.setItem("sp_token", data.token);
+      statusEl.textContent = "";
+    } else {
+      localStorage.removeItem("sp_token");
+      statusEl.textContent = data.detail
+        || "Connected, but not signed in — signature verification failed.";
+    }
     renderSidebar();
     loadChainStatus();
+    refreshSessionState();
   } catch (e) {
     clearTimeout(hintTimer);
     if (e && e.code === -32002) {
@@ -2571,7 +2610,7 @@ async function showDefenseModal(idx) {
 }
 
 // ---------------------------------------------------------------------------
-// ANALYTICS TAB — Pidyne forecast
+// ANALYTICS TAB — pi-Dyne forecast
 // ---------------------------------------------------------------------------
 let forecastChart = null;
 const CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
@@ -2672,7 +2711,7 @@ async function loadForecast() {
   const heading = document.getElementById("criteriaHeading");
 
   const lookback = document.getElementById("lookbackSelect").value;
-  msg.textContent = "Training Pidyne LSTM on recorded ledger weights…";
+  msg.textContent = "Training pi-Dyne LSTM on recorded ledger weights…";
   [empty, chartWrap, metaBox, insight, table, heading].forEach(el => el.classList.add("hidden"));
 
   try {
@@ -2942,7 +2981,7 @@ async function loadForecast() {
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
       <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
       <div class="fm-item"><span>Method</span><strong>${
-        data.method === "holt-linear-trend" ? "Statistical" : "Pidyne LSTM"}</strong></div>
+        data.method === "holt-linear-trend" ? "Statistical" : "pi-Dyne LSTM"}</strong></div>
       <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>`;
 
     if (data.interpretation) {
@@ -3428,7 +3467,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   CANARY --> ${jurorChain}
   PARSE --> L5
 
-  subgraph S4["4 · Pidyne adjudication"]
+  subgraph S4["4 · pi-Dyne adjudication"]
     direction TB
     SYN["Evidence synthesis"]:::judge
     AGREE["Inter-model agreement"]:::judge
@@ -3484,7 +3523,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   subgraph S7["7 · Outputs"]
     direction LR
     DOSS["Dossier<br/>per-signal attribution"]:::ui
-    FORE["Pidyne forecast<br/>Holt default · LSTM optional"]:::ui
+    FORE["pi-Dyne forecast<br/>Holt default · LSTM optional"]:::ui
     MAPS["Map of science<br/>fields from dossiers"]:::ui
     BOARD["piX / piQ boards"]:::ui
     DEF["GA rebuttal strategy"]:::ui
@@ -3971,7 +4010,33 @@ function initSidebar() {
   }, 150));
 }
 
+/** Ask the server what this browser has actually proven. */
+let sessionState = { verified: false, two_factor: false, is_owner: false };
+async function refreshSessionState() {
+  try {
+    sessionState = await (await fetch(`${API}/api/auth/session`)).json();
+  } catch (_) {
+    sessionState = { verified: false, two_factor: false, is_owner: false };
+  }
+  const badge = document.getElementById("authBadge");
+  if (!badge) return;
+  if (!sessionState.verified) {
+    badge.textContent = "Not signed in";
+    badge.className = "pill pill-muted";
+    badge.title = sessionState.note || "Connect a wallet and sign, or link ORCID.";
+    return;
+  }
+  const proofs = [];
+  if (sessionState.wallet) proofs.push("wallet signature");
+  if (sessionState.orcid) proofs.push("ORCID");
+  badge.textContent = sessionState.two_factor ? "Verified ×2" : "Verified";
+  badge.className = sessionState.two_factor ? "pill q-high" : "pill q-mod";
+  badge.title = "Proven by: " + proofs.join(" + ")
+    + (sessionState.is_owner ? " · owner" : "");
+}
+
 bootstrapFromQueryParams();
+refreshSessionState();
 renderSidebar();
 loadChainStatus();
 loadEmissionStatus();

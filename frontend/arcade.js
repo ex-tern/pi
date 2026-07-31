@@ -113,10 +113,17 @@
   }
 
   function renderAuthorOptions() {
-    const list = document.getElementById("arcadeAuthorList");
+    // A <select>, not a text input with a datalist. A datalist looks like a
+    // free-text box, so it invites typing a name that is not in the corpus and
+    // then silently returns nothing — the filter appears broken when it is
+    // simply reporting an empty result. A select can only offer authors that
+    // actually exist in the assessed corpus.
+    const list = document.getElementById("arcadeAuthor");
     if (!list) return;
-    list.innerHTML = state.authors
-      .map(a => `<option value="${escapeHtml(a)}"></option>`).join("");
+    const current = list.value;
+    list.innerHTML = `<option value="">Any author</option>` + state.authors
+      .map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
+    list.value = state.authors.includes(current) ? current : "";
     const wrap = document.getElementById("arcadeAuthorWrap");
     // Hiding the control when the corpus has no authors is more honest than
     // showing a filter that can only ever return nothing.

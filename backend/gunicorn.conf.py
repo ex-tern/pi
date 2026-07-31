@@ -5,7 +5,6 @@ Gunicorn config for production. Run from backend/:
 Overridable via environment variables so the same image works across
 different instance sizes without an edit.
 """
-import multiprocessing
 import os
 
 bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"

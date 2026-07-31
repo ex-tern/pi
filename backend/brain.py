@@ -92,12 +92,10 @@ def torch_available() -> bool:
     import importlib.util
     return importlib.util.find_spec("torch") is not None
 
-try:
-    from openrouter import OpenRouter
-    OPENROUTER_SDK_AVAILABLE = True
-except Exception:
-    OpenRouter = None
-    OPENROUTER_SDK_AVAILABLE = False
+# NOTE: the `openrouter` SDK was imported here and never used. OpenRouter is
+# reached through the OpenAI-compatible client like every other provider, so
+# the package was installed on every deploy to support nothing. Removed from
+# both this module and requirements.txt.
 
 from config import (
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY,
@@ -110,7 +108,7 @@ from ledger import (
     validate_block_por, generate_blockchain_pi
 )
 from integrations import (
-    clean_author_name, is_likely_institution, fetch_legacy_author_metrics,
+    clean_author_name, fetch_legacy_author_metrics,
     measure_legacy_citation_entropy
 )
 from scientometrics import (
@@ -120,7 +118,7 @@ from scientometrics import (
     fetch_author_metrics,
 )
 from rubric import (
-    apply_scoring_rubric, explain_all_criteria, compute_composite_score, CRITERIA_ORDER as RUBRIC_CRITERIA_ORDER,
+    apply_scoring_rubric, explain_all_criteria, compute_composite_score, CRITERIA_ORDER as
     RUBRIC_VERSION,
 )
 from security import (
@@ -130,7 +128,7 @@ from security import (
 from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
 from attribution import verify_authorship
 from providers import (
-    build_routes, classify_provider_error, redact_provider_text, provider_configuration,
+    build_routes, classify_provider_error, redact_provider_text,
     is_route_cooling, record_rate_limit, record_success, parse_retry_after,
 )
 from emission import compute_piq_emission, emission_manifest
@@ -464,17 +462,101 @@ def parse_model_json(content: str):
                 continue
     return None
 
+# Section headings, in the order a manuscript conventionally uses them.
+# Matched case-insensitively at a line start, optionally numbered ("3. Methods",
+# "IV. RESULTS"), which is how they actually appear in extracted PDF text.
+_EXCERPT_SECTIONS = {
+    "abstract": [r"abstract", r"summary"],
+    "methods": [r"methods?", r"materials and methods", r"methodology",
+                r"experimental (?:section|procedures?|setup)", r"study design"],
+    "results": [r"results?", r"findings", r"results and discussion"],
+    "discussion": [r"discussion", r"limitations?", r"conclusions?", r"concluding remarks"],
+    "references": [r"references", r"bibliography", r"works cited", r"literature cited"],
+}
+
+# Character budget per section. Methods and results get the most because that
+# is where the criteria the panel is asked about actually live — a reviewer
+# cannot judge methodological rigour from a title page.
+_SECTION_BUDGET = {
+    "front": 2000, "abstract": 2000, "methods": 6000,
+    "results": 5000, "discussion": 3000, "references": 2500,
+}
+
+
+def _find_sections(paper_text: str) -> dict:
+    """Byte offsets of each recognised section heading."""
+    found = {}
+    for name, patterns in _EXCERPT_SECTIONS.items():
+        for pat in patterns:
+            m = re.search(
+                rf"^\s*(?:\d+[.)]?\s*|[IVXLC]+[.)]\s*)?{pat}\s*:?\s*$",
+                paper_text, re.IGNORECASE | re.MULTILINE)
+            if m:
+                # Keep the earliest match for a section, except references,
+                # where the LAST occurrence is the real bibliography (earlier
+                # ones are in-text mentions of the word).
+                if name == "references":
+                    for m2 in re.finditer(
+                            rf"^\s*(?:\d+[.)]?\s*)?{pat}\s*:?\s*$",
+                            paper_text, re.IGNORECASE | re.MULTILINE):
+                        m = m2
+                if name not in found or m.start() < found[name]:
+                    found[name] = m.start()
+                break
+    return found
+
+
+def build_assessment_excerpt(paper_text: str) -> str:
+    """Assemble a section-aware excerpt for the model panel.
+
+    This replaces sending the first 3,000 characters plus the reference list.
+    That selection meant the panel never saw the methods, the results, or the
+    discussion — it was being asked to judge methodological rigour and
+    empirical density from a title page and a bibliography, and then its
+    verdict was weighted into criteria those sections define. The models were
+    not performing badly; they were being shown the wrong part of the paper.
+
+    Sections are located by heading and sampled within a per-section budget,
+    so a long methods section is represented rather than truncated away by a
+    front-loaded character cap. When no headings can be found — a scanned PDF,
+    an unconventional layout — this degrades to a head-and-tail sample, which
+    is no worse than the previous behaviour.
+    """
+    if not paper_text:
+        return ""
+
+    marks = _find_sections(paper_text)
+    ordered = sorted(marks.items(), key=lambda kv: kv[1])
+
+    parts = [("FRONT MATTER", paper_text[:_SECTION_BUDGET["front"]])]
+
+    if not ordered:
+        # No recognisable structure: head and tail, and say so, so the panel
+        # can report that a criterion was not judgeable rather than guessing.
+        parts.append(("BODY (no section headings detected; sampled)",
+                      paper_text[_SECTION_BUDGET["front"]:_SECTION_BUDGET["front"] + 8000]))
+        parts.append(("END OF DOCUMENT", paper_text[-4000:]))
+    else:
+        bounds = [start for _, start in ordered] + [len(paper_text)]
+        for i, (name, start) in enumerate(ordered):
+            budget = _SECTION_BUDGET.get(name, 2500)
+            end = min(bounds[i + 1], start + budget)
+            body = paper_text[start:end].strip()
+            # Keep any section that has content beyond its own heading line.
+            # A flat character minimum also discarded genuinely short sections —
+            # a five-entry reference list is 34 characters and was being thrown
+            # away, taking the panel's only view of the bibliography with it.
+            content = "\n".join(body.split("\n")[1:]).strip()
+            if content:
+                parts.append((name.upper(), body))
+        if "references" not in marks:
+            parts.append(("END OF DOCUMENT (no reference section found)", paper_text[-3000:]))
+
+    return "\n\n".join(f"--- {label} ---\n{body}" for label, body in parts if body.strip())
+
+
 def build_assessment_prompt(paper_text, canary=""):
-    front_matter = paper_text[:3000]
-    lower_text = paper_text.lower()
-    ref_section = ""
-    for keyword in ["references", "bibliography", "works cited"]:
-        idx = lower_text.rfind(keyword)
-        if idx != -1:
-            ref_section = paper_text[idx:idx+4000]
-            break
-    if not ref_section:
-        ref_section = paper_text[-4000:]
+    excerpt = build_assessment_excerpt(paper_text)
 
     guard = build_security_directive(canary) if canary else ""
 
@@ -510,11 +592,11 @@ Required JSON keys:
 6. "concerns": array of up to 3 short strings — specific, actionable methodological concerns.
 7. "references": array of up to 10 objects {{"citation": "[1]", "authors": "...", "year": "2024"}}
 
---- FRONT MATTER ---
-{front_matter}
+The manuscript is provided below as labelled excerpts. Each section is truncated to a budget, so
+absence of detail may reflect truncation rather than the manuscript omitting it — where that is
+possible, say the criterion could not be judged rather than scoring it low.
 
---- REFERENCES SECTION ---
-{ref_section}
+{excerpt}
 """
 
 def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
@@ -698,7 +780,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
         tier, confidence = "Strong", 0.90 + min(0.08, 0.02 * (n_external - 3))
         rationale = (
             f"{n_external} independent external LLMs plus the local Scilem engine each assessed this "
-            f"manuscript separately, and the Pidyne engine adjudicated their combined evidence. "
+            f"manuscript separately, and the pi-Dyne engine adjudicated their combined evidence. "
             f"The jurors come from different providers and model families, so their errors are "
             f"partly independent and agreement carries real information. Note the limit of this: "
             f"these models share overlapping training corpora and architectures, so agreement "
@@ -839,7 +921,7 @@ def collect_panel_lists(consensus_results, field: str, heading: str) -> str:
     return f"\n#### {heading}\n\n" + "\n".join(items[:8]) + "\n"
 
 def adjudicate_panel_verdict(consensus_results, text=None):
-    prompt = "You are the Pidyne Assessment Engine. Review these independent model assessments:\n\n"
+    prompt = "You are the pi-Dyne Assessment Engine. Review these independent model assessments:\n\n"
     active_count = 0
     for provider, data in consensus_results.items():
         if provider.startswith("_"):

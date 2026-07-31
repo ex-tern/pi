@@ -186,7 +186,7 @@ every push/PR.
 |---|---|
 | Sidebar (wallet, ORCID, live logs, Scilem chat) | `frontend/index.html` sidebar + `/api/auth/*`, `/api/logs`, `/api/scilem/*` |
 | Assess Manuscript (local PDF or DOI lookup) | "Assess Manuscript" tab + `POST /api/assess/stream` (NDJSON progress stream) |
-| Pidyne LSTM forecast | "Analytics & Map" tab + `GET /api/forecast` |
+| pi-Dyne LSTM forecast | "Analytics & Map" tab + `GET /api/forecast` |
 | Map of Science | Same tab, rendered client-side with `vis-network` from `GET /api/analytics/map` |
 | piQ Leaderboard / piX Top Papers | `GET /api/analytics/leaderboard`, `GET /api/analytics/top-papers` |
 | Ledger Explorer (search + full dossier, tx linked to Etherscan) | "Ledger Explorer" tab + `GET /api/explorer/search`, `/latest`, `/dossier/{hash}`, `/tx-url` |

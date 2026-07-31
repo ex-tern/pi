@@ -63,7 +63,7 @@ def main():
     parser.add_argument("--dry-run", action="store_true",
                         help="Report what would be deleted and exit.")
     parser.add_argument("--keep-model", action="store_true",
-                        help="Preserve trained Scilem/Pidyne weights.")
+                        help="Preserve trained Scilem/pi-Dyne weights.")
     args = parser.parse_args()
 
     conn = get_db_connection()

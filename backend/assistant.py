@@ -88,7 +88,7 @@ def _concepts() -> Dict[str, Dict]:
             "answer": (
                 "A manuscript is never scored by one model. It is sent independently to several "
                 "large language models, while a deterministic structural analyser runs in "
-                "parallel. The **Pidyne engine** then adjudicates their combined evidence.\n\n"
+                "parallel. The **pi-Dyne engine** then adjudicates their combined evidence.\n\n"
                 "Because the jurors come from different providers and training corpora, their "
                 "errors are largely uncorrelated — so agreement between them is real evidence "
                 "rather than repetition. Judgement quality is graded from how many independent "
@@ -162,7 +162,7 @@ def _concepts() -> Dict[str, Dict]:
             "answer": (
                 "The eight criteria are not weighted equally forever. Every assessment writes a "
                 "Proof-of-Research block recording the criteria weighting that paper's evidence "
-                "profile implies. The **Pidyne** forecaster learns that recorded sequence and "
+                "profile implies. The **pi-Dyne** forecaster learns that recorded sequence and "
                 "projects where the weighting lands next epoch.\n\n"
                 "Solid lines on the chart are observed weights; the dashed segment is the "
                 "forecast. The eight weights always sum to 8.0, so a criterion above 1.0 is being "

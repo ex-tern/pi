@@ -37,11 +37,10 @@ import logging
 from collections import Counter
 from typing import Dict, List, Optional, Tuple
 
-import requests
 
 from integrations import clean_author_name, is_likely_institution
 from http_client import (
-    fetch_json, run_bounded, doi_cache, author_cache, work_cache, DEFAULT_TIMEOUT,
+    fetch_json, run_bounded, doi_cache, author_cache, work_cache,
 )
 
 OPENALEX_BASE = "https://api.openalex.org"
