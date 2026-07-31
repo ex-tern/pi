@@ -480,10 +480,34 @@ def get_piq_balance(wallet: str = "", orcid: str = "") -> dict:
     net = get_piq_ledger_net(wallet, orcid)
     # Rounded to 4dp so accumulated float error across many 0.1 debits can't
     # leave a drained account at -4e-15 and wrongly fail an affordability check.
+    # Held piQ is reported alongside the balance but is NOT part of it: it has
+    # been earned and not yet credited to a proven author, so it cannot be
+    # spent. Returning it here is what lets every "insufficient balance"
+    # message say "…and you have X held, claim it first" instead of leaving
+    # someone staring at 0.00 while the interface shows them 31.35 elsewhere.
+    held = 0.0
+    keys = _account_keys(wallet, orcid)
+    if keys:
+        accounts = [a for _, a in keys]
+        ph = ",".join("?" for _ in accounts)
+        conn = get_db_connection()
+        try:
+            row = conn.execute(
+                f"""SELECT COALESCE(SUM(piq_escrowed), 0) FROM papers_assessment
+                    WHERE piq_claimed_at IS NULL
+                      AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+                (*accounts, *accounts)).fetchone()
+            held = round(float(row[0] or 0.0), 4)
+        except sqlite3.Error:
+            held = 0.0
+        finally:
+            conn.close()
+
     return {
         "minted": minted,
         "fees_paid": round(max(0.0, -net), 4),
         "balance": round(minted + net, 4),
+        "held": held,
     }
 
 

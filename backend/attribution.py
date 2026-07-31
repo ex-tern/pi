@@ -257,6 +257,14 @@ def verify_authorship(*, submitter_orcid: str = "", submitter_wallet: str = "",
     except Exception as e:
         logging.debug("ORCID profile lookup failed for %s: %s", orcid, e)
 
+    # Record what was compared, so a refusal is diagnosable. "Your name does
+    # not match" is unactionable when the user can see their own name on the
+    # paper — the useful information is which two strings were compared, and
+    # extraction errors mean the second one is often not what they expect.
+    result["compared"] = {
+        "your_orcid_name": profile_name or None,
+        "extracted_authors": author_list or [],
+    }
     if profile_name and author_list:
         for candidate in author_list:
             if names_match(profile_name, candidate):
@@ -279,13 +287,20 @@ def verify_authorship(*, submitter_orcid: str = "", submitter_wallet: str = "",
         )
         return result
 
+    # Name BOTH sides of the comparison. "Your name does not match" is
+    # unactionable when the user can see their own name printed on the paper —
+    # the useful information is which two strings were actually compared, and
+    # PDF byline extraction is imperfect often enough that the second one is
+    # frequently not what they expect.
+    shown = ", ".join(author_list[:3]) + ("…" if len(author_list) > 3 else "")
     result["reason"] = (
-        f"Your ORCID profile name does not match any author on this manuscript "
-        f"({', '.join(author_list[:3])}{'…' if len(author_list) > 3 else ''}). The assessment is "
-        f"recorded and publicly visible, but piQ is minted only to a paper's own authors."
+        f"Your ORCID profile name ({profile_name or 'could not be read'}) does not match any "
+        f"author extracted from this manuscript ({shown or 'none found'}). The assessment is "
+        f"recorded and its piQ is held, but piQ settles only to a paper's own authors."
     )
     result["how_to_verify"] = (
-        "If you are an author, check that your ORCID profile name matches your published byline, "
-        "or submit with a DOI whose deposited record includes your ORCID."
+        "If your name is on the paper but not in that list, the byline was misread — resubmit "
+        "with the DOI, which uses the publisher's deposited author record instead of reading the "
+        "PDF. Otherwise, check that your ORCID profile name matches your published byline."
     )
     return result

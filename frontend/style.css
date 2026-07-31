@@ -1298,3 +1298,5 @@ a.btn { text-decoration: none; display: inline-block; }
   padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
 .p-llm-reviewed { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
 .p-peer-reviewed { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }
+.p-piq-held { background: var(--warn-bg); color: var(--warn); }
+.held-note { color: var(--warn); font-weight: 600; }

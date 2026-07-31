@@ -762,11 +762,63 @@ document.getElementById("connectMmBtn").addEventListener("click", async () => {
   }
 });
 
+/** Reconcile the remembered wallet with MetaMask's actual permission state.
+ *
+ *  The address was persisted in localStorage and restored on every load, so the
+ *  app reported itself connected to a wallet MetaMask had never been asked
+ *  about in this session — and `accountsChanged` then kept topping it up. It
+ *  looked like MetaMask auto-connecting; it was the page remembering.
+ *
+ *  `eth_accounts` is the silent query: it returns only accounts the user has
+ *  ALREADY authorised for this site and never opens a prompt. If the
+ *  remembered address is not among them, the memory is stale and is dropped —
+ *  along with the session token, which was issued against that address and
+ *  would otherwise keep asserting an identity the wallet no longer backs.
+ */
+async function reconcileWalletConnection() {
+  const remembered = Session.wallet;
+  if (!remembered) return;
+  if (!window.ethereum || !window.ethereum.request) {
+    // No wallet provider in this browser at all, so nothing can back the claim.
+    Session.wallet = "";
+    renderSidebar();
+    return;
+  }
+  try {
+    const accounts = await window.ethereum.request({ method: "eth_accounts" });
+    const authorised = (accounts || []).map(a => String(a).toLowerCase());
+    if (!authorised.includes(String(remembered).toLowerCase())) {
+      Session.wallet = "";
+      try { localStorage.removeItem("sp_token"); } catch (_) {}
+      renderSidebar();
+      refreshSessionState();
+    }
+  } catch (_) {
+    // A provider that refuses to answer is not evidence of a connection.
+    Session.wallet = "";
+    renderSidebar();
+  }
+}
+
 if (window.ethereum && window.ethereum.on) {
   window.ethereum.on("chainChanged", () => { refreshWalletNetwork(); loadChainStatus(); });
   window.ethereum.on("accountsChanged", (accounts) => {
-    if (!accounts || !accounts.length) { Session.wallet = ""; }
-    else if (Session.hasWeb3()) { Session.wallet = accounts[0]; }
+    const next = (accounts && accounts[0]) ? String(accounts[0]).toLowerCase() : "";
+    const current = String(Session.wallet || "").toLowerCase();
+    if (!next) {
+      // Disconnected in MetaMask. Sign out fully rather than leaving a valid
+      // token behind for an account the user just revoked.
+      signOut();
+      return;
+    }
+    if (current && next !== current) {
+      // A DIFFERENT account is now active. The session token is bound to the
+      // old address, so silently adopting the new one would leave the page
+      // showing one identity while the server authorises another. Sign out and
+      // let them connect deliberately.
+      signOut();
+      return;
+    }
     renderSidebar();
   });
 }
@@ -1927,6 +1979,11 @@ function handleStreamLine(obj, statusBox) {
     renderResults();
   } else if (obj.type === "done") {
     statusBox.innerHTML += `<div class="status-line status-done">${escapeHtml(obj.message || "Complete.")}</div>`;
+    // The rows are committed by the time "done" arrives. Refreshing here as
+    // well as in the finally block covers the case where the stream ends
+    // without the request settling — an aborted run still wrote its papers.
+    loadAssessmentHistory();
+    loadEmissionStatus();
   }
   statusBox.scrollTop = statusBox.scrollHeight;
 }
@@ -2021,8 +2078,23 @@ function renderResultCard(item, idx) {
         <div class="result-author">${escapeHtml(item.author_name || "Unidentified author")}</div>
         <div class="result-pills">
           <span class="pill p-score">piX ${fmtNum(item.score, 1)}</span>
-          <span class="pill p-piq ${Number(item.piq || 0) > 0 ? "p-piq-earned" : "p-piq-none"}"
-            title="${escapeHtml(rewardExplanation(item))}">piQ ${fmtNum(Number(item.piq || 0), 2, "0.00")}</span>
+          ${(() => {
+        const minted = Number(item.piq || 0);
+        const held = Number((item.emission || {}).escrowed || 0);
+        // A bare "piQ 0.00" next to a warning that piQ is held reads as a
+        // contradiction. Show the held figure on the pill itself.
+        if (minted > 0) {
+          return `<span class="pill p-piq p-piq-earned"
+            title="${escapeHtml(rewardExplanation(item))}">piQ ${minted.toFixed(2)}</span>`;
+        }
+        if (held > 0) {
+          return `<span class="pill p-piq p-piq-held"
+            title="Earned but held until authorship is verified. ${escapeHtml(rewardExplanation(item))}"
+            >piQ ${held.toFixed(2)} held</span>`;
+        }
+        return `<span class="pill p-piq p-piq-none"
+          title="${escapeHtml(rewardExplanation(item))}">piQ 0.00</span>`;
+      })()}
           ${qualityPill(meta)}
           ${integrityPills(item)}
           ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
@@ -2054,6 +2126,11 @@ async function showReviewModal(hash) {
     <h2>Request a review</h2>
     <p class="hint">Two different things, priced differently and badged differently. A reader can
     tell them apart, which is the point.</p>
+    <p class="hint">Spendable balance: <strong>${Number(piqState.balance || 0).toFixed(2)} piQ</strong>${
+      Number(piqState.held || 0) > 0
+        ? ` · <span class="held-note">${Number(piqState.held).toFixed(2)} piQ held</span> —
+            held piQ cannot be spent until you claim it from Your assessments.`
+        : ""}</p>
 
     <div class="opt-card">
       <div class="opt-head"><strong>Peer review</strong>
@@ -2081,7 +2158,16 @@ async function showReviewModal(hash) {
     </div>
     <div class="profile-msg" id="reviewMsg"></div>`);
 
-  const post = async (path, label) => {
+  const post = async (path, label, cost) => {
+    // Confirm before spending. piQ is earned slowly and an accidental click
+    // should not cost a paper's worth of it.
+    if (!confirm(`Request ${label}?\n\nThis costs ${Number(cost).toFixed(2)} piQ`
+                 + (label === "peer review"
+                    ? ", paid in full to the researcher who completes the review."
+                    : ".")
+                 + `\n\nYour spendable balance: ${Number(piqState.balance || 0).toFixed(2)} piQ`)) {
+      return;
+    }
     const msg = document.getElementById("reviewMsg");
     msg.textContent = "Working…";
     try {
@@ -2096,9 +2182,9 @@ async function showReviewModal(hash) {
     } catch (e) { msg.textContent = `Could not request ${label}: ${e.message}`; }
   };
   const p1 = document.getElementById("reqPeer");
-  if (p1) p1.addEventListener("click", () => post("/review/request", "peer review"));
+  if (p1) p1.addEventListener("click", () => post("/review/request", "peer review", peerFee));
   const p2 = document.getElementById("reqLlm");
-  if (p2) p2.addEventListener("click", () => post("/review/llm", "LLM review"));
+  if (p2) p2.addEventListener("click", () => post("/review/llm", "LLM review", llmFee));
 }
 
 /** Publish options. Submit stays disabled until authorship is proven. */
@@ -2116,7 +2202,7 @@ async function showPublishModal(hash) {
 
   openModal(`
     <h2>Publish this assessment</h2>
-    <p class="hint">Publishing attaches your name to the assessment publicly. It is not a claim
+    <p class="hint">Publishing attaches a badge to the assessment publicly. It is not a claim
     of peer review.</p>
 
     <div class="opt-card ${may ? "" : "opt-locked"}">
@@ -3384,7 +3470,7 @@ async function loadAnalyticsSummary() {
     const label = piqEl.parentElement && piqEl.parentElement.querySelector(".stat-label");
     if (label) {
       label.innerHTML = held > 0
-        ? `Total piQ Earned<br><span class="stat-sub">${data.total_piq.toFixed(2)} settled · ${held.toFixed(2)} held</span>`
+        ? `Total piQ Minted<br><span class="stat-sub">${data.total_piq.toFixed(2)} settled · ${held.toFixed(2)} held</span>`
         : "Total piQ Minted";
     }
     document.getElementById("statAvgScore").textContent = data.total_papers ? data.avg_score.toFixed(1) : "–";
@@ -4568,6 +4654,7 @@ function signOut() {
 
 bootstrapFromQueryParams();
 refreshSessionState();
+reconcileWalletConnection();
 
 renderSidebar();
 loadChainStatus();

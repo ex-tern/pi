@@ -586,6 +586,7 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
     fee = resolve_active_fee()
     return {
         "total_piq": bal["minted"],
+        "held": bal.get("held", 0.0),
         "minted": bal["minted"],
         "fees_paid": bal["fees_paid"],
         "balance": bal["balance"],
@@ -1437,6 +1438,7 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
         "fee": fee,
         "fee_already_paid": already_paid,
         "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+        "held": get_piq_balance(identity["wallet"], identity["orcid"]).get("held", 0.0),
         "reason": ("" if verified else
                    (attribution.get("reason") or "Authorship is not verified for this paper.")),
         "how_to_fix": None if verified else attribution.get("how_to_verify"),
@@ -1517,13 +1519,16 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
 
     fee = publication_fee(safe_float(row[4], 0.0))["fee"]
     if fee > 0 and not publication_fee_paid(file_hash, identities):
-        balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
-        if balance + 1e-9 < fee:
+        bal = get_piq_balance(identity["wallet"], identity["orcid"])
+        if bal["balance"] + 1e-9 < fee:
             raise HTTPException(
                 status_code=402,
-                detail=(f"Publishing costs {fee:.2f} piQ and your balance is {balance:.2f} piQ. "
-                        f"Claim the piQ held for your assessed papers, or have more of your work "
-                        f"assessed."))
+                detail=(f"Publishing costs {fee:.2f} piQ and your balance is "
+                        f"{bal['balance']:.2f} piQ."
+            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
+               f" not yet verified — claim those first and this becomes affordable."
+               if bal.get("held") else
+               " Have your own work assessed to earn piQ.")))
         if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
                               eval_hash=file_hash, reason="Publication fee"):
             raise HTTPException(status_code=402, detail="The publication fee could not be charged.")
@@ -1666,12 +1671,16 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
 
     key = _profile_key(identity["wallet"], identity["orcid"])
     fee = peer_review_fee()["fee"]
-    balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
-    if balance + 1e-9 < fee:
+    bal = get_piq_balance(identity["wallet"], identity["orcid"])
+    if bal["balance"] + 1e-9 < fee:
         raise HTTPException(
             status_code=402,
-            detail=(f"A review costs {fee:.2f} piQ and your balance is {balance:.2f} piQ. The "
-                    f"whole amount goes to the reviewer."))
+            detail=(f"A peer review costs {fee:.2f} piQ and your balance is "
+                    f"{bal['balance']:.2f} piQ."
+            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
+               f" not yet verified — claim those first and this becomes affordable."
+               if bal.get("held") else
+               " Have your own work assessed to earn piQ.")))
 
     result = open_review_request(file_hash, key, fee)
     if not result["ok"]:
@@ -1700,11 +1709,16 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
     key = _profile_key(identity["wallet"], identity["orcid"])
 
     fee = llm_review_fee()["fee"]
-    balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
-    if balance + 1e-9 < fee:
-        raise HTTPException(status_code=402,
-                            detail=f"An LLM review costs {fee:.2f} piQ; your balance is "
-                                   f"{balance:.2f} piQ.")
+    bal = get_piq_balance(identity["wallet"], identity["orcid"])
+    if bal["balance"] + 1e-9 < fee:
+        raise HTTPException(
+            status_code=402,
+            detail=(f"An LLM review costs {fee:.2f} piQ and your balance is "
+                    f"{bal['balance']:.2f} piQ."
+            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
+               f" not yet verified — claim those first and this becomes affordable."
+               if bal.get("held") else
+               " Have your own work assessed to earn piQ.")))
 
     conn = get_db_connection()
     try:
