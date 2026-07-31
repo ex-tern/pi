@@ -228,6 +228,27 @@ ENABLE_SCILEM_LOCAL_MODEL = _env_bool("ENABLE_SCILEM_LOCAL_MODEL", SCILEM_LOCAL_
 # assistant useful.
 ENABLE_SCILEM_ASSISTANT = _env_bool("ENABLE_SCILEM_ASSISTANT", True)
 
+# How the assistant should describe itself.
+#
+#   auto     - infer from what is actually configured (provider keys present
+#              => "Ready", otherwise "Grounded").
+#   limited  - state plainly that capability is reduced on this host.
+#
+# "limited" exists because inference and the local model both cost memory this
+# deployment does not have on a free tier. The honest thing is to say so: a
+# badge reading "Ready" on a host that will refuse half the questions asked of
+# it is worse than no badge, because the user blames their question rather
+# than the deployment. Set SCILEM_MODE=auto once the instance has headroom.
+SCILEM_MODE = (os.getenv("SCILEM_MODE", "limited").strip().lower() or "limited")
+if SCILEM_MODE not in ("auto", "limited"):
+    SCILEM_MODE = "limited"
+
+SCILEM_LIMITED_NOTICE = (
+    "Running in limited mode: this deployment is memory-constrained, so the assistant answers "
+    "from live deployment state and its built-in knowledge base only. Those answers are exact "
+    "and never invented \u2014 but open-ended questions outside that scope will not be answered."
+)
+
 SCILEM_DISABLED_NOTICE = (
     "The Scilem assistant is disabled on this deployment."
 )
@@ -369,3 +390,21 @@ HOT_TOPICS = [
     "Carbon Capture Metal-Organic Frameworks", "Fusion Energy Plasma Confinement",
     "Exoplanet Atmospheric Spectroscopy"
 ]
+
+
+# ---------------------------------------------------------------------------
+# Bug reports
+# ---------------------------------------------------------------------------
+# Reports are always written to the local database first and emailed second.
+# That order is deliberate: mail is the part that can fail (bad credentials,
+# provider throttling, an SMTP port blocked by the host), and a report that
+# was accepted from a user and then silently dropped is worse than one that
+# was never accepted at all.
+BUG_REPORT_TO = get_secret("BUG_REPORT_TO", "a.vafadaryengejeh@campus.unimib.it")
+SMTP_HOST = get_secret("SMTP_HOST")
+SMTP_PORT = int(get_secret("SMTP_PORT", "587") or 587)
+SMTP_USER = get_secret("SMTP_USER")
+SMTP_PASSWORD = get_secret("SMTP_PASSWORD")
+# Defaults to SMTP_USER because most providers reject a From: they do not own.
+SMTP_FROM = get_secret("SMTP_FROM") or SMTP_USER
+SMTP_USE_TLS = _env_bool("SMTP_USE_TLS", True)

@@ -40,11 +40,12 @@ from web3 import Web3
 from eth_account.messages import encode_defunct
 
 from config import (
-    BASE_DIR, DB_PATH, PIQ_CONTRACT_ADDRESS, REGISTRY_CONTRACT_ADDRESS, HOT_TOPICS,
+    BASE_DIR, DB_PATH, PIQ_CONTRACT_ADDRESS, HOT_TOPICS,
     ORCID_CLIENT_ID, ORCID_CLIENT_SECRET, ORCID_REDIRECT_URI, FRONTEND_ORIGIN, OWNER_ID,
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
-    SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, PIQ_PROCESSING_FEE, DONATION_WALLET,
+    SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, SCILEM_MODE, SCILEM_LIMITED_NOTICE,
+    PIQ_PROCESSING_FEE, DONATION_WALLET,
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY,
     DEEPSEEK_API_KEY, TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
@@ -56,11 +57,15 @@ from database import (
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
+    delete_researcher_profile, list_assessments_for_identity, delete_assessment,
+    store_bug_report, mark_bug_report_delivered, list_bug_reports,
+    record_backup_cid, latest_backups,
     get_papers_for_recommendation, get_corpus_totals,
 )
 import arcade
 import diagnostics
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
+import ledger as ledger_backup
 from integrations import (
     normalize_doi, collect_pdf_candidates,
     clean_author_name, is_likely_institution, fetch_doi_metadata,
@@ -70,7 +75,7 @@ from integrations import (
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state, generate_assistant_reply,
-    derive_next_epoch_weights,
+    derive_next_epoch_weights, load_torch, torch_available,
 )
 from providers import provider_configuration
 from rubric import (
@@ -84,14 +89,15 @@ from emission import (
 import forecast as forecast_engine
 import assistant as scilem
 import abuse_guard
+import bugreport
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import DataLoader
+
+# torch is NOT imported here — see brain.load_torch(). Importing it at module
+# scope cost ~350MB in every worker to serve an optional, off-by-default
+# feature, which is what was OOM-killing this app on a 512MB host.
 
 # ---------------------------------------------------------------------------
 # Logging — actually configured (the app previously called logging.info()
@@ -494,15 +500,13 @@ def chain_contracts():
             entry(PIQ_CONTRACT_ADDRESS, "piQ token contract",
                   "Soulbound pi-Quotient token. Receives verifyProofAndMint calls when a "
                   "manuscript clears the minting threshold."),
-            # Optional by design. It powers only the encrypted IPFS state
-            # backup/restore; with it unset, the ledger lives in the local
-            # database exactly as it otherwise would. Nothing about scoring,
-            # minting, or the Proof-of-Research chain depends on it, so an
-            # empty value here is a normal deployment, not a fault.
-            entry(REGISTRY_CONTRACT_ADDRESS, "State registry contract",
-                  "Optional. Holds the IPFS CID pointing at the encrypted ledger state backup. "
-                  "When unset, ledger state is kept locally and nothing else changes.",
-                  optional=True),
+            # The state registry row is deliberately absent. This deployment
+            # has one contract — the piQ token — and a registry entry that is
+            # permanently unconfigured is not information, it is a standing
+            # invitation to paste the wrong address into it (which is what
+            # happened). Encrypted backups are pinned to IPFS and the CID is
+            # tracked locally; if a registry contract is deployed later, this
+            # is where its row goes back.
             entry(admin_address, "Minting authority",
                   "Wallet that signs minting transactions. Derived from the configured signing "
                   "key; the key itself is never exposed."),
@@ -513,6 +517,47 @@ def chain_contracts():
                   "Administrative wallet permitted to re-score the corpus and reset local state."),
         ],
     }
+
+
+@app.get("/api/backup/status")
+def backup_status():
+    """Whether durable off-host backup is actually happening.
+
+    Worth surfacing because the failure mode is silent: pinning is best-effort
+    and runs on a background thread, so a deployment can look completely
+    healthy while storing nothing anywhere but its own ephemeral disk — which
+    on a free-tier host is lost on redeploy.
+    """
+    backups = latest_backups(limit=5)
+    configured = ledger_backup.ipfs_backup_available()
+    registry = ledger_backup.registry_contract_usable()
+    return {
+        "configured": configured,
+        "backups": backups,
+        "last_backup": backups[0] if backups else None,
+        "registry": registry,
+        "anchoring_enabled": bool(registry.get("usable")),
+        "note": (
+            "Encrypted snapshots are pinned to IPFS. " + registry["reason"] + " The backup is "
+            "durable and restorable either way; on-chain anchoring only adds tamper-evidence."
+            if configured and not registry.get("usable") else
+            "Encrypted snapshots are pinned to IPFS and their CIDs anchored on-chain."
+            if configured else
+            "Off-host backup is NOT configured. State exists only on this host's disk, which is "
+            "not durable on an ephemeral filesystem. Set PINATA_API_KEY, PINATA_SECRET_API_KEY "
+            "and BACKUP_ENCRYPTION_KEY to enable it."
+        ),
+    }
+
+
+@app.post("/api/backup/run")
+def backup_run(wallet: str = Query(default="")):
+    """Owner-triggered immediate backup, bypassing the throttle."""
+    if not wallet or not OWNER_ID or wallet.lower() != OWNER_ID.lower():
+        raise HTTPException(status_code=403, detail="Owner wallet required.")
+    result = ledger_backup.run_backup(force=True)
+    add_log(f"Manual backup: {result}")
+    return result
 
 
 @app.get("/api/chain/status")
@@ -801,6 +846,155 @@ def write_profile(payload: ResearcherProfile):
                    "this browser until you connect one.")
     saved = save_researcher_profile(key, payload.dict())
     return {"stored": True, "profile": saved}
+
+
+@app.delete("/api/profile")
+def reset_profile(wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """Delete the stored researcher profile for this identity.
+
+    The row is removed rather than blanked. A profile whose fields are empty
+    strings still exists, still frames the diagnostic summary, and still scopes
+    the research buddy's recommendations — so a "reset" that left one behind
+    would keep shaping results the user believed they had cleared.
+    """
+    key = _profile_key(wallet, orcid)
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="Connect a wallet or link ORCID to manage a stored profile.")
+    removed = delete_researcher_profile(key)
+    add_log(f"Researcher profile reset for {key[:16]}…")
+    return {"reset": True, "had_profile": removed,
+            "message": ("Profile cleared. Diagnostics will no longer be framed by it."
+                        if removed else "There was no stored profile to clear.")}
+
+
+# ---------------------------------------------------------------------------
+# Assessment history and withdrawal
+# ---------------------------------------------------------------------------
+@app.get("/api/assessments/mine")
+def my_assessments(wallet: str = Query(default=""), orcid: str = Query(default=""),
+                   limit: int = Query(default=100, ge=1, le=300)):
+    """Everything assessed under this identity.
+
+    Anonymous visitors get an explicit empty result rather than an error: they
+    genuinely have no history to show, because nothing durable is keyed to
+    them, and saying so is more useful than a 400.
+    """
+    key = _profile_key(wallet, orcid)
+    if not key:
+        return {"signed_in": False, "assessments": [], "count": 0,
+                "reason": ("Sign in with a wallet or ORCID to keep a history of your "
+                           "assessments. Anonymous runs are not linked to an identity.")}
+    rows = list_assessments_for_identity(key, limit=limit)
+    return {"signed_in": True, "assessments": rows, "count": len(rows)}
+
+
+@app.delete("/api/assessments/{file_hash}")
+def remove_assessment(file_hash: str, wallet: str = Query(default=""),
+                      orcid: str = Query(default="")):
+    """Withdraw one paper from the corpus.
+
+    Ownership is enforced inside the DELETE statement, not by a prior SELECT:
+    evaluation hashes are visible in the public leaderboard, so a check-then-
+    delete would let anyone who can read a hash remove someone else's paper.
+
+    The Proof-of-Research block for the assessment is intentionally left in
+    place — the chain is append-only and every block hashes its predecessor, so
+    removing one would invalidate all of its successors. The paper leaves the
+    corpus and the listings; the record that it was once assessed remains, which
+    is the only outcome consistent with the ledger's integrity claim.
+    """
+    key = _profile_key(wallet, orcid)
+    is_owner = bool(wallet and OWNER_ID and wallet.lower() == OWNER_ID.lower())
+    result = delete_assessment(file_hash, account_key=key, allow_any=is_owner)
+    if not result["deleted"]:
+        raise HTTPException(status_code=404 if "not found" in result["reason"].lower() else 403,
+                            detail=result["reason"])
+    add_log(f"Assessment {file_hash[:12]}… withdrawn by {key[:16] or 'owner'}")
+    return {"deleted": True,
+            "message": ("Paper removed from the corpus and all listings. Its ledger block "
+                        "remains, because the Proof-of-Research chain is append-only.")}
+
+
+# ---------------------------------------------------------------------------
+# Bug reports
+# ---------------------------------------------------------------------------
+class BugReport(BaseModel):
+    message: str
+    contact: str = ""
+    page: str = ""
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.get("/api/bug-report/status")
+def bug_report_status():
+    """What the form should promise before the user types anything."""
+    return bugreport.delivery_status()
+
+
+@app.post("/api/bug-report")
+def submit_bug_report(payload: BugReport, request: Request):
+    """Store the report, then attempt email delivery in the background.
+
+    Storing first is the point. Mail is the part that fails — expired
+    credentials, a throttling provider, a host that blocks outbound 587 — and
+    telling someone their report was sent when it was silently dropped is worse
+    than not offering the button. The confirmation the user gets is a receipt
+    for something already committed to the database.
+    """
+    client_ip = get_client_ip(request)
+    check_rate_limit(client_ip, bucket="bug_report")
+
+    problem = bugreport.validate(payload.message, payload.contact)
+    if problem:
+        raise HTTPException(status_code=400, detail=problem)
+
+    key = _profile_key(payload.wallet, payload.orcid)
+    report = bugreport.normalise(
+        message=payload.message, contact=payload.contact, identity=key,
+        page=payload.page, user_agent=request.headers.get("user-agent", ""),
+    )
+    # The raw IP is not stored: a bug report is not an abuse signal, and
+    # keeping one would attach an identifier to a complaint for no operational
+    # reason. The hash still supports rate limiting and duplicate detection.
+    ip_hash = hashlib.sha256(f"bugreport:{client_ip}".encode()).hexdigest()[:32]
+
+    try:
+        report["id"] = store_bug_report(report, ip_hash=ip_hash)
+    except Exception as e:
+        logging.exception("Bug report could not be stored")
+        raise HTTPException(status_code=500,
+                            detail="The report could not be saved. Please try again.") from e
+
+    add_log(f"Bug report #{report['id']} received ({len(report['message'])} chars).")
+    bugreport.send_async(report, on_result=lambda rid, res: mark_bug_report_delivered(
+        rid, res["sent"], res.get("error") or ""))
+
+    emailed = bugreport.smtp_configured()
+    return {
+        "received": True,
+        "id": report["id"],
+        "emailed": emailed,
+        "message": (
+            f"Thank you — report #{report['id']} was saved"
+            + (" and is being emailed to the maintainer." if emailed
+               else ". Email delivery is not configured on this deployment, so it is stored "
+                    "on the server for the maintainer to read.")
+        ),
+    }
+
+
+@app.get("/api/bug-report/list")
+def bug_report_list(wallet: str = Query(default=""), limit: int = Query(default=100, ge=1, le=300)):
+    """Owner-only. The reports that failed to send exist nowhere else."""
+    if not wallet or not OWNER_ID or wallet.lower() != OWNER_ID.lower():
+        raise HTTPException(status_code=403, detail="Owner wallet required.")
+    reports = list_bug_reports(limit=limit)
+    return {"reports": reports,
+            "undelivered": sum(1 for r in reports if not r["delivered"]),
+            "count": len(reports)}
 
 
 def _json_safe(value):
@@ -1452,6 +1646,12 @@ def scilem_status():
                         or TOGETHER_API_KEY or GITHUB_MODELS_TOKEN)
     if not ENABLE_SCILEM_ASSISTANT:
         mode, label, notice = "disabled", "Off", SCILEM_DISABLED_NOTICE
+    elif SCILEM_MODE == "limited":
+        # Operator-declared, not inferred. The deployment may well have
+        # provider keys configured and still not have the memory to use them
+        # comfortably, so this overrides the capability sniff rather than
+        # being overridden by it.
+        mode, label, notice = "limited", "Limited", SCILEM_LIMITED_NOTICE
     elif has_phrasing:
         mode, label = "grounded+phrasing", "Ready"
         notice = None
@@ -1644,9 +1844,19 @@ def _run_forecast_impl(lookback: int = 3):
     # not a projection, so it is returned as a delta and labelled as one.
     # Fabricating a curve through one point would be the dishonest option, and
     # showing nothing at all was the useless one.
-    if len(rows) == 2:
-        baseline = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
-        current = np.array([safe_float(v, 1.0) for v in rows[1][1:9]], dtype=np.float32)
+    # One assessment must produce something visible. Depending on whether the
+    # genesis block is present, "one assessment" is either two rows (genesis +
+    # the paper) or a single row, and the second case previously fell into the
+    # "no manuscripts assessed yet" branch and showed an empty state to a user
+    # who had just assessed a manuscript. Both are handled as the same measured
+    # shift, against a uniform baseline when there is no recorded predecessor.
+    if len(rows) in (1, 2):
+        if len(rows) == 2:
+            baseline = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
+            current = np.array([safe_float(v, 1.0) for v in rows[1][1:9]], dtype=np.float32)
+        else:
+            baseline = np.full(8, 1.0, dtype=np.float32)
+            current = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
         criteria = []
         for i, key_c in enumerate(CRITERIA_KEYS):
             delta = float(current[i] - baseline[i])
@@ -1683,7 +1893,7 @@ def _run_forecast_impl(lookback: int = 3):
             ),
         }
 
-    if len(rows) < 2:
+    if len(rows) < 1:
         return {
             "ready": False,
             "mode": "empty",
@@ -1729,16 +1939,23 @@ def _run_forecast_impl(lookback: int = 3):
 
     raw_pred, method, final_loss = None, "holt-linear-trend", 0.0
     
+    # The neural path is attempted only when explicitly enabled AND torch can
+    # actually be loaded. Both conditions matter: a host that cannot afford the
+    # import must degrade to the statistical projection rather than crashing
+    # the worker, and a crashed worker is exactly what the user sees as
+    # "could not reach the forecasting service".
     if USE_LSTM_FORECAST:
-        raw_pred = forecast_engine.train_lstm_forecast(
-            weight_matrix, actual_lookback,
-            model_factory=PidyneLSTM,
-            dataset_factory=PidyneBlockchainDataset,
-            loader_factory=DataLoader,
-            torch_mod=torch, nn_mod=nn, optim_mod=optim,
-        )
-        if raw_pred is not None:
-            method = "pidyne-lstm"
+        t = load_torch()
+        if t:
+            raw_pred = forecast_engine.train_lstm_forecast(
+                weight_matrix, actual_lookback,
+                model_factory=PidyneLSTM,
+                dataset_factory=PidyneBlockchainDataset,
+                loader_factory=t["DataLoader"],
+                torch_mod=t["torch"], nn_mod=t["nn"], optim_mod=t["optim"],
+            )
+            if raw_pred is not None:
+                method = "pidyne-lstm"
             
     if raw_pred is None:
         raw_pred = forecast_engine.holt_linear_forecast(weight_matrix)

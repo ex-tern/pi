@@ -27,14 +27,69 @@ from typing import Tuple, Dict
 
 import fitz
 import numpy as np
-import torch
-import torch.nn as nn
-import torch.optim as optim
-from torch.utils.data import Dataset
 from openai import OpenAI
 from functools import lru_cache
 
-torch.set_num_threads(1)  # belt-and-suspenders; some backends don't fully honor the env vars above
+# ---------------------------------------------------------------------------
+# PyTorch is loaded on demand, not at import time.
+# ---------------------------------------------------------------------------
+# Importing torch costs roughly 300-400MB of resident memory before a single
+# request is served. That was being paid unconditionally by every worker, on
+# every deployment, to support ONE optional feature: the LSTM forecast, which
+# is off by default (USE_LSTM_FORECAST) and whose statistical fallback is pure
+# NumPy. Everything else in this module — scoring, extraction, the provider
+# panel, the ledger — never touches torch at all.
+#
+# On a 512MB host that import is most of the budget, so the worker was being
+# OOM-killed part-way through requests. A killed worker drops the connection
+# without a response, which the browser reports as "could not reach the
+# service" — a network-shaped symptom for what is actually a memory problem,
+# which is why it looked like an intermittent host fault rather than a
+# configuration one.
+#
+# Deferring the import means a deployment that never enables the LSTM never
+# pays for it, and one that does enable it pays only on the first forecast.
+_TORCH = None
+_TORCH_FAILED = False
+
+
+def load_torch():
+    """Import torch on first use. Returns None if unavailable.
+
+    Callers must treat None as "use the statistical path", never as an error:
+    a deployment that deliberately omits torch to fit in memory is a supported
+    configuration, not a broken one.
+    """
+    global _TORCH, _TORCH_FAILED
+    if _TORCH is not None or _TORCH_FAILED:
+        return _TORCH
+    try:
+        import torch
+        import torch.nn as nn
+        import torch.optim as optim
+        from torch.utils.data import Dataset, DataLoader
+        torch.set_num_threads(1)  # some backends ignore the env vars set above
+        _TORCH = {"torch": torch, "nn": nn, "optim": optim,
+                  "Dataset": Dataset, "DataLoader": DataLoader}
+    except Exception as e:
+        _TORCH_FAILED = True
+        logging.info("PyTorch unavailable; forecasting will use the statistical path: %s", e)
+        return None
+    return _TORCH
+
+
+def torch_available() -> bool:
+    """Whether torch can be loaded, WITHOUT loading it.
+
+    Used by status endpoints, which must not trigger a 350MB import just to
+    render a badge.
+    """
+    if _TORCH is not None:
+        return True
+    if _TORCH_FAILED:
+        return False
+    import importlib.util
+    return importlib.util.find_spec("torch") is not None
 
 try:
     from openrouter import OpenRouter
@@ -137,7 +192,7 @@ def assess_with_structural_analyzer(paper_text, canary=""):
 
     return "scilem", {
         "title": cand_title[:120],
-        "authors": clean_author_name(cand_author)[:80],
+        "authors": _truncate_author_list(clean_author_name(cand_author), 80),
         "opinion": opinion,
         "references": [],
         "api_failed": False,
@@ -158,37 +213,87 @@ def clear_structural_analyzer_state():
             return f"Could not remove stale weights file: {e}"
     return "Nothing to reset: Scilem structural analysis is deterministic."
 
-class PiBlockchainDataset(Dataset):
-    def __init__(self, data_matrix, lookback):
-        self.data = data_matrix
-        self.lookback = lookback
+# The two torch-dependent classes are defined inside factories so that
+# subclassing nn.Module / Dataset — which requires torch to be imported —
+# happens only when a forecast actually asks for the neural path.
+@lru_cache(maxsize=1)
+def _build_torch_classes():
+    t = load_torch()
+    if not t:
+        return None
+    nn = t["nn"]
+    torch = t["torch"]
 
-    def __len__(self):
-        return len(self.data) - self.lookback
+    class PiBlockchainDataset(t["Dataset"]):
+        def __init__(self, data_matrix, lookback):
+            self.data = data_matrix
+            self.lookback = lookback
 
-    def __getitem__(self, idx):
-        x = self.data[idx : idx + self.lookback]
-        y = self.data[idx + self.lookback]
-        return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
+        def __len__(self):
+            return len(self.data) - self.lookback
 
-PidyneBlockchainDataset = PiBlockchainDataset
+        def __getitem__(self, idx):
+            x = self.data[idx: idx + self.lookback]
+            y = self.data[idx + self.lookback]
+            return torch.tensor(x, dtype=torch.float32), torch.tensor(y, dtype=torch.float32)
 
-class PiBrainLSTM(nn.Module):
-    def __init__(self, input_size=8, hidden_layer_size=32, output_size=8):
-        super(PiBrainLSTM, self).__init__()
-        self.lstm = nn.LSTM(input_size, hidden_layer_size, batch_first=True)
-        self.linear = nn.Sequential(
-            nn.Linear(hidden_layer_size, 16),
-            nn.ReLU(),
-            nn.Linear(16, output_size),
-        )
+    class PiBrainLSTM(nn.Module):
+        def __init__(self, input_size=8, hidden_layer_size=32, output_size=8):
+            super().__init__()
+            self.lstm = nn.LSTM(input_size, hidden_layer_size, batch_first=True)
+            self.linear = nn.Sequential(
+                nn.Linear(hidden_layer_size, 16),
+                nn.ReLU(),
+                nn.Linear(16, output_size),
+            )
 
-    def forward(self, x):
-        lstm_out, _ = self.lstm(x)
-        predictions = self.linear(lstm_out[:, -1, :])
-        return torch.softmax(predictions, dim=-1) * 8.0
+        def forward(self, x):
+            lstm_out, _ = self.lstm(x)
+            predictions = self.linear(lstm_out[:, -1, :])
+            return torch.softmax(predictions, dim=-1) * 8.0
 
-PidyneLSTM = PiBrainLSTM
+    return {"dataset": PiBlockchainDataset, "model": PiBrainLSTM}
+
+
+def PidyneBlockchainDataset(data_matrix, lookback):
+    """Factory kept at the original call signature so forecast.py is unchanged."""
+    classes = _build_torch_classes()
+    if not classes:
+        raise RuntimeError("PyTorch is not available on this deployment.")
+    return classes["dataset"](data_matrix, lookback)
+
+
+def PidyneLSTM(*args, **kwargs):
+    classes = _build_torch_classes()
+    if not classes:
+        raise RuntimeError("PyTorch is not available on this deployment.")
+    return classes["model"](*args, **kwargs)
+
+def _truncate_author_list(authors: str, limit: int = 80) -> str:
+    """Shorten an author list on a NAME boundary.
+
+    A hard slice cut mid-name and left a dangling separator — the leaderboard
+    showed "... Russ Bates, Augustin Zidek," which reads as a data error rather
+    than an abbreviation, and gives no signal that more authors exist. Cutting
+    at the last complete name and marking the remainder with "et al." says
+    exactly what happened.
+    """
+    text = (authors or "").strip()
+    if len(text) <= limit:
+        return text
+    names = [n.strip() for n in text.split(",") if n.strip()]
+    kept, used = [], 0
+    for name in names:
+        # +2 for the ", " separator; reserve 8 for the " et al." suffix.
+        cost = len(name) + (2 if kept else 0)
+        if used + cost > limit - 8:
+            break
+        kept.append(name)
+        used += cost
+    if not kept:
+        return text[:limit - 1].rstrip(" ,;") + "\u2026"
+    return ", ".join(kept) + (" et al." if len(kept) < len(names) else "")
+
 
 def request_model_assessment(provider_name, model_name, api_key, base_url, prompt):
     """Call one model and parse its JSON verdict."""

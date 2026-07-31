@@ -74,6 +74,93 @@ _AFFILIATION_MARKERS = [
     "academy of sciences", "research council",
 ]
 
+# Geography and dates terminate a byline. A title block is typically
+# "Title / Authors / Affiliation / City, Country / Date", and none of the
+# affiliation markers above match a bare "Milan, Italy" or "July 2026" — so
+# those lines were being appended to the author list and then split on their
+# own commas, producing authors named "Ali Vafadar Yengejeh Milan" and
+# "Italy July". The author string is the key for piQ attribution and
+# per-author emission decay, so a corrupted one mis-credits real people.
+_COUNTRIES = {
+    "italy", "italia", "france", "germany", "deutschland", "spain", "españa",
+    "portugal", "netherlands", "belgium", "switzerland", "austria", "greece",
+    "sweden", "norway", "denmark", "finland", "poland", "czechia", "hungary",
+    "romania", "ireland", "iceland", "croatia", "serbia", "slovenia", "slovakia",
+    "bulgaria", "estonia", "latvia", "lithuania", "luxembourg", "malta", "cyprus",
+    "united kingdom", "uk", "england", "scotland", "wales", "usa", "u.s.a.",
+    "united states", "canada", "mexico", "brazil", "argentina", "chile", "colombia",
+    "china", "japan", "korea", "south korea", "india", "pakistan", "iran", "iraq",
+    "israel", "turkey", "türkiye", "egypt", "morocco", "tunisia", "algeria",
+    "nigeria", "kenya", "south africa", "ethiopia", "ghana", "australia",
+    "new zealand", "singapore", "malaysia", "indonesia", "thailand", "vietnam",
+    "philippines", "russia", "ukraine", "saudi arabia", "uae", "qatar",
+}
+
+_MONTHS = {
+    "january", "february", "march", "april", "may", "june", "july", "august",
+    "september", "october", "november", "december",
+    "jan", "feb", "mar", "apr", "jun", "jul", "aug", "sep", "sept", "oct", "nov", "dec",
+}
+
+# Cities are stripped ONLY when the same string already contains a country or
+# a month — i.e. when there is independent evidence that address material was
+# fused into the byline. Applied unconditionally this list would be actively
+# harmful, because most of these are also surnames (Milan, Berlin, Paris,
+# Lyon, Bologna). The context gate is what makes it safe.
+_CITIES = {
+    "milan", "milano", "rome", "roma", "turin", "torino", "bologna", "naples",
+    "florence", "firenze", "venice", "padua", "padova", "pisa", "genoa", "trieste",
+    "paris", "lyon", "marseille", "toulouse", "grenoble", "bordeaux", "nantes",
+    "berlin", "munich", "münchen", "hamburg", "cologne", "frankfurt", "heidelberg",
+    "stuttgart", "dresden", "leipzig", "bonn", "aachen", "freiburg", "tübingen",
+    "madrid", "barcelona", "valencia", "seville", "bilbao", "granada",
+    "lisbon", "porto", "amsterdam", "rotterdam", "utrecht", "leiden", "delft",
+    "brussels", "leuven", "ghent", "antwerp", "zurich", "zürich", "geneva",
+    "basel", "lausanne", "bern", "vienna", "wien", "graz", "salzburg",
+    "london", "oxford", "cambridge", "manchester", "edinburgh", "glasgow",
+    "bristol", "leeds", "birmingham", "sheffield", "nottingham", "southampton",
+    "dublin", "stockholm", "uppsala", "gothenburg", "oslo", "bergen",
+    "copenhagen", "aarhus", "helsinki", "warsaw", "krakow", "kraków", "prague",
+    "budapest", "bucharest", "athens", "istanbul", "ankara", "moscow",
+    "boston", "chicago", "seattle", "atlanta", "houston", "denver", "austin",
+    "philadelphia", "pittsburgh", "baltimore", "minneapolis", "detroit",
+    "toronto", "montreal", "vancouver", "ottawa", "beijing", "shanghai",
+    "shenzhen", "guangzhou", "hangzhou", "nanjing", "wuhan", "tianjin",
+    "tokyo", "kyoto", "osaka", "seoul", "busan", "taipei", "hong kong",
+    "singapore", "delhi", "mumbai", "bangalore", "chennai", "kolkata",
+    "sydney", "melbourne", "brisbane", "perth", "auckland", "wellington",
+    "tehran", "tabriz", "cairo", "nairobi", "lagos", "johannesburg",
+    "são paulo", "sao paulo", "rio de janeiro", "buenos aires", "santiago",
+}
+
+def looks_like_location(text: str) -> bool:
+    """True for a line that is a place rather than a person.
+
+    Matches on the LAST comma-separated token, because that is where a country
+    sits in every conventional address format ("Milan, Italy", "Cambridge, MA,
+    USA"), and a surname is never a country.
+    """
+    cleaned = (text or "").strip().strip(".,;")
+    if not cleaned:
+        return False
+    if cleaned.lower() in _COUNTRIES:
+        return True
+    parts = [p.strip().lower() for p in cleaned.split(",") if p.strip()]
+    return bool(parts) and parts[-1] in _COUNTRIES
+
+
+def looks_like_date(text: str) -> bool:
+    """True for a line that is a date, with or without a year."""
+    lowered = (text or "").strip().lower().strip(".,;")
+    if not lowered:
+        return False
+    tokens = re.findall(r"[a-z]+", lowered)
+    if tokens and any(t in _MONTHS for t in tokens):
+        return True
+    # A short line that is mostly a year is a date line, not a name.
+    return bool(_YEAR_RE.search(lowered)) and len(lowered) <= 30
+
+
 _SECTION_HEADINGS = [
     "abstract", "introduction", "background", "related work", "materials and methods",
     "methods", "methodology", "experimental", "results", "results and discussion",
@@ -325,6 +412,11 @@ def extract_from_pdf_layout(file_bytes: bytes) -> Dict:
                 low = text.lower()
                 if low.startswith(("abstract", "keywords", "introduction", "a b s t r a c t")):
                     break
+                # Geography and dates mark the END of the byline, so they
+                # terminate the scan rather than being skipped: anything below
+                # a "Milan, Italy" line is address block, not more authors.
+                if looks_like_location(text) or looks_like_date(text):
+                    break
                 if _looks_like_banner(text) or looks_like_affiliation(text):
                     continue
                 if "@" in text or re.search(r"\b10\.\d{4,9}/", text):
@@ -336,7 +428,11 @@ def extract_from_pdf_layout(file_bytes: bytes) -> Dict:
                 if len(byline_parts) >= 3:
                     break
             if byline_parts:
-                result["authors"] = clean_author_list(" ".join(byline_parts))
+                # Joined with a comma, not a space. A byline wrapping across
+                # two lines has no trailing comma on the first, so a space-join
+                # fused the last name of one line to the first name of the next
+                # into a single bogus author.
+                result["authors"] = clean_author_list(", ".join(byline_parts))
     except Exception as e:
         logging.debug("Layout extraction failed: %s", e)
     finally:
@@ -358,16 +454,39 @@ def clean_author_list(raw: str) -> str:
     text = re.sub(r"\b(and|&)\b", ",", text, flags=re.IGNORECASE)
     text = text.replace(";", ",")
 
+    # Is there address material in this string at all? Only then is it safe to
+    # strip city-like trailing tokens, since "Milan" and "Berlin" are perfectly
+    # ordinary surnames in a byline that contains no address.
+    _lower = text.lower()
+    address_context = bool(
+        set(re.findall(r"[a-z]+", _lower)) & _MONTHS
+        or _YEAR_RE.search(text)
+        or any(c in _lower for c in _COUNTRIES)
+    )
+
     names = []
     for part in text.split(","):
         name = part.strip(" .,-")
         if not name or len(name) < 3 or len(name) > 60:
             continue
-        if looks_like_affiliation(name):
+        if looks_like_affiliation(name) or looks_like_location(name) or looks_like_date(name):
             continue
         if "@" in name:
             continue
+        # A year anywhere in a "name" means a date fragment was concatenated
+        # onto it; there is no recovering the real name from that, and keeping
+        # it would attribute piQ to a person who does not exist.
+        if _YEAR_RE.search(name):
+            continue
         words = name.split()
+        # Drop a trailing country token fused onto the last name
+        # ("Yengejeh Milan" -> "Yengejeh") before the word-count checks.
+        while len(words) > 1 and words[-1].lower().strip(".,") in _COUNTRIES:
+            words = words[:-1]
+        while (address_context and len(words) > 1
+               and words[-1].lower().strip(".,") in _CITIES):
+            words = words[:-1]
+        name = " ".join(words)
         if not (1 < len(words) <= 5):
             continue
         # A personal name is mostly capitalised words.

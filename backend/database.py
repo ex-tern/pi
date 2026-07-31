@@ -1,6 +1,8 @@
 import sqlite3
 import hashlib
+import json
 import logging
+from datetime import datetime
 from config import (
     DB_PATH, GENESIS_BLOCK_CONFIG, DEPLOYMENT_FINGERPRINT, compute_genesis_hash,
 )
@@ -74,6 +76,32 @@ def enforce_database_schema(conn: sqlite3.Connection):
                           (block_height INTEGER PRIMARY KEY AUTOINCREMENT, w1 REAL, w2 REAL, w3 REAL, w4 REAL, w5 REAL, w6 REAL, w7 REAL, w8 REAL, 
                            timestamp DATETIME, previous_hash TEXT, validator_node TEXT, block_hash TEXT, eval_hash TEXT, model_used TEXT,
                            por_proof TEXT DEFAULT 'Genesis_Proof', formulas_hash TEXT DEFAULT 'Locked_State')""")
+
+    # Bug reports. Stored before any delivery attempt so a mail failure can
+    # never lose a report — `delivered` records the outcome separately, and a
+    # row with delivered=0 is a report the maintainer still needs to read out
+    # of the database.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS bug_reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        message TEXT NOT NULL,
+                        contact TEXT DEFAULT '',
+                        identity TEXT DEFAULT '',
+                        page TEXT DEFAULT '',
+                        user_agent TEXT DEFAULT '',
+                        ip_hash TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        delivered INTEGER DEFAULT 0,
+                        delivery_error TEXT DEFAULT '')""")
+
+    # Backup provenance: which IPFS CID the state was last pinned under, and
+    # whether that CID was anchored on-chain. Kept as history rather than a
+    # single row, because "the backup silently stopped working three weeks
+    # ago" is only diagnosable if the successful ones are dated.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS backup_history (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        cid TEXT NOT NULL,
+                        tx_hash TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
 
     # 3. New Ingestion Queue for Microservices
     cursor.execute("""CREATE TABLE IF NOT EXISTS ingestion_queue (
@@ -774,3 +802,190 @@ def increment_free_evals_used(ip_address: str) -> int:
         return int(row[0]) if row else 0
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Bug reports
+# ---------------------------------------------------------------------------
+def store_bug_report(report: dict, ip_hash: str = "") -> int:
+    """Persist a report and return its id.
+
+    Called before the mail attempt, so the id can be quoted back to the user
+    as proof of receipt regardless of whether delivery later succeeds.
+    """
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO bug_reports
+                 (message, contact, identity, page, user_agent, ip_hash, created_at)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (report.get("message", ""), report.get("contact", ""),
+             report.get("identity", ""), report.get("page", ""),
+             report.get("user_agent", ""), ip_hash,
+             report.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+        )
+        conn.commit()
+        return int(cur.lastrowid)
+    finally:
+        conn.close()
+
+
+def mark_bug_report_delivered(report_id: int, delivered: bool, error: str = ""):
+    if not report_id:
+        return
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "UPDATE bug_reports SET delivered = ?, delivery_error = ? WHERE id = ?",
+            (1 if delivered else 0, (error or "")[:300], report_id),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not record bug report delivery state: %s", e)
+    finally:
+        conn.close()
+
+
+def list_bug_reports(limit: int = 100) -> list:
+    """Owner-only view. Undelivered reports first — those are the ones that
+    exist nowhere else."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT id, message, contact, identity, page, created_at, delivered, delivery_error
+               FROM bug_reports ORDER BY delivered ASC, id DESC LIMIT ?""",
+            (int(limit),),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"id": r[0], "message": r[1], "contact": r[2], "identity": r[3],
+             "page": r[4], "created_at": r[5], "delivered": bool(r[6]),
+             "delivery_error": r[7]} for r in rows]
+
+
+def delete_researcher_profile(account_key: str) -> bool:
+    """Remove a stored profile entirely.
+
+    A reset must actually delete the row rather than blanking its columns:
+    an empty-but-present profile still frames the diagnostic summary and still
+    feeds the research buddy, so "reset" that left a row behind would keep
+    influencing results the user believed they had cleared.
+    """
+    if not account_key:
+        return False
+    conn = get_db_connection()
+    try:
+        cur = conn.execute("DELETE FROM researcher_profiles WHERE account_key = ?", (account_key,))
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logging.warning("Profile reset failed: %s", e)
+        return False
+    finally:
+        conn.close()
+
+
+def list_assessments_for_identity(account_key: str, limit: int = 100) -> list:
+    """Every assessment submitted under one identity, newest first."""
+    if not account_key:
+        return []
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT eval_hash, title, author_name, final_score, fields, timestamp,
+                      piq_minted, doi, filename
+               FROM papers_assessment
+               WHERE user_id = ? OR author_openalex_id = ?
+               ORDER BY timestamp DESC LIMIT ?""",
+            (account_key, account_key, int(limit)),
+        ).fetchall()
+    except sqlite3.Error as e:
+        logging.warning("Assessment history query failed: %s", e)
+        return []
+    finally:
+        conn.close()
+    out = []
+    for r in rows:
+        try:
+            fields = json.loads(r[4]) if r[4] else []
+        except (ValueError, TypeError):
+            fields = []
+        out.append({"hash": r[0], "title": r[1] or "Untitled", "author": r[2] or "",
+                    "score": round(float(r[3] or 0), 1), "fields": fields,
+                    "timestamp": r[5], "piq_minted": float(r[6] or 0),
+                    "doi": r[7] or "", "filename": r[8] or ""})
+    return out
+
+
+def delete_assessment(file_hash: str, account_key: str = "", allow_any: bool = False) -> dict:
+    """Remove one assessed paper.
+
+    Ownership is checked in SQL rather than in Python so there is no window
+    between the check and the delete. Without `allow_any` (owner wallet only),
+    a user can delete only rows submitted under their own identity — otherwise
+    knowing a hash, which appears in the public leaderboard, would be enough
+    to delete someone else's assessment.
+
+    The Proof-of-Research block is deliberately NOT removed. The chain is
+    append-only and each block hashes its predecessor; deleting a block would
+    invalidate every block after it and destroy the ledger's integrity claim.
+    Removing the paper from the corpus and leaving its block standing is the
+    honest outcome — the assessment happened, and the ledger records that it
+    happened, even after the user withdraws the paper from the listings.
+    """
+    if not file_hash:
+        return {"deleted": False, "reason": "No paper specified."}
+    conn = get_db_connection()
+    try:
+        if allow_any:
+            cur = conn.execute("DELETE FROM papers_assessment WHERE eval_hash = ?", (file_hash,))
+        else:
+            if not account_key:
+                return {"deleted": False, "reason": "Sign in to remove a paper."}
+            cur = conn.execute(
+                """DELETE FROM papers_assessment
+                   WHERE eval_hash = ? AND (user_id = ? OR author_openalex_id = ?)""",
+                (file_hash, account_key, account_key),
+            )
+        conn.commit()
+        if cur.rowcount:
+            return {"deleted": True, "reason": ""}
+        return {"deleted": False,
+                "reason": "That paper was not found under your identity."}
+    except sqlite3.Error as e:
+        logging.warning("Assessment delete failed: %s", e)
+        return {"deleted": False, "reason": "The paper could not be removed."}
+    finally:
+        conn.close()
+
+
+def record_backup_cid(cid: str, tx_hash: str = "") -> None:
+    """Record a successful pin. Never raises into the backup thread."""
+    if not cid:
+        return
+    conn = get_db_connection()
+    try:
+        conn.execute("INSERT INTO backup_history (cid, tx_hash) VALUES (?, ?)",
+                     (cid, tx_hash or ""))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not record backup CID: %s", e)
+    finally:
+        conn.close()
+
+
+def latest_backups(limit: int = 10) -> list:
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            "SELECT cid, tx_hash, created_at FROM backup_history ORDER BY id DESC LIMIT ?",
+            (int(limit),),
+        ).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"cid": r[0], "tx_hash": r[1], "anchored": bool(r[1]), "created_at": r[2]}
+            for r in rows]
