@@ -929,19 +929,35 @@ def delete_researcher_profile(account_key: str) -> bool:
         conn.close()
 
 
-def list_assessments_for_identity(account_key: str, limit: int = 100) -> list:
-    """Every assessment submitted under one identity, newest first."""
-    if not account_key:
+def list_assessments_for_identity(identities, limit: int = 100) -> list:
+    """Every assessment submitted under one identity, newest first.
+
+    `identities` is the LIST of forms an identity can take in the database,
+    not a single key. This matters because the assessment pipeline stores
+    `user_id` as the raw ORCID or wallet address, while profiles, arcade
+    progress and bug reports are keyed by a namespaced "orcid:..." string.
+    Querying with only the namespaced key compared "orcid:0000-0002-..."
+    against a stored "0000-0002-..." and matched nothing, so history was
+    always empty for every user who had one — and the identical mismatch in
+    delete_assessment meant paper removal silently found nothing to remove.
+
+    Rather than rewrite historical rows, both forms are accepted.
+    """
+    values = [v for v in (identities if isinstance(identities, (list, tuple, set))
+                          else [identities]) if v]
+    if not values:
         return []
+    placeholders = ",".join("?" for _ in values)
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            """SELECT eval_hash, title, author_name, final_score, fields, timestamp,
+            f"""SELECT eval_hash, title, author_name, final_score, fields, timestamp,
                       piq_minted, doi, filename
                FROM papers_assessment
-               WHERE user_id = ? OR author_openalex_id = ?
+               WHERE user_id IN ({placeholders})
+                  OR author_openalex_id IN ({placeholders})
                ORDER BY timestamp DESC LIMIT ?""",
-            (account_key, account_key, int(limit)),
+            (*values, *values, int(limit)),
         ).fetchall()
     except sqlite3.Error as e:
         logging.warning("Assessment history query failed: %s", e)
@@ -961,7 +977,7 @@ def list_assessments_for_identity(account_key: str, limit: int = 100) -> list:
     return out
 
 
-def delete_assessment(file_hash: str, account_key: str = "", allow_any: bool = False) -> dict:
+def delete_assessment(file_hash: str, identities=None, allow_any: bool = False) -> dict:
     """Remove one assessed paper.
 
     Ownership is checked in SQL rather than in Python so there is no window
@@ -984,12 +1000,15 @@ def delete_assessment(file_hash: str, account_key: str = "", allow_any: bool = F
         if allow_any:
             cur = conn.execute("DELETE FROM papers_assessment WHERE eval_hash = ?", (file_hash,))
         else:
-            if not account_key:
+            values = [v for v in (identities or []) if v]
+            if not values:
                 return {"deleted": False, "reason": "Sign in to remove a paper."}
+            ph = ",".join("?" for _ in values)
             cur = conn.execute(
-                """DELETE FROM papers_assessment
-                   WHERE eval_hash = ? AND (user_id = ? OR author_openalex_id = ?)""",
-                (file_hash, account_key, account_key),
+                f"""DELETE FROM papers_assessment
+                   WHERE eval_hash = ?
+                     AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+                (file_hash, *values, *values),
             )
         conn.commit()
         if cur.rowcount:
