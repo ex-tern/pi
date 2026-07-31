@@ -207,6 +207,25 @@ const HELP = {
       likely to already have any.</p>
       <p>Select a row to see that author's assessed papers.</p>`,
   },
+  diagnostics: {
+    title: "Reception diagnostics",
+    body: `<p>The piX score answers "how rigorous is this work?". This panel answers a different
+      question: "given the work is what it is, why is nobody reading it, and what can actually
+      be changed?"</p>
+      <p><strong>Two kinds of finding, deliberately separated.</strong> Findings <em>in the
+      manuscript</em> are properties of the work — weak criteria, low reproducibility — and they
+      are what reviewers catch. Findings <em>in how it reaches people</em> are venue, team size,
+      author discoverability: they say nothing about quality but strongly affect whether the work
+      is read.</p>
+      <p><strong>Visibility factors never touch your score.</strong> ScholarPi is CoARA-aligned,
+      so venue prestige, h-index and seniority are excluded from assessment — they measure career
+      stage and field citation culture, not quality. But they do affect reception, and a
+      researcher who doesn't know that is worse off than one who does. So they are reported
+      honestly here and nowhere near the scoring.</p>
+      <p>Every finding is derived from signals the assessment already produced. No language model
+      is called, so the report costs nothing, cannot invent a citation count, and returns the
+      same result for the same paper every time.</p>`,
+  },
   arcade: {
     title: "The Global Map of Science",
     body: `<p>One surface with two modes over the same data.</p>
@@ -892,6 +911,105 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 });
 
 // ---------------------------------------------------------------------------
+// RESEARCHER PROFILE
+//
+// Saved server-side against ORCID or wallet, and mirrored into localStorage so
+// an anonymous visitor can still fill it in and keep it. Without the local
+// mirror the form would silently discard everything typed by anyone who hasn't
+// connected an identity yet — which is most first-time visitors, and exactly
+// the people the profile is meant to help.
+// ---------------------------------------------------------------------------
+const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea", "abstract"];
+const PROFILE_INPUTS = {
+  field: "profileField", career_stage: "profileCareerStage",
+  goal: "profileGoal", idea: "profileIdea", abstract: "profileAbstract",
+};
+
+function readProfileForm() {
+  const out = {};
+  for (const key of PROFILE_FIELDS) {
+    const el = document.getElementById(PROFILE_INPUTS[key]);
+    out[key] = el ? el.value.trim() : "";
+  }
+  return out;
+}
+
+function writeProfileForm(profile) {
+  for (const key of PROFILE_FIELDS) {
+    const el = document.getElementById(PROFILE_INPUTS[key]);
+    if (el && profile[key] !== undefined) el.value = profile[key] || "";
+  }
+  updateProfileStatus(profile);
+}
+
+function updateProfileStatus(profile) {
+  const badge = document.getElementById("profileStatus");
+  if (!badge) return;
+  const filled = PROFILE_FIELDS.filter(k => (profile[k] || "").trim()).length;
+  if (!filled) { badge.textContent = "not set"; badge.className = "profile-status"; return; }
+  badge.textContent = `${filled}/${PROFILE_FIELDS.length} complete`;
+  badge.className = "profile-status profile-status-set";
+}
+
+async function loadProfile() {
+  // Local draft first so the form is never blank while the network is in
+  // flight, then let the server's copy win if there is one.
+  try {
+    const local = JSON.parse(localStorage.getItem("sp_profile") || "{}");
+    if (Object.keys(local).length) writeProfileForm(local);
+  } catch (_) { /* corrupt draft is not worth surfacing */ }
+
+  if (!Session.hasIdentity()) return;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/profile?${qs}`);
+    if (!res.ok) return;
+    const data = await res.json();
+    if (data.stored && data.profile) {
+      writeProfileForm(data.profile);
+      localStorage.setItem("sp_profile", JSON.stringify(data.profile));
+    }
+  } catch (_) { /* offline: the local draft stands */ }
+}
+
+async function saveProfile() {
+  const btn = document.getElementById("profileSaveBtn");
+  const msg = document.getElementById("profileMsg");
+  const profile = readProfileForm();
+
+  localStorage.setItem("sp_profile", JSON.stringify(profile));
+  updateProfileStatus(profile);
+
+  if (!Session.hasIdentity()) {
+    msg.textContent = "Saved in this browser. Connect a wallet or ORCID to keep it permanently.";
+    msg.className = "profile-msg profile-msg-warn";
+    return;
+  }
+
+  btn.disabled = true;
+  msg.textContent = "Saving…";
+  msg.className = "profile-msg";
+  try {
+    const res = await fetch(`${API}/api/profile`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid, ...profile }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.detail || `HTTP ${res.status}`);
+    }
+    msg.textContent = "Profile saved.";
+    msg.className = "profile-msg profile-msg-ok";
+  } catch (e) {
+    msg.textContent = "Could not save to the server: " + e.message +
+      " Your profile is still stored in this browser.";
+    msg.className = "profile-msg profile-msg-warn";
+  } finally {
+    btn.disabled = false;
+  }
+}
+
+// ---------------------------------------------------------------------------
 // ASSESS TAB
 // ---------------------------------------------------------------------------
 // Authoritative allowance, as last reported by the server. The browser's own
@@ -1470,6 +1588,62 @@ function renderJudgePanel(meta, consensus) {
   return html;
 }
 
+/** Reception diagnostic: why the work is or isn't landing.
+ *
+ *  Separates findings about the manuscript from findings about its visibility,
+ *  because they need different responses — and because visibility factors are
+ *  deliberately excluded from the score, which the panel states outright so a
+ *  reader never assumes venue or seniority moved their piX. */
+function renderDiagnosticsPanel(item) {
+  const d = item.diagnostics;
+  if (!d || !d.available) return "";
+
+  const SEV = {
+    critical: { label: "Critical", cls: "diag-critical" },
+    major:    { label: "Major",    cls: "diag-major" },
+    minor:    { label: "Minor",    cls: "diag-minor" },
+    positive: { label: "Strength", cls: "diag-positive" },
+  };
+
+  let html = `<h3>Why this work is landing — or isn't<button class="help-btn"
+    data-help="diagnostics" aria-label="About reception diagnostics">?</button></h3>`;
+  html += `<p class="diag-headline">${escapeHtml(d.headline)}</p>`;
+  if (d.profile_context) html += `<p class="diag-context">${escapeHtml(d.profile_context)}</p>`;
+
+  if (!d.findings.length) {
+    html += `<div class="ok-box">No structural obstacles detected. Nothing in the venue,
+      authorship or reproducibility signals is holding this back.</div>`;
+    return html;
+  }
+
+  const group = (kind, title, blurb) => {
+    const rows = d.findings.filter(f => f.kind === kind);
+    if (!rows.length) return "";
+    let out = `<h4>${title}</h4><p class="diag-blurb">${blurb}</p><div class="diag-list">`;
+    for (const f of rows) {
+      const sev = SEV[f.severity] || SEV.minor;
+      out += `
+        <div class="diag-item ${sev.cls}">
+          <div class="diag-item-head">
+            <span class="diag-badge">${sev.label}</span>
+            <strong>${escapeHtml(f.title)}</strong>
+          </div>
+          <p class="diag-reality">${escapeHtml(f.reality)}</p>
+          <p class="diag-action"><strong>What to do:</strong> ${escapeHtml(f.action)}</p>
+        </div>`;
+    }
+    return out + `</div>`;
+  };
+
+  html += group("quality", "In the manuscript",
+    "These are properties of the work itself, and they are what reviewers will catch.");
+  html += group("visibility", "In how it reaches people",
+    "These do not reflect the quality of the work, but they strongly affect whether it is read.");
+
+  html += `<p class="diag-disclaimer">${escapeHtml(d.disclaimer)}</p>`;
+  return html;
+}
+
 /** Research-integrity panel: adversarial scan, reference audit, and the
  *  advisory authorship signal (which never affects a score). */
 function renderIntegrityPanel(item) {
@@ -1649,6 +1823,9 @@ function renderDossierModal(item) {
     html += `<div class="ok-box">No warnings were raised during processing. All extraction,
       model-panel and ledger stages completed as expected.</div>`;
   }
+
+  // --- Why this work is or isn't landing ---
+  html += renderDiagnosticsPanel(item);
 
   // --- Research integrity ---
   html += renderIntegrityPanel(item);
@@ -3175,6 +3352,8 @@ renderSidebar();
 loadChainStatus();
 loadEmissionStatus();
 refreshTrialStatus();
+loadProfile();
+document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
 initScilem();
 setInterval(loadChainStatus, 60000);
 

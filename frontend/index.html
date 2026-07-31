@@ -94,6 +94,55 @@
         <h1>Manuscript Intake &amp; Processing<button class="help-btn" data-help="intake" aria-label="About manuscript intake">?</button></h1>
       </div>
 
+      <details class="card profile-card" id="profileCard">
+        <summary>
+          <span><strong>Your research profile</strong>
+          <span class="profile-status" id="profileStatus">not set</span></span>
+          <span class="profile-toggle-hint">Tailors your diagnostics</span>
+        </summary>
+
+        <p class="lede profile-lede">Telling ScholarPi what you work on and what you are trying to
+        achieve lets the reception diagnostic frame its findings against your goal. This never
+        changes your piX score or the findings themselves — only how they are explained.</p>
+
+        <div class="profile-grid">
+          <label>Research field
+            <input type="text" id="profileField" placeholder="Computational biology" maxlength="120">
+          </label>
+          <label>Career stage
+            <select id="profileCareerStage">
+              <option value="">Prefer not to say</option>
+              <option value="student">Student</option>
+              <option value="phd">PhD candidate</option>
+              <option value="postdoc">Postdoc</option>
+              <option value="faculty">Faculty</option>
+              <option value="industry">Industry researcher</option>
+              <option value="independent">Independent researcher</option>
+            </select>
+          </label>
+        </div>
+
+        <label class="profile-block">What are you trying to achieve?
+          <input type="text" id="profileGoal" maxlength="600"
+                 placeholder="Land a faculty position / build a case for funding / establish priority">
+        </label>
+
+        <label class="profile-block">Your core idea
+          <textarea id="profileIdea" rows="3" maxlength="1500"
+                    placeholder="The claim your work is built around, in a few sentences."></textarea>
+        </label>
+
+        <label class="profile-block">Working abstract <span class="profile-optional">optional</span>
+          <textarea id="profileAbstract" rows="4" maxlength="4000"
+                    placeholder="Paste a draft abstract if you have one."></textarea>
+        </label>
+
+        <div class="profile-actions">
+          <button class="btn btn-primary" id="profileSaveBtn">Save profile</button>
+          <span class="profile-msg" id="profileMsg"></span>
+        </div>
+      </details>
+
       <div class="card">
         <h2>Assess a Manuscript<button class="help-btn" data-help="assess" aria-label="About assessment">?</button></h2>
 
