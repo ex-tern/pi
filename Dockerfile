@@ -21,7 +21,12 @@ COPY frontend/ ./frontend/
 
 # Persistent data (SQLite DB + PyTorch weights + logs) lives here, outside
 # the image layer — mount a volume at /data in production.
-ENV SCHOLARPI_DATA_DIR=/data
+# Deliberately NOT setting SCHOLARPI_DATA_DIR here. Hardcoding it overrides the
+# resolution order in config.py, which prefers an explicit setting, then the
+# platform's own RAILWAY_VOLUME_MOUNT_PATH, then a home directory. Pinning it to
+# /data meant a volume mounted anywhere else was silently ignored and the app
+# wrote to a path that is not persisted. The image still prepares /data as the
+# conventional default for `docker run -v ...:/data`.
 RUN mkdir -p /data
 
 # Non-root user. Note there is deliberately no `USER scholarpi` here: the
@@ -40,8 +45,11 @@ ENV ENVIRONMENT=production \
 
 EXPOSE 8000
 
-HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
-    CMD curl -f http://localhost:8000/api/health || exit 1
+# Must follow $PORT, not a fixed 8000 — the app binds whatever the platform
+# injects (Railway used 8080), so a hardcoded port checks a socket nothing is
+# listening on and reports a healthy container as unhealthy forever.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=45s --retries=3 \
+    CMD curl -f "http://localhost:${PORT:-8000}/api/health" || exit 1
 
 WORKDIR /app/backend
 ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
