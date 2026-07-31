@@ -187,7 +187,26 @@ REQUIRE_PROOF_OF_WORK = os.getenv("REQUIRE_PROOF_OF_WORK", "true").strip().lower
 # Data directory (SQLite DB + PyTorch weights). Overridable so production
 # deployments (Docker, systemd) can point it at a persistent volume instead
 # of the service account's home directory.
-BASE_DIR = os.path.expanduser(os.getenv("SCHOLARPI_DATA_DIR", "~/Scientometric_Pi_Index"))
+def _resolve_data_dir() -> str:
+    """Where the ledger, database and learned state live.
+
+    Order matters. An explicit SCHOLARPI_DATA_DIR always wins. Failing that,
+    Railway sets RAILWAY_VOLUME_MOUNT_PATH automatically whenever a volume is
+    attached, so a mounted volume is used even if the operator forgot the
+    second configuration step — which is the failure this ordering exists to
+    prevent. Mounting a volume and not pointing the app at it looks like a
+    successful setup and still discards the database on every redeploy.
+    """
+    explicit = os.getenv("SCHOLARPI_DATA_DIR", "").strip()
+    if explicit:
+        return os.path.expanduser(explicit)
+    railway_volume = os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "").strip()
+    if railway_volume:
+        return os.path.join(railway_volume, "scholarpi")
+    return os.path.expanduser("~/Scientometric_Pi_Index")
+
+
+BASE_DIR = _resolve_data_dir()
 os.makedirs(BASE_DIR, exist_ok=True)
 DB_PATH = os.path.join(BASE_DIR, "pi_index_main.db")
 

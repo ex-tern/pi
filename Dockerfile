@@ -8,6 +8,7 @@ FROM python:3.11-slim
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
@@ -23,10 +24,16 @@ COPY frontend/ ./frontend/
 ENV SCHOLARPI_DATA_DIR=/data
 RUN mkdir -p /data
 
-# Run as a non-root user.
+# Non-root user. Note there is deliberately no `USER scholarpi` here: the
+# entrypoint must start as root so it can take ownership of a freshly mounted
+# volume, and it drops to this user with gosu immediately afterwards. The
+# build-time chown below covers /app and the image's own /data; a mounted
+# volume replaces the latter and is handled at runtime instead.
 RUN useradd --create-home --shell /bin/bash scholarpi \
     && chown -R scholarpi:scholarpi /app /data
-USER scholarpi
+
+COPY docker-entrypoint.sh /usr/local/bin/docker-entrypoint.sh
+RUN chmod +x /usr/local/bin/docker-entrypoint.sh
 
 ENV ENVIRONMENT=production \
     PYTHONUNBUFFERED=1
@@ -37,4 +44,5 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=30s --retries=3 \
     CMD curl -f http://localhost:8000/api/health || exit 1
 
 WORKDIR /app/backend
+ENTRYPOINT ["/usr/local/bin/docker-entrypoint.sh"]
 CMD ["gunicorn", "api:app", "-c", "gunicorn.conf.py"]

@@ -106,17 +106,28 @@ import numpy as np
 # Logging — actually configured (the app previously called logging.info()
 # with no handler attached, so nothing was ever written anywhere).
 # ---------------------------------------------------------------------------
-_LOG_DIR = os.path.join(BASE_DIR, "logs")
-os.makedirs(_LOG_DIR, exist_ok=True)
+# stdout first, and unconditionally. Every container platform captures it, so
+# it is the handler that always works.
 _log_handlers = [logging.StreamHandler()]
+
+# A log FILE is a convenience. The directory creation was previously
+# unguarded — while the handler below it was wrapped in try/except — so a data
+# directory the process could not write to raised PermissionError at import
+# time and the worker died before serving a single request. That is exactly
+# what happens the first time a volume is mounted, because the mount arrives
+# root-owned and replaces whatever the image had prepared. The application
+# must not refuse to start over somewhere to put logs.
+_LOG_DIR = os.path.join(BASE_DIR, "logs")
 try:
+    os.makedirs(_LOG_DIR, exist_ok=True)
     _log_handlers.append(
         logging.handlers.RotatingFileHandler(
             os.path.join(_LOG_DIR, "scholarpi.log"), maxBytes=5_000_000, backupCount=5
         )
     )
-except OSError:
-    pass
+except OSError as _log_err:
+    print(f"[startup] File logging disabled ({_log_err}); logging to stdout only.",
+          file=sys.stderr)
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(message)s",
@@ -3064,7 +3075,7 @@ _EXPLORER_SORTS = {
 def explorer_latest(
     min_score: float = Query(default=0.0, ge=0.0, le=100.0),
     max_score: float = Query(default=100.0, ge=0.0, le=100.0),
-    field: str = Query(default="", max_length=120),
+    field: str = Query(default="", max_length=400),   # comma-separated; matches ANY
     sort: str = Query(default="date"),
     order: str = Query(default="desc"),
     limit: int = Query(default=25, ge=1, le=200),
@@ -3110,7 +3121,9 @@ def explorer_latest(
     finally:
         conn.close()
     records = []
-    wanted_field = (field or "").strip().lower()
+    # A list, matched with OR. Researchers work across several fields, and a
+    # single-value filter forced them to run the same query once per field.
+    wanted_fields = {f.strip().lower() for f in (field or "").split(",") if f.strip()}
     for r in rows:
         # Field filtering is done here rather than in SQL because `fields` is a
         # JSON array in a TEXT column; a LIKE against it would match substrings
@@ -3120,7 +3133,7 @@ def explorer_latest(
             row_fields = [str(f).strip() for f in json.loads(r[15] or "[]") if str(f).strip()]
         except (ValueError, TypeError):
             row_fields = []
-        if wanted_field and not any(f.lower() == wanted_field for f in row_fields):
+        if wanted_fields and not any(f.lower() in wanted_fields for f in row_fields):
             continue
         tx = r[5]
         records.append({
