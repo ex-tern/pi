@@ -1,0 +1,25 @@
+{
+  "inputs": [
+    {
+      "name": "vapri",
+      "public": false,
+      "type": "field"
+    },
+    {
+      "name": "threshold",
+      "public": false,
+      "type": "field"
+    },
+    {
+      "name": "truncatedHashInt",
+      "public": true,
+      "type": "field"
+    }
+  ],
+  "output": {
+    "type": "tuple",
+    "components": {
+      "elements": []
+    }
+  }
+}

@@ -109,6 +109,19 @@ def enforce_database_schema(conn: sqlite3.Connection):
             cursor.execute("ALTER TABLE auto_ip_tracking ADD COLUMN free_evals_used INTEGER DEFAULT 0")
         except Exception:
             pass
+    # Bonus allowance earned by playing the Science Map arcade. Kept in a
+    # separate column from free_evals_used so the base entitlement and the
+    # earned entitlement can be reasoned about (and capped) independently.
+    if "bonus_evals" not in ip_cols:
+        try:
+            cursor.execute("ALTER TABLE auto_ip_tracking ADD COLUMN bonus_evals INTEGER DEFAULT 0")
+        except Exception:
+            pass
+    if "bonus_last_award" not in ip_cols:
+        try:
+            cursor.execute("ALTER TABLE auto_ip_tracking ADD COLUMN bonus_last_award DATETIME")
+        except Exception:
+            pass
 
     # Ensure assessment columns exist
     target_columns = {
@@ -380,6 +393,82 @@ def get_free_evals_used(ip_address: str) -> int:
             "SELECT free_evals_used FROM auto_ip_tracking WHERE ip_address = ?", (ip_address,)
         ).fetchone()
         return int(row[0]) if row and row[0] is not None else 0
+    finally:
+        conn.close()
+
+
+def get_bonus_evals(ip_address: str) -> int:
+    """Extra allowance this IP has earned from the Science Map arcade."""
+    if not ip_address:
+        return 0
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT bonus_evals FROM auto_ip_tracking WHERE ip_address = ?", (ip_address,)
+        ).fetchone()
+        return int(row[0]) if row and row[0] is not None else 0
+    finally:
+        conn.close()
+
+
+def get_bonus_award_state(ip_address: str) -> dict:
+    """Current bonus balance plus when it was last topped up.
+
+    The timestamp is what enforces the cooldown between arcade rewards, so it
+    has to live in the database rather than in process memory — otherwise a
+    restart, or a second gunicorn worker, would hand out a fresh reward.
+    """
+    if not ip_address:
+        return {"bonus": 0, "last_award": None}
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT bonus_evals, bonus_last_award FROM auto_ip_tracking WHERE ip_address = ?",
+            (ip_address,),
+        ).fetchone()
+        if not row:
+            return {"bonus": 0, "last_award": None}
+        return {"bonus": int(row[0] or 0), "last_award": row[1]}
+    finally:
+        conn.close()
+
+
+def grant_bonus_evals(ip_address: str, amount: int, cap: int) -> dict:
+    """Adds arcade winnings to this IP's allowance, never exceeding ``cap``.
+
+    Returns the granted amount (which may be less than requested, or zero) and
+    the resulting balance. The cap is applied inside the same transaction that
+    performs the update so two concurrent requests cannot both read a
+    below-cap value and each add to it.
+    """
+    if not ip_address or amount <= 0:
+        return {"granted": 0, "bonus": get_bonus_evals(ip_address)}
+    conn = get_db_connection()
+    try:
+        conn.execute("BEGIN IMMEDIATE")
+        conn.execute(
+            """INSERT INTO auto_ip_tracking (ip_address, first_seen, bonus_evals)
+               VALUES (?, CURRENT_TIMESTAMP, 0)
+               ON CONFLICT(ip_address) DO NOTHING""",
+            (ip_address,),
+        )
+        row = conn.execute(
+            "SELECT bonus_evals FROM auto_ip_tracking WHERE ip_address = ?", (ip_address,)
+        ).fetchone()
+        current = int(row[0] or 0) if row else 0
+        granted = max(0, min(amount, cap - current))
+        if granted:
+            conn.execute(
+                """UPDATE auto_ip_tracking
+                   SET bonus_evals = ?, bonus_last_award = CURRENT_TIMESTAMP
+                   WHERE ip_address = ?""",
+                (current + granted, ip_address),
+            )
+        conn.commit()
+        return {"granted": granted, "bonus": current + granted}
+    except Exception:
+        conn.rollback()
+        raise
     finally:
         conn.close()
 

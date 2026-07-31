@@ -204,6 +204,22 @@ const HELP = {
       likely to already have any.</p>
       <p>Select a row to see that author's assessed papers.</p>`,
   },
+  arcade: {
+    title: "The Global Map of Science",
+    body: `<p>Each bubble is a field of science, sized by how much of the literature it accounts
+      for. You start small: absorb fields smaller than you to grow, and avoid the ones larger
+      than you until you outgrow them.</p>
+      <p><strong>Why it grants free assessments.</strong> Assessment costs real compute, so the
+      free tier has to be finite. Rather than a hard wall, a completed run earns additional
+      allowance — capped, and rate-limited, so it supplements the free tier without replacing
+      the need for an identity.</p>
+      <p><strong>The score is not taken on trust.</strong> The playfield is generated from a
+      server-issued seed, and the server replays your entire run against its own copy before
+      granting anything. A run that claims an impossible absorption is rejected, so editing the
+      game in your browser does not produce credit.</p>
+      <p>Press <kbd>Esc</kbd> or the Exit button to leave at any time. An abandoned run is not
+      recorded and costs you nothing.</p>`,
+  },
   explorer: {
     title: "Proof-of-Research Ledger Explorer",
     body: `<p>Every assessment writes a block containing the evaluation hash, criteria weights,
@@ -835,6 +851,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
     if (btn.dataset.tab === "explorer") loadExplorer();
     if (btn.dataset.tab === "diagram") renderArchitectureDiagrams();
+    // Leaving the arcade mid-run must stop the animation loop, or it keeps
+    // burning a frame budget (and battery) behind a hidden panel forever.
+    if (btn.dataset.tab !== "arcade" && window.ScholarPiArcade) {
+      window.ScholarPiArcade.exit("");
+    }
   });
 });
 
@@ -852,13 +873,61 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // ---------------------------------------------------------------------------
 // ASSESS TAB
 // ---------------------------------------------------------------------------
+// Authoritative allowance, as last reported by the server. The browser's own
+// localStorage counter is only a hint — it is trivially cleared, and it knows
+// nothing about allowance earned in the Science Map arcade — so the banner is
+// driven by /api/trial/status and falls back to the local count only if the
+// server has not answered yet.
+let trialStatus = null;
+
+async function refreshTrialStatus() {
+  try {
+    const res = await fetch(`${API}/api/trial/status`);
+    if (res.ok) trialStatus = await res.json();
+  } catch (_) {
+    trialStatus = null;   // offline: fall through to the local estimate
+  }
+  refreshAssessGate();
+}
+
 function refreshAssessGate() {
   const warn = document.getElementById("freeTrialWarning");
-  const blocked = Session.freeEvalsUsed > 0 && !Session.hasIdentity();
-  warn.classList.toggle("hidden", !blocked);
+  if (!warn) return;
+
+  if (Session.hasIdentity()) {
+    warn.classList.add("hidden");
+  } else if (trialStatus) {
+    const { remaining, documents_allowed, bonus_allowance } = trialStatus;
+    if (remaining <= 0) {
+      warn.innerHTML = `<strong>Free trial complete.</strong> All ${documents_allowed} free
+        assessments have been used from this connection. Connect a wallet or link ORCID to
+        continue — or win a run on the <a href="#" data-goto-tab="arcade">Science Map</a> to
+        earn more.`;
+      warn.classList.remove("hidden");
+    } else {
+      const earned = bonus_allowance
+        ? ` (${bonus_allowance} earned in the Science Map)` : "";
+      warn.innerHTML = `<strong>${remaining} of ${documents_allowed} free assessments
+        remaining</strong>${earned} on this connection. Re-assessing a paper you have already
+        submitted is always free.`;
+      warn.classList.remove("hidden");
+    }
+  } else {
+    warn.classList.toggle("hidden", !(Session.freeEvalsUsed > 0));
+  }
+
   renderFeeNotice();
   updateEstimatedCost();
 }
+
+// Lets the banner's "Science Map" link switch tabs without a page reload.
+document.addEventListener("click", e => {
+  const link = e.target.closest("[data-goto-tab]");
+  if (!link) return;
+  e.preventDefault();
+  const target = document.querySelector(`.tab-btn[data-tab="${link.dataset.gotoTab}"]`);
+  if (target) target.click();
+});
 
 function countQueuedPapers() {
   const files = document.getElementById("pdfFiles").files.length;
@@ -3072,5 +3141,12 @@ bootstrapFromQueryParams();
 renderSidebar();
 loadChainStatus();
 loadEmissionStatus();
+refreshTrialStatus();
 initScilem();
 setInterval(loadChainStatus, 60000);
+
+// Narrow surface exposed to arcade.js so it can refresh the allowance banner
+// after a win. Kept explicit rather than leaking the whole module scope.
+window.ScholarPi = {
+  refreshTrialStatus,
+};
