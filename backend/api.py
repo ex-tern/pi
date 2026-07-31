@@ -676,6 +676,35 @@ def _profile_key(wallet: str = "", orcid: str = "") -> str:
     return ""
 
 
+def _identity_values(wallet: str = "", orcid: str = "") -> list:
+    """Every form this identity may appear as in `papers_assessment.user_id`.
+
+    The assessment pipeline writes the RAW identifier (`user_id = orcid if
+    orcid else wallet`), while profiles, arcade progress and bug reports use a
+    namespaced `orcid:`/`wallet:` key. Anything that joins the two must accept
+    both, or it silently matches nothing — which is exactly what made the
+    assessment history appear empty for signed-in users.
+
+    Wallet addresses are included in several casings because EIP-55 checksum
+    casing is what a wallet reports, but a lowercase form is what a normalised
+    key contains, and SQLite's `=` is case-sensitive for text.
+    """
+    values = []
+    orcid = (orcid or "").strip()
+    wallet = (wallet or "").strip()
+    if orcid:
+        values += [orcid, f"orcid:{orcid}"]
+    if wallet:
+        values += [wallet, wallet.lower(), f"wallet:{wallet.lower()}"]
+    # Order-preserving dedupe.
+    seen, out = set(), []
+    for v in values:
+        if v and v not in seen:
+            seen.add(v)
+            out.append(v)
+    return out
+
+
 def _display_name(wallet: str = "", orcid: str = "") -> str:
     """A public label for a player that is not their full credential.
 
@@ -988,7 +1017,7 @@ def my_assessments(wallet: str = Query(default=""), orcid: str = Query(default="
         return {"signed_in": False, "assessments": [], "count": 0,
                 "reason": ("Sign in with a wallet or ORCID to keep a history of your "
                            "assessments. Anonymous runs are not linked to an identity.")}
-    rows = list_assessments_for_identity(key, limit=limit)
+    rows = list_assessments_for_identity(_identity_values(wallet, orcid), limit=limit)
     return {"signed_in": True, "assessments": rows, "count": len(rows)}
 
 
@@ -1009,7 +1038,8 @@ def remove_assessment(file_hash: str, wallet: str = Query(default=""),
     """
     key = _profile_key(wallet, orcid)
     is_owner = bool(wallet and OWNER_ID and wallet.lower() == OWNER_ID.lower())
-    result = delete_assessment(file_hash, account_key=key, allow_any=is_owner)
+    result = delete_assessment(file_hash, identities=_identity_values(wallet, orcid),
+                               allow_any=is_owner)
     if not result["deleted"]:
         raise HTTPException(status_code=404 if "not found" in result["reason"].lower() else 403,
                             detail=result["reason"])

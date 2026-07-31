@@ -1,4 +1,5 @@
 import os
+import logging
 import json
 import hashlib
 
@@ -65,9 +66,38 @@ FALLBACK_MODEL = "llama-3.1-8b-instant"
 MAX_TEXT_TOKENS = 15000
 EPOCH_BLOCK_SIZE = 5
 
+def _clean_address(raw: str, label: str) -> str:
+    """Accept a single well-formed address, or nothing.
+
+    Pasting two addresses into one variable is an easy mistake and produced a
+    value that looked configured but could never work. Taking the first token
+    silently would be worse — it would guess at intent — so a malformed value
+    is discarded and reported, and the feature simply stays off.
+    """
+    value = (raw or "").strip()
+    if not value:
+        return ""
+    if len(value.split()) > 1:
+        logging.warning("%s contains %d values; expected one address. Ignoring it.",
+                        label, len(value.split()))
+        return ""
+    if not (value.startswith("0x") and len(value) == 42):
+        logging.warning("%s is not a valid Ethereum address (%d hex chars, expected 40). "
+                        "Ignoring it.", label, max(0, len(value) - 2))
+        return ""
+    return value
+
+
+
 WEB3_PROVIDER_URI = os.getenv("WEB3_PROVIDER_URI", "https://ethereum-sepolia-rpc.publicnode.com")
 ETH_ADMIN_PRIVATE_KEY = os.getenv("ETH_ADMIN_PRIVATE_KEY", "")
-PIQ_CONTRACT_ADDRESS = os.getenv("PIQ_CONTRACT_ADDRESS", "0x17AF5399986C34e16Df8fB830eB8e2048b878A88")
+# No default. The previous hardcoded fallback pointed at an uninitialized UUPS
+# implementation, so forgetting to set this variable did not fail — it silently
+# aimed the app at a dead contract that reverts every mint while still looking
+# configured. An unset address is an honest "not configured"; a stale default
+# is a wrong answer that reports itself as a right one.
+PIQ_CONTRACT_ADDRESS = _clean_address(os.getenv("PIQ_CONTRACT_ADDRESS", ""),
+                                      "PIQ_CONTRACT_ADDRESS")
 
 # ---------------------------------------------------------------------------
 # Ethereum network
@@ -264,7 +294,8 @@ def get_secret(key, default=""):
 GROQ_API_KEY = get_secret("GROQ_API_KEY")
 PINATA_API_KEY = get_secret("PINATA_API_KEY")
 PINATA_SECRET_API_KEY = get_secret("PINATA_SECRET_API_KEY")
-REGISTRY_CONTRACT_ADDRESS = get_secret("REGISTRY_CONTRACT_ADDRESS")
+REGISTRY_CONTRACT_ADDRESS = _clean_address(
+    get_secret("REGISTRY_CONTRACT_ADDRESS"), "REGISTRY_CONTRACT_ADDRESS")
 OR_API_KEY = get_secret("OR_API_KEY")
 GEMINI_API_KEY = get_secret("GEMINI_API_KEY")
 
