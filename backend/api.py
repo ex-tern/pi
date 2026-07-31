@@ -222,10 +222,22 @@ def on_startup():
     for line in config_summary():
         logging.info(line)
     if not _STATE_RESTORED:
+        # Bounded inside restore_state_from_web3, but guarded again here.
+        # Startup blocks the server from accepting connections, so anything
+        # slow added to this function silently becomes a deployment failure —
+        # the healthcheck times out and the platform reports a broken app that
+        # is in fact working. Nothing here may be unbounded.
+        _restore_started = time.time()
         try:
             restore_state_from_web3()
         except Exception as e:
             add_log(f"State restore warning: {e}")
+        finally:
+            _elapsed = time.time() - _restore_started
+            if _elapsed > 10:
+                logging.warning(
+                    "State restore took %.1fs of the startup window. If deploys begin failing "
+                    "their healthcheck, lower RESTORE_BUDGET_SECONDS.", _elapsed)
         _STATE_RESTORED = True
 
     # Say plainly, at every boot, whether this deployment can survive a
