@@ -1023,6 +1023,7 @@ function renderResearchBuddy(profile) {
   let html = `<p class="buddy-lede">Based on your profile${fields.length
     ? ` in <strong>${fields.map(escapeHtml).join(", ")}</strong>` : ""}${goal
     ? `, working toward <em>${escapeHtml(goal)}</em>` : ""}.</p>`;
+  html += `<div id="buddyCorpus"></div>`;
 
   const actions = [];
   if (stage === "phd" || stage === "student") {
@@ -1063,6 +1064,90 @@ function renderResearchBuddy(profile) {
   html += `<p class="buddy-note">These are heuristics from your stated profile, not an analysis
     of your publications. Assess a manuscript for findings grounded in an actual paper.</p>`;
   body.innerHTML = html;
+  loadBuddyCorpus();
+}
+
+/** The grounded half of Research Buddy: the researcher's stated fields
+ *  measured against what has actually been assessed in this deployment. */
+async function loadBuddyCorpus() {
+  const slot = document.getElementById("buddyCorpus");
+  if (!slot || !Session.hasIdentity()) return;
+  let data;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/buddy?${qs}`);
+    if (!res.ok) return;
+    data = await res.json();
+  } catch (_) { return; }
+  if (!data.available) return;
+
+  const { corpus, fields, adjacent } = data;
+  if (!corpus.total_papers) {
+    slot.innerHTML = `<div class="buddy-corpus"><p class="buddy-empty">No papers assessed in this
+      deployment yet, so there is nothing to compare your fields against. Assess one and this
+      section starts reporting how your fields sit relative to the corpus.</p></div>`;
+    return;
+  }
+
+  const inCorpus = fields.filter(f => f.in_corpus);
+  const missing = fields.filter(f => !f.in_corpus);
+  let html = `<div class="buddy-corpus"><h4>Your fields against the corpus</h4>`;
+  html += `<p class="buddy-corpus-meta">${corpus.total_papers} paper${corpus.total_papers === 1 ? "" : "s"}
+    assessed across ${corpus.fields_assessed} field${corpus.fields_assessed === 1 ? "" : "s"}${
+    corpus.mean_score !== null ? `, mean piX ${corpus.mean_score}` : ""}.</p>`;
+
+  if (inCorpus.length) {
+    html += `<table class="data-table buddy-table"><thead><tr>
+      <th>Your field</th><th class="num">Papers</th><th class="num">Avg piX</th><th class="num">vs corpus</th>
+      </tr></thead><tbody>` + inCorpus.map(f => {
+        const d = f.vs_corpus;
+        const cls = d > 0 ? "trend-up" : d < 0 ? "trend-down" : "trend-flat";
+        return `<tr><td>${escapeHtml(f.field)}</td><td class="num">${f.papers}</td>
+          <td class="num">${f.avg_score === null ? "—" : f.avg_score.toFixed(1)}</td>
+          <td class="num ${cls}">${d === null ? "—" : (d >= 0 ? "+" : "") + d.toFixed(1)}</td></tr>`;
+      }).join("") + `</tbody></table>`;
+  }
+  if (missing.length) {
+    html += `<p class="buddy-corpus-note"><strong>No assessed work yet in
+      ${missing.map(f => escapeHtml(f.field)).join(", ")}.</strong> Nothing here can tell you how
+      those fields are performing until something in them is assessed.</p>`;
+  }
+  if (adjacent.length) {
+    html += `<p class="buddy-corpus-note">Active here but not on your profile:
+      ${adjacent.map(a => `<strong>${escapeHtml(a.field)}</strong> (${a.papers})`).join(", ")}.
+      If any overlap your work, adding them sharpens this comparison.</p>`;
+  }
+  html += `</div>`;
+
+  const picks = data.picks;
+  if (picks && picks.available) {
+    html += `<div class="buddy-picks"><h4>Scilem's reading picks
+      <span class="picks-scope">from ${escapeHtml(picks.scope || "corpus")}</span></h4>`;
+
+    const list = (items, kind) => items.map(p => `
+      <div class="pick-item pick-${kind}">
+        <div class="pick-head">
+          <span class="pill ${kind === "yes" ? "p-score" : "q-warn"}">piX ${p.score.toFixed(1)}</span>
+          <strong>${escapeHtml(p.title)}</strong>
+        </div>
+        <div class="pick-meta">${escapeHtml(p.author_name || "Unknown author")}${
+          p.fields.length ? " · " + p.fields.map(escapeHtml).join(", ") : ""}</div>
+        <p class="pick-why">${escapeHtml(p.why)}</p>
+      </div>`).join("");
+
+    if (picks.recommended.length) {
+      html += `<h5 class="pick-group">Worth reading</h5>${list(picks.recommended, "yes")}`;
+    }
+    if (picks.caution.length) {
+      html += `<h5 class="pick-group">Read critically</h5>${list(picks.caution, "no")}`;
+    }
+    if (!picks.recommended.length && !picks.caution.length) {
+      html += `<p class="buddy-empty">Nothing in the corpus sits clearly above or below the
+        rubric thresholds yet.</p>`;
+    }
+    html += `<p class="buddy-note">${escapeHtml(picks.note || "")}</p></div>`;
+  }
+  slot.innerHTML = html;
 }
 
 function updateProfileStatus(profile) {
@@ -2259,7 +2344,40 @@ async function loadForecast() {
       return;
     }
 
+    // Delta mode: one assessment recorded. There is no series to plot, so
+    // render the measured shift from baseline as a table instead of forcing a
+    // chart through a single point — a two-point line implying a trend would
+    // be a claim the data does not support.
+    if (data.mode === "delta") {
+      msg.textContent = "";
+      empty.classList.remove("hidden");
+      chartWrap.classList.add("hidden");
+      if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
+      const rows = (data.criteria || [])
+        .slice()
+        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
+        .map(c => {
+          const arrow = c.direction === "up" ? "▲" : c.direction === "down" ? "▼" : "–";
+          const cls = c.direction === "up" ? "trend-up" : c.direction === "down" ? "trend-down" : "trend-flat";
+          return `<tr>
+            <td>${escapeHtml(c.title || c.id)}</td>
+            <td class="num">${c.current.toFixed(3)}</td>
+            <td class="num ${cls}">${arrow} ${c.delta >= 0 ? "+" : ""}${c.delta.toFixed(3)}</td>
+          </tr>`;
+        }).join("");
+      empty.innerHTML = `
+        <div class="empty-title">Measured weighting — no trend yet</div>
+        <p>${escapeHtml(data.message || "")}</p>
+        <table class="data-table forecast-delta-table">
+          <thead><tr><th>Criterion</th><th class="num">Weight</th><th class="num">vs baseline</th></tr></thead>
+          <tbody>${rows}</tbody>
+        </table>
+        ${data.insight ? `<p class="forecast-insight-inline">${escapeHtml(data.insight)}</p>` : ""}`;
+      return;
+    }
+
     msg.textContent = "";
+    empty.classList.add("hidden");
     chartWrap.classList.remove("hidden");
 
     // Observed history, then the forecast point appended. Each criterion gets
@@ -2959,6 +3077,39 @@ refreshTrialStatus();
 syncProfileVisibility();
 loadProfile();
 document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
+
+// Referral. Uses the native share sheet where it exists (mobile), falls back to
+// the clipboard, and falls back again to a selectable text box — navigator.share
+// and navigator.clipboard both require a secure context, so neither can be
+// relied on over plain http, which is exactly how this runs locally.
+document.getElementById("referBtn").addEventListener("click", async () => {
+  const msg = document.getElementById("referMsg");
+  const url = window.location.origin + window.location.pathname;
+  const text = "ScholarPi assesses research manuscripts against CoARA-aligned criteria and "
+    + "tells you why a paper isn't landing — venue, coauthors, reproducibility. " + url;
+
+  if (navigator.share) {
+    try {
+      await navigator.share({ title: "ScholarPi", text, url });
+      msg.textContent = "Thanks for sharing.";
+      msg.className = "referral-msg referral-ok";
+      return;
+    } catch (e) {
+      if (e && e.name === "AbortError") { msg.textContent = ""; return; }
+    }
+  }
+  try {
+    await navigator.clipboard.writeText(text);
+    msg.textContent = "Invitation copied to your clipboard.";
+    msg.className = "referral-msg referral-ok";
+  } catch (e) {
+    msg.innerHTML = `<textarea readonly rows="3" class="referral-fallback">${escapeHtml(text)}</textarea>
+      <span class="referral-hint">Copy the text above to share.</span>`;
+    msg.className = "referral-msg";
+    const ta = msg.querySelector("textarea");
+    if (ta) { ta.focus(); ta.select(); }
+  }
+});
 
 // Field tag entry: Enter or comma commits, Backspace on an empty input removes
 // the last tag (the behaviour every tag field has, and its absence is noticed).

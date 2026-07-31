@@ -53,6 +53,7 @@ from database import (
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
+    get_papers_for_recommendation,
 )
 import arcade
 import diagnostics
@@ -624,6 +625,92 @@ class ResearcherProfile(BaseModel):
     goal: str = ""
     idea: str = ""
     abstract: str = ""
+
+
+@app.get("/api/buddy")
+def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """Tailored guidance: the researcher's stated fields against the live corpus.
+
+    This is the part the frontend cannot compute on its own. It compares the
+    fields the researcher says they work in against what has actually been
+    assessed here — which of their fields are crowded, which are empty, and how
+    their own assessed papers score relative to the corpus mean.
+
+    Everything returned is grounded in a real count or a real mean. Where there
+    is no data, it says so rather than generating plausible-sounding advice,
+    because a researcher cannot distinguish a grounded suggestion from an
+    invented one and should not have to.
+    """
+    key = _profile_key(wallet, orcid)
+    if not key:
+        return {"available": False, "reason": "Sign in to get tailored guidance."}
+
+    profile = get_researcher_profile(key)
+    fields = [f.strip() for f in str(profile.get("field", "")).split(",") if f.strip()]
+
+    try:
+        corpus = get_field_corpus_stats(limit=60)
+    except Exception as e:
+        logging.warning("Buddy corpus read failed: %s", e)
+        corpus = []
+    by_field = {row["field"].lower(): row for row in corpus}
+    total_papers = sum(r["papers"] for r in corpus)
+    corpus_mean = (
+        round(sum(r["avg_score"] * r["papers"] for r in corpus) / total_papers, 1)
+        if total_papers else None
+    )
+
+    field_reports = []
+    for name in fields:
+        row = by_field.get(name.lower())
+        if row:
+            delta = (round(row["avg_score"] - corpus_mean, 1)
+                     if corpus_mean is not None else None)
+            field_reports.append({
+                "field": name, "in_corpus": True,
+                "papers": row["papers"], "avg_score": row["avg_score"],
+                "vs_corpus": delta,
+            })
+        else:
+            field_reports.append({"field": name, "in_corpus": False,
+                                  "papers": 0, "avg_score": None, "vs_corpus": None})
+
+    # Fields with assessed work that the researcher did not list. These are the
+    # most useful suggestions available without external data: they are areas
+    # this deployment demonstrably has material in.
+    listed = {f.lower() for f in fields}
+    adjacent = [
+        {"field": r["field"], "papers": r["papers"], "avg_score": r["avg_score"]}
+        for r in corpus if r["field"].lower() not in listed
+    ][:5]
+
+    # Scilem's reading picks. Scoped to the researcher's fields when they have
+    # listed any and those fields contain assessed work; otherwise drawn from
+    # the whole corpus, since a recommendation from an adjacent field is more
+    # useful than an empty list.
+    try:
+        candidates = get_papers_for_recommendation(fields=fields)
+        if not candidates and fields:
+            candidates = get_papers_for_recommendation(fields=None)
+            scope = "corpus"
+        else:
+            scope = "your fields" if fields else "corpus"
+        picks = diagnostics.recommend_papers(candidates)
+        picks["scope"] = scope
+    except Exception as e:
+        logging.warning("Buddy recommendations failed: %s", e)
+        picks = {"available": False, "reason": "Recommendations unavailable.",
+                 "recommended": [], "caution": []}
+
+    return {
+        "available": True,
+        "profile": profile,
+        "fields": field_reports,
+        "adjacent": adjacent,
+        "picks": picks,
+        "corpus": {"total_papers": total_papers, "mean_score": corpus_mean,
+                   "fields_assessed": len(corpus)},
+    }
 
 
 @app.get("/api/profile")
@@ -1320,12 +1407,61 @@ def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
                 "blocks_recorded": 0, "blocks_required": 3, "history": [],
                 "forecast": None, "criteria": []}
 
-    if len(rows) < 3:
+    # Two regimes, because "forecast" and "report" are different claims.
+    #
+    # A trend cannot honestly be projected from a single assessment — one
+    # point has no direction. But the moment there is one assessed paper there
+    # IS something real to report: how that paper's evidence profile moved the
+    # criteria weighting away from the genesis baseline. That is a measurement,
+    # not a projection, so it is returned as a delta and labelled as one.
+    # Fabricating a curve through one point would be the dishonest option, and
+    # showing nothing at all was the useless one.
+    if len(rows) == 2:
+        baseline = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
+        current = np.array([safe_float(v, 1.0) for v in rows[1][1:9]], dtype=np.float32)
+        criteria = []
+        for i, key_c in enumerate(CRITERIA_KEYS):
+            delta = float(current[i] - baseline[i])
+            criteria.append({
+                "id": key_c,
+                "title": CRITERIA_TITLES.get(key_c, key_c),
+                "current": round(float(current[i]), 5),
+                "previous": round(float(baseline[i]), 5),
+                "delta": round(delta, 5),
+                "direction": "up" if delta > 1e-4 else ("down" if delta < -1e-4 else "flat"),
+            })
+        ranked = sorted(criteria, key=lambda c: abs(c["delta"]), reverse=True)
+        movers = [c for c in ranked if c["direction"] != "flat"][:3]
+        return {
+            "ready": True,
+            "mode": "delta",
+            "method": "observed-delta",
+            "message": (
+                "One assessment recorded. This is the measured shift from the genesis "
+                "baseline, not a projection — a trend needs at least two assessed papers "
+                "before a direction can be inferred."
+            ),
+            "blocks_recorded": len(rows), "blocks_required": 3,
+            "history": [], "forecast": None,
+            "criteria": criteria,
+            "insight": (
+                "Your first assessment weighted "
+                + ", ".join(f"{c['title']} {'up' if c['direction'] == 'up' else 'down'}"
+                            for c in movers)
+                + " relative to the uniform baseline."
+            ) if movers else (
+                "Your first assessment produced a weighting indistinguishable from the "
+                "uniform baseline — its evidence was evenly spread across all eight criteria."
+            ),
+        }
+
+    if len(rows) < 2:
         return {
             "ready": False,
+            "mode": "empty",
             "message": (
-                f"The Pidyne forecaster needs at least 3 ledger blocks to learn a trend; "
-                f"{len(rows)} recorded so far. Assess a few manuscripts to build history."
+                "No manuscripts assessed yet. The first assessment produces a criteria "
+                "weighting immediately; a projected trend needs three ledger blocks."
             ),
             "blocks_recorded": len(rows), "blocks_required": 3,
             "history": [], "forecast": None, "criteria": [],

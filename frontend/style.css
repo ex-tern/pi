@@ -845,3 +845,74 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
 .warning-text { color: var(--warn); }
 .buddy-card { border-left: 3px solid var(--accent); }
+
+/* ---- Forecast: delta mode (single assessment) ---- */
+.forecast-delta-table { margin-top: 12px; font-size: 12.5px; }
+.trend-up { color: var(--success); font-weight: 600; }
+.trend-down { color: var(--danger); font-weight: 600; }
+.trend-flat { color: var(--faint); }
+.forecast-insight-inline { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 12px 0 0; }
+
+/* ---- Science Map header + orb (pk910-style depth cue) ---- */
+.arcade-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
+.arcade-header .arcade-corpus { margin: 0; }
+.arcade-hero-orb {
+  width: 68px; height: 68px; flex-shrink: 0; border-radius: 50%; position: relative;
+  background: radial-gradient(circle at 34% 30%, #7dd3fc, #0369a1 58%, #082f49);
+  box-shadow: 0 0 0 1px rgba(56,189,248,0.35), 0 0 34px -6px rgba(56,189,248,0.65);
+}
+.arcade-hero-orb::before {
+  content: ""; position: absolute; inset: -12px; border-radius: 50%; z-index: -1;
+  background: conic-gradient(from 0deg, rgba(56,189,248,0), rgba(56,189,248,0.5),
+              rgba(168,85,247,0.45), rgba(56,189,248,0));
+  animation: arcade-spin 7s linear infinite; filter: blur(7px);
+}
+@keyframes arcade-spin { to { transform: rotate(360deg); } }
+
+/* ---- Faucet panel ---- */
+.faucet-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
+.faucet-warn { color: var(--warn); }
+.faucet-list { list-style: none; padding: 0; margin: 8px 0; }
+.faucet-list li { margin-bottom: 9px; font-size: 12px; }
+.faucet-list a { font-weight: 600; display: block; }
+.faucet-list span { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; }
+
+/* ---- Referral ---- */
+.referral-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 13px; margin-bottom: 12px; }
+.referral-msg { font-size: 11.5px; color: var(--muted); margin-top: 8px; }
+.referral-ok { color: var(--success); font-weight: 600; }
+.referral-fallback { width: 100%; font-size: 11px; font-family: inherit; margin-top: 4px; }
+.referral-hint { display: block; font-size: 11px; color: var(--faint); margin-top: 4px; }
+
+@media (max-width: 720px) {
+  .arcade-header { gap: 12px; }
+  .arcade-hero-orb { width: 48px; height: 48px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .arcade-hero-orb::before { animation: none; }
+}
+
+/* ---- Research Buddy: corpus comparison ---- */
+.buddy-corpus { margin: 4px 0 16px; padding: 12px 13px; background: #fbfcfe;
+  border: 1px solid var(--border); border-radius: var(--radius); }
+.buddy-corpus h4 { margin: 0 0 4px; font-size: 12.5px; }
+.buddy-corpus-meta { font-size: 11.5px; color: var(--faint); margin: 0 0 10px; }
+.buddy-table { font-size: 12px; }
+.buddy-corpus-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 10px 0 0; }
+
+/* Horizontal scroll container for tables in narrow side panels. */
+.table-wrap { overflow-x: auto; }
+
+/* ---- Scilem reading picks ---- */
+.buddy-picks { margin-top: 16px; }
+.buddy-picks h4 { margin: 0 0 10px; font-size: 12.5px; display: flex; align-items: baseline; gap: 8px; }
+.picks-scope { font-weight: 400; font-size: 11px; color: var(--faint); }
+.pick-group { font-size: 11px; text-transform: uppercase; letter-spacing: 0.05em;
+  color: var(--muted); margin: 14px 0 7px; }
+.pick-item { border: 1px solid var(--border); border-left: 3px solid var(--border-strong);
+  border-radius: 0 var(--radius) var(--radius) 0; padding: 10px 12px; margin-bottom: 8px; background: #fff; }
+.pick-yes { border-left-color: var(--success); }
+.pick-no { border-left-color: var(--warn); }
+.pick-head { display: flex; align-items: center; gap: 8px; font-size: 13px; margin-bottom: 4px; }
+.pick-meta { font-size: 11px; color: var(--faint); margin-bottom: 5px; }
+.pick-why { font-size: 12px; color: #334155; line-height: 1.55; margin: 0; }

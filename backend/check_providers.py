@@ -28,6 +28,11 @@ PROVIDER_KEYS = [
     ("GROQ_API_KEY", "Groq", "https://console.groq.com"),
     ("OR_API_KEY", "OpenRouter", "https://openrouter.ai/keys"),
     ("GEMINI_API_KEY", "Google Gemini", "https://aistudio.google.com/apikey"),
+    ("CEREBRAS_API_KEY", "Cerebras", "https://cloud.cerebras.ai"),
+    ("MISTRAL_API_KEY", "Mistral", "https://console.mistral.ai/api-keys"),
+    ("DEEPSEEK_API_KEY", "DeepSeek", "https://platform.deepseek.com/api_keys"),
+    ("TOGETHER_API_KEY", "Together AI", "https://api.together.xyz/settings/api-keys"),
+    ("GITHUB_MODELS_TOKEN", "GitHub Models", "https://github.com/settings/tokens"),
 ]
 
 

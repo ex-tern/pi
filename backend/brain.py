@@ -236,8 +236,19 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
             response = client.chat.completions.create(
                 response_format={"type": "json_object"}, **request_args)
         except Exception as e:
-            if not re.search(r"response_format|json_object|not support", str(e), re.IGNORECASE):
+            # Retry without structured-output mode on anything that plausibly
+            # relates to it. The previous pattern was too narrow: OpenRouter
+            # reports this refusal in several wordings ("no endpoints found
+            # that support...", "unsupported parameter", "invalid_request"),
+            # none of which matched, so the fallback never fired and the juror
+            # was dropped over a parameter it did not need.
+            if not re.search(
+                r"response_format|json_object|not support|unsupported|no endpoints|"
+                r"invalid[_ ]request|structured output|schema",
+                str(e), re.IGNORECASE,
+            ):
                 raise
+            logging.info("Retrying %s without response_format: %s", model_name, str(e)[:160])
             logging.info("%s/%s rejected response_format; retrying without it.",
                          provider_name, model_name)
             response = client.chat.completions.create(**request_args)
