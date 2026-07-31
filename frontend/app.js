@@ -2346,7 +2346,19 @@ async function loadMap() {
     renderMapNetwork(data);
   } catch (e) {
     emptyState.classList.remove("hidden");
-    emptyState.textContent = "Could not load the map. The analytics service may be unavailable.";
+    // "The service may be unavailable" is not actionable — it collapses three
+    // different faults (server down, server erroring, bad response) into one
+    // sentence that suggests no next step. Report which one actually happened.
+    const detail = String(e && e.message ? e.message : e);
+    if (detail.startsWith("HTTP 5")) {
+      emptyState.textContent = `The map request reached the server but it returned an error `
+        + `(${detail}). Check the server log — this is a backend fault, not a network problem.`;
+    } else if (detail.startsWith("HTTP ")) {
+      emptyState.textContent = `The map request was rejected by the server (${detail}).`;
+    } else {
+      emptyState.textContent = "Could not reach the ScholarPi server. Confirm it is running "
+        + "and reachable at this address, then reload.";
+    }
     if (stabilizing) stabilizing.classList.add("hidden");
   }
 }

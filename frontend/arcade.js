@@ -56,7 +56,65 @@
     startedAt: 0, lastFrame: 0, raf: null,
     particles: [], stars: [],
     submitting: false, over: false,
+    legend: [],
+    filters: { search: "", minPapers: 0, liveOnly: false },
+    look: { labels: true, mesh: true, scale: 1 },
   };
+
+  // Filters DIM bubbles rather than removing them. Removal would change what
+  // is physically present in the playfield, which the server's replay knows
+  // nothing about — an honest player could then be rejected for eating a
+  // bubble the server still has, or blocked by one they cannot see. Dimming
+  // is purely a rendering concern and can never desynchronise a run.
+  function applyFilters() {
+    const f = state.filters;
+    const needle = f.search.trim().toLowerCase();
+    let shown = 0;
+    for (const b of state.bubbles) {
+      const matches =
+        (!needle || b.domain.toLowerCase().includes(needle)) &&
+        b.papers >= f.minPapers &&
+        (!f.liveOnly || b.live);
+      b.dimmed = !matches;
+      if (matches) shown++;
+    }
+    const summary = document.getElementById("arcadeFilterSummary");
+    if (summary) {
+      const total = state.bubbles.length;
+      summary.textContent = shown === total ? "All fields" : `${shown} of ${total}`;
+    }
+    renderLegend();
+  }
+
+  function renderLegend() {
+    const body = document.querySelector("#arcadeLegendTable tbody");
+    if (!body) return;
+    const visible = new Set(state.bubbles.filter(b => !b.dimmed).map(b => b.domain));
+    const rows = state.legend.filter(r => visible.has(r.field));
+    if (!rows.length) {
+      body.innerHTML = `<tr><td colspan="4" class="arcade-detail-empty">No fields match.</td></tr>`;
+      return;
+    }
+    body.innerHTML = rows.map(r => `
+      <tr data-field="${escapeHtml(r.field)}">
+        <td><span class="arcade-swatch" style="background:${colorFor(r.field)}"></span></td>
+        <td>${escapeHtml(r.field)}</td>
+        <td class="num">${r.papers}</td>
+        <td class="num">${r.avg_score === null || r.avg_score === undefined ? "—" : r.avg_score.toFixed(1)}</td>
+      </tr>`).join("");
+  }
+
+  /** Centre the camera on a field and select it — the legend's focus action. */
+  function focusField(name) {
+    const target = state.bubbles
+      .filter(b => !b.eaten && b.domain === name)
+      .sort((a, b) => b.mass - a.mass)[0];
+    if (!target) return;
+    state.camera.x = target.x;
+    state.camera.y = target.y;
+    if (state.mode === "explore") state.camera.zoom = Math.max(state.camera.zoom, 0.7);
+    selectBubble(target);
+  }
 
   let effectsQuality = 1;
   let slowFrames = 0;
@@ -147,8 +205,10 @@
       papers: b.papers || 0, live: !!b.live,
       x: b.x * WORLD_W, y: b.y * WORLD_H,
       vx: b.vx * WORLD_W, vy: b.vy * WORLD_H,
-      eaten: false, pulse: Math.random() * Math.PI * 2,
+      eaten: false, dimmed: false, pulse: Math.random() * Math.PI * 2,
     }));
+    state.legend = data.legend || [];
+    applyFilters();
 
     seedStars();
     renderWalletState(data.wallet_state, data.reward);
@@ -452,7 +512,7 @@
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
 
     drawStars(ctx, w, h);
-    if (effectsQuality > 0) drawMesh(ctx);
+    if (effectsQuality > 0 && state.look.mesh) drawMesh(ctx);
     for (const b of state.bubbles) if (!b.eaten) drawBubble(ctx, b);
     drawParticles(ctx);
     if (state.mode === "play" && state.player) drawPlayer(ctx);
@@ -491,7 +551,13 @@
   }
 
   function drawBubble(ctx, b) {
-    const s = worldToScreen(b.x, b.y), r = b.mass * state.camera.zoom;
+    // The bubble-scale control is a rendering aid only, and is forced to 1
+    // during play: drawing a bubble at a different radius from the one used
+    // for collision would let the player visibly clip through a field, or be
+    // killed by one they never touched.
+    const look = state.mode === "play" ? 1 : state.look.scale;
+    const s = worldToScreen(b.x, b.y), r = b.mass * state.camera.zoom * look;
+    if (b.dimmed && state.mode !== "play") { drawDimmed(ctx, s, r, b); return; }
     if (s.x + r < 0 || s.x - r > viewW() || s.y + r < 0 || s.y - r > viewH()) return;
     const color = colorFor(b.domain);
     const playing = state.mode === "play" && state.player;
@@ -519,7 +585,7 @@
     else                    { ctx.lineWidth = b.live ? 1.6 : 1; ctx.strokeStyle = rgba(color, 0.9); }
     ctx.stroke();
 
-    if (r > 20) {
+    if (r > 20 && state.look.labels) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = b.live ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.6)";
       ctx.font = `600 ${Math.min(15, r / 2.8)}px -apple-system, system-ui, sans-serif`;
@@ -530,6 +596,15 @@
         ctx.fillText(`${b.papers} paper${b.papers === 1 ? "" : "s"}`, s.x, s.y + 9);
       }
     }
+  }
+
+  /** A filtered-out field: still drawn, so the map keeps its shape, but
+   *  pushed into the background so the matching set reads clearly. */
+  function drawDimmed(ctx, s, r, b) {
+    if (s.x + r < 0 || s.x - r > viewW() || s.y + r < 0 || s.y - r > viewH()) return;
+    ctx.fillStyle = "rgba(148,163,184,0.10)";
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(148,163,184,0.22)"; ctx.stroke();
   }
 
   function drawPlayer(ctx) {
@@ -753,6 +828,44 @@
   // ---------------------------------------------------------------------
   // Boot
   // ---------------------------------------------------------------------
+  function bindControls() {
+    const search = document.getElementById("arcadeSearch");
+    const minPapers = document.getElementById("arcadeMinPapers");
+    const minOut = document.getElementById("arcadeMinPapersOut");
+    const liveOnly = document.getElementById("arcadeLiveOnly");
+    const labels = document.getElementById("arcadeLabels");
+    const mesh = document.getElementById("arcadeMesh");
+    const scale = document.getElementById("arcadeScale");
+    const scaleOut = document.getElementById("arcadeScaleOut");
+
+    search.addEventListener("input", () => { state.filters.search = search.value; applyFilters(); });
+    minPapers.addEventListener("input", () => {
+      state.filters.minPapers = parseInt(minPapers.value, 10) || 0;
+      minOut.textContent = state.filters.minPapers;
+      applyFilters();
+    });
+    liveOnly.addEventListener("change", () => { state.filters.liveOnly = liveOnly.checked; applyFilters(); });
+    labels.addEventListener("change", () => { state.look.labels = labels.checked; });
+    mesh.addEventListener("change", () => { state.look.mesh = mesh.checked; });
+    scale.addEventListener("input", () => {
+      state.look.scale = parseFloat(scale.value) || 1;
+      scaleOut.textContent = state.look.scale.toFixed(1) + "×";
+    });
+
+    document.getElementById("arcadeResetFilters").addEventListener("click", () => {
+      state.filters = { search: "", minPapers: 0, liveOnly: false };
+      search.value = ""; minPapers.value = "0"; minOut.textContent = "0"; liveOnly.checked = false;
+      applyFilters();
+    });
+
+    // Selecting a legend row focuses that field on the map, so the table and
+    // the canvas are two views of one selection rather than separate lists.
+    document.querySelector("#arcadeLegendTable tbody").addEventListener("click", e => {
+      const row = e.target.closest("tr[data-field]");
+      if (row) focusField(row.dataset.field);
+    });
+  }
+
   function init() {
     state.canvas = document.getElementById("arcadeCanvas");
     if (!state.canvas) return;
@@ -760,6 +873,7 @@
     bindInput();
     selectBubble(null);
 
+    bindControls();
     document.getElementById("arcadePlayBtn").addEventListener("click", startRun);
     document.getElementById("arcadeExitBtn").addEventListener("click", abandonRun);
     document.getElementById("arcadeRefreshBtn").addEventListener("click", () => enterExplore(true));
