@@ -498,15 +498,41 @@ async function refreshPiqBalance() {
   renderFeeNotice();
 }
 
+/** Free assessments still available to an unidentified visitor.
+ *
+ *  The server is the only component that knows this. Arcade wins are granted
+ *  per IP, and allowance is metered per DISTINCT manuscript — so re-assessing
+ *  the same paper costs nothing. `Session.freeEvalsUsed` is a localStorage
+ *  counter that increments on every result and can neither see a win nor
+ *  recognise a resubmission, which is why three separate places in the UI
+ *  independently concluded the trial was spent while the server still had
+ *  allowance to give. It survives only as an offline estimate.
+ */
+function freeRemaining() {
+  if (Session.hasIdentity()) return 0;
+  if (trialStatus && typeof trialStatus.remaining === "number") return trialStatus.remaining;
+  return Session.freeEvalsUsed > 0 ? 0 : 1;
+}
+
 function renderFeeNotice() {
   const fee = piqState.fee_per_paper ?? 0.1;
   document.getElementById("feeAmount").textContent = `${formatPiq(fee)} piQ`;
   const line = document.getElementById("feeBalanceLine");
 
   if (!Session.hasIdentity()) {
-    line.innerHTML = Session.freeEvalsUsed > 0
-      ? `<span class="fee-warn">Free trial used. Connect a wallet or ORCID to continue.</span>`
-      : `<span class="fee-ok">Free trial available — your first assessment is on us.</span>`;
+    // Naming only the paid route here was a dead end for anyone unwilling to
+    // connect a wallet — the arcade allowance existed and was never mentioned
+    // at the one moment it is relevant, so users hit the wall and left.
+    const remaining = freeRemaining();
+    const earned = trialStatus && trialStatus.bonus_allowance
+      ? ` (${trialStatus.bonus_allowance} earned on the Science Map)` : "";
+    line.innerHTML = remaining > 0
+      ? `<span class="fee-ok">${remaining} free assessment${remaining === 1 ? "" : "s"}
+         available${earned}. Winning a run on the
+         <a href="#" data-goto-tab="arcade">Science Map</a> earns more.</span>`
+      : `<span class="fee-warn">Free trial used. Connect a wallet or ORCID to continue —
+         or win a run on the <a href="#" data-goto-tab="arcade">Science Map</a> to earn more free
+         assessments.</span>`;
     return;
   }
   if (piqState.balance < fee) {
@@ -885,12 +911,31 @@ async function initScilem() {
       input.placeholder = "Assistant disabled";
       return;
     }
-    badge.textContent = status.cloud_phrasing ? "Ready" : "Grounded";
-    badge.className = "pill q-high";
+    // "Ready" is a claim about capability, so it is only shown when the
+    // assistant actually has everything it needs. Without a language-model
+    // provider it is still useful but strictly narrower, and saying "Grounded"
+    // rather than "Ready" is what stops the badge from contradicting the
+    // assistant's own account of what it can do.
+    badge.textContent = status.badge || (status.cloud_phrasing ? "Ready" : "Grounded");
+    badge.className = status.cloud_phrasing ? "pill q-high" : "pill q-mod";
+    badge.title = status.notice || "Answers from live deployment state and the built-in knowledge base.";
     renderScilemSuggestions();
+    const intro = status.notice
+      ? `${status.capabilities}\n\n${status.notice}`
+      : status.capabilities;
     document.getElementById("scilemChatBox").insertAdjacentHTML("beforeend",
-      `<div class="chat-msg ai">${escapeHtml(status.capabilities)}</div>`);
-  } catch (e) { /* leave the form usable; the endpoint will report failures */ }
+      `<div class="chat-msg ai">${escapeHtml(intro)}</div>`);
+  } catch (e) {
+    // The status call failed, so the assistant's real state is unknown.
+    // Leaving the badge on its hardcoded "Ready" was the previous behaviour
+    // and asserted something that had not been checked.
+    const badge = document.getElementById("scilemBadge");
+    if (badge) {
+      badge.textContent = "Unknown";
+      badge.className = "pill pill-muted";
+      badge.title = "Could not reach the assistant status endpoint.";
+    }
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -902,6 +947,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     document.querySelectorAll(".tab-panel").forEach(p => p.classList.remove("active"));
     btn.classList.add("active");
     document.getElementById(`tab-${btn.dataset.tab}`).classList.add("active");
+    // Allowance is granted server-side (arcade wins) and metered server-side
+    // (per distinct manuscript), so re-read it on the way back to Assess.
+    // Relying only on the arcade's own post-win callback meant any missed
+    // refresh left the tab insisting the trial was spent.
+    if (btn.dataset.tab === "assess") refreshTrialStatus();
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
     if (btn.dataset.tab === "explorer") loadExplorer();
     if (btn.dataset.tab === "diagram") renderArchitectureDiagrams();
@@ -1325,12 +1375,20 @@ function updateEstimatedCost() {
   if (!n) { box.classList.add("hidden"); return; }
 
   const fee = piqState.fee_per_paper ?? 0.1;
-  const onFreeTrial = !Session.hasIdentity() && Session.freeEvalsUsed === 0;
+  const freeLeft = freeRemaining();
   box.classList.remove("hidden");
 
-  if (onFreeTrial) {
+  // Quoting a piQ price to someone who still has free allowance — including
+  // allowance they had just won — read as "your reward is not accepted here".
+  if (freeLeft > 0) {
+    const covered = Math.min(n, freeLeft);
     box.className = "est-cost est-free";
-    box.innerHTML = `<strong>${n}</strong> paper${n === 1 ? "" : "s"} queued — covered by your free trial run.`;
+    box.innerHTML = covered >= n
+      ? `<strong>${n}</strong> paper${n === 1 ? "" : "s"} queued — covered by your
+         ${freeLeft} remaining free assessment${freeLeft === 1 ? "" : "s"}.`
+      : `<strong>${n}</strong> papers queued — the first <strong>${covered}</strong>
+         ${covered === 1 ? "is" : "are"} covered by your free allowance; the rest need a
+         connected wallet or ORCID.`;
     return;
   }
   const total = fee * n;
@@ -1528,9 +1586,16 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     alert("Please add at least one source to assess (upload a PDF, include a DOI, or select an auto-discovered paper).");
     return;
   }
-  if (Session.freeEvalsUsed >= 1 && !Session.hasIdentity()) {
-    alert("Free trial limit reached. Connect an Ethereum wallet or link ORCID to continue.");
-    return;
+  // The server is the authority on allowance (it knows about arcade-earned
+  // bonus runs, which are granted per IP and cannot be tracked in localStorage).
+  // This check only short-circuits the obvious case; hardcoding "1" here used
+  // to block users who had legitimately earned more.
+  if (!Session.hasIdentity()) {
+    if (freeRemaining() <= 0) {
+      alert("Free trial limit reached.\n\nConnect an Ethereum wallet or link ORCID to continue, "
+            + "or win a run on the Science Map tab to earn more free assessments.");
+      return;
+    }
   }
 
   const runBtn = document.getElementById("runPipelineBtn");
@@ -2411,6 +2476,10 @@ async function loadForecast() {
       msg.textContent = "";
       empty.classList.add("hidden");
       chartWrap.classList.remove("hidden");
+      // This chart sets maintainAspectRatio:false, so Chart.js takes its height
+      // from the wrapper. Without an explicit height the wrapper is 0px tall and
+      // the chart is drawn but invisible.
+      chartWrap.classList.add("chart-sized");
 
       // Diverging horizontal bars: each criterion's shift from the uniform
       // baseline, signed and sorted by magnitude. A bar chart is the honest
@@ -2477,6 +2546,9 @@ async function loadForecast() {
     msg.textContent = "";
     empty.classList.add("hidden");
     chartWrap.classList.remove("hidden");
+    // The line chart keeps Chart.js's default aspect-ratio sizing, so the
+    // fixed height used by delta mode must be cleared when switching back.
+    chartWrap.classList.remove("chart-sized");
 
     // Observed history, then the forecast point appended. Each criterion gets
     // two datasets sharing a colour: a solid observed line, and a dashed

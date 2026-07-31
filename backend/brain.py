@@ -500,6 +500,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
             "kind": meta["kind"],
             "status": "failed" if entry.get("api_failed", False) else "active",
             "detail": str(entry.get("opinion", ""))[:400],
+            "route": entry.get("route"),
         }
         (failed if entry.get("api_failed", False) else participating).append(record)
 
@@ -507,7 +508,24 @@ def grade_adjudication_quality(consensus_results) -> dict:
     n_external = len(external_active)
     agreement = measure_title_agreement(consensus_results)
 
-    if n_external >= 3:
+    # Corroboration is a claim about INDEPENDENCE, not about headcount. Every
+    # juror chain now ends in a shared Groq Llama fallback, so a deployment
+    # with only that key configured can have five jurors all answer from the
+    # same model on the same provider. Counting those as five independent
+    # opinions would be the single most misleading thing this function could
+    # do — it would report "Strong" corroboration for what is one model voting
+    # five times, and correlated agreement is not evidence.
+    #
+    # The tier is therefore driven by the number of DISTINCT routes actually
+    # used. Jurors that predate route recording, or that somehow reported no
+    # route, fall back to the headcount rather than being silently dropped.
+    routed = [m for m in external_active if isinstance(m.get("route"), dict)]
+    distinct_routes = {(m["route"].get("provider"), m["route"].get("model")) for m in routed}
+    n_independent = len(distinct_routes) + (len(external_active) - len(routed))
+    n_independent = max(1, min(n_independent, n_external)) if n_external else 0
+    collapsed = n_external - n_independent
+
+    if n_independent >= 3:
         tier, confidence = "Strong", 0.90 + min(0.08, 0.02 * (n_external - 3))
         rationale = (
             f"{n_external} independent external LLMs plus the local Scilem engine each assessed this "
@@ -518,7 +536,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
             f"rules out idiosyncratic error but not systematic error common to all of them. "
             f"Corroboration for this assessment is STRONG."
         )
-    elif n_external == 2:
+    elif n_independent == 2:
         tier, confidence = "Strong", 0.82
         rationale = (
             "Two external LLMs cross-checked this manuscript alongside the local structural "
@@ -526,7 +544,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
             "different model lineage would strengthen it — jurors trained on similar corpora can "
             "agree on a shared error."
         )
-    elif n_external == 1:
+    elif n_independent == 1:
         tier, confidence = "Partial", 0.65
         rationale = (
             "Only one external LLM was reachable for this assessment. The verdict is usable but was "
@@ -542,7 +560,17 @@ def grade_adjudication_quality(consensus_results) -> dict:
             "Corroboration is SINGLE-SOURCE — treat the interpretive criteria as indicative only."
         )
 
-    if n_external >= 2:
+    # Say plainly when jurors collapsed onto one model. A reader comparing two
+    # assessments needs to know that one of them is four labels over one model.
+    if collapsed > 0:
+        rationale += (
+            f" {collapsed + 1} of the {n_external} external jurors were served by the same "
+            f"model on the same provider after their own routes were unavailable, so they are "
+            f"counted as {n_independent} independent {'source' if n_independent == 1 else 'sources'}, "
+            f"not {n_external}. Their agreement with each other carries no corroborative weight."
+        )
+
+    if n_independent >= 2:
         if agreement >= 0.75:
             rationale += f" Inter-model agreement on document identification was strong ({agreement * 100:.0f}%)."
         elif agreement > 0:
@@ -560,9 +588,11 @@ def grade_adjudication_quality(consensus_results) -> dict:
         "participating_models": participating,
         "failed_models": failed,
         "external_juror_count": n_external,
+        "independent_source_count": n_independent,
+        "distinct_routes": sorted(f"{p}:{m}" for p, m in distinct_routes if p or m),
         "total_juror_count": len(participating),
         "inter_model_agreement": round(agreement, 3),
-        "multi_llm": n_external >= 2,
+        "multi_llm": n_independent >= 2,
     }
 
 def summarize_panel_criteria(consensus_results) -> str:
