@@ -446,11 +446,45 @@ def chain_contracts():
         except Exception:
             admin_address = None
 
-    def entry(address, label, description):
+    def entry(address, label, description, optional=False):
+        """One row of the contracts panel, with the address actually validated.
+
+        `configured` previously meant nothing more than "the environment
+        variable is non-empty", so a truncated or mistyped address rendered as
+        a normal, apparently-working entry with a live explorer link that
+        resolves to nothing. Every code path that consumes these addresses
+        checks the length and silently returns when it fails, so a typo
+        disabled the feature with no message anywhere — the configuration
+        looked correct and the feature simply did not happen.
+
+        An address is now reported as valid only if web3 accepts it, and an
+        address that is set but invalid says so explicitly. `optional` marks
+        the entries a deployment can legitimately leave blank, so "not set" is
+        not mistaken for "broken".
+        """
+        address = (address or "").strip()
+        problem = None
+        valid = False
+        if address:
+            try:
+                w3.to_checksum_address(address)
+                valid = True
+            except Exception:
+                problem = (
+                    f"This is not a valid Ethereum address — it has "
+                    f"{len(address.removeprefix('0x'))} hex characters where 40 are required. "
+                    f"It is being ignored."
+                )
+        elif not optional:
+            problem = "Not set."
+
         return {
             "label": label, "address": address or None, "description": description,
-            "explorer_url": get_sepolia_explorer_url(address, "address") if address else None,
-            "configured": bool(address),
+            "explorer_url": get_sepolia_explorer_url(address, "address") if valid else None,
+            "configured": valid,
+            "optional": optional,
+            "problem": problem,
+            "state": "ok" if valid else ("invalid" if address else "unset"),
         }
 
     return {
@@ -460,8 +494,15 @@ def chain_contracts():
             entry(PIQ_CONTRACT_ADDRESS, "piQ token contract",
                   "Soulbound pi-Quotient token. Receives verifyProofAndMint calls when a "
                   "manuscript clears the minting threshold."),
+            # Optional by design. It powers only the encrypted IPFS state
+            # backup/restore; with it unset, the ledger lives in the local
+            # database exactly as it otherwise would. Nothing about scoring,
+            # minting, or the Proof-of-Research chain depends on it, so an
+            # empty value here is a normal deployment, not a fault.
             entry(REGISTRY_CONTRACT_ADDRESS, "State registry contract",
-                  "Holds the IPFS CID pointing at the encrypted ledger state backup."),
+                  "Optional. Holds the IPFS CID pointing at the encrypted ledger state backup. "
+                  "When unset, ledger state is kept locally and nothing else changes.",
+                  optional=True),
             entry(admin_address, "Minting authority",
                   "Wallet that signs minting transactions. Derived from the configured signing "
                   "key; the key itself is never exposed."),
