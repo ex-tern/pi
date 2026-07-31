@@ -1119,6 +1119,8 @@ function syncProfileVisibility() {
   const history = document.getElementById("historyCard");
   if (history) history.classList.toggle("hidden", !signedIn);
   if (signedIn && typeof loadAssessmentHistory === "function") loadAssessmentHistory();
+  // Un-hiding the card is not the same as populating it.
+  if (signedIn && typeof refreshBuddy === "function") refreshBuddy();
 }
 
 /** Research Buddy — concrete next actions derived from the saved profile.
@@ -1338,6 +1340,26 @@ function updateProfileStatus(profile) {
   badge.className = "profile-status profile-status-set";
 }
 
+/** Render the buddy from whatever profile state currently exists.
+ *
+ *  The buddy was previously drawn only as a side effect of writeProfileForm()
+ *  and saveProfile(). Both are skipped for a signed-in user who has no saved
+ *  profile and no local draft — which is every new user — so `buddyBody` was
+ *  never written to at all and the card rendered as an empty box. An empty
+ *  state that is never reached is not an empty state.
+ */
+function refreshBuddy() {
+  try {
+    renderResearchBuddy(readProfileForm() || {});
+  } catch (e) {
+    const body = document.getElementById("buddyBody");
+    if (body) {
+      body.innerHTML = `<p class="buddy-empty">The Research Buddy could not be rendered.
+        <code>${escapeHtml(String(e && e.message ? e.message : e))}</code></p>`;
+    }
+  }
+}
+
 async function loadProfile() {
   // Local draft first so the form is never blank while the network is in
   // flight, then let the server's copy win if there is one.
@@ -1346,17 +1368,22 @@ async function loadProfile() {
     if (Object.keys(local).length) writeProfileForm(local);
   } catch (_) { /* corrupt draft is not worth surfacing */ }
 
-  if (!Session.hasIdentity()) return;
+  if (!Session.hasIdentity()) { refreshBuddy(); return; }
   try {
     const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
     const res = await fetch(`${API}/api/profile?${qs}`);
-    if (!res.ok) return;
-    const data = await res.json();
-    if (data.stored && data.profile) {
-      writeProfileForm(data.profile);
-      localStorage.setItem("sp_profile", JSON.stringify(data.profile));
+    if (res.ok) {
+      const data = await res.json();
+      if (data.stored && data.profile) {
+        writeProfileForm(data.profile);
+        localStorage.setItem("sp_profile", JSON.stringify(data.profile));
+      }
     }
   } catch (_) { /* offline: the local draft stands */ }
+
+  // Unconditional. Every early return above previously left the card blank,
+  // and "no profile yet" is exactly the case the onboarding state exists for.
+  refreshBuddy();
 }
 
 async function saveProfile() {
@@ -1802,6 +1829,22 @@ function handleStreamLine(obj, statusBox) {
   } else if (obj.type === "fee") {
     statusBox.innerHTML += `<div class="status-line status-fee">${escapeHtml(obj.message)}</div>`;
     if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
+  } else if (obj.type === "reward") {
+    // Every paper now reports its reward outcome explicitly. "0.00 piQ" with
+    // no explanation was indistinguishable from a bug, and the reason was
+    // already computed server-side.
+    if (obj.outcome === "minted") {
+      statusBox.innerHTML += `<div class="status-line status-reward">
+        <strong>+${Number(obj.amount).toFixed(2)} piQ minted.</strong>
+        ${escapeHtml(obj.message || "")}</div>`;
+      loadEmissionStatus();
+      refreshTrialStatus();
+    } else {
+      statusBox.innerHTML += `<div class="status-line status-reward-none">
+        <strong>No piQ for this paper.</strong> ${escapeHtml(obj.message || "")}
+        ${obj.how_to_fix ? `<div class="reward-fix">${escapeHtml(obj.how_to_fix)}</div>` : ""}
+      </div>`;
+    }
   } else if (obj.type === "curation") {
     statusBox.innerHTML += `<div class="status-line status-curation">
       <strong>+${Number(obj.amount).toFixed(4)} piQ curation reward.</strong>
@@ -1848,6 +1891,25 @@ function integrityPills(item) {
   if (integrity.compromised) out.push(`<span class="pill q-low">Integrity: manipulation detected</span>`);
   if (refs.verdict === "fabricated_references") out.push(`<span class="pill q-low">Fabricated references</span>`);
   return out.join("");
+}
+
+
+/** Why this paper earned what it earned, in one sentence.
+ *
+ *  Reads the explanation the pipeline already produced rather than inferring
+ *  one from the number, so the card and the ledger can never disagree.
+ */
+function rewardExplanation(item) {
+  const emission = item.emission || {};
+  const attribution = emission.attribution || {};
+  const minted = Number(item.piq || 0);
+  if (minted > 0) return attribution.reason || `${minted.toFixed(2)} piQ minted.`;
+  if (item.curation && item.curation.awarded > 0) return item.curation.reason;
+  if (!attribution.verified) {
+    return (attribution.reason || "Authorship could not be verified.")
+      + (attribution.how_to_verify ? " " + attribution.how_to_verify : "");
+  }
+  return emission.reason || "This paper did not meet the minting threshold.";
 }
 
 function renderResults() {
@@ -1904,7 +1966,8 @@ function renderResultCard(item, idx) {
         <div class="result-author">${escapeHtml(item.author_name || "Unidentified author")}</div>
         <div class="result-pills">
           <span class="pill p-score">piX ${fmtNum(item.score, 1)}</span>
-          <span class="pill p-piq">piQ ${fmtNum(Number(item.piq || 0), 2, "0.00")}</span>
+          <span class="pill p-piq ${Number(item.piq || 0) > 0 ? "p-piq-earned" : "p-piq-none"}"
+            title="${escapeHtml(rewardExplanation(item))}">piQ ${fmtNum(Number(item.piq || 0), 2, "0.00")}</span>
           ${qualityPill(meta)}
           ${integrityPills(item)}
           ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
@@ -2515,6 +2578,82 @@ const CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
 const CRITERIA_COLORS = ["#2563eb", "#f97316", "#16a34a", "#a855f7", "#eab308", "#dc2626", "#0891b2", "#db2777"];
 let lastForecastCriteria = [];
 
+
+// ---------------------------------------------------------------------------
+// Chart.js availability
+// ---------------------------------------------------------------------------
+// The library is loaded from a CDN in <head>. That fetch fails for reasons the
+// server cannot see or control — a privacy extension, a corporate proxy, a
+// filtered network, or simply being offline — and when it does, every chart in
+// the app silently produces nothing.
+//
+// Three responses, in order of preference: try a second CDN, then a
+// self-hosted copy, and if neither works render the data as a table instead of
+// an error. The numbers are the point; the chart is a presentation of them. A
+// page that refuses to show data it already has because a decorative
+// dependency is missing is failing harder than it needs to.
+const CHART_SOURCES = [
+  "https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js",
+  "vendor/chart.umd.min.js",   // optional self-hosted copy; see README
+];
+
+let chartLoadAttempted = false;
+
+function loadScript(src) {
+  return new Promise((resolve, reject) => {
+    const el = document.createElement("script");
+    el.src = src;
+    el.onload = () => resolve(src);
+    el.onerror = () => reject(new Error("failed to load " + src));
+    document.head.appendChild(el);
+  });
+}
+
+async function ensureChart() {
+  if (typeof Chart !== "undefined") return true;
+  if (chartLoadAttempted) return typeof Chart !== "undefined";
+  chartLoadAttempted = true;
+  for (const src of CHART_SOURCES) {
+    try {
+      await loadScript(src);
+      if (typeof Chart !== "undefined") return true;
+    } catch (_) { /* try the next source */ }
+  }
+  return false;
+}
+
+/** Forecast as a table, for when no charting library is available. */
+function renderForecastTable(data) {
+  const rows = data.criteria || [];
+  if (!rows.length) return `<p class="hint">No criteria weights to show yet.</p>`;
+
+  // Three shapes of payload reach this function; pick the columns each one
+  // actually has rather than printing "undefined".
+  const isProjection = rows[0].weight !== undefined;
+  const head = isProjection
+    ? `<tr><th>ID</th><th>Criterion</th><th class="num">Current</th><th class="num">Projected</th><th class="num">Change</th></tr>`
+    : `<tr><th>ID</th><th>Criterion</th><th class="num">Weight</th><th class="num">vs baseline</th></tr>`;
+
+  const body = rows.map(c => {
+    if (isProjection) {
+      const cls = c.trend === "rising" ? "trend-up" : c.trend === "falling" ? "trend-down" : "trend-flat";
+      return `<tr><td><strong>${escapeHtml(c.id)}</strong></td><td>${escapeHtml(c.title || "")}</td>
+        <td class="num">${Number(c.current_weight ?? 0).toFixed(4)}</td>
+        <td class="num">${Number(c.weight ?? 0).toFixed(4)}</td>
+        <td class="num ${cls}">${(c.delta_pct ?? 0) >= 0 ? "+" : ""}${Number(c.delta_pct ?? 0).toFixed(1)}%</td></tr>`;
+    }
+    const cls = c.direction === "up" ? "trend-up" : c.direction === "down" ? "trend-down" : "trend-flat";
+    return `<tr><td><strong>${escapeHtml(c.id)}</strong></td><td>${escapeHtml(c.title || "")}</td>
+      <td class="num">${Number(c.current ?? 0).toFixed(4)}</td>
+      <td class="num ${cls}">${(c.delta ?? 0) >= 0 ? "+" : ""}${Number(c.delta ?? 0).toFixed(4)}</td></tr>`;
+  }).join("");
+
+  return `<div class="table-scroll"><table class="data-table"><thead>${head}</thead>
+    <tbody>${body}</tbody></table></div>
+    <p class="hint">Shown as a table because the charting library could not be loaded. The
+    figures are exactly those the chart would have plotted.</p>`;
+}
+
 async function loadForecast() {
   // Chart.js comes from a CDN. When that fetch is blocked — corporate proxy,
   // ad blocker, offline — every chart in the app silently fails, and the
@@ -2522,22 +2661,7 @@ async function loadForecast() {
   // reported "could not reach the forecasting service", which sent the
   // operator to look at a backend that was working perfectly. Name the real
   // cause instead.
-  if (typeof Chart === "undefined") {
-    const box = document.getElementById("forecastEmpty");
-    const m = document.getElementById("forecastMsg");
-    if (m) m.textContent = "";
-    if (box) {
-      box.classList.remove("hidden");
-      box.innerHTML = `<div class="empty-title">Charting library did not load</div>
-        <p>The forecast data is fine — the Chart.js library could not be fetched from the CDN,
-        so there is nothing to draw with. An ad blocker, a corporate proxy, or being offline
-        will all cause this.</p>
-        <button class="btn btn-primary" id="forecastRetryBtn">Retry</button>`;
-      const r = document.getElementById("forecastRetryBtn");
-      if (r) r.addEventListener("click", loadForecast);
-    }
-    return;
-  }
+  const chartsAvailable = await ensureChart();
 
   const msg = document.getElementById("forecastMsg");
   const empty = document.getElementById("forecastEmpty");
@@ -2595,6 +2719,19 @@ async function loadForecast() {
     // render the measured shift from baseline as a table instead of forcing a
     // chart through a single point — a two-point line implying a trend would
     // be a claim the data does not support.
+    if (!chartsAvailable && data.ready) {
+      msg.textContent = "";
+      empty.classList.add("hidden");
+      chartWrap.classList.remove("hidden");
+      chartWrap.innerHTML = renderForecastTable(data);
+      const ins = document.getElementById("forecastInsight");
+      if (ins && (data.interpretation || data.insight)) {
+        ins.classList.remove("hidden");
+        ins.innerHTML = escapeHtml(data.interpretation || data.insight || "");
+      }
+      return;
+    }
+
     // Baseline: nothing assessed yet. Render the genesis weighting as a flat
     // bar chart rather than an empty state — it is a real, defined starting
     // point, and seeing it makes the first assessment's effect legible.

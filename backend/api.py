@@ -1403,6 +1403,51 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             "balance": bal["balance"], "required": fee,
         })]
 
+    def reward_notice(item, label):
+        """One explicit line per paper about what it earned, and why.
+
+        The result card showed "piQ 0.00" and nothing else. Zero is a valid
+        outcome — unverified authorship, or a score below the minting
+        threshold — but presented as a bare number it is indistinguishable
+        from a bug, and the explanation the pipeline had already computed
+        (including the instructions for fixing it) was sitting unread in the
+        payload. Earning nothing has to be as legible as earning something.
+        """
+        emission_rec = item.get("emission") or {}
+        attribution = emission_rec.get("attribution") or {}
+        minted = safe_float(item.get("piq"), 0.0)
+
+        if minted > 0:
+            return [line({
+                "type": "reward",
+                "outcome": "minted",
+                "amount": minted,
+                "tier": attribution.get("tier"),
+                "message": (
+                    f"{minted:.2f} piQ minted for '{str(label)[:60]}'. "
+                    + (attribution.get("reason") or "")
+                ),
+            })]
+
+        # Nothing minted. Say which of the two reasons applies.
+        if not attribution.get("verified"):
+            return [line({
+                "type": "reward",
+                "outcome": "withheld_authorship",
+                "amount": 0.0,
+                "message": (attribution.get("reason")
+                            or "Authorship could not be verified, so no piQ was minted."),
+                "how_to_fix": attribution.get("how_to_verify"),
+            })]
+
+        return [line({
+            "type": "reward",
+            "outcome": "below_threshold",
+            "amount": 0.0,
+            "message": (emission_rec.get("reason")
+                        or "This paper did not meet the minting threshold, so no piQ was minted."),
+        })]
+
     def award_curation(item, label):
         """Credit a curation reward when the submitter is not the author.
 
@@ -1486,6 +1531,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 item["fee_charged"] = fee if charge_fees else 0.0
                 for m in award_curation(item, f"DOI {doi}"):
                     yield m
+                for m in reward_notice(item, f"DOI {doi}"):
+                    yield m
                 add_log(f"Assessed DOI {doi}: score {_fmt_score(item.get('score'))}")
                 yield emit_result(item, f"DOI {doi}")
         else:
@@ -1516,6 +1563,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 item["fee_charged"] = fee if charge_fees else 0.0
                 for m in award_curation(item, title):
                     yield m
+                for m in reward_notice(item, title):
+                    yield m
                 add_log(f"Assessed discovered paper '{title[:60]}': score {_fmt_score(item.get('score'))}")
                 yield emit_result(item, fname)
         else:
@@ -1538,6 +1587,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
             for m in award_curation(item, fname):
+                yield m
+            for m in reward_notice(item, fname):
                 yield m
             add_log(f"Assessed {fname}: score {_fmt_score(item.get('score'))}")
             yield emit_result(item, fname)
