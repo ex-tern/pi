@@ -1130,3 +1130,50 @@ textarea.bug-input { resize: vertical; min-height: 120px; }
 .bug-counter { font-size: 11px; color: var(--faint); text-align: right; margin-top: 4px; }
 .bug-msg-error { color: var(--danger); }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
+
+/* --- Whitepaper on the Architecture tab --------------------------------- */
+.wp-head { display: flex; justify-content: space-between; align-items: flex-start;
+  gap: 16px; flex-wrap: wrap; }
+.wp-head h2 { margin-bottom: 4px; }
+.wp-download { flex-shrink: 0; text-decoration: none; display: inline-flex;
+  align-items: center; }
+.wp-details { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
+.wp-details > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent); }
+.wp-body { margin-top: 14px; max-height: 70vh; overflow-y: auto; padding-right: 8px; }
+
+/* The whitepaper is a document, not app chrome: a narrower measure and looser
+   leading than the surrounding UI, because it is meant to be read at length. */
+.wp { max-width: 68ch; font-size: 13.5px; line-height: 1.72; color: var(--text); }
+.wp p { margin: 0 0 12px; }
+.wp-title { font-size: 1.25rem; line-height: 1.3; margin: 0 0 6px; }
+.wp-subtitle { color: var(--muted); font-size: 13px; margin-bottom: 10px; }
+.wp-byline { font-size: 12.5px; margin-bottom: 2px; }
+.wp-byline span { color: var(--muted); font-style: italic; }
+.wp-version { font-size: 11px; color: var(--faint); margin-bottom: 18px; }
+
+/* Abstract, styled to match the PDF: tinted panel with an accent rule. */
+.wp-abstract {
+  background: #f6f9ff; border: 1px solid #dbeafe; border-left: 3px solid var(--accent);
+  border-radius: 8px; padding: 14px 16px; margin: 0 0 22px;
+}
+.wp-abstract h3 {
+  font-size: 10.5px; text-transform: uppercase; letter-spacing: 0.08em;
+  color: var(--accent); margin: 0 0 7px;
+}
+.wp-abstract p { margin: 0; font-size: 13px; line-height: 1.68; text-align: justify; }
+
+.wp-h1 { font-size: 1.02rem; margin: 26px 0 9px; padding-bottom: 5px;
+  border-bottom: 1px solid var(--border); }
+.wp-h2 { font-size: 0.9rem; color: var(--accent); margin: 18px 0 7px; }
+.wp-list { margin: 0 0 14px; padding-left: 20px; }
+.wp-list li { margin-bottom: 8px; }
+.wp-table { font-size: 11.5px; }
+.wp-note { font-size: 11.5px; color: var(--muted); font-style: italic; margin: 6px 0 14px; }
+.wp-refs { font-size: 12px; line-height: 1.6; padding-left: 22px; }
+.wp-refs li { margin-bottom: 8px; }
+
+@media (max-width: 900px) {
+  .wp-download { width: 100%; justify-content: center; }
+  .wp-body { max-height: none; padding-right: 0; }
+  .wp { font-size: 13px; }
+}

@@ -982,7 +982,14 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     if (btn.dataset.tab === "assess") refreshTrialStatus();
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
     if (btn.dataset.tab === "explorer") loadExplorer();
-    if (btn.dataset.tab === "diagram") renderArchitectureDiagrams();
+    if (btn.dataset.tab === "diagram") {
+      renderArchitectureDiagrams();
+      const wp = document.querySelector(".wp-details");
+      if (wp && !wp.dataset.bound) {
+        wp.dataset.bound = "1";
+        wp.addEventListener("toggle", () => { if (wp.open) loadWhitepaper(); });
+      }
+    }
     // The map renders continuously, so it must be started when its tab opens
     // and stopped when it closes — otherwise it burns a frame budget (and
     // battery) behind a hidden panel forever.
@@ -3325,6 +3332,29 @@ flowchart LR
 let mermaidReady = false;
 let diagramsRendered = false;
 
+/** Load the whitepaper fragment into the Architecture tab.
+ *
+ *  Fetched on first expand rather than on tab open: it is ~20KB of prose that
+ *  most visitors to this tab will not read, and the diagrams above it are the
+ *  reason they came.
+ */
+let whitepaperLoaded = false;
+async function loadWhitepaper() {
+  const box = document.getElementById("whitepaperBody");
+  if (!box || whitepaperLoaded) return;
+  whitepaperLoaded = true;
+  try {
+    const res = await fetch("whitepaper.html", { cache: "no-cache" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    box.innerHTML = await res.text();
+  } catch (e) {
+    whitepaperLoaded = false;   // allow a retry on the next expand
+    box.innerHTML = `<p class="hint">The whitepaper could not be loaded here.
+      <a href="ScholarPi_Whitepaper.pdf" target="_blank" rel="noopener">Download the PDF</a>
+      instead.</p>`;
+  }
+}
+
 async function renderArchitectureDiagrams() {
   if (diagramsRendered || typeof mermaid === "undefined") return;
   if (!mermaidReady) {
@@ -3727,10 +3757,10 @@ document.getElementById("referBtn").addEventListener("click", async () => {
   // Warmer than the original, which read like a product datasheet and led
   // with what the tool measures rather than what it does for the reader.
   const text = "I've been using ScholarPi and I think you'd find it really useful. "
-    + "It reviews your manuscript against CoARA-aligned criteria and gives you clear, "
-    + "practical feedback on what's holding a paper back — reproducibility, venue fit, "
-    + "collaboration patterns — before a reviewer does. It's free to try, and genuinely "
-    + "helpful if you're preparing something for submission. Please give it a go: " + url;
+    + "It reviews your manuscript based on science and uses several AIs and gives you clear, "
+    + "practical feedback on what's holding a paper back before a reviewer does. It's "
+    + "practically a research buddy. It's free to try, and genuinely helpful if you're "
+    + "preparing something for submission. Please give it a go: " + url;
 
   if (navigator.share) {
     try {
