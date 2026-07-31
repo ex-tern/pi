@@ -232,6 +232,14 @@ input::placeholder { color: var(--faint); }
 .forecast-toolbar { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin: 12px 0; }
 .inline-select { width: auto; min-width: 175px; margin-bottom: 0; }
 .chart-wrap { margin: 6px 0 4px; }
+/* Chart.js with `maintainAspectRatio: false` sizes the canvas to its PARENT,
+   not to the canvas `height` attribute. The delta-mode bar chart uses that
+   option, so without a height here the wrapper collapsed to 0px and the chart
+   rendered invisibly — which looked exactly like "no graph after the first
+   assessment". The class is applied only to charts that opt out of the aspect
+   ratio; the line chart keeps its own aspect-driven sizing. */
+.chart-wrap.chart-sized { position: relative; height: 320px; }
+.chart-wrap.chart-sized canvas { max-height: 320px; }
 .forecast-meta { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 14px 0 0; }
 @media (max-width: 620px) { .forecast-meta { grid-template-columns: repeat(2, 1fr); } }
 .fm-item { background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 9px; text-align: center; }

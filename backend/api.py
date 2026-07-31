@@ -45,7 +45,8 @@ from config import (
     ENVIRONMENT, IS_PRODUCTION, ALLOWED_ORIGINS, MAX_UPLOAD_MB, FREE_EVALS_PER_IP,
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, PIQ_PROCESSING_FEE, DONATION_WALLET,
-    GROQ_API_KEY, OR_API_KEY,
+    GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY,
+    DEEPSEEK_API_KEY, TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
     TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK, USE_LSTM_FORECAST,
 )
@@ -956,7 +957,8 @@ def estimate_word_count(pdf_bytes: bytes) -> int:
 def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_doi: bool,
                             discover_papers: List[dict], user_id: str, book_address: str,
                             fee_wallet: str = "", fee_orcid: str = "", charge_fees: bool = False,
-                            active_fee: float = PIQ_PROCESSING_FEE):
+                            active_fee: float = PIQ_PROCESSING_FEE,
+                            researcher_profile: Optional[dict] = None):
     """Generator yielding NDJSON status/result lines, mirroring the old
     st.status(...) 'Analyzing X...' live progress box.
 
@@ -994,6 +996,10 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         # anything had gone wrong. Serialisation must never be able to discard a
         # completed assessment.
         return json.dumps(obj, default=_json_safe) + "\n"
+
+    # A missing profile is normal (anonymous users have none); it only frames
+    # the wording of the diagnostic summary and never changes the findings.
+    researcher_profile = researcher_profile or {}
 
     fee = active_fee
 
@@ -1282,7 +1288,7 @@ async def assess_stream(
             yield from stream_assessment_progress(
                 file_payload, doi, include_doi, discover_list, user_id, book_address,
                 fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
-                active_fee=active_fee,
+                active_fee=active_fee, researcher_profile=researcher_profile,
             )
         except Exception as exc:
             ref = uuid.uuid4().hex[:8]
@@ -1386,14 +1392,43 @@ class ScilemChatRequest(BaseModel):
 
 @app.get("/api/scilem/status")
 def scilem_status():
-    """Capabilities of the assistant, so the UI can describe it honestly."""
+    """Capabilities of the assistant, so the UI can describe it honestly.
+
+    The badge previously read "Ready" whenever the assistant was enabled, while
+    the assistant itself would then explain that it could only answer a narrow
+    set of questions. Both statements were true and together they read as a
+    contradiction, because "Ready" was answering a different question from the
+    one the user was asking. The status now names the actual mode, and says in
+    one sentence what that mode can and cannot do — so the badge and the prose
+    agree.
+
+    `cloud_phrasing` also checks every provider key rather than only Groq and
+    OpenRouter; a deployment configured with, say, only a Mistral key had
+    working phrasing but reported none.
+    """
+    has_phrasing = bool(GROQ_API_KEY or OR_API_KEY or GEMINI_API_KEY
+                        or CEREBRAS_API_KEY or MISTRAL_API_KEY or DEEPSEEK_API_KEY
+                        or TOGETHER_API_KEY or GITHUB_MODELS_TOKEN)
+    if not ENABLE_SCILEM_ASSISTANT:
+        mode, label, notice = "disabled", "Off", SCILEM_DISABLED_NOTICE
+    elif has_phrasing:
+        mode, label = "grounded+phrasing", "Ready"
+        notice = None
+    else:
+        mode, label = "grounded", "Grounded"
+        notice = (
+            "No language-model provider is configured, so open-ended questions cannot be "
+            "rephrased or reasoned about. Answers come from live deployment state and the "
+            "built-in knowledge base only — narrower, but never invented."
+        )
     return {
         "enabled": ENABLE_SCILEM_ASSISTANT,
-        "mode": "grounded",
+        "mode": mode,
+        "badge": label,
         "local_model": ENABLE_SCILEM_LOCAL_MODEL,
-        "cloud_phrasing": bool(GROQ_API_KEY or OR_API_KEY),
+        "cloud_phrasing": has_phrasing,
         "capabilities": scilem.CAPABILITIES,
-        "notice": None if ENABLE_SCILEM_ASSISTANT else SCILEM_DISABLED_NOTICE,
+        "notice": notice,
     }
 
 
@@ -1653,7 +1688,7 @@ def _run_forecast_impl(lookback: int = 3):
 
     raw_pred, method, final_loss = None, "holt-linear-trend", 0.0
     
-    if False and USE_LSTM_FORECAST:
+    if USE_LSTM_FORECAST:
         raw_pred = forecast_engine.train_lstm_forecast(
             weight_matrix, actual_lookback,
             model_factory=PidyneLSTM,

@@ -33,12 +33,13 @@ try:
     from config import (CEREBRAS_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY,
                         TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
                         GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL,
-                        GEMINI_PRIMARY_MODEL)
+                        FALLBACK_MODEL, GEMINI_PRIMARY_MODEL)
 except ImportError:
     GROQ_API_KEY = OR_API_KEY = GEMINI_API_KEY = ""
     CEREBRAS_API_KEY = MISTRAL_API_KEY = DEEPSEEK_API_KEY = ""
     TOGETHER_API_KEY = GITHUB_MODELS_TOKEN = ""
     PRIMARY_MODEL = "llama-3.3-70b-versatile"
+    FALLBACK_MODEL = "llama-3.1-8b-instant"
     GEMINI_PRIMARY_MODEL = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
@@ -247,7 +248,26 @@ def build_routes(juror: str) -> List[Dict]:
 
     routes = [r for r in chains.get(juror, []) if r]
 
-    # Universal last resort: OpenRouter's Auto Router selects whichever model
+    # Universal last resort #1: the Groq-hosted PRIMARY_MODEL
+    # (llama-3.3-70b-versatile). Every juror ends here because it is the one
+    # route this deployment is most likely to actually have configured — Groq's
+    # free tier needs no billing relationship, and unlike the OpenRouter Auto
+    # Router it names a known model of known quality rather than whatever the
+    # account happens to be allowed today. A juror that reaches a shared Llama
+    # instead of returning nothing still contributes a verdict; it is only a
+    # weaker form of independence, not an absent one.
+    #
+    # It is appended, never promoted: for jurors whose own lineage is
+    # reachable, that lineage is always tried first, and the dedupe below
+    # keeps the Llama juror (where it is already primary) from listing it
+    # twice. FALLBACK_MODEL follows it as the smallest, most consistently
+    # available model on the same account, for when the 70B quota is spent.
+    for fallback_model in (PRIMARY_MODEL, FALLBACK_MODEL):
+        route = _route(fallback_model, GROQ_API_KEY, GROQ_BASE, "Groq")
+        if route:
+            routes.append(route)
+
+    # Universal last resort #2: OpenRouter's Auto Router selects whichever model
     # is actually available to this account right now. It is the correct
     # answer to "no endpoints available matching your data policy" — rather
     # than naming a model the account may not reach, it asks OpenRouter to
@@ -256,7 +276,19 @@ def build_routes(juror: str) -> List[Dict]:
     if OR_API_KEY:
         routes.append({"model": "openrouter/auto", "key": OR_API_KEY,
                        "base": OPENROUTER_BASE, "provider": "OpenRouter"})
-    return routes
+
+    # Dedupe while preserving order. Appending the universal fallbacks would
+    # otherwise make the Llama juror and the judge retry a route they had
+    # already exhausted seconds earlier — burning time budget on a call whose
+    # outcome is already known.
+    seen, unique = set(), []
+    for r in routes:
+        ident = (r["provider"], r["model"])
+        if ident in seen:
+            continue
+        seen.add(ident)
+        unique.append(r)
+    return unique
 
 
 # ---------------------------------------------------------------------------
