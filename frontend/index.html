@@ -109,7 +109,7 @@
   <!-- ===================== MAIN ===================== -->
   <main class="main">
     <nav class="nav-tabs">
-      <button class="tab-btn active" data-tab="assess">Assess Manuscript</button>
+      <button class="tab-btn active" data-tab="assess">Assessment</button>
       <button class="tab-btn" data-tab="analytics">Analytics</button>
       <button class="tab-btn" data-tab="explorer">Explorer</button>
       <button class="tab-btn" data-tab="arcade">Science Map</button>
@@ -153,21 +153,10 @@
             </div>
             <span class="profile-hint">Add as many as apply — press Enter or comma after each.</span>
           </div>
-          <label>Career stage
-            <select id="profileCareerStage">
-              <option value="">Prefer not to say</option>
-              <option value="student">Student</option>
-              <option value="phd">PhD candidate</option>
-              <option value="postdoc">Postdoc</option>
-              <option value="faculty">Faculty</option>
-              <option value="industry">Industry researcher</option>
-              <option value="independent">Independent researcher</option>
-            </select>
-          </label>
         </div>
 
         <div class="profile-block">
-          <label for="profileGoalInput">Keywords and focuses</label>
+          <label for="profileGoalInput">Keywords and Focus areas</label>
           <div class="tag-input" id="profileGoalTags">
             <span class="tag-list" id="profileGoalList"></span>
             <input type="text" id="profileGoalInput" maxlength="60"
@@ -299,7 +288,7 @@
 
       <div class="full-col">
         <div class="card">
-          <h2>pi-Dyne Forecast<button class="help-btn" data-help="pidyne" aria-label="About the pi-Dyne forecast">?</button></h2>
+          <h2>pi-Dyne (piD) Forecast<button class="help-btn" data-help="pidyne" aria-label="About the pi-Dyne forecast">?</button></h2>
           <p class="hint">Projects how the eight Pi-Index criteria weights will shift in the next ledger epoch, learned from the weights recorded in every Proof-of-Research block.</p>
 
           <div class="forecast-toolbar">
@@ -387,11 +376,13 @@
           <label class="ex-ctl">Min piX
             <input type="number" id="explorerMinScore" min="0" max="100" step="1" placeholder="0" class="score-input">
           </label>
-          <label class="ex-ctl">Max piX
-            <input type="number" id="explorerMaxScore" min="0" max="100" step="1" placeholder="100" class="score-input">
-          </label>
-          <label class="ex-ctl">Field
-            <select id="explorerField"><option value="">All fields</option></select>
+          <label class="ex-ctl ex-ctl-wide">Fields
+            <div class="tag-input" id="explorerFieldTags">
+              <span class="tag-list" id="explorerFieldList"></span>
+              <input type="text" id="explorerFieldInput" list="explorerFieldOptions"
+                     placeholder="Add a field, press Enter">
+              <datalist id="explorerFieldOptions"></datalist>
+            </div>
           </label>
           <label class="ex-ctl">Sort by
             <select id="explorerSort">
@@ -450,7 +441,12 @@
               <input type="text" id="arcadeSearch" placeholder="e.g. Genomics">
               <div id="arcadeAuthorWrap" class="hidden">
                 <label class="arcade-ctl-label" for="arcadeAuthor">Author</label>
-                <select id="arcadeAuthor"><option value="">Any author</option></select>
+                <div class="tag-input" id="arcadeAuthorTags">
+                  <span class="tag-list" id="arcadeAuthorList2"></span>
+                  <input type="text" id="arcadeAuthor" list="arcadeAuthorOptions"
+                         placeholder="Add an author, press Enter">
+                  <datalist id="arcadeAuthorOptions"></datalist>
+                </div>
               </div>
               <label class="arcade-ctl-label">Minimum papers <output id="arcadeMinPapersOut">0</output></label>
               <input type="range" id="arcadeMinPapers" min="0" max="20" step="1" value="0">

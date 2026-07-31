@@ -1062,8 +1062,8 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // connected an identity yet — which is most first-time visitors, and exactly
 // the people the profile is meant to help.
 // ---------------------------------------------------------------------------
-const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea", "abstract"];
-const PROFILE_INPUTS = { career_stage: "profileCareerStage", abstract: "profileAbstract" };
+const PROFILE_FIELDS = ["field", "goal", "idea", "abstract"];
+const PROFILE_INPUTS = { abstract: "profileAbstract" };
 
 // Research fields and keywords are both lists, not strings: researchers sit
 // across several of each. One generic implementation serves both, so the two
@@ -1084,6 +1084,16 @@ const TAG_GROUPS = {
            wrapId: "profileGoalTags", max: 60, sep: ", ", split: "," },
   idea:  { tags: [], listId: "profileIdeaList", inputId: "profileIdeaInput",
            wrapId: "profileIdeaTags", max: 200, sep: "\n", split: "\n" },
+  // Filters, not profile fields, but the same control: a researcher filters by
+  // several fields or several authors, and a single-select forced them to pick
+  // one and re-query. `onChange` re-runs the relevant loader when tags move.
+  exField: { tags: [], listId: "explorerFieldList", inputId: "explorerFieldInput",
+             wrapId: "explorerFieldTags", max: 80, sep: ", ", split: ",",
+             onChange: () => (typeof loadExplorer === "function") && loadExplorer() },
+  mapAuthor: { tags: [], listId: "arcadeAuthorList2", inputId: "arcadeAuthor",
+               wrapId: "arcadeAuthorTags", max: 120, sep: ", ", split: ",",
+               onChange: () => window.ScholarPiArcade && window.ScholarPiArcade.applyFilters
+                              && window.ScholarPiArcade.applyFilters() },
 };
 const TAG_LIMIT = 12;
 
@@ -1095,6 +1105,7 @@ function renderTags(group) {
     <span class="tag">${escapeHtml(t)}<button type="button" class="tag-x"
       data-tag-group="${group}" data-tag-index="${i}"
       aria-label="Remove ${escapeHtml(t)}">×</button></span>`).join("");
+  if (typeof g.onChange === "function") g.onChange();
 }
 
 function addTag(group, raw) {
@@ -1172,7 +1183,7 @@ function renderResearchBuddy(profile) {
   if (!body) return;
   const fields = String(profile.field || "").split(",").map(s => s.trim()).filter(Boolean);
   const goal = (profile.goal || "").trim();
-  const stage = (profile.career_stage || "").trim();
+
   const idea = (profile.idea || "").trim();
 
   const filled = [fields.length, goal, stage, idea].filter(Boolean).length;
@@ -1183,9 +1194,7 @@ function renderResearchBuddy(profile) {
     const checklist = [
       ["Research fields", fields.length > 0,
        "compares your fields against everything assessed here"],
-      ["Career stage", Boolean(stage),
-       "changes which advice is relevant — a PhD student and a PI need different things"],
-      ["Keywords and focuses", Boolean(goal),
+      ["Keywords and Focus areas", Boolean(goal),
        "finds papers in the corpus worth reading"],
       ["Core ideas", Boolean(idea),
        "checks whether your framing is already crowded"],
@@ -1246,22 +1255,13 @@ function renderResearchBuddy(profile) {
   html += `<div id="buddyCorpus"></div>`;
 
   const actions = [];
-  if (stage === "phd" || stage === "student") {
-    actions.push(["Build a citable trail early",
-      "Deposit preprints for everything you can. At your stage the cost of being unread is "
-      + "higher than the risk of being scooped, and a DOI you can cite in applications is "
-      + "worth more than an unpublished draft."]);
-  }
-  if (stage === "postdoc") {
-    actions.push(["Establish an independent line",
-      "Search committees look for work that is identifiably yours rather than your PI's. A "
-      + "first- or last-author paper in a direction you chose carries disproportionate weight."]);
-  }
-  if (stage === "independent") {
-    actions.push(["Compensate for missing affiliation",
-      "Unaffiliated work is discounted by reviewers whether or not that is fair. An ORCID, a "
-      + "consistent name form and open data are the levers you control."]);
-  }
+  // Advice that applies regardless of career stage, which is no longer
+  // collected. These were the stage-specific branches worth keeping: they hold
+  // for anyone publishing, not only for one seniority.
+  actions.push(["Build a citable trail",
+    "Deposit preprints for everything you can. The cost of being unread is generally higher "
+    + "than the risk of being scooped, and a DOI you can cite is worth more than an "
+    + "unpublished draft."]);
   if (fields.length > 3) {
     actions.push(["You are spread across many fields",
       `You listed ${fields.length}. Breadth is genuinely valuable, but citation accrues to a `
@@ -3251,34 +3251,30 @@ async function initAnalyticsTab() {
 // ---------------------------------------------------------------------------
 // EXPLORER TAB
 // ---------------------------------------------------------------------------
-const explorerState = { minScore: "", maxScore: "", field: "", sort: "date", order: "desc" };
+const explorerState = { minScore: "", sort: "date", order: "desc" };
 let explorerFieldsLoaded = false;
 
 document.getElementById("explorerSearch").addEventListener("input", debounced(loadExplorer));
-["explorerMinScore", "explorerMaxScore", "explorerField", "explorerSort", "explorerOrder"]
-  .forEach(id => {
-    const el = document.getElementById(id);
-    if (!el) return;
-    const handler = () => {
-      explorerState.minScore = document.getElementById("explorerMinScore").value;
-      explorerState.maxScore = document.getElementById("explorerMaxScore").value;
-      explorerState.field = document.getElementById("explorerField").value;
-      explorerState.sort = document.getElementById("explorerSort").value;
-      explorerState.order = document.getElementById("explorerOrder").value;
-      loadExplorer();
-    };
-    el.addEventListener(el.tagName === "SELECT" ? "change" : "input", debounced(handler));
-  });
+["explorerMinScore", "explorerSort", "explorerOrder"].forEach(id => {
+  const el = document.getElementById(id);
+  if (!el) return;
+  const handler = () => {
+    explorerState.minScore = document.getElementById("explorerMinScore").value;
+    explorerState.sort = document.getElementById("explorerSort").value;
+    explorerState.order = document.getElementById("explorerOrder").value;
+    loadExplorer();
+  };
+  el.addEventListener(el.tagName === "SELECT" ? "change" : "input", debounced(handler));
+});
 
 document.getElementById("explorerResetBtn").addEventListener("click", () => {
-  Object.assign(explorerState, { minScore: "", maxScore: "", field: "", sort: "date", order: "desc" });
+  Object.assign(explorerState, { minScore: "", sort: "date", order: "desc" });
   document.getElementById("explorerSearch").value = "";
   document.getElementById("explorerMinScore").value = "";
-  document.getElementById("explorerMaxScore").value = "";
-  document.getElementById("explorerField").value = "";
   document.getElementById("explorerSort").value = "date";
   document.getElementById("explorerOrder").value = "desc";
-  loadExplorer();
+  TAG_GROUPS.exField.tags = [];
+  renderTags("exField");   // fires onChange -> reloads
 });
 
 async function loadExplorer() {
@@ -3301,8 +3297,9 @@ async function loadExplorer() {
         // Blank inputs must fall back to the full range rather than 0/0,
         // which would return nothing and look like a broken filter.
         min_score: explorerState.minScore === "" ? 0 : Number(explorerState.minScore),
-        max_score: explorerState.maxScore === "" ? 100 : Number(explorerState.maxScore),
-        field: explorerState.field, sort: explorerState.sort, order: explorerState.order,
+        max_score: 100,
+        field: TAG_GROUPS.exField.tags.join(","),
+        sort: explorerState.sort, order: explorerState.order,
         limit: 100,
       });
       const res = await fetch(`${API}/api/explorer/latest?${qs}`);
@@ -3315,20 +3312,17 @@ async function loadExplorer() {
 
       // Populate the field filter once, from fields that actually exist in the
       // corpus — an option that returns nothing is worse than no option.
-      const fieldSel = document.getElementById("explorerField");
-      if (fieldSel && !explorerFieldsLoaded && (data.available_fields || []).length) {
+      const opts = document.getElementById("explorerFieldOptions");
+      if (opts && !explorerFieldsLoaded && (data.available_fields || []).length) {
         explorerFieldsLoaded = true;
-        const current = fieldSel.value;
-        fieldSel.innerHTML = `<option value="">All fields</option>` +
-          data.available_fields.map(f => {
-            const name = typeof f === "string" ? f : (f.field || f.name || "");
-            return `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`;
-          }).join("");
-        fieldSel.value = current;
+        opts.innerHTML = data.available_fields.map(f => {
+          const name = typeof f === "string" ? f : (f.field || f.name || "");
+          return `<option value="${escapeHtml(name)}"></option>`;
+        }).join("");
       }
 
       const countEl = document.getElementById("explorerCount");
-      const filtered = explorerState.minScore !== "" || explorerState.maxScore !== "" || explorerState.field;
+      const filtered = explorerState.minScore !== "" || TAG_GROUPS.exField.tags.length > 0;
       if (countEl) {
         countEl.textContent = data.count
           ? `${data.count} record${data.count === 1 ? "" : "s"}${filtered ? " matching your filters" : ""}.`
@@ -3742,7 +3736,7 @@ async function resetProfile() {
       msg.textContent = "Local draft cleared.";
     }
     localStorage.removeItem("sp_profile");
-    writeProfileForm({ field: "", career_stage: "", goal: "", idea: "", abstract: "" });
+    writeProfileForm({ field: "", goal: "", idea: "", abstract: "" });
     loadBuddyCorpus();
   } catch (e) {
     msg.textContent = `Could not clear the profile: ${e.message}`;
@@ -4021,9 +4015,18 @@ async function refreshSessionState() {
   const badge = document.getElementById("authBadge");
   if (!badge) return;
   if (!sessionState.verified) {
-    badge.textContent = "Not signed in";
-    badge.className = "pill pill-muted";
-    badge.title = sessionState.note || "Connect a wallet and sign, or link ORCID.";
+    // Distinguish "you have not signed in" from "this deployment cannot sign
+    // you in". Showing the first when the second is true is what made the
+    // badge look broken: the user completes ORCID login, everything succeeds,
+    // and the badge still says Not signed in because no secret exists to mint
+    // a token with. That is a deployment fault, and it should say so.
+    const disabled = sessionState.sessions_enabled === false;
+    badge.textContent = disabled ? "Sign-in disabled" : "Not signed in";
+    badge.className = disabled ? "pill q-low" : "pill pill-muted";
+    badge.title = disabled
+      ? "This deployment has no SESSION_SECRET, so sessions cannot be signed and "
+        + "identity-scoped features are switched off."
+      : "Connect a wallet and sign the login message, or link ORCID.";
     return;
   }
   const proofs = [];
@@ -4145,4 +4148,7 @@ window.ScholarPi = {
   // The arcade needs the current identity to key difficulty and the
   // leaderboard to a person rather than to an IP address.
   identity: () => ({ wallet: Session.wallet || "", orcid: Session.orcid || "" }),
+  // The arcade's author filter is a tag control living in app.js's shared
+  // implementation; this is how arcade.js reads its current selection.
+  tags: (group) => (TAG_GROUPS[group] ? TAG_GROUPS[group].tags.slice() : []),
 };

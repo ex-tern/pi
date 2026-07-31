@@ -71,17 +71,24 @@
   // is purely a rendering concern and can never desynchronise a run.
   function applyFilters() {
     const f = state.filters;
+    // Pull the current author tags from the shared control each time rather
+    // than mirroring them into local state, so the two cannot drift.
+    f.authors = (window.ScholarPi && window.ScholarPi.tags)
+      ? window.ScholarPi.tags("mapAuthor") : (f.authors || []);
     const needle = f.search.trim().toLowerCase();
-    const author = f.author.trim().toLowerCase();
+    // A list now, not a single name: collaborations span people, and filtering
+    // to one author at a time could not show a shared body of work.
+    const authors = (f.authors || []).map(a => a.trim().toLowerCase()).filter(Boolean);
 
-    // Which fields the chosen author actually publishes in. Built from the
+    // Which fields the chosen authors actually publish in. Built from the
     // legend rather than the bubbles, because authorship is a property of the
     // corpus, not of an individual bubble — several bubbles share a domain.
     let authorFields = null;
-    if (author) {
+    if (authors.length) {
       authorFields = new Set(
         state.legend
-          .filter(r => (r.authors || []).some(a => a.toLowerCase().includes(author)))
+          .filter(r => (r.authors || []).some(
+            a => authors.some(sel => a.toLowerCase().includes(sel))))
           .map(r => r.field)
       );
     }
@@ -102,7 +109,8 @@
       const total = state.bubbles.length;
       const active = [];
       if (needle) active.push(`"${f.search.trim()}"`);
-      if (author) active.push(f.author.trim());
+      if (authors.length) active.push(authors.length === 1 ? f.authors[0]
+                                       : `${authors.length} authors`);
       if (f.minPapers) active.push(`≥${f.minPapers} papers`);
       if (f.liveOnly) active.push("corpus only");
       summary.textContent = shown === total && !active.length
@@ -118,12 +126,11 @@
     // then silently returns nothing — the filter appears broken when it is
     // simply reporting an empty result. A select can only offer authors that
     // actually exist in the assessed corpus.
-    const list = document.getElementById("arcadeAuthor");
-    if (!list) return;
-    const current = list.value;
-    list.innerHTML = `<option value="">Any author</option>` + state.authors
-      .map(a => `<option value="${escapeHtml(a)}">${escapeHtml(a)}</option>`).join("");
-    list.value = state.authors.includes(current) ? current : "";
+    const opts = document.getElementById("arcadeAuthorOptions");
+    if (opts) {
+      opts.innerHTML = state.authors
+        .map(a => `<option value="${escapeHtml(a)}"></option>`).join("");
+    }
     const wrap = document.getElementById("arcadeAuthorWrap");
     // Hiding the control when the corpus has no authors is more honest than
     // showing a filter that can only ever return nothing.
@@ -1145,9 +1152,9 @@
     const scale = document.getElementById("arcadeScale");
     const scaleOut = document.getElementById("arcadeScaleOut");
 
-    const author = document.getElementById("arcadeAuthor");
+    // The author control is a tag input owned by app.js's shared tag system,
+    // which calls back through ScholarPiArcade.applyFilters when tags change.
     search.addEventListener("input", () => { state.filters.search = search.value; applyFilters(); });
-    author.addEventListener("input", () => { state.filters.author = author.value; applyFilters(); });
     minPapers.addEventListener("input", () => {
       state.filters.minPapers = parseInt(minPapers.value, 10) || 0;
       minOut.textContent = state.filters.minPapers;
@@ -1203,5 +1210,5 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", init);
   else init();
 
-  window.ScholarPiArcade = { exit, open: () => enterExplore(false) };
+  window.ScholarPiArcade = { exit, open: () => enterExplore(false), applyFilters };
 })();
