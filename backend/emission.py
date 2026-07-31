@@ -569,3 +569,30 @@ def publication_fee(pix_score: float = 0.0) -> Dict:
             f"behind — a free action carries no such signal."
         ),
     }
+
+
+# ---------------------------------------------------------------------------
+# Peer review bounty
+# ---------------------------------------------------------------------------
+# What a review request costs, and what the reviewer is paid.
+#
+# The fee is a BOUNTY, not a badge price. It is held when the request opens and
+# paid to whoever completes the review — so the money buys someone's time, not
+# a claim about quality. A badge that could be bought outright would be exactly
+# the purchasable credibility that DORA and CoARA exist to oppose, and it would
+# be worth nothing to a reader the moment they understood how it was obtained.
+PEER_REVIEW_BOUNTY = 2.0
+
+
+def peer_review_fee() -> Dict:
+    return {
+        "fee": PEER_REVIEW_BOUNTY,
+        "paid_to": "the reviewer, on completion",
+        "refundable": False,
+        "rationale": (
+            f"Opening a review costs {PEER_REVIEW_BOUNTY:.2f} piQ. The whole amount is paid to "
+            f"the researcher who completes the review — it commissions their time, it does not "
+            f"purchase a badge. The Peer-reviewed badge appears only once a review has actually "
+            f"been submitted by someone other than the requester."
+        ),
+    }

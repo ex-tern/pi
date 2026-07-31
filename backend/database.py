@@ -162,6 +162,21 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_challenge_lookup "
                    "ON authorship_challenges(eval_hash, account_key)")
 
+    # Peer review. A request is opened by paying a fee; the fee is held and
+    # paid to whoever completes the review. The badge derives from a COMPLETED
+    # row — never from the payment — so it cannot be bought.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS peer_reviews (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        eval_hash TEXT NOT NULL,
+                        requested_by TEXT NOT NULL,
+                        bounty REAL DEFAULT 0,
+                        reviewer_key TEXT DEFAULT '',
+                        verdict TEXT DEFAULT '',
+                        comment TEXT DEFAULT '',
+                        requested_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        completed_at DATETIME)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_peer_reviews_hash ON peer_reviews(eval_hash)")
+
     # 3. New Ingestion Queue for Microservices
     cursor.execute("""CREATE TABLE IF NOT EXISTS ingestion_queue (
                         id INTEGER PRIMARY KEY AUTOINCREMENT, source_type TEXT, source_val TEXT, 
@@ -1637,3 +1652,120 @@ def publication_fee_paid(eval_hash: str, identities) -> bool:
         return False
     finally:
         conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Peer review
+# ---------------------------------------------------------------------------
+def open_review_request(eval_hash: str, requested_by: str, bounty: float) -> dict:
+    """Open a review request. One open request per paper."""
+    conn = get_db_connection()
+    try:
+        existing = conn.execute(
+            "SELECT id FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1",
+            (eval_hash,)).fetchone()
+        if existing:
+            return {"ok": False, "reason": "A review is already open for this paper."}
+        conn.execute(
+            "INSERT INTO peer_reviews (eval_hash, requested_by, bounty) VALUES (?, ?, ?)",
+            (eval_hash, requested_by, float(bounty)))
+        conn.commit()
+        return {"ok": True, "reason": ""}
+    except sqlite3.Error as e:
+        logging.warning("Could not open review request: %s", e)
+        return {"ok": False, "reason": "The request could not be opened."}
+    finally:
+        conn.close()
+
+
+def list_open_reviews(exclude_key: str = "", limit: int = 50) -> list:
+    """Papers awaiting review, excluding the caller's own requests.
+
+    Excluding your own is the point: a reviewer who requested the review is not
+    an independent reviewer, and letting the two coincide would make the badge
+    self-issued through a longer route.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT r.id, r.eval_hash, r.bounty, r.requested_at,
+                      p.title, p.author_name, p.final_score
+               FROM peer_reviews r
+               JOIN papers_assessment p ON p.eval_hash = r.eval_hash
+               WHERE r.completed_at IS NULL AND r.requested_by <> ?
+               ORDER BY r.requested_at ASC LIMIT ?""",
+            (exclude_key or "\x00", int(limit))).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"id": r[0], "hash": r[1], "bounty": round(float(r[2] or 0), 4),
+             "requested_at": r[3], "title": r[4] or "Untitled",
+             "author": r[5] or "", "score": round(float(r[6] or 0), 1)} for r in rows]
+
+
+def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: str) -> dict:
+    """Record a completed review and pay the bounty to the reviewer.
+
+    The requester is re-checked here, not only at listing time: a request could
+    have been opened between a reviewer loading the list and submitting, and a
+    self-review must be impossible at the moment it is written, not merely
+    hidden from a page.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT eval_hash, requested_by, bounty, completed_at FROM peer_reviews WHERE id = ?",
+            (review_id,)).fetchone()
+        if not row:
+            return {"ok": False, "reason": "No such review request."}
+        if row[3]:
+            return {"ok": False, "reason": "That review has already been completed."}
+        if row[1] == reviewer_key:
+            return {"ok": False, "reason": "You cannot review a paper you requested review of."}
+
+        conn.execute(
+            """UPDATE peer_reviews SET reviewer_key = ?, verdict = ?, comment = ?,
+                   completed_at = CURRENT_TIMESTAMP WHERE id = ?""",
+            (reviewer_key, verdict[:40], comment[:4000], review_id))
+        bounty = round(float(row[2] or 0), 4)
+        if bounty > 0:
+            kind = "orcid" if reviewer_key.startswith("orcid:") else "wallet"
+            conn.execute(
+                "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (reviewer_key.split(":", 1)[-1], kind, bounty,
+                 "Peer review bounty", row[0]))
+        conn.commit()
+        return {"ok": True, "eval_hash": row[0], "paid": bounty, "reason": ""}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not complete review: %s", e)
+        return {"ok": False, "reason": "The review could not be saved."}
+    finally:
+        conn.close()
+
+
+def review_summary(eval_hash: str) -> dict:
+    """Completed reviews for a paper. The badge derives from this, not payment."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT verdict, comment, completed_at FROM peer_reviews
+               WHERE eval_hash = ? AND completed_at IS NOT NULL
+               ORDER BY completed_at DESC""", (eval_hash,)).fetchall()
+        pending = conn.execute(
+            "SELECT COUNT(*) FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL",
+            (eval_hash,)).fetchone()
+    except sqlite3.Error:
+        return {"reviewed": False, "count": 0, "pending": 0, "reviews": []}
+    finally:
+        conn.close()
+    return {
+        "reviewed": len(rows) > 0,
+        "count": len(rows),
+        "pending": int(pending[0]) if pending else 0,
+        # Reviewer identity is deliberately absent: this is single-blind, and
+        # publishing who reviewed what would deter honest negative reviews.
+        "reviews": [{"verdict": r[0], "comment": r[1], "completed_at": r[2]} for r in rows],
+    }

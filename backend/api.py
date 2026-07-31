@@ -63,6 +63,7 @@ from database import (
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
     set_published, is_published, publication_fee_paid,
+    open_review_request, list_open_reviews, complete_review, review_summary,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
 )
@@ -89,7 +90,7 @@ from rubric import (
 )
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
-    compute_curation_reward, publication_fee,
+    compute_curation_reward, publication_fee, peer_review_fee,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import pid_engine as forecast_engine
@@ -1509,6 +1510,102 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
         "message": ("Published. Your assessment now carries an Author-published badge wherever "
                     "it appears. You can withdraw it at any time, free of charge."),
     }
+
+
+class ReviewRequest(BaseModel):
+    wallet: str = ""
+    orcid: str = ""
+
+
+class ReviewSubmission(BaseModel):
+    review_id: int
+    verdict: str = "sound"          # sound | concerns | unsound
+    comment: str = ""
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.get("/api/reviews/open")
+def open_reviews(request: Request, wallet: str = Query(default=""),
+                 orcid: str = Query(default="")):
+    """Papers awaiting review. Your own requests are excluded."""
+    identity = auth.identity_from_request(request, wallet, orcid)
+    key = _profile_key(identity["wallet"], identity["orcid"]) if identity["verified"] else ""
+    return {"signed_in": bool(key), "open": list_open_reviews(exclude_key=key),
+            "bounty": peer_review_fee()}
+
+
+@app.get("/api/assessments/{file_hash}/review")
+def review_state(file_hash: str):
+    """Public: whether this paper has been peer reviewed, and what was said."""
+    return {**review_summary(file_hash), "fee": peer_review_fee()}
+
+
+@app.post("/api/assessments/{file_hash}/review/request")
+def request_review(file_hash: str, payload: ReviewRequest, request: Request):
+    """Commission a review. Requires BOTH a signed wallet and a linked ORCID.
+
+    Both, because this spends piQ and puts a claim in front of other
+    researchers: a wallet proves control of the paying account, an ORCID ties
+    the request to a real research identity that can be held to it.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+    if not (identity["wallet"] and identity["orcid"]):
+        raise HTTPException(
+            status_code=403,
+            detail=("Requesting review needs both a signed wallet and a linked ORCID. One proves "
+                    "the paying account, the other ties the request to a research identity."))
+
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    fee = peer_review_fee()["fee"]
+    balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
+    if balance + 1e-9 < fee:
+        raise HTTPException(
+            status_code=402,
+            detail=(f"A review costs {fee:.2f} piQ and your balance is {balance:.2f} piQ. The "
+                    f"whole amount goes to the reviewer."))
+
+    result = open_review_request(file_hash, key, fee)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+    if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
+                          eval_hash=file_hash, reason="Peer review bounty (held)"):
+        raise HTTPException(status_code=402, detail="The bounty could not be held.")
+
+    add_log(f"Review requested for {file_hash[:12]}… bounty {fee:.2f} piQ")
+    return {"requested": True, "bounty": fee,
+            "message": (f"Review requested. {fee:.2f} piQ is held and will be paid to the "
+                        f"researcher who completes it. The Peer-reviewed badge appears only "
+                        f"once a review has been submitted.")}
+
+
+@app.post("/api/reviews/submit")
+def submit_review(payload: ReviewSubmission, request: Request):
+    """Complete a review and collect the bounty."""
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+    if not (identity["wallet"] and identity["orcid"]):
+        raise HTTPException(
+            status_code=403,
+            detail="Reviewing needs both a signed wallet and a linked ORCID.")
+    if payload.verdict not in ("sound", "concerns", "unsound"):
+        raise HTTPException(status_code=400, detail="Verdict must be sound, concerns or unsound.")
+    if len((payload.comment or "").strip()) < 40:
+        raise HTTPException(
+            status_code=400,
+            detail=("A review needs at least 40 characters of comment. A verdict with no "
+                    "reasoning is not a review, and the badge would be worthless if it were."))
+
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    result = complete_review(payload.review_id, key, payload.verdict, payload.comment)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+    add_log(f"Review completed on {result['eval_hash'][:12]}… paid {result['paid']:.2f} piQ")
+    return {"submitted": True, "paid": result["paid"],
+            "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+            "message": (f"Review recorded. {result['paid']:.2f} piQ paid to you. The paper now "
+                        f"carries a Peer-reviewed badge.")}
 
 
 @app.delete("/api/assessments/{file_hash}")
@@ -2975,6 +3072,7 @@ def analytics_summary():
     try:
         row = conn.execute(
             """SELECT COUNT(*), COALESCE(SUM(piq_minted),0), COALESCE(AVG(final_score),0),
+                      COALESCE(SUM(CASE WHEN piq_claimed_at IS NULL THEN piq_escrowed ELSE 0 END),0),
                       MIN(timestamp), MAX(timestamp)
                FROM papers_assessment"""
         ).fetchone()
@@ -2984,11 +3082,19 @@ def analytics_summary():
     unique_authors = {r["author"] for r in aggregate_author_statistics(author_rows)}
     return {
         "total_papers": row[0] or 0,
+        # Settled: minted to a verified author. This is what the leaderboard
+        # ranks and what settles on-chain, so it must never include a claim
+        # that has not been proven.
         "total_piq": round(safe_float(row[1], 0.0), 2),
+        # Earned but held pending authorship verification. Reported separately
+        # so the corpus total reflects work done, without conflating "earned"
+        # with "credited to a proven author".
+        "total_piq_escrowed": round(safe_float(row[3], 0.0), 2),
+        "total_piq_earned": round(safe_float(row[1], 0.0) + safe_float(row[3], 0.0), 2),
         "avg_score": round(safe_float(row[2], 0.0), 2),
         "unique_authors": len(unique_authors),
-        "earliest": row[3],
-        "latest": row[4],
+        "earliest": row[4],
+        "latest": row[5],
     }
 
 
