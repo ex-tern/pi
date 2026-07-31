@@ -935,39 +935,54 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // connected an identity yet — which is most first-time visitors, and exactly
 // the people the profile is meant to help.
 // ---------------------------------------------------------------------------
-const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea", "abstract"];
-const PROFILE_INPUTS = {
-  career_stage: "profileCareerStage", goal: "profileGoal",
-  idea: "profileIdea", abstract: "profileAbstract",
+const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea"];
+const PROFILE_INPUTS = { career_stage: "profileCareerStage", idea: "profileIdea" };
+
+// Research fields and keywords are both lists, not strings: researchers sit
+// across several of each. One generic implementation serves both, so the two
+// controls cannot drift apart in behaviour. Stored comma-joined, keeping the
+// backend columns plain strings.
+const TAG_GROUPS = {
+  field: { tags: [], listId: "profileFieldList", inputId: "profileFieldInput", wrapId: "profileFieldTags" },
+  goal:  { tags: [], listId: "profileGoalList",  inputId: "profileGoalInput",  wrapId: "profileGoalTags" },
 };
+const TAG_LIMIT = 12;
 
-// Research fields are a list, not a string: most researchers sit across
-// several. Stored comma-joined so the backend column stays a plain string.
-let profileFieldTags = [];
-
-function renderFieldTags() {
-  const list = document.getElementById("profileFieldList");
+function renderTags(group) {
+  const g = TAG_GROUPS[group];
+  const list = document.getElementById(g.listId);
   if (!list) return;
-  list.innerHTML = profileFieldTags.map((t, i) => `
-    <span class="tag">${escapeHtml(t)}<button type="button" class="tag-x" data-tag-index="${i}"
+  list.innerHTML = g.tags.map((t, i) => `
+    <span class="tag">${escapeHtml(t)}<button type="button" class="tag-x"
+      data-tag-group="${group}" data-tag-index="${i}"
       aria-label="Remove ${escapeHtml(t)}">×</button></span>`).join("");
 }
 
-function addFieldTag(raw) {
+function addTag(group, raw) {
+  const g = TAG_GROUPS[group];
   for (const piece of String(raw).split(",")) {
     const value = piece.trim();
-    // Case-insensitive dedupe: "Genomics" and "genomics" are one field, and
-    // storing both would split the same interest across two tags.
+    // Case-insensitive dedupe: "Genomics" and "genomics" are one entry, and
+    // keeping both would split the same interest across two tags.
     if (!value) continue;
-    if (profileFieldTags.some(t => t.toLowerCase() === value.toLowerCase())) continue;
-    if (profileFieldTags.length >= 12) break;
-    profileFieldTags.push(value.slice(0, 60));
+    if (g.tags.some(t => t.toLowerCase() === value.toLowerCase())) continue;
+    if (g.tags.length >= TAG_LIMIT) break;
+    g.tags.push(value.slice(0, 60));
   }
-  renderFieldTags();
+  renderTags(group);
+}
+
+function setTags(group, csv) {
+  TAG_GROUPS[group].tags = String(csv || "")
+    .split(",").map(s => s.trim()).filter(Boolean).slice(0, TAG_LIMIT);
+  renderTags(group);
 }
 
 function readProfileForm() {
-  const out = { field: profileFieldTags.join(", ") };
+  const out = {
+    field: TAG_GROUPS.field.tags.join(", "),
+    goal: TAG_GROUPS.goal.tags.join(", "),
+  };
   for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
     out[key] = el ? el.value.trim() : "";
@@ -976,9 +991,8 @@ function readProfileForm() {
 }
 
 function writeProfileForm(profile) {
-  profileFieldTags = String(profile.field || "")
-    .split(",").map(s => s.trim()).filter(Boolean).slice(0, 12);
-  renderFieldTags();
+  setTags("field", profile.field);
+  setTags("goal", profile.goal);
   for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
     if (el && profile[key] !== undefined) el.value = profile[key] || "";
@@ -1020,9 +1034,12 @@ function renderResearchBuddy(profile) {
     return;
   }
 
+  // Keywords are a tag list now, so render them as a phrase rather than
+  // dropping the raw comma-joined string into the sentence.
+  const keywords = goal.split(",").map(s => s.trim()).filter(Boolean);
   let html = `<p class="buddy-lede">Based on your profile${fields.length
-    ? ` in <strong>${fields.map(escapeHtml).join(", ")}</strong>` : ""}${goal
-    ? `, working toward <em>${escapeHtml(goal)}</em>` : ""}.</p>`;
+    ? ` in <strong>${fields.map(escapeHtml).join(", ")}</strong>` : ""}${keywords.length
+    ? `, focused on <em>${keywords.map(escapeHtml).join(", ")}</em>` : ""}.</p>`;
   html += `<div id="buddyCorpus"></div>`;
 
   const actions = [];
@@ -2350,29 +2367,63 @@ async function loadForecast() {
     // be a claim the data does not support.
     if (data.mode === "delta") {
       msg.textContent = "";
-      empty.classList.remove("hidden");
-      chartWrap.classList.add("hidden");
+      empty.classList.add("hidden");
+      chartWrap.classList.remove("hidden");
+
+      // Diverging horizontal bars: each criterion's shift from the uniform
+      // baseline, signed and sorted by magnitude. A bar chart is the honest
+      // shape here — a line chart would imply a series through time, and there
+      // is only one observation.
+      const sorted = (data.criteria || []).slice()
+        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta));
+      const labels = sorted.map(c => c.title || c.id);
+      const values = sorted.map(c => c.delta);
+      const colors = sorted.map(c =>
+        c.direction === "up" ? "#15803d" : c.direction === "down" ? "#dc2626" : "#94a3b8");
+
       if (forecastChart) { forecastChart.destroy(); forecastChart = null; }
-      const rows = (data.criteria || [])
-        .slice()
-        .sort((a, b) => Math.abs(b.delta) - Math.abs(a.delta))
-        .map(c => {
-          const arrow = c.direction === "up" ? "▲" : c.direction === "down" ? "▼" : "–";
-          const cls = c.direction === "up" ? "trend-up" : c.direction === "down" ? "trend-down" : "trend-flat";
-          return `<tr>
-            <td>${escapeHtml(c.title || c.id)}</td>
-            <td class="num">${c.current.toFixed(3)}</td>
-            <td class="num ${cls}">${arrow} ${c.delta >= 0 ? "+" : ""}${c.delta.toFixed(3)}</td>
-          </tr>`;
-        }).join("");
-      empty.innerHTML = `
-        <div class="empty-title">Measured weighting — no trend yet</div>
-        <p>${escapeHtml(data.message || "")}</p>
-        <table class="data-table forecast-delta-table">
-          <thead><tr><th>Criterion</th><th class="num">Weight</th><th class="num">vs baseline</th></tr></thead>
-          <tbody>${rows}</tbody>
-        </table>
-        ${data.insight ? `<p class="forecast-insight-inline">${escapeHtml(data.insight)}</p>` : ""}`;
+      const ctx = document.getElementById("forecastChart").getContext("2d");
+      forecastChart = new Chart(ctx, {
+        type: "bar",
+        data: { labels, datasets: [{ label: "Shift from baseline", data: values,
+                                     backgroundColor: colors, borderWidth: 0,
+                                     borderRadius: 3, barThickness: 18 }] },
+        options: {
+          indexAxis: "y",
+          responsive: true, maintainAspectRatio: false,
+          plugins: {
+            legend: { display: false },
+            tooltip: {
+              callbacks: {
+                label: c => {
+                  const row = sorted[c.dataIndex];
+                  const sign = row.delta >= 0 ? "+" : "";
+                  return ` weight ${row.current.toFixed(3)} (${sign}${row.delta.toFixed(3)} vs baseline)`;
+                },
+              },
+            },
+          },
+          scales: {
+            x: { title: { display: true, text: "Shift from uniform baseline" },
+                 grid: { color: "#e2e8f0" },
+                 ticks: { callback: v => (v > 0 ? "+" : "") + Number(v).toFixed(2) } },
+            y: { grid: { display: false }, ticks: { font: { size: 11 } } },
+          },
+        },
+      });
+
+      const meta = document.getElementById("forecastMeta");
+      if (meta) {
+        meta.innerHTML = `
+          <div class="fm-item"><span>Mode</span><strong>Measured</strong></div>
+          <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
+          <div class="fm-item"><span>Projection</span><strong>needs ${data.blocks_required}</strong></div>`;
+      }
+      const insight = document.getElementById("forecastInsight");
+      if (insight) {
+        insight.innerHTML = `<p>${escapeHtml(data.insight || "")}</p>
+          <p class="forecast-insight-inline">${escapeHtml(data.message || "")}</p>`;
+      }
       return;
     }
 
@@ -3111,33 +3162,39 @@ document.getElementById("referBtn").addEventListener("click", async () => {
   }
 });
 
-// Field tag entry: Enter or comma commits, Backspace on an empty input removes
-// the last tag (the behaviour every tag field has, and its absence is noticed).
-const fieldInput = document.getElementById("profileFieldInput");
-fieldInput.addEventListener("keydown", e => {
-  if (e.key === "Enter" || e.key === ",") {
-    e.preventDefault();
-    addFieldTag(fieldInput.value);
-    fieldInput.value = "";
-  } else if (e.key === "Backspace" && !fieldInput.value && profileFieldTags.length) {
-    profileFieldTags.pop();
-    renderFieldTags();
-  }
-});
-// Commit whatever is typed when focus leaves, so a half-entered field is not
-// silently discarded on save.
-fieldInput.addEventListener("blur", () => {
-  if (fieldInput.value.trim()) { addFieldTag(fieldInput.value); fieldInput.value = ""; }
-});
-document.getElementById("profileFieldList").addEventListener("click", e => {
-  const btn = e.target.closest("[data-tag-index]");
-  if (!btn) return;
-  profileFieldTags.splice(Number(btn.dataset.tagIndex), 1);
-  renderFieldTags();
-});
-document.getElementById("profileFieldTags").addEventListener("click", e => {
-  if (e.target.id === "profileFieldTags") fieldInput.focus();
-});
+// Tag entry, shared by both groups: Enter or comma commits, Backspace on an
+// empty input removes the last tag (the behaviour every tag field has, and its
+// absence is noticed immediately).
+for (const group of Object.keys(TAG_GROUPS)) {
+  const g = TAG_GROUPS[group];
+  const input = document.getElementById(g.inputId);
+  if (!input) continue;
+
+  input.addEventListener("keydown", e => {
+    if (e.key === "Enter" || e.key === ",") {
+      e.preventDefault();
+      addTag(group, input.value);
+      input.value = "";
+    } else if (e.key === "Backspace" && !input.value && g.tags.length) {
+      g.tags.pop();
+      renderTags(group);
+    }
+  });
+  // Commit whatever is typed when focus leaves, so a half-entered tag is not
+  // silently discarded when the user clicks Save.
+  input.addEventListener("blur", () => {
+    if (input.value.trim()) { addTag(group, input.value); input.value = ""; }
+  });
+  document.getElementById(g.listId).addEventListener("click", e => {
+    const btn = e.target.closest("[data-tag-index]");
+    if (!btn) return;
+    TAG_GROUPS[btn.dataset.tagGroup].tags.splice(Number(btn.dataset.tagIndex), 1);
+    renderTags(btn.dataset.tagGroup);
+  });
+  document.getElementById(g.wrapId).addEventListener("click", e => {
+    if (e.target.id === g.wrapId) input.focus();
+  });
+}
 initScilem();
 setInterval(loadChainStatus, 60000);
 

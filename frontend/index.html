@@ -67,22 +67,6 @@
 
     <hr>
 
-    <details class="sidebar-expander" id="faucetPanel">
-      <summary>Need test ETH?</summary>
-      <p class="faucet-note">Sepolia ETH has <strong>no monetary value</strong> and cannot be
-      bought — anyone selling it is running a scam. It is free from faucets:</p>
-      <ul class="faucet-list">
-        <li><a href="https://sepolia-faucet.pk910.de" target="_blank" rel="noopener noreferrer">pk910 PoW faucet</a>
-          <span>Mine in-browser. No account, no balance requirement.</span></li>
-        <li><a href="https://www.alchemy.com/faucets/ethereum-sepolia" target="_blank" rel="noopener noreferrer">Alchemy faucet</a>
-          <span>Instant, needs a free Alchemy account.</span></li>
-        <li><a href="https://cloud.google.com/application/web3/faucet/ethereum/sepolia" target="_blank" rel="noopener noreferrer">Google Cloud faucet</a>
-          <span>Instant, needs a Google account.</span></li>
-      </ul>
-      <p class="faucet-note faucet-warn">Never enter your seed phrase or private key on a faucet.
-      A faucet only ever needs your public address.</p>
-    </details>
-
     <div class="referral-card">
       <div class="donate-title">Invite a researcher</div>
       <p class="donate-text">ScholarPi gets more useful as the corpus grows — every assessed
@@ -161,19 +145,19 @@
           </label>
         </div>
 
-        <label class="profile-block">Goals
-          <input type="text" id="profileGoal" maxlength="600"
-                 placeholder="What you want this line of work to achieve">
-        </label>
+        <div class="profile-block">
+          <label for="profileGoalInput">Keywords and focuses</label>
+          <div class="tag-input" id="profileGoalTags">
+            <span class="tag-list" id="profileGoalList"></span>
+            <input type="text" id="profileGoalInput" maxlength="60"
+                   placeholder="Type a keyword, press Enter">
+          </div>
+          <span class="profile-hint">Topics and methods you focus on — press Enter or comma after each.</span>
+        </div>
 
-        <label class="profile-block">Your core idea
+        <label class="profile-block">Core Idea
           <textarea id="profileIdea" rows="3" maxlength="1500"
                     placeholder="The central claim your work is built around, in a few sentences."></textarea>
-        </label>
-
-        <label class="profile-block">Working abstract <span class="profile-optional">optional</span>
-          <textarea id="profileAbstract" rows="4" maxlength="4000"
-                    placeholder="A draft abstract, if you have one."></textarea>
         </label>
 
         <div class="profile-actions">
@@ -406,7 +390,7 @@
                 <input type="checkbox" id="arcadeMesh" checked> Show connections
               </label>
               <label class="arcade-ctl-check">
-                <input type="checkbox" id="arcadeGravity" checked> Cluster by gravity
+                <input type="checkbox" id="arcadeGravity"> Cluster by gravity
               </label>
               <label class="arcade-ctl-label">Bubble scale <output id="arcadeScaleOut">1.0×</output></label>
               <input type="range" id="arcadeScale" min="0.5" max="2" step="0.1" value="1">
