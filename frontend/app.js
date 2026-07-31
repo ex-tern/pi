@@ -3742,6 +3742,21 @@ refreshTrialStatus();
 syncProfileVisibility();
 loadProfile();
 document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
+
+// Live character count for the working abstract. The 4,000-character cap was
+// previously enforced silently by maxlength, so a longer paste was truncated
+// with no indication that anything had been dropped.
+(() => {
+  const ta = document.getElementById("profileAbstract");
+  const out = document.getElementById("profileAbstractCount");
+  if (!ta || !out) return;
+  const sync = () => {
+    out.textContent = ta.value.length;
+    out.parentElement.classList.toggle("near-limit", ta.value.length > 3600);
+  };
+  ta.addEventListener("input", sync);
+  sync();
+})();
 document.getElementById("profileResetBtn").addEventListener("click", resetProfile);
 document.getElementById("bugReportBtn").addEventListener("click", openBugReport);
 initSidebar();

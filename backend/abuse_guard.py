@@ -243,8 +243,41 @@ def validate_upload(filename: str, raw: bytes, max_bytes: int) -> Tuple[bool, Op
     if len(raw) < 4096:
         return False, (f"'{filename}' is too small to be a manuscript "
                        f"({len(raw)} bytes). It may be a placeholder or a failed download.")
-    if b"/Page" not in raw[:200000] and b"/Pages" not in raw[:200000]:
-        return False, f"'{filename}' does not contain a readable page structure."
+    # Structural validation by actually parsing the file, not by searching for
+    # a byte string.
+    #
+    # The previous check looked for the literal bytes "/Page" in the first
+    # 200KB. That is wrong for any PDF 1.5 or later that uses cross-reference
+    # streams and object streams (/ObjStm), because in that format the page
+    # tree is stored COMPRESSED INSIDE a stream — the token "/Page" does not
+    # appear anywhere in the raw bytes of a perfectly valid file. pdflatex
+    # produces exactly this by default, so the check was rejecting a large
+    # share of legitimate academic manuscripts with a message stating the file
+    # had no readable page structure, which was the opposite of the truth.
+    #
+    # Parsing costs a few milliseconds and answers the question that was
+    # actually being asked: can this document be opened and does it have pages?
+    try:
+        import fitz  # PyMuPDF, already a dependency of the extraction pipeline
+    except ImportError:
+        # Without a parser, fall back to the byte heuristic — but only as a
+        # *positive* signal. A file that fails it is passed through rather than
+        # rejected, because the heuristic's false-positive rate on modern PDFs
+        # is far too high to refuse work on.
+        logging.warning("PyMuPDF unavailable; skipping structural PDF validation.")
+        return True, None
+
+    try:
+        with fitz.open(stream=raw, filetype="pdf") as doc:
+            if doc.needs_pass:
+                return False, (f"'{filename}' is password-protected. Remove the password and "
+                               f"upload it again.")
+            if doc.page_count < 1:
+                return False, f"'{filename}' contains no pages."
+    except Exception as e:
+        logging.info("Rejected upload %s: %s: %s", filename, type(e).__name__, e)
+        return False, (f"'{filename}' could not be opened as a PDF. It may be corrupted or "
+                       f"incompletely downloaded.")
     return True, None
 
 

@@ -897,21 +897,9 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .trend-flat { color: var(--faint); }
 .forecast-insight-inline { font-size: 12.5px; color: var(--muted); line-height: 1.6; margin: 12px 0 0; }
 
-/* ---- Science Map header + orb (pk910-style depth cue) ---- */
+/* ---- Science Map header ---- */
 .arcade-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
 .arcade-header .arcade-corpus { margin: 0; }
-.arcade-hero-orb {
-  width: 68px; height: 68px; flex-shrink: 0; border-radius: 50%; position: relative;
-  background: radial-gradient(circle at 34% 30%, #7dd3fc, #0369a1 58%, #082f49);
-  box-shadow: 0 0 0 1px rgba(56,189,248,0.35), 0 0 34px -6px rgba(56,189,248,0.65);
-}
-.arcade-hero-orb::before {
-  content: ""; position: absolute; inset: -12px; border-radius: 50%; z-index: -1;
-  background: conic-gradient(from 0deg, rgba(56,189,248,0), rgba(56,189,248,0.5),
-              rgba(168,85,247,0.45), rgba(56,189,248,0));
-  animation: arcade-spin 7s linear infinite; filter: blur(7px);
-}
-@keyframes arcade-spin { to { transform: rotate(360deg); } }
 
 /* ---- Faucet panel ---- */
 .faucet-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
@@ -930,10 +918,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 
 @media (max-width: 720px) {
   .arcade-header { gap: 12px; }
-  .arcade-hero-orb { width: 48px; height: 48px; }
-}
-@media (prefers-reduced-motion: reduce) {
-  .arcade-hero-orb::before { animation: none; }
 }
 
 /* ---- Research Buddy: corpus comparison ---- */
@@ -1132,11 +1116,12 @@ textarea.bug-input { resize: vertical; min-height: 120px; }
 .btn:disabled { opacity: 0.55; cursor: not-allowed; }
 
 /* --- Whitepaper on the Architecture tab --------------------------------- */
-.wp-head { display: flex; justify-content: space-between; align-items: flex-start;
-  gap: 16px; flex-wrap: wrap; }
 .wp-head h2 { margin-bottom: 4px; }
-.wp-download { flex-shrink: 0; text-decoration: none; display: inline-flex;
-  align-items: center; }
+.wp-actions { margin: 12px 0 0; }
+/* Anchors styled as buttons keep the browser's underline unless it is cleared,
+   and .btn does not clear it because it was written for <button>. */
+a.btn { text-decoration: none; display: inline-block; }
+.wp-download { display: inline-block; }
 .wp-details { margin-top: 12px; border-top: 1px solid var(--border); padding-top: 10px; }
 .wp-details > summary { cursor: pointer; font-weight: 600; font-size: 13px; color: var(--accent); }
 .wp-body { margin-top: 14px; max-height: 70vh; overflow-y: auto; padding-right: 8px; }
@@ -1177,3 +1162,44 @@ textarea.bug-input { resize: vertical; min-height: 120px; }
   .wp-body { max-height: none; padding-right: 0; }
   .wp { font-size: 13px; }
 }
+
+/* --- Working abstract ---------------------------------------------------- */
+/* It was a bare full-width textarea with a one-line placeholder, visually
+   detached from the labelled blocks above it and offering no sense of how much
+   text belongs there. Now it matches the other profile blocks and shows a
+   count, so the 4,000-character ceiling is visible before it is hit. */
+.profile-card textarea#profileAbstract {
+  min-height: 108px; line-height: 1.6; padding: 10px 12px;
+  border: 1px solid var(--border-strong); border-radius: 8px;
+  background: #fff; font-size: 13px;
+}
+.profile-card textarea#profileAbstract:focus {
+  outline: none; border-color: var(--accent);
+  box-shadow: 0 0 0 3px var(--accent-soft);
+}
+.profile-card textarea#profileAbstract::placeholder {
+  color: var(--faint); line-height: 1.55;
+}
+.profile-meta {
+  display: flex; justify-content: space-between; align-items: baseline;
+  gap: 12px; margin-top: 5px; flex-wrap: wrap;
+}
+.profile-meta .profile-hint { margin: 0; }
+.profile-count { font-size: 11px; color: var(--faint); font-variant-numeric: tabular-nums;
+  white-space: nowrap; }
+.profile-count.near-limit { color: var(--warn); font-weight: 600; }
+
+/* --- Science Map leaderboard, under the game ----------------------------- */
+/* Previously a <details> in the sidebar. Its <summary> inherited a flex rule
+   written for the filter panels and, when focused, drew a full-width focus
+   ring that read as an editable text field. A heading is not interactive, so
+   it should not look interactive. */
+.arcade-board-card {
+  margin-top: 14px; border: 1px solid var(--border); border-radius: var(--radius);
+  background: var(--card-bg); padding: 13px 15px; box-shadow: var(--shadow);
+}
+.arcade-board-title {
+  margin: 0 0 10px; font-size: 13px; font-weight: 700; color: var(--text);
+}
+.arcade-board-card table { margin: 0; }
+.arcade-board-card .hint { margin-top: 9px; }

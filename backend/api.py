@@ -214,7 +214,34 @@ def on_startup():
         except Exception as e:
             add_log(f"State restore warning: {e}")
         _STATE_RESTORED = True
-        add_log("Backend started. Synchronized state with Sepolia Ethereum Ledger (if configured).")
+
+    # Say plainly, at every boot, whether this deployment can survive a
+    # redeploy. The failure mode is silent by construction: an ephemeral
+    # filesystem raises no error, it simply comes back empty, so the operator
+    # discovers it only by noticing the corpus has reset.
+    verdict = (PERSISTENCE_REPORT or {}).get("verdict")
+    backups_on = False
+    try:
+        backups_on = ledger_backup.ipfs_backup_available()
+    except Exception:
+        pass
+
+    if verdict == "ephemeral" and not backups_on:
+        add_log(
+            "DATA WILL BE LOST ON REDEPLOY. This host's filesystem is ephemeral and no IPFS "
+            "backup is configured, so the ledger, piQ balances and assessment history are "
+            "discarded every time the app restarts. Mount a persistent volume at "
+            "SCHOLARPI_DATA_DIR, or set PINATA_API_KEY, PINATA_SECRET_API_KEY and "
+            "BACKUP_ENCRYPTION_KEY to enable off-host backups."
+        )
+        logging.error("EPHEMERAL STORAGE WITH NO BACKUP — state is discarded on every redeploy.")
+    elif verdict == "ephemeral":
+        add_log(
+            "This host's filesystem is ephemeral. Encrypted IPFS backups are configured, so "
+            "state is restored on boot — but anything assessed since the last backup is lost. "
+            "A persistent volume is the durable fix; backups are a safety net."
+        )
+    add_log("Backend started.")
 
 
 # ---------------------------------------------------------------------------

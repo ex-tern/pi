@@ -30,9 +30,11 @@ try:
         BASE_DIR, WEB3_PROVIDER_URI, REGISTRY_CONTRACT_ADDRESS,
         PINATA_API_KEY, PINATA_SECRET_API_KEY, ETH_ADMIN_PRIVATE_KEY, PIQ_CONTRACT_ADDRESS,
         WEB3_RPC_ENDPOINTS, CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL,
+        DEPLOYMENT_FINGERPRINT,
     )
 except ImportError:
     BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+    DEPLOYMENT_FINGERPRINT = "unconfigured"
     WEB3_PROVIDER_URI = ""
     REGISTRY_CONTRACT_ADDRESS = ""
     PINATA_API_KEY = ""
@@ -315,46 +317,105 @@ def safe_extract_zip(zip_path: str, extract_to: str):
                 continue
             zip_ref.extract(member, extract_to)
 
-def restore_state_from_web3():
+def _cid_from_registry():
+    """The anchored CID, if a working registry contract is configured."""
     w3 = get_web3()
-    if not WEB3_AVAILABLE or not w3 or not w3.is_connected() or not REGISTRY_CONTRACT_ADDRESS or not ETH_ADMIN_PRIVATE_KEY:
-        return
+    if (not WEB3_AVAILABLE or not w3 or not w3.is_connected()
+            or not REGISTRY_CONTRACT_ADDRESS or len(REGISTRY_CONTRACT_ADDRESS) != 42):
+        return None
     try:
-        abi = '[{"inputs":[],"name":"getCID","outputs":[{"internalType":"string","name":"","type":"string"}],"stateMutability":"view","type":"function"}]'
-        if len(REGISTRY_CONTRACT_ADDRESS) != 42 or not REGISTRY_CONTRACT_ADDRESS.startswith("0x"):
-            return
-        contract = w3.eth.contract(address=w3.to_checksum_address(REGISTRY_CONTRACT_ADDRESS), abi=json.loads(abi))
-        cid = contract.functions.getCID().call()
-        if cid:
-            gateways = [
-                f"https://ivory-worrying-boa-917.mypinata.cloud/ipfs/{cid}",
-                f"https://gateway.pinata.cloud/ipfs/{cid}",
-                f"https://ipfs.io/ipfs/{cid}"
-            ]
-            res = None
-            for gw in gateways:
-                try:
-                    r = requests.get(gw, timeout=15)
-                    if r.status_code == 200:
-                        res = r
-                        break
-                except requests.RequestException:
-                    continue
-            if res and res.status_code == 200 and FERNET_AVAILABLE:
-                fernet = Fernet(derive_encryption_key(ETH_ADMIN_PRIVATE_KEY))
-                decrypted_data = fernet.decrypt(res.content)
-                
-                zip_path = os.path.join(BASE_DIR, "_restore.zip")
-                with open(zip_path, 'wb') as fp:
-                    fp.write(decrypted_data)
-                safe_extract_zip(zip_path, BASE_DIR)
-                if os.path.exists(zip_path):
-                    os.remove(zip_path)
+        abi = ('[{"inputs":[],"name":"getCID","outputs":[{"internalType":"string",'
+               '"name":"","type":"string"}],"stateMutability":"view","type":"function"}]')
+        contract = w3.eth.contract(
+            address=w3.to_checksum_address(REGISTRY_CONTRACT_ADDRESS), abi=json.loads(abi))
+        return contract.functions.getCID().call() or None
+    except Exception:
+        return None
 
-                from database import reset_schema_cache
-                reset_schema_cache()
+
+def restore_state_from_web3():
+    """Restore the most recent state backup when the local database is missing.
+
+    Two sources, in order: the registry contract's anchored CID when one is
+    configured and functional, then Pinata's own pin list.
+
+    The second path is what makes restore work at all on this deployment.
+    Previously this function returned immediately unless BOTH a registry
+    address and an admin key were set, so it had never once restored anything —
+    and because the backup CID was recorded in the database, which is the exact
+    file an ephemeral host discards, the CID died with the data it pointed at.
+    Every redeploy therefore started from an empty database while the backups
+    sat in IPFS, intact and permanently unreachable.
+    """
+    if not FERNET_AVAILABLE:
+        logging.info("Cryptography unavailable; cannot decrypt a state backup.")
+        return
+
+    seed = _encryption_seed()
+    if not seed:
+        logging.info("No backup encryption key configured; skipping restore.")
+        return
+
+    # Never overwrite a database that already has content: restore is for a
+    # cold container, not a running one.
+    db_path = os.path.join(BASE_DIR, "pi_index_main.db")
+    try:
+        if os.path.exists(db_path) and os.path.getsize(db_path) > 65536:
+            logging.info("Local state already present; skipping restore.")
+            return
+    except OSError:
+        pass
+
+    cid = _cid_from_registry() or find_latest_backup_cid()
+    if not cid:
+        logging.info("No state backup found to restore.")
+        return
+
+    gateways = [
+        f"https://gateway.pinata.cloud/ipfs/{cid}",
+        f"https://ipfs.io/ipfs/{cid}",
+        f"https://cloudflare-ipfs.com/ipfs/{cid}",
+    ]
+    payload = None
+    for gw in gateways:
+        try:
+            r = requests.get(gw, timeout=45)
+            if r.status_code == 200 and r.content:
+                payload = r.content
+                break
+        except requests.RequestException:
+            continue
+    if not payload:
+        logging.warning("Backup %s could not be fetched from any IPFS gateway.", cid)
+        return
+
+    zip_path = os.path.join(BASE_DIR, "_restore.zip")
+    try:
+        os.makedirs(BASE_DIR, exist_ok=True)
+        # Decrypted with the same seed the backup was written with. These were
+        # different values once (backup used _encryption_seed, restore used the
+        # admin key), which would have produced an InvalidToken on any host
+        # that set BACKUP_ENCRYPTION_KEY instead of an admin key — a restore
+        # that fails only on the deployments that need it most.
+        decrypted = Fernet(derive_encryption_key(seed)).decrypt(payload)
+        with open(zip_path, "wb") as fp:
+            fp.write(decrypted)
+        safe_extract_zip(zip_path, BASE_DIR)
+        logging.info("State restored from IPFS backup %s.", cid)
+        try:
+            from database import reset_schema_cache
+            reset_schema_cache()
+        except Exception:
+            pass
     except Exception as e:
-        logging.error(f"Restore warning: {e}")
+        logging.error("State restore failed for %s: %s: %s", cid, type(e).__name__, e)
+    finally:
+        try:
+            if os.path.exists(zip_path):
+                os.remove(zip_path)
+        except OSError:
+            pass
+
 
 # ---------------------------------------------------------------------------
 # Durable state: IPFS pinning, with on-chain anchoring as an optional extra
@@ -380,12 +441,23 @@ _backup_lock = threading.Lock()
 def _encryption_seed() -> str:
     """Secret used to derive the backup encryption key.
 
-    Falls back to a dedicated BACKUP_ENCRYPTION_KEY so that a deployment can
-    have encrypted, durable backups without also holding a funded signing key
-    on the server — those are very different risk profiles and should not have
-    been the same setting.
+    BACKUP_ENCRYPTION_KEY takes precedence, and the ordering is the whole
+    point. The admin signing key was originally used for this, which conflated
+    two very different risk profiles — a funded key that must be rotatable, and
+    an archive key that must never change.
+
+    Preferring the dedicated key means adding or rotating a wallet key later
+    cannot silently change the encryption seed. Under the reverse order, a
+    deployment that set BACKUP_ENCRYPTION_KEY today and added an admin key
+    tomorrow would start writing backups under a different seed while every
+    older backup became undecryptable — with no error at any point, because
+    encryption always succeeds. You would discover it only on a restore, which
+    is the worst possible moment.
+
+    ETH_ADMIN_PRIVATE_KEY remains a fallback so existing deployments that have
+    only ever had that key can still read their own backups.
     """
-    return ETH_ADMIN_PRIVATE_KEY or os.getenv("BACKUP_ENCRYPTION_KEY", "")
+    return os.getenv("BACKUP_ENCRYPTION_KEY", "").strip() or ETH_ADMIN_PRIVATE_KEY
 
 
 def ipfs_backup_available() -> bool:
@@ -434,9 +506,22 @@ def pin_state_to_ipfs():
 
         headers = {"pinata_api_key": PINATA_API_KEY,
                    "pinata_secret_api_key": PINATA_SECRET_API_KEY}
+        # Tag the pin with this deployment's fingerprint. Without metadata a
+        # backup is only findable if you already know its CID — and the CID was
+        # recorded in the database, which is the exact thing being backed up.
+        # That circularity is why nothing was ever restorable: on an ephemeral
+        # filesystem the container came back with no database and therefore no
+        # CID, so the backups sat in IPFS permanently unreachable.
+        meta = json.dumps({
+            "name": f"scholarpi-state-{DEPLOYMENT_FINGERPRINT[:12]}",
+            "keyvalues": {"deployment": DEPLOYMENT_FINGERPRINT[:32],
+                          "kind": "state-backup"},
+        })
         with open(enc_zip_path, "rb") as fp:
             res = requests.post("https://api.pinata.cloud/pinning/pinFileToIPFS",
-                                files={"file": fp}, headers=headers, timeout=90)
+                                files={"file": fp},
+                                data={"pinataMetadata": meta},
+                                headers=headers, timeout=90)
         if res.status_code != 200:
             logging.warning("Pinata rejected the backup (HTTP %s).", res.status_code)
             return None
@@ -501,6 +586,43 @@ def registry_contract_usable() -> dict:
             "pinned to IPFS and recorded locally; they will not be anchored on-chain."
         )
     return result
+
+
+def find_latest_backup_cid():
+    """Ask Pinata for this deployment's most recent state backup.
+
+    This is the restore path that actually works without a registry contract.
+    Pinata's own pin list is queryable by metadata, so the deployment can find
+    its backups using nothing but its API credentials — which come from the
+    environment and therefore survive a redeploy, unlike anything on disk.
+    """
+    if not (PINATA_API_KEY and PINATA_SECRET_API_KEY):
+        return None
+    try:
+        res = requests.get(
+            "https://api.pinata.cloud/data/pinList",
+            headers={"pinata_api_key": PINATA_API_KEY,
+                     "pinata_secret_api_key": PINATA_SECRET_API_KEY},
+            params={
+                "status": "pinned",
+                "metadata[keyvalues]": json.dumps(
+                    {"deployment": {"value": DEPLOYMENT_FINGERPRINT[:32], "op": "eq"}}),
+                "pageLimit": 10,
+            },
+            timeout=30,
+        )
+        if res.status_code != 200:
+            logging.warning("Pinata pin list unavailable (HTTP %s).", res.status_code)
+            return None
+        rows = (res.json() or {}).get("rows") or []
+        if not rows:
+            return None
+        # Newest first. date_pinned is ISO-8601, so a string sort is a date sort.
+        rows.sort(key=lambda r: str(r.get("date_pinned") or ""), reverse=True)
+        return rows[0].get("ipfs_pin_hash")
+    except Exception as e:
+        logging.warning("Could not query Pinata for a backup: %s", e)
+        return None
 
 
 def anchor_cid_on_chain(cid: str) -> str:
