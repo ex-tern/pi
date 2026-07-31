@@ -1,11 +1,29 @@
 """
-Gunicorn config for production. Run from backend/:
-    gunicorn api:app -c gunicorn.conf.py
+Gunicorn config for production.
 
-Overridable via environment variables so the same image works across
+    gunicorn api:app -c backend/gunicorn.conf.py     (from the repo root)
+    gunicorn api:app -c gunicorn.conf.py             (from backend/)
+
+Both work because this file locates itself and chdirs there. That matters
+because the backend modules import each other flatly (`from config import ...`),
+so the process must run with backend/ as its working directory — and platforms
+launch the start command from the repository root.
+
+Doing it here rather than in the start command also avoids needing a shell.
+Railway executes the start command directly, with no shell to interpret it, so
+a command beginning `cd backend && ...` fails with "The executable `cd` could
+not be found" — `cd` is a shell builtin, not a program.
+
+Overridable via environment variables so the same config works across
 different instance sizes without an edit.
 """
 import os
+
+# Absolute path to backend/, derived from this file's own location.
+chdir = os.path.dirname(os.path.abspath(__file__))
+# Also on sys.path, so the flat imports resolve regardless of how the
+# interpreter was started.
+pythonpath = chdir
 
 bind = f"0.0.0.0:{os.getenv('PORT', '8000')}"
 worker_class = "uvicorn.workers.UvicornWorker"
