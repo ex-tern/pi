@@ -118,8 +118,7 @@ from scientometrics import (
     fetch_author_metrics,
 )
 from rubric import (
-    apply_scoring_rubric, explain_all_criteria, compute_composite_score, CRITERIA_ORDER as
-    RUBRIC_VERSION,
+    apply_scoring_rubric, explain_all_criteria, compute_composite_score, RUBRIC_VERSION,
 )
 from security import (
     issue_integrity_canary, build_security_directive, run_static_integrity_scan,

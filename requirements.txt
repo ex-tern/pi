@@ -1,0 +1,3 @@
+# Root requirements file so Nixpacks detects this as a Python project.
+# The real dependency list lives with the code it belongs to.
+-r backend/requirements.txt

@@ -1,0 +1,26 @@
+# Railway build configuration.
+#
+# Railway prefers a Dockerfile whenever one is present at the repository root.
+# Setting the builder explicitly overrides that, so the Dockerfile can stay in
+# the repo for local development and for anyone deploying elsewhere, without
+# Railway using it.
+#
+# Why move off Docker here: the image ran as a non-root user, and a mounted
+# volume arrives owned by root and replaces whatever the image prepared at that
+# path. The build-time `chown` was therefore undone at runtime and the worker
+# died with EACCES before serving a request. Nixpacks images run as root, so
+# that mismatch does not arise. The container is the security boundary on this
+# platform regardless.
+#
+# To go back to Docker: delete this file, or change the builder value below.
+
+[build]
+builder = "NIXPACKS"
+
+[deploy]
+# gunicorn.conf.py lives in backend/ and reads $PORT, which Railway injects.
+startCommand = "cd backend && gunicorn api:app -c gunicorn.conf.py"
+healthcheckPath = "/api/health"
+healthcheckTimeout = 120
+restartPolicyType = "ON_FAILURE"
+restartPolicyMaxRetries = 3

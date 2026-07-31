@@ -14,16 +14,37 @@ gunicorn~=23.0
 python-multipart~=0.0.12
 pydantic~=2.9
 
-# --- Core ML / scoring engine ---
-# CPU-only PyTorch build: free/small hosts have no GPU, and the default
-# PyPI build pulls in ~2GB of CUDA libraries you'd never use. This index is
-# tried first for torch specifically; pip falls back to PyPI for everything
-# else listed below.
---extra-index-url https://download.pytorch.org/whl/cpu
+# --- Scoring engine ---
+# NumPy only. The scoring pipeline, the rubric, Scilem's learned calibration
+# and the Holt forecast are all pure NumPy.
 numpy~=1.26
-torch~=2.4
-transformers~=4.45
-accelerate~=0.34
+
+# --- Optional: PyTorch and Transformers are NOT installed by default ---
+#
+# They were in this list, so every deploy downloaded and shipped roughly 700MB
+# of dependencies that the running application never imported. Both features
+# that use them are off by default:
+#
+#   torch                  -> only the LSTM forecast (USE_LSTM_FORECAST=false).
+#                             The default forecast is Holt's method in NumPy.
+#   transformers/accelerate-> only the local TinyLlama chat model
+#                             (ENABLE_SCILEM_LOCAL_MODEL=false). The assistant
+#                             answers from live state and its knowledge base.
+#
+# Both imports are lazy and both paths degrade cleanly when the package is
+# absent, so omitting them changes nothing about default behaviour — it only
+# removes the build time, the image size and the memory pressure. That matters
+# most on a small host, which is exactly where the unused weight hurt.
+#
+# To enable either, uncomment its block AND set the matching env var.
+#
+# LSTM forecast:
+#   --extra-index-url https://download.pytorch.org/whl/cpu
+#   torch~=2.4
+#
+# Local chat model (needs several GB of RAM — not viable on a small instance):
+#   transformers~=4.45
+#   accelerate~=0.34
 
 # --- LLM providers ---
 openai~=1.51
