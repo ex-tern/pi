@@ -401,17 +401,29 @@ async function loadChainAddresses() {
   if (!box) return;
   try {
     const d = await (await fetch(`${API}/api/chain/contracts`)).json();
-    box.innerHTML = (d.addresses || []).map(a => `
+    box.innerHTML = (d.addresses || []).map(a => {
+      // Three states, not two. "Set but invalid" was previously rendered
+      // identically to "set and working" — including a live explorer link to
+      // an address that cannot exist — which is the one case where the panel
+      // most needs to say something.
+      const badge = a.state === "invalid"
+        ? `<span class="pill q-low">invalid</span>`
+        : a.state === "unset"
+          ? `<span class="pill pill-muted">${a.optional ? "not used" : "not configured"}</span>`
+          : "";
+      return `
       <div class="addr-item">
-        <div class="addr-label">${escapeHtml(a.label)}
-          ${a.configured ? "" : `<span class="pill pill-muted">not configured</span>`}</div>
+        <div class="addr-label">${escapeHtml(a.label)} ${badge}</div>
         ${a.address
           ? (a.explorer_url
               ? `<a href="${escapeHtml(a.explorer_url)}" target="_blank" rel="noopener"><code class="wrap">${escapeHtml(a.address)}</code></a>`
               : `<code class="wrap">${escapeHtml(a.address)}</code>`)
           : `<code class="wrap">—</code>`}
         <div class="addr-desc">${escapeHtml(a.description)}</div>
-      </div>`).join("") +
+        ${a.problem && a.state === "invalid"
+          ? `<div class="addr-problem">${escapeHtml(a.problem)}</div>` : ""}
+      </div>`;
+    }).join("") +
       `<p class="hint">Network: ${escapeHtml(d.network)} (chain ${escapeHtml(String(d.chain_id))}).</p>`;
   } catch (e) {
     box.innerHTML = `<span class="hint">Could not load on-chain addresses.</span>`;
