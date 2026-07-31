@@ -36,7 +36,6 @@
          problem on any shared machine. -->
     <div class="session-row hidden" id="sessionRow">
       <span class="session-who" id="sessionWho"></span>
-      <button class="btn-link" id="signOutBtn" type="button">Sign out</button>
     </div>
 
     <div id="chainBadge" class="chain-badge chain-unknown">
@@ -63,7 +62,7 @@
         <div class="ri-row ri-total"><span>Spendable balance</span><code id="researcherBalance">0.00</code></div>
         <div class="ri-note" id="researcherAffordable"></div>
       </div>
-      <button id="unlinkBtn" class="btn btn-secondary btn-block">Unlink / Reset Session</button>
+      <button id="unlinkBtn" class="btn btn-secondary btn-block">Sign out</button>
     </div>
 
     <hr>
@@ -307,10 +306,10 @@
 
             <select id="forecastChartType" class="inline-select"
                     title="How to draw the same numbers">
-              <option value="line" selected>Line</option>
-              <option value="area">Stacked area</option>
-              <option value="bar">Grouped bars</option>
-              <option value="radar">Radar</option>
+              <option value="radar" selected>Radar — profile shape</option>
+              <option value="line">Line — trend over epochs</option>
+              <option value="change">Change — what moved most</option>
+              <option value="ranking">Ranking — position over time</option>
             </select>
 
             <select id="forecastXAxis" class="inline-select"
@@ -319,7 +318,6 @@
               <option value="time">X: real time</option>
             </select>
 
-            <button id="runForecastBtn" class="btn btn-primary">Run Neural Forecast</button>
           </div>
 
           <div id="forecastMsg" class="hint"></div>
