@@ -12,6 +12,7 @@ Production:  gunicorn api:app -c gunicorn.conf.py   (see README)
 import os
 import io
 import json
+import uuid
 import decimal
 import time
 import math
@@ -1263,11 +1264,42 @@ async def assess_stream(
             increment_free_evals_used(client_ip)
 
     def gen():
-        yield from stream_assessment_progress(
-            file_payload, doi, include_doi, discover_list, user_id, book_address,
-            fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
-            active_fee=active_fee,
-        )
+        """Wraps the assessment stream so a failure is *visible*.
+
+        This generator previously had no exception handling anywhere in it.
+        Because assessment writes to the database before it yields the result,
+        any exception raised after that write — a serialisation failure, a bad
+        index, a provider client blowing up — ended the HTTP stream silently.
+        The browser saw a connection that simply stopped: no error, no result,
+        while the paper sat in the leaderboard. Every diagnosis of that
+        behaviour was guesswork because nothing anywhere recorded the cause.
+
+        Now the traceback is logged server-side with a short reference, and a
+        terminal `stream_error` line is emitted so the UI can say that the run
+        failed and quote the reference, instead of appearing to hang.
+        """
+        try:
+            yield from stream_assessment_progress(
+                file_payload, doi, include_doi, discover_list, user_id, book_address,
+                fee_wallet=fee_wallet, fee_orcid=fee_orcid, charge_fees=charge_fees,
+                active_fee=active_fee,
+            )
+        except Exception as exc:
+            ref = uuid.uuid4().hex[:8]
+            logging.exception("Assessment stream failed [ref %s]", ref)
+            add_log(f"Assessment stream failed [ref {ref}]: {type(exc).__name__}: {exc}")
+            detail = f"{type(exc).__name__}: {exc}" if ENVIRONMENT != "production" else ""
+            try:
+                yield json.dumps({
+                    "type": "stream_error",
+                    "reference": ref,
+                    "detail": detail,
+                    "message": ("The assessment stopped unexpectedly. Any paper that finished "
+                                "before this point was saved and appears in Analytics. "
+                                f"Server log reference: {ref}."),
+                }, default=_json_safe) + "\n"
+            except Exception:
+                pass
 
     return StreamingResponse(gen(), media_type="application/x-ndjson")
 
@@ -1477,6 +1509,30 @@ def project_weights_onto_simplex(vec):
 
 @app.get("/api/forecast")
 def run_forecast(lookback: int = Query(default=3, ge=1, le=5)):
+    """Public wrapper: never lets an internal fault look like a dead connection.
+
+    A 500 and a dropped socket render identically in the browser ("could not
+    reach the forecasting service"), which sends the operator looking at
+    networking when the real fault is in this handler. Catching here means the
+    UI gets a structured answer with a log reference either way.
+    """
+    try:
+        return _run_forecast_impl(lookback)
+    except Exception as exc:
+        ref = uuid.uuid4().hex[:8]
+        logging.exception("Forecast failed [ref %s]", ref)
+        add_log(f"Forecast failed [ref {ref}]: {type(exc).__name__}: {exc}")
+        return {
+            "ready": False, "mode": "error",
+            "message": (f"The forecaster hit an internal error and could not complete. "
+                        f"Server log reference: {ref}."),
+            "detail": (f"{type(exc).__name__}: {exc}" if ENVIRONMENT != "production" else ""),
+            "blocks_recorded": 0, "blocks_required": 3,
+            "history": [], "forecast": None, "criteria": [],
+        }
+
+
+def _run_forecast_impl(lookback: int = 3):
     """Trains the Pidyne LSTM on the recorded per-block criteria weights and
     projects the next epoch's weighting.
 

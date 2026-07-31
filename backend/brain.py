@@ -658,29 +658,50 @@ Respond strictly in JSON with keys:
 1. "evidence_report": string containing the markdown report with sections for Executive Summary, 8 Criteria Audit, and Methodological Quality.
 2. "ai_rating": float between 0.0 and 100.0.
 """
-    api_key = GROQ_API_KEY or OR_API_KEY or GEMINI_API_KEY
-    base_url = "https://api.groq.com/openai/v1" if GROQ_API_KEY else ("https://openrouter.ai/api/v1" if OR_API_KEY else "https://generativelanguage.googleapis.com/v1beta/openai/")
-    
-    if GROQ_API_KEY:
-        model_name = PRIMARY_MODEL
-        judge_platform = "Groq Cloud"
-    elif OR_API_KEY:
-        # FIX: Use openrouter/auto to ensure it routes to an available/free model
-        model_name = "openrouter/auto"
-        judge_platform = "OpenRouter"
-    elif GEMINI_API_KEY:
-        model_name = "gemini-2.0-flash"
-        judge_platform = "Google Gemini"
-    else:
-        model_name = "Scilem Local Neural Engine"
-        judge_platform = "Local (API Fallback)"
-    judge_provider = f"{judge_platform} (Model: {model_name})"
-
+    # The judge now walks a provider chain exactly as the jurors do, instead of
+    # making one hardcoded call and giving up. A rate limit on one provider
+    # demotes the judge to the next, rather than collapsing the whole
+    # adjudication step to the local deterministic fallback.
+    judge_routes = build_routes("judge")
+    model_name = "Scilem Local Neural Engine"
+    judge_platform = "Local (API Fallback)"
+    judge_attempts = []
     data = None
-    if api_key and active_count > 0:
-        _, data = request_model_assessment("pidyne", model_name, api_key, base_url, prompt)
-        if data.get("api_failed", True):
-            data = None
+
+    if judge_routes and active_count > 0:
+        for route in judge_routes:
+            cooling, remaining = is_route_cooling(route["model"], route["provider"])
+            if cooling:
+                judge_attempts.append({"model": route["model"], "provider": route["provider"],
+                                       "category": "cooling",
+                                       "seconds_remaining": round(remaining, 1)})
+                continue
+
+            _, attempt = request_model_assessment(
+                "pidyne", route["model"], route["key"], route["base"], prompt)
+
+            if not attempt.get("api_failed", True):
+                record_success(route["model"], route["provider"])
+                data = attempt
+                model_name = route["model"]
+                judge_platform = route["provider"]
+                break
+
+            raw = attempt.get("_raw_error") or attempt.get("opinion", "")
+            classified = classify_provider_error(raw)
+            judge_attempts.append({"model": route["model"], "provider": route["provider"],
+                                   "category": classified["category"]})
+            if classified["category"] == "rate_limit":
+                record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
+            elif classified["category"] in ("credit", "auth"):
+                record_rate_limit(route["model"], route["provider"], 600)
+            logging.warning("Judge route %s (%s) failed [%s]: %s",
+                            route["model"], route["provider"],
+                            classified["category"], classified["internal"][:200])
+            if not classified["retryable"]:
+                break
+
+    judge_provider = f"{judge_platform} (Model: {model_name})"
 
     quality = grade_adjudication_quality(consensus_results)
     judge_succeeded = data is not None
@@ -690,6 +711,11 @@ Respond strictly in JSON with keys:
         "judge_platform": judge_platform,
         "model_name": model_name,
         "judge_succeeded": judge_succeeded,
+        # What the judge tried before landing here. Without this, a fallback to
+        # the local engine looked identical whether one provider was rate
+        # limited or none were configured at all.
+        "judge_attempts": judge_attempts,
+        "judge_routes_available": len(judge_routes),
         "final_judge_label": (
             f"{model_name} via {judge_platform}" if judge_succeeded
             else "Scilem Local Neural Engine (deterministic fallback)"

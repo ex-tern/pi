@@ -220,6 +220,31 @@ def build_routes(juror: str) -> List[Dict]:
             _route("gpt-4o-mini", GITHUB_MODELS_TOKEN, GITHUB_MODELS_BASE, "GitHub Models"),
         ],
     }
+    # The final judge adjudicates the panel's verdicts, and it previously had
+    # no chain at all: one hardcoded model on whichever provider happened to be
+    # configured, with a straight drop to the local fallback the moment that
+    # call failed. Worse, on Groq it ran PRIMARY_MODEL — the *same model and
+    # the same quota bucket* as the llama juror — so a single Groq rate limit
+    # removed both the juror and the adjudicator in one go.
+    #
+    # This chain is ordered to reach a different provider from the one the
+    # panel has just finished hammering, and only falls back to the shared Groq
+    # model near the end. Judging should also not be done by a panel member
+    # where that is avoidable: a juror grading the debate it took part in is a
+    # weaker check than an outside model, so independent providers come first.
+    chains["judge"] = [
+        _route("llama-3.3-70b", CEREBRAS_API_KEY, CEREBRAS_BASE, "Cerebras"),
+        _route("mistral-large-latest", MISTRAL_API_KEY, MISTRAL_BASE, "Mistral"),
+        _route("deepseek-chat", DEEPSEEK_API_KEY, DEEPSEEK_BASE, "DeepSeek"),
+        _route("gpt-4o-mini", GITHUB_MODELS_TOKEN, GITHUB_MODELS_BASE, "GitHub Models"),
+        _route("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
+        _route(GEMINI_PRIMARY_MODEL, GEMINI_API_KEY, GEMINI_BASE, "Google"),
+        # Shared with the llama juror — deliberately last, since if the panel
+        # exhausted this quota the judge will find it exhausted too.
+        _route(PRIMARY_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
+        _route("llama-3.1-8b-instant", GROQ_API_KEY, GROQ_BASE, "Groq"),
+    ]
+
     routes = [r for r in chains.get(juror, []) if r]
 
     # Universal last resort: OpenRouter's Auto Router selects whichever model
@@ -322,7 +347,7 @@ def provider_configuration() -> Dict:
         "Google Gemini": bool(GEMINI_API_KEY),
     }
     jurors = {}
-    for juror in ("llama", "mistral", "qwen", "gemini", "deepseek"):
+    for juror in ("llama", "mistral", "qwen", "gemini", "deepseek", "judge"):
         routes = build_routes(juror)
         jurors[juror] = {
             "route_count": len(routes),
