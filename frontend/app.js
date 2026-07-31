@@ -2329,18 +2329,20 @@ function assessmentActions(item, variant = "card") {
   const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
 
   const claimable = a.escrowed > 0 && !a.claimed;
+  
   return `
     <button class="${primary}" data-a="report" ${d}>Full Report &amp; Dossier</button>
     <button class="${cls}" data-a="defense" ${d}>Suggest Defense</button>
-    <button class="${cls}" data-a="review" ${d}>Review</button>
-    ${claimable ? `<button class="${cls}" data-a="claim" ${d}
-        title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held for this paper"
-        >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
-    <button class="${cls}" data-a="${a.published ? "withdraw" : "publish"}" ${d}
-      title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}"
-      >${a.published ? "Withdraw" : "Publish"}</button>
-    <button class="${danger}" data-a="remove" ${d}
-      title="Withdraw this paper from the corpus">Remove</button>`;
+    <button class="${danger}" data-a="remove" ${d} title="Withdraw this paper from the corpus">Remove</button>
+    
+    <details class="dossier-details" style="margin-top: 10px; width: 100%;">
+      <summary>Are you Author of this Manuscript?</summary>
+      <div style="display: flex; gap: 8px; margin-top: 8px; flex-wrap: wrap;">
+        <button class="${cls}" data-a="review" ${d}>Review</button>
+        ${claimable ? `<button class="${cls}" data-a="claim" ${d} title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held">Claim ${a.escrowed.toFixed(2)}</button>` : ""}
+        <button class="${cls}" data-a="${a.published ? "withdraw" : "publish"}" ${d} title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}">${a.published ? "Withdraw" : "Publish"}</button>
+      </div>
+    </details>`;
 }
 
 // One delegated listener for every action bar on the page, however it was
@@ -2726,13 +2728,23 @@ function renderDossierModal(item) {
   const meta = item.judge_metadata || consensus._judge_metadata || {};
   const warnings = item.warnings || [];
 
+  const minted = Number(item.piq || 0);
+  const held = Number((item.emission || {}).escrowed || 0);
+
+  let piqPill = `<span class="pill p-piq p-piq-none" title="No piQ earned">piQ 0.00</span>`;
+  if (minted > 0) {
+    piqPill = `<span class="pill p-piq p-piq-earned" title="Minted to your account">piQ ${minted.toFixed(2)}</span>`;
+  } else if (held > 0) {
+    piqPill = `<span class="pill p-piq p-piq-held" title="Earned but held until authorship is verified">piQ ${held.toFixed(2)} held</span>`;
+  }
+
   let html = `<div class="dossier">`;
   html += `<div class="dossier-head">
     <h2>${escapeHtml(item.title || "Untitled")}</h2>
     <div class="dossier-author">${escapeHtml(item.author_name || "Unknown author")}</div>
     <div class="result-pills">
       <span class="pill p-score">piX ${Number(item.score || 0).toFixed(1)}</span>
-      <span class="pill p-piq">piQ ${Number(item.piq || 0).toFixed(2)}</span>
+      ${piqPill}
       ${typeof item.logic_integrity === "number" ? `<span class="pill p-logic">Logic ${item.logic_integrity.toFixed(1)}</span>` : ""}
       ${qualityPill(meta)}
       ${integrityPills(item)}
@@ -2766,8 +2778,6 @@ function renderDossierModal(item) {
     : Object.entries(item.scores_dict || {}).map(([k, v]) => ({ id: k, title: "", score: Number(v) || 0 }));
 
   if (breakdown) {
-    // The rubric records exactly which signal contributed how many points, so
-    // the researcher can see what to fix rather than just what they scored.
     html += `<h3>Criteria Breakdown<button class="help-btn" data-help="rubric" aria-label="About the scoring rubric">?</button></h3>`;
     html += `<p class="hint">Each criterion is a weighted sum of named signals. Expand any row to see
       which signal contributed how many points, and where the largest unclaimed gap is.</p>`;
@@ -2844,7 +2854,7 @@ function renderDossierModal(item) {
       `</tbody></table>`;
   }
 
-  // --- Ledger record ---
+  // --- Ledger Record ---
   html += `<h3>Ledger Record</h3><table class="data-table"><tbody>`;
   html += `<tr><td>Evaluation hash</td><td><code class="wrap">${escapeHtml(item.eval_hash || "—")}</code></td></tr>`;
   html += `<tr><td>piQ minted</td><td><code>${Number(item.piq || 0).toFixed(2)}</code></td></tr>`;
