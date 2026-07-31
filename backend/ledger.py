@@ -111,6 +111,131 @@ def is_chain_connected() -> bool:
     return uri is not None
 
 
+# Minimal read-only ABI. Only the views needed to answer "is the address in
+# config actually the contract we think it is?" — deliberately not the full
+# ABI, so this keeps working against any ERC-20-shaped deployment.
+_PIQ_INTROSPECTION_ABI = [
+    {"name": "name", "outputs": [{"type": "string"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+    {"name": "symbol", "outputs": [{"type": "string"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+    {"name": "decimals", "outputs": [{"type": "uint8"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+    {"name": "totalSupply", "outputs": [{"type": "uint256"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+    {"name": "owner", "outputs": [{"type": "address"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+    {"name": "zkVerifier", "outputs": [{"type": "address"}], "inputs": [],
+     "stateMutability": "view", "type": "function"},
+]
+
+
+def inspect_piq_contract(expected_owner: str = "") -> dict:
+    """Reads the *deployed* piQ contract and reports what is actually there.
+
+    Configuration says what the operator believes; this says what the chain
+    holds. The two drift constantly in practice — an address that was never
+    deployed, a proxy that was deployed but never initialized, an owner that
+    was transferred — and every one of those failure modes otherwise surfaces
+    much later as a confusing minting error.
+
+    Every field is best-effort: a contract that doesn't implement a given view
+    reports ``None`` for it rather than failing the whole inspection.
+    """
+    report = {
+        "address": PIQ_CONTRACT_ADDRESS or None,
+        "checked": False,
+        "is_contract": False,
+        "initialized": None,
+        "name": None, "symbol": None, "decimals": None, "total_supply": None,
+        "owner": None, "verifier": None,
+        "owner_matches_config": None,
+        "problems": [],
+    }
+
+    if not WEB3_AVAILABLE:
+        report["problems"].append("web3.py is not installed, so the contract cannot be checked.")
+        return report
+    if not PIQ_CONTRACT_ADDRESS or len(PIQ_CONTRACT_ADDRESS) != 42:
+        report["problems"].append("PIQ_CONTRACT_ADDRESS is missing or malformed.")
+        return report
+
+    instance, uri = _select_working_rpc()
+    if not uri:
+        report["problems"].append("No RPC endpoint responded, so the contract could not be read.")
+        return report
+
+    report["checked"] = True
+    try:
+        address = Web3.to_checksum_address(PIQ_CONTRACT_ADDRESS)
+    except Exception:
+        report["problems"].append("PIQ_CONTRACT_ADDRESS is not a valid Ethereum address.")
+        return report
+
+    # A wallet address and an undeployed address both return empty bytecode.
+    # This is the check that catches "the contract was never actually deployed
+    # to the network the app is pointed at", which is the single most common
+    # cause of silent minting failure.
+    try:
+        code = instance.eth.get_code(address)
+    except Exception as e:
+        report["problems"].append(f"Could not read bytecode at the address: {e}")
+        return report
+
+    if not code or len(code) == 0:
+        report["problems"].append(
+            "There is no contract deployed at this address on the configured network. "
+            "Either the address is wrong or it belongs to a different chain."
+        )
+        return report
+
+    report["is_contract"] = True
+    contract = instance.eth.contract(address=address, abi=_PIQ_INTROSPECTION_ABI)
+
+    def read(fn_name):
+        try:
+            return getattr(contract.functions, fn_name)().call()
+        except Exception:
+            return None
+
+    report["name"] = read("name")
+    report["symbol"] = read("symbol")
+    report["decimals"] = read("decimals")
+    report["verifier"] = read("zkVerifier")
+    supply = read("totalSupply")
+    report["total_supply"] = str(supply) if supply is not None else None
+    owner = read("owner")
+    report["owner"] = owner
+
+    # An uninitialized UUPS proxy answers every view with empty values: the
+    # implementation's initialize() was never called through the proxy, so no
+    # storage was ever written. Treat "deployed but nameless and ownerless" as
+    # uninitialized rather than as a healthy contract.
+    zero = "0x0000000000000000000000000000000000000000"
+    report["initialized"] = bool(report["name"]) and bool(owner) and owner != zero
+    if not report["initialized"]:
+        report["problems"].append(
+            "The contract is deployed but appears uninitialized — initialize() has not been "
+            "called, so it has no name and no owner. Minting will revert until it is."
+        )
+
+    if expected_owner and owner:
+        matches = owner.lower() == expected_owner.lower()
+        report["owner_matches_config"] = matches
+        if not matches:
+            report["problems"].append(
+                f"On-chain owner is {owner}, but OWNER_ID in configuration is {expected_owner}. "
+                f"Owner-restricted actions will be refused by the contract."
+            )
+
+    if report["symbol"] and report["symbol"].lower() != "piq":
+        report["problems"].append(
+            f"The token at this address reports symbol '{report['symbol']}', not 'piQ'. "
+            f"This may not be the intended contract."
+        )
+    return report
+
+
 def get_chain_status() -> dict:
     """Everything the UI needs to show an honest network badge."""
     status = {
@@ -151,6 +276,24 @@ def get_chain_status() -> dict:
     else:
         status["minting_enabled"] = True
         status["reason"] = "Connected. On-chain piQ minting is enabled."
+
+    # Report what the chain actually holds, not just what config claims. If the
+    # contract is missing or uninitialized, minting cannot work regardless of
+    # how well-formed the configuration looks, so the badge must not say "ready".
+    try:
+        from config import OWNER_ID as _OWNER_ID
+    except ImportError:
+        _OWNER_ID = ""
+    status["owner_wallet"] = _OWNER_ID or None
+    try:
+        contract = inspect_piq_contract(expected_owner=_OWNER_ID)
+        status["contract"] = contract
+        if status["minting_enabled"] and contract["checked"] and contract["problems"]:
+            status["minting_enabled"] = False
+            status["reason"] = "Connected, but the piQ contract is not usable: " + contract["problems"][0]
+    except Exception as e:
+        logging.debug("Contract introspection failed: %s", e)
+        status["contract"] = {"checked": False, "problems": [f"Introspection failed: {e}"]}
     return status
 
 

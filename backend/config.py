@@ -28,7 +28,7 @@ EPOCH_BLOCK_SIZE = 5
 
 WEB3_PROVIDER_URI = os.getenv("WEB3_PROVIDER_URI", "https://ethereum-sepolia-rpc.publicnode.com")
 ETH_ADMIN_PRIVATE_KEY = os.getenv("ETH_ADMIN_PRIVATE_KEY", "")
-PIQ_CONTRACT_ADDRESS = os.getenv("PIQ_CONTRACT_ADDRESS", "0xaE7a504aCF32ABf0E891B74bF39E4527999A6256")
+PIQ_CONTRACT_ADDRESS = os.getenv("PIQ_CONTRACT_ADDRESS", "0x17AF5399986C34e16Df8fB830eB8e2048b878A88")
 
 # ---------------------------------------------------------------------------
 # Ethereum network
@@ -64,7 +64,7 @@ WEB3_RPC_ENDPOINTS = [WEB3_PROVIDER_URI] + [u for u in WEB3_FALLBACK_RPCS if u !
 PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
 
 # Wallet that receives Support & Donate contributions.
-DONATION_WALLET = os.getenv("DONATION_WALLET", "0x1Af8D9A120b02D0983590587364F8705e6942356")
+DONATION_WALLET = os.getenv("DONATION_WALLET", "0x6B89DD74DCa5d4DC98599206b1c2dE614066ef40")
 
 # ---------------------------------------------------------------------------
 # Forecasting
@@ -205,7 +205,7 @@ ORCID_REDIRECT_URI = get_secret("ORCID_REDIRECT_URI", "http://localhost:8000/api
 # Where the frontend is served from, used to redirect the browser back after ORCID login
 FRONTEND_ORIGIN = get_secret("FRONTEND_ORIGIN", "http://localhost:8000")
 # Web3 owner wallet allowed to reset Scilem
-OWNER_ID = get_secret("OWNER_ID", "0x1Af8D9A120b02D0983590587364F8705e6942356")
+OWNER_ID = get_secret("OWNER_ID", "0x6B89DD74DCa5d4DC98599206b1c2dE614066ef40")
 
 if IS_PRODUCTION and not ALLOWED_ORIGINS:
     ALLOWED_ORIGINS = [FRONTEND_ORIGIN]

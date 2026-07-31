@@ -1,5 +1,8 @@
 const API = ""; // same-origin, FastAPI serves both API and this frontend
-const OWNER_ID = "0x1Af8D9A120b02D0983590587364F8705e6942356";
+// The owner wallet is NOT hardcoded here. It lives in backend config (OWNER_ID)
+// and is served via /api/chain/contracts, so rotating it is a one-line change in
+// one place. Anything in this file that needs it reads it from the server.
+let ownerWallet = "";
 
 // ---------------------------------------------------------------------------
 // Session state (replaces Streamlit's st.session_state, persisted in the browser)
@@ -507,6 +510,7 @@ async function loadChainStatus() {
   try {
     const res = await fetch(`${API}/api/chain/status`);
     chainState = await res.json();
+    if (chainState.owner_wallet) ownerWallet = chainState.owner_wallet;
     badge.className = "chain-badge " + (
       chainState.minting_enabled ? "chain-ok" : (chainState.connected ? "chain-warn" : "chain-down")
     );
@@ -640,12 +644,19 @@ async function showDonateModal() {
     try {
       donationInfo = await (await fetch(`${API}/api/donate/info`)).json();
     } catch (e) {
-      donationInfo = {
-        wallet: OWNER_ID, chain_name: "Sepolia", currency: "SepoliaETH",
-        explorer_url: `https://sepolia.etherscan.io/address/${OWNER_ID}`,
-        suggested_amounts: ["0.005", "0.01", "0.05", "0.1"],
-        message: "Contributions fund model inference credits, RPC access and hosting.",
-      };
+      // Deliberately no hardcoded fallback address here. A donation address
+      // baked into the frontend silently goes stale the moment the operator
+      // rotates DONATION_WALLET, and the failure mode is real money sent to a
+      // wallet nobody controls. Refusing to show an address is the safe
+      // outcome; the server is the only source of truth for where funds go.
+      openModal(`
+        <div class="donate-modal">
+          <h2>Support ScholarPi</h2>
+          <p>The donation address could not be loaded because the ScholarPi server is
+          unreachable. Please try again in a moment — no address is shown rather than
+          risk displaying an out-of-date one.</p>
+        </div>`);
+      return;
     }
   }
   const d = donationInfo;
