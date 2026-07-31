@@ -892,12 +892,24 @@ document.getElementById("unlinkBtn").addEventListener("click", () => {
 async function pollLogs() {
   try {
     const res = await fetch(`${API}/api/logs`);
+    if (res.status === 401 || res.status === 403 || res.status === 503) {
+      // Expected for everyone except the owner. Say so plainly instead of
+      // rendering an empty panel that reads as a fault.
+      const box = document.getElementById("logMonitor");
+      if (box) {
+        box.textContent = "Restricted — the operational log is visible to the owner wallet only.";
+      }
+      // Stop polling: it will keep being refused, and a request every 4s
+      // achieves nothing but noise in the access log.
+      if (logPollTimer) { clearInterval(logPollTimer); logPollTimer = null; }
+      return;
+    }
     const data = await res.json();
     const box = document.getElementById("logMonitor");
     box.textContent = data.logs.length ? data.logs.join("\n") : "No active logs...";
   } catch (e) { /* ignore */ }
 }
-setInterval(pollLogs, 4000);
+let logPollTimer = setInterval(pollLogs, 4000);
 pollLogs();
 
 // --- Scilem assistant -------------------------------------------------------
@@ -4162,10 +4174,60 @@ async function refreshSessionState() {
   badge.className = sessionState.two_factor ? "pill q-high" : "pill q-mod";
   badge.title = "Proven by: " + proofs.join(" + ")
     + (sessionState.is_owner ? " · owner" : "");
+
+  // Name the holder. "Verified" alone reads as a bug to anyone who did not
+  // sign in during this visit — the session outlives the browser tab, so the
+  // badge has to say WHO it belongs to, not merely that someone is signed in.
+  const row = document.getElementById("sessionRow");
+  const who = document.getElementById("sessionWho");
+  if (row && who) {
+    const label = sessionState.orcid
+      ? `ORCID …${String(sessionState.orcid).slice(-4)}`
+      : sessionState.wallet
+        ? `${sessionState.wallet.slice(0, 6)}…${sessionState.wallet.slice(-4)}`
+        : "this browser";
+    who.textContent = `Signed in as ${label}`;
+    who.title = sessionState.is_owner ? "Owner wallet" : "";
+    row.classList.remove("hidden");
+  }
+}
+
+/** End the session everywhere it is held.
+ *
+ *  Clears the server-issued token first: leaving it in localStorage while the
+ *  UI claims to be signed out is the worse of the two failures, because the
+ *  next request would still carry a valid credential.
+ */
+function signOut() {
+  try {
+    localStorage.removeItem("sp_token");
+    localStorage.removeItem("sp_profile");
+  } catch (_) { /* private mode */ }
+  Session.wallet = "";
+  Session.orcid = "";
+  Session.researcherName = "";
+  sessionState = { verified: false, two_factor: false, is_owner: false };
+
+  const row = document.getElementById("sessionRow");
+  if (row) row.classList.add("hidden");
+  const badge = document.getElementById("authBadge");
+  if (badge) {
+    badge.textContent = "Not signed in";
+    badge.className = "pill pill-muted";
+    badge.title = "Connect a wallet and sign the login message, or link ORCID.";
+  }
+  syncProfileVisibility();
+  renderSidebar();
+  refreshTrialStatus();
+  refreshSessionState();
 }
 
 bootstrapFromQueryParams();
 refreshSessionState();
+{
+  const btn = document.getElementById("signOutBtn");
+  if (btn) btn.addEventListener("click", signOut);
+}
 renderSidebar();
 loadChainStatus();
 loadEmissionStatus();
