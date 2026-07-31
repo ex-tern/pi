@@ -24,7 +24,7 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     # Candidate corresponding-author addresses found in the manuscript.
     "contact_emails",
     # Author-published state. See the column notes below.
-    "published_at", "published_by",
+    "published_at", "published_by", "publish_kind",
 }
 
 def reset_schema_cache():
@@ -275,6 +275,10 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # "Author-published" so the two cannot be confused.
         "published_at": "DATETIME",
         "published_by": "TEXT DEFAULT ''",
+        # "author" or "journal". Journal is only ever set when a DOI actually
+        # resolves in a registry — otherwise it would be a second purchasable
+        # credibility claim, which is the thing this framework argues against.
+        "publish_kind": "TEXT DEFAULT 'author'",
         # Real h-index / i10-index from OpenAlex. Reported as author context;
         # excluded from scoring per CoARA.
         "author_metrics": "TEXT DEFAULT '{}'",
@@ -1580,7 +1584,8 @@ def record_challenge_attempt(challenge_id: int, verified: bool = False) -> None:
 # ---------------------------------------------------------------------------
 # Author publishing
 # ---------------------------------------------------------------------------
-def set_published(eval_hash: str, identities, account_key: str, published: bool) -> dict:
+def set_published(eval_hash: str, identities, account_key: str, published: bool,
+                  kind: str = "author") -> dict:
     """Attach or withdraw an author's public endorsement of an assessment.
 
     Ownership is enforced in the UPDATE rather than by a prior SELECT, for the
@@ -1601,9 +1606,9 @@ def set_published(eval_hash: str, identities, account_key: str, published: bool)
         if published:
             cur = conn.execute(
                 f"""UPDATE papers_assessment
-                    SET published_at = CURRENT_TIMESTAMP, published_by = ?
+                    SET published_at = CURRENT_TIMESTAMP, published_by = ?, publish_kind = ?
                     WHERE eval_hash = ? AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
-                (account_key, eval_hash, *values, *values))
+                (account_key, kind, eval_hash, *values, *values))
         else:
             cur = conn.execute(
                 f"""UPDATE papers_assessment

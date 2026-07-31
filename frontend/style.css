@@ -1280,3 +1280,21 @@ a.btn { text-decoration: none; display: inline-block; }
 .btn-icon:hover { border-color: var(--accent); color: var(--accent); }
 
 .stat-sub { font-size: 10px; font-weight: 400; color: var(--faint); line-height: 1.4; }
+
+/* --- Review / Publish option cards --------------------------------------- */
+.opt-card { border: 1px solid var(--border); border-radius: 9px; padding: 13px 15px;
+  margin: 12px 0; background: #fbfcfe; }
+.opt-head { display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; margin-bottom: 6px; }
+.opt-card p { font-size: 12.5px; line-height: 1.6; margin: 0 0 10px; color: var(--muted); }
+.opt-done { color: var(--success); font-weight: 600; }
+.opt-radio { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
+  line-height: 1.55; margin-bottom: 10px; font-weight: 400; }
+.opt-radio input { margin-top: 3px; flex-shrink: 0; }
+.opt-locked { opacity: 0.6; }
+.opt-ok { background: var(--success-bg); color: #166534; border-radius: 8px;
+  padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
+.opt-blocked { background: var(--warn-bg); color: #78350f; border-radius: 8px;
+  padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
+.p-llm-reviewed { background: #eef2ff; color: #4338ca; border: 1px solid #c7d2fe; }
+.p-peer-reviewed { background: #fef3c7; color: #92400e; border: 1px solid #fde68a; }

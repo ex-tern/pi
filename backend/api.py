@@ -78,6 +78,7 @@ from integrations import (
     build_pdf_from_text, search_open_access_works,
 )
 from attribution import verify_authorship
+from extraction import fetch_registry_metadata
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state,
@@ -90,7 +91,7 @@ from rubric import (
 )
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
-    compute_curation_reward, publication_fee, peer_review_fee,
+    compute_curation_reward, publication_fee, peer_review_fee, llm_review_fee,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import pid_engine as forecast_engine
@@ -1389,6 +1390,8 @@ def challenge_confirm(file_hash: str, payload: ChallengeConfirm, request: Reques
 
 class PublishRequest(BaseModel):
     published: bool = True
+    kind: str = "author"            # "author" | "journal"
+    doi: str = ""                   # required for a journal claim
     wallet: str = ""
     orcid: str = ""
 
@@ -1485,6 +1488,33 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
             detail=(attribution.get("reason") or "Authorship is not verified for this paper.")
                    + (" " + attribution["how_to_verify"] if attribution.get("how_to_verify") else ""))
 
+    kind = (payload.kind or "author").strip().lower()
+    if kind not in ("author", "journal"):
+        raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
+
+    # A journal claim is only accepted when a DOI actually resolves in a
+    # registry. Otherwise "Journal-published" would be a second badge you could
+    # simply assert — and an unverifiable badge is worse than no badge, because
+    # readers cannot tell which kind they are looking at.
+    if kind == "journal":
+        doi = (payload.doi or row[1] or "").strip()
+        if not doi:
+            raise HTTPException(
+                status_code=400,
+                detail=("A journal claim needs a DOI. Submit the DOI of the published version — "
+                        "it is checked against Crossref/OpenAlex, not taken on trust."))
+        try:
+            meta = fetch_registry_metadata(doi)
+        except Exception as e:
+            logging.warning("Registry lookup failed for %s: %s", doi, e)
+            meta = {}
+        if not (meta or {}).get("title"):
+            raise HTTPException(
+                status_code=422,
+                detail=(f"That DOI could not be resolved in Crossref or OpenAlex, so a journal "
+                        f"publication cannot be confirmed. Author-publishing is available now, "
+                        f"and you can switch to a journal claim once the DOI is registered."))
+
     fee = publication_fee(safe_float(row[4], 0.0))["fee"]
     if fee > 0 and not publication_fee_paid(file_hash, identities):
         balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
@@ -1498,17 +1528,21 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
                               eval_hash=file_hash, reason="Publication fee"):
             raise HTTPException(status_code=402, detail="The publication fee could not be charged.")
 
-    result = set_published(file_hash, identities, key, True)
+    result = set_published(file_hash, identities, key, True, kind=kind)
     if not result["ok"]:
         raise HTTPException(status_code=403, detail=result["reason"])
-    add_log(f"Assessment {file_hash[:12]}… published by {key[:16]}… "
+    add_log(f"Assessment {file_hash[:12]}… published ({kind}) by {key[:16]}… "
             f"(tier {attribution.get('tier') or 'escrow-claimed'})")
     return {
         "published": True,
         "charged": 0.0 if publication_fee_paid(file_hash, identities) and False else fee,
         "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-        "message": ("Published. Your assessment now carries an Author-published badge wherever "
-                    "it appears. You can withdraw it at any time, free of charge."),
+        "kind": kind,
+        "message": (("Published. Your assessment now carries a Journal-published badge, backed by "
+                     "a DOI that resolves in a registry."
+                     if kind == "journal" else
+                     "Published. Your assessment now carries an Author-published badge wherever "
+                     "it appears.") + " You can withdraw it at any time, free of charge."),
     }
 
 
@@ -1525,6 +1559,69 @@ class ReviewSubmission(BaseModel):
     orcid: str = ""
 
 
+@app.get("/api/journal")
+def journal(limit: int = Query(default=100, ge=1, le=300),
+            kind: str = Query(default="all")):   # all | published | reviewed
+    """The Journal: papers their authors published, or that carry a review.
+
+    Two distinct claims live here and are never merged into one column. A paper
+    can be published without review, reviewed without publication, or both, and
+    collapsing them would let the weaker claim borrow the stronger one's
+    credibility — which is the failure this whole framework argues against.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT p.eval_hash, p.title, p.author_name, p.final_score, p.piq_minted,
+                      p.doi, p.published_at, p.publish_kind, p.fields, p.timestamp,
+                      (SELECT COUNT(*) FROM peer_reviews r
+                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NOT NULL
+                          AND r.reviewer_key <> 'llm:panel') AS peer_count,
+                      (SELECT COUNT(*) FROM peer_reviews r
+                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NOT NULL
+                          AND r.reviewer_key = 'llm:panel') AS llm_count
+               FROM papers_assessment p
+               ORDER BY COALESCE(p.published_at, p.timestamp) DESC"""
+        ).fetchall()
+    except sqlite3.Error as e:
+        add_log(f"Journal read failed: {e}")
+        raise HTTPException(status_code=503, detail="The journal index is unavailable.")
+    finally:
+        conn.close()
+
+    out = []
+    for r in rows:
+        published, peer, llm = bool(r[6]), int(r[10] or 0), int(r[11] or 0)
+        if not (published or peer or llm):
+            continue          # the Journal lists claims, not the whole corpus
+        if kind == "published" and not published:
+            continue
+        if kind == "reviewed" and not (peer or llm):
+            continue
+        try:
+            fields = json.loads(r[8] or "[]")
+        except (ValueError, TypeError):
+            fields = []
+        out.append({
+            "hash": r[0], "title": r[1] or "Untitled",
+            "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
+            "piq": round(safe_float(r[4], 0.0), 2), "doi": r[5] or "",
+            "published": published, "publish_kind": (r[7] or "author") if published else None,
+            "published_at": r[6], "peer_reviews": peer, "llm_reviewed": bool(llm),
+            "fields": fields, "assessed_at": r[9],
+        })
+        if len(out) >= limit:
+            break
+
+    return {
+        "entries": out, "count": len(out),
+        "note": ("Published means the verified author attached their name. Journal-published "
+                 "additionally required a DOI that resolves in a registry. Peer-reviewed means "
+                 "an independent researcher submitted a reasoned verdict; LLM-reviewed means a "
+                 "model panel did. They are separate claims and are shown separately."),
+    }
+
+
 @app.get("/api/reviews/open")
 def open_reviews(request: Request, wallet: str = Query(default=""),
                  orcid: str = Query(default="")):
@@ -1537,8 +1634,18 @@ def open_reviews(request: Request, wallet: str = Query(default=""),
 
 @app.get("/api/assessments/{file_hash}/review")
 def review_state(file_hash: str):
-    """Public: whether this paper has been peer reviewed, and what was said."""
-    return {**review_summary(file_hash), "fee": peer_review_fee()}
+    """Public: which reviews exist, kept strictly separate by kind."""
+    summary = review_summary(file_hash)
+    human = [r for r in summary["reviews"] if not str(r.get("verdict", "")).startswith("llm")]
+    machine = [r for r in summary["reviews"] if str(r.get("verdict", "")).startswith("llm")]
+    return {
+        **summary,
+        "peer_reviewed": len(human) > 0,
+        "peer_review_count": len(human),
+        "llm_reviewed": len(machine) > 0,
+        "reviews": human, "llm_reviews": machine,
+        "fee": peer_review_fee(), "llm_fee": llm_review_fee(),
+    }
 
 
 @app.post("/api/assessments/{file_hash}/review/request")
@@ -1578,6 +1685,75 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
             "message": (f"Review requested. {fee:.2f} piQ is held and will be paid to the "
                         f"researcher who completes it. The Peer-reviewed badge appears only "
                         f"once a review has been submitted.")}
+
+
+@app.post("/api/assessments/{file_hash}/review/llm")
+def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request):
+    """Commission a machine review. Cheaper, and labelled as what it is.
+
+    Recorded in the same table as human reviews but with a reviewer key of
+    "llm:panel", so the badge logic can tell them apart and never present one
+    as the other.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+    key = _profile_key(identity["wallet"], identity["orcid"])
+
+    fee = llm_review_fee()["fee"]
+    balance = get_piq_balance(identity["wallet"], identity["orcid"])["balance"]
+    if balance + 1e-9 < fee:
+        raise HTTPException(status_code=402,
+                            detail=f"An LLM review costs {fee:.2f} piQ; your balance is "
+                                   f"{balance:.2f} piQ.")
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT title, evidence_report, consensus_data FROM papers_assessment "
+            "WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    existing = review_summary(file_hash)
+    if any(r.get("verdict", "").startswith("llm") for r in existing.get("reviews", [])):
+        return {"requested": False, "message": "This paper already has an LLM review."}
+
+    if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
+                          eval_hash=file_hash, reason="LLM review fee"):
+        raise HTTPException(status_code=402, detail="The fee could not be charged.")
+
+    # Synthesised from the panel's recorded evidence rather than a fresh set of
+    # provider calls: the assessment already paid for that inference, and
+    # charging a second time for the same reading would be dishonest pricing.
+    try:
+        consensus = json.loads(row[2] or "{}")
+    except (ValueError, TypeError):
+        consensus = {}
+    meta = (consensus.get("_judge_metadata") or {})
+    sources = int(meta.get("independent_source_count") or 0)
+    verdict = ("llm-sound" if sources >= 2 and (meta.get("confidence") or 0) >= 0.8
+               else "llm-concerns")
+    comment = (
+        f"Machine review synthesised from the assessment panel. "
+        f"{sources} independent model route(s) contributed; corroboration graded "
+        f"{meta.get('tier', 'unknown')} at confidence {meta.get('confidence', 0)}. "
+        f"{(row[1] or '')[:1500]}"
+    )
+
+    result = open_review_request(file_hash, "llm:panel", 0.0)
+    if not result["ok"]:
+        return {"requested": False, "message": result["reason"]}
+    pending = [r for r in list_open_reviews(exclude_key="") if r["hash"] == file_hash]
+    if pending:
+        complete_review(pending[0]["id"], "llm:panel", verdict, comment)
+
+    add_log(f"LLM review recorded for {file_hash[:12]}… ({verdict})")
+    return {"requested": True, "verdict": verdict, "charged": fee,
+            "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+            "message": ("LLM review recorded. The paper carries an LLM-reviewed badge — "
+                        "distinct from Peer-reviewed, because no human read it.")}
 
 
 @app.post("/api/reviews/submit")
