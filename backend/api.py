@@ -53,7 +53,7 @@ from database import (
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
-    get_papers_for_recommendation,
+    get_papers_for_recommendation, get_corpus_totals,
 )
 import arcade
 import diagnostics
@@ -543,7 +543,12 @@ def arcade_start(request: Request):
     except Exception as e:
         logging.warning("Science Map corpus snapshot failed, using taxonomy only: %s", e)
         corpus = []
-    session = arcade.start_session(ip, corpus_stats=corpus)
+    try:
+        totals = get_corpus_totals()
+    except Exception as e:
+        logging.warning("Corpus totals failed: %s", e)
+        totals = {"papers": 0, "classified": 0, "unclassified": 0}
+    session = arcade.start_session(ip, corpus_stats=corpus, corpus_totals=totals)
     state = get_bonus_award_state(ip)
     session["wallet_state"] = {
         "bonus_earned": state["bonus"],
@@ -735,6 +740,22 @@ def write_profile(payload: ResearcherProfile):
                    "this browser until you connect one.")
     saved = save_researcher_profile(key, payload.dict())
     return {"stored": True, "profile": saved}
+
+
+def _fmt_score(value) -> str:
+    """Format a score for a log line without ever raising.
+
+    This is not cosmetic. These log calls sit between the database write and
+    the `yield` that delivers the result to the browser, so a TypeError here
+    (score is None when a stage degrades) killed the generator *after* the
+    paper was persisted: it appeared in the leaderboard and analytics, but the
+    Assessment Results panel stayed empty and the user believed the run had
+    silently failed. Logging must never be able to destroy a completed result.
+    """
+    try:
+        return f"{float(value):.2f}"
+    except (TypeError, ValueError):
+        return "n/a"
 
 
 def build_result_payload(res, filename, profile=None):
@@ -961,7 +982,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
-                add_log(f"Assessed DOI {doi}: score {item['score']:.2f}")
+                add_log(f"Assessed DOI {doi}: score {_fmt_score(item.get('score'))}")
                 yield line({"type": "result", "item": item})
         else:
             yield line({"type": "download_error", "doi": doi,
@@ -989,7 +1010,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
-                add_log(f"Assessed discovered paper '{title[:60]}': score {item['score']:.2f}")
+                add_log(f"Assessed discovered paper '{title[:60]}': score {_fmt_score(item.get('score'))}")
                 yield line({"type": "result", "item": item})
         else:
             yield line({"type": "download_error", "doi": p_doi or title,
@@ -1010,7 +1031,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         if res:
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
-            add_log(f"Assessed {fname}: score {item['score']:.2f}")
+            add_log(f"Assessed {fname}: score {_fmt_score(item.get('score'))}")
             yield line({"type": "result", "item": item})
 
     yield line({"type": "done", "message": "Complete."})
@@ -1231,7 +1252,7 @@ def assess_text(req: TextAssessRequest, request: Request):
     if not res:
         raise HTTPException(status_code=500, detail="Assessment failed.")
     item = build_result_payload(res, "Pasted_Text.pdf")
-    add_log(f"Assessed pasted text: score {item['score']:.2f}")
+    add_log(f"Assessed pasted text: score {_fmt_score(item.get('score'))}")
     return item
 
 

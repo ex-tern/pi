@@ -935,16 +935,19 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // connected an identity yet — which is most first-time visitors, and exactly
 // the people the profile is meant to help.
 // ---------------------------------------------------------------------------
-const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea"];
-const PROFILE_INPUTS = { career_stage: "profileCareerStage", idea: "profileIdea" };
+const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea", "abstract"];
+const PROFILE_INPUTS = { career_stage: "profileCareerStage", abstract: "profileAbstract" };
 
 // Research fields and keywords are both lists, not strings: researchers sit
 // across several of each. One generic implementation serves both, so the two
 // controls cannot drift apart in behaviour. Stored comma-joined, keeping the
 // backend columns plain strings.
 const TAG_GROUPS = {
-  field: { tags: [], listId: "profileFieldList", inputId: "profileFieldInput", wrapId: "profileFieldTags" },
-  goal:  { tags: [], listId: "profileGoalList",  inputId: "profileGoalInput",  wrapId: "profileGoalTags" },
+  field: { tags: [], listId: "profileFieldList", inputId: "profileFieldInput", wrapId: "profileFieldTags", max: 60 },
+  goal:  { tags: [], listId: "profileGoalList",  inputId: "profileGoalInput",  wrapId: "profileGoalTags",  max: 60 },
+  // Core ideas are short sentences rather than single terms, so they get a
+  // longer per-tag cap than a keyword does.
+  idea:  { tags: [], listId: "profileIdeaList",  inputId: "profileIdeaInput",  wrapId: "profileIdeaTags",  max: 120 },
 };
 const TAG_LIMIT = 12;
 
@@ -967,7 +970,7 @@ function addTag(group, raw) {
     if (!value) continue;
     if (g.tags.some(t => t.toLowerCase() === value.toLowerCase())) continue;
     if (g.tags.length >= TAG_LIMIT) break;
-    g.tags.push(value.slice(0, 60));
+    g.tags.push(value.slice(0, g.max || 60));
   }
   renderTags(group);
 }
@@ -982,6 +985,7 @@ function readProfileForm() {
   const out = {
     field: TAG_GROUPS.field.tags.join(", "),
     goal: TAG_GROUPS.goal.tags.join(", "),
+    idea: TAG_GROUPS.idea.tags.join(", "),
   };
   for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
@@ -993,6 +997,7 @@ function readProfileForm() {
 function writeProfileForm(profile) {
   setTags("field", profile.field);
   setTags("goal", profile.goal);
+  setTags("idea", profile.idea);
   for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
     if (el && profile[key] !== undefined) el.value = profile[key] || "";
@@ -2412,8 +2417,12 @@ async function loadForecast() {
         },
       });
 
+      // These are hidden at the top of loadForecast, so they must be
+      // explicitly un-hidden here — setting innerHTML on a hidden element
+      // renders nothing and looks exactly like a failed request.
       const meta = document.getElementById("forecastMeta");
       if (meta) {
+        meta.classList.remove("hidden");
         meta.innerHTML = `
           <div class="fm-item"><span>Mode</span><strong>Measured</strong></div>
           <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
@@ -2421,6 +2430,7 @@ async function loadForecast() {
       }
       const insight = document.getElementById("forecastInsight");
       if (insight) {
+        insight.classList.remove("hidden");
         insight.innerHTML = `<p>${escapeHtml(data.insight || "")}</p>
           <p class="forecast-insight-inline">${escapeHtml(data.message || "")}</p>`;
       }

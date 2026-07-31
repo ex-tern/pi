@@ -218,7 +218,8 @@ def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
     return overlay
 
 
-def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None) -> Dict:
+def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
+                  corpus_totals: Optional[Dict] = None) -> Dict:
     """Issues a signed seed plus corpus snapshot the server can later replay."""
     seed = secrets.randbelow(0xFFFFFFFF) or 0x9E3779B9
     issued_at = int(time.time())
@@ -260,10 +261,14 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None) -> Dict:
         "field": field,
         "legend": legend,
         "authors": authors,
+        # Paper counts come from counting papers, never from summing per-field
+        # rows: a paper tagged with three fields appears in three of them.
         "corpus": {
             "fields_with_papers": sum(1 for b in field if b["live"]),
-            "total_papers": sum(int(e[1]) for e in overlay),
-            "is_empty": not overlay,
+            "total_papers": int((corpus_totals or {}).get("papers", 0)),
+            "classified_papers": int((corpus_totals or {}).get("classified", 0)),
+            "unclassified_papers": int((corpus_totals or {}).get("unclassified", 0)),
+            "is_empty": not (corpus_totals or {}).get("papers", 0),
         },
         "rules": {
             "start_mass": START_MASS,
