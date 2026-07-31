@@ -466,7 +466,7 @@ def save_researcher_profile(account_key: str, profile: dict) -> dict:
     if not account_key:
         return {}
     fields = {
-        "field": str(profile.get("field", ""))[:120],
+        "field": str(profile.get("field", ""))[:400],   # comma-joined list of fields
         "career_stage": str(profile.get("career_stage", ""))[:60],
         "goal": str(profile.get("goal", ""))[:600],
         "idea": str(profile.get("idea", ""))[:1500],

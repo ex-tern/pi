@@ -30,10 +30,14 @@ import threading
 from typing import Dict, List, Optional, Tuple
 
 try:
-    from config import (GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL,
+    from config import (CEREBRAS_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY,
+                        TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
+                        GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL,
                         GEMINI_PRIMARY_MODEL)
 except ImportError:
     GROQ_API_KEY = OR_API_KEY = GEMINI_API_KEY = ""
+    CEREBRAS_API_KEY = MISTRAL_API_KEY = DEEPSEEK_API_KEY = ""
+    TOGETHER_API_KEY = GITHUB_MODELS_TOKEN = ""
     PRIMARY_MODEL = "llama-3.3-70b-versatile"
     GEMINI_PRIMARY_MODEL = "gemini-2.5-flash"
 
@@ -132,6 +136,16 @@ def cooldown_status() -> List[Dict]:
 GROQ_BASE = "https://api.groq.com/openai/v1"
 OPENROUTER_BASE = "https://openrouter.ai/api/v1"
 GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta/openai/"
+
+# Direct providers, all OpenAI-compatible and all with a free tier. Their
+# purpose is independence from OpenRouter, not extra capacity: a juror whose
+# only path is OpenRouter disappears entirely when that account's data policy
+# rejects a model, and four of the five jurors were in that position.
+CEREBRAS_BASE = "https://api.cerebras.ai/v1"
+MISTRAL_BASE = "https://api.mistral.ai/v1"
+DEEPSEEK_BASE = "https://api.deepseek.com/v1"
+TOGETHER_BASE = "https://api.together.xyz/v1"
+GITHUB_MODELS_BASE = "https://models.inference.ai.azure.com"
 
 
 def _route(model: str, key: str, base: str, provider: str) -> Optional[Dict]:

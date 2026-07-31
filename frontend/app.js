@@ -207,6 +207,18 @@ const HELP = {
       likely to already have any.</p>
       <p>Select a row to see that author's assessed papers.</p>`,
   },
+  buddy: {
+    title: "Research Buddy",
+    body: `<p>A short, tailored plan derived from your saved profile — career stage, how many
+      fields you work across, and whether you have articulated a core claim.</p>
+      <p><strong>It is heuristics, not analysis.</strong> Research Buddy reads what you typed
+      about yourself; it has not read your publications. It says so at the bottom of every
+      report, and it deliberately refuses to generate advice from an almost-empty profile —
+      a buddy that invents suggestions from nothing is worse than one that stays quiet, because
+      you cannot tell which of its claims were grounded.</p>
+      <p>For findings grounded in an actual paper, assess a manuscript and read the reception
+      diagnostic instead.</p>`,
+  },
   diagnostics: {
     title: "Reception diagnostics",
     body: `<p>The piX score answers "how rigorous is this work?". This panel answers a different
@@ -419,6 +431,10 @@ document.addEventListener("click", (e) => {
 // Sidebar: wallet / orcid / balance / chain
 // ---------------------------------------------------------------------------
 async function renderSidebar() {
+  // Sidebar renders on every identity change (connect, link, unlink), so it is
+  // the correct place to keep the identity-gated panels in sync — otherwise
+  // signing in would leave the profile hidden until a page reload.
+  syncProfileVisibility();
   const mmWrap = document.getElementById("mmConnectWrap");
   const mmLinked = document.getElementById("mmLinked");
   const orcidWrap = document.getElementById("orcidConnectWrap");
@@ -921,13 +937,38 @@ document.querySelectorAll(".subtab-btn").forEach(btn => {
 // ---------------------------------------------------------------------------
 const PROFILE_FIELDS = ["field", "career_stage", "goal", "idea", "abstract"];
 const PROFILE_INPUTS = {
-  field: "profileField", career_stage: "profileCareerStage",
-  goal: "profileGoal", idea: "profileIdea", abstract: "profileAbstract",
+  career_stage: "profileCareerStage", goal: "profileGoal",
+  idea: "profileIdea", abstract: "profileAbstract",
 };
 
+// Research fields are a list, not a string: most researchers sit across
+// several. Stored comma-joined so the backend column stays a plain string.
+let profileFieldTags = [];
+
+function renderFieldTags() {
+  const list = document.getElementById("profileFieldList");
+  if (!list) return;
+  list.innerHTML = profileFieldTags.map((t, i) => `
+    <span class="tag">${escapeHtml(t)}<button type="button" class="tag-x" data-tag-index="${i}"
+      aria-label="Remove ${escapeHtml(t)}">×</button></span>`).join("");
+}
+
+function addFieldTag(raw) {
+  for (const piece of String(raw).split(",")) {
+    const value = piece.trim();
+    // Case-insensitive dedupe: "Genomics" and "genomics" are one field, and
+    // storing both would split the same interest across two tags.
+    if (!value) continue;
+    if (profileFieldTags.some(t => t.toLowerCase() === value.toLowerCase())) continue;
+    if (profileFieldTags.length >= 12) break;
+    profileFieldTags.push(value.slice(0, 60));
+  }
+  renderFieldTags();
+}
+
 function readProfileForm() {
-  const out = {};
-  for (const key of PROFILE_FIELDS) {
+  const out = { field: profileFieldTags.join(", ") };
+  for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
     out[key] = el ? el.value.trim() : "";
   }
@@ -935,11 +976,93 @@ function readProfileForm() {
 }
 
 function writeProfileForm(profile) {
-  for (const key of PROFILE_FIELDS) {
+  profileFieldTags = String(profile.field || "")
+    .split(",").map(s => s.trim()).filter(Boolean).slice(0, 12);
+  renderFieldTags();
+  for (const key of Object.keys(PROFILE_INPUTS)) {
     const el = document.getElementById(PROFILE_INPUTS[key]);
     if (el && profile[key] !== undefined) el.value = profile[key] || "";
   }
   updateProfileStatus(profile);
+  renderResearchBuddy(profile);
+}
+
+/** Profile and Buddy are identity-gated; signed-out visitors get the notice
+ *  instead. Called whenever the session changes, not just at boot. */
+function syncProfileVisibility() {
+  const signedIn = Session.hasIdentity();
+  const card = document.getElementById("profileCard");
+  const notice = document.getElementById("signInNotice");
+  const buddy = document.getElementById("buddyCard");
+  if (card) card.classList.toggle("hidden", !signedIn);
+  if (notice) notice.classList.toggle("hidden", signedIn);
+  if (buddy) buddy.classList.toggle("hidden", !signedIn);
+}
+
+/** Research Buddy — concrete next actions derived from the saved profile.
+ *
+ *  Deliberately states what it does not know. A "buddy" that invents advice
+ *  from an empty profile is worse than one that says the profile is thin,
+ *  because the researcher cannot tell which of its suggestions were grounded. */
+function renderResearchBuddy(profile) {
+  const body = document.getElementById("buddyBody");
+  if (!body) return;
+  const fields = String(profile.field || "").split(",").map(s => s.trim()).filter(Boolean);
+  const goal = (profile.goal || "").trim();
+  const stage = (profile.career_stage || "").trim();
+  const idea = (profile.idea || "").trim();
+
+  const filled = [fields.length, goal, stage, idea].filter(Boolean).length;
+  if (filled < 2) {
+    body.innerHTML = `<p class="buddy-empty">Fill in your research fields and goals above, and
+      this becomes a tailored plan — which of your fields is most crowded, where your work is
+      most likely to be seen, and what to fix first.</p>`;
+    return;
+  }
+
+  let html = `<p class="buddy-lede">Based on your profile${fields.length
+    ? ` in <strong>${fields.map(escapeHtml).join(", ")}</strong>` : ""}${goal
+    ? `, working toward <em>${escapeHtml(goal)}</em>` : ""}.</p>`;
+
+  const actions = [];
+  if (stage === "phd" || stage === "student") {
+    actions.push(["Build a citable trail early",
+      "Deposit preprints for everything you can. At your stage the cost of being unread is "
+      + "higher than the risk of being scooped, and a DOI you can cite in applications is "
+      + "worth more than an unpublished draft."]);
+  }
+  if (stage === "postdoc") {
+    actions.push(["Establish an independent line",
+      "Search committees look for work that is identifiably yours rather than your PI's. A "
+      + "first- or last-author paper in a direction you chose carries disproportionate weight."]);
+  }
+  if (stage === "independent") {
+    actions.push(["Compensate for missing affiliation",
+      "Unaffiliated work is discounted by reviewers whether or not that is fair. An ORCID, a "
+      + "consistent name form and open data are the levers you control."]);
+  }
+  if (fields.length > 3) {
+    actions.push(["You are spread across many fields",
+      `You listed ${fields.length}. Breadth is genuinely valuable, but citation accrues to a `
+      + "recognisable identity in one area. Consider which one or two you want to be known for."]);
+  }
+  if (!idea) {
+    actions.push(["State your core claim",
+      "You have not written down the central claim of your work. If it does not compress into "
+      + "a few sentences here, it will not compress into an abstract either — and reviewers "
+      + "read the abstract first."]);
+  }
+  actions.push(["Assess your weakest paper first",
+    "The diagnostic is most useful on work that is not landing. Run the paper you are least "
+    + "happy with — it produces the most actionable report."]);
+
+  html += `<div class="buddy-actions">` + actions.map(([t, d]) => `
+    <div class="buddy-item"><strong>${escapeHtml(t)}</strong><p>${escapeHtml(d)}</p></div>`
+  ).join("") + `</div>`;
+
+  html += `<p class="buddy-note">These are heuristics from your stated profile, not an analysis
+    of your publications. Assess a manuscript for findings grounded in an actual paper.</p>`;
+  body.innerHTML = html;
 }
 
 function updateProfileStatus(profile) {
@@ -979,6 +1102,7 @@ async function saveProfile() {
 
   localStorage.setItem("sp_profile", JSON.stringify(profile));
   updateProfileStatus(profile);
+  renderResearchBuddy(profile);
 
   if (!Session.hasIdentity()) {
     msg.textContent = "Saved in this browser. Connect a wallet or ORCID to keep it permanently.";
@@ -1439,17 +1563,52 @@ function renderResults() {
     `<div class="warning-box">Could not retrieve <code>${escapeHtml(err.doi)}</code> — the publisher restricts direct access. Any fee for this item was refunded.</div>`
   ).join("");
 
+  // Each card is rendered inside its own try/catch. Previously one malformed
+  // result — a null score, say — threw inside .map(), so innerHTML was never
+  // assigned and the ENTIRE results list stayed empty, even though the paper
+  // had already been assessed and written to the ledger. The user saw their
+  // work vanish from the results panel while appearing in the leaderboard.
+  // Isolating each card means a bad one degrades to a visible error row
+  // instead of silently destroying every good one beside it.
   document.getElementById("resultsList").innerHTML = evaluatedBuffer.map((item, idx) => {
-    const meta = item.judge_metadata || (item.consensus_raw || {})._judge_metadata || {};
-    const warnCount = (item.warnings || []).length;
-    return `
+    try {
+      return renderResultCard(item, idx);
+    } catch (e) {
+      console.error("Result card failed to render:", e, item);
+      return `
+      <div class="result-card">
+        <div class="result-main">
+          <div class="result-title">${escapeHtml(item && item.title ? item.title : "Assessed manuscript")}</div>
+          <div class="result-author warning-text">This result was assessed and saved, but could
+            not be displayed here (${escapeHtml(e.message)}). It is still in the ledger and the
+            Analytics tables.</div>
+        </div>
+        <div class="result-actions">
+          <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
+          <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
+        </div>
+      </div>`;
+    }
+  }).join("");
+}
+
+/** One result card. `fmtNum` guards every numeric field: the assessment
+ *  pipeline can legitimately return null for a score when a stage degrades,
+ *  and a display concern must never discard a completed assessment. */
+function renderResultCard(item, idx) {
+  const meta = item.judge_metadata || (item.consensus_raw || {})._judge_metadata || {};
+  const warnCount = (item.warnings || []).length;
+  const fmtNum = (v, dp, fallback = "—") =>
+    (typeof v === "number" && isFinite(v)) ? v.toFixed(dp) : fallback;
+
+  return `
     <div class="result-card">
       <div class="result-main">
-        <div class="result-title">${escapeHtml(item.title)}</div>
-        <div class="result-author">${escapeHtml(item.author_name)}</div>
+        <div class="result-title">${escapeHtml(item.title || "Untitled manuscript")}</div>
+        <div class="result-author">${escapeHtml(item.author_name || "Unidentified author")}</div>
         <div class="result-pills">
-          <span class="pill p-score">piX ${item.score.toFixed(1)}</span>
-          <span class="pill p-piq">piQ ${Number(item.piq || 0).toFixed(2)}</span>
+          <span class="pill p-score">piX ${fmtNum(item.score, 1)}</span>
+          <span class="pill p-piq">piQ ${fmtNum(Number(item.piq || 0), 2, "0.00")}</span>
           ${qualityPill(meta)}
           ${integrityPills(item)}
           ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
@@ -1461,7 +1620,6 @@ function renderResults() {
         <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
       </div>
     </div>`;
-  }).join("");
 }
 
 function removeResult(idx) { evaluatedBuffer.splice(idx, 1); renderResults(); }
@@ -2798,8 +2956,37 @@ renderSidebar();
 loadChainStatus();
 loadEmissionStatus();
 refreshTrialStatus();
+syncProfileVisibility();
 loadProfile();
 document.getElementById("profileSaveBtn").addEventListener("click", saveProfile);
+
+// Field tag entry: Enter or comma commits, Backspace on an empty input removes
+// the last tag (the behaviour every tag field has, and its absence is noticed).
+const fieldInput = document.getElementById("profileFieldInput");
+fieldInput.addEventListener("keydown", e => {
+  if (e.key === "Enter" || e.key === ",") {
+    e.preventDefault();
+    addFieldTag(fieldInput.value);
+    fieldInput.value = "";
+  } else if (e.key === "Backspace" && !fieldInput.value && profileFieldTags.length) {
+    profileFieldTags.pop();
+    renderFieldTags();
+  }
+});
+// Commit whatever is typed when focus leaves, so a half-entered field is not
+// silently discarded on save.
+fieldInput.addEventListener("blur", () => {
+  if (fieldInput.value.trim()) { addFieldTag(fieldInput.value); fieldInput.value = ""; }
+});
+document.getElementById("profileFieldList").addEventListener("click", e => {
+  const btn = e.target.closest("[data-tag-index]");
+  if (!btn) return;
+  profileFieldTags.splice(Number(btn.dataset.tagIndex), 1);
+  renderFieldTags();
+});
+document.getElementById("profileFieldTags").addEventListener("click", e => {
+  if (e.target.id === "profileFieldTags") fieldInput.focus();
+});
 initScilem();
 setInterval(loadChainStatus, 60000);
 
