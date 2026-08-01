@@ -443,11 +443,15 @@
     }
     if (!data.valid) {
       setMessage("Run rejected: " + (data.reason || "verification failed") + ".", "bad");
-    } else if (data.granted > 0) {
+    } else if (data.granted > 0 || Number(data.piq_awarded) > 0) {
+      // A win that credits something says so in full, including the new
+      // balance. Previously the piQ was credited server-side and nothing on
+      // screen was refreshed, so a real payout was indistinguishable from no
+      // payout at all — the balance in the sidebar simply stayed where it was.
       setMessage(data.message, "good");
-      if (window.ScholarPi && typeof window.ScholarPi.refreshTrialStatus === "function") {
-        window.ScholarPi.refreshTrialStatus();
-      }
+      const SP = window.ScholarPi || {};
+      if (typeof SP.refreshTrialStatus === "function") SP.refreshTrialStatus();
+      if (typeof SP.refreshPiqBalance === "function") SP.refreshPiqBalance();
     } else {
       setMessage(data.message || "Run recorded.", won ? "info" : "");
     }
@@ -527,9 +531,20 @@
       `Absorbed <strong>${state.absorbed.length}</strong> fields` +
         (eatenLive ? `, ${eatenLive} of them carrying real papers.` : "."),
     ];
+    // Say exactly what landed, and where. "+3 free assessments" alone left a
+    // player who had also earned piQ with no confirmation it had been credited.
+    const piq = Number((data && data.piq_awarded) || 0);
     if (data && data.granted > 0) {
       parts.push(`<span class="arcade-reward">+${data.granted} free assessments unlocked.</span>`);
-    } else if (won && data && data.message) {
+    }
+    if (piq > 0) {
+      parts.push(`<span class="arcade-reward">+${piq.toFixed(2)} piQ credited to your balance`
+        + (data.piq_balance != null
+            ? ` — you now hold <strong>${Number(data.piq_balance).toFixed(2)} piQ</strong>.`
+            : ".")
+        + `</span>`);
+    }
+    if (!(data && (data.granted > 0 || piq > 0)) && won && data && data.message) {
       parts.push(data.message);
     } else if (!won) {
       parts.push("You ran into a larger field. Grow on the small ones first.");
@@ -551,9 +566,9 @@
     const el = document.getElementById("arcadeWallet");
     if (!el || !wallet) return;
     const bits = [`Earned <strong>${wallet.bonus_earned}</strong> / ${wallet.cap} bonus assessments.`];
-    if (wallet.cooldown_remaining > 0) {
-      bits.push(`Next reward in ${(wallet.cooldown_remaining / 3600).toFixed(1)}h.`);
-    } else if (wallet.bonus_earned < wallet.cap) {
+    // No waiting period any more — a win pays out immediately, and the only
+    // thing that can stop it is the lifetime cap.
+    if (wallet.bonus_earned < wallet.cap) {
       bits.push(`A win is worth ${reward.per_win}.`);
     } else {
       bits.push("Cap reached — connect a wallet or ORCID to continue.");
