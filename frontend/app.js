@@ -592,9 +592,18 @@ async function refreshPiqBalance() {
     balEl.className = data.balance < data.fee_per_paper ? "bal-low" : "bal-ok";
 
     const note = document.getElementById("researcherAffordable");
-    note.textContent = data.balance < data.fee_per_paper
-      ? "Balance below the per-paper fee."
-      : `Covers ${data.papers_affordable} more paper${data.papers_affordable === 1 ? "" : "s"}.`;
+    // An identity this browser remembers but the session cannot prove takes
+    // priority over the affordability line: it explains why the balance looks
+    // smaller than expected, which is otherwise unexplainable from the UI.
+    if (data.unproven_note) {
+      note.textContent = data.unproven_note;
+      note.className = "ri-note ri-note-warn";
+    } else {
+      note.className = "ri-note";
+      note.textContent = data.balance < data.fee_per_paper
+        ? "Balance below the per-paper fee."
+        : `Covers ${data.papers_affordable} more paper${data.papers_affordable === 1 ? "" : "s"}.`;
+    }
   } catch (e) { /* ignore */ }
   renderFeeNotice();
 }
