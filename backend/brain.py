@@ -1818,11 +1818,26 @@ def process_single_pdf(
                 "piQ WITHHELD — AUTHORSHIP UNVERIFIED: " + attribution.get("reason", "")
                 + (" " + attribution["how_to_verify"] if attribution.get("how_to_verify") else "")
             )
-        if not emission["qualified"] and attribution.get("verified"):
+        # Report the reason that actually applies.
+        #
+        # This previously showed a paper's real reason for minting nothing only
+        # when authorship was verified; every other failure fell through to the
+        # "EMISSION DIFFICULTY" branch, which then printed "minted 0.0000 piQ"
+        # beside a supply factor of 1.0000 and an author factor of 0.99. That
+        # blamed scarcity for an outcome scarcity had no part in — a paper
+        # blocked by the logic gate was told the platform was getting harder.
+        #
+        # Qualification is now reported whenever the paper failed to qualify,
+        # whoever submitted it, and the difficulty note is reserved for papers
+        # that DID qualify and were genuinely scaled down.
+        if not emission["qualified"]:
             warnings_list.append("piQ NOT MINTED: " + " ".join(emission["reasons"]))
-        elif emission["halving_epoch"] > 0 or emission["author_factor"] < 1.0:
+        elif (emission["halving_epoch"] > 0 or emission["author_factor"] < 1.0) and (
+                piq_minted > 0 or piq_escrowed > 0):
+            amount = piq_minted if piq_minted > 0 else piq_escrowed
+            where = "minted" if piq_minted > 0 else "earned and held"
             warnings_list.append(
-                f"EMISSION DIFFICULTY: minted {piq_minted:.4f} piQ at halving epoch "
+                f"EMISSION DIFFICULTY: {amount:.4f} piQ {where} at halving epoch "
                 f"{emission['halving_epoch']} (supply factor {emission['supply_factor']:.4f}, "
                 f"author factor {emission['author_factor']:.4f}). Emission hardens as the "
                 f"platform grows."

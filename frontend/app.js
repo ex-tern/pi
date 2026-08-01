@@ -2441,6 +2441,15 @@ async function showPublishModal(hash) {
            ${st.how_to_fix ? `<br>${escapeHtml(st.how_to_fix)}` : ""}`}
     </div>
 
+    ${st.has_file ? `
+    <div class="opt-card">
+      <label class="opt-radio"><input type="checkbox" id="pubDistribute">
+        <span><strong>Make the manuscript file public.</strong> Publishing lets anyone open the
+        PDF you uploaded by clicking the badge. Tick this to confirm you hold the right to
+        distribute this file — for a journal article that is usually the accepted manuscript,
+        not the publisher's typeset version. Withdrawing removes public access again.</span></label>
+    </div>` : ""}
+
     <div class="modal-actions">
       <button class="btn btn-primary" id="pubSubmit" ${may ? "" : "disabled"}>Publish</button>
       <span class="profile-msg" id="pubMsg"></span>
@@ -2459,11 +2468,17 @@ async function showPublishModal(hash) {
     if (kind === "journal" && !doi) {
       msg.textContent = "A journal claim needs a DOI."; return;
     }
+    const distEl = document.getElementById("pubDistribute");
+    if (st.has_file && !(distEl && distEl.checked)) {
+      msg.textContent = "Confirm you may distribute the uploaded file before publishing.";
+      return;
+    }
     btn.disabled = true; msg.textContent = "Publishing…";
     try {
       const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ published: true, kind, doi,
+                               distribute_file: !!(distEl && distEl.checked),
                                wallet: Session.wallet, orcid: Session.orcid }),
       });
       const data = await res.json().catch(() => ({}));
@@ -2971,8 +2986,11 @@ function renderDossierModal(item, idx) {
       ${typeof item.logic_integrity === "number" ? `<span class="pill p-logic">Logic ${item.logic_integrity.toFixed(1)}</span>` : ""}
       ${qualityPill(meta)}
       ${integrityPills(item)}
-      ${/* The publish seal is omitted here: inside the dossier it would only
-            reopen the dossier. The review seals still open their reviews. */""}
+      ${/* The publish seal appears here only when it has somewhere to go. With
+            a DOI it opens the published paper, which is exactly what a reader
+            of the dossier wants next; without one it would merely reopen the
+            dossier they are already looking at, so it is left out. */
+        safeDoi(item.doi) ? publishedBadge({ ...item, hash: item.hash || item.eval_hash }) : ""}
       ${peerReviewBadge(item)}
       ${llmReviewBadge({ ...item, hash: item.hash || item.eval_hash })}
     </div>
@@ -4233,7 +4251,8 @@ const BADGE_MARKS = {
 function seal(kind, mark, label, title, open) {
   const tag = open ? "button" : "span";
   const extra = open
-    ? ` type="button" data-seal="${open.action}" data-seal-hash="${escapeHtml(open.hash)}"`
+    ? ` type="button" data-seal="${open.action}" data-seal-hash="${escapeHtml(open.hash || "")}"`
+      + (open.doi ? ` data-seal-doi="${escapeHtml(open.doi)}"` : "")
     : "";
   return `<${tag} class="seal seal-${kind}${open ? " seal-open" : ""}"`
        + ` title="${escapeHtml(title + (open ? " Click to open." : ""))}"${extra}>`
@@ -4246,17 +4265,43 @@ function badgeHash(item) {
   return (item && (item.hash || item.eval_hash)) || "";
 }
 
+/** A DOI safe to turn into a doi.org URL, or "" if it is not one.
+ *
+ *  Validated rather than concatenated: these strings come from the database and
+ *  end up in a URL that gets opened, so anything not matching the DOI grammar
+ *  is discarded instead of trusted.
+ */
+function safeDoi(raw) {
+  const d = String(raw || "").replace(/^https?:\/\/(dx\.)?doi\.org\//i, "").trim();
+  return /^10\.\d{4,9}\/[^\s"'<>]+$/.test(d) ? d : "";
+}
+
 function publishedBadge(item) {
   if (!item || !item.published) return "";
   const h = badgeHash(item);
-  const open = h ? { action: "dossier", hash: h } : null;
+  const doi = safeDoi(item.doi);
+  // Prefer the paper itself. A publication badge is a claim about a published
+  // work, so the thing a reader wants when they click it is that work — not a
+  // second opinion about it.
+  //
+  // Order matters: the stored manuscript is the exact document that was
+  // assessed, so it wins over the DOI, which resolves to the publisher's
+  // version — usually the same paper, but not necessarily the same file, and
+  // often behind a paywall. The dossier is the last resort, for papers with
+  // neither.
+  const open = item.has_file ? { action: "file", hash: h }
+             : doi          ? { action: "paper", hash: h, doi }
+             : h            ? { action: "dossier", hash: h } : null;
+
   if (item.publish_kind === "journal") {
     return seal("journal", "star", "Journal-published",
-      "A DOI for this work resolves in Crossref or OpenAlex. Verified, not asserted.", open);
+      "A DOI for this work resolves in Crossref or OpenAlex, the registered title matches this "
+      + "manuscript, and the claimant is a deposited author. Opens the published paper.", open);
   }
   return seal("author", "check", "Author-published",
-    "The verified author attached their name to this assessment. "
-    + "An authorship endorsement, not journal publication.", open);
+    "The verified author attached their name to this assessment. An authorship endorsement, "
+    + "not journal publication. "
+    + (doi ? "Opens the paper." : "Opens the full assessment — no DOI is on record."), open);
 }
 
 function peerReviewBadge(item) {
@@ -4281,8 +4326,26 @@ document.addEventListener("click", (e) => {
   e.preventDefault();
   e.stopPropagation();
   const hash = el.dataset.sealHash;
+  const action = el.dataset.seal;
+
+  if (action === "file" && hash) {
+    // The manuscript that was actually assessed, served inline.
+    window.open(`${API}/api/papers/${encodeURIComponent(hash)}/file`,
+                "_blank", "noopener,noreferrer");
+    return;
+  }
+  if (action === "paper") {
+    // Re-validate on the way out. The attribute was written from validated
+    // input, but this ends in window.open and the check is one line.
+    const doi = safeDoi(el.dataset.sealDoi);
+    if (doi) {
+      // noopener: the opened page must not get a handle on this one.
+      window.open(`https://doi.org/${encodeURI(doi)}`, "_blank", "noopener,noreferrer");
+      return;
+    }
+  }
   if (!hash) return;
-  if (el.dataset.seal === "llm-review") showLlmReviewModal(hash);
+  if (action === "llm-review") showLlmReviewModal(hash);
   else openDossierByHash(hash);
 });
 
