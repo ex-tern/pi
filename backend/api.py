@@ -1077,7 +1077,24 @@ def arcade_finish(payload: ArcadeRun, request: Request):
     piq_reward = 0.0
     credited = False
     balance_after = None
-    fee_wallet, fee_orcid = normalize_identity(payload.wallet, payload.orcid)
+
+    # Credited to the PROVEN identity from the signed session, not to the
+    # wallet/orcid the browser posted.
+    #
+    # Those two are not always the same set, and when they diverge the piQ
+    # lands in an account the user cannot see or spend: the balance endpoint
+    # scopes to the session, so a win credited against a localStorage-only
+    # ORCID was written to the ledger and then rendered invisible. Crediting
+    # and spending have to agree on who you are, and the signed token is the
+    # only thing that actually knows.
+    #
+    # It also closes the obvious hole in taking the account name from the
+    # request body: a win claim could otherwise nominate any ORCID it liked.
+    identity = auth.identity_from_request(request, payload.wallet, payload.orcid)
+    signed_in = bool(identity["verified"] and (identity["wallet"] or identity["orcid"]))
+    fee_wallet, fee_orcid = ("", "")
+    if signed_in:
+        fee_wallet, fee_orcid = normalize_identity(identity["wallet"], identity["orcid"])
 
     if result["won"] and (fee_wallet or fee_orcid):
         piq_reward = arcade.PIQ_PER_WIN
@@ -1089,23 +1106,26 @@ def arcade_finish(payload: ArcadeRun, request: Request):
         # the fact that an INSERT did not raise.
         credited = balance_after > before + (piq_reward / 2)
         if credited:
-            add_log(f"Arcade win from {ip} credited {piq_reward:.2f} piQ "
-                    f"(balance now {balance_after:.2f}).")
+            add_log(f"Arcade win credited {piq_reward:.2f} piQ to "
+                    f"{_profile_key(fee_wallet, fee_orcid)} (balance now {balance_after:.2f}).")
         else:
             piq_reward = 0.0
             logging.warning("Arcade piQ credit did not land for %s/%s", fee_wallet, fee_orcid)
 
     if grant["granted"] == 0 and not credited:
+        # Say which of the two reasons applies rather than blaming the cap for
+        # a signed-out session, or vice versa.
+        if not signed_in:
+            why = ("Sign in with a wallet or ORCID — piQ for a win is credited to a signed-in "
+                   "account, and this run was submitted without a proven session. If you are "
+                   "signed in, re-link and play again.")
+        else:
+            why = (f"This connection has already earned the maximum {arcade.BONUS_CAP} bonus "
+                   f"assessments, and the piQ credit did not go through. Nothing was taken "
+                   f"from you.")
         return {**result, "granted": 0, "bonus_total": grant["bonus"],
-                "piq_awarded": 0.0, "piq_balance": balance_after,
-                "message": ("You won, but nothing could be credited for it. "
-                            + (f"This connection has already earned the maximum "
-                               f"{arcade.BONUS_CAP} bonus assessments — sign in with a wallet "
-                               f"or ORCID to earn piQ for wins."
-                               if not (fee_wallet or fee_orcid) else
-                               f"This connection has already earned the maximum "
-                               f"{arcade.BONUS_CAP} bonus assessments and the piQ credit did "
-                               f"not go through. Nothing was taken from you."))}
+                "piq_awarded": 0.0, "piq_balance": balance_after, "signed_in": signed_in,
+                "message": "You won, but nothing could be credited for it. " + why}
 
     logging.info("Arcade win from %s granted %s free assessments and %s piQ (difficulty now %s)",
                  ip, grant["granted"], piq_reward, progress["difficulty_level"])
@@ -1120,12 +1140,12 @@ def arcade_finish(payload: ArcadeRun, request: Request):
 
     return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
             "piq_awarded": piq_reward if credited else 0.0,
-            "piq_balance": balance_after,
+            "piq_balance": balance_after, "signed_in": signed_in,
             "message": (f"Victory! {earned} credited to your account."
                         + (f" Your piQ balance is now {balance_after:.2f}."
                            if credited and balance_after is not None else "")
                         + (" Sign in with a wallet or ORCID to earn piQ for wins too."
-                           if not (fee_wallet or fee_orcid) else "")
+                           if not signed_in else "")
                         + f" Difficulty is now level {progress['difficulty_level']} — assess a "
                         f"manuscript to reset it.")}
 
