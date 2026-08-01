@@ -2444,18 +2444,30 @@ async function showPublishModal(hash) {
     ${st.has_file ? `
     <div class="opt-card">
       <label class="opt-radio"><input type="checkbox" id="pubDistribute">
-        <span><strong>Make the manuscript file public.</strong> Publishing lets anyone open the
-        PDF you uploaded by clicking the badge. Tick this to confirm you hold the right to
-        distribute this file — for a journal article that is usually the accepted manuscript,
-        not the publisher's typeset version. Withdrawing removes public access again.</span></label>
-    </div>` : ""}
+        <span><strong>Make the manuscript file public. Required.</strong> Publishing lets anyone
+        open the PDF you uploaded by clicking the badge — a published assessment always shows the
+        paper it assessed. Tick this to confirm you hold the right to distribute this file; for a
+        journal article that is usually the accepted manuscript, not the publisher's typeset
+        version. Withdrawing removes public access again.</span></label>
+    </div>`
+    : `<div class="opt-blocked">
+        <strong>No manuscript file is stored for this assessment,</strong> so it cannot be
+        published. Publishing always shows the paper, and papers assessed by DOI — or before file
+        retention was added — have no file to show. Re-run the assessment with the PDF uploaded
+        and you will be able to publish it.
+      </div>`}
 
     <div class="modal-actions">
-      <button class="btn btn-primary" id="pubSubmit" ${may ? "" : "disabled"}>Publish</button>
+      <button class="btn btn-primary" id="pubSubmit"
+              ${may && st.has_file ? "" : "disabled"}>Publish</button>
       <span class="profile-msg" id="pubMsg"></span>
     </div>`);
 
   const btn = document.getElementById("pubSubmit");
+  if (!st.has_file) {
+    btn.title = "No manuscript file is stored for this assessment.";
+    return;
+  }
   if (!may) {
     btn.title = "Publishing requires verified authorship — the submitter's name must match an "
               + "author on the manuscript.";
@@ -2986,11 +2998,11 @@ function renderDossierModal(item, idx) {
       ${typeof item.logic_integrity === "number" ? `<span class="pill p-logic">Logic ${item.logic_integrity.toFixed(1)}</span>` : ""}
       ${qualityPill(meta)}
       ${integrityPills(item)}
-      ${/* The publish seal appears here only when it has somewhere to go. With
-            a DOI it opens the published paper, which is exactly what a reader
-            of the dossier wants next; without one it would merely reopen the
-            dossier they are already looking at, so it is left out. */
-        safeDoi(item.doi) ? publishedBadge({ ...item, hash: item.hash || item.eval_hash }) : ""}
+      ${/* The publish seal appears here only when it has somewhere to go — the
+            stored manuscript or the DOI. Without either it would merely reopen
+            the dossier the reader is already looking at. */
+        (item.has_file || safeDoi(item.doi))
+          ? publishedBadge({ ...item, hash: item.hash || item.eval_hash }) : ""}
       ${peerReviewBadge(item)}
       ${llmReviewBadge({ ...item, hash: item.hash || item.eval_hash })}
     </div>
@@ -3839,6 +3851,29 @@ function redrawForecast() {
                             buildForecastChartConfig(lastForecastData, view));
 }
 
+/** 1234 -> "1,234". Visitor counts get large faster than paper counts do. */
+function formatCount(n) {
+  return Number(n || 0).toLocaleString("en-US");
+}
+
+/** Count this browser as a visitor, once per session.
+ *
+ *  sessionStorage rather than localStorage: the intent is one count per visit,
+ *  not one per browser forever. A returning visitor should register a new visit
+ *  tomorrow, and the server deduplicates them into the same unique visitor by
+ *  hashed address, so the "unique" figure stays honest either way.
+ *
+ *  Fire-and-forget. Nothing on the page depends on it, and a visitor counter
+ *  that can delay or break a page load has its priorities backwards.
+ */
+function pingVisit() {
+  try {
+    if (sessionStorage.getItem("sp_visit_counted")) return;
+    sessionStorage.setItem("sp_visit_counted", "1");
+  } catch (_) { /* private mode: count it, just not deduplicated */ }
+  fetch(`${API}/api/visit`, { method: "POST" }).catch(() => {});
+}
+
 // --- Summary stats bar ---
 async function loadAnalyticsSummary() {
   try {
@@ -3854,6 +3889,25 @@ async function loadAnalyticsSummary() {
     if (label) label.textContent = "Total piQ Minted";
     document.getElementById("statAvgScore").textContent = data.total_papers ? data.avg_score.toFixed(1) : "–";
     document.getElementById("statUniqueAuthors").textContent = data.unique_authors;
+
+    const v = data.visitors || {};
+    const vEl = document.getElementById("statVisitors");
+    if (vEl) {
+      vEl.textContent = formatCount(v.unique || 0);
+      // The recent-window figures go in the label rather than as a second
+      // headline: "unique visitors" is the number people came for, and the
+      // 7-day figure is context for it, not a competing statistic.
+      const label = vEl.parentElement.querySelector(".stat-label");
+      if (label) {
+        label.innerHTML = "Unique Visitors"
+          + (v.week ? `<br><span class="stat-sub">${formatCount(v.week)} in the last 7 days</span>` : "");
+      }
+      vEl.parentElement.title =
+        `${formatCount(v.unique || 0)} distinct visitors, ${formatCount(v.total || 0)} visits. `
+        + `${formatCount(v.day || 0)} today, ${formatCount(v.week || 0)} this week, `
+        + `${formatCount(v.month || 0)} this month. Counted by a keyed hash of the visitor's `
+        + `address — no IP is stored.`;
+    }
   } catch (e) { /* ignore */ }
 }
 
@@ -5164,6 +5218,7 @@ refreshSessionState();
 reconcileWalletConnection();
 
 renderSidebar();
+pingVisit();
 // Restore whatever this browser assessed previously, so a reload or a sign-out
 // no longer looks like the results were thrown away.
 renderResults();

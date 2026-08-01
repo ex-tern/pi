@@ -138,14 +138,20 @@ OVERLAY_MAX_FIELDS = 20
 TOKEN_TTL_SECONDS = MAX_RUN_MS // 1000 + 120
 _SECRET = (ETH_ADMIN_PRIVATE_KEY or "scholarpi_arcade_seed").encode("utf-8")
 
-# The domains a bubble can belong to. Kept here rather than derived from the
-# live database so the game is playable on a fresh install with no papers in
-# it, and so the client and server agree without an extra round trip.
-DOMAINS = [
-    "Physics", "Chemistry", "Biology", "Medicine", "Neuroscience",
-    "Computer Science", "Mathematics", "Materials", "Climate", "Genomics",
-    "Astronomy", "Economics", "Psychology", "Engineering", "Ecology",
-]
+# Bubbles are labelled ONLY with fields the assessed corpus actually contains.
+#
+# There used to be a fifteen-entry default taxonomy here — Physics, Chemistry,
+# Neuroscience and so on — mixed into every field so the map looked populated
+# on a fresh install. The cost of that was a map indistinguishable from a real
+# one: a player inspecting "Astronomy" was shown a card with a map weight and a
+# status, describing a field this deployment had never assessed a paper in. On
+# a platform whose entire claim is that its numbers are auditable, a decorative
+# taxonomy sitting in the same UI as real corpus counts is the wrong kind of
+# filler.
+#
+# An empty corpus now yields an honestly empty map, which the client already
+# has a state for (`corpus.is_empty`).
+UNASSIGNED = "Unassigned"
 
 
 def _b64(raw: bytes) -> str:
@@ -216,12 +222,14 @@ def generate_field(seed: int, overlay: Optional[List] = None) -> List[Dict]:
         except (IndexError, TypeError, ValueError):
             continue
 
-    # Domain list = default taxonomy, plus any real field the corpus contains
-    # that isn't already in it. Sorted so the ordering is deterministic.
-    domains = list(DOMAINS)
-    for name in sorted(weights):
-        if name not in domains:
-            domains.append(name)
+    # Only real fields. Sorted so the ordering is deterministic and a run
+    # replays identically on the server.
+    #
+    # With an empty corpus every bubble is UNASSIGNED and `live` is false, so
+    # the map is visibly empty rather than plausibly populated. The game is
+    # still playable — the bubbles have mass — it simply does not pretend the
+    # field names mean anything.
+    domains = sorted(weights) or [UNASSIGNED]
 
     busiest = max(weights.values()) if weights else 0
 

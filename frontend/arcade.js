@@ -24,22 +24,24 @@
   const WORLD_W = 3400;
   const WORLD_H = 2200;
 
-  const DOMAIN_COLORS = {
-    "Physics": "#6366f1", "Chemistry": "#14b8a6", "Biology": "#22c55e",
-    "Medicine": "#ef4444", "Neuroscience": "#a855f7", "Computer Science": "#3b82f6",
-    "Mathematics": "#f59e0b", "Materials": "#64748b", "Climate": "#0ea5e9",
-    "Genomics": "#ec4899", "Astronomy": "#8b5cf6", "Economics": "#84cc16",
-    "Psychology": "#f97316", "Engineering": "#06b6d4", "Ecology": "#10b981",
-  };
-  const FALLBACK_COLORS = ["#f472b6", "#38bdf8", "#a3e635", "#fbbf24", "#c084fc", "#2dd4bf"];
+  // Colours are assigned by hashing the field name, not from a fixed table.
+  //
+  // The table this replaces listed fifteen named disciplines, which was the
+  // client-side half of a taxonomy the server no longer invents — every field
+  // now comes from the assessed corpus, so there is no fixed set to enumerate.
+  // Hashing gives each real field a stable colour across loads without the
+  // palette implying which fields are supposed to exist.
+  const FIELD_COLORS = [
+    "#6366f1", "#14b8a6", "#22c55e", "#ef4444", "#a855f7", "#3b82f6",
+    "#f59e0b", "#0ea5e9", "#ec4899", "#84cc16", "#f97316", "#06b6d4",
+  ];
+  const UNASSIGNED_COLOR = "#cbd5e1";   // deliberately grey: it names nothing
 
-  // Fields discovered from the corpus won't be in the palette above. Hash the
-  // name to a stable colour so the same field is the same colour every load.
   function colorFor(domain) {
-    if (DOMAIN_COLORS[domain]) return DOMAIN_COLORS[domain];
+    if (!domain || domain === "Unassigned") return UNASSIGNED_COLOR;
     let h = 0;
     for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) >>> 0;
-    return FALLBACK_COLORS[h % FALLBACK_COLORS.length];
+    return FIELD_COLORS[h % FIELD_COLORS.length];
   }
 
   const state = {
@@ -297,8 +299,10 @@
     const el = document.getElementById("arcadeCorpus");
     if (!el || !corpus) return;
     if (corpus.is_empty) {
-      el.innerHTML = `<strong>No papers assessed yet.</strong> The map is showing the base
-        taxonomy of science. Assess a manuscript and its field grows here.`;
+      // No invented taxonomy to describe any more — the map shows unlabelled
+      // bubbles until there is something real to name them after.
+      el.innerHTML = `<strong>No papers assessed yet.</strong> The map has no fields to show, so
+        the bubbles are unlabelled. Assess a manuscript and its field appears here.`;
     } else if (!corpus.classified_papers) {
       // Papers exist but none carry a usable field. Saying "no papers
       // assessed" here would be flatly untrue, and this state has a specific
@@ -581,19 +585,28 @@
     const panel = document.getElementById("arcadeDetail");
     if (!panel) return;
     if (!b) { panel.innerHTML = `<p class="arcade-detail-empty">Select a field to inspect it.</p>`; return; }
-    const avg = b.papers ? "" : "";
+
+    // An unlabelled bubble is what an empty corpus looks like. It gets no
+    // paper count and no "field" framing, because there is no field — showing
+    // "Assessed papers 0" under a made-up name was the thing that made the map
+    // read as real data when it was not.
+    const unnamed = !b.domain || b.domain === "Unassigned";
     panel.innerHTML = `
       <div class="arcade-detail-head">
         <span class="arcade-swatch" style="background:${colorFor(b.domain)}"></span>
-        <strong>${escapeHtml(b.domain)}</strong>
+        <strong>${escapeHtml(unnamed ? "Unclaimed space" : b.domain)}</strong>
       </div>
       <dl class="arcade-detail-rows">
-        <div><dt>Assessed papers</dt><dd>${b.papers}</dd></div>
+        ${unnamed ? "" : `<div><dt>Assessed papers</dt><dd>${b.papers}</dd></div>`}
         <div><dt>Map weight</dt><dd>${b.mass.toFixed(1)}</dd></div>
-        <div><dt>Status</dt><dd>${b.live ? "In your corpus" : "Unexplored"}</dd></div>
+        <div><dt>Status</dt><dd>${
+          unnamed ? "No field yet" : (b.live ? "In our corpus" : "Unexplored")}</dd></div>
       </dl>
-      ${b.live
-        ? `<p class="arcade-detail-note">This field is part of your assessed corpus. Its size on
+      ${unnamed
+        ? `<p class="arcade-detail-note">This bubble carries no field, because nothing has been
+           assessed into one yet. Assess a manuscript and real fields replace it.</p>`
+        : b.live
+        ? `<p class="arcade-detail-note">This field is part of our assessed corpus. Its size on
            the map is driven by how many papers it holds.</p>`
         : `<p class="arcade-detail-note">No assessed papers in this field yet. Assess one and this
            bubble grows on the map.</p>`}`;
