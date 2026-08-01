@@ -65,29 +65,51 @@ from typing import Dict, Optional
 # because piQ's purpose is to record contribution, not to fund anything. If
 # the intent ever becomes to keep piQ economically meaningful at scale, this
 # is the constant to revisit — not the quality floor, which does different work.
-HALVING_INTERVAL = 250          # papers per halving epoch
+# Widened from 250 to 1,000. At 250 the corpus crossed a halving every few
+# weeks of modest use, so a researcher's second paper could mint half what
+# their first did for no reason they could see or influence. Scarcity that
+# arrives faster than a user can perceive the cause of reads as the system
+# quietly breaking, not as a designed schedule.
+HALVING_INTERVAL = 1000         # papers per halving epoch
 MAX_HALVINGS = 10               # floor: emission never drops below 1/1024
 
 # --- Base emission ---------------------------------------------------------
 # piQ = piX / 5 at genesis, so a strong paper (piX 80) mints 16 piQ rather
 # than 8. Generous early adoption is the point: piQ has to be earnable before
 # scarcity means anything.
-BASE_DIVISOR = 5.0
+# Lowered from 5.0 to 4.0: a piX 80 paper now mints 20 piQ rather than 16, and
+# a piX 40 paper 10 rather than 8. With a publication fee of ~1 piQ and an LLM
+# review at 0.5, one qualifying paper should comfortably fund several actions
+# on the platform — otherwise the currency records contribution in a unit too
+# small to spend.
+BASE_DIVISOR = 4.0
 
 # --- Quality bar -----------------------------------------------------------
 # Starts low enough that a competent paper qualifies, and rises slowly. The
 # previous 50 -> 75 over 2,000 papers excluded solid work almost immediately.
-FLOOR_PIX_INITIAL = 30.0        # minimum piX to mint, at genesis
-FLOOR_PIX_CEILING = 62.0        # asymptotic maximum for that minimum
-FLOOR_GROWTH_SCALE = 12000.0    # corpus size over which the bar approaches its ceiling
-LOGIC_FLOOR = 35.0              # logic integrity gate; a validity check, not difficulty
+FLOOR_PIX_INITIAL = 22.0        # minimum piX to mint, at genesis
+FLOOR_PIX_CEILING = 55.0        # asymptotic maximum for that minimum
+FLOOR_GROWTH_SCALE = 20000.0    # corpus size over which the bar approaches its ceiling
+
+# The logic gate is a validity check, not a difficulty dial, so it is lowered
+# with more care than the rest: it exists to stop internally incoherent work
+# from minting at all. 35 was rejecting manuscripts whose logic score was
+# depressed by extraction quality rather than by the argument — a scanned PDF
+# or an unusual structure can cost a paper 15 points it did not deserve to
+# lose. 22 still excludes genuinely incoherent submissions while no longer
+# punishing papers for how well they happened to parse.
+LOGIC_FLOOR = 22.0              # logic integrity gate; a validity check, not difficulty
 
 # --- Per-author decay ------------------------------------------------------
 # Decay exists to stop volume farming, not to punish productive researchers.
 # A 12-paper halflife penalised a normal publication record; 50 with a 0.5
 # floor means a prolific author still earns at least half rate.
-AUTHOR_DECAY_HALFLIFE = 50.0    # papers, per author, per halving of their own rate
-AUTHOR_MIN_FACTOR = 0.50        # never below half, so contribution always pays
+# Widened from 50 to 120 papers, with the floor raised from 0.50 to 0.75. The
+# decay is aimed at bulk submission, and a researcher with a normal career-long
+# output should never feel it — at 120 they are still near full rate after
+# dozens of papers, and never drop below three quarters.
+AUTHOR_DECAY_HALFLIFE = 120.0   # papers, per author, per halving of their own rate
+AUTHOR_MIN_FACTOR = 0.75        # never below three quarters, so contribution always pays
 
 
 def current_halving_epoch(total_papers: int) -> int:

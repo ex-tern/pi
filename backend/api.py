@@ -11,6 +11,7 @@ Production:  gunicorn api:app -c gunicorn.conf.py   (see README)
 """
 import os
 import io
+import re
 import json
 import uuid
 import decimal
@@ -31,7 +32,7 @@ import sqlite3
 import requests
 from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, PlainTextResponse, JSONResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, PlainTextResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 
@@ -71,6 +72,7 @@ from database import (
 )
 import arcade
 import diagnostics
+import paper_store
 from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
 import ledger as ledger_backup
 from integrations import (
@@ -1512,6 +1514,11 @@ class PublishRequest(BaseModel):
     doi: str = ""                   # required for a journal claim
     wallet: str = ""
     orcid: str = ""
+    # Publishing makes the stored manuscript publicly downloadable. The platform
+    # cannot know whether the uploader holds redistribution rights — a typeset
+    # version of record usually belongs to the publisher, not the author — so
+    # the claim is made explicitly by the person who does know, and recorded.
+    distribute_file: bool = False
 
 
 @app.get("/api/assessments/{file_hash}/publish")
@@ -1554,6 +1561,9 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
         # so the form can disable that option up front instead of letting a user
         # fill it in and be refused.
         "may_claim_journal": bool(identity["wallet"] and identity["orcid"]),
+        # Whether publishing would expose a stored file, so the form can ask
+        # for the redistribution attestation only when there is one to make.
+        "has_file": paper_store.has_paper(file_hash),
         "journal_blocked_reason": (
             "" if (identity["wallet"] and identity["orcid"]) else
             ("A journal claim needs both a signed wallet and a linked ORCID. You have "
@@ -1611,6 +1621,17 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     kind = (payload.kind or "author").strip().lower()
     if kind not in ("author", "journal"):
         raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
+
+    # Publishing exposes the stored manuscript. Refuse rather than assume: an
+    # author who has not said they may redistribute the file has not said it,
+    # and defaulting to "yes" would put the platform in the position of having
+    # published someone's copyrighted version of record on their behalf.
+    if paper_store.has_paper(file_hash) and not payload.distribute_file:
+        raise HTTPException(
+            status_code=400,
+            detail=("Publishing makes the uploaded manuscript publicly downloadable. Confirm you "
+                    "hold the right to distribute this file — for a journal article that is "
+                    "often the accepted manuscript rather than the publisher's typeset version."))
 
     attribution = verify_authorship(
         submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
@@ -1709,6 +1730,59 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
         "tier": tier,
         "message": msg + " You can withdraw it at any time, free of charge.",
     }
+
+
+@app.get("/api/papers/{file_hash}/file")
+def serve_paper_file(file_hash: str, request: Request,
+                     wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """The manuscript a published assessment is an assessment of.
+
+    Two ways to be allowed to read it, and no third:
+
+      * the assessment is PUBLISHED — its author chose to make it public and
+        attested they hold the right to distribute it; or
+      * you are the author, reading your own unpublished upload.
+
+    Retention is not publication. A file sitting in the store because someone
+    once ran an assessment is nobody's business but theirs until they publish
+    it, so an unpublished paper is 404 to everyone else — not 403, which would
+    confirm the paper exists to someone who should not know that.
+    """
+    path = paper_store.paper_path(file_hash)
+
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT published_at, title, user_id FROM papers_assessment WHERE eval_hash = ?",
+            (file_hash,)).fetchone()
+    except sqlite3.Error:
+        row = None
+    finally:
+        conn.close()
+
+    if not row or not path:
+        raise HTTPException(
+            status_code=404,
+            detail=("No manuscript file is stored for this assessment. Papers assessed before "
+                    "file retention was enabled, and papers submitted by DOI rather than upload, "
+                    "have no stored file — the DOI resolves to the published version instead."))
+
+    if not row[0]:
+        identity = auth.identity_from_request(request, wallet, orcid)
+        owns = bool(identity["verified"]
+                    and row[2]
+                    and row[2] in _identity_values(identity["wallet"], identity["orcid"]))
+        if not owns:
+            raise HTTPException(
+                status_code=404,
+                detail="No public manuscript file is available for this assessment.")
+
+    safe_title = re.sub(r"[^\w \-.]", "", (row[1] or "manuscript"))[:80].strip() or "manuscript"
+    return FileResponse(
+        path, media_type="application/pdf",
+        # inline: a reader clicking a badge wants to read the paper, not to
+        # find it in their downloads folder.
+        headers={"Content-Disposition": f'inline; filename="{safe_title}.pdf"'})
 
 
 class ReviewRequest(BaseModel):
@@ -2035,10 +2109,19 @@ def remove_assessment(file_hash: str, request: Request,
     if not result["deleted"]:
         raise HTTPException(status_code=404 if "not found" in result["reason"].lower() else 403,
                             detail=result["reason"])
-    add_log(f"Assessment {file_hash[:12]}… withdrawn by {key[:16] or 'owner'}")
-    return {"deleted": True,
-            "message": ("Paper removed from the corpus and all listings. Its ledger block "
-                        "remains, because the Proof-of-Research chain is append-only.")}
+    # The manuscript file goes with the paper. The ledger block is append-only
+    # and stays; the PDF is not part of the chain, and leaving a downloadable
+    # copy of a withdrawn paper on a public URL would make "remove" mean
+    # considerably less than it says.
+    file_removed = paper_store.delete_paper(file_hash)
+
+    add_log(f"Assessment {file_hash[:12]}… withdrawn by {key[:16] or 'owner'}"
+            + (" (stored manuscript deleted)" if file_removed else ""))
+    return {"deleted": True, "file_deleted": file_removed,
+            "message": ("Paper removed from the corpus and all listings"
+                        + (", and the stored manuscript file was deleted" if file_removed else "")
+                        + ". Its ledger block remains, because the Proof-of-Research chain is "
+                          "append-only.")}
 
 
 # ---------------------------------------------------------------------------
@@ -2664,6 +2747,12 @@ async def assess_stream(
             raise HTTPException(status_code=400, detail=why)
         file_payload.append((f.filename, raw))
         fingerprints.append(abuse_guard.document_fingerprint(raw))
+        # Retained so a published assessment can serve the manuscript it is an
+        # assessment OF. Keyed by sha256 of the bytes, which is the same value
+        # brain.py uses for eval_hash — so the file is addressable from the
+        # assessment with no extra bookkeeping. Storage failures are swallowed
+        # inside store_paper: losing the file must never fail a paid run.
+        paper_store.store_paper(raw)
 
     # DOI and discovery submissions are fingerprinted by identifier, since
     # their bytes are not available until retrieval.
@@ -4095,6 +4184,11 @@ def explorer_dossier(eval_hash: str):
         1 for r in reviews if not str(r.get("verdict", "")).startswith("llm"))
     dossier["llm_reviewed"] = any(
         str(r.get("verdict", "")).startswith("llm") for r in reviews)
+    # Only advertise the file when it is actually readable — the endpoint
+    # serves a published paper to anyone, and an unpublished one to nobody but
+    # its author. Advertising an unpublished file would produce a link that
+    # 404s for every reader who follows it.
+    dossier["has_file"] = bool(dossier["published"] and paper_store.has_paper(eval_hash))
     return dossier
 
 
