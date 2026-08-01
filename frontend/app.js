@@ -2280,9 +2280,13 @@ async function showReviewModal(hash) {
     <div class="opt-card">
       <div class="opt-head"><strong>LLM review</strong>
         <span class="pill p-piq">${llmFee.toFixed(2)} piQ</span></div>
-      <p>The model panel writes a critical review from the evidence it already gathered. Badged
-      <strong>LLM-reviewed</strong> — never peer-reviewed, because no human read it. Cheaper
-      because it buys inference, not someone's afternoon.</p>
+      <p>A language model reads <strong>the manuscript itself</strong> and writes a referee
+      report the way a journal reviewer would — claims against evidence, methodology, statistics,
+      novelty, reproducibility, and specific revisions — ending in a recommendation of accept,
+      minor revision, major revision or reject.</p>
+      <p>It does not use ScholarPi's criteria and knows nothing of your piX score, so it can
+      disagree with the assessment. Badged <strong>LLM-reviewed</strong>, never peer-reviewed,
+      because no human read it. Requires a stored manuscript file.</p>
       ${alreadyLlm
         ? `<p class="opt-done">This paper carries an LLM review. Open its badge to read it, or
              request a new one — each review is kept and dated.</p>`
@@ -2379,15 +2383,18 @@ async function showLlmReviewModal(hash) {
     return;
   }
 
+  // The legacy "llm-" prefix is stripped for old rows; new ones store an
+  // ordinary editorial recommendation and need no translation.
   const verdictLabel = (v) => String(v || "").replace(/^llm-/, "") || "unrecorded";
   openModal(`
-    <h2>LLM review</h2>
-    <p class="hint">Written by the model panel from the evidence report. Not peer review — no
-    human read the paper to produce this.</p>
+    <h2>Referee report</h2>
+    <p class="hint">An independent reading of the manuscript by a language model, in the
+    conventions of ordinary peer review. It does not use ScholarPi's criteria and may disagree
+    with the assessment. Not peer review — no human read the paper to produce this.</p>
     ${reviews.map(r => `
       <div class="opt-card">
         <div class="opt-head">
-          <strong>Verdict: ${escapeHtml(verdictLabel(r.verdict))}</strong>
+          <strong>Recommendation: ${escapeHtml(verdictLabel(r.verdict))}</strong>
           <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
         </div>
         <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>

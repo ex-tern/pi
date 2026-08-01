@@ -662,3 +662,33 @@ def reconcile_bibliographic_record(*, registry: Dict, layout: Dict,
         "authors_confidence": authors["confidence"], "authors_alternatives": authors["alternatives"],
         "journal": registry.get("journal", ""), "year": registry.get("year"),
     }
+
+
+def full_text_from_pdf(file_bytes: bytes, max_chars: int = 60000) -> str:
+    """The manuscript's own text, for anything that needs to read the paper.
+
+    Added for the LLM review, which previously had no access to the manuscript
+    at all and so reviewed ScholarPi's evidence report instead — a review of a
+    summary, not of the work. Now that uploads are retained, the reviewer can
+    read what the authors actually wrote.
+
+    Truncated rather than chunked: a review needs the argument, the methods and
+    the discussion, and 60k characters covers a normal paper. Papers longer than
+    that lose their tail, which is stated in the review rather than hidden.
+    """
+    if not file_bytes or fitz is None:
+        return ""
+    try:
+        doc = fitz.open(stream=file_bytes, filetype="pdf")
+        parts = []
+        total = 0
+        for page in doc:
+            t = page.get_text("text", sort=True) or ""
+            parts.append(t)
+            total += len(t)
+            if total >= max_chars:
+                break
+        return re.sub(r"\n{3,}", "\n\n", "\n".join(parts))[:max_chars]
+    except Exception as e:
+        logging.warning("Could not extract manuscript text: %s", e)
+        return ""
