@@ -858,7 +858,7 @@
     if (state.mode !== "play" || !state.player) return;
 
     const p = state.player;
-    const speed = 420 / (1 + p.mass / 150);
+    const speed = 420 / (1 + p.mass / 300);
     let dx = 0, dy = 0;
     if (state.pointer.active) { dx = state.pointer.x - p.x; dy = state.pointer.y - p.y; }
     if (state.keys.has("ArrowLeft") || state.keys.has("a")) dx -= 100;
