@@ -79,7 +79,7 @@ from integrations import (
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
     build_pdf_from_text, search_open_access_works,
 )
-from attribution import verify_authorship
+from attribution import verify_authorship, verify_journal_claim
 from extraction import fetch_registry_metadata
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
@@ -1550,6 +1550,16 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
         "published": published,
         "published_at": row[3],
         "may_publish": verified,
+        # Journal claims need both factors and a DOI that survives verification,
+        # so the form can disable that option up front instead of letting a user
+        # fill it in and be refused.
+        "may_claim_journal": bool(identity["wallet"] and identity["orcid"]),
+        "journal_blocked_reason": (
+            "" if (identity["wallet"] and identity["orcid"]) else
+            ("A journal claim needs both a signed wallet and a linked ORCID. You have "
+             + ("only an ORCID — connect and sign a wallet to enable it."
+                if identity["orcid"] else
+                "only a wallet — link your ORCID to enable it."))),
         "authorship_tier": attribution.get("tier") if attribution.get("verified") else (
             "escrow-claimed" if row[5] else "unverified"),
         "fee": fee,
@@ -1598,41 +1608,49 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
                 "message": ("Withdrawn. The badge is removed; the assessment and its ledger "
                             "block are unchanged. Re-publishing is free.")}
 
+    kind = (payload.kind or "author").strip().lower()
+    if kind not in ("author", "journal"):
+        raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
+
     attribution = verify_authorship(
         submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
         extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
-    if not (attribution.get("verified") or row[3]):
+
+    # An author-published badge accepts the escrow-claim as standing evidence of
+    # authorship. A journal claim does not: claiming escrow proves you satisfied
+    # the minting check at some point in the past, which says nothing about
+    # whether a particular DOI is yours.
+    escrow_ok = bool(row[3]) and kind != "journal"
+    if not (attribution.get("verified") or escrow_ok):
         raise HTTPException(
             status_code=403,
             detail=(attribution.get("reason") or "Authorship is not verified for this paper.")
                    + (" " + attribution["how_to_verify"] if attribution.get("how_to_verify") else ""))
 
-    kind = (payload.kind or "author").strip().lower()
-    if kind not in ("author", "journal"):
-        raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
-
-    # A journal claim is only accepted when a DOI actually resolves in a
-    # registry. Otherwise "Journal-published" would be a second badge you could
-    # simply assert — and an unverifiable badge is worse than no badge, because
-    # readers cannot tell which kind they are looking at.
+    journal_check = None
     if kind == "journal":
-        doi = (payload.doi or row[1] or "").strip()
-        if not doi:
+        # The strongest badge on the platform, so it carries the strongest
+        # identity requirement — both a signed wallet and a linked ORCID, the
+        # same bar as commissioning a review. One factor was enough to mint a
+        # permanent public claim about a journal that never made it.
+        if not (identity["wallet"] and identity["orcid"]):
+            missing = "a signed wallet" if not identity["wallet"] else "a linked ORCID"
             raise HTTPException(
-                status_code=400,
-                detail=("A journal claim needs a DOI. Submit the DOI of the published version — "
-                        "it is checked against Crossref/OpenAlex, not taken on trust."))
-        try:
-            meta = fetch_registry_metadata(doi)
-        except Exception as e:
-            logging.warning("Registry lookup failed for %s: %s", doi, e)
-            meta = {}
-        if not (meta or {}).get("title"):
+                status_code=403,
+                detail=(f"A journal claim needs both a signed wallet and a linked ORCID; you are "
+                        f"missing {missing}. The wallet proves control of the account making the "
+                        f"claim, the ORCID ties it to a research identity the registry can be "
+                        f"checked against. Author-publishing needs only one and is available now."))
+
+        journal_check = verify_journal_claim(
+            doi=(payload.doi or row[1] or ""), orcid=identity["orcid"],
+            assessed_title=row[2] or "", assessed_authors=row[0] or "")
+        if not journal_check["ok"]:
+            add_log(f"Journal claim REFUSED on {file_hash[:12]}… — {journal_check['reason'][:120]}")
             raise HTTPException(
                 status_code=422,
-                detail=(f"That DOI could not be resolved in Crossref or OpenAlex, so a journal "
-                        f"publication cannot be confirmed. Author-publishing is available now, "
-                        f"and you can switch to a journal claim once the DOI is registered."))
+                detail=journal_check["reason"]
+                       + (" " + journal_check["how_to_fix"] if journal_check["how_to_fix"] else ""))
 
     fee = publication_fee(safe_float(row[4], 0.0))["fee"]
     if fee > 0 and not publication_fee_paid(file_hash, identities):
@@ -1653,18 +1671,43 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     result = set_published(file_hash, identities, key, True, kind=kind)
     if not result["ok"]:
         raise HTTPException(status_code=403, detail=result["reason"])
-    add_log(f"Assessment {file_hash[:12]}… published ({kind}) by {key[:16]}… "
-            f"(tier {attribution.get('tier') or 'escrow-claimed'})")
+
+    # Record the DOI the claim was actually verified against. Without this the
+    # badge would be backed by whatever DOI happened to be on the row, which
+    # need not be the one that passed the check.
+    if kind == "journal" and journal_check:
+        verified_doi = (payload.doi or row[1] or "").replace("https://doi.org/", "").strip()
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE papers_assessment SET doi = ? WHERE eval_hash = ?",
+                         (verified_doi, file_hash))
+            conn.commit()
+        except sqlite3.Error as e:
+            logging.warning("Could not store verified DOI for %s: %s", file_hash[:12], e)
+        finally:
+            conn.close()
+
+    tier = (journal_check or {}).get("tier") or attribution.get("tier") or "escrow-claimed"
+    add_log(f"Assessment {file_hash[:12]}… published ({kind}) by {key[:16]}… (tier {tier})")
+
+    if kind == "journal":
+        reg = (journal_check or {}).get("registry", {})
+        msg = (f"Published. This assessment now carries a Journal-published badge. The DOI "
+               f"resolves in {reg.get('basis') or 'a registry'}, the registered title matches "
+               f"this manuscript, and you are confirmed as an author "
+               f"({'deposited ORCID' if tier == 'registry-orcid' else 'deposited author name'}).")
+    else:
+        msg = ("Published. Your assessment now carries an Author-published badge wherever it "
+               "appears. This is your own endorsement, not a claim of journal publication.")
+
     return {
         "published": True,
         "charged": 0.0 if publication_fee_paid(file_hash, identities) and False else fee,
         "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
         "kind": kind,
-        "message": (("Published. Your assessment now carries a Journal-published badge, backed by "
-                     "a DOI that resolves in a registry."
-                     if kind == "journal" else
-                     "Published. Your assessment now carries an Author-published badge wherever "
-                     "it appears.") + " You can withdraw it at any time, free of charge."),
+        "verification": journal_check.get("registry") if journal_check else None,
+        "tier": tier,
+        "message": msg + " You can withdraw it at any time, free of charge.",
     }
 
 
