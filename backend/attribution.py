@@ -304,3 +304,144 @@ def verify_authorship(*, submitter_orcid: str = "", submitter_wallet: str = "",
         "PDF. Otherwise, check that your ORCID profile name matches your published byline."
     )
     return result
+
+
+# ---------------------------------------------------------------------------
+# Journal-publication claims
+# ---------------------------------------------------------------------------
+# "Journal-published" is the strongest badge the platform issues, and it was
+# also the easiest to obtain: the only test was that the submitted DOI resolved
+# in a registry. That asks one question and skips the two that matter.
+#
+#   * It never asked whether the DOI is THIS manuscript. Any real DOI passed —
+#     including the example DOI printed in the form's own placeholder — so a
+#     famous paper's identifier could be pasted onto an unrelated draft.
+#   * It never asked whether the claimant is an author OF that DOI. Resolving a
+#     stranger's work proves the work exists, not that it is yours.
+#
+# A badge anyone can mint by copying a string from a search result is worse
+# than no badge, because a reader cannot tell the honest ones from the rest.
+# All three questions are now asked, and each is answered against the
+# publisher's deposited record rather than the submitter's assertion.
+
+JOURNAL_TITLE_MATCH_RATIO = 0.75   # registry title vs assessed manuscript title
+
+
+def _title_similarity(a: str, b: str) -> float:
+    """How close two titles are, ignoring case, accents and punctuation."""
+    na, nb = normalize_name(a), normalize_name(b)
+    if not na or not nb:
+        return 0.0
+    if na == nb:
+        return 1.0
+    # A preprint often carries a subtitle the published version drops (or the
+    # reverse), so containment counts as a strong match rather than a partial.
+    if len(na) > 25 and len(nb) > 25 and (na in nb or nb in na):
+        return 0.95
+    return difflib.SequenceMatcher(None, na, nb).ratio()
+
+
+def verify_journal_claim(*, doi: str, orcid: str, assessed_title: str,
+                         assessed_authors: str = "") -> Dict:
+    """Whether this DOI may back a Journal-published badge for this person.
+
+    Three independent conditions, all required:
+
+      1. The DOI resolves in Crossref or OpenAlex.
+      2. The work it resolves to IS the assessed manuscript (title match).
+      3. The claimant is an author of that work — by deposited ORCID (strongest)
+         or by their ORCID profile name matching a deposited author.
+
+    Returns ``{ok, reason, how_to_fix, tier, registry}``. Every failure names
+    which condition failed and what would satisfy it, because a refusal a user
+    cannot act on is indistinguishable from a bug.
+    """
+    out = {"ok": False, "reason": "", "how_to_fix": None, "tier": "unverified",
+           "registry": {}}
+
+    doi = (doi or "").replace("https://doi.org/", "").strip().rstrip(".")
+    if not doi:
+        out["reason"] = "A journal claim needs a DOI."
+        out["how_to_fix"] = ("Enter the DOI of the published version. It is checked against "
+                             "Crossref and OpenAlex, not taken on trust.")
+        return out
+
+    if not re.match(r"^10\.\d{4,9}/\S+$", doi):
+        out["reason"] = f"'{doi}' is not a well-formed DOI."
+        out["how_to_fix"] = "A DOI looks like 10.1038/s41586-021-03819-2."
+        return out
+
+    # --- 1. Does it resolve? ------------------------------------------------
+    try:
+        from extraction import fetch_registry_metadata
+        meta = fetch_registry_metadata(doi) or {}
+    except Exception as e:
+        logging.warning("Registry lookup failed for %s: %s", doi, e)
+        meta = {}
+    out["registry"] = {k: meta.get(k) for k in ("title", "authors", "year", "journal", "basis")}
+
+    if not meta.get("title"):
+        out["reason"] = ("That DOI could not be resolved in Crossref or OpenAlex, so journal "
+                         "publication cannot be confirmed.")
+        out["how_to_fix"] = ("Author-publish for now and switch to a journal claim once the DOI "
+                             "is registered — deposits can take a few days to appear.")
+        return out
+
+    # --- 2. Is it THIS paper? ----------------------------------------------
+    ratio = _title_similarity(meta["title"], assessed_title or "")
+    if ratio < JOURNAL_TITLE_MATCH_RATIO:
+        out["reason"] = (
+            f"That DOI resolves to a different work. The registry has "
+            f"\"{meta['title'][:120]}\", and this assessment is of "
+            f"\"{(assessed_title or 'an untitled manuscript')[:120]}\".")
+        out["how_to_fix"] = ("Use the DOI of this manuscript's published version. A DOI belonging "
+                             "to another paper cannot back a claim about this one.")
+        out["registry"]["title_match"] = round(ratio, 3)
+        return out
+    out["registry"]["title_match"] = round(ratio, 3)
+
+    # --- 3. Are YOU an author of it? ---------------------------------------
+    if not orcid:
+        out["reason"] = "A journal claim requires a linked ORCID."
+        out["how_to_fix"] = ("Link ORCID in the sidebar. It is what lets the publisher's "
+                             "deposited author record be checked against you.")
+        return out
+
+    try:
+        deposited = registry_orcids_for_doi(doi)
+    except Exception as e:
+        logging.debug("Deposited ORCID lookup failed for %s: %s", doi, e)
+        deposited = []
+
+    if orcid in deposited:
+        out.update({"ok": True, "tier": "registry-orcid",
+                    "reason": "Your ORCID is listed as an author in the publisher's record."})
+        return out
+
+    # Fall back to matching your ORCID profile name against the deposited
+    # byline. Weaker than a deposited ORCID — names collide, ORCIDs do not —
+    # so it is recorded as a distinct, lower tier rather than presented as
+    # equivalent evidence.
+    profile_name = None
+    try:
+        profile_name = fetch_orcid_profile_name(orcid)
+    except Exception as e:
+        logging.debug("ORCID profile lookup failed for %s: %s", orcid, e)
+
+    registry_authors = [a.strip() for a in (meta.get("authors") or "").split(",") if a.strip()]
+    if profile_name and any(names_match(profile_name, a) for a in registry_authors):
+        out.update({"ok": True, "tier": "registry-name",
+                    "reason": (f"Your ORCID profile name ({profile_name}) matches an author in "
+                               f"the publisher's deposited record.")})
+        return out
+
+    shown = ", ".join(registry_authors[:4]) + ("…" if len(registry_authors) > 4 else "")
+    out["reason"] = (
+        f"You are not listed as an author of that DOI. The publisher's record names "
+        f"{shown or 'no authors'}, and your ORCID ({orcid}) is not among the deposited ORCIDs"
+        + (f" — your profile name reads {profile_name}." if profile_name else "."))
+    out["how_to_fix"] = (
+        "Ask the publisher to deposit your ORCID against the work, or make sure your ORCID "
+        "profile name matches your published byline. Author-publishing needs neither and is "
+        "available now.")
+    return out

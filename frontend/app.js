@@ -2416,12 +2416,20 @@ async function showPublishModal(hash) {
       <label class="opt-radio"><input type="radio" name="pubkind" value="author" checked>
         <span><strong>Author-published</strong> — you confirm this is your work and choose to
         stand behind the assessment.</span></label>
-      <label class="opt-radio"><input type="radio" name="pubkind" value="journal">
-        <span><strong>Journal-published</strong> — the work appeared in a journal. Requires a DOI,
-        which is checked against Crossref/OpenAlex rather than taken on trust.</span></label>
+      <label class="opt-radio ${st.may_claim_journal === false ? "opt-locked" : ""}">
+        <input type="radio" name="pubkind" value="journal"
+               ${st.may_claim_journal === false ? "disabled" : ""}>
+        <span><strong>Journal-published</strong> — the work appeared in a journal. Three checks,
+        all against the publisher's record: the DOI must resolve, it must resolve to
+        <em>this</em> manuscript, and you must be listed as one of its authors.</span></label>
+      ${st.journal_blocked_reason
+        ? `<div class="opt-inactive">${escapeHtml(st.journal_blocked_reason)}</div>` : ""}
       <label class="bug-label" for="pubDoi">DOI <span class="hint-inline">for a journal claim</span></label>
       <input class="bug-input" id="pubDoi" placeholder="10.1038/s41586-021-03819-2"
+             ${st.may_claim_journal === false ? "disabled" : ""}
              value="${escapeHtml(st.doi || "")}">
+      <div class="hint" style="margin-top:6px;">A DOI belonging to another paper will be
+      refused — the registered title is compared against this manuscript.</div>
     </div>
 
     <div class="${may ? "opt-ok" : "opt-blocked"}">
