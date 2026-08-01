@@ -67,14 +67,12 @@ MAX_RUN_MS = 20 * 60_000   # runs longer than 20 minutes are not accepted
 # run needs ~37 absorptions, i.e. ~3.3s at the permitted rate.)
 
 # --- Reward policy --------------------------------------------------------
-# A win grants allowance; the lifetime cap and the difficulty ramp are what
-# keep it from being a renewable income stream. There is deliberately no time
-# cooldown: making a player who has already won wait out a clock punishes the
-# fastest honest players and does nothing the cap does not already do.
+# A win grants allowance; the cap and cooldown are what keep it from being a
+# renewable income stream. Tuned so a player can earn a meaningful trial run
+# but not farm the service.
 REWARD_PER_WIN = 3
 BONUS_CAP = 9              # lifetime ceiling on arcade-earned allowance per IP
-COOLDOWN_SECONDS = 0       # retained for API shape; no time limit is enforced
-PIQ_PER_WIN = 1.0          # piQ credited to a signed-in player for a verified win
+COOLDOWN_SECONDS = 6 * 3600
 
 # --- Difficulty ramp ------------------------------------------------------
 # Each win makes the next run harder, until winning becomes arithmetically
@@ -463,15 +461,17 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
 
 
 def cooldown_remaining(last_award: Optional[str]) -> int:
-    """Always 0: rewards are no longer time-limited.
-
-    The waiting period is gone. What stops an arcade win from being a renewable
-    income stream is now the lifetime ``BONUS_CAP`` plus the difficulty ramp,
-    both of which bite on the *number* of wins rather than the clock — so a
-    player who wins twice in a minute is treated the same as one who spaced the
-    wins six hours apart, which is the honest reading of the same achievement.
-
-    The function is kept (rather than deleted) so callers, the API shape and
-    the client's `cooldown_remaining` field all stay valid.
-    """
-    return 0
+    """Seconds left before this IP may earn another reward. 0 when ready."""
+    if not last_award:
+        return 0
+    from datetime import datetime, timezone
+    for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M:%S.%f"):
+        try:
+            ts = datetime.strptime(str(last_award), fmt).replace(tzinfo=timezone.utc)
+            break
+        except ValueError:
+            continue
+    else:
+        return 0
+    elapsed = (datetime.now(timezone.utc) - ts).total_seconds()
+    return max(0, int(COOLDOWN_SECONDS - elapsed))
