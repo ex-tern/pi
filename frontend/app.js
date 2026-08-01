@@ -2154,9 +2154,26 @@ function renderResults() {
  *    grey   — nothing was earned
  */
 function piqPill(item) {
-  const minted = Number((item && item.piq) || item.piq_minted || 0);
-  const held = Number(
-    (item && item.escrowed != null ? item.escrowed : ((item.emission || {}).escrowed || 0)) || 0);
+  item = item || {};
+  const emission = item.emission || {};
+
+  // The same assessment reaches this function in three shapes — a live result,
+  // a history row, a stored dossier — and each names these figures slightly
+  // differently. Rather than guess one source, take the first field that is
+  // actually present, in order of authority: the explicit column, then the
+  // alternate column name, then the emission blob (which is empty for rows
+  // assessed before it existed, and was the reason this pill read 0.00 on
+  // papers that had clearly minted piQ).
+  const first = (...vals) => {
+    for (const v of vals) {
+      const n = Number(v);
+      if (v != null && v !== "" && isFinite(n)) return n;
+    }
+    return 0;
+  };
+
+  const minted = first(item.piq, item.piq_minted, emission.minted);
+  const held = first(item.escrowed, item.piq_escrowed, emission.escrowed);
   const total = minted + held;
   const why = typeof rewardExplanation === "function" ? rewardExplanation(item) : "";
 
