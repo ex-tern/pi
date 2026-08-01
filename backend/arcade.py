@@ -91,8 +91,15 @@ PIQ_PER_WIN = 1.0          # piQ credited to a signed-in player for a verified w
 # token, so the server replays each run against exactly the parameters the
 # client was given. It cannot be edited in the browser, and a token issued at
 # level 2 can never be verified as though it were level 0.
-DIFFICULTY_WIN_STEP = 1.18     # win threshold multiplier per level
+DIFFICULTY_WIN_STEP = 1.18     # retained for API shape; the win is now clearing
 DIFFICULTY_ABSORB_STEP = 0.88  # absorb efficiency multiplier per level
+# The real difficulty lever, now that winning means clearing the field rather
+# than passing a mass threshold. Raising the top of the mass ladder makes the
+# largest fields harder to grow into: at some level the greedy optimum stalls
+# with bubbles still standing, and that level is genuinely unwinnable.
+# Absorb decay alone could not do this — with ninety bubbles the ladder steps
+# are small enough that even a poor ratio compounds all the way to the top.
+DIFFICULTY_SPREAD_STEP = 1.16  # heaviest-bubble multiplier per level
 MAX_DIFFICULTY_LEVEL = 12      # hard ceiling; unwinnable well before this
 
 
@@ -105,30 +112,51 @@ def difficulty_params(level: int) -> Dict:
         "absorb_ratio": round(ABSORB_RATIO * (DIFFICULTY_ABSORB_STEP ** level), 5),
         "start_mass": START_MASS,
         "field_size": FIELD_SIZE,
+        "spread": round(DIFFICULTY_SPREAD_STEP ** level, 5),
     }
 
 
-def max_attainable_mass(seed: int, overlay: Optional[List], level: int) -> float:
-    """Upper bound on the mass a perfect run could reach on this field.
+def optimal_run(seed: int, overlay: Optional[List], level: int) -> Dict:
+    """Replay the optimal strategy: eat ascending, repeatedly, while you can.
 
-    Computed by eating every bubble that is ever smaller than the player, in
-    ascending size order — the optimal strategy. This is what makes
-    "unwinnable" a statement of fact rather than a guess: if the bound is below
-    the win threshold, no sequence of moves wins, and the UI can say so plainly
-    instead of letting the player grind at something impossible.
+    Repeatedly matters. Eating in one ascending pass under-counts, because a
+    bubble too large early becomes edible once the player has grown on smaller
+    ones. The loop keeps sweeping until a full pass absorbs nothing, which is
+    the true fixed point of the greedy strategy and therefore the real upper
+    bound on what a perfect run can clear.
     """
     params = difficulty_params(level)
-    bubbles = sorted(generate_field(seed, overlay), key=lambda b: b["mass"])
+    bubbles = sorted(generate_field(seed, overlay, level), key=lambda b: b["mass"])
     mass = params["start_mass"]
-    for bubble in bubbles:
-        if bubble["mass"] >= mass:
-            continue
-        mass += bubble["mass"] * params["absorb_ratio"]
-    return round(mass, 2)
+    eaten = set()
+    progress = True
+    while progress:
+        progress = False
+        for b in bubbles:
+            if b["id"] in eaten or b["mass"] >= mass:
+                continue
+            mass += b["mass"] * params["absorb_ratio"]
+            eaten.add(b["id"])
+            progress = True
+    return {"mass": round(mass, 2), "absorbed": len(eaten), "total": len(bubbles),
+            "clears": len(eaten) == len(bubbles)}
+
+
+def max_attainable_mass(seed: int, overlay: Optional[List], level: int) -> float:
+    """Upper bound on the mass a perfect run could reach on this field."""
+    return optimal_run(seed, overlay, level)["mass"]
 
 
 def is_winnable(seed: int, overlay: Optional[List], level: int) -> bool:
-    return max_attainable_mass(seed, overlay, level) >= difficulty_params(level)["win_mass"]
+    """Whether the whole field can be cleared.
+
+    The win condition is now clearing the map, not passing a mass threshold —
+    so winnability has to ask the same question. A field where the greedy
+    optimum stalls with bubbles left standing is unwinnable however much mass
+    the player accumulates, and the UI says so rather than letting someone
+    grind at something arithmetically impossible.
+    """
+    return optimal_run(seed, overlay, level)["clears"]
 
 
 # Cap on how many real corpus fields ride inside the signed token. Bounded so a
@@ -193,7 +221,8 @@ class _Rng:
         return self.next_u32() / 0x100000000
 
 
-def generate_field(seed: int, overlay: Optional[List] = None) -> List[Dict]:
+def generate_field(seed: int, overlay: Optional[List] = None,
+                   level: int = 0) -> List[Dict]:
     """Rebuilds the exact set of bubbles a given seed and corpus snapshot produce.
 
     Masses are drawn on a curve that guarantees a playable opening: the first
@@ -215,45 +244,95 @@ def generate_field(seed: int, overlay: Optional[List] = None) -> List[Dict]:
     the run while staying live from run to run.
     """
     overlay = overlay or []
-    weights = {}
+    weights, domains_of = {}, {}
     for entry in overlay:
         try:
-            weights[str(entry[0])] = int(entry[1])
+            name = str(entry[0])
+            weights[name] = int(entry[1])
+            # Third element is the parent domain, added so bubbles can be
+            # coloured by discipline rather than by an arbitrary hash. Older
+            # tokens carry only two elements and still decode.
+            domains_of[name] = str(entry[2]) if len(entry) > 2 and entry[2] else UNASSIGNED
         except (IndexError, TypeError, ValueError):
             continue
 
-    # Only real fields. Sorted so the ordering is deterministic and a run
-    # replays identically on the server.
+    fields = sorted(weights)
+    if not fields:
+        # Empty corpus: one unlabelled field, so the map is visibly empty
+        # rather than plausibly populated.
+        fields = [UNASSIGNED]
+        weights = {UNASSIGNED: 0}
+        domains_of = {UNASSIGNED: UNASSIGNED}
+
+    # --- How many bubbles each field gets -------------------------------
+    # Proportional to its share of the corpus, with a floor of one so every
+    # assessed field is visible however small. Bubble COUNT is share of the
+    # corpus; bubble SIZE is the field's weight. Both come from paper counts,
+    # neither from the RNG.
+    total_papers = sum(weights.values())
+    quota = []
+    for name in fields:
+        if total_papers > 0:
+            share = weights[name] / total_papers
+            n = max(1, int(round(share * FIELD_SIZE)))
+        else:
+            n = max(1, FIELD_SIZE // len(fields))
+        quota.append([name, n])
+
+    # Reconcile rounding against FIELD_SIZE exactly, largest field absorbing
+    # the slack. The field must be exactly FIELD_SIZE bubbles or verification
+    # and the client disagree about what exists.
+    allocated = sum(n for _, n in quota)
+    if allocated != FIELD_SIZE and quota:
+        biggest = max(range(len(quota)), key=lambda i: (weights[quota[i][0]], quota[i][0]))
+        quota[biggest][1] = max(1, quota[biggest][1] + (FIELD_SIZE - allocated))
+        allocated = sum(n for _, n in quota)
+        while allocated > FIELD_SIZE:                 # trim from the largest
+            for q in sorted(quota, key=lambda q: -q[1]):
+                if allocated == FIELD_SIZE:
+                    break
+                if q[1] > 1:
+                    q[1] -= 1
+                    allocated -= 1
+
+    # --- Mass ladder, ordered by paper count ----------------------------
+    # Every slot on the ladder is assigned to a field in ascending order of
+    # papers, so a field with more assessed work is systematically a bigger,
+    # heavier bubble. Size is now a reading of the corpus rather than an
+    # RNG draw with a small paper-count nudge on top.
     #
-    # With an empty corpus every bubble is UNASSIGNED and `live` is false, so
-    # the map is visibly empty rather than plausibly populated. The game is
-    # still playable — the bubbles have mass — it simply does not pretend the
-    # field names mean anything.
-    domains = sorted(weights) or [UNASSIGNED]
+    # The ladder itself is retained because it is what keeps the game
+    # playable: the smallest bubbles must sit below START_MASS or the player
+    # spawns unable to eat anything, and the largest must be reachable only
+    # after real growth.
+    slots = []
+    for name, n in quota:
+        slots.extend([name] * n)
+    slots.sort(key=lambda name: (weights.get(name, 0), name))
 
     busiest = max(weights.values()) if weights else 0
-
+    # Difficulty stretches the ladder rather than shifting it: the smallest
+    # bubbles stay below START_MASS so the player can always begin, while the
+    # heaviest grow out of reach. That is what makes a high level hard and
+    # eventually impossible, in a way the player can see on the map.
+    spread = DIFFICULTY_SPREAD_STEP ** max(0, min(int(level or 0), MAX_DIFFICULTY_LEVEL))
     rng = _Rng(seed)
     field = []
-    for i in range(FIELD_SIZE):
-        # Progression factor: early bubbles small, late bubbles large.
+    for i, name in enumerate(slots[:FIELD_SIZE]):
         t = i / max(1, FIELD_SIZE - 1)
-        base = 6.0 + (t ** 1.6) * 78.0
-        jitter = 0.7 + rng.next_float() * 0.6
-        domain = domains[rng.next_u32() % len(domains)]
-
-        # A field carrying real papers is visibly heavier, scaled against the
-        # busiest field so the map is readable whether the corpus holds three
-        # papers or three thousand. Capped at +60% so a single dominant field
-        # cannot make the game unwinnable.
-        papers = weights.get(domain, 0)
-        boost = 1.0 + (0.6 * (papers / busiest)) if busiest else 1.0
+        base = 6.0 + (t ** 1.6) * 78.0 * spread
+        # Jitter is now small and cosmetic — enough to stop the map looking
+        # like a bar chart, never enough to reorder two fields by size.
+        jitter = 0.94 + rng.next_float() * 0.12
+        papers = weights.get(name, 0)
+        boost = 1.0 + (0.35 * (papers / busiest)) if busiest else 1.0
         mass = round(base * jitter * boost, 3)
 
         field.append({
             "id": i,
             "mass": mass,
-            "domain": domain,
+            "domain": name,                       # the field itself
+            "parent": domains_of.get(name, UNASSIGNED),   # its discipline
             "papers": papers,
             "live": papers > 0,
             "x": round(rng.next_float(), 5),
@@ -267,9 +346,9 @@ def generate_field(seed: int, overlay: Optional[List] = None) -> List[Dict]:
 def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
     """Compacts corpus stats into the minimal form the token can carry.
 
-    Only the field name and paper count survive: those are the two inputs
-    ``generate_field`` needs, and keeping the payload small keeps the signed
-    token short enough to sit comfortably in a JSON body.
+    Field name, paper count and parent domain survive: the first two size the
+    bubbles, the third colours them by discipline. Everything else is dropped
+    to keep the signed token small enough to sit in a JSON body.
     """
     overlay = []
     for row in (corpus_stats or [])[:OVERLAY_MAX_FIELDS]:
@@ -277,7 +356,8 @@ def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
         if not name:
             continue
         try:
-            overlay.append([name, int(row.get("papers", 0))])
+            overlay.append([name, int(row.get("papers", 0)),
+                            str(row.get("domain") or "")[:40]])
         except (TypeError, ValueError):
             continue
     return overlay
@@ -301,7 +381,7 @@ def start_session(ip: str, corpus_stats: Optional[List[Dict]] = None,
         separators=(",", ":"), sort_keys=True,
     )
     encoded = _b64(payload.encode("utf-8"))
-    field = generate_field(seed, overlay)
+    field = generate_field(seed, overlay, params["level"])
 
     # Legend rows carry the analytics the map UI needs (paper counts, mean piX)
     # but that the *game* must not depend on. They travel outside the signed
@@ -425,7 +505,7 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
     if duration_ms <= 0 or duration_ms > MAX_RUN_MS:
         return {"valid": False, "won": False, "reason": "Run duration is out of range."}
 
-    field = {b["id"]: b for b in generate_field(seed, overlay)}
+    field = {b["id"]: b for b in generate_field(seed, overlay, level)}
     mass = params["start_mass"]
     seen = set()
     last_t = -MIN_EAT_INTERVAL_MS
@@ -457,7 +537,10 @@ def verify_run(ip: str, token: str, absorbed: List[Dict], duration_ms: int) -> D
         last_t = t
         mass += bubble["mass"] * params["absorb_ratio"]
 
-    won = mass >= params["win_mass"]
+    # The run is won by clearing the field. A mass threshold ended the game
+    # while most of the corpus was still on screen, which made "absorb the map"
+    # the stated goal and "reach 140" the actual one. Every bubble must go.
+    won = len(seen) == FIELD_SIZE
     return {
         "valid": True,
         "won": won,
