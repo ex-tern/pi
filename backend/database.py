@@ -199,6 +199,22 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE TABLE IF NOT EXISTS global_eval_counter (count INTEGER)")
     cursor.execute("CREATE TABLE IF NOT EXISTS desci_attestations (attestation_id TEXT PRIMARY KEY, eval_hash TEXT, attester_id TEXT, stake_amount REAL, stance TEXT, timestamp DATETIME)")
     cursor.execute("CREATE TABLE IF NOT EXISTS auto_ip_tracking (ip_address TEXT PRIMARY KEY, first_seen DATETIME)")
+
+    # Site visits. Deliberately NOT reusing auto_ip_tracking: that table exists
+    # to meter the free trial and only ever sees people who submit a paper, so
+    # counting it would report "visitors" while measuring submitters.
+    #
+    # visitor_key is a keyed hash of the IP, never the address itself. A raw IP
+    # log is personal data under GDPR and would need a retention policy, a
+    # lawful basis and a way to honour erasure requests — none of which a
+    # visitor counter is worth. The hash counts distinct visitors and cannot be
+    # reversed into who they were.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS site_visits (
+                        visitor_key TEXT PRIMARY KEY,
+                        first_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        visits INTEGER DEFAULT 1)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_site_visits_last ON site_visits(last_seen)")
     cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
                         account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
                         goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
@@ -1861,8 +1877,14 @@ def review_summary(eval_hash: str) -> dict:
     """Completed reviews for a paper. The badge derives from this, not payment."""
     conn = get_db_connection()
     try:
+        # reviewer_key is selected because it, not the verdict string, is what
+        # says whether the panel or a human wrote a review. Callers were
+        # classifying on `verdict.startswith("llm")` while the badge queries
+        # counted `reviewer_key = 'llm:panel'` — two definitions of the same
+        # fact, which disagreed on any row where the verdict was stored without
+        # the prefix. The badge appeared and the review list came back empty.
         rows = conn.execute(
-            """SELECT verdict, comment, completed_at FROM peer_reviews
+            """SELECT verdict, comment, completed_at, reviewer_key FROM peer_reviews
                WHERE eval_hash = ? AND completed_at IS NOT NULL
                ORDER BY completed_at DESC""", (eval_hash,)).fetchall()
         pending = conn.execute(
@@ -1878,5 +1900,65 @@ def review_summary(eval_hash: str) -> dict:
         "pending": int(pending[0]) if pending else 0,
         # Reviewer identity is deliberately absent: this is single-blind, and
         # publishing who reviewed what would deter honest negative reviews.
-        "reviews": [{"verdict": r[0], "comment": r[1], "completed_at": r[2]} for r in rows],
+        # `is_llm` is the one exception, and it is not an identity — the panel
+        # is not a person, and a reader must be able to tell machine from human.
+        "reviews": [{
+            "verdict": r[0], "comment": r[1], "completed_at": r[2],
+            "is_llm": (r[3] == "llm:panel") or str(r[0] or "").startswith("llm"),
+        } for r in rows],
+    }
+
+
+# ---------------------------------------------------------------------------
+# Site visits
+# ---------------------------------------------------------------------------
+def record_visit(visitor_key: str) -> None:
+    """Note that a visitor was here. Idempotent per visitor.
+
+    An UPSERT rather than a SELECT-then-INSERT: two tabs opening at once would
+    otherwise race and either double-count or fail on the primary key.
+
+    Never raises. A visitor counter is a nice-to-have; it must not be able to
+    break a page load for the person being counted.
+    """
+    if not visitor_key:
+        return
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO site_visits (visitor_key, first_seen, last_seen, visits)
+               VALUES (?, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP, 1)
+               ON CONFLICT(visitor_key) DO UPDATE SET
+                   last_seen = CURRENT_TIMESTAMP,
+                   visits = visits + 1""",
+            (visitor_key,))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.debug("Could not record visit: %s", e)
+    finally:
+        conn.close()
+
+
+def visitor_stats() -> dict:
+    """Unique visitors, all time and over recent windows."""
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT COUNT(*),
+                      COALESCE(SUM(visits), 0),
+                      SUM(CASE WHEN last_seen >= datetime('now', '-1 day')  THEN 1 ELSE 0 END),
+                      SUM(CASE WHEN last_seen >= datetime('now', '-7 day')  THEN 1 ELSE 0 END),
+                      SUM(CASE WHEN last_seen >= datetime('now', '-30 day') THEN 1 ELSE 0 END)
+               FROM site_visits""").fetchone()
+    except sqlite3.Error as e:
+        logging.debug("Visitor stats unavailable: %s", e)
+        return {"unique": 0, "total": 0, "day": 0, "week": 0, "month": 0}
+    finally:
+        conn.close()
+    return {
+        "unique": int(row[0] or 0),
+        "total": int(row[1] or 0),
+        "day": int(row[2] or 0),
+        "week": int(row[3] or 0),
+        "month": int(row[4] or 0),
     }

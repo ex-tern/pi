@@ -69,6 +69,7 @@ from database import (
     record_llm_review,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
+    record_visit, visitor_stats,
 )
 import arcade
 import diagnostics
@@ -1151,6 +1152,36 @@ def arcade_finish(payload: ArcadeRun, request: Request):
                         + f" Difficulty is now level {progress['difficulty_level']} — assess a "
                         f"manuscript to reset it.")}
 
+def _visitor_key(ip: str) -> str:
+    """A stable, non-reversible identifier for one visitor.
+
+    Keyed with the session secret rather than a plain hash: a bare sha256 of an
+    IPv4 address is trivially reversible by enumerating all four billion of
+    them, so it would not actually be anonymous. With a secret key it is.
+    """
+    if not ip:
+        return ""
+    secret = (os.getenv("SESSION_SECRET") or "scholarpi-visits").encode()
+    return hmac.new(secret, f"visit:{ip}".encode(), hashlib.sha256).hexdigest()[:32]
+
+
+@app.post("/api/visit")
+def register_visit(request: Request):
+    """Count this visitor once. Called by the frontend on first load per session.
+
+    Returns the current totals so the caller can render them without a second
+    request.
+    """
+    record_visit(_visitor_key(get_client_ip(request)))
+    return visitor_stats()
+
+
+@app.get("/api/stats/visitors")
+def visitor_counts():
+    """Public visitor totals."""
+    return visitor_stats()
+
+
 @app.get("/api/stats/count")
 def stats_count():
     conn = get_db_connection()
@@ -1283,6 +1314,11 @@ def my_assessments(request: Request, wallet: str = Query(default=""),
                            "assessments. Anonymous runs are not linked to an identity.")}
     rows = list_assessments_for_identity(
         _identity_values(identity["wallet"], identity["orcid"]), limit=limit)
+    # Annotated here rather than in the query: whether a file exists is a
+    # filesystem fact, not a column, and the badge needs it to link to the
+    # manuscript instead of falling back to the dossier.
+    for r in rows:
+        r["has_file"] = paper_store.has_paper(r.get("hash", ""))
     return {"signed_in": True, "assessments": rows, "count": len(rows)}
 
 
@@ -1622,16 +1658,26 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     if kind not in ("author", "journal"):
         raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
 
-    # Publishing exposes the stored manuscript. Refuse rather than assume: an
-    # author who has not said they may redistribute the file has not said it,
-    # and defaulting to "yes" would put the platform in the position of having
-    # published someone's copyrighted version of record on their behalf.
-    if paper_store.has_paper(file_hash) and not payload.distribute_file:
+    # Publication requires a readable manuscript, and permission to show it.
+    #
+    # Both conditions are mandatory, for the same reason: a badge that asserts
+    # "published" while the paper behind it cannot be opened is a claim a reader
+    # has no way to check, which is precisely what this platform argues against.
+    # Every published assessment therefore has a file, and every file is public
+    # because its author said it could be.
+    if not paper_store.has_paper(file_hash):
+        raise HTTPException(
+            status_code=409,
+            detail=("Publishing needs the manuscript file, and none is stored for this "
+                    "assessment. Papers assessed before file retention, and papers submitted by "
+                    "DOI rather than upload, have no stored file — re-run the assessment with "
+                    "the PDF uploaded and you can publish it."))
+    if not payload.distribute_file:
         raise HTTPException(
             status_code=400,
-            detail=("Publishing makes the uploaded manuscript publicly downloadable. Confirm you "
-                    "hold the right to distribute this file — for a journal article that is "
-                    "often the accepted manuscript rather than the publisher's typeset version."))
+            detail=("Publishing makes the uploaded manuscript publicly readable. Confirm you hold "
+                    "the right to distribute this file — for a journal article that is often the "
+                    "accepted manuscript rather than the publisher's typeset version."))
 
     attribution = verify_authorship(
         submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
@@ -1848,6 +1894,10 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
             "published": published, "publish_kind": (r[7] or "author") if published else None,
             "published_at": r[6], "peer_reviews": peer, "llm_reviewed": bool(llm),
             "fields": fields, "assessed_at": r[9],
+            # Lets the badge link straight to the manuscript. Without it every
+            # row fell back to the DOI or the dossier, so a published paper
+            # with a stored file still did not open that file.
+            "has_file": paper_store.has_paper(r[0]),
         })
         if len(out) >= limit:
             break
@@ -1875,8 +1925,12 @@ def open_reviews(request: Request, wallet: str = Query(default=""),
 def review_state(file_hash: str):
     """Public: which reviews exist, kept strictly separate by kind."""
     summary = review_summary(file_hash)
-    human = [r for r in summary["reviews"] if not str(r.get("verdict", "")).startswith("llm")]
-    machine = [r for r in summary["reviews"] if str(r.get("verdict", "")).startswith("llm")]
+    # Split on is_llm (derived from reviewer_key), not on the verdict text. The
+    # verdict-prefix test disagreed with the reviewer_key test used by the badge
+    # queries, so a paper could carry an LLM-reviewed badge whose review this
+    # endpoint then reported as human — leaving the modal empty.
+    human = [r for r in summary["reviews"] if not r.get("is_llm")]
+    machine = [r for r in summary["reviews"] if r.get("is_llm")]
     return {
         **summary,
         "peer_reviewed": len(human) > 0,
@@ -3584,6 +3638,10 @@ def analytics_summary():
         "total_piq_earned": round(safe_float(row[1], 0.0) + safe_float(row[3], 0.0), 2),
         "avg_score": round(safe_float(row[2], 0.0), 2),
         "unique_authors": len(unique_authors),
+        # Distinct visitors, counted by keyed IP hash. Reported here so the
+        # analytics tab can show reach alongside output — a corpus of 40 papers
+        # reads very differently at 60 visitors than at 6,000.
+        "visitors": visitor_stats(),
         "earliest": row[4],
         "latest": row[5],
     }
