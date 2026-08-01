@@ -67,6 +67,9 @@ code.wrap { word-break: break-all; }
 .ri-row span { color: var(--muted); }
 .ri-total { border-top: 1px solid var(--border); margin-top: 5px; padding-top: 7px; font-weight: 600; }
 .ri-note { font-size: 11px; color: var(--faint); margin-top: 6px; }
+/* Money is missing from view and the user needs to know why — this one has to
+   read as a warning, not as the usual grey footnote. */
+.ri-note-warn { color: var(--warn); line-height: 1.5; }
 .bal-ok { background: var(--success-bg); color: var(--success); }
 .bal-low { background: #fef2f2; color: var(--danger); }
 

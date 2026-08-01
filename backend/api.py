@@ -410,7 +410,27 @@ def verify_wallet(req: WalletVerifyRequest, request: Request):
         }
 
     add_log(f"Wallet authenticated by EIP-191 signature: {clean_wallet}")
-    token = auth.issue_session(wallet=clean_wallet, methods={"wallet": "signature"})
+
+    # Carry forward an ORCID that is ALREADY proven in the caller's current
+    # session, exactly as the ORCID callback carries forward a proven wallet.
+    #
+    # Without this, signing a wallet after linking ORCID minted a token holding
+    # only the wallet and silently dropped the ORCID. The browser still had both
+    # in localStorage, so the sidebar — which passes both as parameters — summed
+    # both accounts, while every identity-scoped action used the narrower token.
+    # The result was a user shown a spendable balance of 0.51 piQ being told
+    # their balance was 0.01 when they tried to spend it.
+    #
+    # This re-reads the ORCID from the signed token, never from a parameter, so
+    # it asserts nothing the server did not already verify.
+    methods = {"wallet": "signature"}
+    proven_orcid = ""
+    existing = auth.verify_session(auth.token_from_request(request))
+    if existing and existing.get("orcid"):
+        proven_orcid = existing["orcid"]
+        methods["orcid"] = existing.get("methods", {}).get("orcid", "oauth")
+
+    token = auth.issue_session(wallet=clean_wallet, orcid=proven_orcid, methods=methods)
     return {
         "address": clean_wallet, "authenticated": True, "token": token,
         "expires_in": auth.SESSION_TTL_SECONDS,
@@ -569,9 +589,32 @@ def normalize_identity(wallet: Optional[str], orcid: Optional[str]):
 
 
 @app.get("/api/user/piq-total")
-def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
+def user_piq_total(request: Request, wallet: Optional[str] = None,
+                   orcid: Optional[str] = None):
     """Lifetime piQ awarded, plus the fee-adjusted spendable balance the
-    assessment pipeline actually charges against."""
+    assessment pipeline actually charges against.
+
+    When a signed session exists it is the authority on WHICH accounts are
+    yours, overriding the wallet/orcid parameters. Those parameters come from
+    the browser's localStorage and can name an identity the session does not
+    prove — so a user who had linked ORCID and later signed a wallet was shown
+    the sum of both accounts here while every spending path charged against the
+    session's narrower identity alone. The displayed balance and the spendable
+    balance have to be the same number computed the same way, or the interface
+    is lying about money.
+    """
+    claimed_wallet, claimed_orcid = normalize_identity(wallet, orcid)
+    identity = auth.identity_from_request(request, wallet or "", orcid or "")
+    # An identity the browser remembers but the session does not prove. Reported
+    # so the interface can say "re-link ORCID to reach that piQ" instead of the
+    # balance quietly dropping with no explanation.
+    unproven = []
+    if identity["verified"] and (identity["wallet"] or identity["orcid"]):
+        if claimed_orcid and not identity["orcid"]:
+            unproven.append("orcid")
+        if claimed_wallet and not identity["wallet"]:
+            unproven.append("wallet")
+        wallet, orcid = identity["wallet"], identity["orcid"]
     clean_wallet, clean_orcid = normalize_identity(wallet, orcid)
     if not clean_wallet and not clean_orcid:
         return {
@@ -601,6 +644,11 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
         "balance": bal["balance"],
         "fee_per_paper": fee,
         "papers_affordable": int(bal["balance"] // fee) if fee > 0 else 0,
+        "unproven": unproven,
+        "unproven_note": (
+            f"This browser remembers {' and '.join(unproven)} that your current sign-in does "
+            f"not prove, so any piQ held there is not counted or spendable. Re-link it to "
+            f"bring it back." if unproven else ""),
     }
 
 
