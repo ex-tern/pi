@@ -3943,8 +3943,8 @@ def explorer_dossier(eval_hash: str):
     try:
         row = conn.execute(f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)).fetchone()
         status = conn.execute(
-            "SELECT published_at, publish_kind FROM papers_assessment WHERE eval_hash = ?",
-            (eval_hash,)).fetchone()
+            "SELECT published_at, publish_kind, piq_minted, piq_escrowed, piq_claimed_at "
+            "FROM papers_assessment WHERE eval_hash = ?", (eval_hash,)).fetchone()
     except sqlite3.Error:
         status = None
     finally:
@@ -3953,6 +3953,17 @@ def explorer_dossier(eval_hash: str):
         raise HTTPException(status_code=404, detail="Record not found.")
 
     dossier = build_dossier_from_row(row)
+
+    # piQ read from the authoritative columns, not from the emission_record
+    # JSON. The blob is written by the assessment pipeline and is empty ('{}')
+    # for every row assessed before it existed, so a dossier built from it
+    # reported "piQ 0.00" on papers that had plainly minted or escrowed piQ.
+    # piq_minted and piq_escrowed are the columns the balance and the escrow
+    # claim both read; the dossier now agrees with them by construction.
+    if status:
+        dossier["piq"] = round(safe_float(status[2], 0.0), 4)
+        dossier["escrowed"] = round(safe_float(status[3], 0.0), 4)
+        dossier["claimed"] = bool(status[4])
     # Publication and review state travel with the dossier so the seals render
     # the same wherever the dossier is opened from — a badge that appears on a
     # card and vanishes in the full record is worse than no badge.
