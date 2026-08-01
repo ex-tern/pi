@@ -574,7 +574,18 @@ async function refreshPiqBalance() {
     const data = await res.json();
     piqState = data;
 
-    document.getElementById("researcherPiq").textContent = `${data.minted.toFixed(2)} piQ`;
+    // "piQ earned" previously showed only piQ minted against assessed papers,
+    // so an arcade win or a review bounty moved the spendable balance while
+    // this row sat at 0.00 — which reads as the reward never having arrived.
+    // It now shows everything earned, and names the non-assessment part.
+    const rewards = Number(data.rewards || 0);
+    const earned = Number(data.earned != null ? data.earned : data.minted);
+    const piqEl = document.getElementById("researcherPiq");
+    piqEl.textContent = `${earned.toFixed(2)} piQ`;
+    piqEl.title = rewards > 0
+      ? `${Number(data.minted).toFixed(2)} piQ minted from assessed papers, `
+        + `${rewards.toFixed(2)} piQ from rewards (arcade wins, bounties, grants and refunds).`
+      : "piQ minted against papers you have had assessed.";
     document.getElementById("researcherFees").textContent = `${data.fees_paid.toFixed(2)} piQ`;
     const balEl = document.getElementById("researcherBalance");
     balEl.textContent = `${data.balance.toFixed(2)} piQ`;
@@ -2499,19 +2510,41 @@ function assessmentActions(item, variant = "card") {
   if (!a || !a.hash) return "";
   const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
 
-  const claimable = a.escrowed > 0 && !a.claimed;
-  const reviewLabel = a.llmReviewed ? "Request a new review" : "Request a Review";
-
   return `
     <div class="action-bar">
       <button class="btn btn-primary" data-a="report" ${d}>Full Report &amp; Dossier</button>
       <button class="btn btn-quiet" data-a="defense" ${d}>Suggest Defense</button>
       <button class="btn btn-danger-soft" data-a="remove" ${d}
               title="Withdraw this paper from the corpus">Remove</button>
-    </div>
+    </div>`;
+}
 
-    <details class="dossier-details">
+/** Author-only powers over one assessment: review, claim, publish.
+ *
+ *  These live in the dossier rather than on the card. They are the actions
+ *  that cost piQ or make a public claim, and none of them is a decision worth
+ *  taking from a summary tile — the dossier is where the score, the warnings
+ *  and the evidence are, which is exactly the context needed to decide whether
+ *  to publish a paper or spend piQ reviewing it.
+ *
+ *  Putting them in the dossier also makes them reachable from everywhere a
+ *  dossier can be opened (result card, history row, explorer, journal, a
+ *  publish badge) instead of only from the two places that happened to render
+ *  an action bar.
+ */
+function authorshipActions(item, idx) {
+  const a = normalizeAssessment(item, idx);
+  if (!a || !a.hash) return "";
+  const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
+
+  const claimable = a.escrowed > 0 && !a.claimed;
+  const reviewLabel = a.llmReviewed ? "Request a new review" : "Request a Review";
+
+  return `
+    <details class="dossier-details dossier-author-actions">
       <summary class="author-toggle">If this is your manuscript</summary>
+      <p class="hint">Requesting a review spends piQ. Publishing attaches a badge to this
+      assessment publicly and requires verified authorship.</p>
       <div class="action-bar">
         <button class="btn btn-quiet" data-a="review" ${d}>${reviewLabel}</button>
         ${claimable ? `<button class="btn btn-quiet" data-a="claim" ${d}
@@ -2587,7 +2620,7 @@ function openModal(html) {
   document.querySelector(".modal").scrollTop = 0;
 }
 
-function showDetailsModal(idx) { renderDossierModal(evaluatedBuffer[idx]); }
+function showDetailsModal(idx) { renderDossierModal(evaluatedBuffer[idx], idx); }
 
 // --- Full report & dossier -------------------------------------------------
 const MODEL_LABELS = {
@@ -2902,7 +2935,7 @@ function renderIntegrityPanel(item) {
   return html;
 }
 
-function renderDossierModal(item) {
+function renderDossierModal(item, idx) {
   const consensus = item.consensus_raw || {};
   const meta = item.judge_metadata || consensus._judge_metadata || {};
   const warnings = item.warnings || [];
@@ -2926,6 +2959,7 @@ function renderDossierModal(item) {
       ${peerReviewBadge(item)}
       ${llmReviewBadge({ ...item, hash: item.hash || item.eval_hash })}
     </div>
+    ${authorshipActions(item, idx)}
   </div>`;
 
   // --- Warnings: the most important thing to surface, so it goes first ---

@@ -53,6 +53,7 @@ from config import (
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
+    get_piq_rewards_total,
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
@@ -584,11 +585,18 @@ def user_piq_total(wallet: Optional[str] = None, orcid: Optional[str] = None):
             add_log(f"Onboarding grant of {NEW_PARTICIPANT_GRANT} piQ issued to {clean_orcid}.")
 
     bal = get_piq_balance(clean_wallet, clean_orcid)
+    # Rewards (arcade wins, bounties, grants, refunds) are ledger credits and
+    # are NOT part of `minted`, which counts only piQ minted against an assessed
+    # manuscript. Reported separately so the interface can show total piQ earned
+    # rather than implying assessment is the only way to earn it.
+    rewards = get_piq_rewards_total(clean_wallet, clean_orcid)
     fee = resolve_active_fee()
     return {
         "total_piq": bal["minted"],
         "held": bal.get("held", 0.0),
         "minted": bal["minted"],
+        "rewards": rewards,
+        "earned": round(bal["minted"] + rewards, 4),
         "fees_paid": bal["fees_paid"],
         "balance": bal["balance"],
         "fee_per_paper": fee,

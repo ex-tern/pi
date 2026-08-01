@@ -463,6 +463,37 @@ def get_piq_ledger_net(wallet: str = "", orcid: str = "") -> float:
     return float(row[0] or 0.0)
 
 
+def get_piq_rewards_total(wallet: str = "", orcid: str = "") -> float:
+    """piQ credited to this identity by something other than assessing a paper.
+
+    Arcade wins, review bounties, refunds and onboarding grants are all ledger
+    credits. `get_piq_minted_total` deliberately counts only piQ minted against
+    an assessed manuscript, so none of these appear in it — which meant a player
+    who won piQ in the arcade watched "piQ earned" stay at 0.00 while only the
+    spendable balance moved, and reasonably concluded the reward never arrived.
+
+    Summing the positive side of the ledger separately lets the interface show
+    where piQ actually came from instead of implying assessment is the only
+    source.
+    """
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return 0.0
+    placeholders = ", ".join("?" for _ in keys)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT COALESCE(SUM(delta), 0) FROM piq_ledger
+                WHERE delta > 0 AND LOWER(account) IN ({placeholders})""",
+            tuple(v for _, v in keys),
+        ).fetchone()
+    except sqlite3.Error:
+        return 0.0
+    finally:
+        conn.close()
+    return round(float(row[0] or 0.0), 4)
+
+
 def get_piq_fees_paid(wallet: str = "", orcid: str = "") -> float:
     """Net piQ this identity has actually spent on fees, after refunds."""
     net = get_piq_ledger_net(wallet, orcid)
