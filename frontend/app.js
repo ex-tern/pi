@@ -42,7 +42,46 @@ const Session = {
   currentUser() { return this.orcid || this.wallet || "Anonymous"; },
 };
 
-let evaluatedBuffer = []; // mirrors st.session_state.evaluated_papers_buffer
+// ---------------------------------------------------------------------------
+// Assessed-paper buffer — persisted, because losing it was never a feature
+// ---------------------------------------------------------------------------
+// This used to be a bare in-memory array. A reload, a tab close, or a sign-out
+// (which calls renderSidebar and re-renders the page) emptied it, so a
+// researcher who had just spent piQ assessing six papers watched the results
+// disappear for doing something unrelated. The assessments themselves were
+// never lost — they are on the server — but the cards were, and to the person
+// looking at the screen those are the same thing.
+//
+// The buffer is now mirrored into localStorage. It is deliberately NOT cleared
+// on sign-out: these are the results of work this browser did, they are not
+// secret (each is also readable by hash from the public dossier endpoint), and
+// clearing them would recreate exactly the loss being fixed here. Signing out
+// of an identity is not the same act as discarding your working results, and
+// conflating the two is what made the behaviour surprising.
+const RESULTS_KEY = "sp_results";
+const RESULTS_MAX = 40;   // enough for a long session, small enough to store
+
+function loadPersistedResults() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(RESULTS_KEY) || "[]");
+    return Array.isArray(raw) ? raw : [];
+  } catch (_) { return []; }   // corrupt or private mode: start clean
+}
+
+function persistResults() {
+  try {
+    localStorage.setItem(RESULTS_KEY, JSON.stringify(evaluatedBuffer.slice(0, RESULTS_MAX)));
+  } catch (_) {
+    // Quota exceeded, most likely a few very large dossiers. Drop the oldest
+    // half and try once more rather than failing silently and forever.
+    try {
+      evaluatedBuffer = evaluatedBuffer.slice(0, Math.ceil(evaluatedBuffer.length / 2));
+      localStorage.setItem(RESULTS_KEY, JSON.stringify(evaluatedBuffer));
+    } catch (_) { /* private mode; the in-memory buffer still works */ }
+  }
+}
+
+let evaluatedBuffer = loadPersistedResults();
 let downloadErrors = [];
 let piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: 0.1, papers_affordable: 0 };
 let chainState = null;
@@ -2057,6 +2096,10 @@ function rewardExplanation(item) {
 
 function renderResults() {
   const section = document.getElementById("resultsSection");
+  // Persist here rather than at each call site: every mutation of the buffer
+  // ends in a render, so one write point cannot drift out of sync with the
+  // half-dozen places that add, edit or drop a result.
+  persistResults();
   if (!evaluatedBuffer.length && !downloadErrors.length) { section.classList.add("hidden"); return; }
   section.classList.remove("hidden");
 
@@ -2085,12 +2128,52 @@ function renderResults() {
             Analytics tables.</div>
         </div>
         <div class="result-actions">
-          <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
-          <button class="btn btn-ghost" onclick="removeResult(${idx})" aria-label="Dismiss">×</button>
+          <div class="action-bar">
+            <button class="btn btn-primary" onclick="showDetailsModal(${idx})">Full Report &amp; Dossier</button>
+            <button class="btn btn-quiet" onclick="removeResult(${idx})"
+                    title="Hide this card. The assessment stays in the ledger.">Dismiss</button>
+          </div>
         </div>
       </div>`;
     }
   }).join("");
+}
+
+/** The piQ pill — one definition, used on the card, in the dossier, everywhere.
+ *
+ *  The figure is always the TOTAL piQ the assessment generated: minted plus
+ *  still-held. It never changes when the piQ is claimed, because claiming does
+ *  not change how much the paper earned — it changes where the piQ sits. The
+ *  previous pill showed the held amount in one state and the minted amount in
+ *  another, so the same paper appeared to be worth different numbers before and
+ *  after a claim, which made the figure impossible to trust.
+ *
+ *  Status is carried by colour and by the word after the number:
+ *    green  — claimed and spendable
+ *    amber  — held pending authorship verification (fully or partly)
+ *    grey   — nothing was earned
+ */
+function piqPill(item) {
+  const minted = Number((item && item.piq) || item.piq_minted || 0);
+  const held = Number(
+    (item && item.escrowed != null ? item.escrowed : ((item.emission || {}).escrowed || 0)) || 0);
+  const total = minted + held;
+  const why = typeof rewardExplanation === "function" ? rewardExplanation(item) : "";
+
+  if (total <= 0) {
+    return `<span class="pill p-piq p-piq-none" title="${escapeHtml(
+      "No piQ was earned for this assessment. " + why)}">piQ 0.00</span>`;
+  }
+  if (held > 0) {
+    const partly = minted > 0;
+    return `<span class="pill p-piq p-piq-held" title="${escapeHtml(
+      `${total.toFixed(2)} piQ earned in total. ${held.toFixed(2)} is held until authorship is `
+      + `verified${partly ? `, ${minted.toFixed(2)} is already claimed` : ""}. ` + why)}"
+      >piQ ${total.toFixed(2)} held</span>`;
+  }
+  return `<span class="pill p-piq p-piq-claimed" title="${escapeHtml(
+    `${total.toFixed(2)} piQ earned and claimed to your balance. ` + why)}"
+    >piQ ${total.toFixed(2)}</span>`;
 }
 
 /** One result card. `fmtNum` guards every numeric field: the assessment
@@ -2109,32 +2192,15 @@ function renderResultCard(item, idx) {
         <div class="result-author">${escapeHtml(item.author_name || "Unidentified author")}</div>
         <div class="result-pills">
           <span class="pill p-score">piX ${fmtNum(item.score, 1)}</span>
-          ${(() => {
-        const minted = Number(item.piq || 0);
-        const held = Number((item.emission || {}).escrowed || 0);
-        // A bare "piQ 0.00" next to a warning that piQ is held reads as a
-        // contradiction. Show the held figure on the pill itself.
-        if (minted > 0) {
-          return `<span class="pill p-piq p-piq-earned"
-            title="${escapeHtml(rewardExplanation(item))}">piQ ${minted.toFixed(2)}</span>`;
-        }
-        if (held > 0) {
-          return `<span class="pill p-piq p-piq-held"
-            title="Earned but held until authorship is verified. ${escapeHtml(rewardExplanation(item))}"
-            >piQ ${held.toFixed(2)} held</span>`;
-        }
-        return `<span class="pill p-piq p-piq-none"
-          title="${escapeHtml(rewardExplanation(item))}">piQ 0.00</span>`;
-      })()}
+          ${piqPill(item)}
           ${qualityPill(meta)}
           ${integrityPills(item)}
+          ${allBadges({ ...item, hash: item.hash || item.eval_hash })}
           ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
         </div>
       </div>
       <div class="result-actions">
         ${assessmentActions({ ...item, idx }, "card")}
-        <button class="btn btn-ghost" onclick="removeResult(${idx})"
-                title="Hide this card. The assessment is kept." aria-label="Dismiss">×</button>
       </div>
     </div>`;
 }
@@ -2150,9 +2216,10 @@ async function showReviewModal(hash) {
 
   const peerFee = state.fee?.fee ?? 2;
   const llmFee = state.llm_fee?.fee ?? 0.5;
+  const alreadyLlm = !!state.llm_reviewed;
 
   openModal(`
-    <h2>Request a review</h2>
+    <h2>${alreadyLlm ? "Request a new review" : "Request a review"}</h2>
     <p class="hint">Two different things, priced differently and badged differently. A reader can
     tell them apart, which is the point.</p>
     <p class="hint">Spendable balance: <strong>${Number(piqState.balance || 0).toFixed(2)} piQ</strong>${
@@ -2161,18 +2228,16 @@ async function showReviewModal(hash) {
             held piQ cannot be spent until you claim it from Your assessments.`
         : ""}</p>
 
-    <div class="opt-card">
+    <div class="opt-card opt-card-disabled">
       <div class="opt-head"><strong>Peer review</strong>
         <span class="pill p-piq">${peerFee.toFixed(2)} piQ</span></div>
       <p>Another researcher — signed in with both a wallet and an ORCID, and not you — reads the
       paper and submits a reasoned verdict. The fee is a bounty paid to them on completion, not a
-      price for the badge. <strong>Peer-reviewed</strong> appears only once a review is actually
-      submitted.</p>
-      ${state.peer_reviewed
-        ? `<p class="opt-done">Already peer reviewed (${state.peer_review_count}).</p>`
-        : state.pending
-          ? `<p class="opt-done">A review is already open and awaiting a reviewer.</p>`
-          : `<button class="btn btn-primary" id="reqPeer">Request peer review</button>`}
+      price for the badge.</p>
+      <div class="opt-inactive">This function is inactive at the moment. Nothing is charged and no
+      request is placed.</div>
+      <button class="btn" id="reqPeer" disabled
+              title="Peer review is inactive at the moment">Request peer review</button>
     </div>
 
     <div class="opt-card">
@@ -2181,24 +2246,28 @@ async function showReviewModal(hash) {
       <p>The model panel writes a critical review from the evidence it already gathered. Badged
       <strong>LLM-reviewed</strong> — never peer-reviewed, because no human read it. Cheaper
       because it buys inference, not someone's afternoon.</p>
-      ${state.llm_reviewed
-        ? `<p class="opt-done">Already LLM reviewed.</p>`
-        : `<button class="btn" id="reqLlm">Request LLM review</button>`}
+      ${alreadyLlm
+        ? `<p class="opt-done">This paper carries an LLM review. Open its badge to read it, or
+             request a new one — each review is kept and dated.</p>`
+        : ""}
+      <button class="btn btn-primary" id="reqLlm">${
+        alreadyLlm ? "Request a new review" : "Request LLM review"}</button>
     </div>
     <div class="profile-msg" id="reviewMsg"></div>`);
 
   const post = async (path, label, cost) => {
     // Confirm before spending. piQ is earned slowly and an accidental click
     // should not cost a paper's worth of it.
-    if (!confirm(`Request ${label}?\n\nThis costs ${Number(cost).toFixed(2)} piQ`
-                 + (label === "peer review"
-                    ? ", paid in full to the researcher who completes the review."
-                    : ".")
+    if (!confirm(`Request ${label}?\n\nThis costs ${Number(cost).toFixed(2)} piQ.`
+                 + `\n\nA badge is attached whatever the panel concludes, and the review is `
+                 + `saved so you can read it from the badge.`
                  + `\n\nYour spendable balance: ${Number(piqState.balance || 0).toFixed(2)} piQ`)) {
       return;
     }
     const msg = document.getElementById("reviewMsg");
-    msg.textContent = "Working…";
+    const btn = document.getElementById("reqLlm");
+    if (btn) { btn.disabled = true; btn.textContent = "Reviewing…"; }
+    msg.textContent = "The panel is reading the evidence report. This takes a few seconds…";
     try {
       const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}${path}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -2206,14 +2275,86 @@ async function showReviewModal(hash) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      msg.textContent = data.message || `${label} requested.`;
+      msg.textContent = data.message || `${label} complete.`;
       loadEmissionStatus();
-    } catch (e) { msg.textContent = `Could not request ${label}: ${e.message}`; }
+      // The badge and the button label both depend on this, so refresh what is
+      // on screen rather than leaving a stale "Request a Review".
+      markLocalLlmReviewed(hash);
+      renderResults();
+      loadAssessmentHistory();
+      if (btn) { btn.disabled = false; btn.textContent = "Request a new review"; }
+      showReviewButton(hash, msg);
+    } catch (e) {
+      msg.textContent = `Could not request ${label}: ${e.message}`;
+      if (btn) { btn.disabled = false; btn.textContent = alreadyLlm ? "Request a new review" : "Request LLM review"; }
+    }
   };
-  const p1 = document.getElementById("reqPeer");
-  if (p1) p1.addEventListener("click", () => post("/review/request", "peer review", peerFee));
   const p2 = document.getElementById("reqLlm");
   if (p2) p2.addEventListener("click", () => post("/review/llm", "LLM review", llmFee));
+}
+
+/** Mark an in-memory result as LLM-reviewed so the card updates without a reload. */
+function markLocalLlmReviewed(hash) {
+  evaluatedBuffer.forEach(it => {
+    if ((it.hash || it.eval_hash) === hash) {
+      it.llm_reviewed = true;
+      it.llm_review_count = Number(it.llm_review_count || 0) + 1;
+    }
+  });
+  persistResults();
+}
+
+/** Offer a direct way into the review that was just written. */
+function showReviewButton(hash, msg) {
+  if (!msg) return;
+  const b = document.createElement("button");
+  b.className = "btn btn-quiet";
+  b.style.marginTop = "10px";
+  b.textContent = "Read the review";
+  b.addEventListener("click", () => showLlmReviewModal(hash));
+  msg.appendChild(document.createElement("br"));
+  msg.appendChild(b);
+}
+
+/** Every machine review written for a paper, newest first.
+ *
+ *  This is what the LLM-reviewed badge opens. A badge that asserts something
+ *  about a paper and cannot be interrogated is decoration; being able to read
+ *  the actual critique is the whole reason the badge is worth anything.
+ */
+async function showLlmReviewModal(hash) {
+  if (!hash) return;
+  openModal(`<h2>LLM review</h2><p class="hint">Loading the saved review…</p>`);
+  let state = {};
+  try {
+    state = await (await fetch(
+      `${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+  } catch (e) {
+    openModal(`<h2>LLM review</h2><p class="hint">Could not load the review: ${
+      escapeHtml(e.message)}</p>`);
+    return;
+  }
+
+  const reviews = state.llm_reviews || [];
+  if (!reviews.length) {
+    openModal(`<h2>LLM review</h2><p class="hint">No machine review has been written for this
+      paper yet.</p>`);
+    return;
+  }
+
+  const verdictLabel = (v) => String(v || "").replace(/^llm-/, "") || "unrecorded";
+  openModal(`
+    <h2>LLM review</h2>
+    <p class="hint">Written by the model panel from the evidence report. Not peer review — no
+    human read the paper to produce this.</p>
+    ${reviews.map(r => `
+      <div class="opt-card">
+        <div class="opt-head">
+          <strong>Verdict: ${escapeHtml(verdictLabel(r.verdict))}</strong>
+          <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
+        </div>
+        <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>
+      </div>`).join("")}`);
 }
 
 /** Publish options. Submit stays disabled until authorship is proven. */
@@ -2316,31 +2457,54 @@ function normalizeAssessment(x, idx) {
     // History reports these directly; a fresh result carries them on emission.
     escrowed: Number(x.escrowed != null ? x.escrowed : (emission.escrowed || 0)),
     claimed: x.claimed != null ? !!x.claimed : Number(x.piq || 0) > 0,
+    // Whether a machine review already exists. History rows carry it from the
+    // server; a freshly assessed paper never has one yet.
+    llmReviewed: !!(x.llm_reviewed || x.llm_review_count),
   };
 }
 
-/** The action bar. `variant` only changes styling, never which actions exist. */
+/** The action bar. `variant` only changes styling, never which actions exist.
+ *
+ *  Every control here does the same class of thing — operate on this one
+ *  assessment — so they share one size, one radius and one weight. Only
+ *  "Full Report" is filled, because it is the action a reader almost always
+ *  wants; the rest are quiet outlines, and Remove is the single tinted
+ *  exception because it destroys something.
+ *
+ *  The card previously carried BOTH a "Remove" button and a bare "×" in the
+ *  corner. They read as two ways to do one thing and were not: × only hid the
+ *  card locally while Remove withdrew the paper from the corpus. The × is gone
+ *  and Remove is the only destructive control, so there is nothing to
+ *  misidentify.
+ */
 function assessmentActions(item, variant = "card") {
   const a = normalizeAssessment(item, item && item.idx);
   if (!a || !a.hash) return "";
-  const cls = variant === "row" ? "btn-icon" : "btn";
-  const primary = variant === "row" ? "btn-icon" : "btn btn-primary";
-  const danger = variant === "row" ? "btn-icon-danger" : "btn btn-ghost";
   const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
 
   const claimable = a.escrowed > 0 && !a.claimed;
+  const reviewLabel = a.llmReviewed ? "Request a new review" : "Request a Review";
+
   return `
-    <button class="${primary}" data-a="report" ${d}>Full Report &amp; Dossier</button>
-    <button class="${cls}" data-a="defense" ${d}>Suggest Defense</button>
-    <button class="${cls}" data-a="review" ${d}>Review</button>
-    ${claimable ? `<button class="${cls}" data-a="claim" ${d}
-        title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held for this paper"
-        >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
-    <button class="${cls}" data-a="${a.published ? "withdraw" : "publish"}" ${d}
-      title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}"
-      >${a.published ? "Withdraw" : "Publish"}</button>
-    <button class="${danger}" data-a="remove" ${d}
-      title="Withdraw this paper from the corpus">Remove</button>`;
+    <div class="action-bar">
+      <button class="btn btn-primary" data-a="report" ${d}>Full Report &amp; Dossier</button>
+      <button class="btn btn-quiet" data-a="defense" ${d}>Suggest Defense</button>
+      <button class="btn btn-danger-soft" data-a="remove" ${d}
+              title="Withdraw this paper from the corpus">Remove</button>
+    </div>
+
+    <details class="dossier-details">
+      <summary class="author-toggle">If this is your manuscript</summary>
+      <div class="action-bar">
+        <button class="btn btn-quiet" data-a="review" ${d}>${reviewLabel}</button>
+        ${claimable ? `<button class="btn btn-quiet" data-a="claim" ${d}
+              title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held"
+              >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
+        <button class="btn btn-quiet" data-a="${a.published ? "withdraw" : "publish"}" ${d}
+                title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}"
+                >${a.published ? "Withdraw" : "Publish"}</button>
+      </div>
+    </details>`;
 }
 
 // One delegated listener for every action bar on the page, however it was
@@ -2726,16 +2890,24 @@ function renderDossierModal(item) {
   const meta = item.judge_metadata || consensus._judge_metadata || {};
   const warnings = item.warnings || [];
 
+  // Same pill as the result card, from the same function — the dossier and the
+  // card are the same assessment and must never report different totals.
+  const pill = piqPill(item);
+
   let html = `<div class="dossier">`;
   html += `<div class="dossier-head">
     <h2>${escapeHtml(item.title || "Untitled")}</h2>
     <div class="dossier-author">${escapeHtml(item.author_name || "Unknown author")}</div>
     <div class="result-pills">
       <span class="pill p-score">piX ${Number(item.score || 0).toFixed(1)}</span>
-      <span class="pill p-piq">piQ ${Number(item.piq || 0).toFixed(2)}</span>
+      ${pill}
       ${typeof item.logic_integrity === "number" ? `<span class="pill p-logic">Logic ${item.logic_integrity.toFixed(1)}</span>` : ""}
       ${qualityPill(meta)}
       ${integrityPills(item)}
+      ${/* The publish seal is omitted here: inside the dossier it would only
+            reopen the dossier. The review seals still open their reviews. */""}
+      ${peerReviewBadge(item)}
+      ${llmReviewBadge({ ...item, hash: item.hash || item.eval_hash })}
     </div>
   </div>`;
 
@@ -2766,8 +2938,6 @@ function renderDossierModal(item) {
     : Object.entries(item.scores_dict || {}).map(([k, v]) => ({ id: k, title: "", score: Number(v) || 0 }));
 
   if (breakdown) {
-    // The rubric records exactly which signal contributed how many points, so
-    // the researcher can see what to fix rather than just what they scored.
     html += `<h3>Criteria Breakdown<button class="help-btn" data-help="rubric" aria-label="About the scoring rubric">?</button></h3>`;
     html += `<p class="hint">Each criterion is a weighted sum of named signals. Expand any row to see
       which signal contributed how many points, and where the largest unclaimed gap is.</p>`;
@@ -2844,7 +3014,7 @@ function renderDossierModal(item) {
       `</tbody></table>`;
   }
 
-  // --- Ledger record ---
+  // --- Ledger Record ---
   html += `<h3>Ledger Record</h3><table class="data-table"><tbody>`;
   html += `<tr><td>Evaluation hash</td><td><code class="wrap">${escapeHtml(item.eval_hash || "—")}</code></td></tr>`;
   html += `<tr><td>piQ minted</td><td><code>${Number(item.piq || 0).toFixed(2)}</code></td></tr>`;
@@ -3483,7 +3653,6 @@ async function loadForecast() {
     metaBox.classList.remove("hidden");
     metaBox.innerHTML = `
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
-      <div class="fm-item"><span>Lookback used</span><strong>${data.lookback_used} epoch${data.lookback_used === 1 ? "" : "s"}</strong></div>
       <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>
       ${data.settings ? `<div class="fm-item"><span>Smoothing</span><strong>&alpha; ${
         data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}`;
@@ -3590,18 +3759,13 @@ async function loadAnalyticsSummary() {
     const res = await fetch(`${API}/api/analytics/summary`);
     const data = await res.json();
     document.getElementById("statTotalPapers").textContent = data.total_papers;
-    // Show what the corpus has earned, and how much of it is still held.
-    // "0.00 minted" on a corpus that has earned piQ reads as a broken system;
-    // the honest figure is the total, annotated with what is unclaimed.
+    // The headline figure is the total the corpus has earned. The settled /
+    // held split is an accounting detail that belongs on an individual
+    // assessment, not on a corpus-wide stat tile.
     const piqEl = document.getElementById("statTotalPiq");
-    const held = Number(data.total_piq_escrowed || 0);
     piqEl.textContent = Number(data.total_piq_earned ?? data.total_piq).toFixed(2);
     const label = piqEl.parentElement && piqEl.parentElement.querySelector(".stat-label");
-    if (label) {
-      label.innerHTML = held > 0
-        ? `Total piQ Minted<br><span class="stat-sub">${data.total_piq.toFixed(2)} settled · ${held.toFixed(2)} held</span>`
-        : "Total piQ Minted";
-    }
+    if (label) label.textContent = "Total piQ Minted";
     document.getElementById("statAvgScore").textContent = data.total_papers ? data.avg_score.toFixed(1) : "–";
     document.getElementById("statUniqueAuthors").textContent = data.unique_authors;
   } catch (e) { /* ignore */ }
@@ -3991,21 +4155,40 @@ const BADGE_MARKS = {
   chip: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/><path d="M9.6 2.8h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM9.6 18.2h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM2.8 9.6h3v1.5h-3zm0 3.3h3v1.5h-3zM18.2 9.6h3v1.5h-3zm0 3.3h3v1.5h-3z"/></svg>`,
 };
 
-function seal(kind, mark, label, title) {
-  return `<span class="seal seal-${kind}" title="${escapeHtml(title)}">`
+/** Render a seal. When `open` is given the seal becomes a button that opens
+ *  the evidence behind the claim it makes.
+ *
+ *  A badge is an assertion about a paper, and an assertion the reader cannot
+ *  check is decoration. Every seal that has something to show — the review
+ *  text, the full assessment — is therefore clickable, and says so.
+ */
+function seal(kind, mark, label, title, open) {
+  const tag = open ? "button" : "span";
+  const extra = open
+    ? ` type="button" data-seal="${open.action}" data-seal-hash="${escapeHtml(open.hash)}"`
+    : "";
+  return `<${tag} class="seal seal-${kind}${open ? " seal-open" : ""}"`
+       + ` title="${escapeHtml(title + (open ? " Click to open." : ""))}"${extra}>`
        + `<span class="seal-mark">${BADGE_MARKS[mark]}</span>`
-       + `<span class="seal-text">${escapeHtml(label)}</span></span>`;
+       + `<span class="seal-text">${escapeHtml(label)}</span></${tag}>`;
+}
+
+/** The hash a badge should open, whichever shape the row came in. */
+function badgeHash(item) {
+  return (item && (item.hash || item.eval_hash)) || "";
 }
 
 function publishedBadge(item) {
   if (!item || !item.published) return "";
+  const h = badgeHash(item);
+  const open = h ? { action: "dossier", hash: h } : null;
   if (item.publish_kind === "journal") {
     return seal("journal", "star", "Journal-published",
-      "A DOI for this work resolves in Crossref or OpenAlex. Verified, not asserted.");
+      "A DOI for this work resolves in Crossref or OpenAlex. Verified, not asserted.", open);
   }
   return seal("author", "check", "Author-published",
     "The verified author attached their name to this assessment. "
-    + "An authorship endorsement, not journal publication.");
+    + "An authorship endorsement, not journal publication.", open);
 }
 
 function peerReviewBadge(item) {
@@ -4017,9 +4200,23 @@ function peerReviewBadge(item) {
 
 function llmReviewBadge(item) {
   if (!item || !item.llm_reviewed) return "";
+  const h = badgeHash(item);
   return seal("llm", "chip", "LLM-reviewed",
-    "A model panel wrote this review. No human read the paper.");
+    "A model panel wrote this review. No human read the paper.",
+    h ? { action: "llm-review", hash: h } : null);
 }
+
+// Delegated so badges keep working through every table redraw.
+document.addEventListener("click", (e) => {
+  const el = e.target.closest("[data-seal]");
+  if (!el) return;
+  e.preventDefault();
+  e.stopPropagation();
+  const hash = el.dataset.sealHash;
+  if (!hash) return;
+  if (el.dataset.seal === "llm-review") showLlmReviewModal(hash);
+  else openDossierByHash(hash);
+});
 
 function allBadges(item) {
   return [publishedBadge(item), peerReviewBadge(item), llmReviewBadge(item)]
@@ -4429,7 +4626,7 @@ async function loadAssessmentHistory() {
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => `
         <tr>
-          <td><div class="hist-title">${escapeHtml(a.title)} ${publishedBadge(a)}</div>
+          <td><div class="hist-title">${escapeHtml(a.title)} ${allBadges(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
           <td class="num">${a.score.toFixed(1)}</td>
@@ -4813,6 +5010,9 @@ refreshSessionState();
 reconcileWalletConnection();
 
 renderSidebar();
+// Restore whatever this browser assessed previously, so a reload or a sign-out
+// no longer looks like the results were thrown away.
+renderResults();
 loadChainStatus();
 loadEmissionStatus();
 refreshTrialStatus();
@@ -4917,6 +5117,9 @@ setInterval(loadChainStatus, 60000);
 // after a win. Kept explicit rather than leaking the whole module scope.
 window.ScholarPi = {
   refreshTrialStatus,
+  // A win credits piQ, so the arcade needs a way to make the sidebar reflect
+  // that immediately. Without it the credit was real and invisible.
+  refreshPiqBalance: () => { renderSidebar(); loadEmissionStatus(); },
   // The arcade needs the current identity to key difficulty and the
   // leaderboard to a person rather than to an IP address.
   identity: () => ({ wallet: Session.wallet || "", orcid: Session.orcid || "" }),
