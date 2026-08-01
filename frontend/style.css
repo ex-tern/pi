@@ -1370,8 +1370,13 @@ button.seal { font-family: inherit; cursor: pointer; }
    filled; nothing else competes with it, and nothing is styled as an icon
    afterthought. */
 .action-bar { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
-.result-actions { flex-direction: column; align-items: stretch; }
-.result-actions .action-bar { width: 100%; }
+
+/* The author-only actions now live in the dossier, so a card carries one row
+   of buttons and nothing that expands. */
+.dossier-author-actions {
+  margin-top: 12px; background: #fbfcfe;
+}
+.dossier-author-actions .hint { margin: 8px 0 10px; }
 .action-bar .btn,
 .hist-actions .btn {
   font-size: 12px; padding: 7px 13px; border-radius: 7px;
