@@ -1055,7 +1055,15 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
     try:
         rows = conn.execute(
             f"""SELECT eval_hash, title, author_name, final_score, fields, timestamp,
-                      piq_minted, doi, filename, published_at, piq_escrowed, piq_claimed_at
+                      piq_minted, doi, filename, published_at, piq_escrowed, piq_claimed_at,
+                      (SELECT COUNT(*) FROM peer_reviews r
+                        WHERE r.eval_hash = papers_assessment.eval_hash
+                          AND r.completed_at IS NOT NULL
+                          AND r.reviewer_key = 'llm:panel') AS llm_count,
+                      (SELECT COUNT(*) FROM peer_reviews r
+                        WHERE r.eval_hash = papers_assessment.eval_hash
+                          AND r.completed_at IS NOT NULL
+                          AND r.reviewer_key <> 'llm:panel') AS peer_count
                FROM papers_assessment
                WHERE user_id IN ({placeholders})
                   OR author_openalex_id IN ({placeholders})
@@ -1079,7 +1087,13 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
                     "doi": r[7] or "", "filename": r[8] or "",
                     "published": bool(r[9]),
                     "escrowed": round(float(r[10] or 0), 4),
-                    "claimed": bool(r[11])})
+                    "claimed": bool(r[11]),
+                    # Carried here so a history row can show the review badge and
+                    # offer "Request a new review" without a second round trip
+                    # per row.
+                    "llm_reviewed": bool(r[12]),
+                    "llm_review_count": int(r[12] or 0),
+                    "peer_reviews": int(r[13] or 0)})
     return out
 
 
@@ -1703,6 +1717,43 @@ def open_review_request(eval_hash: str, requested_by: str, bounty: float) -> dic
     except sqlite3.Error as e:
         logging.warning("Could not open review request: %s", e)
         return {"ok": False, "reason": "The request could not be opened."}
+    finally:
+        conn.close()
+
+
+def record_llm_review(eval_hash: str, verdict: str, comment: str) -> dict:
+    """Write a completed machine review straight into the reviews table.
+
+    Machine reviews deliberately do NOT go through open_review_request +
+    complete_review. That path exists to stop someone reviewing their own
+    request, and it does so by rejecting a completion whose reviewer_key equals
+    the requester's — which for the panel is "llm:panel" on both sides, so
+    every machine review was silently rejected at the last step and no badge
+    was ever attached. The self-review guard is meaningful for humans and
+    meaningless for the panel, so the panel gets its own insert.
+
+    A row is written whatever the panel concluded, including when no model was
+    reachable: the badge records that a machine review was run and paid for,
+    and the verdict inside it says what came of it. Silently charging piQ and
+    attaching nothing would be the worse failure.
+
+    Reviews accumulate; a paper can be reviewed again later and each review is
+    kept, so a reader can see how the machine read the paper over time.
+    """
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO peer_reviews
+                   (eval_hash, requested_by, bounty, reviewer_key, verdict, comment,
+                    completed_at)
+               VALUES (?, 'llm:panel', 0, 'llm:panel', ?, ?, CURRENT_TIMESTAMP)""",
+            (eval_hash, str(verdict)[:40], str(comment)[:4000]))
+        conn.commit()
+        return {"ok": True, "id": cur.lastrowid, "reason": ""}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not record LLM review: %s", e)
+        return {"ok": False, "id": None, "reason": "The machine review could not be saved."}
     finally:
         conn.close()
 

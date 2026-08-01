@@ -52,7 +52,7 @@ from config import (
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
-    get_piq_balance, charge_piq_fee, get_piq_fee_history,
+    get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
@@ -64,6 +64,7 @@ from database import (
     store_challenge, get_challenge, record_challenge_attempt,
     set_published, is_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
+    record_llm_review,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
 )
@@ -1006,31 +1007,71 @@ def arcade_finish(payload: ArcadeRun, request: Request):
                 "message": (f"Run recorded at mass {result['final_mass']}. "
                             f"Reach {result['win_mass']} to earn free assessments.")}
 
-    state = get_bonus_award_state(ip)
-    remaining_cooldown = arcade.cooldown_remaining(state["last_award"])
-    if remaining_cooldown > 0:
-        hours = remaining_cooldown / 3600
-        return {**result, "granted": 0, "bonus_total": state["bonus"],
-                "cooldown_remaining": remaining_cooldown,
-                "message": (f"You won — but arcade rewards are limited to one per "
-                            f"{arcade.COOLDOWN_SECONDS // 3600} hours. "
-                            f"Next reward available in {hours:.1f}h.")}
-
+    # No time cooldown: a win is rewarded when it happens. The lifetime cap and
+    # the difficulty ramp are what bound the faucet.
     grant = grant_bonus_evals(ip, arcade.REWARD_PER_WIN, arcade.BONUS_CAP)
-    if grant["granted"] == 0:
+    
+    # --- piQ reward -------------------------------------------------------
+    # Credited through refund_piq_fee (a plain positive ledger entry against the
+    # same normalised account keys the balance is read from) rather than a
+    # hand-written INSERT. The hand-written version wrote the raw identity while
+    # every balance query reads normalised keys, and it swallowed its own
+    # exception — so a failed credit looked identical to a successful one and
+    # the win silently never reached the balance.
+    piq_reward = 0.0
+    credited = False
+    balance_after = None
+    fee_wallet, fee_orcid = normalize_identity(payload.wallet, payload.orcid)
+
+    if result["won"] and (fee_wallet or fee_orcid):
+        piq_reward = arcade.PIQ_PER_WIN
+        before = get_piq_balance(fee_wallet, fee_orcid)["balance"]
+        refund_piq_fee(piq_reward, fee_wallet, fee_orcid,
+                       eval_hash="", reason="Science Map Arcade victory")
+        balance_after = get_piq_balance(fee_wallet, fee_orcid)["balance"]
+        # Verified against the balance the user will actually see, not against
+        # the fact that an INSERT did not raise.
+        credited = balance_after > before + (piq_reward / 2)
+        if credited:
+            add_log(f"Arcade win from {ip} credited {piq_reward:.2f} piQ "
+                    f"(balance now {balance_after:.2f}).")
+        else:
+            piq_reward = 0.0
+            logging.warning("Arcade piQ credit did not land for %s/%s", fee_wallet, fee_orcid)
+
+    if grant["granted"] == 0 and not credited:
         return {**result, "granted": 0, "bonus_total": grant["bonus"],
-                "message": (f"You won, but this connection has already earned the maximum "
-                            f"{arcade.BONUS_CAP} bonus assessments. Connect a wallet or link "
-                            f"ORCID to keep going.")}
+                "piq_awarded": 0.0, "piq_balance": balance_after,
+                "message": ("You won, but nothing could be credited for it. "
+                            + (f"This connection has already earned the maximum "
+                               f"{arcade.BONUS_CAP} bonus assessments — sign in with a wallet "
+                               f"or ORCID to earn piQ for wins."
+                               if not (fee_wallet or fee_orcid) else
+                               f"This connection has already earned the maximum "
+                               f"{arcade.BONUS_CAP} bonus assessments and the piQ credit did "
+                               f"not go through. Nothing was taken from you."))}
 
-    logging.info("Arcade win from %s granted %s free assessments (difficulty now %s)",
-                 ip, grant["granted"], progress["difficulty_level"])
+    logging.info("Arcade win from %s granted %s free assessments and %s piQ (difficulty now %s)",
+                 ip, grant["granted"], piq_reward, progress["difficulty_level"])
+
+    parts = []
+    if grant["granted"]:
+        parts.append(f"{grant['granted']} free assessment"
+                     f"{'s' if grant['granted'] != 1 else ''}")
+    if credited:
+        parts.append(f"{piq_reward:.2f} piQ")
+    earned = " and ".join(parts) if parts else "nothing"
+
     return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
-            "message": (f"Victory. {grant['granted']} free assessment"
-                        f"{'s' if grant['granted'] != 1 else ''} added to this connection. "
-                        f"Difficulty is now level {progress['difficulty_level']} — assess a "
+            "piq_awarded": piq_reward if credited else 0.0,
+            "piq_balance": balance_after,
+            "message": (f"Victory! {earned} credited to your account."
+                        + (f" Your piQ balance is now {balance_after:.2f}."
+                           if credited and balance_after is not None else "")
+                        + (" Sign in with a wallet or ORCID to earn piQ for wins too."
+                           if not (fee_wallet or fee_orcid) else "")
+                        + f" Difficulty is now level {progress['difficulty_level']} — assess a "
                         f"manuscript to reset it.")}
-
 
 @app.get("/api/stats/count")
 def stats_count():
@@ -1661,6 +1702,13 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
     researchers: a wallet proves control of the paying account, an ORCID ties
     the request to a real research identity that can be held to it.
     """
+    # Human peer review is switched off for now. Enforced here as well as in the
+    # UI: a disabled button is a courtesy, not a control, and this endpoint
+    # holds piQ against a bounty nobody is currently able to collect.
+    raise HTTPException(
+        status_code=503,
+        detail="Peer review is inactive at the moment. No piQ has been charged or held.")
+
     identity = require_identity(request, payload.wallet, payload.orcid)
     check_rate_limit(get_client_ip(request), bucket="review")
     if not (identity["wallet"] and identity["orcid"]):
@@ -1698,11 +1746,17 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
 
 @app.post("/api/assessments/{file_hash}/review/llm")
 def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request):
-    """Commission a machine review. Cheaper, and labelled as what it is.
+    """Commission a machine review using an actual LLM panel call. Cheaper, and labelled as what it is.
 
     Recorded in the same table as human reviews but with a reviewer key of
     "llm:panel", so the badge logic can tell them apart and never present one
     as the other.
+
+    A review may be requested again on a paper that already has one. The models
+    change, the evidence behind the report changes, and a second reading is a
+    legitimate thing to want; each review is kept and shown with its date
+    rather than overwriting the last one. The fee is charged per review, which
+    is what stops "again" from being free.
     """
     identity = require_identity(request, payload.wallet, payload.orcid)
     check_rate_limit(get_client_ip(request), bucket="review")
@@ -1730,44 +1784,83 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
     if not row:
         raise HTTPException(status_code=404, detail="No assessment found for that hash.")
 
-    existing = review_summary(file_hash)
-    if any(r.get("verdict", "").startswith("llm") for r in existing.get("reviews", [])):
-        return {"requested": False, "message": "This paper already has an LLM review."}
-
     if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
                           eval_hash=file_hash, reason="LLM review fee"):
         raise HTTPException(status_code=402, detail="The fee could not be charged.")
 
-    # Synthesised from the panel's recorded evidence rather than a fresh set of
-    # provider calls: the assessment already paid for that inference, and
-    # charging a second time for the same reading would be dishonest pricing.
-    try:
-        consensus = json.loads(row[2] or "{}")
-    except (ValueError, TypeError):
-        consensus = {}
-    meta = (consensus.get("_judge_metadata") or {})
-    sources = int(meta.get("independent_source_count") or 0)
-    verdict = ("llm-sound" if sources >= 2 and (meta.get("confidence") or 0) >= 0.8
-               else "llm-concerns")
-    comment = (
-        f"Machine review synthesised from the assessment panel. "
-        f"{sources} independent model route(s) contributed; corroboration graded "
-        f"{meta.get('tier', 'unknown')} at confidence {meta.get('confidence', 0)}. "
-        f"{(row[1] or '')[:1500]}"
+    # Call the actual LLM infrastructure for the review
+    from providers import build_routes, is_route_cooling, record_success, record_rate_limit, parse_retry_after, classify_provider_error
+    from brain import request_model_assessment
+    
+    prompt = (
+        f"You are providing a critical post-assessment peer review. Below is the synthesized "
+        f"evidence report for a manuscript. Please read it and provide a JSON response with "
+        f"a 'verdict' (must be exactly 'sound', 'concerns', or 'unsound') and an 'opinion' "
+        f"(150-200 words explaining your critique).\n\n"
+        f"Report:\n{row[1][:6000]}"
     )
 
-    result = open_review_request(file_hash, "llm:panel", 0.0)
-    if not result["ok"]:
-        return {"requested": False, "message": result["reason"]}
-    pending = [r for r in list_open_reviews(exclude_key="") if r["hash"] == file_hash]
-    if pending:
-        complete_review(pending[0]["id"], "llm:panel", verdict, comment)
+    judge_routes = build_routes("judge")
+    # The fallbacks are what make the badge unconditional. If no model answers,
+    # the review still exists and says so plainly — an honest "the panel could
+    # not be reached" is a result, and hiding it after taking the fee is not.
+    verdict = "llm-inconclusive"
+    comment = ("Machine review attempted, but no model in the judge panel was reachable at the "
+               "time of the request. No critique could be generated. Request a new review to "
+               "try again.")
+    reached_model = False
+
+    if judge_routes:
+        for route in judge_routes:
+            cooling, remaining = is_route_cooling(route["model"], route["provider"])
+            if cooling:
+                continue
+
+            _, attempt = request_model_assessment(
+                "pidyne", route["model"], route["key"], route["base"], prompt
+            )
+
+            if not attempt.get("api_failed", True):
+                record_success(route["model"], route["provider"])
+                raw_verdict = str(attempt.get("verdict") or "").strip().lower()
+                if raw_verdict not in ("sound", "concerns", "unsound"):
+                    raw_verdict = "concerns"
+                verdict = f"llm-{raw_verdict}"
+                opinion = str(attempt.get("opinion") or "").strip()
+                comment = (
+                    f"Machine review generated by {route['model']} via {route['provider']}.\n\n"
+                    + (opinion or "The model returned a verdict without a written critique.")
+                )
+                reached_model = True
+                break
+
+            raw_err = attempt.get("_raw_error", "")
+            classified = classify_provider_error(raw_err)
+            if classified["category"] == "rate_limit":
+                record_rate_limit(route["model"], route["provider"], parse_retry_after(raw_err))
+
+    # Written directly rather than through the request/complete pair, which
+    # rejects a completion by the same key that opened it — see record_llm_review.
+    saved = record_llm_review(file_hash, verdict, comment)
+    if not saved["ok"]:
+        # The fee bought a review that could not be stored. Give it back rather
+        # than keep piQ for nothing.
+        try:
+            refund_piq_fee(fee, identity["wallet"], identity["orcid"],
+                           eval_hash=file_hash, reason="LLM review refund (not saved)")
+        except Exception:
+            logging.warning("LLM review refund failed for %s", file_hash[:12])
+        raise HTTPException(status_code=503, detail=saved["reason"])
 
     add_log(f"LLM review recorded for {file_hash[:12]}… ({verdict})")
     return {"requested": True, "verdict": verdict, "charged": fee,
+            "reached_model": reached_model,
+            "review": {"verdict": verdict, "comment": comment},
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": ("LLM review recorded. The paper carries an LLM-reviewed badge — "
-                        "distinct from Peer-reviewed, because no human read it.")}
+            "message": ("LLM review complete and the badge is attached. Open the badge to read it."
+                        if reached_model else
+                        "No model was reachable, so the review records that. The badge is attached "
+                        "and you can request a new review to try again.")}
 
 
 @app.post("/api/reviews/submit")
@@ -3849,11 +3942,30 @@ def explorer_dossier(eval_hash: str):
     conn = get_db_connection()
     try:
         row = conn.execute(f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)).fetchone()
+        status = conn.execute(
+            "SELECT published_at, publish_kind FROM papers_assessment WHERE eval_hash = ?",
+            (eval_hash,)).fetchone()
+    except sqlite3.Error:
+        status = None
     finally:
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="Record not found.")
-    return build_dossier_from_row(row)
+
+    dossier = build_dossier_from_row(row)
+    # Publication and review state travel with the dossier so the seals render
+    # the same wherever the dossier is opened from — a badge that appears on a
+    # card and vanishes in the full record is worse than no badge.
+    summary = review_summary(eval_hash)
+    reviews = summary.get("reviews", [])
+    dossier["published"] = bool(status and status[0])
+    dossier["publish_kind"] = (status[1] if status and status[1] else "author") \
+        if (status and status[0]) else None
+    dossier["peer_reviews"] = sum(
+        1 for r in reviews if not str(r.get("verdict", "")).startswith("llm"))
+    dossier["llm_reviewed"] = any(
+        str(r.get("verdict", "")).startswith("llm") for r in reviews)
+    return dossier
 
 
 # ---------------------------------------------------------------------------
