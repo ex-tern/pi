@@ -35,7 +35,7 @@
     "#6366f1", "#14b8a6", "#22c55e", "#ef4444", "#a855f7", "#3b82f6",
     "#f59e0b", "#0ea5e9", "#ec4899", "#84cc16", "#f97316", "#06b6d4",
   ];
-  const UNASSIGNED_COLOR = "#cbd5e1";   // deliberately grey: it names nothing
+  const UNASSIGNED_COLOR = "#94a3b8";   // deliberately grey: it names nothing
 
   function colorFor(domain) {
     if (!domain || domain === "Unassigned") return UNASSIGNED_COLOR;
@@ -43,6 +43,63 @@
     for (let i = 0; i < domain.length; i++) h = (h * 31 + domain.charCodeAt(i)) >>> 0;
     return FIELD_COLORS[h % FIELD_COLORS.length];
   }
+
+  /** A bubble's colour comes from its DISCIPLINE, its label from its field.
+   *
+   *  Colouring per field made a map of twenty fields a map of twenty unrelated
+   *  colours, with nothing to read at a glance. Colouring by parent domain
+   *  means every bubble in one discipline shares a hue, so the map shows the
+   *  shape of the corpus — which areas the deployment works in, and how much
+   *  of each — before anyone reads a single label. */
+  function bubbleColor(b) {
+    return colorFor((b && (b.parent || b.domain)) || "");
+  }
+
+  // -------------------------------------------------------------------
+  // Theme
+  // -------------------------------------------------------------------
+  // The map follows the reader's own light/dark preference rather than being
+  // permanently night. A hard-coded near-black canvas sitting inside an
+  // otherwise light page is not a style choice, it is a hole in the page.
+  const THEMES = {
+    dark:  { top: "#070b1c", bottom: "#0d1430", stars: true,
+             mesh: "rgba(148,163,184,0.10)", label: "rgba(255,255,255,0.95)",
+             labelDim: "rgba(255,255,255,0.60)", sub: "rgba(255,255,255,0.75)",
+             hud: "rgba(8,12,28,0.72)", hudText: "#e2e8f0", hudDim: "#94a3b8",
+             playerText: "#083344", track: "rgba(255,255,255,0.14)" },
+    light: { top: "#eef3fb", bottom: "#dbe6f6", stars: false,
+             mesh: "rgba(51,65,85,0.14)", label: "rgba(15,23,42,0.92)",
+             labelDim: "rgba(15,23,42,0.55)", sub: "rgba(15,23,42,0.70)",
+             hud: "rgba(255,255,255,0.86)", hudText: "#0f172a", hudDim: "#475569",
+             playerText: "#f8fafc", track: "rgba(15,23,42,0.12)" },
+  };
+  let themeQuery = null;
+  let themeName = "dark";
+
+  function detectTheme() {
+    // An explicit app setting wins over the OS, because a user who has chosen
+    // a theme in the product has expressed a stronger preference than their
+    // system default.
+    try {
+      const forced = document.documentElement.getAttribute("data-theme")
+                  || localStorage.getItem("sp_theme");
+      if (forced === "light" || forced === "dark") return forced;
+    } catch (_) { /* private mode */ }
+    return (themeQuery && themeQuery.matches) ? "dark" : "light";
+  }
+
+  function theme() { return THEMES[themeName] || THEMES.dark; }
+
+  function initTheme() {
+    try {
+      themeQuery = window.matchMedia("(prefers-color-scheme: dark)");
+      const onChange = () => { themeName = detectTheme(); };
+      if (themeQuery.addEventListener) themeQuery.addEventListener("change", onChange);
+      else if (themeQuery.addListener) themeQuery.addListener(onChange);
+    } catch (_) { themeQuery = null; }
+    themeName = detectTheme();
+  }
+  initTheme();
 
   const state = {
     mode: "idle",          // idle | explore | play
@@ -384,7 +441,7 @@
     document.getElementById("arcadePlayBtn").classList.toggle("hidden", playing);
     document.getElementById("arcadeExitBtn").classList.toggle("hidden", !playing);
     document.getElementById("arcadeModeHint").textContent = playing
-      ? "Move to absorb smaller fields. Esc exits."
+      ? "Absorb every field on the map to win. Bigger bubbles pull harder — and so do you. Esc exits."
       : "Drag to pan, scroll to zoom, click a field for detail.";
   }
 
@@ -485,7 +542,7 @@
     el.className = cls;
     el.innerHTML = `
       <div class="diff-row"><span>Difficulty</span><strong>Level ${level}</strong></div>
-      ${target ? `<div class="diff-row"><span>Target mass</span><strong>${Number(target).toFixed(0)}</strong></div>` : ""}
+      <div class="diff-row"><span>Goal</span><strong>Absorb every field</strong></div>
       <div class="diff-row"><span>Wins</span><strong>${progress.wins || 0}</strong></div>
       ${progress.best_mass ? `<div class="diff-row"><span>Your best</span><strong>${Number(progress.best_mass).toFixed(0)}</strong></div>` : ""}
       <p class="diff-hint">${
@@ -531,7 +588,8 @@
     const mass = (data && data.final_mass) || Math.round(state.player ? state.player.mass : 0);
     const eatenLive = state.bubbles.filter(b => b.eaten && b.live).length;
     const parts = [
-      `Final mass <strong>${mass}</strong> of ${state.rules.win_mass} needed.`,
+      `Absorbed <strong>${state.absorbed.length}</strong> of ${state.bubbles.length} fields.`,
+      `Final mass <strong>${mass}</strong>.`,
       `Absorbed <strong>${state.absorbed.length}</strong> fields` +
         (eatenLive ? `, ${eatenLive} of them carrying real papers.` : "."),
     ];
@@ -593,7 +651,7 @@
     const unnamed = !b.domain || b.domain === "Unassigned";
     panel.innerHTML = `
       <div class="arcade-detail-head">
-        <span class="arcade-swatch" style="background:${colorFor(b.domain)}"></span>
+        <span class="arcade-swatch" style="background:${bubbleColor(b)}"></span>
         <strong>${escapeHtml(unnamed ? "Unclaimed space" : b.domain)}</strong>
       </div>
       <dl class="arcade-detail-rows">
@@ -629,10 +687,9 @@
    *  pile. Forces are applied to velocity and damped, so the layout settles
    *  instead of oscillating. */
   function applyGravity(dt) {
-    // Never during play. Clustering drags fields toward each other while the
-    // player is moving between them, which makes the game unplayable — a gap
-    // you aimed for closes as you cross it. Gravity is a layout aid for
-    // reading the map, not a game mechanic.
+    // In EXPLORE this is a layout spring that arranges the constellation.
+    // In PLAY it is real gravity — see applyOrbitalGravity, called separately —
+    // so the spring is skipped there rather than the whole mechanic.
     if (state.mode === "play") return;
     if (!state.look.gravity) return;
     const ATTRACT = 0.9;
@@ -684,8 +741,95 @@
     }
   }
 
+  /** Mass attracts mass — the play-mode mechanic.
+   *
+   *  Every bubble pulls every other, and the player pulls too. Force follows
+   *  the inverse-square law with mass in the numerator, so a large field has a
+   *  genuinely deeper well than a small one and the map behaves the way its
+   *  sizes suggest it should.
+   *
+   *  Three departures from textbook gravity, each for a reason:
+   *
+   *   * Only the SMALLER body is moved by a pair. Mutual attraction would let a
+   *     player drag the entire field along behind them, and makes the biggest
+   *     bubbles wander off their own domain cluster. Being pulled toward
+   *     something bigger than you is also the reading the mechanic wants: mass
+   *     is a threat until you outgrow it.
+   *   * A softening term in the denominator. True inverse-square goes infinite
+   *     at contact, which at a 60 Hz step launches bubbles across the world.
+   *   * A speed cap, for the same reason.
+   *
+   *  None of this touches verification. The server replays a run from the
+   *  ordered list of absorptions and the field's masses; it never simulates
+   *  positions, so how bubbles moved is a client-side concern.
+   */
+  function applyOrbitalGravity(dt) {
+    const G = 480;            // tuned so a large field is felt, not fatal
+    const SOFT = 900;         // softening, in world units squared
+    const MAX_SPEED = 5.5;
+    const list = state.bubbles;
+
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (a.eaten) continue;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (b.eaten) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d2 = dx * dx + dy * dy + SOFT;
+        const d = Math.sqrt(d2);
+        // Heavier of the pair is the attractor; lighter one moves.
+        const small = a.mass <= b.mass ? a : b;
+        const big = small === a ? b : a;
+        const pull = (G * big.mass) / d2 * dt;
+        const sx = (big.x - small.x) / d, sy = (big.y - small.y) / d;
+        small.vx += sx * pull;
+        small.vy += sy * pull;
+      }
+    }
+
+    // The player is a body too: as it grows it visibly draws the field in.
+    const p = state.player;
+    if (p) {
+      for (const b of list) {
+        if (b.eaten || b.mass >= p.mass) continue;   // only smaller ones fall in
+        const dx = p.x - b.x, dy = p.y - b.y;
+        const d2 = dx * dx + dy * dy + SOFT;
+        const d = Math.sqrt(d2);
+        const pull = (G * p.mass) / d2 * dt;
+        b.vx += (dx / d) * pull;
+        b.vy += (dy / d) * pull;
+      }
+    }
+
+    // Separation, so bubbles orbit rather than merge into one blob.
+    for (let i = 0; i < list.length; i++) {
+      const a = list[i];
+      if (a.eaten) continue;
+      for (let j = i + 1; j < list.length; j++) {
+        const b = list[j];
+        if (b.eaten) continue;
+        const dx = b.x - a.x, dy = b.y - a.y;
+        const d = Math.hypot(dx, dy) || 1;
+        const min = (a.mass + b.mass) * 1.02;
+        if (d >= min) continue;
+        const push = ((min - d) / d) * 14 * dt;
+        a.vx -= dx * push; a.vy -= dy * push;
+        b.vx += dx * push; b.vy += dy * push;
+      }
+    }
+
+    for (const b of list) {
+      if (b.eaten) continue;
+      b.vx *= 0.985; b.vy *= 0.985;        // light drag keeps orbits stable
+      const sp = Math.hypot(b.vx, b.vy);
+      if (sp > MAX_SPEED) { b.vx = (b.vx / sp) * MAX_SPEED; b.vy = (b.vy / sp) * MAX_SPEED; }
+    }
+  }
+
   function drift(dt) {
-    applyGravity(dt);
+    if (state.mode === "play") applyOrbitalGravity(dt);
+    else applyGravity(dt);
     for (const b of state.bubbles) {
       if (b.eaten) continue;
       if (state.grabbed && state.grabbed.bubble === b) continue;
@@ -739,7 +883,7 @@
           b.eaten = true;
           p.mass += b.mass * state.rules.absorb_ratio;
           state.absorbed.push({ id: b.id, t: Math.round(performance.now() - state.startedAt) });
-          spawnBurst(b.x, b.y, colorFor(b.domain), b.live ? 26 : 14);
+          spawnBurst(b.x, b.y, bubbleColor(b), b.live ? 26 : 14);
           selectBubble(b);          // absorbing IS inspecting
         } else {
           spawnBurst(p.x, p.y, "#ef4444", 40);
@@ -749,7 +893,15 @@
       }
     }
 
-    if (p.mass >= state.rules.win_mass) { spawnBurst(p.x, p.y, "#22c55e", 90); endRun(true); return; }
+    // The run is won by clearing the map, not by passing a mass threshold.
+    // The old rule ended the game at 140 mass with most of the corpus still on
+    // screen, which meant the stated goal ("absorb the field") and the real one
+    // ("reach a number") were different games. Now they are the same one.
+    if (!state.bubbles.some(b => !b.eaten)) {
+      spawnBurst(p.x, p.y, "#22c55e", 120);
+      endRun(true);
+      return;
+    }
 
     const targetZoom = Math.max(0.34, Math.min(1.15, 46 / p.mass));
     state.camera.zoom += (targetZoom - state.camera.zoom) * Math.min(1, dt * 2.4);
@@ -763,11 +915,14 @@
   function draw() {
     const ctx = state.ctx, w = viewW(), h = viewH();
     ctx.setTransform(state.dpr, 0, 0, state.dpr, 0, 0);
+    const T = theme();
     const g = ctx.createLinearGradient(0, 0, 0, h);
-    g.addColorStop(0, "#070b1c"); g.addColorStop(1, "#0d1430");
+    g.addColorStop(0, T.top); g.addColorStop(1, T.bottom);
     ctx.fillStyle = g; ctx.fillRect(0, 0, w, h);
 
-    drawStars(ctx, w, h);
+    // Stars are a night-sky metaphor. In daylight they read as dust on the
+    // screen, so they are simply absent rather than recoloured.
+    if (T.stars) drawStars(ctx, w, h);
     if (effectsQuality > 0 && state.look.mesh) drawMesh(ctx);
     for (const b of state.bubbles) if (!b.eaten) drawBubble(ctx, b);
     drawParticles(ctx);
@@ -855,7 +1010,7 @@
     const s = worldToScreen(b.x, b.y), r = b.mass * state.camera.zoom * look;
     if (b.dimmed && state.mode !== "play") { drawDimmed(ctx, s, r, b); return; }
     if (s.x + r < 0 || s.x - r > viewW() || s.y + r < 0 || s.y - r > viewH()) return;
-    const color = colorFor(b.domain);
+    const color = bubbleColor(b);
     const playing = state.mode === "play" && state.player;
     const edible = playing ? b.mass < state.player.mass : false;
     const pulse = 1 + Math.sin(b.pulse) * 0.02;
@@ -883,11 +1038,11 @@
 
     if (r > 20 && state.look.labels) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.fillStyle = b.live ? "rgba(255,255,255,0.95)" : "rgba(255,255,255,0.6)";
+      ctx.fillStyle = b.live ? theme().label : theme().labelDim;
       ctx.font = `600 ${Math.min(15, r / 2.8)}px -apple-system, system-ui, sans-serif`;
       ctx.fillText(b.domain, s.x, s.y - (b.live && r > 34 ? 7 : 0));
       if (b.live && r > 34) {
-        ctx.fillStyle = "rgba(255,255,255,0.75)";
+        ctx.fillStyle = theme().sub;
         ctx.font = `500 ${Math.min(12, r / 4)}px -apple-system, system-ui, sans-serif`;
         ctx.fillText(`${b.papers} paper${b.papers === 1 ? "" : "s"}`, s.x, s.y + 9);
       }
@@ -898,7 +1053,7 @@
    *  pushed into the background so the matching set reads clearly. */
   function drawDimmed(ctx, s, r, b) {
     if (s.x + r < 0 || s.x - r > viewW() || s.y + r < 0 || s.y - r > viewH()) return;
-    ctx.fillStyle = "rgba(148,163,184,0.10)";
+    ctx.fillStyle = theme().mesh;
     ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(148,163,184,0.22)"; ctx.stroke();
   }
@@ -916,7 +1071,7 @@
     ctx.fillStyle = body;
     ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
-    ctx.fillStyle = "#083344"; ctx.textAlign = "center"; ctx.textBaseline = "middle";
+    ctx.fillStyle = theme().playerText; ctx.textAlign = "center"; ctx.textBaseline = "middle";
     ctx.font = `700 ${Math.min(17, r / 2.2)}px -apple-system, system-ui, sans-serif`;
     ctx.fillText("π", s.x, s.y);
   }
@@ -931,24 +1086,30 @@
 
   function drawHud(ctx, w, h) {
     if (state.mode === "play" && state.player) {
-      const p = state.player, pct = Math.min(1, p.mass / state.rules.win_mass);
-      ctx.fillStyle = "rgba(8,12,28,0.72)"; roundRect(ctx, 12, 12, 208, 62, 10); ctx.fill();
-      ctx.fillStyle = "#e2e8f0"; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
+      // Progress is what is left of the map, because clearing the map is the
+      // win. A mass bar measured progress toward a number that no longer ends
+      // the game.
+      const p = state.player;
+      const total = state.bubbles.length;
+      const left = state.bubbles.reduce((n, b) => n + (b.eaten ? 0 : 1), 0);
+      const pct = total ? (total - left) / total : 0;
+      ctx.fillStyle = theme().hud; roundRect(ctx, 12, 12, 208, 62, 10); ctx.fill();
+      ctx.fillStyle = theme().hudText; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
       ctx.font = "600 12px -apple-system, system-ui, sans-serif";
-      ctx.fillText(`Mass ${Math.round(p.mass)} / ${state.rules.win_mass}`, 24, 34);
-      ctx.fillStyle = "#94a3b8"; ctx.font = "500 11px -apple-system, system-ui, sans-serif";
-      ctx.fillText(`${state.absorbed.length} fields absorbed`, 24, 66);
-      ctx.fillStyle = "rgba(255,255,255,0.14)"; roundRect(ctx, 24, 42, 184, 8, 4); ctx.fill();
+      ctx.fillText(`${total - left} / ${total} fields absorbed`, 24, 34);
+      ctx.fillStyle = theme().hudDim; ctx.font = "500 11px -apple-system, system-ui, sans-serif";
+      ctx.fillText(`Mass ${Math.round(p.mass)} · ${left} left`, 24, 66);
+      ctx.fillStyle = theme().track; roundRect(ctx, 24, 42, 184, 8, 4); ctx.fill();
       ctx.fillStyle = pct > 0.75 ? "#22c55e" : "#38bdf8";
       roundRect(ctx, 24, 42, Math.max(4, 184 * pct), 8, 4); ctx.fill();
     }
 
     const mw = 132, mh = mw * (WORLD_H / WORLD_W);
     const mx = w - mw - 12, my = h - mh - 12;
-    ctx.fillStyle = "rgba(8,12,28,0.72)"; roundRect(ctx, mx, my, mw, mh, 8); ctx.fill();
+    ctx.fillStyle = theme().hud; roundRect(ctx, mx, my, mw, mh, 8); ctx.fill();
     for (const b of state.bubbles) {
       if (b.eaten) continue;
-      ctx.fillStyle = rgba(colorFor(b.domain), b.live ? 0.85 : 0.4);
+      ctx.fillStyle = rgba(bubbleColor(b), b.live ? 0.85 : 0.4);
       ctx.beginPath();
       ctx.arc(mx + (b.x / WORLD_W) * mw, my + (b.y / WORLD_H) * mh,
               Math.max(0.8, b.mass / 26), 0, Math.PI * 2);
