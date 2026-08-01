@@ -1275,7 +1275,9 @@ a.btn { text-decoration: none; display: inline-block; }
 /* --- Author-published badge and history actions -------------------------- */
 .p-published { background: #ecfdf5; color: #047857; border: 1px solid #a7f3d0; }
 .hist-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
-.hist-held { font-size: 10.5px; color: var(--warn); font-weight: 600; margin-top: 2px; }
+/* Held piQ is the full earned figure, coloured rather than split into a
+   headline number and a footnote that disagreed with it. */
+.hist-piq-held { color: var(--warn); font-weight: 600; }
 .btn-icon {
   background: none; border: 1px solid var(--border-strong); color: var(--text);
   border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit;

@@ -4657,6 +4657,32 @@ async function resetProfile() {
   }
 }
 
+/** The piQ figure for one history row.
+ *
+ *  One number: everything this paper earned, held or not. The column used to
+ *  print the minted figure and hang "+13.13 held" underneath it, so a paper
+ *  that had earned 13.13 piQ displayed a headline "0.00" — the true figure was
+ *  relegated to a footnote under the wrong number. Held piQ is earned piQ; it
+ *  is simply not yet spendable, and that is a matter of colour and a tooltip,
+ *  not of showing a different amount.
+ *
+ *  Matches piqPill() on the cards and in the dossier, so the same paper reads
+ *  the same everywhere.
+ */
+function histPiq(a) {
+  const minted = Number(a.piq_minted || a.piq || 0);
+  const held = (a.claimed ? 0 : Number(a.escrowed || 0));
+  const total = minted + held;
+  if (held > 0) {
+    return `<span class="hist-piq-held" title="${escapeHtml(
+      `${total.toFixed(2)} piQ earned. ${held.toFixed(2)} is held until authorship is verified `
+      + `— claim it to make it spendable.`)}">${total.toFixed(2)}</span>`;
+  }
+  return `<span title="${escapeHtml(
+    total > 0 ? `${total.toFixed(2)} piQ earned and claimed.` : "No piQ earned for this paper."
+  )}">${total.toFixed(2)}</span>`;
+}
+
 /** Assessment history for a signed-in identity. */
 async function loadAssessmentHistory() {
   const card = document.getElementById("historyCard");
@@ -4690,10 +4716,7 @@ async function loadAssessmentHistory() {
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
           <td class="num">${a.score.toFixed(1)}</td>
-          <td class="num">${a.piq_minted.toFixed(2)}${
-            a.escrowed && !a.claimed
-              ? `<div class="hist-held" title="Earned but held until authorship is verified">+${a.escrowed.toFixed(2)} held</div>`
-              : ""}</td>
+          <td class="num">${histPiq(a)}</td>
           <td class="hist-actions">${assessmentActions(a, "row")}</td>
         </tr>`).join("") + `</tbody></table>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
