@@ -1962,3 +1962,148 @@ def visitor_stats() -> dict:
         "week": int(row[3] or 0),
         "month": int(row[4] or 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# Engine model state — piD, riB, siM
+# ---------------------------------------------------------------------------
+def _ensure_engine_tables(conn) -> None:
+    conn.execute("""CREATE TABLE IF NOT EXISTS engine_models (
+                        name TEXT PRIMARY KEY,
+                        state TEXT NOT NULL,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    # Every observation is kept, not just the resulting weights. A learned
+    # model whose training history is discarded cannot be recomputed, audited
+    # or explained after the fact — and these models feed research assessment,
+    # where "the number changed and we cannot say why" is not acceptable.
+    conn.execute("""CREATE TABLE IF NOT EXISTS engine_observations (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        engine TEXT NOT NULL,
+                        features TEXT NOT NULL,
+                        target REAL NOT NULL,
+                        predicted REAL,
+                        error REAL,
+                        baseline_error REAL,
+                        source TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    conn.execute("CREATE INDEX IF NOT EXISTS idx_engine_obs ON engine_observations(engine, id)")
+
+
+def save_engine_state(name: str, state_json: str) -> None:
+    """Persist a model. Never raises: learning must not break a request."""
+    conn = get_db_connection()
+    try:
+        _ensure_engine_tables(conn)
+        conn.execute(
+            """INSERT INTO engine_models (name, state, updated_at)
+               VALUES (?, ?, CURRENT_TIMESTAMP)
+               ON CONFLICT(name) DO UPDATE SET state = excluded.state,
+                                               updated_at = CURRENT_TIMESTAMP""",
+            (name, state_json))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not persist engine model %s: %s", name, e)
+    finally:
+        conn.close()
+
+
+def load_engine_state(name: str) -> str:
+    conn = get_db_connection()
+    try:
+        _ensure_engine_tables(conn)
+        row = conn.execute("SELECT state FROM engine_models WHERE name = ?", (name,)).fetchone()
+        return row[0] if row else ""
+    except sqlite3.Error:
+        return ""
+    finally:
+        conn.close()
+
+
+def log_engine_observation(engine: str, features, target: float, result: dict,
+                           source: str = "") -> None:
+    conn = get_db_connection()
+    try:
+        _ensure_engine_tables(conn)
+        conn.execute(
+            """INSERT INTO engine_observations
+                   (engine, features, target, predicted, error, baseline_error, source)
+               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+            (engine, json.dumps([float(f) for f in features]), float(target),
+             result.get("predicted"), result.get("error"),
+             result.get("baseline_error"), source))
+        conn.commit()
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        logging.debug("Could not log engine observation: %s", e)
+    finally:
+        conn.close()
+
+
+def engine_observation_count(engine: str) -> int:
+    conn = get_db_connection()
+    try:
+        _ensure_engine_tables(conn)
+        row = conn.execute(
+            "SELECT COUNT(*) FROM engine_observations WHERE engine = ?", (engine,)).fetchone()
+        return int(row[0] or 0)
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
+def recent_engine_observations(engine: str, limit: int = 30) -> list:
+    conn = get_db_connection()
+    try:
+        _ensure_engine_tables(conn)
+        rows = conn.execute(
+            """SELECT target, predicted, error, baseline_error, source, created_at
+               FROM engine_observations WHERE engine = ? ORDER BY id DESC LIMIT ?""",
+            (engine, int(limit))).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"target": r[0], "predicted": r[1], "error": r[2],
+             "baseline_error": r[3], "source": r[4], "created_at": r[5]} for r in rows]
+
+
+# --- riB guidance feedback -------------------------------------------------
+def record_rib_feedback(account_key: str, suggestion: str, features,
+                        useful: bool) -> None:
+    """A researcher's verdict on one piece of riB guidance.
+
+    This is riB's only training signal. Without it riB can compute statistics
+    but cannot learn, because nothing in the system otherwise observes whether
+    its advice was any good.
+    """
+    conn = get_db_connection()
+    try:
+        conn.execute("""CREATE TABLE IF NOT EXISTS rib_feedback (
+                            id INTEGER PRIMARY KEY AUTOINCREMENT,
+                            account_key TEXT,
+                            suggestion TEXT,
+                            features TEXT,
+                            useful INTEGER,
+                            created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+        conn.execute(
+            "INSERT INTO rib_feedback (account_key, suggestion, features, useful) "
+            "VALUES (?, ?, ?, ?)",
+            (account_key, str(suggestion)[:300],
+             json.dumps([float(f) for f in features]), 1 if useful else 0))
+        conn.commit()
+    except (sqlite3.Error, TypeError, ValueError) as e:
+        logging.warning("Could not record riB feedback: %s", e)
+    finally:
+        conn.close()
+
+
+def rib_feedback_totals() -> dict:
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT COUNT(*), COALESCE(SUM(useful),0) FROM rib_feedback").fetchone()
+        return {"count": int(row[0] or 0), "useful": int(row[1] or 0)}
+    except sqlite3.Error:
+        return {"count": 0, "useful": 0}
+    finally:
+        conn.close()

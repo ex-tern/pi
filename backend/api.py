@@ -83,7 +83,7 @@ from integrations import (
     build_pdf_from_text, search_open_access_works,
 )
 from attribution import verify_authorship, verify_journal_claim
-from extraction import fetch_registry_metadata
+from extraction import fetch_registry_metadata, full_text_from_pdf
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state,
@@ -104,6 +104,7 @@ import assistant as scilem
 import abuse_guard
 import bugreport
 import rib_engine
+import rib_engine as rib_learning
 import auth
 import authorship_challenge
 import sim_engine as scilem_learning
@@ -1176,6 +1177,67 @@ def register_visit(request: Request):
     return visitor_stats()
 
 
+class RibFeedback(BaseModel):
+    field: str = ""
+    useful: bool = True
+    features: List[float] = []
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.post("/api/rib/feedback")
+def rib_feedback(payload: RibFeedback, request: Request):
+    """A researcher's verdict on one riB suggestion — riB's training signal.
+
+    riB has no other way to learn. Its counts and means are measurements with
+    no error to observe; whether a suggestion was worth making is only knowable
+    from the person who received it.
+    """
+    identity = auth.identity_from_request(request, payload.wallet, payload.orcid)
+    key = _profile_key(identity["wallet"], identity["orcid"]) if identity["verified"] else ""
+    check_rate_limit(get_client_ip(request), bucket="review")
+
+    candidate = {"field": payload.field, "_features": payload.features or None}
+    summary = {"total_papers": 0, "mean_score": 0.0}
+    try:
+        result = rib_learning.observe_feedback(candidate, summary, payload.useful,
+                                               account_key=key)
+    except Exception as e:
+        logging.warning("riB could not learn from feedback: %s", e)
+        raise HTTPException(status_code=503, detail="Feedback could not be recorded.")
+    return {"recorded": True, "learning": result,
+            "message": ("Recorded. riB uses this to decide which suggestions to surface "
+                        "first — it never adjusts the underlying counts.")}
+
+
+@app.get("/api/engines/status")
+def engines_status():
+    """What each of the three engines has actually learned.
+
+    Published rather than asserted: a claim that an engine improves over time
+    is only meaningful if the improvement can be inspected, so each model
+    reports its parameters, its observation count, and its error against its
+    own frozen defaults. An engine that is not beating its defaults says so.
+    """
+    criteria_keys = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+    out = {"budget_note": ("All three learners are NumPy linear models with a few dozen "
+                           "parameters each. No PyTorch is imported on this path, which is "
+                           "what keeps the process inside a 500 MB envelope.")}
+    try:
+        out["piD"] = forecast_engine.engine_status(criteria_keys)
+    except Exception as e:
+        out["piD"] = {"error": str(e)}
+    try:
+        out["riB"] = rib_learning.engine_status()
+    except Exception as e:
+        out["riB"] = {"error": str(e)}
+    try:
+        out["siM"] = scilem_learning.status()
+    except Exception as e:
+        out["siM"] = {"error": str(e)}
+    return out
+
+
 @app.get("/api/stats/visitors")
 def visitor_counts():
     """Public visitor totals."""
@@ -2024,12 +2086,40 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
     conn = get_db_connection()
     try:
         row = conn.execute(
-            "SELECT title, evidence_report, consensus_data FROM papers_assessment "
+            "SELECT title, evidence_report, author_name FROM papers_assessment "
             "WHERE eval_hash = ?", (file_hash,)).fetchone()
     finally:
         conn.close()
     if not row:
         raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    # The reviewer reads the MANUSCRIPT, not our evidence report.
+    #
+    # This endpoint used to hand the model ScholarPi's own synthesised evidence
+    # report and ask it to return one of our three rubric verdicts. That was a
+    # review of our summary, phrased in our vocabulary — it could only ever
+    # agree or disagree with an assessment that had already been made, and it
+    # inherited every framing decision the rubric had taken. A machine review
+    # worth 0.5 piQ should be an independent reading of the paper.
+    manuscript = ""
+    stored = paper_store.paper_path(file_hash)
+    if stored:
+        try:
+            with open(stored, "rb") as fh:
+                manuscript = full_text_from_pdf(fh.read())
+        except OSError as e:
+            logging.warning("Could not read stored manuscript %s: %s", file_hash[:12], e)
+
+    if not manuscript.strip():
+        # Refuse rather than silently fall back to reviewing our own report.
+        # Charging for "a genuine review of the paper" and delivering a review
+        # of a summary is the thing being fixed here.
+        raise HTTPException(
+            status_code=409,
+            detail=("An LLM review reads the manuscript itself, and no manuscript file is "
+                    "stored for this assessment. Papers assessed before file retention, and "
+                    "papers submitted by DOI rather than upload, cannot be reviewed this way — "
+                    "re-run the assessment with the PDF uploaded. No piQ has been charged."))
 
     if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
                           eval_hash=file_hash, reason="LLM review fee"):
@@ -2039,23 +2129,50 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
     from providers import build_routes, is_route_cooling, record_success, record_rate_limit, parse_retry_after, classify_provider_error
     from brain import request_model_assessment
     
+    # An ordinary scholarly peer review, in the reviewer's own terms.
+    #
+    # Deliberately free of ScholarPi's vocabulary: no piX, no piQ, no C1-C8, no
+    # three-way rubric verdict. The model is asked to review the paper the way a
+    # journal referee would, and to reach its own recommendation from standard
+    # peer-review language. If it disagrees with our assessment that is a useful
+    # signal, and it cannot produce one while writing inside our categories.
+    truncated = len(manuscript) >= 59000
     prompt = (
-        f"You are providing a critical post-assessment peer review. Below is the synthesized "
-        f"evidence report for a manuscript. Please read it and provide a JSON response with "
-        f"a 'verdict' (must be exactly 'sound', 'concerns', or 'unsound') and an 'opinion' "
-        f"(150-200 words explaining your critique).\n\n"
-        f"Report:\n{row[1][:6000]}"
+        "You are an expert peer reviewer for an academic journal. Read the manuscript below "
+        "and write a substantive referee report, exactly as you would for a journal editor.\n\n"
+        "Judge the work on its own terms and in the conventions of its own field. Do not use "
+        "any external scoring framework, rubric or numeric index — assess the research.\n\n"
+        "Cover, in your own structure and words:\n"
+        "  - what the paper claims and whether the evidence supports it\n"
+        "  - the methodology, and any threat to the validity of the conclusions\n"
+        "  - statistical or analytical soundness, where applicable\n"
+        "  - novelty and contribution relative to existing literature\n"
+        "  - reproducibility: data, code, materials, and enough detail to repeat the work\n"
+        "  - clarity of presentation\n"
+        "  - specific, actionable revisions, referring to concrete parts of the text\n\n"
+        "Be direct about weaknesses. A referee report that praises everything is useless to an "
+        "editor and to the authors. If the manuscript is strong, say why specifically.\n\n"
+        "Return JSON with exactly these keys:\n"
+        '  "recommendation": one of "accept", "minor revision", "major revision", "reject"\n'
+        '  "summary": one or two sentences stating what the paper does\n'
+        '  "report": your full referee report as markdown, 400-800 words, using headings\n'
+        '  "strengths": array of short strings\n'
+        '  "concerns": array of short strings, most serious first\n\n'
+        + ("NOTE: the manuscript was truncated for length; review what is present and say so "
+           "if the ending is missing.\n\n" if truncated else "")
+        + f"TITLE: {row[0] or 'Untitled'}\n\nMANUSCRIPT:\n{manuscript}"
     )
 
     judge_routes = build_routes("judge")
     # The fallbacks are what make the badge unconditional. If no model answers,
     # the review still exists and says so plainly — an honest "the panel could
     # not be reached" is a result, and hiding it after taking the fee is not.
-    verdict = "llm-inconclusive"
-    comment = ("Machine review attempted, but no model in the judge panel was reachable at the "
-               "time of the request. No critique could be generated. Request a new review to "
-               "try again.")
+    verdict = "inconclusive"
+    comment = ("Machine review attempted, but no model in the panel was reachable at the time of "
+               "the request. No referee report could be generated. Request a new review to try "
+               "again.")
     reached_model = False
+    review_model = ""
 
     if judge_routes:
         for route in judge_routes:
@@ -2069,15 +2186,39 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
 
             if not attempt.get("api_failed", True):
                 record_success(route["model"], route["provider"])
-                raw_verdict = str(attempt.get("verdict") or "").strip().lower()
-                if raw_verdict not in ("sound", "concerns", "unsound"):
-                    raw_verdict = "concerns"
-                verdict = f"llm-{raw_verdict}"
-                opinion = str(attempt.get("opinion") or "").strip()
-                comment = (
-                    f"Machine review generated by {route['model']} via {route['provider']}.\n\n"
-                    + (opinion or "The model returned a verdict without a written critique.")
-                )
+
+                # Standard editorial recommendations, not our rubric. Anything
+                # unrecognised is kept verbatim rather than coerced into one of
+                # our categories — forcing a reviewer's conclusion into a
+                # vocabulary it did not use is how the previous version stopped
+                # being a genuine review.
+                rec = str(attempt.get("recommendation") or "").strip().lower()
+                allowed = ("accept", "minor revision", "major revision", "reject")
+                verdict = rec if rec in allowed else (rec[:40] or "reviewed")
+
+                report = str(attempt.get("report") or attempt.get("opinion") or "").strip()
+                strengths = [str(x).strip() for x in (attempt.get("strengths") or []) if str(x).strip()]
+                concerns = [str(x).strip() for x in (attempt.get("concerns") or []) if str(x).strip()]
+                summary_line = str(attempt.get("summary") or "").strip()
+
+                parts = []
+                if summary_line:
+                    parts.append(f"**Summary.** {summary_line}")
+                parts.append(f"**Recommendation: {verdict}**")
+                if report:
+                    parts.append(report)
+                if strengths:
+                    parts.append("### Strengths\n" + "\n".join(f"- {x}" for x in strengths))
+                if concerns:
+                    parts.append("### Concerns\n" + "\n".join(f"- {x}" for x in concerns))
+                parts.append(
+                    f"---\n*Referee report written by {route['model']} via {route['provider']} "
+                    f"from the full manuscript. This is a machine review — no human read the "
+                    f"paper — and it is independent of ScholarPi's own assessment.*")
+
+                comment = "\n\n".join(parts) if report or strengths or concerns else (
+                    f"The model returned a recommendation ({verdict}) without a written report.")
+                review_model = f"{route['model']} via {route['provider']}"
                 reached_model = True
                 break
 
@@ -2099,12 +2240,13 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
             logging.warning("LLM review refund failed for %s", file_hash[:12])
         raise HTTPException(status_code=503, detail=saved["reason"])
 
-    add_log(f"LLM review recorded for {file_hash[:12]}… ({verdict})")
+    add_log(f"LLM referee report recorded for {file_hash[:12]}… ({verdict})")
     return {"requested": True, "verdict": verdict, "charged": fee,
-            "reached_model": reached_model,
+            "reached_model": reached_model, "model": review_model,
             "review": {"verdict": verdict, "comment": comment},
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": ("LLM review complete and the badge is attached. Open the badge to read it."
+            "message": (f"Referee report complete — recommendation: {verdict}. The badge is "
+                        f"attached; open it to read the full report."
                         if reached_model else
                         "No model was reachable, so the review records that. The badge is attached "
                         "and you can request a new review to try again.")}
@@ -3479,6 +3621,24 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
             if raw_pred is not None:
                 method = "pidyne-lstm"
             
+    # piD learns here. Every block that has appeared since the last pass is
+    # replayed one step ahead — predicted from only the blocks before it, then
+    # scored against what was actually written — so the model is trained the
+    # way it is used and never sees the answer first. This is what makes piD a
+    # learner rather than a procedure that refits and forgets.
+    criteria_keys = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
+    try:
+        forecast_engine.learn_from_history(weight_matrix, criteria_keys)
+        learned_pred = np.array(
+            [forecast_engine.learned_forecast(weight_matrix[:, i], c)
+             for i, c in enumerate(criteria_keys[:weight_matrix.shape[1]])])
+    except Exception as e:
+        logging.warning("piD learned forecast unavailable: %s", e)
+        learned_pred = None
+
+    if raw_pred is None and learned_pred is not None:
+        raw_pred = learned_pred
+        method = "pid-learned"
     if raw_pred is None:
         raw_pred = forecast_engine.holt_linear_forecast(weight_matrix, alpha=alpha, beta=beta)
 
@@ -4238,10 +4398,11 @@ def explorer_dossier(eval_hash: str):
     dossier["published"] = bool(status and status[0])
     dossier["publish_kind"] = (status[1] if status and status[1] else "author") \
         if (status and status[0]) else None
-    dossier["peer_reviews"] = sum(
-        1 for r in reviews if not str(r.get("verdict", "")).startswith("llm"))
-    dossier["llm_reviewed"] = any(
-        str(r.get("verdict", "")).startswith("llm") for r in reviews)
+    # is_llm, not a verdict prefix. Machine verdicts are now ordinary editorial
+    # recommendations ("major revision"), so a prefix test would classify every
+    # referee report as a human peer review and attach the wrong badge.
+    dossier["peer_reviews"] = sum(1 for r in reviews if not r.get("is_llm"))
+    dossier["llm_reviewed"] = any(r.get("is_llm") for r in reviews)
     # Only advertise the file when it is actually readable — the endpoint
     # serves a published paper to anyone, and an unpublished one to nobody but
     # its author. Advertising an unpublished file would produce a link that
