@@ -6028,6 +6028,21 @@ function resetBuddyStateForIdentityChange() {
   } catch (_) { /* nothing to clean up */ }
 }
 
+/** Show "Clear all history" only when every paper is ticked.
+ *
+ *  Deleting everything is not something to offer next to a list you are part
+ *  way through selecting. Requiring the full set first makes the button an
+ *  explicit second step rather than a thing sitting under the pointer while
+ *  you tick — and the tick state is already the clearest statement of "I mean
+ *  all of them" available on the page.
+ */
+function syncClearHistoryVisibility(total) {
+  const btn = document.getElementById("clearHistoryBtn");
+  if (!btn) return;
+  const all = total > 0 && buddySelection.size === total;
+  btn.classList.toggle("hidden", !all);
+}
+
 /** Say plainly what riB is currently reading, so the scope is never a guess. */
 function renderBuddyPickNote(total) {
   const el = document.getElementById("buddyPickNote");
@@ -6140,7 +6155,8 @@ async function _loadAssessmentHistory() {
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
       invalidate every block after it.
-      <button class="btn btn-danger-soft" id="clearHistoryBtn"
+      <button class="btn btn-danger-soft ${
+        anySelected && buddySelection.size === live.size ? "" : "hidden"}" id="clearHistoryBtn"
               title="Withdraw every paper you have submitted">Clear all history</button></p>`;
 
     renderBuddyPickNote(live.size);
@@ -6156,6 +6172,7 @@ async function _loadAssessmentHistory() {
         const all = document.getElementById("buddyPickAll");
         if (all) all.checked = buddySelection.size === live.size && live.size > 0;
         renderBuddyPickNote(live.size);
+        syncClearHistoryVisibility(live.size);
         refreshBuddy();
       });
     });
@@ -6169,6 +6186,7 @@ async function _loadAssessmentHistory() {
           cb.closest("tr").classList.toggle("row-picked", all.checked);
         });
         renderBuddyPickNote(live.size);
+        syncClearHistoryVisibility(live.size);
         refreshBuddy();
       });
     }
