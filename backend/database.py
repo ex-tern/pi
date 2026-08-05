@@ -2134,7 +2134,7 @@ def record_challenge_attempt(challenge_id: int, verified: bool = False) -> None:
 # Author publishing
 # ---------------------------------------------------------------------------
 def set_published(eval_hash: str, identities, account_key: str, published: bool,
-                  kind: str = "author") -> dict:
+                  kind: str = "author", allow_unreviewed: bool = False) -> dict:
     """Attach or withdraw an author's public endorsement of an assessment.
 
     Ownership is enforced in the UPDATE rather than by a prior SELECT, for the
@@ -2155,7 +2155,15 @@ def set_published(eval_hash: str, identities, account_key: str, published: bool,
     values = [v for v in (identities or []) if v]
     if not eval_hash or not values:
         return {"ok": False, "reason": "Sign in to publish an assessment."}
-    if published and not has_human_review(eval_hash):
+    # `allow_unreviewed` is the operator override. It exists because the review
+    # rule is otherwise a closed loop on a new deployment: publishing needs a
+    # review, reviewing needs a peer, and the first participant has none. The
+    # override lets the operator publish their own work — and deliberately does
+    # NOT fabricate a review to do it, so the paper carries an Author-published
+    # badge and no Peer-reviewed badge. The gap is visible to every reader,
+    # which is the honest way to bootstrap: the paper is published, and nobody
+    # is told it was reviewed when it was not.
+    if published and not allow_unreviewed and not has_human_review(eval_hash):
         return {"ok": False, "reason": (
             "This paper has not been peer reviewed yet. A paper must be reviewed before it can "
             "be published — request a review from the dossier, and publish once a reviewer has "
