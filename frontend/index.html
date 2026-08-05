@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=20">
+<link rel="stylesheet" href="style.css?v=25">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -112,6 +112,15 @@
       <button id="bugReportBtn" class="btn btn-outline btn-block">Report a bug</button>
       <div class="bug-hint" id="bugReportHint"></div>
     </div>
+
+    <!-- Owner only, and hidden entirely for everyone else. Reports whose email
+         delivery failed exist nowhere but this database, so without somewhere
+         to read them they are silently lost — the sidebar is where the
+         maintainer already looks at system state. -->
+    <details class="sidebar-expander hidden" id="ownerBugsPanel">
+      <summary>Bug reports<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
+      <div id="ownerBugsBody"><p class="hint">Loading…</p></div>
+    </details>
   </aside>
 
   <!-- ===================== MAIN ===================== -->
@@ -515,13 +524,11 @@
               <button class="arcade-tool arcade-tool-exit hidden" id="arcadeExitBtn" aria-label="Exit the game">Exit ✕</button>
             </div>
 
-            <!-- Leaderboard sits under the game it ranks. In the sidebar it was
-                 competing with the filter controls, and a ranking is something
-                 you look at after a run, not while setting one up. -->
-            <section class="arcade-board-card" id="arcadeBoardGroup">
-              <h3 class="arcade-board-title">Science Map leaderboard</h3>
-              <div id="arcadeBoard"><p class="hint">Loading…</p></div>
-            </section>
+            <!-- The Science Map leaderboard was removed. Its loader
+                 (loadArcadeBoard) already returns early when this element is
+                 absent, so the fetch simply stops happening; the endpoint and
+                 the scores behind it are untouched and can be surfaced again
+                 by restoring this block. -->
           </div>
 
           <aside class="arcade-side">
@@ -701,7 +708,7 @@
   </div>
 </div>
 
-<script src="app.js?v=20"></script>
-<script src="arcade.js?v=20"></script>
+<script src="app.js?v=25"></script>
+<script src="arcade.js?v=25"></script>
 </body>
 </html>

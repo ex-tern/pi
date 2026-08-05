@@ -596,7 +596,7 @@ def publication_fee(pix_score: float = 0.0) -> Dict:
 # ---------------------------------------------------------------------------
 # Peer review bounty
 # ---------------------------------------------------------------------------
-# What a review request costs, and what the reviewer is paid.
+# What a review request sets aside, and what the reviewer earns for completing it.
 #
 # The fee is a BOUNTY, not a badge price. It is held when the request opens and
 # paid to whoever completes the review — so the money buys someone's time, not
@@ -612,8 +612,8 @@ def peer_review_fee() -> Dict:
         "paid_to": "the reviewer, on completion",
         "refundable": False,
         "rationale": (
-            f"Opening a review costs {PEER_REVIEW_BOUNTY:.2f} piQ. The whole amount is paid to "
-            f"the researcher who completes the review — it commissions their time, it does not "
+            f"Opening a review sets aside {PEER_REVIEW_BOUNTY:.2f} piQ. The whole amount is "
+            f"credited to the researcher who completes the review — it recognises their time, it does not "
             f"purchase a badge. The Peer-reviewed badge appears only once a review has actually "
             f"been submitted by someone other than the requester."
         ),
@@ -640,9 +640,9 @@ def peer_review_bonus() -> Dict:
         "bonus": PEER_REVIEW_BONUS,
         "rationale": (
             f"Completing a peer review credits {PEER_REVIEW_BONUS:.2f} piQ to the reviewer, in "
-            f"addition to any bounty the requester posted. It is paid on submission of a "
-            f"reasoned report, not on the verdict reached — paying differently for different "
-            f"conclusions would buy the conclusion."
+            f"addition to anything the requester set aside. It is credited on submission of a "
+            f"reasoned report, not on the verdict reached — rewarding conclusions differently "
+            f"would be a way of buying them."
         ),
     }
 

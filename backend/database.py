@@ -759,23 +759,43 @@ def get_free_evals_used(ip_address: str) -> int:
         conn.close()
 
 
-def get_papers_for_recommendation(fields: list = None, limit: int = 200) -> list:
+def get_papers_for_recommendation(fields: list = None, limit: int = 200,
+                                  hashes: list = None) -> list:
     """Assessed papers with their per-criterion scores, for Scilem's picks.
 
     Returns the whole criteria vector rather than just the composite score,
     because a recommendation is only useful if it can say *why* — "strong
     empirical density, weak reproducibility" is actionable, "scored 71" is not.
+
+    `hashes` restricts the set to specific assessments. This is what lets a
+    researcher choose which of their papers the Research Buddy reasons from:
+    a corpus-wide read is the right default, but someone working across two
+    unrelated projects gets advice averaged over both unless they can say
+    which one they mean. Filtered in SQL rather than after the fact, so the
+    `limit` applies to the chosen papers instead of truncating them away.
     """
+    picked = [h for h in (hashes or []) if h]
     conn = get_db_connection()
     try:
-        rows = conn.execute(
-            """SELECT eval_hash, title, author_name, fields, final_score,
-                      c1, c2, c3, c4, c5, c6, c7, c8, timestamp
-               FROM papers_assessment
-               WHERE final_score IS NOT NULL
-               ORDER BY timestamp DESC LIMIT ?""",
-            (int(limit),),
-        ).fetchall()
+        if picked:
+            ph = ",".join("?" for _ in picked)
+            rows = conn.execute(
+                f"""SELECT eval_hash, title, author_name, fields, final_score,
+                           c1, c2, c3, c4, c5, c6, c7, c8, timestamp
+                    FROM papers_assessment
+                    WHERE final_score IS NOT NULL AND eval_hash IN ({ph})
+                    ORDER BY timestamp DESC LIMIT ?""",
+                (*picked, int(limit)),
+            ).fetchall()
+        else:
+            rows = conn.execute(
+                """SELECT eval_hash, title, author_name, fields, final_score,
+                          c1, c2, c3, c4, c5, c6, c7, c8, timestamp
+                   FROM papers_assessment
+                   WHERE final_score IS NOT NULL
+                   ORDER BY timestamp DESC LIMIT ?""",
+                (int(limit),),
+            ).fetchall()
     except sqlite3.Error:
         return []
     finally:
@@ -1124,6 +1144,141 @@ def mark_bug_report_delivered(report_id: int, delivered: bool, error: str = ""):
         logging.warning("Could not record bug report delivery state: %s", e)
     finally:
         conn.close()
+
+
+# What an operator can wipe, and what each choice actually destroys.
+#
+# Grouped by MEANING rather than by table, because an operator reasons about
+# "the corpus" and "balances", not about `papers_assessment` and `piq_ledger`.
+# Each group is independently selectable: wiping test papers without
+# destroying the ledger, or clearing balances while keeping the corpus, are
+# both legitimate and were impossible with the all-or-nothing script.
+#
+# `order` matters — groups are wiped in this sequence so that a partial
+# failure never leaves a dangling reference (reviews before papers, and so on).
+RESET_GROUPS = {
+    "assessments": {
+        "label": "Assessed papers",
+        "detail": ("Every manuscript, its scores, its dossier and its stored file. "
+                   "This is the corpus itself."),
+        "tables": ["papers_assessment", "paper_reads"],
+        "order": 20,
+        "destroys": "the corpus",
+    },
+    "reviews": {
+        "label": "Reviews and review activity",
+        "detail": ("Peer and machine reviews, open review requests, replies, ratings and "
+                   "moderation reports."),
+        "tables": ["peer_reviews", "review_rebuttals", "review_ratings",
+                   "review_reports", "review_jobs"],
+        "order": 10,
+        "destroys": "all review history",
+    },
+    "ledger": {
+        "label": "piQ balances",
+        "detail": ("The whole piQ ledger — every balance anyone has earned, spent or had "
+                   "held. Papers keep their recorded piQ figures unless you also wipe them."),
+        "tables": ["piq_ledger"],
+        "order": 30,
+        "destroys": "all balances",
+    },
+    "chain": {
+        "label": "Proof-of-Research blocks",
+        "detail": ("The local block records. The chain is append-only by design, so this is "
+                   "a local wipe, not a rewrite of anything already settled on-chain."),
+        "tables": ["blockchain_por_weights", "desci_attestations"],
+        "order": 40,
+        "destroys": "the local ledger blocks",
+    },
+    "profiles": {
+        "label": "Researcher profiles",
+        "detail": "Saved profiles and the Research Buddy inputs derived from them.",
+        "tables": ["researcher_profiles"],
+        "order": 50,
+        "destroys": "saved profiles",
+    },
+    "trials": {
+        "label": "Free-trial and arcade state",
+        "detail": "Per-IP free assessment counters, arcade progress and win records.",
+        "tables": ["auto_ip_tracking", "arcade_progress", "arcade_runs", "ingestion_queue"],
+        "order": 60,
+        "destroys": "trial counters",
+    },
+    "bugs": {
+        "label": "Bug reports",
+        "detail": "Reports submitted through Report a bug, including undelivered ones.",
+        "tables": ["bug_reports"],
+        "order": 70,
+        "destroys": "bug reports",
+    },
+    "visits": {
+        "label": "Visitor counts",
+        "detail": "The unique-visitor tally shown in Analytics.",
+        "tables": ["site_visits"],
+        "order": 80,
+        "destroys": "visitor statistics",
+    },
+}
+
+
+def reset_state_groups(groups) -> dict:
+    """Empty the tables behind the named reset groups.
+
+    Returns a per-table row count of what was actually deleted, so the caller
+    can report the real outcome rather than an assumed one. A table that does
+    not exist in this schema version is skipped rather than failing the whole
+    reset — schema drift must not make the wipe unusable.
+
+    Everything runs in ONE transaction. A reset that half-completes is worse
+    than one that fails: it leaves reviews pointing at papers that no longer
+    exist, and no operator would know which half had gone.
+    """
+    chosen = [g for g in (groups or []) if g in RESET_GROUPS]
+    if not chosen:
+        return {"ok": False, "reason": "No valid reset groups were named.", "deleted": {}}
+
+    chosen.sort(key=lambda g: RESET_GROUPS[g]["order"])
+    deleted, skipped = {}, []
+    conn = get_db_connection()
+    try:
+        conn.execute("BEGIN")
+        for group in chosen:
+            for table in RESET_GROUPS[group]["tables"]:
+                try:
+                    n = conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0]
+                    conn.execute(f"DELETE FROM {table}")
+                    deleted[table] = int(n or 0)
+                except sqlite3.Error:
+                    skipped.append(table)      # not present in this schema version
+        conn.commit()
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.error("Reset failed and was rolled back: %s", e)
+        return {"ok": False, "reason": f"The reset failed and nothing was deleted ({e}).",
+                "deleted": {}}
+    finally:
+        conn.close()
+
+    # Reclaim the space and reset AUTOINCREMENT counters, so a wiped
+    # deployment really does start from 1 rather than from wherever it stopped.
+    try:
+        conn = get_db_connection()
+        try:
+            conn.execute("DELETE FROM sqlite_sequence")
+        except sqlite3.Error:
+            pass                                # no AUTOINCREMENT tables yet
+        conn.commit()
+        conn.close()
+        conn = get_db_connection()
+        conn.isolation_level = None
+        conn.execute("VACUUM")
+        conn.close()
+    except sqlite3.Error as e:
+        logging.warning("Post-reset VACUUM failed (data is still deleted): %s", e)
+
+    logging.warning("STATE RESET performed on groups: %s", ", ".join(chosen))
+    return {"ok": True, "reason": "", "deleted": deleted, "skipped": skipped,
+            "groups": chosen}
 
 
 def list_bug_reports(limit: int = 100) -> list:
