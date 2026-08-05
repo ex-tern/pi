@@ -1785,3 +1785,32 @@ button.seal { font-family: inherit; cursor: pointer; }
 .reset-row-extra { margin-top: 12px; border-style: dashed; }
 
 #clearHistoryBtn { margin-left: 10px; padding: 4px 11px; font-size: 11.5px; }
+
+/* Says what the checkbox column is for, above the table rather than only in a
+   tooltip. A bare checkbox in a list that also has a Remove button is
+   ambiguous in the worst direction — it can read as "mark for deletion". */
+.buddy-pick-lead {
+  margin: 0 0 10px; padding: 9px 11px; font-size: 12.5px; line-height: 1.5;
+  background: var(--accent-soft, #eef2ff); border-left: 3px solid var(--accent);
+  border-radius: 0 8px 8px 0; color: var(--text);
+}
+.buddy-pick-lead strong { display: block; margin-bottom: 2px; }
+
+/* --- Owner: deployment stats + Science Map field papers ----------------- */
+.owner-stats-group { margin-bottom: 12px; }
+.owner-stats-group:last-child { margin-bottom: 0; }
+.owner-stats-head {
+  font-size: 10px; font-weight: 700; text-transform: uppercase;
+  letter-spacing: 0.06em; color: var(--faint); margin: 0 0 4px;
+}
+.owner-stats-group .ri-row { font-size: 12px; padding: 3px 0; }
+
+.arcade-papers-title {
+  margin: 0 0 10px; font-size: 1rem;
+  display: flex; align-items: baseline; gap: 10px; flex-wrap: wrap;
+}
+.arcade-papers-count {
+  font-size: 11px; font-weight: 600; color: var(--muted);
+  font-variant-numeric: tabular-nums;
+}
+#arcadeFieldPapers { margin-top: 16px; }

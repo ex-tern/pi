@@ -1074,6 +1074,58 @@ class ArcadeRun(BaseModel):
     orcid: str = ""
 
 
+@app.get("/api/arcade/field-papers")
+def arcade_field_papers(field: str = Query(default=""),
+                        limit: int = Query(default=50, ge=1, le=200)):
+    """The assessed papers inside one field of the Science Map.
+
+    The map shows a field as a bubble whose size encodes how much work sits in
+    it, but there was no way to get from the bubble to the work itself — the
+    number was the whole answer. This is what makes a bubble openable: click a
+    field, read what is actually in it.
+    """
+    name = (field or "").strip()
+    if not name:
+        return {"field": "", "papers": [], "count": 0}
+
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT eval_hash, title, author_name, final_score, piq_minted,
+                      fields, timestamp, doi
+               FROM papers_assessment
+               WHERE final_score IS NOT NULL
+               ORDER BY final_score DESC LIMIT 400""").fetchall()
+    except sqlite3.Error:
+        raise HTTPException(status_code=503, detail="The corpus could not be read.")
+    finally:
+        conn.close()
+
+    # Matched in Python rather than with SQL LIKE: `fields` is a JSON array, so
+    # a LIKE '%Physics%' would also match "Astrophysics" and "Physics
+    # Education" — a bubble listing papers that belong to a different field is
+    # worse than one that lists none.
+    wanted = name.lower()
+    out = []
+    for r in rows:
+        try:
+            paper_fields = [f.strip() for f in json.loads(r[5] or "[]") if f and f.strip()]
+        except (ValueError, TypeError):
+            paper_fields = []
+        if not any(f.lower() == wanted for f in paper_fields):
+            continue
+        out.append({
+            "hash": r[0], "title": r[1] or "Untitled",
+            "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
+            "piq": round(safe_float(r[4], 0.0), 2), "date": (r[6] or "")[:10],
+            "doi": r[7] or "",
+        })
+        if len(out) >= limit:
+            break
+
+    return {"field": name, "papers": out, "count": len(out)}
+
+
 @app.get("/api/arcade/leaderboard")
 def arcade_leaderboard_endpoint(limit: int = Query(default=20, ge=1, le=100)):
     """Top Science Map players. Signed-in identities only."""
@@ -2772,6 +2824,88 @@ def admin_reset(payload: ResetRequest, request: Request):
                if payload.clear_files and files_removed >= 0 else "")
             + " This cannot be undone."),
     }
+
+
+@app.get("/api/admin/overview")
+def admin_overview(request: Request, wallet: str = Query(default="")):
+    """Operator-only numbers: who has signed up, and what they are doing.
+
+    Deliberately separate from /api/analytics/summary, which is public. These
+    are counts of PEOPLE and of platform activity — how many identities exist,
+    how many are active, what is being spent — and publishing them would tell
+    every visitor the size of the user base and how thin the activity is. The
+    public summary describes the corpus; this describes the deployment.
+    """
+    require_owner(request, wallet)
+    conn = get_db_connection()
+
+    def scalar(sql, params=()):
+        try:
+            row = conn.execute(sql, params).fetchone()
+            return int(row[0] or 0) if row else 0
+        except sqlite3.Error:
+            return 0
+
+    try:
+        # "Signed up" = a distinct account that exists in the ledger or has
+        # saved a profile. There is no users table — identity is a wallet or an
+        # ORCID that has done something — so the count is derived from the
+        # places an identity leaves a durable trace.
+        ledger_accounts = scalar("SELECT COUNT(DISTINCT account) FROM piq_ledger")
+        profiles = scalar("SELECT COUNT(*) FROM researcher_profiles")
+        submitters = scalar(
+            "SELECT COUNT(DISTINCT user_id) FROM papers_assessment "
+            "WHERE user_id IS NOT NULL AND user_id <> ''")
+
+        stats = {
+            "accounts_with_balance": ledger_accounts,
+            "saved_profiles": profiles,
+            "distinct_submitters": submitters,
+            # Activity windows, so "how many signed up" can be read against
+            # "how many are still here" — a total with no recency is a number
+            # that only ever goes up.
+            "active_7d": scalar(
+                "SELECT COUNT(DISTINCT user_id) FROM papers_assessment "
+                "WHERE timestamp > DATETIME('now','-7 days') AND user_id <> ''"),
+            "active_30d": scalar(
+                "SELECT COUNT(DISTINCT user_id) FROM papers_assessment "
+                "WHERE timestamp > DATETIME('now','-30 days') AND user_id <> ''"),
+            "papers_7d": scalar(
+                "SELECT COUNT(*) FROM papers_assessment "
+                "WHERE timestamp > DATETIME('now','-7 days')"),
+            "papers_total": scalar("SELECT COUNT(*) FROM papers_assessment"),
+            "reviews_human": scalar(
+                "SELECT COUNT(*) FROM peer_reviews WHERE completed_at IS NOT NULL "
+                "AND reviewer_key <> 'llm:panel'"),
+            "reviews_llm": scalar(
+                "SELECT COUNT(*) FROM peer_reviews WHERE completed_at IS NOT NULL "
+                "AND reviewer_key = 'llm:panel'"),
+            "reviews_open": scalar(
+                "SELECT COUNT(*) FROM peer_reviews WHERE completed_at IS NULL"),
+            "published": scalar(
+                "SELECT COUNT(*) FROM papers_assessment WHERE published_at IS NOT NULL"),
+            "bugs_open": scalar("SELECT COUNT(*) FROM bug_reports WHERE delivered = 0"),
+        }
+
+        # piQ in circulation, split the way the balance itself is split.
+        try:
+            row = conn.execute(
+                "SELECT COALESCE(SUM(piq_minted),0), "
+                "COALESCE(SUM(CASE WHEN piq_claimed_at IS NULL THEN piq_escrowed ELSE 0 END),0) "
+                "FROM papers_assessment").fetchone()
+            stats["piq_minted"] = round(float(row[0] or 0), 2)
+            stats["piq_held"] = round(float(row[1] or 0), 2)
+        except sqlite3.Error:
+            stats["piq_minted"] = stats["piq_held"] = 0.0
+    finally:
+        conn.close()
+
+    try:
+        stats["visitors"] = visitor_stats()
+    except Exception:
+        stats["visitors"] = {}
+
+    return stats
 
 
 @app.get("/api/admin/review-reports")

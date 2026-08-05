@@ -411,8 +411,8 @@
       el.innerHTML = `<strong>${corpus.total_papers}</strong> assessed
         paper${corpus.total_papers === 1 ? "" : "s"}, ${corpus.classified_papers} placed across
         <strong>${corpus.fields_with_papers}</strong> live
-        field${corpus.fields_with_papers === 1 ? "" : "s"}. Solid bubbles are your corpus;
-        faint ones are unexplored territory.${unclassified}`;
+        field${corpus.fields_with_papers === 1 ? "" : "s"}. Solid bubbles are our corpus;
+        faint ones are unexplored territory. Select a field to list its papers.${unclassified}`;
     }
   }
 
@@ -665,19 +665,87 @@
   function renderWalletState(wallet, reward) {
     const el = document.getElementById("arcadeWallet");
     if (!el || !wallet) return;
-    const bits = [`Earned <strong>${wallet.bonus_earned}</strong> / ${wallet.cap} bonus assessments.`];
-    // No waiting period any more — a win pays out immediately, and the only
-    // thing that can stop it is the lifetime cap.
-    if (wallet.bonus_earned < wallet.cap) {
-      bits.push(`A win is worth ${reward.per_win}.`);
-    } else {
-      bits.push("Cap reached — connect a wallet or ORCID to continue.");
+    // The bonus-assessment tally is gone. A win already credits piQ, and piQ
+    // is what buys an assessment — so "Earned 0 / 9 bonus assessments. A win
+    // is worth 3." was a second, parallel currency describing the same
+    // reward, in different units, next to the one that actually applies. Two
+    // counters for one thing is how a player ends up unable to say what a win
+    // gets them.
+    //
+    // The cap still matters, because reaching it changes what a win does, so
+    // that is the one state still reported.
+    el.innerHTML = wallet.bonus_earned >= wallet.cap
+      ? "Free-play cap reached — connect a wallet or ORCID to keep earning piQ from wins."
+      : "";
+    el.classList.toggle("hidden", !el.innerHTML);
+  }
+
+  /** List the assessed papers inside the selected field, below the map.
+   *
+   *  Requests are sequenced by field name rather than cancelled: clicking
+   *  quickly across several bubbles fires several fetches, and without a guard
+   *  the slowest reply wins and the panel ends up describing a field the user
+   *  is no longer looking at.
+   */
+  let fieldPapersToken = 0;
+  async function loadFieldPapers(b) {
+    const box = document.getElementById("arcadeFieldPapers");
+    if (!box) return;
+    const name = b && b.domain && b.domain !== "Unassigned" ? b.domain : "";
+    if (!name) { box.classList.add("hidden"); box.innerHTML = ""; return; }
+
+    const token = ++fieldPapersToken;
+    box.classList.remove("hidden");
+    box.innerHTML = `<h3 class="arcade-papers-title">${escapeHtml(name)}</h3>
+      <p class="hint">Loading papers…</p>`;
+    try {
+      const res = await fetch(`/api/arcade/field-papers?field=${encodeURIComponent(name)}`);
+      const data = await res.json();
+      if (token !== fieldPapersToken) return;     // a newer selection won
+
+      if (!data.papers || !data.papers.length) {
+        box.innerHTML = `<h3 class="arcade-papers-title">${escapeHtml(name)}</h3>
+          <p class="hint">No assessed papers in this field yet — it is unexplored territory on
+          the map. Assess one and it becomes a solid bubble.</p>`;
+        return;
+      }
+      box.innerHTML = `
+        <h3 class="arcade-papers-title">${escapeHtml(name)}
+          <span class="arcade-papers-count">${data.count} paper${data.count === 1 ? "" : "s"}</span>
+        </h3>
+        <div class="table-scroll"><table class="data-table"><thead><tr>
+          <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th class="num">Date</th>
+        </tr></thead><tbody>` + data.papers.map(p => `
+          <tr class="clickable-row" data-hash="${escapeHtml(p.hash)}" title="Open the full assessment">
+            <td><div class="hist-title">${escapeHtml(p.title)}</div>
+                <div class="hist-meta">${escapeHtml(p.author || "—")}</div></td>
+            <td class="num strong">${p.score.toFixed(1)}</td>
+            <td class="num">${p.piq.toFixed(2)}</td>
+            <td class="num cell-muted">${escapeHtml(p.date)}</td>
+          </tr>`).join("") + `</tbody></table></div>`;
+
+      // The dossier opener lives in app.js; reach it through the shared bridge
+      // rather than duplicating the fetch here.
+      box.querySelectorAll(".clickable-row").forEach(tr => {
+        tr.addEventListener("click", () => {
+          if (window.ScholarPi && window.ScholarPi.openDossier) {
+            window.ScholarPi.openDossier(tr.dataset.hash);
+          }
+        });
+      });
+    } catch (_) {
+      if (token !== fieldPapersToken) return;
+      box.innerHTML = `<h3 class="arcade-papers-title">${escapeHtml(name)}</h3>
+        <p class="hint">The papers in this field could not be loaded.</p>`;
     }
-    el.innerHTML = bits.join(" ");
   }
 
   function selectBubble(b) {
     state.selected = b;
+    // The papers in the selected field, listed below the map. A bubble whose
+    // size encodes "how much work is here" and which cannot be opened to see
+    // that work makes the number the whole answer.
+    loadFieldPapers(b);
     const panel = document.getElementById("arcadeDetail");
     if (!panel) return;
     if (!b) { panel.innerHTML = `<p class="arcade-detail-empty">Select a field to inspect it.</p>`; return; }
@@ -995,6 +1063,10 @@
       contact.eaten = true;
       p.mass += contact.mass * state.rules.absorb_ratio;
       state.lastEatAt = nowMs;
+      // Drives the swallow pulse in drawPlayer, which decays there. Scaled by
+      // what was eaten, so absorbing something substantial reads differently
+      // from hoovering a speck.
+      p._pop = Math.min(1, (p._pop || 0) + 0.5 + Math.min(0.5, contact.mass / p.mass));
       state.absorbed.push({ id: contact.id, t: Math.round(nowMs) });
       spawnBurst(contact.x, contact.y, bubbleColor(contact), contact.live ? 26 : 14);
       selectBubble(contact);        // absorbing IS inspecting
@@ -1166,26 +1238,108 @@
   }
 
   function drawPlayer(ctx) {
-    // Drawn from the capped radius, not from mass. Past the cap the blob stops
-    // growing on screen while its mass keeps rising — which is the point: the
-    // score continues, the body stops swallowing the viewport.
+    // π as a character rather than a glyph on a disc.
+    //
+    // The player was a static circle with a letter in it, which reads as a
+    // cursor, not as something alive — and it is the one object on screen the
+    // player controls and looks at continuously. Everything below is derived
+    // from state that already exists (position, mass, absorptions), so the
+    // animation is a reading of what is happening rather than decoration
+    // running on its own clock: it squashes in the direction it is moving,
+    // looks where it is going, blinks, and reacts when it eats.
     const p = state.player, s = worldToScreen(p.x, p.y),
           r = playerRadius(p.mass) * state.camera.zoom;
-    if (effectsQuality > 0) {
-      const glow = ctx.createRadialGradient(s.x, s.y, r * 0.1, s.x, s.y, r * 2.1);
-      glow.addColorStop(0, "rgba(56,189,248,0.5)"); glow.addColorStop(1, "rgba(56,189,248,0)");
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(s.x, s.y, r * 2.1, 0, Math.PI * 2); ctx.fill();
+    const t = performance.now() / 1000;
+
+    // --- Motion, smoothed ------------------------------------------------
+    // Velocity is derived here rather than stored on the player, so nothing in
+    // the simulation has to know the renderer exists.
+    if (p._px === undefined) { p._px = p.x; p._py = p.y; p._lookX = 0; p._lookY = 1; }
+    const vx = p.x - p._px, vy = p.y - p._py;
+    p._px = p.x; p._py = p.y;
+    const speed = Math.hypot(vx, vy);
+    if (speed > 0.05) {
+      // Ease toward the direction of travel so the gaze does not snap around
+      // on every frame of a jittery input.
+      p._lookX += ((vx / speed) - p._lookX) * 0.18;
+      p._lookY += ((vy / speed) - p._lookY) * 0.18;
     }
-    const body = ctx.createRadialGradient(s.x - r * 0.3, s.y - r * 0.3, r * 0.1, s.x, s.y, r);
+
+    // --- Squash and stretch ---------------------------------------------
+    // Bounded hard: past about 12% it stops reading as momentum and starts
+    // reading as a rendering bug.
+    const stretch = Math.min(0.12, speed * 0.012);
+    const ang = Math.atan2(vy, vx);
+    // A slow idle breath so a stationary π is still alive.
+    const breathe = 1 + Math.sin(t * 1.9) * 0.018;
+    // Eating pulse: set in the absorb path, decays here.
+    p._pop = Math.max(0, (p._pop || 0) - 0.045);
+    const pop = 1 + p._pop * 0.22;
+
+    ctx.save();
+    ctx.translate(s.x, s.y);
+    ctx.rotate(ang);
+    ctx.scale((1 + stretch) * breathe * pop, (1 - stretch) * breathe * pop);
+    ctx.rotate(-ang);
+
+    if (effectsQuality > 0) {
+      // The glow pulses with the breath, so the halo belongs to the body
+      // rather than sitting behind it at a constant size.
+      const halo = r * (2.1 + Math.sin(t * 1.9) * 0.12);
+      const glow = ctx.createRadialGradient(0, 0, r * 0.1, 0, 0, halo);
+      glow.addColorStop(0, `rgba(56,189,248,${0.45 + p._pop * 0.3})`);
+      glow.addColorStop(1, "rgba(56,189,248,0)");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(0, 0, halo, 0, Math.PI * 2); ctx.fill();
+    }
+
+    const body = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
     body.addColorStop(0, "#e0f2fe"); body.addColorStop(1, "#0284c7");
     ctx.fillStyle = body;
-    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = 2; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
-    ctx.fillStyle = theme().playerText; ctx.textAlign = "center"; ctx.textBaseline = "middle";
-    ctx.font = `700 ${Math.min(17, r / 2.2)}px -apple-system, system-ui, sans-serif`;
-    ctx.fillText("π", s.x, s.y);
+
+    // --- Face -------------------------------------------------------------
+    // Only drawn once the body is big enough to hold it. Below that the eyes
+    // collapse into two dots touching each other, which looks like damage
+    // rather than a face — so a small π keeps the plain glyph.
+    if (r > 13) {
+      // The π sits high, leaving room for eyes below it: the glyph becomes
+      // the character's hair rather than competing with its face.
+      ctx.fillStyle = theme().playerText;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `700 ${Math.min(20, r * 0.62)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText("π", 0, -r * 0.34);
+
+      // Blink: mostly open, with a brief close every few seconds. Driven by a
+      // sine threshold rather than a timer so it needs no extra state.
+      const blink = Math.sin(t * 1.1) > 0.985 ? 0.12 : 1;
+      const eyeR = r * 0.15;
+      const eyeY = r * 0.26;
+      const eyeDX = r * 0.3;
+      // Pupils track the direction of travel, clamped inside the eye.
+      const px = p._lookX * eyeR * 0.42, py = p._lookY * eyeR * 0.42;
+
+      for (const dx of [-eyeDX, eyeDX]) {
+        ctx.save();
+        ctx.translate(dx, eyeY);
+        ctx.scale(1, blink);
+        ctx.fillStyle = "#f8fafc";
+        ctx.beginPath(); ctx.arc(0, 0, eyeR, 0, Math.PI * 2); ctx.fill();
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath(); ctx.arc(px, py, eyeR * 0.52, 0, Math.PI * 2); ctx.fill();
+        ctx.restore();
+      }
+    } else {
+      ctx.fillStyle = theme().playerText;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.font = `700 ${Math.min(17, r / 2.2)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText("π", 0, 0);
+    }
+
+    ctx.restore();
   }
+
 
   function drawParticles(ctx) {
     for (const q of state.particles) {

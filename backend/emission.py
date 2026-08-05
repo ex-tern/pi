@@ -79,7 +79,7 @@ MAX_HALVINGS = 10               # floor: emission never drops below 1/1024
 # scarcity means anything.
 # Lowered from 5.0 to 4.0: a piX 80 paper now mints 20 piQ rather than 16, and
 # a piX 40 paper 10 rather than 8. With a publication fee of ~1 piQ and an LLM
-# review at 0.5, one qualifying paper should comfortably fund several actions
+# review at 1.0, one qualifying paper should comfortably fund several actions
 # on the platform — otherwise the currency records contribution in a unit too
 # small to spend.
 BASE_DIVISOR = 4.0
@@ -620,18 +620,23 @@ def peer_review_fee() -> Dict:
     }
 
 
-# LLM review costs less than peer review because it costs less to produce: it
-# buys inference, not a researcher's afternoon. Pricing them the same would
-# imply they are the same thing, and the whole point of having two badges is
-# that a reader can tell them apart.
-LLM_REVIEW_FEE = 0.5
+# An LLM review still requires less than a peer review, because it draws on
+# inference rather than a researcher's afternoon. The gap between the two is
+# what keeps the badges distinguishable — pricing them the same would imply
+# they are the same thing, and the whole point of having two badges is that a
+# reader can tell them apart.
+#
+# Raised from 0.5 to 1.0: at half a piQ a machine review was close enough to
+# free that requesting one repeatedly cost nothing meaningful, which is not a
+# useful signal to attach to a paper. It remains half the peer-review figure.
+LLM_REVIEW_FEE = 1.0
 
 
-# Paid to a reviewer for a completed review, over and above any bounty the
-# requester posted. A review written on a paper nobody paid to have reviewed is
-# worth exactly as much to a reader as one that was commissioned, so paying it
-# nothing would make unsolicited review — the kind that actually needs
-# encouraging — the only unpaid work on the platform.
+# Credited to a reviewer for a completed review, over and above anything the
+# requester set aside. A review written on a paper nobody commissioned is worth
+# exactly as much to a reader as one that was, so crediting it nothing would
+# make unsolicited review — the kind that actually needs encouraging — the only
+# unrewarded work on the platform.
 PEER_REVIEW_BONUS = 2.0
 
 
