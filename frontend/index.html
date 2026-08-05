@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=29">
+<link rel="stylesheet" href="style.css?v=32">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -69,7 +69,10 @@
 
     <hr>
 
-    <details class="sidebar-expander">
+    <!-- Owner only. The log stream carries deployment internals — provider
+         failures, refunds, resets, truncated identities — which is operator
+         information rather than something a researcher needs or should see. -->
+    <details class="sidebar-expander hidden" id="logMonitorPanel">
       <summary>Live System Monitor</summary>
       <pre id="logMonitor" class="log-box">No active logs...</pre>
     </details>
@@ -125,6 +128,14 @@
       <div id="ownerStatsBody"><p class="hint">Loading…</p></div>
     </details>
 
+    <!-- Owner only. A reported review is a moderation signal that exists
+         nowhere else — without somewhere to read it, reporting is a button
+         that does nothing visible to anyone who could act on it. -->
+    <details class="sidebar-expander hidden" id="ownerReviewReportsPanel">
+      <summary>Reported reviews<span class="pill pill-muted" id="ownerReviewReportsBadge">0</span></summary>
+      <div id="ownerReviewReportsBody"><p class="hint">Loading…</p></div>
+    </details>
+
     <details class="sidebar-expander hidden" id="ownerBugsPanel">
       <summary>Bug reports<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
       <div id="ownerBugsBody"><p class="hint">Loading…</p></div>
@@ -178,6 +189,23 @@
         <p class="lede profile-lede">Telling ScholarPi what you work on and what you are trying to
         achieve lets the reception diagnostic frame its findings against your goals. This never
         changes your piX score or the findings themselves — only how they are explained.</p>
+
+        <!-- Several profiles, one active. A researcher working across two
+             unrelated projects had to overwrite one description with the
+             other, so every paper was framed against whichever project they
+             had described most recently. -->
+        <div class="profile-slots" id="profileSlots">
+          <label class="ex-ctl">Profile
+            <select id="profileSlotSelect" class="inline-select"
+                    title="Which profile frames your diagnostics and Research Buddy"></select>
+          </label>
+          <input class="bug-input profile-name-input" id="profileSlotName"
+                 placeholder="Profile name (e.g. Thesis, Side project)" autocomplete="off">
+          <button class="btn btn-quiet" id="profileNewBtn"
+                  title="Start a new, empty profile">New</button>
+          <button class="btn btn-quiet btn-danger-outline" id="profileDeleteBtn"
+                  title="Delete the selected profile">Delete</button>
+        </div>
 
         <div class="profile-grid">
           <div>
@@ -559,6 +587,13 @@
                  by restoring this block. -->
           </div>
 
+          <!-- Papers in the selected field, immediately below the map and in
+               the map's own column. Placed here rather than after the whole
+               layout because the side panel is taller than the canvas: below
+               the layout, the list appeared a screen further down with a large
+               empty gap above it, disconnected from the bubble that opened it. -->
+          <div class="card hidden" id="arcadeFieldPapers"></div>
+
           <aside class="arcade-side">
             <details class="arcade-controls-group" open>
               <summary>Filters <span class="arcade-filter-summary" id="arcadeFilterSummary">All fields</span></summary>
@@ -632,10 +667,6 @@
 
       <p class="arcade-message hidden" id="arcadeMessage"></p>
 
-      <!-- Papers inside the selected field. Below the map rather than inside
-           the side panel: a list of manuscripts needs the full width, and the
-           side panel is already carrying the filters. -->
-      <div class="card hidden" id="arcadeFieldPapers"></div>
     </section>
 
 
@@ -741,7 +772,7 @@
   </div>
 </div>
 
-<script src="app.js?v=29"></script>
-<script src="arcade.js?v=29"></script>
+<script src="app.js?v=32"></script>
+<script src="arcade.js?v=32"></script>
 </body>
 </html>

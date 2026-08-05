@@ -62,6 +62,8 @@ from database import (
     award_onboarding_grant, has_received_grant,
     get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
+    list_profile_slots, save_profile_slot, activate_profile_slot, delete_profile_slot,
+    MAX_PROFILE_SLOTS,
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
     store_bug_report, mark_bug_report_delivered, list_bug_reports,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
@@ -70,7 +72,7 @@ from database import (
     store_challenge, get_challenge, record_challenge_attempt,
     set_published, is_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
-    record_llm_review, has_open_review_request, has_human_review,
+    record_llm_review, has_open_review_request, has_human_review, cancel_review_request,
     count_journal_publications,
     review_owner_key, add_review_rebuttal, rate_review, review_rating_summary,
     report_review, rebuttals_for_paper, list_review_reports,
@@ -1384,27 +1386,34 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
         logging.warning("riB corpus read failed: %s", e)
         corpus = []
 
-    # An explicit selection overrides the field filter entirely. If the
-    # researcher has named the papers they want reasoned from, narrowing that
-    # set further by their stated fields would silently drop papers they had
-    # just deliberately ticked — the selection IS the statement of scope.
+    # riB reads ONLY the papers the researcher has ticked.
+    #
+    # It previously fell back to the whole corpus when nothing was selected,
+    # which meant its guidance was assembled from other people's work and
+    # presented as though it were about yours. Reading nothing and saying so is
+    # the honest version: an empty selection is not a request for advice about
+    # everything, it is the absence of a request.
     selected = [h.strip() for h in (hashes or "").split(",") if h.strip()][:200]
+    if not selected:
+        return {
+            "available": False,
+            "needs_selection": True,
+            "reason": ("Tick the papers you want the Research Buddy to read, under Your "
+                       "assessments. It reasons only from the papers you choose, so it never "
+                       "gives you advice assembled from someone else's work."),
+            "profile": profile,
+        }
 
     fields = rib_engine.parse_fields(profile)
     try:
-        if selected:
-            candidates = get_papers_for_recommendation(fields=None, hashes=selected)
-            scope = f"{len(candidates)} selected paper{'' if len(candidates) == 1 else 's'}"
-        else:
-            candidates = get_papers_for_recommendation(fields=fields)
-            scope = "your fields" if fields else "corpus"
-            if not candidates and fields:
-                candidates = get_papers_for_recommendation(fields=None)
-                scope = "corpus"
+        # The selection is the statement of scope, so the stated-fields filter
+        # is not applied on top of it — that would silently drop papers the
+        # researcher had just deliberately ticked.
+        candidates = get_papers_for_recommendation(fields=None, hashes=selected)
         picks = diagnostics.recommend_papers(candidates)
-        picks["scope"] = scope
-        picks["selection_active"] = bool(selected)
-        picks["selection_count"] = len(candidates) if selected else 0
+        picks["scope"] = f"{len(candidates)} selected paper{'' if len(candidates) == 1 else 's'}"
+        picks["selection_active"] = True
+        picks["selection_count"] = len(candidates)
     except Exception as e:
         logging.warning("riB recommendations failed: %s", e)
         picks = {"available": False, "reason": "Recommendations unavailable.",
@@ -1438,6 +1447,72 @@ def write_profile(payload: ResearcherProfile, request: Request):
                    "this browser until you connect one.")
     saved = save_researcher_profile(key, payload.dict())
     return {"stored": True, "profile": saved}
+
+
+class ProfileSlotRequest(ResearcherProfile):
+    """A named profile. Inherits the profile fields so the two forms cannot drift."""
+    name: str = ""
+    slot_id: Optional[int] = None
+
+
+@app.get("/api/profiles")
+def list_profiles(request: Request, wallet: str = Query(default=""),
+                  orcid: str = Query(default="")):
+    """Every named profile this identity has saved.
+
+    A researcher working across two unrelated projects was previously forced
+    to overwrite one description with the other, so the diagnostics framed
+    every paper against whichever project they had described most recently.
+    """
+    key = _profile_key(wallet, orcid)
+    if not key:
+        return {"signed_in": False, "profiles": [], "max": MAX_PROFILE_SLOTS}
+    return {"signed_in": True, "profiles": list_profile_slots(key),
+            "max": MAX_PROFILE_SLOTS}
+
+
+@app.post("/api/profiles")
+def write_profile_slot(payload: ProfileSlotRequest, request: Request):
+    """Create or update a named profile, and make it the active one."""
+    check_rate_limit(get_client_ip(request), bucket="profile")
+    key = _profile_key(payload.wallet, payload.orcid)
+    if not key:
+        raise HTTPException(
+            status_code=400,
+            detail="A wallet or ORCID is required to save a profile. Your draft is kept in "
+                   "this browser until you connect one.")
+    result = save_profile_slot(
+        key, payload.dict(), name=payload.name, slot_id=payload.slot_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+    return {"stored": True, "id": result["id"], "name": result["name"],
+            "profiles": list_profile_slots(key)}
+
+
+@app.post("/api/profiles/{slot_id}/activate")
+def activate_profile(slot_id: int, payload: ResearcherProfile, request: Request):
+    """Switch which profile frames diagnostics and the Research Buddy."""
+    key = _profile_key(payload.wallet, payload.orcid)
+    if not key:
+        raise HTTPException(status_code=400, detail="Sign in to switch profiles.")
+    result = activate_profile_slot(key, slot_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=404, detail=result["reason"])
+    return {"activated": True, "name": result["name"], "profile": result["profile"],
+            "profiles": list_profile_slots(key)}
+
+
+@app.delete("/api/profiles/{slot_id}")
+def remove_profile_slot(slot_id: int, request: Request,
+                        wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """Delete one named profile."""
+    key = _profile_key(wallet, orcid)
+    if not key:
+        raise HTTPException(status_code=400, detail="Sign in to delete a profile.")
+    result = delete_profile_slot(key, slot_id)
+    if not result["ok"]:
+        raise HTTPException(status_code=404, detail=result["reason"])
+    return {"deleted": True, "profiles": list_profile_slots(key)}
 
 
 @app.delete("/api/profile")
@@ -2169,6 +2244,43 @@ def review_state(file_hash: str, request: Request = None,
     paper_ids = [v for v in (prow or []) if v]
     is_author = bool(viewer_ids) and any(v in paper_ids for v in viewer_ids)
 
+    # Who opened the outstanding request, if there is one. Read once here
+    # rather than inside the response dict, so the query is obvious and the
+    # comparison is a plain boolean.
+    requested_by_me = False
+    if viewer_key:
+        conn = get_db_connection()
+        try:
+            r = conn.execute(
+                "SELECT requested_by FROM peer_reviews "
+                "WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1", (file_hash,)).fetchone()
+            requested_by_me = bool(r and r[0] == viewer_key)
+        except sqlite3.Error:
+            requested_by_me = False
+        finally:
+            conn.close()
+
+    # Authorship, for the request gate. Computed here so the interface and the
+    # endpoint agree about who may act rather than discovering it on refusal.
+    may_request = False
+    if viewer_ids:
+        try:
+            prow2 = conn2 = None
+            conn2 = get_db_connection()
+            prow2 = conn2.execute(
+                "SELECT author_name, doi, title, piq_claimed_at FROM papers_assessment "
+                "WHERE eval_hash = ?", (file_hash,)).fetchone()
+            conn2.close()
+            if prow2:
+                attr = verify_authorship(
+                    submitter_orcid=viewer.get("orcid", ""),
+                    submitter_wallet=viewer.get("wallet", ""),
+                    extracted_authors=prow2[0] or "", doi=prow2[1] or "",
+                    title=prow2[2] or "")
+                may_request = bool(attr.get("verified") or prow2[3])
+        except Exception:
+            may_request = False
+
     replies = rebuttals_for_paper(file_hash)
     for r in human + machine:
         rid = r.get("id")
@@ -2190,6 +2302,13 @@ def review_state(file_hash: str, request: Request = None,
         # separate: "somebody asked for this to be checked" must never be
         # readable as "this was checked".
         "review_requested": has_open_review_request(file_hash),
+        # Whether THIS caller opened it, so the interface can offer a cancel
+        # button only to the person entitled to use it.
+        "review_requested_by_me": requested_by_me,
+        # Whether this viewer may commission a review — same authorship test
+        # as publishing, so the button is offered only to the author rather
+        # than shown to everyone and refused on click.
+        "may_request": may_request,
         "may_publish_gate": len(human) > 0,
         "fee": peer_review_fee(), "llm_fee": llm_review_fee(),
         "bonus": peer_review_bonus(),
@@ -2212,6 +2331,38 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
             status_code=403,
             detail=("Requesting review needs both a signed wallet and a linked ORCID. One proves "
                     "the paying account, the other ties the request to a research identity."))
+
+    # Only the paper's author may commission a review of it, on the same
+    # authorship test that gates publishing.
+    #
+    # Review is now the step that unlocks publication, so whoever can request
+    # one effectively decides whether a paper becomes publishable. Leaving that
+    # open to anyone would let a third party start the process on someone
+    # else's manuscript — and, because a request puts the paper in front of
+    # reviewers under a "Requested to be reviewed" marker, do so visibly and
+    # without the author's involvement.
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT author_name, doi, title, piq_claimed_at FROM papers_assessment "
+            "WHERE eval_hash = ?", (file_hash,)).fetchone()
+    finally:
+        conn.close()
+    if not row:
+        raise HTTPException(status_code=404, detail="No assessment found for that hash.")
+
+    attribution = verify_authorship(
+        submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
+        extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
+    # The escrow claim counts as standing evidence of authorship here, exactly
+    # as it does for an author-published badge.
+    if not (attribution.get("verified") or bool(row[3])):
+        raise HTTPException(
+            status_code=403,
+            detail=("Only the author of a paper can request a review of it. "
+                    + (attribution.get("reason") or "Authorship is not verified for this paper.")
+                    + (" " + attribution["how_to_verify"]
+                       if attribution.get("how_to_verify") else "")))
 
     key = _profile_key(identity["wallet"], identity["orcid"])
     fee = peer_review_fee()["fee"]
@@ -2242,6 +2393,49 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
                         f"Requested-to-be-reviewed "
                         f"marker; the Peer-reviewed badge appears only once a review has actually "
                         f"been submitted.")}
+
+
+@app.post("/api/assessments/{file_hash}/review/cancel")
+def cancel_review(file_hash: str, payload: ReviewRequest, request: Request):
+    """Withdraw a review request you opened, and get the held piQ back.
+
+    A request that cannot be withdrawn is a trap: circumstances change, a
+    paper gets revised, and piQ set aside against a review nobody ever picks
+    up would otherwise be held indefinitely with no way to release it.
+
+    Refunded only after the row is actually gone, so a failed cancellation can
+    never return piQ while leaving the request standing.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+    key = _profile_key(identity["wallet"], identity["orcid"])
+
+    result = cancel_review_request(file_hash, key)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+
+    refund = result["refund"]
+    refunded = False
+    if refund > 0:
+        try:
+            refunded = refund_piq_fee(refund, identity["wallet"], identity["orcid"],
+                                      eval_hash=file_hash,
+                                      reason="Peer review request cancelled")
+        except Exception as e:
+            logging.warning("Refund failed after cancelling review on %s: %s",
+                            file_hash[:12], e)
+
+    add_log(f"Review request cancelled on {file_hash[:12]}… refund {refund:.2f} piQ")
+    return {
+        "cancelled": True, "refund": refund if refunded else 0.0,
+        "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+        "message": (
+            f"Review request withdrawn. {refund:.2f} piQ returned to your balance."
+            if refunded and refund > 0 else
+            "Review request withdrawn."
+            + (f" The {refund:.2f} piQ could not be returned automatically — please report this."
+               if refund > 0 else "")),
+    }
 
 
 @app.post("/api/assessments/{file_hash}/review/llm")
@@ -2935,9 +3129,26 @@ def review_eligibility(request: Request, wallet: str = Query(default=""),
     identities = _identity_values(identity["wallet"], identity["orcid"])
     published = count_journal_publications(identities)
     both_factors = bool(identity["wallet"] and identity["orcid"])
-    eligible = published >= 1 and both_factors
 
-    if published < 1:
+    # The owner is exempt from the publication requirement, and has to be.
+    #
+    # Publishing requires a completed review; reviewing requires having
+    # published. On a fresh deployment that is a closed loop with no entry
+    # point — the first paper can never be reviewed, so it can never be
+    # published, so nobody ever becomes eligible to review. Somebody has to be
+    # able to write the first review, and the operator is the only identity the
+    # platform can already authenticate as trusted.
+    #
+    # It is an exemption from the ELIGIBILITY gate only. Everything that
+    # protects the integrity of a review still applies to the owner: they
+    # cannot review their own paper, cannot review one they requested, and the
+    # report still has to meet the length and verdict requirements.
+    is_owner = bool(auth.is_owner(identity))
+    eligible = (published >= 1 or is_owner) and both_factors
+
+    if is_owner and published < 1:
+        reason = ""
+    elif published < 1:
         reason = ("To become a reviewer you must have at least one paper published in the journal "
                   "list. Publish an assessment of your own work first — it needs a review of its "
                   "own to be publishable, so the requirement is a loop you enter by being "
@@ -2950,7 +3161,11 @@ def review_eligibility(request: Request, wallet: str = Query(default=""),
 
     return {"signed_in": True, "eligible": eligible, "published_count": published,
             "requirements": REVIEW_REQUIREMENTS, "min_chars": REVIEW_MIN_CHARS,
-            "bonus": PEER_REVIEW_BONUS, "reason": reason}
+            "bonus": PEER_REVIEW_BONUS, "reason": reason,
+            # Surfaced so the writing window can say WHY it is open — an
+            # exemption the user cannot see is indistinguishable from the rule
+            # not existing.
+            "owner_exemption": bool(is_owner and published < 1)}
 
 
 @app.post("/api/reviews/submit")
@@ -2967,7 +3182,11 @@ def submit_review(payload: ReviewSubmission, request: Request):
     # left open across a change in standing, and the eligibility endpoint is a
     # courtesy to the reviewer — this is the control.
     identities = _identity_values(identity["wallet"], identity["orcid"])
-    if count_journal_publications(identities) < 1:
+    # Same owner exemption as the eligibility endpoint, and enforced here for
+    # the same reason that endpoint exists: the gate is the control, and the
+    # interface is only a courtesy. See review_eligibility for why the
+    # exemption is necessary rather than convenient.
+    if count_journal_publications(identities) < 1 and not auth.is_owner(identity):
         raise HTTPException(
             status_code=403,
             detail=("To review, you must have at least one paper published in the journal list. "
@@ -3536,6 +3755,15 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         pdf_bytes, attempts = retrieve_manuscript_bytes(doi=doi)
 
         if pdf_bytes:
+            # Retained exactly as an upload is. Only uploaded files used to be
+            # stored, so a paper fetched by DOI could never be LLM-reviewed,
+            # published, or served to a reader — three features silently
+            # unavailable depending on how the paper happened to arrive. The
+            # bytes are here and identical in kind; the only reason they were
+            # not kept is that this path was written separately from the
+            # upload path. Failures are swallowed inside store_paper: losing
+            # the file must never fail a run that has been charged for.
+            paper_store.store_paper(pdf_bytes)
             # Priced after retrieval so the fee reflects the actual document,
             # and so nothing is charged for a paper that could not be fetched.
             ok, msgs = take_fee(f"DOI {doi}", estimate_word_count(pdf_bytes))
@@ -3570,6 +3798,10 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
 
         fname = f"Discovered_{p_doi or title[:60]}.pdf"
         if pdf_bytes:
+            # Same reasoning as the DOI path above: an auto-discovered paper is
+            # a retrieved PDF like any other, and keeping it is what makes the
+            # assessment reviewable and publishable later.
+            paper_store.store_paper(pdf_bytes)
             ok, msgs = take_fee(title, estimate_word_count(pdf_bytes))
             for m in msgs:
                 yield m

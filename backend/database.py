@@ -2,6 +2,7 @@ import sqlite3
 import json
 import logging
 from datetime import datetime
+from typing import Optional
 # Imported at module scope rather than inside complete_review: the bonus is
 # part of what a completed review pays, and a lazy import would let a bad
 # emission module fail at payment time instead of at start-up.
@@ -222,6 +223,27 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
                         account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
                         goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
+
+    # Named profiles, so a researcher working across several projects can keep
+    # a separate description of each rather than overwriting one.
+    #
+    # `researcher_profiles` above is KEPT as the active-profile mirror rather
+    # than migrated away. Every existing reader — the diagnostic framing, the
+    # Research Buddy, the reset path — asks it for "the profile for this
+    # account", and that question still has one answer: whichever slot is
+    # active. Adding a table beside it means multiple profiles cost one write
+    # on activation instead of a rewrite of everything that consumes them.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profile_slots (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        account_key TEXT NOT NULL,
+                        name TEXT NOT NULL,
+                        field TEXT DEFAULT '', career_stage TEXT DEFAULT '',
+                        goal TEXT DEFAULT '', idea TEXT DEFAULT '',
+                        abstract TEXT DEFAULT '',
+                        is_active INTEGER DEFAULT 0,
+                        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_profile_slots_acct "
+                   "ON researcher_profile_slots(account_key)")
 
     cursor.execute("SELECT COUNT(*) FROM global_eval_counter")
     if cursor.fetchone()[0] == 0: cursor.execute("INSERT INTO global_eval_counter (count) VALUES (0)")
@@ -866,6 +888,157 @@ def save_researcher_profile(account_key: str, profile: dict) -> dict:
     finally:
         conn.close()
     return fields
+
+
+PROFILE_FIELDS = ("field", "career_stage", "goal", "idea", "abstract")
+MAX_PROFILE_SLOTS = 8
+
+
+def list_profile_slots(account_key: str) -> list:
+    """Every named profile this account has saved, active one first."""
+    if not account_key:
+        return []
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT id, name, field, career_stage, goal, idea, abstract,
+                      is_active, updated_at
+               FROM researcher_profile_slots WHERE account_key = ?
+               ORDER BY is_active DESC, updated_at DESC""", (account_key,)).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"id": r[0], "name": r[1], "field": r[2], "career_stage": r[3],
+             "goal": r[4], "idea": r[5], "abstract": r[6],
+             "active": bool(r[7]), "updated_at": r[8]} for r in rows]
+
+
+def save_profile_slot(account_key: str, profile: dict, name: str = "",
+                      slot_id: Optional[int] = None) -> dict:
+    """Create or update one named profile, and make it the active one.
+
+    Saving activates deliberately. Editing a profile is almost always a
+    statement about what you are working on now, and leaving it saved-but-not-
+    applied would mean the guidance on screen silently disagrees with the
+    profile the user just wrote.
+    """
+    if not account_key:
+        return {"ok": False, "reason": "Sign in to save a profile."}
+    name = (name or "").strip()[:60] or "Untitled profile"
+    values = {k: str(profile.get(k, "") or "")[:4000] for k in PROFILE_FIELDS}
+
+    conn = get_db_connection()
+    try:
+        if slot_id is None:
+            n = conn.execute(
+                "SELECT COUNT(*) FROM researcher_profile_slots WHERE account_key = ?",
+                (account_key,)).fetchone()[0]
+            if n >= MAX_PROFILE_SLOTS:
+                return {"ok": False, "reason": (
+                    f"You can keep up to {MAX_PROFILE_SLOTS} profiles. Delete one first.")}
+            cur = conn.execute(
+                """INSERT INTO researcher_profile_slots
+                     (account_key, name, field, career_stage, goal, idea, abstract, is_active)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, 1)""",
+                (account_key, name, values["field"], values["career_stage"],
+                 values["goal"], values["idea"], values["abstract"]))
+            slot_id = cur.lastrowid
+        else:
+            cur = conn.execute(
+                """UPDATE researcher_profile_slots
+                   SET name = ?, field = ?, career_stage = ?, goal = ?, idea = ?,
+                       abstract = ?, is_active = 1, updated_at = CURRENT_TIMESTAMP
+                   WHERE id = ? AND account_key = ?""",
+                (name, values["field"], values["career_stage"], values["goal"],
+                 values["idea"], values["abstract"], int(slot_id), account_key))
+            if not cur.rowcount:
+                return {"ok": False, "reason": "That profile was not found under your account."}
+        # Exactly one active slot, always.
+        conn.execute(
+            "UPDATE researcher_profile_slots SET is_active = 0 "
+            "WHERE account_key = ? AND id <> ?", (account_key, int(slot_id)))
+        conn.commit()
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not save profile slot: %s", e)
+        return {"ok": False, "reason": "The profile could not be saved."}
+    finally:
+        conn.close()
+
+    # Mirror into the single-profile table every existing reader consults.
+    save_researcher_profile(account_key, values)
+    return {"ok": True, "reason": "", "id": int(slot_id), "name": name}
+
+
+def activate_profile_slot(account_key: str, slot_id: int) -> dict:
+    """Switch which profile the diagnostics and Research Buddy read."""
+    if not account_key:
+        return {"ok": False, "reason": "Sign in to switch profiles."}
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT field, career_stage, goal, idea, abstract, name
+               FROM researcher_profile_slots WHERE id = ? AND account_key = ?""",
+            (int(slot_id), account_key)).fetchone()
+        if not row:
+            return {"ok": False, "reason": "That profile was not found under your account."}
+        conn.execute("UPDATE researcher_profile_slots SET is_active = 0 WHERE account_key = ?",
+                     (account_key,))
+        conn.execute("UPDATE researcher_profile_slots SET is_active = 1 WHERE id = ?",
+                     (int(slot_id),))
+        conn.commit()
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not activate profile slot: %s", e)
+        return {"ok": False, "reason": "The profile could not be switched."}
+    finally:
+        conn.close()
+
+    values = dict(zip(PROFILE_FIELDS, row[:5]))
+    save_researcher_profile(account_key, values)
+    return {"ok": True, "reason": "", "name": row[5], "profile": values}
+
+
+def delete_profile_slot(account_key: str, slot_id: int) -> dict:
+    """Remove one named profile. The last remaining one may still be deleted.
+
+    If the active profile goes, the most recently updated survivor takes over
+    rather than leaving the account with profiles but none of them applied —
+    a state where the interface would show a list and the diagnostics would
+    behave as though it were empty.
+    """
+    if not account_key:
+        return {"ok": False, "reason": "Sign in to delete a profile."}
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT is_active FROM researcher_profile_slots WHERE id = ? AND account_key = ?",
+            (int(slot_id), account_key)).fetchone()
+        if not row:
+            return {"ok": False, "reason": "That profile was not found under your account."}
+        was_active = bool(row[0])
+        conn.execute("DELETE FROM researcher_profile_slots WHERE id = ? AND account_key = ?",
+                     (int(slot_id), account_key))
+        nxt = None
+        if was_active:
+            nxt = conn.execute(
+                "SELECT id FROM researcher_profile_slots WHERE account_key = ? "
+                "ORDER BY updated_at DESC LIMIT 1", (account_key,)).fetchone()
+        conn.commit()
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not delete profile slot: %s", e)
+        return {"ok": False, "reason": "The profile could not be deleted."}
+    finally:
+        conn.close()
+
+    if was_active:
+        if nxt:
+            activate_profile_slot(account_key, nxt[0])
+        else:
+            delete_researcher_profile(account_key)   # none left; clear the mirror
+    return {"ok": True, "reason": ""}
 
 
 def get_researcher_profile(account_key: str) -> dict:
@@ -2043,6 +2216,41 @@ def open_review_request(eval_hash: str, requested_by: str, bounty: float) -> dic
     except sqlite3.Error as e:
         logging.warning("Could not open review request: %s", e)
         return {"ok": False, "reason": "The request could not be opened."}
+    finally:
+        conn.close()
+
+
+def cancel_review_request(eval_hash: str, requested_by: str) -> dict:
+    """Withdraw an open review request, returning what was set aside.
+
+    Only the identity that opened the request may cancel it, and only while it
+    is still open: once a reviewer has submitted a report the piQ is theirs and
+    the badge is earned, so a cancellation at that point would be a way to take
+    back a review you did not like.
+
+    The row is deleted rather than flagged. A cancelled request is not a state
+    the platform needs to remember — it is the absence of a request — and
+    keeping tombstones would make `has_open_review_request` and the reviewer
+    listing both need to know about a third state that means nothing to either.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT id, bounty, completed_at, requested_by FROM peer_reviews "
+            "WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1", (eval_hash,)).fetchone()
+        if not row:
+            return {"ok": False, "reason": "There is no open review request for this paper.",
+                    "refund": 0.0}
+        if row[3] != requested_by:
+            return {"ok": False, "refund": 0.0, "reason": (
+                "Only the person who requested this review can cancel it.")}
+        conn.execute("DELETE FROM peer_reviews WHERE id = ?", (row[0],))
+        conn.commit()
+        return {"ok": True, "reason": "", "refund": round(float(row[1] or 0), 4)}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not cancel review request: %s", e)
+        return {"ok": False, "reason": "The request could not be cancelled.", "refund": 0.0}
     finally:
         conn.close()
 

@@ -38,8 +38,22 @@
   // from every wall, the corners of the world became literally unreachable.
   // Growth now saturates — a square-root curve, so early growth still reads
   // clearly and late growth flattens out instead of running away.
-  const PLAYER_RADIUS_CAP = 150;   // world units; ~4.4% of the world's width
+  // Ceiling for the drawn radius, expressed relative to the field rather than
+  // as a fixed number: twice the largest bubble in play. A constant could be
+  // far too large on an easy field and far too small on a stretched one, since
+  // difficulty scales every bubble — tying it to the biggest thing on screen
+  // keeps "π is at most twice the largest field" true at every level.
+  const PLAYER_RADIUS_CAP_MULTIPLE = 2;
+  const PLAYER_RADIUS_CAP_FALLBACK = 150;   // before a field is loaded
   const PLAYER_RADIUS_KNEE = 60;   // below this, radius tracks mass exactly
+
+  /** Twice the heaviest bubble this run, recomputed when the field changes. */
+  function playerRadiusCap() {
+    const biggest = state.maxBubbleMass || 0;
+    return biggest > 0
+      ? Math.max(PLAYER_RADIUS_KNEE + 1, biggest * PLAYER_RADIUS_CAP_MULTIPLE)
+      : PLAYER_RADIUS_CAP_FALLBACK;
+  }
 
   // Minimum gap between two absorptions. MIRRORED FROM backend/arcade.py — the
   // server rejects any run that eats faster than this, so if you change one you
@@ -49,12 +63,13 @@
   /** Drawn/collision radius for a given mass. Monotonic, and bounded. */
   function playerRadius(mass) {
     const m = Math.max(0, Number(mass) || 0);
-    if (m <= PLAYER_RADIUS_KNEE) return m;
+    const cap = playerRadiusCap();
+    if (m <= Math.min(PLAYER_RADIUS_KNEE, cap)) return Math.min(m, cap);
     // Above the knee, grow as a square root towards the cap: still always
     // increasing, so a bigger player is always visibly bigger, but the
     // increments shrink and never exceed PLAYER_RADIUS_CAP.
     const over = m - PLAYER_RADIUS_KNEE;
-    const span = PLAYER_RADIUS_CAP - PLAYER_RADIUS_KNEE;
+    const span = playerRadiusCap() - PLAYER_RADIUS_KNEE;
     return PLAYER_RADIUS_KNEE + span * (1 - 1 / Math.sqrt(1 + over / span));
   }
 
@@ -370,6 +385,8 @@
       vx: b.vx * WORLD_W, vy: b.vy * WORLD_H,
       eaten: false, dimmed: false, pulse: Math.random() * Math.PI * 2,
     }));
+    // Drives the player's size ceiling — see playerRadiusCap().
+    state.maxBubbleMass = state.bubbles.reduce((m, b) => Math.max(m, b.mass), 0);
     state.legend = data.legend || [];
     state.authors = data.authors || [];
     buildEdges();
@@ -1329,6 +1346,37 @@
         ctx.fillStyle = "#0f172a";
         ctx.beginPath(); ctx.arc(px, py, eyeR * 0.52, 0, Math.PI * 2); ctx.fill();
         ctx.restore();
+      }
+
+      // Mouth. Open when swallowing, a small smile otherwise — so the face
+      // reports what just happened rather than holding one expression. The
+      // width follows the same pop value the body pulse uses, which is what
+      // keeps the two reading as one reaction instead of two effects that
+      // happen to coincide.
+      const mouthY = eyeY + r * 0.3;
+      const openness = p._pop;                       // 0 at rest, 1 mid-swallow
+      ctx.lineCap = "round";
+      if (openness > 0.15) {
+        // An open "O", taller as the swallow peaks.
+        ctx.fillStyle = "#0f172a";
+        ctx.beginPath();
+        ctx.ellipse(0, mouthY, r * (0.12 + openness * 0.06),
+                    r * (0.07 + openness * 0.13), 0, 0, Math.PI * 2);
+        ctx.fill();
+        // A tongue, but only once the mouth is wide enough to hold one —
+        // below that it renders as a stray red pixel.
+        if (openness > 0.5) {
+          ctx.fillStyle = "#fb7185";
+          ctx.beginPath();
+          ctx.ellipse(0, mouthY + r * 0.06, r * 0.06, r * 0.04, 0, 0, Math.PI * 2);
+          ctx.fill();
+        }
+      } else {
+        ctx.strokeStyle = "#0f172a";
+        ctx.lineWidth = Math.max(1.4, r * 0.035);
+        ctx.beginPath();
+        ctx.arc(0, mouthY - r * 0.06, r * 0.16, 0.22 * Math.PI, 0.78 * Math.PI);
+        ctx.stroke();
       }
     } else {
       ctx.fillStyle = theme().playerText;

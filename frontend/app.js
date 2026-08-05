@@ -1633,6 +1633,114 @@ function refreshBuddy() {
   }
 }
 
+// ---------------------------------------------------------------------------
+// Named research profiles
+//
+// One account, several profiles, exactly one active. The active one is what
+// frames the diagnostics and feeds the Research Buddy — everything downstream
+// still asks for "the profile", so switching is a single write rather than a
+// change to every consumer.
+// ---------------------------------------------------------------------------
+let profileSlots = [];
+let activeSlotId = null;
+
+async function loadProfileSlots() {
+  const wrap = document.getElementById("profileSlots");
+  if (!wrap) return;
+  if (!Session.hasIdentity()) { wrap.classList.add("hidden"); return; }
+  wrap.classList.remove("hidden");
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const data = await (await fetch(`${API}/api/profiles?${qs}`)).json();
+    profileSlots = data.profiles || [];
+    renderProfileSlots();
+  } catch (_) { /* the single-profile form still works without the list */ }
+}
+
+function renderProfileSlots() {
+  const sel = document.getElementById("profileSlotSelect");
+  const nameEl = document.getElementById("profileSlotName");
+  if (!sel) return;
+
+  const active = profileSlots.find(p => p.active) || profileSlots[0] || null;
+  activeSlotId = active ? active.id : null;
+
+  sel.innerHTML = profileSlots.length
+    ? profileSlots.map(p =>
+        `<option value="${p.id}"${p.active ? " selected" : ""}>${escapeHtml(p.name)}</option>`
+      ).join("")
+    : `<option value="">No saved profiles yet</option>`;
+  if (nameEl && active) nameEl.value = active.name;
+
+  const del = document.getElementById("profileDeleteBtn");
+  if (del) del.disabled = !profileSlots.length;
+}
+
+/** Switch the active profile and load it into the form. */
+async function switchProfileSlot(id) {
+  if (!id) return;
+  try {
+    const res = await fetch(`${API}/api/profiles/${encodeURIComponent(id)}/activate`, {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+    profileSlots = data.profiles || profileSlots;
+    writeProfileForm(data.profile || {});
+    renderProfileSlots();
+    // The diagnostics and riB read the active profile, so both change here.
+    refreshBuddy();
+    loadBuddyCorpus();
+    const msg = document.getElementById("profileMsg");
+    if (msg) msg.textContent = `Switched to “${data.name}”.`;
+  } catch (e) {
+    const msg = document.getElementById("profileMsg");
+    if (msg) msg.textContent = `Could not switch profile: ${e.message}`;
+  }
+}
+
+{
+  const sel = document.getElementById("profileSlotSelect");
+  if (sel) sel.addEventListener("change", () => switchProfileSlot(sel.value));
+
+  const neu = document.getElementById("profileNewBtn");
+  if (neu) neu.addEventListener("click", () => {
+    // A new profile is an empty form plus a fresh name; nothing is written
+    // until Save, so clicking New cannot lose what is already stored.
+    activeSlotId = null;
+    writeProfileForm({});
+    const nameEl = document.getElementById("profileSlotName");
+    if (nameEl) { nameEl.value = ""; nameEl.focus(); }
+    const msg = document.getElementById("profileMsg");
+    if (msg) msg.textContent = "New profile — give it a name and save.";
+  });
+
+  const del = document.getElementById("profileDeleteBtn");
+  if (del) del.addEventListener("click", async () => {
+    const active = profileSlots.find(p => p.active);
+    if (!active) return;
+    if (!confirm(`Delete the profile “${active.name}”?\n\nThis cannot be undone. `
+                 + `Your assessments and piQ are unaffected.`)) return;
+    try {
+      const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+      const res = await fetch(`${API}/api/profiles/${active.id}?${qs}`, { method: "DELETE" });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      profileSlots = data.profiles || [];
+      renderProfileSlots();
+      const next = profileSlots.find(p => p.active);
+      writeProfileForm(next || {});
+      refreshBuddy();
+      const msg = document.getElementById("profileMsg");
+      if (msg) msg.textContent = next ? `Deleted. Now using “${next.name}”.` : "Profile deleted.";
+    } catch (e) {
+      const msg = document.getElementById("profileMsg");
+      if (msg) msg.textContent = `Could not delete: ${e.message}`;
+    }
+  });
+}
+
 async function loadProfile() {
   // Local draft first so the form is never blank while the network is in
   // flight, then let the server's copy win if there is one.
@@ -1642,6 +1750,8 @@ async function loadProfile() {
   } catch (_) { /* corrupt draft is not worth surfacing */ }
 
   if (!Session.hasIdentity()) { refreshBuddy(); return; }
+  // The named-profile list follows identity, like the profile itself.
+  loadProfileSlots();
   try {
     const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
     const res = await fetch(`${API}/api/profile?${qs}`);
@@ -1678,15 +1788,29 @@ async function saveProfile() {
   msg.textContent = "Saving…";
   msg.className = "profile-msg";
   try {
-    const res = await fetch(`${API}/api/profile`, {
+    // Saved as a NAMED profile. The name falls back to the researcher's stated
+    // field, then to a plain default — an unnamed entry in a list of profiles
+    // is unusable, and asking for a name before allowing a save would put a
+    // form field between the user and the thing they came to do.
+    const nameEl = document.getElementById("profileSlotName");
+    const name = (nameEl && nameEl.value.trim())
+      || (profile.field || "").split(",")[0].trim()
+      || "My profile";
+
+    const res = await fetch(`${API}/api/profiles`, {
       method: "POST", headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid, ...profile }),
+      body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid,
+                             ...profile, name, slot_id: activeSlotId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.detail || `HTTP ${res.status}`);
     }
-    msg.textContent = "Profile saved.";
+    const data = await res.json().catch(() => ({}));
+    activeSlotId = data.id != null ? data.id : activeSlotId;
+    profileSlots = data.profiles || profileSlots;
+    renderProfileSlots();
+    msg.textContent = `Profile “${data.name || name}” saved.`;
     msg.className = "profile-msg profile-msg-ok";
   } catch (e) {
     msg.textContent = "Could not save to the server: " + e.message +
@@ -2427,13 +2551,29 @@ async function showReviewModal(hash) {
       ${alreadyRequested
         ? `<div class="opt-done">A review has already been requested for this paper and is
              waiting for a reviewer. It carries a <strong>Requested to be reviewed</strong>
-             marker until someone submits a report.</div>`
+             marker until someone submits a report.
+             ${state.review_requested_by_me
+               ? `<div class="opt-done-actions">
+                    <button class="btn btn-quiet" id="cancelReq"
+                            title="Withdraw the request and get the piQ back"
+                            >Cancel this request</button>
+                  </div>`
+               : `<div class="hint" style="margin-top:6px">Someone else requested it, so only
+                    they can withdraw it.</div>`}
+           </div>`
+        : ""}
+      ${!alreadyRequested && state.may_request === false
+        ? `<div class="opt-inactive">Only the author of a paper can request a review of it —
+             the same authorship check that gates publishing. If this is your manuscript,
+             claim authorship from the dossier first.</div>`
         : ""}
       <button class="btn ${alreadyRequested ? "" : "btn-primary"}" id="reqPeer"
-              ${alreadyRequested ? "disabled" : ""}
+              ${alreadyRequested || state.may_request === false ? "disabled" : ""}
               title="${alreadyRequested
                 ? "A review is already open for this paper"
-                : "Set aside piQ and put this paper in front of reviewers"}"
+                : state.may_request === false
+                  ? "Only the paper's author can request a review"
+                  : "Set aside piQ and put this paper in front of reviewers"}"
               >${alreadyRequested ? "Review already requested" : "Request peer review"}</button>
     </div>
 
@@ -2500,8 +2640,42 @@ async function showReviewModal(hash) {
     }
   };
 
+  const cancelBtn = document.getElementById("cancelReq");
+  if (cancelBtn) {
+    cancelBtn.addEventListener("click", async () => {
+      if (!confirm(`Withdraw this review request?\n\nThe ${peerFee.toFixed(2)} piQ set aside `
+                   + `for it returns to your balance, and the "Requested to be reviewed" `
+                   + `marker is removed.\n\nYou can request a review again later.`)) return;
+      const msg = document.getElementById("reviewMsg");
+      cancelBtn.disabled = true; cancelBtn.textContent = "Withdrawing…";
+      try {
+        const res = await fetch(
+          `${API}/api/assessments/${encodeURIComponent(hash)}/review/cancel`, {
+          method: "POST", headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid }),
+        });
+        const data = await res.json().catch(() => ({}));
+        if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+        msg.textContent = data.message || "Request withdrawn.";
+        // The marker is gone everywhere it was shown, and the balance moved.
+        markLocalReviewCancelled(hash);
+        renderResults();
+        loadEmissionStatus();
+        renderSidebar();
+        loadAssessmentHistory();
+        refreshCorpusViews();
+        // Reopen so the modal reflects the paper's new state rather than
+        // leaving a disabled button next to a message that is no longer true.
+        showReviewModal(hash);
+      } catch (e) {
+        msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+        cancelBtn.disabled = false; cancelBtn.textContent = "Cancel this request";
+      }
+    });
+  }
+
   const p1 = document.getElementById("reqPeer");
-  if (p1 && !alreadyRequested) {
+  if (p1 && !alreadyRequested && state.may_request !== false) {
     p1.addEventListener("click", () => post(
       "/review/request", "peer review", peerFee, "reqPeer",
       "The whole amount is held and credited to the researcher who completes the review. "
@@ -2532,6 +2706,14 @@ function markLocalPublished(hash, kind) {
 function markLocalReviewRequested(hash) {
   evaluatedBuffer.forEach(it => {
     if ((it.hash || it.eval_hash) === hash) it.review_requested = true;
+  });
+  persistResults();
+}
+
+/** Clear the awaiting-review marker after a request is withdrawn. */
+function markLocalReviewCancelled(hash) {
+  evaluatedBuffer.forEach(it => {
+    if ((it.hash || it.eval_hash) === hash) it.review_requested = false;
   });
   persistResults();
 }
@@ -2720,6 +2902,14 @@ async function showWriteReviewModal(hash) {
   }
 
   const bonus = Number(elig.bonus ?? 2).toFixed(2);
+  const ownerNote = elig.owner_exemption
+    ? `<div class="warning-box"><strong>You are reviewing as the operator.</strong>
+         <p>Publishing requires a review, and reviewing normally requires having published —
+         on a new deployment that is a closed loop with no entry point. As the owner you are
+         exempt from the publication requirement so the first reviews can be written. Every
+         other rule still applies: you cannot review your own paper or one you requested.</p>
+       </div>`
+    : "";
   const minChars = Number(elig.min_chars || 400);
   const requirements = elig.requirements || [];
   const reqList = `
@@ -2777,6 +2967,7 @@ async function showWriteReviewModal(hash) {
   const bounty = Number(openHere.bounty || 0);
   openModal(`
     <h2>Write a review</h2>
+    ${ownerNote}
     <p class="lede">You are reviewing <strong>${escapeHtml(openHere.title)}</strong>. Your report
     is published with the paper; your name is not — reviews here are single-blind, so a negative
     verdict costs you nothing.</p>
@@ -6275,8 +6466,72 @@ async function refreshSessionState() {
   // lingering until a reload.
   loadOwnerBugReports();
   loadOwnerStats();
+  loadOwnerReviewReports();
   const resetCard = document.getElementById("ownerResetCard");
   if (resetCard) resetCard.classList.toggle("hidden", !sessionState.is_owner);
+  // The log stream carries deployment internals — provider failures, refunds,
+  // resets, truncated identities. That is operator information, not something
+  // a researcher needs or should be shown.
+  const logPanel = document.getElementById("logMonitorPanel");
+  if (logPanel) logPanel.classList.toggle("hidden", !sessionState.is_owner);
+}
+
+/** Reviews readers have flagged for a moderator.
+ *
+ *  A report is a moderation signal that exists nowhere else — without somewhere
+ *  for the operator to read it, reporting is a button that does nothing visible
+ *  to anyone who could act on it.
+ */
+async function loadOwnerReviewReports() {
+  const panel = document.getElementById("ownerReviewReportsPanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+
+  const body = document.getElementById("ownerReviewReportsBody");
+  const badge = document.getElementById("ownerReviewReportsBadge");
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet });
+    const res = await fetch(`${API}/api/admin/review-reports?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reports = data.reports || [];
+
+    if (badge) {
+      badge.textContent = reports.length;
+      badge.className = reports.length ? "pill q-warn" : "pill pill-muted";
+      badge.title = `${reports.length} unresolved report${reports.length === 1 ? "" : "s"}`;
+    }
+    if (!reports.length) {
+      body.innerHTML = `<p class="hint">No reviews have been reported.</p>`;
+      return;
+    }
+
+    body.innerHTML = reports.map(r => `
+      <div class="owner-bug owner-bug-undelivered">
+        <div class="owner-bug-head">
+          <span class="owner-bug-when">${escapeHtml((r.created_at || "").slice(0, 16))}</span>
+          <span class="owner-bug-state"><strong>${escapeHtml(r.reason || "reported")}</strong></span>
+        </div>
+        <div class="owner-bug-msg">${escapeHtml(r.title || "Untitled")}</div>
+        ${r.detail ? `<div class="owner-bug-msg">${escapeHtml(r.detail)}</div>` : ""}
+        <div class="owner-bug-meta">
+          <span>review #${escapeHtml(String(r.review_id))}</span>
+        </div>
+        ${r.eval_hash
+          ? `<button class="btn btn-quiet" data-report-hash="${escapeHtml(r.eval_hash)}"
+                     style="margin-top:7px">Read the review</button>` : ""}
+      </div>`).join("");
+
+    // Opens the review being complained about, so a moderator can judge the
+    // report against the thing it is about rather than from the summary alone.
+    body.querySelectorAll("[data-report-hash]").forEach(b => {
+      b.addEventListener("click", () => showPeerReviewModal(b.dataset.reportHash));
+    });
+  } catch (e) {
+    body.innerHTML = `<p class="hint">Could not load reported reviews (${
+      escapeHtml(e.message)}).</p>`;
+  }
 }
 
 /** Operator-only deployment numbers: who has signed up, and who is still here.
