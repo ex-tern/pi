@@ -163,6 +163,11 @@ def is_winnable(seed: int, overlay: Optional[List], level: int) -> bool:
 # Cap on how many real corpus fields ride inside the signed token. Bounded so a
 # large corpus cannot inflate the token into an oversized request body.
 OVERLAY_MAX_FIELDS = 20
+# Total fields carried in the signed token, corpus plus unexplored. Bounded
+# because the overlay travels inside the token on every request, and because
+# FIELD_SIZE bubbles divided across too many fields leaves each one with a
+# single bubble and no size signal at all.
+OVERLAY_MAX_FIELDS_TOTAL = 36
 
 TOKEN_TTL_SECONDS = MAX_RUN_MS // 1000 + 120
 _SECRET = (ETH_ADMIN_PRIVATE_KEY or "scholarpi_arcade_seed").encode("utf-8")
@@ -416,14 +421,63 @@ def generate_field(seed: int, overlay: Optional[List] = None,
     return field
 
 
+# Unexplored territory.
+#
+# The map promised "faint ones are unexplored territory" and had none: the
+# overlay was built purely from fields that already had papers, so every
+# bubble was live and the caption described something that did not exist. A
+# map of science showing only the parts already visited is a map of the
+# corpus, not of science — the empty regions are the more interesting half,
+# because they are the ones that say where nothing has been assessed yet.
+#
+# These are top-level subject areas in the Scopus/ASJC tradition, chosen
+# because the classifier already emits names from this vocabulary, so a field
+# stops being faint and becomes solid the moment a paper lands in it. Any that
+# the corpus already covers are filtered out below rather than duplicated.
+UNEXPLORED_FIELDS = [
+    ("Agricultural and Biological Sciences", "Life Sciences"),
+    ("Arts and Humanities", "Social Sciences"),
+    ("Biochemistry, Genetics and Molecular Biology", "Life Sciences"),
+    ("Business, Management and Accounting", "Social Sciences"),
+    ("Chemical Engineering", "Physical Sciences"),
+    ("Chemistry", "Physical Sciences"),
+    ("Computer Science", "Physical Sciences"),
+    ("Decision Sciences", "Social Sciences"),
+    ("Dentistry", "Health Sciences"),
+    ("Earth and Planetary Sciences", "Physical Sciences"),
+    ("Economics, Econometrics and Finance", "Social Sciences"),
+    ("Energy", "Physical Sciences"),
+    ("Engineering", "Physical Sciences"),
+    ("Environmental Science", "Physical Sciences"),
+    ("Health Professions", "Health Sciences"),
+    ("Immunology and Microbiology", "Life Sciences"),
+    ("Materials Science", "Physical Sciences"),
+    ("Mathematics", "Physical Sciences"),
+    ("Medicine", "Health Sciences"),
+    ("Neuroscience", "Life Sciences"),
+    ("Nursing", "Health Sciences"),
+    ("Pharmacology, Toxicology and Pharmaceutics", "Life Sciences"),
+    ("Physics and Astronomy", "Physical Sciences"),
+    ("Psychology", "Social Sciences"),
+    ("Social Sciences", "Social Sciences"),
+    ("Veterinary", "Health Sciences"),
+]
+
+
 def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
     """Compacts corpus stats into the minimal form the token can carry.
 
     Field name, paper count and parent domain survive: the first two size the
     bubbles, the third colours them by discipline. Everything else is dropped
     to keep the signed token small enough to sit in a JSON body.
+
+    Fields with no papers are appended after the ones that have them, so the
+    map shows unexplored territory alongside the corpus. They carry a count of
+    zero, which is what makes them render faint and — because a bubble's size
+    comes from its paper count — small enough to be edible from the start.
     """
     overlay = []
+    seen = set()
     for row in (corpus_stats or [])[:OVERLAY_MAX_FIELDS]:
         name = str(row.get("field", "")).strip()[:48]
         if not name:
@@ -431,8 +485,21 @@ def build_overlay(corpus_stats: Optional[List[Dict]] = None) -> List:
         try:
             overlay.append([name, int(row.get("papers", 0)),
                             str(row.get("domain") or "")[:40]])
+            seen.add(name.lower())
         except (TypeError, ValueError):
             continue
+
+    # Real fields first, unexplored ones filling the remainder. The order is
+    # fixed and the list is a constant, so the overlay stays deterministic —
+    # run verification replays this exact field and would reject an honest
+    # player if it could differ between the token and the replay.
+    for name, domain in UNEXPLORED_FIELDS:
+        if len(overlay) >= OVERLAY_MAX_FIELDS_TOTAL:
+            break
+        if name.lower() in seen:
+            continue
+        overlay.append([name, 0, domain])
+        seen.add(name.lower())
     return overlay
 
 

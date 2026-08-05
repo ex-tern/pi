@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=26">
+<link rel="stylesheet" href="style.css?v=29">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -117,6 +117,14 @@
          delivery failed exist nowhere but this database, so without somewhere
          to read them they are silently lost — the sidebar is where the
          maintainer already looks at system state. -->
+    <!-- Owner only. Counts of PEOPLE and platform activity, kept out of the
+         public Analytics tab: publishing them would tell every visitor the
+         size of the user base and how thin the activity is. -->
+    <details class="sidebar-expander hidden" id="ownerStatsPanel">
+      <summary>Deployment<span class="pill pill-muted" id="ownerStatsBadge">–</span></summary>
+      <div id="ownerStatsBody"><p class="hint">Loading…</p></div>
+    </details>
+
     <details class="sidebar-expander hidden" id="ownerBugsPanel">
       <summary>Bug reports<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
       <div id="ownerBugsBody"><p class="hint">Loading…</p></div>
@@ -461,6 +469,19 @@
               <option value="time">X: real time</option>
             </select>
 
+            <!-- Sensitivity was already read by readForecastView() and already
+                 accepted by the endpoint as `gain`, but had no control — so it
+                 was permanently pinned at its default and the projection could
+                 only ever be drawn one way. It is the one setting that changes
+                 what the forecast SAYS rather than how it is drawn, which is
+                 why it belongs beside the other three rather than buried. -->
+            <select id="forecastGain" class="inline-select"
+                    title="How strongly the projection reacts to recent movement. Lower is more conservative; higher extrapolates recent trends further.">
+              <option value="1.5">Sensitivity: conservative</option>
+              <option value="2.5" selected>Sensitivity: balanced</option>
+              <option value="3.5">Sensitivity: responsive</option>
+            </select>
+
           </div>
 
           <div id="forecastMsg" class="hint"></div>
@@ -610,6 +631,11 @@
       </div>
 
       <p class="arcade-message hidden" id="arcadeMessage"></p>
+
+      <!-- Papers inside the selected field. Below the map rather than inside
+           the side panel: a list of manuscripts needs the full width, and the
+           side panel is already carrying the filters. -->
+      <div class="card hidden" id="arcadeFieldPapers"></div>
     </section>
 
 
@@ -715,7 +741,7 @@
   </div>
 </div>
 
-<script src="app.js?v=26"></script>
-<script src="arcade.js?v=26"></script>
+<script src="app.js?v=29"></script>
+<script src="arcade.js?v=29"></script>
 </body>
 </html>

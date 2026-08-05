@@ -5715,21 +5715,48 @@ function histPiq(a) {
 // and would be meaningless carried across a sign-out into someone else's.
 let buddySelection = new Set();
 
+/** Storage key for the current identity, or null when signed out.
+ *
+ *  Returns null rather than falling back to an "anon" bucket. An anonymous
+ *  bucket is how a selection made before signing in leaked into a signed-in
+ *  session: the papers were assessed by nobody in particular, but the key
+ *  survived the sign-in and went on narrowing riB with them. A selection is a
+ *  statement about a person's own work, so with no person there is nothing to
+ *  store and nothing to restore.
+ */
 function buddySelectionKey() {
-  return `sp_buddy_pick_${Session.orcid || Session.wallet || "anon"}`;
+  const who = Session.orcid || Session.wallet;
+  return who ? `sp_buddy_pick_${who}` : null;
 }
 
 function loadBuddySelection() {
+  const key = buddySelectionKey();
+  if (!key) { buddySelection = new Set(); return; }
   try {
-    const raw = JSON.parse(localStorage.getItem(buddySelectionKey()) || "[]");
+    const raw = JSON.parse(localStorage.getItem(key) || "[]");
     buddySelection = new Set(Array.isArray(raw) ? raw.filter(Boolean) : []);
   } catch (_) { buddySelection = new Set(); }
 }
 
 function saveBuddySelection() {
+  const key = buddySelectionKey();
+  if (!key) return;                 // nothing to persist for a signed-out visitor
   try {
-    localStorage.setItem(buddySelectionKey(), JSON.stringify([...buddySelection]));
+    localStorage.setItem(key, JSON.stringify([...buddySelection]));
   } catch (_) { /* storage full or blocked; the selection still works in memory */ }
+}
+
+/** Drop anything riB might otherwise carry across an identity change.
+ *
+ *  Called on sign-in and sign-out. Without it, the in-memory selection and the
+ *  legacy "anon" bucket outlived the session that created them, so riB could
+ *  be reasoning from papers chosen by a different person — or by nobody.
+ */
+function resetBuddyStateForIdentityChange() {
+  buddySelection = new Set();
+  try {
+    localStorage.removeItem("sp_buddy_pick_anon");   // legacy key, never re-created
+  } catch (_) { /* nothing to clean up */ }
 }
 
 /** Say plainly what riB is currently reading, so the scope is never a guess. */
@@ -5821,9 +5848,18 @@ async function _loadAssessmentHistory() {
     saveBuddySelection();
 
     const anySelected = buddySelection.size > 0;
-    body.innerHTML = `<div class="table-scroll"><table class="data-table history-table"><thead><tr>
-        <th class="col-pick" title="Choose which papers the Research Buddy reasons from">
-          <input type="checkbox" id="buddyPickAll" aria-label="Select all papers"
+    // Said before the table, not only in a tooltip. A bare checkbox column in
+    // a list that also has a Remove button is ambiguous in the worst possible
+    // direction — a reader can reasonably assume ticking marks papers for
+    // deletion. Naming what it does, above the thing it does it to, is the
+    // cheapest way to make that impossible to misread.
+    body.innerHTML = `<p class="buddy-pick-lead">
+        <strong>Tick a paper to include it in your Research Buddy (riB).</strong>
+        riB reads the ticked papers when suggesting what to work on next.
+        Ticking nothing means it reads all of them.</p>
+      <div class="table-scroll"><table class="data-table history-table"><thead><tr>
+        <th class="col-pick" title="Tick a paper to include it in your Research Buddy (riB)">
+          <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in Research Buddy"
                  ${anySelected && buddySelection.size === live.size ? "checked" : ""}></th>
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => {
@@ -5832,7 +5868,8 @@ async function _loadAssessmentHistory() {
         <tr${buddySelection.has(h) ? ' class="row-picked"' : ""}>
           <td class="col-pick"><input type="checkbox" class="buddy-pick"
               data-pick="${escapeHtml(h)}" ${buddySelection.has(h) ? "checked" : ""}
-              aria-label="Use this paper for the Research Buddy"></td>
+              title="Include this paper in your Research Buddy (riB)"
+              aria-label="Include this paper in your Research Buddy"></td>
           <td><div class="hist-title">${escapeHtml(a.title)} ${allBadges(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
@@ -6237,8 +6274,78 @@ async function refreshSessionState() {
   // moment the owner wallet is proven and disappear on sign-out rather than
   // lingering until a reload.
   loadOwnerBugReports();
+  loadOwnerStats();
   const resetCard = document.getElementById("ownerResetCard");
   if (resetCard) resetCard.classList.toggle("hidden", !sessionState.is_owner);
+}
+
+/** Operator-only deployment numbers: who has signed up, and who is still here.
+ *
+ *  Kept out of the public Analytics tab on purpose. Those are counts of the
+ *  corpus; these are counts of PEOPLE, and publishing them would tell every
+ *  visitor the size of the user base and how thin the activity is.
+ */
+async function loadOwnerStats() {
+  const panel = document.getElementById("ownerStatsPanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+
+  const body = document.getElementById("ownerStatsBody");
+  const badge = document.getElementById("ownerStatsBadge");
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet });
+    const res = await fetch(`${API}/api/admin/overview?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const d = await res.json();
+
+    // The headline is signed-up accounts, since that is the number the panel
+    // exists to answer.
+    const signups = Math.max(d.accounts_with_balance || 0, d.distinct_submitters || 0);
+    if (badge) {
+      badge.textContent = signups;
+      badge.className = "pill q-mod";
+      badge.title = `${signups} identities have signed up`;
+    }
+
+    const row = (label, value, title) =>
+      `<div class="ri-row"${title ? ` title="${escapeHtml(title)}"` : ""}>
+         <span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
+
+    body.innerHTML = `
+      <div class="owner-stats-group">
+        <div class="owner-stats-head">People</div>
+        ${row("Signed up", signups,
+              "Distinct identities that have submitted a paper or hold a piQ balance. There is "
+              + "no separate users table — an identity is a wallet or ORCID that has done "
+              + "something durable.")}
+        ${row("Saved profiles", d.saved_profiles || 0)}
+        ${row("Active · 7 days", d.active_7d || 0, "Distinct identities that assessed a paper")}
+        ${row("Active · 30 days", d.active_30d || 0)}
+        ${row("Unique visitors", (d.visitors || {}).unique || 0,
+              "Counted by a keyed hash of the visitor's address — no IP is stored.")}
+      </div>
+      <div class="owner-stats-group">
+        <div class="owner-stats-head">Activity</div>
+        ${row("Papers · total", d.papers_total || 0)}
+        ${row("Papers · 7 days", d.papers_7d || 0)}
+        ${row("Published", d.published || 0)}
+        ${row("Peer reviews", d.reviews_human || 0)}
+        ${row("LLM reviews", d.reviews_llm || 0)}
+        ${row("Awaiting a reviewer", d.reviews_open || 0)}
+      </div>
+      <div class="owner-stats-group">
+        <div class="owner-stats-head">piQ</div>
+        ${row("Minted", Number(d.piq_minted || 0).toFixed(2), "Released to verified authors")}
+        ${row("Held", Number(d.piq_held || 0).toFixed(2),
+              "Earned but not released — authorship unverified")}
+      </div>`;
+  } catch (e) {
+    // Visible with the reason. A blank panel reads as "nobody has signed up",
+    // which is the one wrong thing it could say.
+    body.innerHTML = `<p class="hint">Could not load deployment stats (${
+      escapeHtml(e.message)}).</p>`;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -6477,6 +6584,8 @@ function signOut() {
   Session.orcid = "";
   Session.researcherName = "";
   sessionState = { verified: false, two_factor: false, is_owner: false };
+  // The Research Buddy selection belongs to the person who just left.
+  resetBuddyStateForIdentityChange();
 
   const row = document.getElementById("sessionRow");
   if (row) row.classList.add("hidden");
@@ -6624,6 +6733,10 @@ window.ScholarPi = {
   // The arcade's author filter is a tag control living in app.js's shared
   // implementation; this is how arcade.js reads its current selection.
   tags: (group) => (TAG_GROUPS[group] ? TAG_GROUPS[group].tags.slice() : []),
+  // Lets the Science Map open a paper's full assessment when a row in its
+  // field listing is clicked. Exposed rather than duplicated, so the map and
+  // every table in app.js open a dossier the same way.
+  openDossier: (hash) => openDossierByHash(hash),
 };
 
 // Owner-only, and hidden unless the owner wallet is proven — the button is
