@@ -211,8 +211,32 @@ code.wrap { word-break: break-all; }
 
 .sidebar-scrim { display: none; }
 
+/* --- Horizontal overflow containment ------------------------------------
+   The page was rendering into a narrow column on phones with dead space to
+   one side. That is the signature of horizontal overflow: one element wider
+   than the viewport stretches the document, and every block-level element
+   then lays out against the viewport width while the page scrolls sideways.
+   The culprits were all "cannot shrink" defaults — grid and flex children get
+   `min-width: auto`, which refuses to go below the intrinsic width of their
+   contents, so a 520px min-width table or three 175px selects held the whole
+   document open.
+
+   Fixed at the source (each container is allowed to shrink) rather than with
+   `overflow-x: hidden` on the body, which would hide the symptom and quietly
+   clip content off the side of the screen. */
+.two-col > *, .stats-bar > *, .forecast-meta > *, .main, .card { min-width: 0; }
+.table-scroll { max-width: 100%; }
+/* A scroll container can shrink; its contents scroll inside it. Without this
+   the table's own min-width propagated up through the card and out. */
+.table-scroll { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+
 @media (max-width: 900px) {
   .app-shell { display: block; }
+  /* Selects shrink to share a row instead of forcing one. Three at 175px is
+     525px of hard minimum — more than a phone viewport — and they were what
+     stretched the Analytics tab sideways. */
+  .inline-select { min-width: 0; flex: 1 1 140px; }
+  .forecast-toolbar { flex-wrap: wrap; }
   /* Drawer, not a stacked column. Stacking pushed every page 800px down the
      document behind the sidebar, so on a phone the actual app was below the
      fold on every single tab. */
@@ -540,11 +564,33 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .page-indicator { font-size: 11.5px; color: var(--muted); }
 
 /* ---------- Analytics: stats bar ---------- */
-.stats-bar { display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 20px; }
-@media (max-width: 900px) { .stats-bar { grid-template-columns: repeat(2, 1fr); } }
-.stat-card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 16px; text-align: center; box-shadow: var(--shadow); }
-.stat-value { font-size: 1.5rem; font-weight: 700; color: var(--accent); font-variant-numeric: tabular-nums; }
+/* One row, however many cards there are.
+   `auto-fit` rather than a hardcoded count: the bar held five cards against a
+   four-column grid, so the fifth wrapped onto a line of its own and sat there
+   looking like a separate section. Counting columns in CSS means the count has
+   to be updated every time a statistic is added — deriving it from the
+   children means it never can be wrong. */
+.stats-bar {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr));
+  grid-auto-flow: column; gap: 12px; margin-bottom: 20px;
+}
+.stat-card {
+  background: var(--card-bg); border: 1px solid var(--border);
+  border-radius: var(--radius); padding: 16px 10px; text-align: center;
+  box-shadow: var(--shadow); min-width: 0;
+}
+/* Clamped so a long number cannot widen its card and unbalance the row. */
+.stat-value {
+  font-size: clamp(1.05rem, 1.6vw, 1.5rem); font-weight: 700; color: var(--accent);
+  font-variant-numeric: tabular-nums; overflow-wrap: anywhere;
+}
 .stat-label { font-size: 10.5px; color: var(--faint); margin-top: 4px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; }
+/* Below this the five cards stop being legible in one row, so they wrap into
+   an even grid instead — `auto-flow: column` is dropped so the rows fill
+   evenly rather than leaving one card stranded. */
+@media (max-width: 900px) {
+  .stats-bar { grid-template-columns: repeat(3, 1fr); grid-auto-flow: row; }
+}
 
 /* ---------- Filters ---------- */
 .filter-panel { border: 1px solid var(--border); border-radius: 10px; padding: 13px; margin-bottom: 12px; background: #fbfcfe; }
@@ -1075,7 +1121,19 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   .table-scroll, .table-wrap {
     overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
-  .data-table { min-width: 520px; font-size: 12px; }
+  /* The min-width applies ONLY to tables that sit in a scroll container.
+     As a bare rule it was the main source of horizontal overflow: most tables
+     on the site are rendered without a wrapper (the dossier, the criteria
+     breakdown, the assessment history), so a 520px floor on every .data-table
+     held the document open on any phone narrower than that and pushed the
+     whole layout into a column with dead space beside it. Inside a scroll
+     container the floor is what makes columns readable; outside one it is
+     just a page-width minimum with no way to scroll to the rest. */
+  .table-scroll .data-table, .table-wrap .data-table { min-width: 520px; }
+  .data-table { font-size: 12px; }
+  /* Unwrapped tables wrap their text instead of demanding width. */
+  .card > .data-table, .modal .data-table { width: 100%; min-width: 0; }
+  .card > .data-table td, .modal .data-table td { overflow-wrap: anywhere; }
   .data-table th, .data-table td { padding: 7px 8px; }
   .history-table { min-width: 420px; }
 

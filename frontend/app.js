@@ -2116,14 +2116,32 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
  *  page that quietly disagreed with the server about what existed.
  */
 function refreshCorpusViews() {
-  try { loadJournal(); } catch (_) {}
-  try { loadTopPapers(); } catch (_) {}
-  try { loadLeaderboard(); } catch (_) {}
-  try { loadExplorer(); } catch (_) {}
-  // Analytics caches its first load, so it must be invalidated rather than
-  // merely re-called or it will serve the numbers from before the run.
+  // Only the visible tab is refreshed. Firing all five loaders at once put a
+  // burst of requests on the server at exactly the moment the assessment
+  // history was loading, and a single failure in that burst was enough to
+  // make the history look like it had been deleted. The hidden tabs reload
+  // when they are opened anyway — that is what the tab handler does — so
+  // refreshing them here bought nothing and cost a thundering herd.
+  //
+  // Analytics caches its first load, so it is invalidated unconditionally:
+  // the flag is what the tab handler checks, and leaving it set would serve
+  // numbers from before the run whenever the tab is next opened.
   analyticsInitialized = false;
-  try { loadAnalyticsSummary(); } catch (_) {}
+
+  const active = document.querySelector(".tab-panel.active");
+  const tab = active ? active.id : "";
+
+  // `catch` on the promise, not around the call. These are async functions, so
+  // a failure inside them rejects a promise rather than throwing synchronously
+  // — the try/catch that used to wrap them could never have caught anything,
+  // and an unhandled rejection is a console error nobody sees.
+  const run = (fn) => { try { Promise.resolve(fn()).catch(() => {}); } catch (_) {} };
+
+  if (tab === "tab-journal") {
+    run(loadJournal); run(loadTopPapers); run(loadLeaderboard); run(loadExplorer);
+  } else if (tab === "tab-analytics") {
+    run(loadAnalyticsSummary);
+  }
 }
 
 function handleStreamLine(obj, statusBox) {
@@ -4522,11 +4540,23 @@ async function loadForecast() {
     forecastChart = new Chart(ctx, buildForecastChartConfig(data, view));
 
     metaBox.classList.remove("hidden");
+    // Four items, so the row fills evenly rather than leaving a gap where a
+    // fourth column plainly should be. Lookback is the missing one worth
+    // stating: every number beside it is computed over that window, and it is
+    // the one input the reader chose themselves — a projection whose horizon
+    // is not shown is a projection you cannot check.
+    // `lookback_used`, not the requested value: the engine clamps the window
+    // to the blocks that actually exist, so on a young ledger the two differ
+    // and reporting the request would overstate what the projection saw.
+    const lookback = Number(
+      data.lookback_used || (data.settings && data.settings.lookback) || 0);
     metaBox.innerHTML = `
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
       <div class="fm-item"><span>Weight sum</span><strong>${Number(data.raw_sum).toFixed(3)} / 8.0</strong></div>
       ${data.settings ? `<div class="fm-item"><span>Smoothing</span><strong>&alpha; ${
-        data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}`;
+        data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}
+      <div class="fm-item"><span>Lookback</span><strong>${
+        lookback ? `${lookback} epoch${lookback === 1 ? "" : "s"}` : "—"}</strong></div>`;
 
     if (data.interpretation) {
       insight.classList.remove("hidden");
@@ -5617,7 +5647,29 @@ function histPiq(a) {
 }
 
 /** Assessment history for a signed-in identity. */
-async function loadAssessmentHistory() {
+// One history load at a time. The end of a pipeline run fires several
+// refreshes at once (the "done" line, the request's finally block, and the
+// sidebar re-render), and without this they raced: each set "Loading…", each
+// awaited, and the slowest overwrote the newest. Sharing one in-flight promise
+// makes the extra callers free instead of harmful.
+let historyLoad = null;
+let historyAgain = false;
+
+function loadAssessmentHistory() {
+  // Coalesce, but do not simply drop. A caller that arrives while a load is in
+  // flight may know about data the in-flight request was too early to see —
+  // the pipeline commits rows and then refreshes from three places — so one
+  // trailing reload is queued rather than letting the newest caller silently
+  // piggyback on a stale answer.
+  if (historyLoad) { historyAgain = true; return historyLoad; }
+  historyLoad = _loadAssessmentHistory().finally(() => {
+    historyLoad = null;
+    if (historyAgain) { historyAgain = false; loadAssessmentHistory(); }
+  });
+  return historyLoad;
+}
+
+async function _loadAssessmentHistory() {
   const card = document.getElementById("historyCard");
   const body = document.getElementById("historyBody");
   const count = document.getElementById("historyCount");
@@ -5632,8 +5684,20 @@ async function loadAssessmentHistory() {
   try {
     const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
     const res = await fetch(`${API}/api/assessments/mine?${qs}`);
+    // A failed request is not a statement about who you are.
+    //
+    // This used to read `data.signed_in` straight off an unchecked response.
+    // On any non-JSON or error reply — a rate limit, a blip, a restart — the
+    // field came back `undefined`, which is falsy, and the card was hidden as
+    // though the user had been signed out. The history simply vanished after a
+    // run, with nothing on screen saying why.
+    //
+    // Only an explicit `signed_in: false` from a successful response is
+    // treated as "not signed in"; anything else keeps the card and says the
+    // load failed, which is recoverable and honest.
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
-    if (!data.signed_in) { card.classList.add("hidden"); return; }
+    if (data.signed_in === false) { card.classList.add("hidden"); return; }
 
     count.textContent = data.count;
     if (!data.count) {
@@ -5641,7 +5705,10 @@ async function loadAssessmentHistory() {
         assess while signed in appear here.</p>`;
       return;
     }
-    body.innerHTML = `<table class="data-table history-table"><thead><tr>
+    // Wrapped in a scroll container like every other wide table. Unwrapped, its
+    // 420px minimum was applied against the page itself, which is what pushed
+    // the layout sideways on a phone.
+    body.innerHTML = `<div class="table-scroll"><table class="data-table history-table"><thead><tr>
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => `
         <tr>
@@ -5651,7 +5718,7 @@ async function loadAssessmentHistory() {
           <td class="num">${a.score.toFixed(1)}</td>
           <td class="num">${histPiq(a)}</td>
           <td class="hist-actions">${assessmentActions(a, "row")}</td>
-        </tr>`).join("") + `</tbody></table>
+        </tr>`).join("") + `</tbody></table></div>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
       invalidate every block after it.</p>`;
@@ -5659,7 +5726,15 @@ async function loadAssessmentHistory() {
     // Actions are handled by the delegated listener in assessmentActions(),
     // which survives this table being replaced on every refresh.
   } catch (e) {
-    body.innerHTML = `<p class="hint">Could not load your history.</p>`;
+    // The card stays visible. Hiding it on a failed load is what made the
+    // history look deleted rather than temporarily unavailable, and the papers
+    // are still on the server either way.
+    card.classList.remove("hidden");
+    body.innerHTML = `<p class="hint">Could not load your history just now — your assessments
+      are safe on the server, this is only the list failing to load.
+      <button class="btn btn-quiet" id="historyRetry" style="margin-left:8px">Retry</button></p>`;
+    const retry = document.getElementById("historyRetry");
+    if (retry) retry.addEventListener("click", () => loadAssessmentHistory());
   }
 }
 
