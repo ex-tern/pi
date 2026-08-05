@@ -5039,6 +5039,19 @@ def architecture_parameters():
         "proof_of_work": REQUIRE_PROOF_OF_WORK,
         "authorship_required_for_minting": True,
         "onboarding_grant": NEW_PARTICIPANT_GRANT,
+        # The review → publish pipeline. Added because the diagram had no
+        # review stage at all while review had become the gate on publication
+        # — the single most consequential rule on the platform was missing
+        # from the picture that claims to describe it.
+        "peer_review_fee": peer_review_fee()["fee"],
+        "peer_review_bonus": PEER_REVIEW_BONUS,
+        "llm_review_fee": llm_review_fee()["fee"],
+        "review_required_before_publish": True,
+        "review_min_chars": REVIEW_MIN_CHARS,
+        "reviewer_needs_publication": True,
+        "rebuttal_min_chars": REBUTTAL_MIN_CHARS,
+        "publication_fee": publication_fee(60.0)["fee"],
+        "rib_tutor": rib_engine.tutor_status().get("active", False),
     }
 
 

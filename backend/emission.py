@@ -274,7 +274,11 @@ MIN_FEE = 0.001
 # trivial submission still carries a real cost (that floor is what stops
 # someone probing the system with one-page files for free), and a ceiling so a
 # thesis cannot become unaffordable.
-MINIMUM_FEE = 0.1               # never below this, whatever the size
+# Raised alongside PIQ_PROCESSING_FEE. The floor and the base fee have to move
+# together: leaving the floor at 0.1 while the base is 1.0 would make every
+# short paper cost a tenth of a long one, which is a bigger spread than the
+# actual difference in work.
+MINIMUM_FEE = 1.0               # never below this, whatever the size
 FEE_CEILING_MULTIPLE = 5.0      # never more than 5x the minimum
 BASELINE_WORDS = 6000.0         # a typical research article
 
