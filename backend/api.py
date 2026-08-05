@@ -5010,7 +5010,63 @@ def explorer_tx_url(tx: str):
 # 9. Serve the frontend (single-page static app)
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+
+# Asset versions are derived from file mtimes, not maintained by hand.
+#
+# index.html references its assets as `app.js?v=16`. That integer was edited
+# manually on each release, and when it was forgotten — which is the normal
+# outcome for a number a human has to remember to change — every returning
+# browser kept serving the previously cached JS and CSS. The symptom is
+# indistinguishable from the code being broken: fixes ship, the deployment is
+# correct, and the user sees the old behaviour with no error anywhere.
+#
+# Rewriting the query string from the file's modification time removes the
+# step. Change a file, its version changes; do not, and the browser cache
+# stays valid. Done on the way out rather than by editing the file on disk, so
+# the source stays readable and nothing has to be regenerated at build time.
+_ASSET_QUERY = re.compile(r'\b(?P<file>[\w./-]+\.(?:js|css))\?v=[\w.]+')
+
+
+def _asset_version(filename: str) -> str:
+    try:
+        return str(int(os.path.getmtime(os.path.join(_FRONTEND_DIR, filename))))
+    except OSError:
+        # Unknown file: leave the cache-buster alone rather than invent one
+        # that changes on every request and defeats caching entirely.
+        return ""
+
+
+def _versioned_index() -> str:
+    with open(os.path.join(_FRONTEND_DIR, "index.html"), "r", encoding="utf-8") as fh:
+        html = fh.read()
+
+    def sub(match):
+        version = _asset_version(match.group("file"))
+        return f"{match.group('file')}?v={version}" if version else match.group(0)
+
+    return _ASSET_QUERY.sub(sub, html)
+
+
 if os.path.isdir(_FRONTEND_DIR):
+    @app.get("/", include_in_schema=False)
+    @app.get("/index.html", include_in_schema=False)
+    def _serve_index():
+        """index.html with asset versions stamped from the files on disk.
+
+        no-store on the HTML itself, because it is the document that carries
+        the version numbers — a cached copy of it would pin the browser to
+        whatever asset versions were current when it was cached, which is the
+        exact failure this exists to prevent. The assets it points at stay
+        aggressively cacheable, which is where the benefit actually is.
+        """
+        try:
+            return HTMLResponse(_versioned_index(),
+                                headers={"Cache-Control": "no-store, must-revalidate"})
+        except OSError:
+            raise HTTPException(status_code=404, detail="Frontend is not available.")
+
+    # Mounted after the routes above so "/" resolves to the stamped index
+    # rather than to the raw file on disk.
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
 
 
