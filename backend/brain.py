@@ -130,6 +130,7 @@ from attribution import verify_authorship
 from providers import (
     build_routes, classify_provider_error, redact_provider_text,
     is_route_cooling, record_rate_limit, record_success, parse_retry_after,
+    is_scilm_route,
 )
 from emission import compute_piq_emission, emission_manifest
 from extraction import (
@@ -738,6 +739,53 @@ def measure_title_agreement(consensus_results) -> float:
             ratios.append(difflib.SequenceMatcher(None, titles[i], titles[j]).ratio())
     return sum(ratios) / len(ratios) if ratios else 0.0
 
+def _panel_median_rating(consensus_results) -> float:
+    """The external panel's own verdict, for when no judge model was reachable.
+
+    Median rather than mean: with three to five jurors, one model returning a
+    wild number should not drag the score, and the median is the standard
+    robust summary for exactly that. Only jurors marked `external` in
+    MODEL_REGISTRY are counted — SciLM is ours, and letting it into this
+    average would reintroduce, by a quieter route, the self-adjudication the
+    judge filter exists to prevent.
+
+    Falls back to SciLM only when no external juror answered at all. At that
+    point there is no panel to merge, the assessment openly rests on the local
+    engine, and the evidence report says so.
+    """
+    ratings = []
+    for key, meta in MODEL_REGISTRY.items():
+        if meta.get("kind") != "external":
+            continue
+        entry = consensus_results.get(key) or {}
+        if entry.get("api_failed", False):
+            continue
+        for field in ("ai_rating", "rating", "score", "overall_score"):
+            if entry.get(field) is None:
+                continue
+            try:
+                value = float(entry[field])
+            except (TypeError, ValueError):
+                continue
+            if 0.0 <= value <= 100.0:
+                ratings.append(value)
+                break
+
+    if ratings:
+        ratings.sort()
+        mid = len(ratings) // 2
+        return round(ratings[mid] if len(ratings) % 2
+                     else (ratings[mid - 1] + ratings[mid]) / 2.0, 2)
+
+    logging.warning(
+        "No external juror returned a usable rating; falling back to the local SciLM (siM) "
+        "score. The assessment rests on the local engine alone and is reported as such.")
+    try:
+        return float((consensus_results.get("scilem") or {}).get("scilem_score", 75.0))
+    except (TypeError, ValueError):
+        return 75.0
+
+
 def grade_adjudication_quality(consensus_results) -> dict:
     participating, failed = [], []
     for key, meta in MODEL_REGISTRY.items():
@@ -943,9 +991,16 @@ Respond strictly in JSON with keys:
     # making one hardcoded call and giving up. A rate limit on one provider
     # demotes the judge to the next, rather than collapsing the whole
     # adjudication step to the local deterministic fallback.
-    judge_routes = build_routes("judge")
-    model_name = "SciLM (siM) Local Neural Engine"
-    judge_platform = "Local (API Fallback)"
+    #
+    # SciLM (siM) is never the judge. When no external route answers, the
+    # adjudication falls through to a deterministic merge of what the jurors
+    # already said — not to ScholarPi's own engine writing the verdict on the
+    # panel it sat in. The previous label claimed the local engine had judged,
+    # which was both the wrong model for the job and an assertion the report
+    # then carried into the ledger.
+    judge_routes = [r for r in build_routes("judge") if not is_scilm_route(r)]
+    model_name = "Deterministic panel merge (no external judge reached)"
+    judge_platform = "None (deterministic fallback)"
     judge_attempts = []
     data = None
 
@@ -999,8 +1054,11 @@ Respond strictly in JSON with keys:
         "judge_routes_available": len(judge_routes),
         "final_judge_label": (
             f"{model_name} via {judge_platform}" if judge_succeeded
-            else "SciLM (siM) Local Neural Engine (deterministic fallback)"
+            else "No external judge reached — deterministic merge of the panel's verdicts"
         ),
+        # Recorded explicitly so the guarantee is visible in the stored record
+        # and not merely implied by the absence of a name.
+        "scilm_excluded_as_judge": True,
         "timestamp": datetime.now().isoformat(),
         **quality,
     }
@@ -1027,9 +1085,27 @@ Respond strictly in JSON with keys:
 
     if not data:
         fallback_rep = merge_assessments_into_report(consensus_results)
-        evidence_report = header_prefix + "**Note:** The external judge model was unavailable; this verdict was synthesized via the unified fallback consensus path.\n\n" + fallback_rep
-        scilem_score = consensus_results.get("scilem", {}).get("scilem_score", 75.0)
-        rating = float(scilem_score)
+        evidence_report = header_prefix + (
+            "**Note:** No external judge model was reachable. This verdict is a deterministic "
+            "merge of what the jurors independently reported — it was not adjudicated by "
+            "SciLM (siM), which sits on the panel and is never permitted to judge it.\n\n"
+        ) + fallback_rep
+        # The fallback rating comes from the PANEL, not from SciLM.
+        #
+        # This line used to read the score straight off consensus_results
+        # ["scilem"], which meant that whenever no external judge answered,
+        # ScholarPi's own engine silently set the final rating on its own. That
+        # is SciLM judging in substance whatever the label above said — and the
+        # provider filter that keeps it out of the judge chain did nothing
+        # about it, because this path never consults the chain at all.
+        #
+        # The median of the external jurors' ratings is used instead: it is an
+        # actual adjudication of the panel (robust to one juror being far out),
+        # and it is composed only of models that are independent of us. SciLM
+        # is the last resort and only when literally no external juror
+        # responded, in which case there is no panel to merge and the report
+        # already says the assessment rests on the local engine.
+        rating = _panel_median_rating(consensus_results)
     else:
         raw_rep = data.get("evidence_report", "Synthesized Evidence Report generated successfully.")
         if "Synthesized Evidence Report" in raw_rep[:50] or raw_rep.startswith("###"):

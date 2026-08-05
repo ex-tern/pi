@@ -175,17 +175,29 @@ code.wrap { word-break: break-all; }
 .sidebar { transition: margin-left 0.18s ease, transform 0.18s ease; }
 .sidebar-collapsed .sidebar { margin-left: -288px; }
 
+/* Deliberately recessive. A sidebar toggle is used once or twice a session and
+   sits permanently over the top-left corner of every page, so it earns no
+   border, no shadow and no label — it resolves into the background until the
+   pointer is near it, and only then looks like a button. The touch target stays
+   full size; only the paint is quiet. */
 .sidebar-toggle {
   position: fixed; top: 10px; left: 10px; z-index: 60;
-  display: inline-flex; align-items: center; gap: 7px;
-  background: #fff; border: 1px solid var(--border-strong); border-radius: 8px;
-  padding: 7px 11px; cursor: pointer; font-family: inherit; font-size: 12.5px;
-  font-weight: 600; color: var(--text); box-shadow: 0 1px 3px rgba(15,23,42,0.08);
+  display: inline-flex; align-items: center; justify-content: center;
+  background: transparent; border: 1px solid transparent; border-radius: 8px;
+  padding: 0; cursor: pointer; font-family: inherit;
+  color: var(--text-muted, #64748b); opacity: 0.55;
   /* Comfortably past the 44px minimum touch target. */
-  min-height: 38px;
+  min-height: 38px; min-width: 38px;
+  transition: opacity 0.15s ease, background 0.15s ease, color 0.15s ease;
 }
-.sidebar-toggle:hover { border-color: var(--accent); color: var(--accent); }
-.sidebar-toggle-icon { font-size: 15px; line-height: 1; }
+.sidebar-toggle:hover,
+.sidebar-toggle:focus-visible {
+  opacity: 1; color: var(--accent);
+  background: rgba(15, 23, 42, 0.05); border-color: transparent;
+}
+.sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.sidebar-toggle-icon { font-size: 17px; line-height: 1; }
+.sidebar-toggle-text { display: none; }
 
 /* The toggle is fixed over the top-left corner, so both columns need
    clearance or it lands on top of the first heading. */
@@ -1340,6 +1352,59 @@ a.btn { text-decoration: none; display: inline-block; }
    it is a weaker claim and should not compete with it visually. */
 .seal-llm { background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6; }
 .seal-llm .seal-mark { background: #8b5cf6; color: #fff; }
+
+/* Reads. A count, not a claim — so it is the quietest pill on the row and
+   carries no colour that could read as approval. */
+.pill.p-reads { background: #f1f5f9; color: #64748b; border: 1px solid #e2e8f0; }
+
+/* Review requirements, shown before someone writes a report rather than after
+   it is refused. */
+.review-reqs { margin: 6px 0 14px; padding-left: 20px; }
+.review-reqs li { margin-bottom: 7px; font-size: 13px; line-height: 1.5; color: var(--text); }
+
+/* A review that finished while nobody was watching announces itself here.
+   Bottom-right, out of the way of the content, and dismissible — it reports
+   something already saved, so it never needs to block anything. */
+.review-toasts {
+  position: fixed; right: 18px; bottom: 18px; z-index: 200;
+  display: flex; flex-direction: column; gap: 10px; max-width: min(92vw, 360px);
+}
+.review-toast {
+  position: relative; background: #fff; border: 1px solid var(--border-strong);
+  border-left-width: 4px; border-radius: 10px; padding: 12px 34px 12px 14px;
+  box-shadow: 0 6px 24px rgba(15, 23, 42, 0.14); font-size: 13px;
+  animation: reviewToastIn 0.22s ease;
+}
+@keyframes reviewToastIn { from { opacity: 0; transform: translateY(8px); } }
+.review-toast-ok { border-left-color: #8b5cf6; }
+.review-toast-warn { border-left-color: #f59e0b; }
+.review-toast-head { font-weight: 700; margin-bottom: 3px; }
+.review-toast-title { font-weight: 600; color: var(--text); margin-bottom: 4px; }
+.review-toast-msg { color: var(--text-muted, #64748b); line-height: 1.45; margin-bottom: 8px; }
+.review-toast-close {
+  position: absolute; top: 6px; right: 8px; background: none; border: 0;
+  cursor: pointer; color: var(--text-muted, #94a3b8); font-size: 13px; line-height: 1;
+  padding: 4px;
+}
+.review-toast-close:hover { color: var(--text); }
+@media (max-width: 620px) { .review-toasts { left: 12px; right: 12px; max-width: none; } }
+
+/* The reviewer's section of a dossier, kept visually apart from the author's
+   actions above it — the person who should use this is explicitly not the
+   author, and merging them invited the wrong reader into the wrong control. */
+.dossier-review-actions {
+  margin-top: 10px; padding-top: 12px; border-top: 1px dashed var(--border);
+}
+
+/* Requested-to-be-reviewed — the weakest mark here, and it has to look it.
+   Grey, outlined, no saturated fill: it records that somebody asked a question,
+   not that anyone answered it, and the one way this badge can do harm is by
+   being mistaken at a glance for the peer-reviewed seal above. */
+.seal-requested {
+  background: #f8fafc; border-color: #cbd5e1; color: #475569;
+  border-style: dashed;
+}
+.seal-requested .seal-mark { background: #94a3b8; color: #fff; }
 
 /* A seal that opens something is a button, and has to look like one without
    losing the seal shape — so the affordance is a cursor and a lift on hover. */

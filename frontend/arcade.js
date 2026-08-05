@@ -858,7 +858,26 @@
     if (state.mode !== "play" || !state.player) return;
 
     const p = state.player;
-    const speed = 420 / (1 + p.mass / 1000);
+
+    // Growing should make you *heavier*, not parked.
+    //
+    // The old curve was 420 / (1 + mass/150): a hyperbola with no floor, so
+    // speed fell towards zero as mass rose. Past a few absorptions the player
+    // could barely cross the screen, and the reward for playing well was a
+    // game that stopped responding — the cost of success was the ability to
+    // act on it.
+    //
+    // A fractional power of the mass ratio slows you down noticeably but
+    // gently, and the floor guarantees a large player still moves at a
+    // playable fraction of the starting speed. Momentum is expressed as a
+    // slower, weightier drift; it is never expressed as being stationary.
+    const BASE_SPEED = 420;
+    const MIN_SPEED_FRACTION = 0.42;   // a giant still moves at 42% of a newborn
+    const startMass = (state.rules && state.rules.start_mass) || 40;
+    const massRatio = Math.max(1, p.mass / startMass);
+    const speed = Math.max(BASE_SPEED * MIN_SPEED_FRACTION,
+                           BASE_SPEED / Math.pow(massRatio, 0.28));
+
     let dx = 0, dy = 0;
     if (state.pointer.active) { dx = state.pointer.x - p.x; dy = state.pointer.y - p.y; }
     if (state.keys.has("ArrowLeft") || state.keys.has("a")) dx -= 100;
@@ -868,7 +887,12 @@
 
     const dist = Math.hypot(dx, dy);
     if (dist > 1) {
-      const throttle = Math.min(1, dist / 60);
+      // The ease-in zone scales with the player's own radius. At a fixed 60px
+      // a large blob was already inside its own deadzone whenever the cursor
+      // sat near its centre, which read as unresponsiveness on top of the
+      // speed loss. Scaling it keeps the feel identical at every size.
+      const easeRadius = Math.max(60, p.mass * 0.8);
+      const throttle = Math.min(1, dist / easeRadius);
       p.x += (dx / dist) * speed * throttle * dt;
       p.y += (dy / dist) * speed * throttle * dt;
     }

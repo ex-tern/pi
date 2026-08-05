@@ -20,10 +20,12 @@
   <!-- Toggle lives outside the sidebar so it stays reachable when the sidebar
        is collapsed — a control that hides with the thing it controls is a
        one-way door. -->
+  <!-- Icon only, and quiet. The label is carried by aria-label and the tooltip
+       rather than by visible chrome: this is a control someone uses twice a
+       session, and it was competing with the page content for attention. -->
   <button id="sidebarToggle" class="sidebar-toggle" aria-expanded="true"
-          aria-controls="appSidebar" aria-label="Hide sidebar">
+          aria-controls="appSidebar" aria-label="Hide sidebar" title="Hide sidebar">
     <span class="sidebar-toggle-icon" aria-hidden="true">☰</span>
-    <span class="sidebar-toggle-text">Menu</span>
   </button>
   <div id="sidebarScrim" class="sidebar-scrim hidden" aria-hidden="true"></div>
 
@@ -115,11 +117,14 @@
   <!-- ===================== MAIN ===================== -->
   <main class="main">
     <nav class="nav-tabs">
+      <!-- Four tabs, in the order the work actually happens: assess a paper,
+           explore what has been assessed, look at the aggregate, then read how
+           the thing is built. The Ledger Explorer moved inside Explore and the
+           Science Map inside Analytics — both were sub-views of a larger idea
+           that had been promoted to top-level navigation. -->
       <button class="tab-btn active" data-tab="assess">Assessment</button>
+      <button class="tab-btn" data-tab="journal">Explore</button>
       <button class="tab-btn" data-tab="analytics">Analytics</button>
-      <button class="tab-btn" data-tab="journal">Journal</button>
-      <button class="tab-btn" data-tab="explorer">Explorer</button>
-      <button class="tab-btn" data-tab="arcade">Map</button>
       <button class="tab-btn" data-tab="diagram">Architecture</button>
     </nav>
 
@@ -282,6 +287,123 @@
       </div>
     </section>
 
+    <!-- TAB: EXPLORE (formerly Journal, with Explorer and the leaderboards
+         merged in). One place to look at what the corpus contains: the index
+         of claims, the rankings those claims produce, and the raw ledger
+         underneath them. They were three tabs describing the same question. -->
+    <section id="tab-journal" class="tab-panel">
+      <div class="page-header"><h1>Explore</h1></div>
+      <div class="card">
+        <h2>The journal</h2>
+        <p class="lede">Papers that have been reviewed, and papers their authors then published.
+        Review comes first: nothing here can be published without a completed peer review, so a
+        published paper is always a reviewed one. The two are still shown in separate columns —
+        a paper can be reviewed without being published, and the claims are not the same.</p>
+
+        <div class="explorer-toolbar">
+          <!-- "Published or Reviewed" is gone. It described a state that can no
+               longer exist: publication now requires review, so the disjunction
+               collapsed into "reviewed" and the option only invited the reader
+               to think the two were independent. -->
+          <label class="ex-ctl">Show
+            <select id="journalKind">
+              <option value="all" selected>Everything</option>
+              <option value="published">Published</option>
+              <option value="reviewed">Reviewed</option>
+              <option value="requested">Awaiting a reviewer</option>
+            </select>
+          </label>
+          <span class="explorer-count hint" id="journalCount"></span>
+        </div>
+
+        <div id="journalBody"></div>
+      </div>
+
+      <div class="two-col">
+        <!-- piX — Top Papers -->
+        <div class="card leaderboard-card">
+          <div class="lb-head">
+            <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Top Papers]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
+            <p class="hint">Individual manuscripts ranked by their composite Pi-Index score. Select any row to open its full assessment report and dossier.</p>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table sortable-table" id="topPapersTable">
+              <thead><tr>
+                <th class="col-rank">#</th>
+                <th data-sort="title">Title</th>
+                <th data-sort="none">Author</th>
+                <th data-sort="score" class="num">piX</th>
+                <th data-sort="piq" class="num">piQ</th>
+                <th data-sort="logic" class="num">Logic</th>
+                <th data-sort="date" class="num">Date</th>
+              </tr></thead>
+              <tbody id="topPapersBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="topPapersPagination"></div>
+        </div>
+
+        <!-- piQ — Top Authors -->
+        <div class="card leaderboard-card">
+          <div class="lb-head">
+            <h2>pi-Quotient (piQ) Leaderboard <span class="lb-scope">[Top Authors]</span><button class="help-btn" data-help="piq" aria-label="About the pi-Quotient leaderboard">?</button></h2>
+            <p class="hint">Researchers ranked by total piQ earned across all of their assessed manuscripts. Select a row to see that author's papers.</p>
+          </div>
+          <div class="table-scroll">
+            <table class="data-table sortable-table" id="leaderboardTable">
+              <thead><tr>
+                <th class="col-rank">#</th>
+                <th data-sort="author">Author</th>
+                <th data-sort="piq" class="num">piQ</th>
+                <th data-sort="papers" class="num">Papers</th>
+                <th data-sort="avg_score" class="num">Avg piX</th>
+              </tr></thead>
+              <tbody id="leaderboardBody"></tbody>
+            </table>
+          </div>
+          <div class="pagination" id="leaderboardPagination"></div>
+        </div>
+      </div>
+
+      <!-- Merged from the old Explorer tab. -->
+      <div class="page-header"><h1>Proof-of-Research Ledger Explorer<button class="help-btn" data-help="explorer" aria-label="About the ledger explorer">?</button></h1></div>
+      <div class="page-header"><h1>Proof-of-Research Ledger Explorer<button class="help-btn" data-help="explorer" aria-label="About the ledger explorer">?</button></h1></div>
+      <div class="card">
+        <input type="text" id="explorerSearch" placeholder="Search by Eval Hash, Block Hash, Title, or Author…">
+        <div class="explorer-toolbar">
+          <label class="ex-ctl">Min piX
+            <input type="number" id="explorerMinScore" min="0" max="100" step="1" placeholder="0" class="score-input">
+          </label>
+          <label class="ex-ctl ex-ctl-wide">Fields
+            <div class="tag-input" id="explorerFieldTags">
+              <span class="tag-list" id="explorerFieldList"></span>
+              <input type="text" id="explorerFieldInput" list="explorerFieldOptions"
+                     placeholder="Add a field, press Enter">
+              <datalist id="explorerFieldOptions"></datalist>
+            </div>
+          </label>
+          <label class="ex-ctl">Sort by
+            <select id="explorerSort">
+              <option value="date">Date</option>
+              <option value="score">piX score</option>
+              <option value="piq">piQ minted</option>
+              <option value="title">Title</option>
+              <option value="author">Author</option>
+            </select>
+          </label>
+          <label class="ex-ctl">Order
+            <select id="explorerOrder">
+              <option value="desc">Descending</option>
+              <option value="asc">Ascending</option>
+            </select>
+          </label>
+          <button class="btn btn-outline" id="explorerResetBtn">Reset</button>
+        </div>
+        <div class="explorer-count hint" id="explorerCount"></div>
+        <div id="explorerResults"></div>
+      </div>
+    </section>
+
     <!-- TAB: ANALYTICS -->
     <section id="tab-analytics" class="tab-panel">
       <div class="page-header"><h1>Performance &amp; Analytics<button class="help-btn" data-help="analytics" aria-label="About analytics">?</button></h1></div>
@@ -372,117 +494,9 @@
       </div>
 
 
-      <div class="two-col">
-        <!-- piX — Top Papers -->
-        <div class="card leaderboard-card">
-          <div class="lb-head">
-            <h2>pi-Index (piX) Leaderboard <span class="lb-scope">[Top Papers]</span><button class="help-btn" data-help="pix" aria-label="About the pi-Index leaderboard">?</button></h2>
-            <p class="hint">Individual manuscripts ranked by their composite Pi-Index score. Select any row to open its full assessment report and dossier.</p>
-          </div>
-          <div class="table-scroll">
-            <table class="data-table sortable-table" id="topPapersTable">
-              <thead><tr>
-                <th class="col-rank">#</th>
-                <th data-sort="title">Title</th>
-                <th data-sort="none">Author</th>
-                <th data-sort="score" class="num">piX</th>
-                <th data-sort="piq" class="num">piQ</th>
-                <th data-sort="logic" class="num">Logic</th>
-                <th data-sort="date" class="num">Date</th>
-              </tr></thead>
-              <tbody id="topPapersBody"></tbody>
-            </table>
-          </div>
-          <div class="pagination" id="topPapersPagination"></div>
-        </div>
 
-        <!-- piQ — Top Authors -->
-        <div class="card leaderboard-card">
-          <div class="lb-head">
-            <h2>pi-Quotient (piQ) Leaderboard <span class="lb-scope">[Top Authors]</span><button class="help-btn" data-help="piq" aria-label="About the pi-Quotient leaderboard">?</button></h2>
-            <p class="hint">Researchers ranked by total piQ earned across all of their assessed manuscripts. Select a row to see that author's papers.</p>
-          </div>
-          <div class="table-scroll">
-            <table class="data-table sortable-table" id="leaderboardTable">
-              <thead><tr>
-                <th class="col-rank">#</th>
-                <th data-sort="author">Author</th>
-                <th data-sort="piq" class="num">piQ</th>
-                <th data-sort="papers" class="num">Papers</th>
-                <th data-sort="avg_score" class="num">Avg piX</th>
-              </tr></thead>
-              <tbody id="leaderboardBody"></tbody>
-            </table>
-          </div>
-          <div class="pagination" id="leaderboardPagination"></div>
-        </div>
-      </div>
-    </section>
-
-    <!-- TAB: JOURNAL -->
-    <section id="tab-journal" class="tab-panel">
-      <div class="page-header"><h1>Journal</h1></div>
-      <div class="card">
-        <p class="lede">Assessments their authors chose to publish, and assessments that carry a
-        review. These are separate claims and are shown in separate columns — a paper can be
-        published without review, reviewed without publication, or both.</p>
-
-        <div class="explorer-toolbar">
-          <label class="ex-ctl">Show
-            <select id="journalKind">
-              <option value="all" selected>Published or Reviewed</option>
-              <option value="published">Published only</option>
-              <option value="reviewed">Reviewed only</option>
-            </select>
-          </label>
-          <span class="explorer-count hint" id="journalCount"></span>
-        </div>
-
-        <div id="journalBody"></div>
-      </div>
-    </section>
-
-    <!-- TAB: EXPLORER -->
-    <section id="tab-explorer" class="tab-panel">
-      <div class="page-header"><h1>Proof-of-Research Ledger Explorer<button class="help-btn" data-help="explorer" aria-label="About the ledger explorer">?</button></h1></div>
-      <div class="card">
-        <input type="text" id="explorerSearch" placeholder="Search by Eval Hash, Block Hash, Title, or Author…">
-        <div class="explorer-toolbar">
-          <label class="ex-ctl">Min piX
-            <input type="number" id="explorerMinScore" min="0" max="100" step="1" placeholder="0" class="score-input">
-          </label>
-          <label class="ex-ctl ex-ctl-wide">Fields
-            <div class="tag-input" id="explorerFieldTags">
-              <span class="tag-list" id="explorerFieldList"></span>
-              <input type="text" id="explorerFieldInput" list="explorerFieldOptions"
-                     placeholder="Add a field, press Enter">
-              <datalist id="explorerFieldOptions"></datalist>
-            </div>
-          </label>
-          <label class="ex-ctl">Sort by
-            <select id="explorerSort">
-              <option value="date">Date</option>
-              <option value="score">piX score</option>
-              <option value="piq">piQ minted</option>
-              <option value="title">Title</option>
-              <option value="author">Author</option>
-            </select>
-          </label>
-          <label class="ex-ctl">Order
-            <select id="explorerOrder">
-              <option value="desc">Descending</option>
-              <option value="asc">Ascending</option>
-            </select>
-          </label>
-          <button class="btn btn-outline" id="explorerResetBtn">Reset</button>
-        </div>
-        <div class="explorer-count hint" id="explorerCount"></div>
-        <div id="explorerResults"></div>
-      </div>
-    </section>
-
-    <!-- TAB: SCIENCE MAP ARCADE -->
-    <section id="tab-arcade" class="tab-panel">
+      <!-- Merged from the old Map tab. The Science Map is a view of the
+           corpus aggregate, which is what this tab is for. -->
       <div class="page-header"><h1>The Global Map of Science<button class="help-btn" data-help="arcade" aria-label="About the science map">?</button></h1></div>
 
       <div class="arcade-header">
@@ -582,6 +596,7 @@
 
       <p class="arcade-message hidden" id="arcadeMessage"></p>
     </section>
+
 
     <!-- TAB: DIAGRAM -->
     <section id="tab-diagram" class="tab-panel">

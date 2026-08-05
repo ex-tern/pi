@@ -627,6 +627,26 @@ def peer_review_fee() -> Dict:
 LLM_REVIEW_FEE = 0.5
 
 
+# Paid to a reviewer for a completed review, over and above any bounty the
+# requester posted. A review written on a paper nobody paid to have reviewed is
+# worth exactly as much to a reader as one that was commissioned, so paying it
+# nothing would make unsolicited review — the kind that actually needs
+# encouraging — the only unpaid work on the platform.
+PEER_REVIEW_BONUS = 2.0
+
+
+def peer_review_bonus() -> Dict:
+    return {
+        "bonus": PEER_REVIEW_BONUS,
+        "rationale": (
+            f"Completing a peer review credits {PEER_REVIEW_BONUS:.2f} piQ to the reviewer, in "
+            f"addition to any bounty the requester posted. It is paid on submission of a "
+            f"reasoned report, not on the verdict reached — paying differently for different "
+            f"conclusions would buy the conclusion."
+        ),
+    }
+
+
 def llm_review_fee() -> Dict:
     return {
         "fee": LLM_REVIEW_FEE,
