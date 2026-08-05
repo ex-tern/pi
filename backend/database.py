@@ -360,6 +360,18 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         PRIMARY KEY (eval_hash, reader, read_day))""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_reads_hash ON paper_reads(eval_hash)")
 
+    # Contact messages are bugs OR suggestions. Added as a column rather than a
+    # second table: they share every field, every delivery path and one
+    # operator queue — the only thing that differs is what the sender is
+    # claiming, which is exactly what a column is for. Existing rows default to
+    # 'bug', which is what they were.
+    cursor.execute("PRAGMA table_info(bug_reports)")
+    if "kind" not in [row[1] for row in cursor.fetchall()]:
+        try:
+            cursor.execute("ALTER TABLE bug_reports ADD COLUMN kind TEXT DEFAULT 'bug'")
+        except sqlite3.Error:
+            pass
+
     # Queued LLM review work. The review outlives the HTTP request that asked
     # for it: the fee is charged up front, so a user who closes the tab must
     # still get what they paid for. The job row is what makes that recoverable
@@ -1280,6 +1292,14 @@ def increment_free_evals_used(ip_address: str) -> int:
 # ---------------------------------------------------------------------------
 # Bug reports
 # ---------------------------------------------------------------------------
+# What a contact message can be. Published so the form, the store and the
+# operator queue cannot disagree about the vocabulary.
+CONTACT_KINDS = {
+    "bug": "Something is broken",
+    "suggestion": "An idea or suggestion",
+}
+
+
 def store_bug_report(report: dict, ip_hash: str = "") -> int:
     """Persist a report and return its id.
 
@@ -1288,14 +1308,16 @@ def store_bug_report(report: dict, ip_hash: str = "") -> int:
     """
     conn = get_db_connection()
     try:
+        kind = report.get("kind") if report.get("kind") in CONTACT_KINDS else "bug"
         cur = conn.execute(
             """INSERT INTO bug_reports
-                 (message, contact, identity, page, user_agent, ip_hash, created_at)
-               VALUES (?, ?, ?, ?, ?, ?, ?)""",
+                 (message, contact, identity, page, user_agent, ip_hash, created_at, kind)
+               VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
             (report.get("message", ""), report.get("contact", ""),
              report.get("identity", ""), report.get("page", ""),
              report.get("user_agent", ""), ip_hash,
-             report.get("created_at") or datetime.now().isoformat(timespec="seconds")),
+             report.get("created_at") or datetime.now().isoformat(timespec="seconds"),
+             kind),
         )
         conn.commit()
         return int(cur.lastrowid)
@@ -1460,7 +1482,8 @@ def list_bug_reports(limit: int = 100) -> list:
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            """SELECT id, message, contact, identity, page, created_at, delivered, delivery_error
+            """SELECT id, message, contact, identity, page, created_at, delivered,
+                      delivery_error, COALESCE(kind, 'bug')
                FROM bug_reports ORDER BY delivered ASC, id DESC LIMIT ?""",
             (int(limit),),
         ).fetchall()
@@ -1470,7 +1493,7 @@ def list_bug_reports(limit: int = 100) -> list:
         conn.close()
     return [{"id": r[0], "message": r[1], "contact": r[2], "identity": r[3],
              "page": r[4], "created_at": r[5], "delivered": bool(r[6]),
-             "delivery_error": r[7]} for r in rows]
+             "delivery_error": r[7], "kind": r[8] or "bug"} for r in rows]
 
 
 def delete_researcher_profile(account_key: str) -> bool:

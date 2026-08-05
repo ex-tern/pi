@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=32">
+<link rel="stylesheet" href="style.css?v=36">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -112,7 +112,7 @@
     </div>
 
     <div class="bug-card">
-      <button id="bugReportBtn" class="btn btn-outline btn-block">Report a bug</button>
+      <button id="bugReportBtn" class="btn btn-outline btn-block">Contact us</button>
       <div class="bug-hint" id="bugReportHint"></div>
     </div>
 
@@ -137,7 +137,7 @@
     </details>
 
     <details class="sidebar-expander hidden" id="ownerBugsPanel">
-      <summary>Bug reports<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
+      <summary>Messages<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
       <div id="ownerBugsBody"><p class="hint">Loading…</p></div>
     </details>
 
@@ -194,17 +194,22 @@
              unrelated projects had to overwrite one description with the
              other, so every paper was framed against whichever project they
              had described most recently. -->
+        <!-- Creating a new profile is an option INSIDE the picker rather than a
+             button beside it: "which profile am I using" and "make another
+             one" are the same decision, and splitting them across two controls
+             made the row read as three unrelated widgets. Deleting lives at the
+             bottom with the other destructive action, well away from it. -->
         <div class="profile-slots" id="profileSlots">
-          <label class="ex-ctl">Profile
-            <select id="profileSlotSelect" class="inline-select"
+          <div class="profile-slot-field">
+            <label for="profileSlotSelect">Profile</label>
+            <select id="profileSlotSelect"
                     title="Which profile frames your diagnostics and Research Buddy"></select>
-          </label>
-          <input class="bug-input profile-name-input" id="profileSlotName"
-                 placeholder="Profile name (e.g. Thesis, Side project)" autocomplete="off">
-          <button class="btn btn-quiet" id="profileNewBtn"
-                  title="Start a new, empty profile">New</button>
-          <button class="btn btn-quiet btn-danger-outline" id="profileDeleteBtn"
-                  title="Delete the selected profile">Delete</button>
+          </div>
+          <div class="profile-slot-field">
+            <label for="profileSlotName">Profile name</label>
+            <input type="text" id="profileSlotName" maxlength="60"
+                   placeholder="e.g. Thesis, Side project" autocomplete="off">
+          </div>
         </div>
 
         <div class="profile-grid">
@@ -250,7 +255,8 @@
 
         <div class="profile-actions">
           <button class="btn btn-primary" id="profileSaveBtn">Save profile</button>
-          <button class="btn btn-outline btn-danger-outline" id="profileResetBtn">Reset profile</button>
+          <button class="btn btn-outline btn-danger-outline" id="profileDeleteBtn"
+                  title="Delete the selected profile">Delete profile</button>
           <span class="profile-msg" id="profileMsg"></span>
         </div>
       </details>
@@ -274,8 +280,12 @@
 
         <div id="feeNotice" class="fee-notice">
           <div class="fee-notice-main">
-            <span class="fee-amount" id="feeAmount">0.10 piQ</span>
-            <span class="fee-label">processing fee per paper</span>
+            <!-- One text flow, not two adjacent spans. The flex gap put a
+                 visual space between them, but they were separate nodes with no
+                 whitespace, so the line copied and was read aloud as
+                 "0.10 piQprocessing fee per paper". -->
+            <span class="fee-line"><span class="fee-amount" id="feeAmount">0.10 piQ</span>
+              <span class="fee-label">processing fee per paper</span></span>
             <button class="help-btn" data-help="fee" aria-label="About the processing fee">?</button>
           </div>
           <div class="fee-notice-bal" id="feeBalanceLine">Connect an identity to see your balance.</div>
@@ -772,7 +782,7 @@
   </div>
 </div>
 
-<script src="app.js?v=32"></script>
-<script src="arcade.js?v=32"></script>
+<script src="app.js?v=36"></script>
+<script src="arcade.js?v=36"></script>
 </body>
 </html>
