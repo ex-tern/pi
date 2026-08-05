@@ -170,7 +170,42 @@
     grabbed: null,
     filters: { search: "", minPapers: 0, liveOnly: false, author: "" },
     look: { labels: true, mesh: true, scale: 1, gravity: false },
+    // Power-ups on the field, and whichever one is currently running.
+    powerups: [], power: null, powerUntil: 0, nextPowerAt: 0,
   };
+
+  // ---------------------------------------------------------------------
+  // Power-ups
+  //
+  // They change how π behaves for a few seconds — they never change what a
+  // run is WORTH. Mass, absorptions and the win condition are all still the
+  // same quantities the server replays when it verifies the run, so a
+  // power-up cannot manufacture a score: it only makes the same absorptions
+  // easier to reach. That is why they can be purely client-side without
+  // opening a hole, and why none of them grants mass directly.
+  // ---------------------------------------------------------------------
+  const POWERS = {
+    magnet: {
+      label: "Magnet", glyph: "🧲", ms: 8000, color: "#f59e0b",
+      hint: "Smaller fields drift toward you",
+    },
+    haste: {
+      label: "Haste", glyph: "⚡", ms: 7000, color: "#38bdf8",
+      hint: "Move faster for a few seconds",
+    },
+    shield: {
+      label: "Shield", glyph: "🛡️", ms: 9000, color: "#34d399",
+      hint: "Survive one collision with something bigger",
+    },
+    appetite: {
+      label: "Appetite", glyph: "🍽️", ms: 8000, color: "#f472b6",
+      hint: "Eat fields slightly larger than you",
+    },
+  };
+  const POWER_KEYS = Object.keys(POWERS);
+  const POWER_SPAWN_MIN_MS = 9000;
+  const POWER_SPAWN_MAX_MS = 16000;
+  const POWER_MAX_ON_FIELD = 3;
 
   // Filters DIM bubbles rather than removing them. Removal would change what
   // is physically present in the playfield, which the server's replay knows
@@ -469,6 +504,8 @@
     // interval — the run starts with the gap already elapsed. This mirrors
     // the server's `last_t = -MIN_EAT_INTERVAL_MS`.
     state.lastEatAt = -MIN_EAT_INTERVAL_MS;
+    // Power-ups belong to a run, not to the session.
+    state.powerups = []; state.power = null; state.powerUntil = 0; state.nextPowerAt = 0;
     document.getElementById("arcadeOverlay").classList.add("hidden");
     syncModeUi();
     resize();
@@ -921,7 +958,7 @@
       // Gravity uses the drawn radius so the pull matches the body the player
       // can see. Uncapped mass here would have an apparently fixed-size blob
       // hoovering the entire field from across the world.
-      const pGrav = playerRadius(p.mass);
+      const pGrav = playerRadius(p.mass) * (state.power === "magnet" ? 6 : 1);
       for (const b of list) {
         if (b.eaten || b.mass >= p.mass) continue;   // only smaller ones fall in
         const dx = p.x - b.x, dy = p.y - b.y;
@@ -1006,8 +1043,9 @@
     const MIN_SPEED_FRACTION = 0.42;   // a giant still moves at 42% of a newborn
     const startMass = (state.rules && state.rules.start_mass) || 40;
     const massRatio = Math.max(1, p.mass / startMass);
-    const speed = Math.max(BASE_SPEED * MIN_SPEED_FRACTION,
-                           BASE_SPEED / Math.pow(massRatio, 0.28));
+    let speed = Math.max(BASE_SPEED * MIN_SPEED_FRACTION,
+                         BASE_SPEED / Math.pow(massRatio, 0.28));
+    if (state.power === "haste") speed *= 1.7;
 
     let dx = 0, dy = 0;
     if (state.pointer.active) { dx = state.pointer.x - p.x; dy = state.pointer.y - p.y; }
@@ -1056,6 +1094,7 @@
     // taken on the next tick, so nothing is lost — absorption is just serial,
     // which is what the rule always assumed.
     const nowMs = performance.now() - state.startedAt;
+    stepPowerups(nowMs, dt);
     let contact = null;
 
     for (const b of state.bubbles) {
@@ -1065,11 +1104,27 @@
       // is a touch. Using raw mass here would have a capped-size blob eating
       // bubbles it visibly never reached.
       if (d < Math.max(b.mass, pr) * 0.86) {
-        // Death is immediate and is not rate limited — being eaten is not an
-        // absorption, and deferring it would let the player survive a frame
-        // inside something bigger than they are.
-        if (b.mass >= p.mass) {
+        // Appetite widens what counts as edible; Shield absorbs one fatal
+        // contact. Both are checked here, before the death branch, because
+        // they change whether this contact IS fatal.
+        const edibleLimit = state.power === "appetite" ? p.mass * 1.35 : p.mass;
+        if (b.mass >= edibleLimit) {
+          if (state.power === "shield") {
+            // Spent on use, not on a timer: a shield that expires unused
+            // while something is eating you is not a shield.
+            state.power = null;
+            spawnBurst(p.x, p.y, "#34d399", 34);
+            playSound("shield");
+            setMessage("🛡️ Shield absorbed the hit.", "good");
+            // Nudge apart so the same contact does not resolve again next
+            // frame and consume a shield the player no longer has.
+            const away = Math.atan2(p.y - b.y, p.x - b.x);
+            p.x += Math.cos(away) * (b.mass + pr) * 0.6;
+            p.y += Math.sin(away) * (b.mass + pr) * 0.6;
+            continue;
+          }
           spawnBurst(p.x, p.y, "#ef4444", 40);
+          playSound("death");
           endRun(false);
           return;
         }
@@ -1084,6 +1139,7 @@
       contact.eaten = true;
       p.mass += contact.mass * state.rules.absorb_ratio;
       state.lastEatAt = nowMs;
+      playSound("eat");
       // Drives the swallow pulse in drawPlayer, which decays there. Scaled by
       // what was eaten, so absorbing something substantial reads differently
       // from hoovering a speck.
@@ -1099,6 +1155,7 @@
     // ("reach a number") were different games. Now they are the same one.
     if (!state.bubbles.some(b => !b.eaten)) {
       spawnBurst(p.x, p.y, "#22c55e", 120);
+      playSound("win");
       endRun(true);
       return;
     }
@@ -1126,8 +1183,16 @@
     if (effectsQuality > 0 && state.look.mesh) drawMesh(ctx);
     for (const b of state.bubbles) if (!b.eaten) drawBubble(ctx, b);
     drawParticles(ctx);
+    // Pickups sit under π so the blob is never hidden by one it is about to
+    // collect, and the timer sits above the HUD where it reads as status.
+    // Run-relative, matching the basis stepPowerups() stores its deadlines in.
+    // Passing absolute performance.now() here made every pickup read as long
+    // expired and the timer bar as permanently empty.
+    const runMs = state.startedAt ? performance.now() - state.startedAt : 0;
+    if (state.mode === "play") drawPowerups(ctx, runMs);
     if (state.mode === "play" && state.player) drawPlayer(ctx);
     drawHud(ctx, w, h);
+    if (state.mode === "play") drawPowerTimer(ctx, runMs);
   }
 
   function drawStars(ctx, w, h) {
@@ -1256,6 +1321,187 @@
     ctx.fillStyle = theme().mesh;
     ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
     ctx.lineWidth = 1; ctx.strokeStyle = "rgba(148,163,184,0.22)"; ctx.stroke();
+  }
+
+  // ---------------------------------------------------------------------
+  // Sound
+  //
+  // Synthesised with the Web Audio API rather than shipped as files: four
+  // short tones cost nothing to download, cannot 404, and need no licence
+  // trail. The context is created lazily on the first gesture because every
+  // browser refuses to start one before that — building it at load time gives
+  // a permanently suspended context and silence with no error.
+  //
+  // Off by default. Sound that starts by itself on a research tool is the
+  // wrong default, and the preference is remembered per browser.
+  // ---------------------------------------------------------------------
+  let audioCtx = null;
+  let soundOn = false;
+  try { soundOn = localStorage.getItem("sp_arcade_sound") === "on"; } catch (_) {}
+
+  function ensureAudio() {
+    if (!soundOn) return null;
+    if (!audioCtx) {
+      const AC = window.AudioContext || window.webkitAudioContext;
+      if (!AC) return null;
+      try { audioCtx = new AC(); } catch (_) { return null; }
+    }
+    if (audioCtx.state === "suspended") audioCtx.resume().catch(() => {});
+    return audioCtx;
+  }
+
+  // freq → freq2 over `ms`, shaped by a short attack and an exponential decay
+  // so nothing clicks. Volume is deliberately low: this plays under a map a
+  // researcher may be reading.
+  function tone(freq, freq2, ms, type = "sine", gain = 0.06) {
+    const ctx = ensureAudio();
+    if (!ctx) return;
+    const t0 = ctx.currentTime;
+    const osc = ctx.createOscillator();
+    const amp = ctx.createGain();
+    osc.type = type;
+    osc.frequency.setValueAtTime(freq, t0);
+    if (freq2 && freq2 !== freq) {
+      osc.frequency.exponentialRampToValueAtTime(Math.max(1, freq2), t0 + ms / 1000);
+    }
+    amp.gain.setValueAtTime(0.0001, t0);
+    amp.gain.exponentialRampToValueAtTime(gain, t0 + 0.012);
+    amp.gain.exponentialRampToValueAtTime(0.0001, t0 + ms / 1000);
+    osc.connect(amp); amp.connect(ctx.destination);
+    osc.start(t0); osc.stop(t0 + ms / 1000 + 0.02);
+  }
+
+  function playSound(kind) {
+    if (!soundOn) return;
+    switch (kind) {
+      // Rising blip, pitched up slightly as π grows, so absorbing a large
+      // field sounds different from hoovering a speck.
+      case "eat": {
+        const m = state.player ? state.player.mass : 40;
+        const base = 420 + Math.min(260, m * 1.4);
+        tone(base, base * 1.5, 90, "triangle", 0.05);
+        break;
+      }
+      case "power":  tone(660, 1320, 220, "square", 0.045); break;
+      case "shield": tone(320, 180, 260, "sawtooth", 0.05); break;
+      case "death":  tone(220, 60, 420, "sawtooth", 0.07); break;
+      case "win":
+        // A small arpeggio rather than one tone: winning should not sound
+        // like another absorption.
+        [523, 659, 784, 1047].forEach((f, i) =>
+          setTimeout(() => tone(f, f, 160, "triangle", 0.05), i * 110));
+        break;
+      default: break;
+    }
+  }
+
+  function setSound(on) {
+    soundOn = !!on;
+    try { localStorage.setItem("sp_arcade_sound", soundOn ? "on" : "off"); } catch (_) {}
+    const btn = document.getElementById("arcadeSoundBtn");
+    if (btn) {
+      btn.textContent = soundOn ? "Sound on" : "Sound off";
+      btn.setAttribute("aria-pressed", soundOn ? "true" : "false");
+    }
+    if (soundOn) { ensureAudio(); tone(880, 880, 90, "triangle", 0.04); }
+  }
+
+  /** Spawn, expire and collect power-ups. Called once per frame. */
+  function stepPowerups(nowMs, dt) {
+    const p = state.player;
+    if (!p) return;
+
+    // Spawn on a random interval rather than a fixed one, so a player cannot
+    // learn the rhythm and camp the spot.
+    if (!state.nextPowerAt) {
+      state.nextPowerAt = nowMs + POWER_SPAWN_MIN_MS
+        + Math.random() * (POWER_SPAWN_MAX_MS - POWER_SPAWN_MIN_MS);
+    }
+    if (nowMs >= state.nextPowerAt && state.powerups.length < POWER_MAX_ON_FIELD) {
+      const kind = POWER_KEYS[Math.floor(Math.random() * POWER_KEYS.length)];
+      // Placed away from the very edge so one cannot land somewhere the
+      // player is clamped out of reaching.
+      state.powerups.push({
+        kind,
+        x: WORLD_W * (0.08 + Math.random() * 0.84),
+        y: WORLD_H * (0.08 + Math.random() * 0.84),
+        born: nowMs,
+        // They expire. A field littered with uncollected pickups stops being
+        // a reward and becomes scenery.
+        dies: nowMs + 18000,
+      });
+      state.nextPowerAt = nowMs + POWER_SPAWN_MIN_MS
+        + Math.random() * (POWER_SPAWN_MAX_MS - POWER_SPAWN_MIN_MS);
+    }
+
+    const pr = playerRadius(p.mass);
+    for (let i = state.powerups.length - 1; i >= 0; i--) {
+      const q = state.powerups[i];
+      if (nowMs >= q.dies) { state.powerups.splice(i, 1); continue; }
+      if (Math.hypot(q.x - p.x, q.y - p.y) < pr + 26) {
+        state.power = q.kind;
+        state.powerUntil = nowMs + POWERS[q.kind].ms;
+        spawnBurst(q.x, q.y, POWERS[q.kind].color, 30);
+        playSound("power");
+        setMessage(`${POWERS[q.kind].glyph} ${POWERS[q.kind].label} — ${POWERS[q.kind].hint}.`,
+                   "good");
+        state.powerups.splice(i, 1);
+      }
+    }
+
+    if (state.power && nowMs >= state.powerUntil) {
+      state.power = null;
+      setMessage("", "");
+    }
+  }
+
+  function drawPowerups(ctx, nowMs) {
+    for (const q of state.powerups) {
+      const s = worldToScreen(q.x, q.y);
+      const r = 17 * state.camera.zoom;
+      if (s.x + r < -40 || s.x - r > viewW() + 40) continue;
+      if (s.y + r < -40 || s.y - r > viewH() + 40) continue;
+      const spec = POWERS[q.kind];
+      // Bob and pulse, so a pickup reads as collectable rather than as
+      // another bubble sitting still.
+      const bob = Math.sin(nowMs / 260 + q.born) * 3 * state.camera.zoom;
+      // Fade out over the last two seconds, so disappearing is telegraphed.
+      const left = q.dies - nowMs;
+      ctx.globalAlpha = left < 2000 ? Math.max(0.15, left / 2000) : 1;
+
+      const glow = ctx.createRadialGradient(s.x, s.y + bob, 1, s.x, s.y + bob, r * 2.2);
+      glow.addColorStop(0, spec.color + "cc");
+      glow.addColorStop(1, spec.color + "00");
+      ctx.fillStyle = glow;
+      ctx.beginPath(); ctx.arc(s.x, s.y + bob, r * 2.2, 0, Math.PI * 2); ctx.fill();
+
+      ctx.fillStyle = "#0f172a";
+      ctx.beginPath(); ctx.arc(s.x, s.y + bob, r, 0, Math.PI * 2); ctx.fill();
+      ctx.lineWidth = 2; ctx.strokeStyle = spec.color; ctx.stroke();
+      ctx.font = `${Math.round(r * 1.05)}px -apple-system, system-ui, sans-serif`;
+      ctx.textAlign = "center"; ctx.textBaseline = "middle";
+      ctx.fillText(spec.glyph, s.x, s.y + bob + 1);
+      ctx.globalAlpha = 1;
+    }
+  }
+
+  /** The remaining time on an active power, drawn under the toolbar. */
+  function drawPowerTimer(ctx, nowMs) {
+    if (!state.power) return;
+    const spec = POWERS[state.power];
+    const left = Math.max(0, state.powerUntil - nowMs);
+    const frac = left / spec.ms;
+    const w = Math.min(220, viewW() * 0.4), h = 6, x = (viewW() - w) / 2, y = 14;
+    ctx.fillStyle = "rgba(15,23,42,0.55)";
+    ctx.beginPath(); ctx.roundRect(x - 8, y - 20, w + 16, h + 28, 8); ctx.fill();
+    ctx.fillStyle = "#e2e8f0";
+    ctx.font = "600 12px -apple-system, system-ui, sans-serif";
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillText(`${spec.glyph} ${spec.label}`, viewW() / 2, y - 6);
+    ctx.fillStyle = "rgba(226,232,240,0.25)";
+    ctx.beginPath(); ctx.roundRect(x, y, w, h, 3); ctx.fill();
+    ctx.fillStyle = spec.color;
+    ctx.beginPath(); ctx.roundRect(x, y, w * frac, h, 3); ctx.fill();
   }
 
   function drawPlayer(ctx) {
@@ -1659,6 +1905,14 @@
 
     // The author control is a tag input owned by app.js's shared tag system,
     // which calls back through ScholarPiArcade.applyFilters when tags change.
+    // Sound toggle. Bound here with the other controls, and reflected into the
+    // button label immediately so its state is readable without pressing it.
+    const soundBtn = document.getElementById("arcadeSoundBtn");
+    if (soundBtn) {
+      setSound(soundOn);                       // paint the current preference
+      soundBtn.addEventListener("click", () => setSound(!soundOn));
+    }
+
     search.addEventListener("input", () => { state.filters.search = search.value; applyFilters(); });
     minPapers.addEventListener("input", () => {
       state.filters.minPapers = parseInt(minPapers.value, 10) || 0;

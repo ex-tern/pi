@@ -894,12 +894,13 @@ def trial_status(request: Request):
     """How much free allowance this visitor has left, and why."""
     ip = get_client_ip(request)
     used = get_free_evals_used(ip)
-    bonus = get_bonus_evals(ip)
-    allowed = abuse_guard.FREE_DOCUMENTS + bonus
+    # Fixed at FREE_DOCUMENTS. Arcade bonus is no longer added — a win pays piQ,
+    # and reporting a grown trial alongside it described one reward twice.
+    allowed = abuse_guard.FREE_DOCUMENTS
     return {
         "documents_allowed": allowed,
         "base_allowance": abuse_guard.FREE_DOCUMENTS,
-        "bonus_allowance": bonus,
+        "bonus_allowance": 0,
         "documents_used": min(used, allowed),
         "remaining": max(0, allowed - used),
         "note": ("Metered per distinct manuscript. Re-assessing a paper you have already "
@@ -4100,7 +4101,9 @@ async def assess_stream(
         documents_used=get_free_evals_used(client_ip),
         fingerprints=fingerprints,
         has_identity=bool(has_web3 or orcid),
-        bonus=get_bonus_evals(client_ip),
+        # Bonus no longer extends the trial; passed as 0 so the parameter stays
+        # in the signature for any caller that still supplies one.
+        bonus=0,
     )
     if not verdict["allowed"]:
         add_log(f"Blocked submission from {client_ip}: {verdict['reason'][:100]}")

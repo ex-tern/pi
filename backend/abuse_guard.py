@@ -39,7 +39,16 @@ from collections import defaultdict, deque
 from typing import Dict, Optional, Tuple
 
 # --- Limits ---------------------------------------------------------------
-FREE_DOCUMENTS = 3              # distinct documents per identity-less visitor
+# Read from config so FREE_EVALS_PER_IP and the enforced allowance cannot
+# disagree. They were two separate constants holding the same number, which is
+# one edit away from an interface that promises three free assessments and a
+# guard that permits a different count.
+try:
+    from config import FREE_EVALS_PER_IP as _FREE_DOCUMENTS_DEFAULT
+except Exception:                                    # pragma: no cover
+    _FREE_DOCUMENTS_DEFAULT = 3
+
+FREE_DOCUMENTS = _FREE_DOCUMENTS_DEFAULT   # distinct documents per identity-less visitor
 SUBNET_FREE_DOCUMENTS = 12      # aggregate ceiling per /24 or /48
 BURST_WINDOW_SECONDS = 60
 BURST_MAX_REQUESTS = 6
@@ -190,13 +199,18 @@ def check_free_tier(ip: str, documents_used: int, new_fingerprints: list,
     if not genuinely_new:
         return True, None
 
-    allowance = FREE_DOCUMENTS + max(0, int(bonus or 0))
+    # The free trial is FREE_DOCUMENTS, full stop.
+    #
+    # Arcade wins used to add to it, so the allowance drifted upward and a
+    # visitor could be told they had twelve free assessments when the trial is
+    # three. Wins now pay piQ, which is what buys an assessment — the trial is
+    # a fixed introduction, not a second balance that grows.
+    allowance = FREE_DOCUMENTS
     remaining = allowance - documents_used
     if remaining <= 0:
-        earned = (f" (including {bonus} earned in the Science Map arcade)" if bonus else "")
         return False, (
             f"Free trial complete: {allowance} distinct manuscripts have been assessed from "
-            f"this connection{earned}. Connect an Ethereum wallet or link ORCID to continue. "
+            f"this connection. Connect an Ethereum wallet or link ORCID to continue. "
             f"Re-assessing a paper you have already submitted remains free."
         )
     if len(genuinely_new) > remaining:

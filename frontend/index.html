@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=45">
+<link rel="stylesheet" href="style.css?v=46">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -592,6 +592,8 @@
             <canvas id="arcadeCanvas" aria-label="Interactive map of science. Drag to pan, scroll to zoom, click a field for detail."></canvas>
             <div class="arcade-toolbar">
               <span class="arcade-hint" id="arcadeModeHint">Drag to pan, scroll to zoom, click a field for detail.</span>
+              <button class="arcade-tool" id="arcadeSoundBtn" aria-pressed="false"
+                      aria-label="Toggle game sound">Sound off</button>
               <button class="arcade-tool" id="arcadeRefreshBtn" aria-label="Reload the map from the corpus">Reload</button>
               <button class="arcade-tool arcade-tool-play" id="arcadePlayBtn">Play ▶</button>
               <button class="arcade-tool arcade-tool-exit hidden" id="arcadeExitBtn" aria-label="Exit the game">Exit ✕</button>
@@ -787,7 +789,7 @@
   </div>
 </div>
 
-<script src="app.js?v=45"></script>
-<script src="arcade.js?v=45"></script>
+<script src="app.js?v=46"></script>
+<script src="arcade.js?v=46"></script>
 </body>
 </html>
