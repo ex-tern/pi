@@ -109,3 +109,45 @@ def delete_paper(eval_hash: str) -> bool:
     except OSError as e:
         logging.warning("Could not delete manuscript %s: %s", str(eval_hash)[:12], e)
         return False
+
+
+def count_papers() -> int:
+    """How many manuscripts are on disk.
+
+    Used by the owner's reset preview, where the number of files is not
+    derivable from the database: an assessment can exist without a stored file
+    (papers submitted by DOI), and an orphaned file can outlive its row.
+    """
+    try:
+        return sum(1 for name in os.listdir(PAPER_STORE_DIR) if name.endswith(".pdf"))
+    except OSError:
+        return 0
+
+
+def clear_all() -> int:
+    """Delete every stored manuscript. Returns the number removed.
+
+    Only reachable from the owner reset, and only when the corpus itself is
+    being wiped. Files are not rows: wiping `papers_assessment` while leaving
+    the PDFs behind would leave a directory of manuscripts belonging to
+    assessments that no longer exist, readable by anyone who could guess a
+    hash — so the two have to be clearable together.
+
+    Deletes only *.pdf inside the store, never the directory, so a
+    misconfigured BASE_DIR cannot escalate into removing something else.
+    """
+    removed = 0
+    try:
+        names = os.listdir(PAPER_STORE_DIR)
+    except OSError as e:
+        logging.warning("Could not list the paper store: %s", e)
+        return 0
+    for name in names:
+        if not name.endswith(".pdf"):
+            continue
+        try:
+            os.remove(os.path.join(PAPER_STORE_DIR, name))
+            removed += 1
+        except OSError as e:
+            logging.warning("Could not delete stored manuscript %s: %s", name, e)
+    return removed

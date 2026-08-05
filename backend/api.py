@@ -75,6 +75,7 @@ from database import (
     review_owner_key, add_review_rebuttal, rate_review, review_rating_summary,
     report_review, rebuttals_for_paper, list_review_reports,
     REBUTTAL_MIN_CHARS, REPORT_REASONS,
+    RESET_GROUPS, reset_state_groups,
     record_paper_read, get_paper_reads,
     create_review_job, finish_review_job, list_review_jobs, reclaim_stale_review_jobs,
     record_backup_cid, latest_backups, list_scilem_observations,
@@ -2606,6 +2607,171 @@ def review_report_reasons():
     and any client agree on what is being claimed."""
     return {"reasons": [{"id": k, "label": v} for k, v in REPORT_REASONS.items()],
             "rebuttal_min_chars": REBUTTAL_MIN_CHARS}
+
+
+class ClearHistoryRequest(BaseModel):
+    confirm: str = ""               # must be the literal word DELETE
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.post("/api/assessments/mine/clear")
+def clear_my_history(payload: ClearHistoryRequest, request: Request):
+    """Withdraw every assessment submitted under this identity.
+
+    This is the user's own scope, not the operator's: it removes only papers
+    submitted by this identity, and it uses the same withdrawal path as
+    removing one paper at a time, so the guarantees are identical. The
+    Proof-of-Research blocks remain — the chain is append-only, and deleting a
+    block would invalidate every block after it, so "clear my history" means
+    the papers leave the corpus and the listings, not that the ledger is
+    rewritten. Said plainly in the response rather than left to be discovered.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    if (payload.confirm or "").strip() != "DELETE":
+        raise HTTPException(
+            status_code=400,
+            detail="Type DELETE exactly to confirm. Nothing has been removed.")
+
+    identities = _identity_values(identity["wallet"], identity["orcid"])
+    rows = list_assessments_for_identity(identities, limit=1000)
+    if not rows:
+        return {"cleared": True, "removed": 0,
+                "message": "There was nothing to remove."}
+
+    removed, failed = 0, 0
+    for r in rows:
+        h = r.get("eval_hash") or r.get("hash")
+        if not h:
+            continue
+        try:
+            if delete_assessment(h, identities):
+                paper_store.delete_paper(h)
+                removed += 1
+            else:
+                failed += 1
+        except Exception as e:
+            logging.warning("Could not remove %s during history clear: %s", str(h)[:12], e)
+            failed += 1
+
+    add_log(f"History cleared for {_profile_key(identity['wallet'], identity['orcid'])[:16]}…"
+            f" — {removed} paper(s) withdrawn")
+    return {
+        "cleared": True, "removed": removed, "failed": failed,
+        "message": (
+            f"{removed} paper{'' if removed == 1 else 's'} withdrawn from the corpus and all "
+            f"listings."
+            + (f" {failed} could not be removed." if failed else "")
+            + " Their Proof-of-Research blocks remain: the chain is append-only, so deleting a "
+              "block would invalidate every block after it. piQ already earned is unaffected."),
+    }
+
+
+class ResetRequest(BaseModel):
+    groups: List[str] = []
+    confirm: str = ""               # must be the literal word RESET
+    clear_files: bool = False       # also delete stored manuscript PDFs
+    wallet: str = ""
+
+
+@app.get("/api/admin/reset/options")
+def reset_options(request: Request, wallet: str = Query(default="")):
+    """What can be wiped, and how much of it there currently is.
+
+    The counts are the point. "Delete assessed papers" means nothing without
+    "(29 rows)" beside it, and an operator about to destroy something
+    irreversible should be shown the size of what they are destroying before
+    they confirm rather than after.
+    """
+    require_owner(request, wallet)
+    conn = get_db_connection()
+    options = []
+    try:
+        for key, spec in sorted(RESET_GROUPS.items(), key=lambda kv: kv[1]["order"]):
+            rows = 0
+            missing = True
+            for table in spec["tables"]:
+                try:
+                    rows += int(conn.execute(f"SELECT COUNT(*) FROM {table}").fetchone()[0] or 0)
+                    missing = False
+                except sqlite3.Error:
+                    continue
+            options.append({"id": key, "label": spec["label"], "detail": spec["detail"],
+                            "destroys": spec["destroys"], "rows": rows,
+                            "available": not missing})
+    finally:
+        conn.close()
+
+    stored_files = 0
+    try:
+        stored_files = paper_store.count_papers()
+    except Exception:
+        stored_files = -1        # unknown; the UI says so rather than guessing
+
+    return {"options": options, "stored_files": stored_files,
+            "confirm_word": "RESET",
+            "note": ("Each group is independent. Nothing outside the groups you tick is "
+                     "touched, and the whole reset runs in one transaction — if any part "
+                     "fails, nothing is deleted.")}
+
+
+@app.post("/api/admin/reset")
+def admin_reset(payload: ResetRequest, request: Request):
+    """Wipe the selected state groups. Owner only, and irreversible.
+
+    Three independent gates, because this is the most destructive endpoint on
+    the platform: the owner wallet must be proven, the confirmation word must
+    be typed exactly, and at least one group must be named. A missing gate is
+    a refusal, never a default — there is no combination of empty inputs that
+    deletes anything.
+    """
+    require_owner(request, payload.wallet)
+
+    if (payload.confirm or "").strip() != "RESET":
+        raise HTTPException(
+            status_code=400,
+            detail="Type RESET exactly to confirm. Nothing has been deleted.")
+
+    groups = [g for g in (payload.groups or []) if g in RESET_GROUPS]
+    if not groups:
+        raise HTTPException(
+            status_code=400,
+            detail="Choose at least one thing to reset. Nothing has been deleted.")
+
+    result = reset_state_groups(groups)
+    if not result["ok"]:
+        raise HTTPException(status_code=503, detail=result["reason"])
+
+    # Stored manuscripts are files on disk, not rows, so they are cleared
+    # separately and only when explicitly asked for. Wiping the corpus while
+    # silently leaving the PDFs behind — or deleting a researcher's uploads
+    # when they only asked to clear balances — are both wrong.
+    files_removed = 0
+    if payload.clear_files and "assessments" in groups:
+        try:
+            files_removed = paper_store.clear_all()
+        except Exception as e:
+            logging.warning("Stored manuscripts could not be cleared: %s", e)
+            files_removed = -1
+
+    add_log(f"STATE RESET by owner — groups: {', '.join(groups)}; "
+            f"rows deleted: {sum(result['deleted'].values())}"
+            + (f"; files removed: {files_removed}" if payload.clear_files else ""))
+
+    total = sum(result["deleted"].values())
+    return {
+        "reset": True,
+        "groups": groups,
+        "deleted": result["deleted"],
+        "rows_deleted": total,
+        "files_removed": files_removed,
+        "message": (
+            f"Reset complete. {total} row{'' if total == 1 else 's'} deleted across "
+            f"{len(groups)} group{'' if len(groups) == 1 else 's'}."
+            + (f" {files_removed} stored manuscript{'' if files_removed == 1 else 's'} removed."
+               if payload.clear_files and files_removed >= 0 else "")
+            + " This cannot be undone."),
+    }
 
 
 @app.get("/api/admin/review-reports")

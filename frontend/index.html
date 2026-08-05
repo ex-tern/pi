@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=25">
+<link rel="stylesheet" href="style.css?v=26">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -121,6 +121,13 @@
       <summary>Bug reports<span class="pill pill-muted" id="ownerBugsBadge">0</span></summary>
       <div id="ownerBugsBody"><p class="hint">Loading…</p></div>
     </details>
+
+    <!-- Owner only. Kept at the very bottom of the sidebar and behind a
+         collapsed disclosure, because it is the most destructive control on
+         the platform and should take deliberate effort to reach. -->
+    <div class="owner-danger hidden" id="ownerResetCard">
+      <button id="ownerResetBtn" class="btn btn-danger-soft btn-block">Reset platform state…</button>
+    </div>
   </aside>
 
   <!-- ===================== MAIN ===================== -->
@@ -708,7 +715,7 @@
   </div>
 </div>
 
-<script src="app.js?v=25"></script>
-<script src="arcade.js?v=25"></script>
+<script src="app.js?v=26"></script>
+<script src="arcade.js?v=26"></script>
 </body>
 </html>

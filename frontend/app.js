@@ -5843,7 +5843,9 @@ async function _loadAssessmentHistory() {
       <div class="buddy-pick-note" id="buddyPickNote"></div>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
-      invalidate every block after it.</p>`;
+      invalidate every block after it.
+      <button class="btn btn-danger-soft" id="clearHistoryBtn"
+              title="Withdraw every paper you have submitted">Clear all history</button></p>`;
 
     renderBuddyPickNote(live.size);
 
@@ -5874,6 +5876,9 @@ async function _loadAssessmentHistory() {
         refreshBuddy();
       });
     }
+
+    const clearBtn = document.getElementById("clearHistoryBtn");
+    if (clearBtn) clearBtn.addEventListener("click", clearMyHistory);
 
     // Actions are handled by the delegated listener in assessmentActions(),
     // which survives this table being replaced on every refresh.
@@ -6228,10 +6233,167 @@ async function refreshSessionState() {
     row.classList.remove("hidden");
   }
 
-  // The owner's maintenance panel follows the session, so it appears the
-  // moment the owner wallet is proven and disappears on sign-out rather than
+  // The owner's maintenance panels follow the session, so they appear the
+  // moment the owner wallet is proven and disappear on sign-out rather than
   // lingering until a reload.
   loadOwnerBugReports();
+  const resetCard = document.getElementById("ownerResetCard");
+  if (resetCard) resetCard.classList.toggle("hidden", !sessionState.is_owner);
+}
+
+// ---------------------------------------------------------------------------
+// Owner: selective state reset
+// ---------------------------------------------------------------------------
+/** Choose what to wipe, see how much of it there is, then confirm by typing.
+ *
+ *  Selective rather than all-or-nothing: wiping test papers without destroying
+ *  the ledger, or clearing balances while keeping the corpus, are both
+ *  legitimate operations. The row counts are shown BEFORE the confirmation,
+ *  because an operator about to destroy something irreversible should see the
+ *  size of it while deciding, not afterwards in a summary.
+ */
+async function showOwnerResetModal() {
+  openModal(`<h2>Reset platform state</h2><p class="hint">Reading current contents…</p>`);
+  let data;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet });
+    const res = await fetch(`${API}/api/admin/reset/options?${qs}`);
+    if (!res.ok) throw new Error((await res.json().catch(() => ({}))).detail || `HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    openModal(`<h2>Reset platform state</h2>
+      <div class="warning-box">Could not load reset options: ${escapeHtml(e.message)}</div>`);
+    return;
+  }
+
+  const opts = (data.options || []).filter(o => o.available);
+  openModal(`
+    <h2>Reset platform state</h2>
+    <div class="warning-box">
+      <strong>This cannot be undone.</strong>
+      <p>Only the groups you tick are touched. The whole reset runs in one transaction, so if
+      any part fails, nothing is deleted.</p>
+    </div>
+
+    <div class="reset-list">
+      ${opts.map(o => `
+        <label class="reset-row">
+          <input type="checkbox" class="reset-pick" value="${escapeHtml(o.id)}">
+          <span>
+            <strong>${escapeHtml(o.label)}</strong>
+            <span class="reset-count">${o.rows.toLocaleString()} row${o.rows === 1 ? "" : "s"}</span>
+            <span class="reset-detail">${escapeHtml(o.detail)}</span>
+          </span>
+        </label>`).join("")}
+    </div>
+
+    ${data.stored_files !== 0 ? `
+    <label class="reset-row reset-row-extra">
+      <input type="checkbox" id="resetFiles">
+      <span><strong>Also delete stored manuscript files</strong>
+        <span class="reset-count">${data.stored_files < 0
+          ? "count unavailable" : `${data.stored_files} file${data.stored_files === 1 ? "" : "s"}`}</span>
+        <span class="reset-detail">Only applies when “Assessed papers” is selected. Leaving the
+        PDFs behind would keep manuscripts on disk for assessments that no longer exist.</span>
+      </span>
+    </label>` : ""}
+
+    <label class="bug-label" for="resetConfirm">Type <code>RESET</code> to confirm</label>
+    <input class="bug-input" id="resetConfirm" autocomplete="off" placeholder="RESET">
+
+    <div class="modal-actions">
+      <button class="btn btn-danger-soft" id="resetGo" disabled>Reset selected</button>
+      <span class="profile-msg" id="resetMsg"></span>
+    </div>`);
+
+  const go = document.getElementById("resetGo");
+  const confirmEl = document.getElementById("resetConfirm");
+  const picks = () => [...document.querySelectorAll(".reset-pick:checked")].map(c => c.value);
+  // Both gates are live, so the button turns on only when the request would
+  // actually be accepted — no submitting into a refusal.
+  const revalidate = () => {
+    go.disabled = !(picks().length && confirmEl.value.trim() === "RESET");
+  };
+  document.querySelectorAll(".reset-pick").forEach(c => c.addEventListener("change", revalidate));
+  confirmEl.addEventListener("input", revalidate);
+
+  go.addEventListener("click", async () => {
+    const chosen = picks();
+    const labels = opts.filter(o => chosen.includes(o.id)).map(o => o.destroys).join(", ");
+    if (!confirm(`Permanently delete ${labels}?\n\nThis cannot be undone.`)) return;
+
+    const msg = document.getElementById("resetMsg");
+    go.disabled = true; go.textContent = "Resetting…";
+    try {
+      const res = await fetch(`${API}/api/admin/reset`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          groups: chosen, confirm: confirmEl.value.trim(),
+          clear_files: !!(document.getElementById("resetFiles") || {}).checked,
+          wallet: Session.wallet,
+        }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.detail || `HTTP ${res.status}`);
+      openModal(`<h2>Reset complete</h2>
+        <p class="lede">${escapeHtml(out.message || "Done.")}</p>
+        <table class="data-table"><tbody>${
+          Object.entries(out.deleted || {}).map(([t, n]) =>
+            `<tr><td>${escapeHtml(t)}</td><td class="num">${n}</td></tr>`).join("")
+        }</tbody></table>`);
+      // Everything on screen now describes state that no longer exists.
+      loadAssessmentHistory(); loadEmissionStatus(); renderSidebar();
+      refreshCorpusViews(); loadOwnerBugReports();
+    } catch (e) {
+      msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+      go.disabled = false; go.textContent = "Reset selected";
+    }
+  });
+}
+
+/** Withdraw every paper this identity has submitted. */
+async function clearMyHistory() {
+  openModal(`
+    <h2>Clear your assessment history</h2>
+    <div class="warning-box">
+      <strong>This withdraws every paper you have submitted.</strong>
+      <p>They leave the corpus, the leaderboards and the journal index. This cannot be undone.</p>
+    </div>
+    <p class="hint">Their Proof-of-Research blocks remain. The chain is append-only, so deleting a
+    block would invalidate every block after it — clearing your history removes the papers, it
+    does not rewrite the ledger. piQ you have already earned is unaffected.</p>
+
+    <label class="bug-label" for="clearConfirm">Type <code>DELETE</code> to confirm</label>
+    <input class="bug-input" id="clearConfirm" autocomplete="off" placeholder="DELETE">
+
+    <div class="modal-actions">
+      <button class="btn btn-danger-soft" id="clearGo" disabled>Withdraw all my papers</button>
+      <span class="profile-msg" id="clearMsg"></span>
+    </div>`);
+
+  const go = document.getElementById("clearGo");
+  const el = document.getElementById("clearConfirm");
+  el.addEventListener("input", () => { go.disabled = el.value.trim() !== "DELETE"; });
+
+  go.addEventListener("click", async () => {
+    const msg = document.getElementById("clearMsg");
+    go.disabled = true; go.textContent = "Withdrawing…";
+    try {
+      const res = await fetch(`${API}/api/assessments/mine/clear`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ confirm: el.value.trim(),
+                               wallet: Session.wallet, orcid: Session.orcid }),
+      });
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(out.detail || `HTTP ${res.status}`);
+      openModal(`<h2>History cleared</h2><p class="lede">${escapeHtml(out.message || "Done.")}</p>`);
+      buddySelection = new Set(); saveBuddySelection();
+      loadAssessmentHistory(); loadEmissionStatus(); refreshCorpusViews();
+    } catch (e) {
+      msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+      go.disabled = false; go.textContent = "Withdraw all my papers";
+    }
+  });
 }
 
 // ---------------------------------------------------------------------------
@@ -6463,3 +6625,10 @@ window.ScholarPi = {
   // implementation; this is how arcade.js reads its current selection.
   tags: (group) => (TAG_GROUPS[group] ? TAG_GROUPS[group].tags.slice() : []),
 };
+
+// Owner-only, and hidden unless the owner wallet is proven — the button is
+// added here rather than inline so the handler cannot be bound twice.
+{
+  const el = document.getElementById("ownerResetBtn");
+  if (el) el.addEventListener("click", showOwnerResetModal);
+}
