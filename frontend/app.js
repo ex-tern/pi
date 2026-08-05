@@ -1524,7 +1524,11 @@ async function loadBuddyCorpus() {
   if (!slot || !Session.hasIdentity()) return;
   let data;
   try {
+    // The ticked papers, if any. Sent as a plain list so the server decides
+    // scope — the client never filters the report itself, or the two would
+    // disagree about what riB actually read.
     const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    if (buddySelection.size) qs.set("hashes", [...buddySelection].join(","));
     const res = await fetch(`${API}/api/buddy?${qs}`);
     if (!res.ok) return;
     data = await res.json();
@@ -2417,7 +2421,7 @@ async function showReviewModal(hash) {
         <span class="pill p-piq">${peerFee.toFixed(2)} piQ</span></div>
       <p>Another researcher — signed in with both a wallet and an ORCID, with at least one paper
       published here, and not you — reads the paper and submits a reasoned verdict. The fee is a
-      bounty paid to them on completion, not a price for the badge.</p>
+      reward credited to them on completion, not a price for the badge.</p>
       <p class="hint">A paper must be peer reviewed before it can be published, so this is the
       step that unlocks publishing.</p>
       ${alreadyRequested
@@ -2429,7 +2433,7 @@ async function showReviewModal(hash) {
               ${alreadyRequested ? "disabled" : ""}
               title="${alreadyRequested
                 ? "A review is already open for this paper"
-                : "Hold a bounty and put this paper in front of reviewers"}"
+                : "Set aside piQ and put this paper in front of reviewers"}"
               >${alreadyRequested ? "Review already requested" : "Request peer review"}</button>
     </div>
 
@@ -2500,7 +2504,7 @@ async function showReviewModal(hash) {
   if (p1 && !alreadyRequested) {
     p1.addEventListener("click", () => post(
       "/review/request", "peer review", peerFee, "reqPeer",
-      "The whole fee is held as a bounty and paid to the researcher who completes the review. "
+      "The whole amount is held and credited to the researcher who completes the review. "
       + "The paper is marked as Requested to be reviewed until someone does. "
       + "A Peer-reviewed badge appears only when a report is actually submitted."));
   }
@@ -2728,8 +2732,8 @@ async function showWriteReviewModal(hash) {
   if (!elig.signed_in) {
     openModal(`
       <h2>Become a reviewer</h2>
-      <p class="lede">Sign in with a wallet or ORCID to review. Reviews are paid, and payment
-      needs an account to pay into.</p>
+      <p class="lede">Sign in with a wallet or ORCID to review. Completing a review earns piQ,
+      and piQ has to be credited to an account.</p>
       ${reqList}`);
     return;
   }
@@ -2746,8 +2750,8 @@ async function showWriteReviewModal(hash) {
       is a requirement that a reviewer has been through the same process they are judging, and
       has their own work standing under the same rules.</p>
       ${reqList}
-      <p class="hint">Completing a review pays <strong>${bonus} piQ</strong>, plus any bounty the
-      requester posted.</p>`);
+      <p class="hint">Completing a review earns <strong>${bonus} piQ</strong>, plus whatever the
+      requester set aside.</p>`);
     return;
   }
 
@@ -2764,7 +2768,7 @@ async function showWriteReviewModal(hash) {
             + "requested it. A requester reviewing their own request would make the badge "
             + "self-issued through a longer route."
           : "No review has been requested for this paper, so there is no open request to take. "
-            + "Reviews are commissioned by someone posting a bounty; ask the author, or request "
+            + "Reviews are commissioned by someone setting piQ aside; ask the author, or request "
             + "one yourself from the dossier."}</p>
       ${reqList}`);
     return;
@@ -2776,10 +2780,11 @@ async function showWriteReviewModal(hash) {
     <p class="lede">You are reviewing <strong>${escapeHtml(openHere.title)}</strong>. Your report
     is published with the paper; your name is not — reviews here are single-blind, so a negative
     verdict costs you nothing.</p>
-    <p class="hint">On submission you receive <strong>${bounty.toFixed(2)} piQ</strong> bounty
-    plus a <strong>${bonus} piQ</strong> completion bonus, and the paper receives a
-    <strong>Peer-reviewed</strong> badge. Payment is for submitting a reasoned report, not for
-    reaching any particular verdict.</p>
+    <p class="hint">On submission <strong>${bounty.toFixed(2)} piQ</strong> set aside by the
+    requester, plus a <strong>${bonus} piQ</strong> completion bonus, is credited to your piQ
+    balance, and the paper receives a
+    <strong>Peer-reviewed</strong> badge. The reward is for submitting a reasoned report, not
+    for reaching any particular verdict.</p>
     ${reqList}
 
     <label class="bug-label" for="wrVerdict">Verdict</label>
@@ -3376,13 +3381,22 @@ function authorshipActions(item, idx) {
 
     <!-- Reviewing is a separate role from authorship, so it gets its own
          section rather than hiding under "if this is your manuscript" — the
-         person who should see this is explicitly not the author. -->
+         person who should see this is explicitly not the author.
+
+         Shown only when a review has actually been commissioned. A review is
+         taken against an open request with piQ set aside against it; with no request
+         there is nothing to claim, so the button led to a window whose only
+         message was that it could not be used. Offering an action that cannot
+         succeed is worse than not offering it. -->
+    ${a.reviewRequested ? `
     <div class="dossier-details dossier-review-actions">
       <div class="action-bar">
         <button class="btn btn-quiet" data-a="write-review" ${d}
-                title="Review this paper and earn piQ">Write a review</button>
+                title="This paper is waiting for a reviewer — review it and earn piQ"
+                >Write a review</button>
       </div>
-    </div>`;
+      <p class="hint">This paper has been submitted for review and is waiting for a reviewer.</p>
+    </div>` : ""}`;
 }
 
 // One delegated listener for every action bar on the page, however it was
@@ -4548,7 +4562,13 @@ async function loadForecast() {
     // `lookback_used`, not the requested value: the engine clamps the window
     // to the blocks that actually exist, so on a young ledger the two differ
     // and reporting the request would overstate what the projection saw.
-    const lookback = Number(
+    //
+    // Named `lookbackUsed` deliberately. A bare `lookback` collides with the
+    // requested value read from the select at the top of this same function,
+    // and because `const` is block-scoped-with-a-dead-zone, redeclaring it
+    // here did not shadow harmlessly — it poisoned every earlier reference in
+    // the function and broke chart rendering outright.
+    const lookbackUsed = Number(
       data.lookback_used || (data.settings && data.settings.lookback) || 0);
     metaBox.innerHTML = `
       <div class="fm-item"><span>Blocks recorded</span><strong>${data.blocks_recorded}</strong></div>
@@ -4556,7 +4576,7 @@ async function loadForecast() {
       ${data.settings ? `<div class="fm-item"><span>Smoothing</span><strong>&alpha; ${
         data.settings.alpha} · &beta; ${data.settings.beta} · ${data.settings.gain}&times;</strong></div>` : ""}
       <div class="fm-item"><span>Lookback</span><strong>${
-        lookback ? `${lookback} epoch${lookback === 1 ? "" : "s"}` : "—"}</strong></div>`;
+        lookbackUsed ? `${lookbackUsed} epoch${lookbackUsed === 1 ? "" : "s"}` : "—"}</strong></div>`;
 
     if (data.interpretation) {
       insight.classList.remove("hidden");
@@ -4789,7 +4809,12 @@ async function loadLeaderboard() {
           return `<tr class="clickable-row" data-author="${escapeHtml(r.author)}">
             <td class="col-rank">${rankBadge(rank)}</td>
             <td class="cell-primary">${escapeHtml(r.author)}</td>
-            <td class="num strong">${r.piq.toFixed(2)}</td>
+            <td class="num strong">${r.piq.toFixed(2)}${
+              Number(r.held || 0) > 0
+                ? `<span class="lb-held" title="Total earned by this author's work: ${
+                    Number(r.piq).toFixed(2)} piQ, of which ${Number(r.held).toFixed(2)} is held — earned by the paper but not released, because authorship has not been verified. Held piQ cannot be used until the author claims it.">${
+                    Number(r.held).toFixed(2)} held</span>`
+                : ""}</td>
             <td class="num">${r.papers}</td>
             <td class="num">${r.avg_score.toFixed(1)}</td>
           </tr>`;
@@ -4848,6 +4873,31 @@ bindSortHeaders("#leaderboardTable", leaderboardState, loadLeaderboard);
 // --- piX Leaderboard [Top Papers] ---
 const topPapersState = { q: "", minScore: 0, sort: "score", order: "desc", limit: 10, offset: 0, total: 0 };
 
+/** First author plus "et al.", which is how a byline is cited anyway.
+ *
+ *  A leaderboard row is an index entry, not a credit line. Printing all eight
+ *  authors of a paper made one cell taller than the rest of the row put
+ *  together and pushed the table wide enough to need horizontal scrolling —
+ *  and nobody reads a full author list off a ranking. The complete byline is
+ *  one click away in the dossier, and stays on the row's tooltip.
+ */
+function compactAuthors(raw) {
+  const s = String(raw || "").trim();
+  if (!s) return "—";
+  const names = s.split(",").map(x => x.trim()).filter(Boolean);
+  if (names.length <= 1) return s;
+  return `${names[0]} et al.`;
+}
+
+/** Trim a title to a readable length without cutting mid-word. */
+function compactTitle(raw, max = 90) {
+  const s = String(raw || "").trim();
+  if (s.length <= max) return s;
+  const cut = s.slice(0, max);
+  const at = cut.lastIndexOf(" ");
+  return (at > max * 0.6 ? cut.slice(0, at) : cut).replace(/[\s,;:.\-]+$/, "") + "…";
+}
+
 async function loadTopPapers() {
   try {
     const qs = new URLSearchParams({
@@ -4862,10 +4912,13 @@ async function loadTopPapers() {
     document.getElementById("topPapersBody").innerHTML = data.papers.length
       ? data.papers.map((p, i) => {
           const rank = topPapersState.offset + i + 1;
-          return `<tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}" title="Open full report and dossier">
+          // The untruncated title and byline live on the tooltip, so nothing
+          // is lost — only the column width.
+          return `<tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}" title="${
+            escapeHtml(p.title || "")}${p.author ? ` — ${escapeHtml(p.author)}` : ""}\n\nOpen full report and dossier">
             <td class="col-rank">${rankBadge(rank)}</td>
-            <td class="cell-primary">${escapeHtml(p.title)}</td>
-            <td class="cell-muted">${escapeHtml(p.author || "—")}</td>
+            <td class="cell-primary">${escapeHtml(compactTitle(p.title))}</td>
+            <td class="cell-muted cell-author">${escapeHtml(compactAuthors(p.author))}</td>
             <td class="num strong">${(p.score || 0).toFixed(1)}</td>
             <td class="num">${(p.piq || 0).toFixed(2)}</td>
             <td class="num">${(p.logic_score || 0).toFixed(1)}</td>
@@ -4925,7 +4978,7 @@ async function loadJournal() {
         <tr class="clickable-row" data-hash="${escapeHtml(e.hash)}">
           <td><div class="hist-title">${escapeHtml(e.title)}</div>
               ${e.doi ? `<div class="hist-meta"><code>${escapeHtml(e.doi)}</code></div>` : ""}</td>
-          <td class="cell-muted">${escapeHtml(e.author || "—")}</td>
+          <td class="cell-muted cell-author">${escapeHtml(compactAuthors(e.author))}</td>
           <td class="num strong">${e.score.toFixed(1)}</td>
           <td>${publishedBadge(e) || `<span class="cell-muted">—</span>`}</td>
           <td>${[peerReviewBadge(e), llmReviewBadge(e), reviewRequestedBadge(e)]
@@ -5652,10 +5705,63 @@ function histPiq(a) {
 // sidebar re-render), and without this they raced: each set "Loading…", each
 // awaited, and the slowest overwrote the newest. Sharing one in-flight promise
 // makes the extra callers free instead of harmful.
+// Which of the researcher's own papers the Research Buddy reasons from.
+//
+// Empty means "all of them", which is the right default: a new user has made
+// no statement about scope, and silently feeding riB nothing would make it
+// look broken. A selection is a narrowing, never a requirement.
+//
+// Persisted per identity, because it is a statement about a person's own work
+// and would be meaningless carried across a sign-out into someone else's.
+let buddySelection = new Set();
+
+function buddySelectionKey() {
+  return `sp_buddy_pick_${Session.orcid || Session.wallet || "anon"}`;
+}
+
+function loadBuddySelection() {
+  try {
+    const raw = JSON.parse(localStorage.getItem(buddySelectionKey()) || "[]");
+    buddySelection = new Set(Array.isArray(raw) ? raw.filter(Boolean) : []);
+  } catch (_) { buddySelection = new Set(); }
+}
+
+function saveBuddySelection() {
+  try {
+    localStorage.setItem(buddySelectionKey(), JSON.stringify([...buddySelection]));
+  } catch (_) { /* storage full or blocked; the selection still works in memory */ }
+}
+
+/** Say plainly what riB is currently reading, so the scope is never a guess. */
+function renderBuddyPickNote(total) {
+  const el = document.getElementById("buddyPickNote");
+  if (!el) return;
+  const n = buddySelection.size;
+  el.innerHTML = n === 0
+    ? `<span class="hint">Research Buddy is reading <strong>all ${total}</strong> of your
+       assessments. Tick specific papers to narrow it to one project.</span>`
+    : `<span class="hint">Research Buddy is reading <strong>${n}</strong> selected
+       paper${n === 1 ? "" : "s"} instead of all ${total}.
+       <button class="btn btn-quiet" id="buddyPickClear">Use all</button></span>`;
+  const clear = document.getElementById("buddyPickClear");
+  if (clear) {
+    clear.addEventListener("click", () => {
+      buddySelection = new Set();
+      saveBuddySelection();
+      loadAssessmentHistory();
+      refreshBuddy();
+    });
+  }
+}
+
 let historyLoad = null;
 let historyAgain = false;
 
 function loadAssessmentHistory() {
+  // Re-read the selection per identity: it is keyed to whoever is signed in,
+  // and a stale in-memory set from a previous session would narrow riB for
+  // the wrong person.
+  loadBuddySelection();
   // Coalesce, but do not simply drop. A caller that arrives while a load is in
   // flight may know about data the in-flight request was too early to see —
   // the pipeline commits rows and then refreshes from three places — so one
@@ -5708,20 +5814,66 @@ async function _loadAssessmentHistory() {
     // Wrapped in a scroll container like every other wide table. Unwrapped, its
     // 420px minimum was applied against the page itself, which is what pushed
     // the layout sideways on a phone.
+    // Drop selections for papers that no longer exist, so a removed paper
+    // cannot go on silently narrowing the Buddy's input from storage.
+    const live = new Set(data.assessments.map(a => a.eval_hash || a.hash).filter(Boolean));
+    buddySelection = new Set([...buddySelection].filter(h => live.has(h)));
+    saveBuddySelection();
+
+    const anySelected = buddySelection.size > 0;
     body.innerHTML = `<div class="table-scroll"><table class="data-table history-table"><thead><tr>
+        <th class="col-pick" title="Choose which papers the Research Buddy reasons from">
+          <input type="checkbox" id="buddyPickAll" aria-label="Select all papers"
+                 ${anySelected && buddySelection.size === live.size ? "checked" : ""}></th>
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
-      </tr></thead><tbody>` + data.assessments.map(a => `
-        <tr>
+      </tr></thead><tbody>` + data.assessments.map(a => {
+        const h = a.eval_hash || a.hash || "";
+        return `
+        <tr${buddySelection.has(h) ? ' class="row-picked"' : ""}>
+          <td class="col-pick"><input type="checkbox" class="buddy-pick"
+              data-pick="${escapeHtml(h)}" ${buddySelection.has(h) ? "checked" : ""}
+              aria-label="Use this paper for the Research Buddy"></td>
           <td><div class="hist-title">${escapeHtml(a.title)} ${allBadges(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
           <td class="num">${a.score.toFixed(1)}</td>
           <td class="num">${histPiq(a)}</td>
           <td class="hist-actions">${assessmentActions(a, "row")}</td>
-        </tr>`).join("") + `</tbody></table></div>
+        </tr>`; }).join("") + `</tbody></table></div>
+      <div class="buddy-pick-note" id="buddyPickNote"></div>
       <p class="hint">Removing a paper withdraws it from the corpus and all listings. Its
       Proof-of-Research block remains — the chain is append-only, so deleting a block would
       invalidate every block after it.</p>`;
+
+    renderBuddyPickNote(live.size);
+
+    // Per-render listeners are fine here: the checkboxes are replaced with the
+    // table, and each one only touches the selection set.
+    body.querySelectorAll(".buddy-pick").forEach(cb => {
+      cb.addEventListener("change", () => {
+        if (cb.checked) buddySelection.add(cb.dataset.pick);
+        else buddySelection.delete(cb.dataset.pick);
+        saveBuddySelection();
+        cb.closest("tr").classList.toggle("row-picked", cb.checked);
+        const all = document.getElementById("buddyPickAll");
+        if (all) all.checked = buddySelection.size === live.size && live.size > 0;
+        renderBuddyPickNote(live.size);
+        refreshBuddy();
+      });
+    });
+    const all = document.getElementById("buddyPickAll");
+    if (all) {
+      all.addEventListener("change", () => {
+        buddySelection = all.checked ? new Set(live) : new Set();
+        saveBuddySelection();
+        body.querySelectorAll(".buddy-pick").forEach(cb => {
+          cb.checked = all.checked;
+          cb.closest("tr").classList.toggle("row-picked", all.checked);
+        });
+        renderBuddyPickNote(live.size);
+        refreshBuddy();
+      });
+    }
 
     // Actions are handled by the delegated listener in assessmentActions(),
     // which survives this table being replaced on every refresh.
@@ -5933,6 +6085,9 @@ async function submitBugReport() {
       <p>${escapeHtml(data.message || "Thank you.")}</p>
       <p class="hint">Reference <code>#${escapeHtml(String(data.id))}</code> — quote this if you
       follow up.</p>`;
+    // If the owner is the one reporting (or testing), their panel should show
+    // the new report immediately rather than on the next sign-in.
+    loadOwnerBugReports();
   } catch (e) {
     msg.textContent = `Could not send: ${e.message}`;
     msg.className = "profile-msg bug-msg-error";
@@ -6071,6 +6226,77 @@ async function refreshSessionState() {
     who.textContent = `Signed in as ${label}`;
     who.title = sessionState.is_owner ? "Owner wallet" : "";
     row.classList.remove("hidden");
+  }
+
+  // The owner's maintenance panel follows the session, so it appears the
+  // moment the owner wallet is proven and disappears on sign-out rather than
+  // lingering until a reload.
+  loadOwnerBugReports();
+}
+
+// ---------------------------------------------------------------------------
+// Owner: incoming bug reports
+//
+// A report is written to the database BEFORE any email is attempted, so a
+// report whose delivery failed exists nowhere else. Without somewhere to read
+// it, it is silently lost — the person who took the trouble to report a bug
+// gets nothing, and the maintainer never learns of it. This panel is that
+// somewhere, and it lives in the sidebar because that is where the operator
+// already watches system state.
+// ---------------------------------------------------------------------------
+async function loadOwnerBugReports() {
+  const panel = document.getElementById("ownerBugsPanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+
+  const body = document.getElementById("ownerBugsBody");
+  const badge = document.getElementById("ownerBugsBadge");
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, limit: 50 });
+    const res = await fetch(`${API}/api/bug-report/list?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    const reports = data.reports || [];
+
+    // The badge counts UNDELIVERED reports, not all of them. A delivered
+    // report is already in the maintainer's inbox; the number that should
+    // pull attention is the one for reports that exist only here.
+    if (badge) {
+      badge.textContent = data.undelivered || 0;
+      badge.className = data.undelivered ? "pill q-warn" : "pill pill-muted";
+      badge.title = `${data.undelivered || 0} report${data.undelivered === 1 ? "" : "s"} `
+                  + `not delivered by email · ${data.count || 0} total`;
+    }
+
+    if (!reports.length) {
+      body.innerHTML = `<p class="hint">No bug reports have been submitted.</p>`;
+      return;
+    }
+
+    body.innerHTML = reports.map(r => `
+      <div class="owner-bug ${r.delivered ? "" : "owner-bug-undelivered"}">
+        <div class="owner-bug-head">
+          <span class="owner-bug-when">${escapeHtml((r.created_at || "").slice(0, 16))}</span>
+          <span class="owner-bug-state">${r.delivered
+            ? "emailed"
+            : `<strong>not emailed</strong>`}</span>
+        </div>
+        <div class="owner-bug-msg">${escapeHtml(r.message || "")}</div>
+        <div class="owner-bug-meta">
+          ${r.contact ? `<span title="Reporter's contact">${escapeHtml(r.contact)}</span>` : ""}
+          ${r.identity ? `<span title="Signed-in identity">${escapeHtml(r.identity)}</span>` : ""}
+          ${r.page ? `<span title="Page it was reported from">${escapeHtml(r.page)}</span>` : ""}
+        </div>
+        ${r.delivery_error
+          ? `<div class="owner-bug-err" title="Why the email failed">${
+              escapeHtml(r.delivery_error)}</div>` : ""}
+      </div>`).join("");
+  } catch (e) {
+    // Kept visible with the reason. A blank panel would be indistinguishable
+    // from "no bugs reported", which is the one wrong thing it could say.
+    body.innerHTML = `<p class="hint">Could not load bug reports (${
+      escapeHtml(e.message)}).</p>`;
   }
 }
 

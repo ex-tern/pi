@@ -1312,7 +1312,8 @@ class ResearcherProfile(BaseModel):
 
 
 @app.get("/api/buddy")
-def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="")):
+def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default=""),
+                   hashes: str = Query(default="")):
     """riB — the researcher's stated fields against the live corpus.
 
     The analysis lives in rib_engine, which takes data and returns a report.
@@ -1330,15 +1331,27 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
         logging.warning("riB corpus read failed: %s", e)
         corpus = []
 
+    # An explicit selection overrides the field filter entirely. If the
+    # researcher has named the papers they want reasoned from, narrowing that
+    # set further by their stated fields would silently drop papers they had
+    # just deliberately ticked — the selection IS the statement of scope.
+    selected = [h.strip() for h in (hashes or "").split(",") if h.strip()][:200]
+
     fields = rib_engine.parse_fields(profile)
     try:
-        candidates = get_papers_for_recommendation(fields=fields)
-        scope = "your fields" if fields else "corpus"
-        if not candidates and fields:
-            candidates = get_papers_for_recommendation(fields=None)
-            scope = "corpus"
+        if selected:
+            candidates = get_papers_for_recommendation(fields=None, hashes=selected)
+            scope = f"{len(candidates)} selected paper{'' if len(candidates) == 1 else 's'}"
+        else:
+            candidates = get_papers_for_recommendation(fields=fields)
+            scope = "your fields" if fields else "corpus"
+            if not candidates and fields:
+                candidates = get_papers_for_recommendation(fields=None)
+                scope = "corpus"
         picks = diagnostics.recommend_papers(candidates)
         picks["scope"] = scope
+        picks["selection_active"] = bool(selected)
+        picks["selection_count"] = len(candidates) if selected else 0
     except Exception as e:
         logging.warning("riB recommendations failed: %s", e)
         picks = {"available": False, "reason": "Recommendations unavailable.",
@@ -2170,9 +2183,10 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
     add_log(f"Review requested for {file_hash[:12]}… bounty {fee:.2f} piQ")
     return {"requested": True, "bounty": fee, "awaiting_review": True,
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": (f"Review requested. {fee:.2f} piQ is held and will be paid to the "
-                        f"researcher who completes it, on top of their {PEER_REVIEW_BONUS:.2f} piQ "
-                        f"completion bonus. The paper now carries a Requested-to-be-reviewed "
+            "message": (f"Review requested. {fee:.2f} piQ is set aside and will be credited to "
+                        f"the researcher who completes it, on top of their "
+                        f"{PEER_REVIEW_BONUS:.2f} piQ completion bonus. The paper now carries a "
+                        f"Requested-to-be-reviewed "
                         f"marker; the Peer-reviewed badge appears only once a review has actually "
                         f"been submitted.")}
 
@@ -2678,9 +2692,9 @@ def submit_review(payload: ReviewSubmission, request: Request):
             "bounty": bounty, "bonus": bonus,
             "eval_hash": result["eval_hash"],
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": (f"Review recorded. {result['paid']:.2f} piQ paid to you"
-                        + (f" ({bounty:.2f} bounty + {bonus:.2f} completion bonus)"
-                           if bounty else f" ({bonus:.2f} completion bonus)")
+            "message": (f"Review recorded. {result['paid']:.2f} piQ credited to your balance"
+                        + (f" ({bounty:.2f} set aside by the requester + {bonus:.2f} completion "
+                           f"bonus)" if bounty else f" ({bonus:.2f} completion bonus)")
                         + ". The paper now carries a Peer-reviewed badge and can be published.")}
 
 
@@ -4186,23 +4200,52 @@ def list_corpus_fields():
 
 
 def aggregate_author_statistics(rows):
-    """rows: iterable of (author_name, piq_minted, final_score). Splits
-    comma-joined author strings, filters out institutions/unknowns, and
-    aggregates piQ/paper-count/avg-score per individual author name."""
+    """rows: (author_name, piq_minted, final_score[, piq_escrowed, piq_claimed_at]).
+
+    Splits comma-joined author strings, filters out institutions/unknowns, and
+    aggregates per individual author name.
+
+    Three figures are produced, and they mean different things:
+
+      * `minted`  — released to a verified author. Spendable.
+      * `held`    — earned by the paper but not yet released, because
+                    authorship has not been verified. Not spendable.
+      * `piq`     — the total the work has earned, minted + held. This is what
+                    the leaderboard ranks and displays.
+
+    The leaderboard ranks on the TOTAL. It previously ranked and displayed
+    `minted` alone, which read as 0.00 for every author on a corpus where
+    nobody had verified authorship yet — a table of real scholars credited
+    with nothing, which says the opposite of what is true. What an author's
+    work has earned is a fact about the work; whether it has been released
+    yet is a fact about their account, and belongs beside the number rather
+    than in place of it.
+    """
     authors = {}
-    for author_str, piq, score in rows:
+    for row in rows:
+        author_str, piq, score = row[0], row[1], row[2]
+        escrowed = safe_float(row[3], 0.0) if len(row) > 3 else 0.0
+        claimed = bool(row[4]) if len(row) > 4 else True
         ca = clean_author_name(author_str)
         if not ca or ca.lower() in ("unidentified", "unknown") or is_likely_institution(ca):
             continue
         for a in [x.strip() for x in ca.split(",") if x.strip()]:
-            rec = authors.setdefault(a, {"author": a, "piq": 0.0, "papers": 0, "_score_sum": 0.0})
-            rec["piq"] += safe_float(piq, 0.0)
+            rec = authors.setdefault(a, {"author": a, "minted": 0.0, "held": 0.0,
+                                         "papers": 0, "_score_sum": 0.0})
+            rec["minted"] += safe_float(piq, 0.0)
+            # Escrowed piQ counts as held only while it is unclaimed; once
+            # claimed it has already been minted and would double-count.
+            if not claimed:
+                rec["held"] += escrowed
             rec["papers"] += 1
             rec["_score_sum"] += safe_float(score, 0.0)
     results = []
     for rec in authors.values():
         rec["avg_score"] = round(rec["_score_sum"] / rec["papers"], 2) if rec["papers"] else 0.0
-        rec["piq"] = round(rec["piq"], 2)
+        rec["minted"] = round(rec["minted"], 2)
+        rec["held"] = round(rec["held"], 2)
+        # `piq` is the total, and is the field the leaderboard sorts and shows.
+        rec["piq"] = round(rec["minted"] + rec["held"], 2)
         del rec["_score_sum"]
         results.append(rec)
     return results
@@ -4407,7 +4450,9 @@ def analytics_leaderboard(
 ):
     conn = get_db_connection()
     try:
-        rows = conn.execute("SELECT author_name, piq_minted, final_score FROM papers_assessment").fetchall()
+        rows = conn.execute(
+            "SELECT author_name, piq_minted, final_score, piq_escrowed, piq_claimed_at "
+            "FROM papers_assessment").fetchall()
     finally:
         conn.close()
 

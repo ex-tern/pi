@@ -514,6 +514,22 @@ input::placeholder { color: var(--faint); }
 
 .color-box { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
+/* The leaderboards fit their column instead of scrolling sideways.
+   A ranking is meant to be scanned top-to-bottom; making the reader drag it
+   left and right to see a score defeats the point of ranking anything. Now
+   that titles are truncated and bylines are compacted to "et al.", the
+   columns fit — so the shared 520px table floor is overridden here and the
+   horizontal scrollbar is turned off for these two tables only. */
+.leaderboard-card .table-scroll { overflow-x: hidden; }
+.leaderboard-card .data-table { min-width: 0; width: 100%; table-layout: fixed; }
+.leaderboard-card .cell-primary {
+  white-space: normal; overflow-wrap: anywhere; line-height: 1.35;
+}
+.leaderboard-card .cell-author { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+/* Numeric columns take only what they need, leaving the rest to the title. */
+.leaderboard-card .col-rank { width: 34px; }
+.leaderboard-card th.num, .leaderboard-card td.num { width: 58px; }
+
 /* Leaderboard cards.
    The card fills its grid cell, and the scrolling row area is the flexible
    part — so the two leaderboards end at the same line no matter how many rows
@@ -1131,9 +1147,18 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
      just a page-width minimum with no way to scroll to the rest. */
   .table-scroll .data-table, .table-wrap .data-table { min-width: 520px; }
   .data-table { font-size: 12px; }
-  /* Unwrapped tables wrap their text instead of demanding width. */
-  .card > .data-table, .modal .data-table { width: 100%; min-width: 0; }
-  .card > .data-table td, .modal .data-table td { overflow-wrap: anywhere; }
+  /* Unwrapped tables get a floor too, and scroll inside their container.
+     Setting `min-width: 0` on these crushed them instead of fixing them: a
+     three-column table forced into 340px gave each column ~40px, and headings
+     like "Criterion" and "Score (0-10)" wrapped one letter per line into a
+     vertical ribbon of characters. Unreadable is not narrower than overflowing,
+     it is just a different failure.
+     A modest floor plus a scrolling ancestor keeps the columns legible. */
+  .card > .data-table, .modal .data-table { min-width: 340px; }
+  .card, .modal { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  /* Long unbroken strings (hashes, DOIs) still must not widen a cell. */
+  .data-table td { overflow-wrap: anywhere; }
+  .data-table th { overflow-wrap: normal; hyphens: none; }
   .data-table th, .data-table td { padding: 7px 8px; }
   .history-table { min-width: 420px; }
 
@@ -1195,6 +1220,15 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   /* Both leaderboards shorten together, so they stay matched on a phone
      without either one eating the whole screen. */
   .leaderboard-card .table-scroll { max-height: 320px; }
+  /* On a phone the piX table drops Logic and Date, and piQ drops Avg piX.
+     Seven columns cannot be legible across 360px, and these are the ones a
+     reader is least likely to be scanning a ranking for — the full set is in
+     the dossier one tap away. */
+  #topPapersTable th:nth-child(5), #topPapersTable td:nth-child(5),
+  #topPapersTable th:nth-child(6), #topPapersTable td:nth-child(6),
+  #topPapersTable th:nth-child(7), #topPapersTable td:nth-child(7),
+  #leaderboardTable th:nth-child(5), #leaderboardTable td:nth-child(5) { display: none; }
+  .leaderboard-card th.num, .leaderboard-card td.num { width: 52px; }
 
   /* The merged section headings need less air on a small screen — they are
      separators, not page titles. */
@@ -1661,3 +1695,62 @@ button.seal { font-family: inherit; cursor: pointer; }
   padding: 9px 11px; font-size: 12px; line-height: 1.55; }
 .opt-card-disabled { opacity: 0.62; }
 .badge-link { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
+
+/* Held piQ on the author leaderboard. Deliberately small, grey and on its own
+   line: it is earned but unverified, cannot be spent, and is NOT part of the
+   ranking — showing it at the same weight as the confirmed figure is what made
+   the column ambiguous in the first place. */
+.lb-held {
+  display: block; font-size: 10px; font-weight: 500; color: var(--faint);
+  font-variant-numeric: tabular-nums; margin-top: 2px;
+}
+
+/* --- Research Buddy paper selection ------------------------------------ */
+/* A checkbox column on Your assessments, choosing which papers riB reasons
+   from. Narrow and unobtrusive: it is a filter on someone's own work, not a
+   destructive control, so it should not draw the eye the way Remove does. */
+.col-pick { width: 34px; text-align: center; padding-right: 0 !important; }
+.col-pick input[type="checkbox"] {
+  width: 16px; height: 16px; margin: 0; cursor: pointer; accent-color: var(--accent);
+  vertical-align: middle;
+}
+.history-table tr.row-picked { background: var(--accent-soft, #eef2ff); }
+.history-table tr.row-picked .hist-title { font-weight: 650; }
+.buddy-pick-note { margin: 10px 0 0; }
+.buddy-pick-note .btn { margin-left: 8px; padding: 3px 10px; font-size: 11.5px; }
+/* Touch target on phones, where a 16px box is not reliably hittable. */
+@media (max-width: 900px) {
+  .col-pick { width: 40px; }
+  .col-pick input[type="checkbox"] { width: 20px; height: 20px; }
+}
+
+/* --- Owner: incoming bug reports (sidebar) ------------------------------ */
+/* Undelivered reports are the ones that exist nowhere but this database, so
+   they are the ones marked. A delivered report is already in the maintainer's
+   inbox and needs no emphasis here. */
+.owner-bug {
+  border: 1px solid var(--border); border-radius: 8px;
+  padding: 9px 10px; margin-bottom: 8px; background: #fff; font-size: 12px;
+}
+.owner-bug-undelivered { border-left: 3px solid var(--danger, #dc2626); }
+.owner-bug-head {
+  display: flex; justify-content: space-between; gap: 8px;
+  font-size: 10.5px; color: var(--faint); margin-bottom: 5px;
+}
+.owner-bug-state strong { color: var(--danger, #dc2626); }
+.owner-bug-msg {
+  color: var(--text); line-height: 1.45; white-space: pre-wrap;
+  overflow-wrap: anywhere; max-height: 8.7em; overflow-y: auto;
+}
+.owner-bug-meta {
+  display: flex; flex-wrap: wrap; gap: 6px; margin-top: 6px;
+  font-size: 10.5px; color: var(--muted);
+}
+.owner-bug-meta span {
+  background: var(--accent-soft, #f1f5f9); border-radius: 4px; padding: 1px 6px;
+  overflow-wrap: anywhere;
+}
+.owner-bug-err {
+  margin-top: 6px; font-size: 10.5px; color: var(--danger, #dc2626);
+  overflow-wrap: anywhere;
+}
