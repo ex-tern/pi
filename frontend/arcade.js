@@ -532,6 +532,11 @@
     const playing = state.mode === "play";
     document.getElementById("arcadePlayBtn").classList.toggle("hidden", playing);
     document.getElementById("arcadeExitBtn").classList.toggle("hidden", !playing);
+    // Sound belongs to the game, not to the map. Exploring the corpus makes no
+    // sound at all, so offering the control there is a switch for nothing —
+    // and it crowded a toolbar whose other buttons are about the map itself.
+    const soundBtn = document.getElementById("arcadeSoundBtn");
+    if (soundBtn) soundBtn.classList.toggle("hidden", !playing);
     document.getElementById("arcadeModeHint").textContent = playing
       ? "Absorb every field on the map to win. Bigger bubbles pull harder — and so do you. Esc exits."
       : "Drag to pan, scroll to zoom, click a field for detail.";
@@ -1372,7 +1377,10 @@
   }
 
   function playSound(kind) {
-    if (!soundOn) return;
+    // Guarded on mode as well as preference: the map is silent by design, and
+    // a stray call from a code path that also runs while exploring should not
+    // be able to break that.
+    if (!soundOn || state.mode !== "play") return;
     switch (kind) {
       // Rising blip, pitched up slightly as π grows, so absorbing a large
       // field sounds different from hoovering a speck.
@@ -1395,15 +1403,20 @@
     }
   }
 
-  function setSound(on) {
+  function setSound(on, confirm = true) {
     soundOn = !!on;
     try { localStorage.setItem("sp_arcade_sound", soundOn ? "on" : "off"); } catch (_) {}
     const btn = document.getElementById("arcadeSoundBtn");
     if (btn) {
       btn.textContent = soundOn ? "Sound on" : "Sound off";
       btn.setAttribute("aria-pressed", soundOn ? "true" : "false");
+      // Visibility is owned by syncModeUi() — the button belongs to play mode,
+      // and this function must not resurrect it on the map.
     }
-    if (soundOn) { ensureAudio(); tone(880, 880, 90, "triangle", 0.04); }
+    // The confirmation beep is for a deliberate toggle only. Playing it while
+    // painting a remembered preference meant the page made a noise on load,
+    // which is the exact behaviour the off-by-default choice exists to avoid.
+    if (soundOn && confirm) { ensureAudio(); tone(880, 880, 90, "triangle", 0.04); }
   }
 
   /** Spawn, expire and collect power-ups. Called once per frame. */
@@ -1485,23 +1498,49 @@
     }
   }
 
-  /** The remaining time on an active power, drawn under the toolbar. */
+  /** The remaining time on an active power.
+   *
+   *  Bottom-left. The top of the canvas is occupied by the HTML toolbar, which
+   *  spans the full width and carries the mode hint — drawing here at y=14 put
+   *  the bar straight through that sentence. The bottom-right is the minimap,
+   *  so the bottom-left is the only corner with nothing already in it.
+   *
+   *  Uses the file's own roundRect() helper rather than ctx.roundRect, which
+   *  is recent enough that a slightly older browser would throw mid-frame and
+   *  take the whole render loop down with it.
+   */
   function drawPowerTimer(ctx, nowMs) {
     if (!state.power) return;
     const spec = POWERS[state.power];
     const left = Math.max(0, state.powerUntil - nowMs);
-    const frac = left / spec.ms;
-    const w = Math.min(220, viewW() * 0.4), h = 6, x = (viewW() - w) / 2, y = 14;
-    ctx.fillStyle = "rgba(15,23,42,0.55)";
-    ctx.beginPath(); ctx.roundRect(x - 8, y - 20, w + 16, h + 28, 8); ctx.fill();
-    ctx.fillStyle = "#e2e8f0";
+    const frac = Math.max(0, Math.min(1, left / spec.ms));
+
+    // Kept clear of the minimap, which occupies the bottom-right at
+    // 132px + 12px of margin. On a narrow canvas a fixed 196px bar would run
+    // underneath it.
+    const MINIMAP_RESERVE = 132 + 12 + 12;
+    const w = Math.max(80, Math.min(196, viewW() - 48 - MINIMAP_RESERVE));
+    const barH = 6;
+    const padX = 12, padY = 9;
+    const boxW = w + padX * 2, boxH = 34 + padY;
+    const x = 24;
+    const y = viewH() - boxH - 16;
+
+    ctx.save();
+    ctx.fillStyle = theme().hud;
+    roundRect(ctx, x, y, boxW, boxH, 8); ctx.fill();
+
+    ctx.fillStyle = theme().hudText || "#e2e8f0";
     ctx.font = "600 12px -apple-system, system-ui, sans-serif";
-    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
-    ctx.fillText(`${spec.glyph} ${spec.label}`, viewW() / 2, y - 6);
-    ctx.fillStyle = "rgba(226,232,240,0.25)";
-    ctx.beginPath(); ctx.roundRect(x, y, w, h, 3); ctx.fill();
+    ctx.textAlign = "left"; ctx.textBaseline = "middle";
+    ctx.fillText(`${spec.glyph} ${spec.label}`, x + padX, y + padY + 6);
+
+    const barY = y + boxH - padY - barH;
+    ctx.fillStyle = theme().track;
+    roundRect(ctx, x + padX, barY, w, barH, 3); ctx.fill();
     ctx.fillStyle = spec.color;
-    ctx.beginPath(); ctx.roundRect(x, y, w * frac, h, 3); ctx.fill();
+    roundRect(ctx, x + padX, barY, Math.max(3, w * frac), barH, 3); ctx.fill();
+    ctx.restore();
   }
 
   function drawPlayer(ctx) {
@@ -1909,7 +1948,7 @@
     // button label immediately so its state is readable without pressing it.
     const soundBtn = document.getElementById("arcadeSoundBtn");
     if (soundBtn) {
-      setSound(soundOn);                       // paint the current preference
+      setSound(soundOn, false);                // paint the preference, silently
       soundBtn.addEventListener("click", () => setSound(!soundOn));
     }
 

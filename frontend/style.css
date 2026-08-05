@@ -1412,6 +1412,22 @@ a.btn { text-decoration: none; display: inline-block; }
 .buddy-checklist .bc-mark { color: var(--faint); font-size: 12px; line-height: 1.5; flex-shrink: 0; }
 .buddy-checklist .bc-done { color: var(--text); }
 .buddy-checklist .bc-done .bc-mark { color: var(--success); font-weight: 700; }
+
+/* The paper-selection step is a fourth checklist item and has to read as one.
+   It sits outside the <ul> because it is a different KIND of prerequisite —
+   papers rather than profile fields — but with no styling of its own it
+   inherited the card's base size and rendered half again as large as the three
+   items above it, which made it look like a heading for them. */
+.buddy-onboard-step {
+  display: flex; gap: 8px; align-items: flex-start;
+  font-size: 12px; line-height: 1.55; color: var(--muted);
+  margin: 0 0 12px; padding-top: 10px; border-top: 1px solid var(--border);
+}
+.buddy-onboard-step .bc-mark {
+  color: var(--faint); font-size: 12px; line-height: 1.5; flex-shrink: 0;
+}
+.buddy-onboard-step.bc-done { color: var(--text); }
+.buddy-onboard-step.bc-done .bc-mark { color: var(--success); font-weight: 700; }
 .buddy-onboard-foot { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 0 0 12px; }
 
 /* --- Curation reward line in the assessment stream ----------------------- */

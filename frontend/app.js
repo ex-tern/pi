@@ -1464,7 +1464,7 @@ function renderResearchBuddy(profile) {
              have been ticked, so an empty selection is as blocking as an empty
              profile — and saying only one of the two would send the reader to
              fix something that was not the problem. -->
-        <div class="buddy-onboard-step ${buddySelection.size ? "bc-done" : ""}">
+        <div class="buddy-onboard-step${buddySelection.size ? " bc-done" : ""}">
           <span class="bc-mark" aria-hidden="true">${buddySelection.size ? "✓" : "○"}</span>
           <span><strong>Papers to read${buddySelection.size
             ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the papers you want riB to
@@ -6160,6 +6160,10 @@ async function _loadAssessmentHistory() {
               title="Withdraw every paper you have submitted">Clear all history</button></p>`;
 
     renderBuddyPickNote(live.size);
+    // Applied again after the markup lands, not left to the inline class
+    // alone. One place decides whether this button is visible, so the initial
+    // paint and every later tick cannot disagree about it.
+    syncClearHistoryVisibility(live.size);
 
     // Per-render listeners are fine here: the checkboxes are replaced with the
     // table, and each one only touches the selection set.
