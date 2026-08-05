@@ -3013,9 +3013,14 @@ async function showWriteReviewModal(hash) {
             + "longer route."}</p>
       ${state.may_request && state.review_requested && !already ? `
         <div class="warning-box">
-          <strong>Looking for something to review?</strong>
-          <p>Assess a paper you did not write — by DOI is easiest — then request a review on it
-          and take it yourself. You are not its author, so that review is a real one.</p>
+          <strong>If you are trying to publish this paper</strong>
+          <p>You do not need to review it. As the operator you can publish your own work without
+          a review — open <em>Publish</em> from the dossier. The paper will carry an
+          Author-published badge and no Peer-reviewed badge, which is the accurate description of
+          what happened.</p>
+          <p>If you want to review something, assess a paper you did not write — by DOI is
+          easiest — request a review on it, and take that one. You are not its author, so the
+          review is real.</p>
         </div>` : ""}
       ${reqList}`);
     return;
@@ -3366,11 +3371,15 @@ async function showPublishModal(hash) {
   const authorOk = st.authorship_ok != null ? !!st.authorship_ok : !!st.may_publish;
   const reviewed = st.reviewed != null ? !!st.reviewed : true;
   const may = !!st.may_publish;
+  // Publishing unreviewed work as the operator. Allowed so the platform can
+  // start, and stated plainly rather than slipped past — the paper will carry
+  // no Peer-reviewed badge, and that absence is the honest signal.
+  const ownerOverride = !!st.owner_override;
 
   // Review before publication. Shown first and on its own, because it is a
   // rule about the paper rather than about the person, and it has a clear next
   // action attached to it.
-  if (!reviewed) {
+  if (!reviewed && !ownerOverride) {
     openModal(`
       <h2>Publish this assessment</h2>
       <div class="warning-box">
@@ -3395,9 +3404,18 @@ async function showPublishModal(hash) {
 
   openModal(`
     <h2>Publish this assessment</h2>
-    <p class="hint">Publishing attaches a badge to the assessment publicly. This paper carries a
-    peer review, which is what makes publishing available — the two badges remain separate
-    claims and are shown separately.</p>
+    ${ownerOverride ? `
+      <div class="warning-box">
+        <strong>Publishing without a peer review, as the operator.</strong>
+        <p>This paper has not been reviewed. You can publish it because you run this deployment
+        and the review requirement would otherwise be a closed loop on a new platform — but no
+        review is being created, so it will carry an <strong>Author-published</strong> badge and
+        <strong>no Peer-reviewed badge</strong>. Readers can see the difference, which is what
+        makes this honest rather than a shortcut.</p>
+      </div>`
+      : `<p class="hint">Publishing attaches a badge to the assessment publicly. This paper
+         carries a peer review, which is what makes publishing available — the two badges remain
+         separate claims and are shown separately.</p>`}
 
     <div class="opt-card ${may ? "" : "opt-locked"}">
       <label class="opt-radio"><input type="radio" name="pubkind" value="author" checked>
@@ -3421,8 +3439,8 @@ async function showPublishModal(hash) {
 
     <div class="${may ? "opt-ok" : "opt-blocked"}">
       ${may
-        ? `Peer reviewed, and authorship verified via
-           <strong>${escapeHtml(st.authorship_tier || "")}</strong>.
+        ? `${ownerOverride ? "Operator override (unreviewed)" : "Peer reviewed"}, and authorship
+           verified via <strong>${escapeHtml(st.authorship_tier || "")}</strong>.
            Publishing costs <strong>${fee.toFixed(2)} piQ</strong>${
              st.fee_already_paid ? " (already paid for this paper — free now)" : ""}.`
         : !authorOk

@@ -1862,15 +1862,17 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
     # Review before publication. Reported here so the form can say why the
     # button is off, rather than letting someone fill it in and be refused.
     reviewed = has_human_review(file_hash)
+    owner_override = bool(auth.is_owner(identity))
 
     return {
         "published": published,
         "published_at": row[3],
-        "may_publish": verified and reviewed,
+        "may_publish": verified and (reviewed or owner_override),
+        "owner_override": owner_override and not reviewed,
         "authorship_ok": verified,
         "reviewed": reviewed,
         "review_requested": has_open_review_request(file_hash),
-        "review_blocked_reason": ("" if reviewed else
+        "review_blocked_reason": ("" if (reviewed or owner_override) else
             ("This paper has not been peer reviewed. A paper must be reviewed before it can be "
              "published — request a review from this dossier, and publish once a reviewer has "
              "submitted their report.")),
@@ -1947,7 +1949,13 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     # ordering rule the journal rests on, and a rule enforced in one place is a
     # rule with one bug away from not existing. A machine review does not
     # satisfy it: has_human_review excludes the panel deliberately.
-    if not has_human_review(file_hash):
+    # The operator may publish unreviewed work on the deployment they run.
+    # Without this the platform cannot start: the first paper needs a review,
+    # a review needs a peer, and the first participant has none. The paper
+    # still gets no Peer-reviewed badge — the override skips the gate, it does
+    # not manufacture a review — so a reader can always see the difference.
+    owner_override = bool(auth.is_owner(identity))
+    if not owner_override and not has_human_review(file_hash):
         raise HTTPException(
             status_code=409,
             detail=("This paper has not been peer reviewed, and a paper must be reviewed before "
@@ -2034,7 +2042,11 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
                               eval_hash=file_hash, reason="Publication fee"):
             raise HTTPException(status_code=402, detail="The publication fee could not be charged.")
 
-    result = set_published(file_hash, identities, key, True, kind=kind)
+    result = set_published(file_hash, identities, key, True, kind=kind,
+                           allow_unreviewed=owner_override)
+    if owner_override and not has_human_review(file_hash):
+        add_log(f"Owner published {file_hash[:12]}… WITHOUT a peer review "
+                f"(operator override; no Peer-reviewed badge attached).")
     if not result["ok"]:
         raise HTTPException(status_code=403, detail=result["reason"])
 
