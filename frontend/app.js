@@ -2945,6 +2945,19 @@ async function showWriteReviewModal(hash) {
   }
 
   const bonus = Number(elig.bonus ?? 2).toFixed(2);
+  // Authorship of THIS paper comes from the review-state endpoint (may_request
+  // is the same authorship test that gates requesting), combined with owner
+  // status from the session. Asking the eligibility endpoint would mean
+  // teaching it about a specific paper it otherwise knows nothing about.
+  const selfNote = (state.may_request && sessionState.is_owner)
+    ? `<div class="warning-box">
+         <strong>This is your own paper.</strong>
+         <p>You are permitted to review it because you run this deployment. The paper will carry
+         a <strong>Peer-reviewed</strong> badge, which normally means an independent researcher
+         read the work — so your review is stored with a note saying it was written by the
+         operator about their own paper. Anyone who opens the badge will see that.</p>
+       </div>`
+    : "";
   const ownerNote = elig.owner_exemption
     ? `<div class="warning-box"><strong>You are reviewing as the operator.</strong>
          <p>Publishing requires a review, and reviewing normally requires having published —
@@ -3014,13 +3027,10 @@ async function showWriteReviewModal(hash) {
       ${state.may_request && state.review_requested && !already ? `
         <div class="warning-box">
           <strong>If you are trying to publish this paper</strong>
-          <p>You do not need to review it. As the operator you can publish your own work without
-          a review — open <em>Publish</em> from the dossier. The paper will carry an
-          Author-published badge and no Peer-reviewed badge, which is the accurate description of
-          what happened.</p>
-          <p>If you want to review something, assess a paper you did not write — by DOI is
-          easiest — request a review on it, and take that one. You are not its author, so the
-          review is real.</p>
+          <p>As the operator you can also publish your own work without a review — open
+          <em>Publish</em> from the dossier. That route attaches an Author-published badge and no
+          Peer-reviewed badge, which is the more accurate description when nobody independent has
+          read the paper.</p>
         </div>` : ""}
       ${reqList}`);
     return;
@@ -3029,7 +3039,7 @@ async function showWriteReviewModal(hash) {
   const bounty = Number(openHere.bounty || 0);
   openModal(`
     <h2>Write a review</h2>
-    ${ownerNote}
+    ${selfNote}${ownerNote}
     <p class="lede">You are reviewing <strong>${escapeHtml(openHere.title)}</strong>. Your report
     is published with the paper; your name is not — reviews here are single-blind, so a negative
     verdict costs you nothing.</p>

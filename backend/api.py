@@ -2245,8 +2245,9 @@ def open_reviews(request: Request, wallet: str = Query(default=""),
     # list by "requests you opened" would hide exactly the work they are
     # entitled to review. Filter by AUTHORSHIP instead — the rule that matters.
     if key and auth.is_owner(identity):
-        open_items = list_open_reviews(
-            exclude_authored_by=_identity_values(identity["wallet"], identity["orcid"]))
+        # Everything open, including the owner's own papers: they are permitted
+        # to review those, so hiding them would leave the exception unusable.
+        open_items = list_open_reviews()
     else:
         open_items = list_open_reviews(exclude_key=key)
     return {"signed_in": bool(key), "open": open_items, "bounty": peer_review_fee()}
@@ -2397,14 +2398,15 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
         extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
     # The escrow claim counts as standing evidence of authorship here, exactly
     # as it does for an author-published badge.
-    # The owner may open a request on ANY paper, not only their own.
+    # Author-only, with no exception — not even for the operator.
     #
-    # Author-only requests plus "you cannot review what you requested" left the
-    # operator unable to review anything: they could only request on their own
-    # papers, and reviewing those is correctly forbidden. Letting the owner put
-    # someone else's paper into review is what gives them something legitimate
-    # to review — they are not an author of it, so the badge is not self-issued.
-    if not (attribution.get("verified") or bool(row[3]) or auth.is_owner(identity)):
+    # The owner exemption that briefly lived here existed to give the operator
+    # something they were allowed to review, back when reviewing your own paper
+    # was impossible. That is no longer the reason it was solving: the owner can
+    # now review their own work directly, so letting them commission reviews of
+    # other people's papers buys nothing and hands one account the power to put
+    # anyone's manuscript in front of reviewers.
+    if not (attribution.get("verified") or bool(row[3])):
         raise HTTPException(
             status_code=403,
             detail=("Only the author of a paper can request a review of it. "
@@ -3277,14 +3279,34 @@ def submit_review(payload: ReviewSubmission, request: Request):
             reviewer_is_author = bool(attr.get("verified") or owns_row
                                       or (prow[5] and owns_row))
 
-    if reviewer_is_author:
+    # The operator may review their own paper. Everyone else may not.
+    #
+    # This exists so a single-participant deployment can produce its first
+    # reviews at all. It is a real weakening of what the Peer-reviewed badge
+    # certifies, so it is not left implicit: the review is stored with a
+    # disclosure line naming it as an operator self-review, and the badge opens
+    # onto that text. A reader who checks can always see what they are looking
+    # at, which is the property that keeps the badge worth having.
+    is_owner_self = bool(reviewer_is_author and auth.is_owner(identity))
+    if reviewer_is_author and not is_owner_self:
         raise HTTPException(
             status_code=403,
             detail=("You cannot review your own paper. A Peer-reviewed badge you issued to "
                     "your own work would certify nothing — it needs a reviewer other than you."))
 
-    result = complete_review(payload.review_id, key, payload.verdict, payload.comment,
-                             reviewer_is_author=reviewer_is_author)
+    comment = payload.comment
+    if is_owner_self:
+        comment = (comment.rstrip()
+                   + "\n\n---\n*Operator self-review: this review was written by the person who "
+                     "runs this deployment, about their own paper. It is disclosed here because a "
+                     "Peer-reviewed badge normally means an independent researcher read the work, "
+                     "and in this case it does not.*")
+        add_log(f"OWNER SELF-REVIEW recorded on review {payload.review_id} "
+                f"(disclosed in the review text).")
+
+    result = complete_review(payload.review_id, key, payload.verdict, comment,
+                             reviewer_is_author=reviewer_is_author,
+                             allow_self_review=is_owner_self)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["reason"])
     add_log(f"Review completed on {result['eval_hash'][:12]}… paid {result['paid']:.2f} piQ")
