@@ -41,6 +41,11 @@
   const PLAYER_RADIUS_CAP = 150;   // world units; ~4.4% of the world's width
   const PLAYER_RADIUS_KNEE = 60;   // below this, radius tracks mass exactly
 
+  // Minimum gap between two absorptions. MIRRORED FROM backend/arcade.py — the
+  // server rejects any run that eats faster than this, so if you change one you
+  // must change both or every honest run will fail verification.
+  const MIN_EAT_INTERVAL_MS = 90;
+
   /** Drawn/collision radius for a given mass. Monotonic, and bounded. */
   function playerRadius(mass) {
     const m = Math.max(0, Number(mass) || 0);
@@ -443,6 +448,10 @@
     state.mode = "play";
     state.startedAt = performance.now();
     state.lastFrame = state.startedAt;
+    // Negative, so the very first absorption is never held back by the
+    // interval — the run starts with the gap already elapsed. This mirrors
+    // the server's `last_t = -MIN_EAT_INTERVAL_MS`.
+    state.lastEatAt = -MIN_EAT_INTERVAL_MS;
     document.getElementById("arcadeOverlay").classList.add("hidden");
     syncModeUi();
     resize();
@@ -942,6 +951,24 @@
     p.x = Math.max(margin, Math.min(WORLD_W - margin, p.x));
     p.y = Math.max(margin, Math.min(WORLD_H - margin, p.y));
 
+    // At most one absorption per MIN_EAT_INTERVAL_MS, matching the server.
+    //
+    // The server rejects any run whose absorptions are closer together than
+    // MIN_EAT_INTERVAL_MS, because a burst of them is what an automated player
+    // looks like. But this loop walked every bubble each frame and could eat
+    // several in the same millisecond — which a large blob overlapping a
+    // cluster does routinely — so honest runs were failing with "Run absorbed
+    // bubbles faster than is possible."
+    //
+    // The fix is to make the client obey the same rule rather than to relax
+    // the server's: the constant is an anti-automation control, and widening
+    // it to fit the client would weaken the check instead of correcting the
+    // behaviour it was measuring. Uneaten bubbles stay in contact and are
+    // taken on the next tick, so nothing is lost — absorption is just serial,
+    // which is what the rule always assumed.
+    const nowMs = performance.now() - state.startedAt;
+    let contact = null;
+
     for (const b of state.bubbles) {
       if (b.eaten) continue;
       const d = Math.hypot(b.x - p.x, b.y - p.y);
@@ -949,18 +976,28 @@
       // is a touch. Using raw mass here would have a capped-size blob eating
       // bubbles it visibly never reached.
       if (d < Math.max(b.mass, pr) * 0.86) {
-        if (b.mass < p.mass) {
-          b.eaten = true;
-          p.mass += b.mass * state.rules.absorb_ratio;
-          state.absorbed.push({ id: b.id, t: Math.round(performance.now() - state.startedAt) });
-          spawnBurst(b.x, b.y, bubbleColor(b), b.live ? 26 : 14);
-          selectBubble(b);          // absorbing IS inspecting
-        } else {
+        // Death is immediate and is not rate limited — being eaten is not an
+        // absorption, and deferring it would let the player survive a frame
+        // inside something bigger than they are.
+        if (b.mass >= p.mass) {
           spawnBurst(p.x, p.y, "#ef4444", 40);
           endRun(false);
           return;
         }
+        // Of everything in reach, take the largest edible bubble first: it is
+        // the one the player was almost certainly aiming for, and it grows
+        // them fastest, so the queue drains sensibly.
+        if (!contact || b.mass > contact.mass) contact = b;
       }
+    }
+
+    if (contact && nowMs >= state.lastEatAt + MIN_EAT_INTERVAL_MS) {
+      contact.eaten = true;
+      p.mass += contact.mass * state.rules.absorb_ratio;
+      state.lastEatAt = nowMs;
+      state.absorbed.push({ id: contact.id, t: Math.round(nowMs) });
+      spawnBurst(contact.x, contact.y, bubbleColor(contact), contact.live ? 26 : 14);
+      selectBubble(contact);        // absorbing IS inspecting
     }
 
     // The run is won by clearing the map, not by passing a mass threshold.

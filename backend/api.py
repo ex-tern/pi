@@ -72,6 +72,9 @@ from database import (
     open_review_request, list_open_reviews, complete_review, review_summary,
     record_llm_review, has_open_review_request, has_human_review,
     count_journal_publications,
+    review_owner_key, add_review_rebuttal, rate_review, review_rating_summary,
+    report_review, rebuttals_for_paper, list_review_reports,
+    REBUTTAL_MIN_CHARS, REPORT_REASONS,
     record_paper_read, get_paper_reads,
     create_review_job, finish_review_job, list_review_jobs, reclaim_stale_review_jobs,
     record_backup_cid, latest_backups, list_scilem_observations,
@@ -2068,7 +2071,8 @@ def open_reviews(request: Request, wallet: str = Query(default=""),
 
 
 @app.get("/api/assessments/{file_hash}/review")
-def review_state(file_hash: str):
+def review_state(file_hash: str, request: Request = None,
+                 wallet: str = Query(default=""), orcid: str = Query(default="")):
     """Public: which reviews exist, kept strictly separate by kind."""
     summary = review_summary(file_hash)
     # Split on is_llm (derived from reviewer_key), not on the verdict text. The
@@ -2077,6 +2081,38 @@ def review_state(file_hash: str):
     # endpoint then reported as human — leaving the modal empty.
     human = [r for r in summary["reviews"] if not r.get("is_llm")]
     machine = [r for r in summary["reviews"] if r.get("is_llm")]
+
+    # Attach the reply, the vote tally, and whether this caller may act — so
+    # the client can render the controls correctly without a second round trip
+    # per review, and without guessing at permissions it cannot enforce anyway.
+    viewer = auth.identity_from_request(request, wallet, orcid) if request else {}
+    viewer_key = (_profile_key(viewer.get("wallet", ""), viewer.get("orcid", ""))
+                  if viewer.get("verified") else "")
+    viewer_ids = (_identity_values(viewer.get("wallet", ""), viewer.get("orcid", ""))
+                  if viewer.get("verified") else [])
+
+    conn = get_db_connection()
+    try:
+        prow = conn.execute(
+            "SELECT user_id, author_openalex_id, published_by FROM papers_assessment "
+            "WHERE eval_hash = ?", (file_hash,)).fetchone()
+    except sqlite3.Error:
+        prow = None
+    finally:
+        conn.close()
+    paper_ids = [v for v in (prow or []) if v]
+    is_author = bool(viewer_ids) and any(v in paper_ids for v in viewer_ids)
+
+    replies = rebuttals_for_paper(file_hash)
+    for r in human + machine:
+        rid = r.get("id")
+        r["rebuttals"] = replies.get(rid, [])
+        r["rating"] = review_rating_summary(rid, viewer_key) if rid else {
+            "helpful": 0, "unhelpful": 0, "my_vote": None}
+        # A rebuttal is the author's right of reply, so it is offered only to
+        # the author, only on a human review, and only once.
+        r["may_rebut"] = bool(is_author and not r.get("is_llm") and not r["rebuttals"])
+        r["may_rate"] = bool(viewer_key)
     return {
         **summary,
         "peer_reviewed": len(human) > 0,
@@ -2441,6 +2477,129 @@ REVIEW_REQUIREMENTS = [
      "text": ("Cover the claims against the evidence, the methodology, and reproducibility. Be "
               "direct about weaknesses — a report that praises everything is useless to a reader.")},
 ]
+
+
+class RebuttalRequest(BaseModel):
+    review_id: int
+    body: str = ""
+    wallet: str = ""
+    orcid: str = ""
+
+
+class RatingRequest(BaseModel):
+    review_id: int
+    value: int = 1              # +1 helpful, -1 not helpful
+    wallet: str = ""
+    orcid: str = ""
+
+
+class ReportRequest(BaseModel):
+    review_id: int
+    reason: str = ""
+    detail: str = ""
+    wallet: str = ""
+    orcid: str = ""
+
+
+@app.post("/api/reviews/rebut")
+def rebut_review(payload: RebuttalRequest, request: Request):
+    """Reply to a review of your own paper.
+
+    The review is never edited or removed. A rebuttal is published beside it,
+    so a reader sees the criticism and the author's answer together — an author
+    who could suppress a review they disliked would make the Peer-reviewed
+    badge meaningless, and one who cannot answer at all is being judged without
+    a right of reply.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+
+    info = review_owner_key(payload.review_id)
+    if not info or not info.get("completed"):
+        raise HTTPException(status_code=404, detail="No completed review with that id.")
+
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    identities = _identity_values(identity["wallet"], identity["orcid"])
+    # Only the paper's author may reply. Anyone else arguing with a review in
+    # the author's slot would be a comment section, which is a different
+    # feature with different moderation needs.
+    if not any(v in info["paper_identities"] for v in identities):
+        raise HTTPException(
+            status_code=403,
+            detail=("Only the author of the paper can reply to a review of it. If the paper is "
+                    "yours, claim authorship first — the same check that gates publishing."))
+
+    result = add_review_rebuttal(payload.review_id, info["eval_hash"], key, payload.body)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+    add_log(f"Rebuttal filed on review {payload.review_id} for {info['eval_hash'][:12]}…")
+    return {"submitted": True,
+            "message": ("Your reply is published beneath the review. The review itself is "
+                        "unchanged — readers see both.")}
+
+
+@app.post("/api/reviews/rate")
+def rate_review_endpoint(payload: RatingRequest, request: Request):
+    """Mark a review helpful or unhelpful. One vote per identity, changeable."""
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+
+    info = review_owner_key(payload.review_id)
+    if not info or not info.get("completed"):
+        raise HTTPException(status_code=404, detail="No completed review with that id.")
+
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    # A reviewer voting on their own review is the one vote that means nothing.
+    if key and key == info.get("reviewer_key"):
+        raise HTTPException(status_code=403, detail="You cannot rate your own review.")
+
+    result = rate_review(payload.review_id, key, payload.value)
+    if not result["ok"]:
+        raise HTTPException(status_code=503, detail=result["reason"])
+    return {"rated": True, "helpful": result["helpful"], "unhelpful": result["unhelpful"],
+            "my_vote": result["my_vote"]}
+
+
+@app.post("/api/reviews/report")
+def report_review_endpoint(payload: ReportRequest, request: Request):
+    """Flag a review for a moderator.
+
+    Deliberately separate from an unhelpful vote. "I disagree with this review"
+    and "this review is abusive or fabricated" are different claims, and
+    counting them together would bury the second under the volume of the first.
+    """
+    identity = require_identity(request, payload.wallet, payload.orcid)
+    check_rate_limit(get_client_ip(request), bucket="review")
+
+    info = review_owner_key(payload.review_id)
+    if not info or not info.get("completed"):
+        raise HTTPException(status_code=404, detail="No completed review with that id.")
+
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    result = report_review(payload.review_id, info["eval_hash"], key,
+                           payload.reason, payload.detail)
+    if not result["ok"]:
+        raise HTTPException(status_code=409, detail=result["reason"])
+    add_log(f"Review {payload.review_id} reported ({payload.reason}).")
+    return {"reported": True,
+            "message": ("Thank you. A moderator will look at this review. The review stays "
+                        "visible in the meantime — reports are not a way to hide criticism.")}
+
+
+@app.get("/api/reviews/report-reasons")
+def review_report_reasons():
+    """The grounds on which a review can be reported, published so the form
+    and any client agree on what is being claimed."""
+    return {"reasons": [{"id": k, "label": v} for k, v in REPORT_REASONS.items()],
+            "rebuttal_min_chars": REBUTTAL_MIN_CHARS}
+
+
+@app.get("/api/admin/review-reports")
+def admin_review_reports(request: Request, wallet: str = Query(default=""),
+                         include_resolved: bool = Query(default=False)):
+    """The moderation queue. Operator only."""
+    require_owner(request, wallet)
+    return {"reports": list_review_reports(include_resolved=include_resolved)}
 
 
 @app.get("/api/reviews/eligibility")

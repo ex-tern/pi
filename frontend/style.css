@@ -496,7 +496,22 @@ input::placeholder { color: var(--faint); }
    each holds, and the pagination controls stay pinned to the bottom of both
    rather than floating at different heights. */
 .leaderboard-card { display: flex; flex-direction: column; height: 100%; }
-.leaderboard-card .table-scroll { flex: 1 1 auto; }
+/* Both leaderboards scroll internally at the same capped height, so the two
+   cards end on the same line regardless of how many rows each holds.
+   `align-items: stretch` alone was not enough: it stretches the card, but the
+   taller table still set the row height for the grid, so the piX card (more
+   rows) dictated the height and the piQ card was padded with empty space.
+   Capping the scroll area makes the height a constant instead of a
+   consequence of the data. */
+.leaderboard-card .table-scroll {
+  flex: 1 1 auto; max-height: 420px; overflow-y: auto;
+}
+/* The header must stay put while the rows move under it, or a scrolled table
+   is a column of numbers with nothing saying what they are. */
+.leaderboard-card .table-scroll thead th {
+  position: sticky; top: 0; z-index: 1;
+  background: var(--card-bg); box-shadow: inset 0 -1px 0 var(--border);
+}
 .leaderboard-card .pagination { margin-top: auto; padding-top: 12px; }
 .lb-head h2 { margin-bottom: 4px; }
 
@@ -1104,6 +1119,36 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   .btn-icon-danger { min-height: 32px; padding: 6px 10px; }
 
   code.wrap, .addr-item code { word-break: break-all; }
+
+  /* Review controls: full-width rows rather than a wrapping pill bar. At this
+     width the three controls wrapped into a ragged two-and-a-half lines, and
+     "Report" — which should be the hardest to hit by accident — ended up
+     directly under the thumb next to the vote buttons. */
+  .review-controls { gap: 6px; }
+  .review-vote { flex: 1 1 auto; justify-content: center; min-height: 40px; }
+  .review-controls .btn { width: 100%; }
+  /* Report drops to its own line, still last and still visually quiet. */
+  .review-report {
+    margin-left: 0; width: 100%; justify-content: center; min-height: 40px;
+    border-color: var(--border);
+  }
+  .rebuttal { padding: 10px 12px; }
+
+  /* Both leaderboards shorten together, so they stay matched on a phone
+     without either one eating the whole screen. */
+  .leaderboard-card .table-scroll { max-height: 320px; }
+
+  /* The merged section headings need less air on a small screen — they are
+     separators, not page titles. */
+  .section-heading { font-size: 1.05rem; margin: 20px 0 10px; padding-top: 16px; }
+
+  /* The Explore table gained Reads and Review columns and no longer fits.
+     Rather than shrink every column to illegibility, the lowest-value ones
+     are dropped: the date and the read count are context, while the paper,
+     its score and its badges are the reason the table exists. */
+  .journal-table th:nth-child(6), .journal-table td:nth-child(6),
+  .journal-table th:nth-child(7), .journal-table td:nth-child(7) { display: none; }
+  .journal-table .hist-title { white-space: normal; }
 }
 
 @media (max-width: 560px) {
@@ -1113,6 +1158,25 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   .page-header h1 { font-size: 1.15rem; }
   .lb-head h2, .card h2 { font-size: 1rem; }
   .chart-wrap.chart-sized { height: 340px; }
+  .card { padding: 15px; }
+
+  /* Also drop the Author column. On a 360px screen the paper title was being
+     squeezed into about half the width by columns that matter less. */
+  .journal-table th:nth-child(2), .journal-table td:nth-child(2) { display: none; }
+
+  /* Stacked, so each control gets a full-width target instead of three
+     cramped ones sharing a line. */
+  .review-vote { flex: 1 1 100%; }
+
+  /* Badges wrap a lot at this width; tighten them so a row of three does not
+     become three rows. */
+  .seal { font-size: 10px; padding: 2px 6px 2px 3px; }
+  .result-pills { gap: 5px; }
+
+  /* A near-full-height sheet leaves room for the keyboard when a review is
+     being written, which is the longest form on the site. */
+  .modal { max-height: 94vh; padding: 14px; }
+  textarea.bug-input { min-height: 160px; }
 }
 
 /* Respect a user who has asked for less motion; the drawer slide is
@@ -1371,6 +1435,44 @@ a.btn { text-decoration: none; display: inline-block; }
    it is a weaker claim and should not compete with it visually. */
 .seal-llm { background: #f5f3ff; border-color: #c4b5fd; color: #5b21b6; }
 .seal-llm .seal-mark { background: #8b5cf6; color: #fff; }
+
+/* --- Review controls: rate, refute, report ----------------------------- */
+.review-controls {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px;
+  margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border);
+}
+.review-vote, .review-report {
+  display: inline-flex; align-items: center; gap: 5px;
+  background: #fff; border: 1px solid var(--border-strong); border-radius: 999px;
+  padding: 6px 13px; font-family: inherit; font-size: 12px; font-weight: 600;
+  color: var(--text); cursor: pointer; min-height: 34px;
+  transition: border-color 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+.review-vote:hover { border-color: var(--accent); color: var(--accent); }
+.review-vote.is-on { border-color: var(--accent); background: var(--accent-soft); color: var(--accent); }
+.review-vote span { font-variant-numeric: tabular-nums; opacity: 0.75; }
+.review-vote:disabled { opacity: 0.5; cursor: wait; }
+/* Report sits apart from the votes: it is a different kind of act, and it
+   should take a deliberate moment to reach rather than sitting under the
+   thumb next to "not useful". */
+.review-report {
+  margin-left: auto; border-color: transparent; color: var(--faint);
+  font-weight: 500;
+}
+.review-report:hover { color: var(--danger); border-color: var(--danger); }
+
+/* The author's reply, nested under the review it answers so the reading order
+   is criticism-then-response rather than two free-floating opinions. */
+.rebuttal {
+  margin: 14px 0 0 0; padding: 12px 14px;
+  border-left: 3px solid var(--accent); border-radius: 0 8px 8px 0;
+  background: var(--accent-soft, #f1f5f9);
+}
+.rebuttal-head {
+  font-size: 12px; font-weight: 700; color: var(--accent);
+  margin-bottom: 6px; display: flex; justify-content: space-between; gap: 10px;
+}
+.rebuttal-date { font-weight: 500; color: var(--faint); }
 
 /* Reads. A count, not a claim — so it is the quietest pill on the row and
    carries no colour that could read as approval. */

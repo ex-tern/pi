@@ -299,36 +299,80 @@ def generate_field(seed: int, overlay: Optional[List] = None,
         for name in fields:
             quota.append([name, max(1, FIELD_SIZE // len(fields))])
 
-    # Reconcile rounding against FIELD_SIZE exactly, largest field absorbing
-    # the slack. The field must be exactly FIELD_SIZE bubbles or verification
-    # and the client disagree about what exists.
+    # Reconcile against FIELD_SIZE exactly. The field must be exactly
+    # FIELD_SIZE bubbles or verification and the client disagree about what
+    # exists.
+    #
+    # The slack is spread round-robin rather than handed to the largest field.
+    # Giving it all to the biggest defeated the max_share cap entirely: with
+    # two very uneven fields the cap allotted 75% of the map, and then the
+    # reconciliation immediately topped that field back up to 96% because it
+    # was the one holding the remainder. A cap that the next step can undo is
+    # not a cap.
+    #
+    # Dealing round-robin from the smallest field up also puts the spare slots
+    # where they do the most good — the fields at risk of being invisible —
+    # while keeping the ordering intact, since it never moves a field past one
+    # that started with more.
     allocated = sum(n for _, n in quota)
-    if allocated != FIELD_SIZE and quota:
-        biggest = max(range(len(quota)), key=lambda i: (weights[quota[i][0]], quota[i][0]))
-        quota[biggest][1] = max(1, quota[biggest][1] + (FIELD_SIZE - allocated))
-        allocated = sum(n for _, n in quota)
-        while allocated > FIELD_SIZE:                 # trim from the largest
-            for q in sorted(quota, key=lambda q: -q[1]):
+    if quota:
+        order = sorted(range(len(quota)),
+                       key=lambda i: (quota[i][1], weights.get(quota[i][0], 0), quota[i][0]))
+        cursor = 0
+        while allocated < FIELD_SIZE:
+            quota[order[cursor % len(order)]][1] += 1
+            allocated += 1
+            cursor += 1
+        # Trim from the largest first, and never below one, so no assessed
+        # field is removed from the map by a rounding correction.
+        while allocated > FIELD_SIZE:
+            trimmed = False
+            for i in sorted(range(len(quota)), key=lambda i: -quota[i][1]):
                 if allocated == FIELD_SIZE:
                     break
-                if q[1] > 1:
-                    q[1] -= 1
+                if quota[i][1] > 1:
+                    quota[i][1] -= 1
                     allocated -= 1
+                    trimmed = True
+            if not trimmed:
+                # Every field is down to a single bubble and there are still
+                # more fields than slots. Nothing further can be given back
+                # without dropping a field, so the field is left slightly
+                # larger rather than silently losing a discipline.
+                break
 
-    # --- Mass ladder, ordered by paper count ----------------------------
-    # Every slot on the ladder is assigned to a field in ascending order of
-    # papers, so a field with more assessed work is systematically a bigger,
-    # heavier bubble. Size is now a reading of the corpus rather than an
-    # RNG draw with a small paper-count nudge on top.
+    # --- Mass ladder, stratified across fields --------------------------
+    # The ladder runs from small to large and is retained because it is what
+    # keeps the game playable: the smallest bubbles must sit below START_MASS
+    # or the player spawns unable to eat anything, and the largest must be
+    # reachable only after real growth.
     #
-    # The ladder itself is retained because it is what keeps the game
-    # playable: the smallest bubbles must sit below START_MASS or the player
-    # spawns unable to eat anything, and the largest must be reachable only
-    # after real growth.
-    slots = []
+    # What changed is WHO gets which rung. Slots used to be sorted by the
+    # field's paper count, which put every one of the busiest field's bubbles
+    # contiguously at the heavy end of the ladder. Combined with that field
+    # already having the most bubbles, and with the boost below multiplying
+    # them again, paper count was being applied three times over and the
+    # effects compounded: a field with 29% of the corpus took 56% of the
+    # visible map, and the top two fields took 83% between them. Eight of the
+    # twelve fields were left as specks.
+    #
+    # Each field's bubbles are now spread evenly across the whole ladder, so
+    # every field owns some small bubbles and some large ones. Field size
+    # still shows up honestly — as how MANY bubbles a field has, which is the
+    # quota above — but it no longer also decides how big each one is, which
+    # is what let a single subject swallow the map.
+    placed = []
     for name, n in quota:
-        slots.extend([name] * n)
-    slots.sort(key=lambda name: (weights.get(name, 0), name))
+        for k in range(n):
+            # Evenly spaced positions in [0, 1): a field with two bubbles gets
+            # one around a quarter of the way up the ladder and one around
+            # three quarters, rather than both at whatever rung its rank
+            # happened to fall on.
+            placed.append(((k + 0.5) / n, name))
+    # Ties broken by name so the field stays deterministic for a given seed,
+    # which run verification depends on.
+    placed.sort(key=lambda p: (p[0], p[1]))
+    slots = [name for _, name in placed]
 
     busiest = max(weights.values()) if weights else 0
     # Difficulty stretches the ladder rather than shifting it: the smallest
@@ -345,7 +389,16 @@ def generate_field(seed: int, overlay: Optional[List] = None,
         # like a bar chart, never enough to reorder two fields by size.
         jitter = 0.94 + rng.next_float() * 0.12
         papers = weights.get(name, 0)
-        boost = 1.0 + (0.35 * (papers / busiest)) if busiest else 1.0
+        # A gentle nudge, not a third application of paper count.
+        #
+        # At 0.35 this was the last of three compounding multipliers — the
+        # busiest field already had the most bubbles and the heaviest rungs,
+        # and then every one of its bubbles was scaled up another 35% on top.
+        # Because visible area goes as the square of the radius, a multiplier
+        # here costs roughly twice what it looks like it should. Kept small so
+        # a busier field reads as marginally weightier without that reading
+        # turning into ownership of the map.
+        boost = 1.0 + (0.10 * (papers / busiest)) if busiest else 1.0
         mass = round(base * jitter * boost, 3)
 
         field.append({
