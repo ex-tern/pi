@@ -633,16 +633,17 @@ function renderFeeNotice() {
     // Naming only the paid route here was a dead end for anyone unwilling to
     // connect a wallet — the arcade allowance existed and was never mentioned
     // at the one moment it is relevant, so users hit the wall and left.
+    // How many are left, not where they came from. Splitting the number into
+    // "12 free assessments available (9 earned on the Science Map)" invited the
+    // reader to track two pools that behave identically and are spent from the
+    // same counter.
     const remaining = freeRemaining();
-    const earned = trialStatus && trialStatus.bonus_allowance
-      ? ` (${trialStatus.bonus_allowance} earned on the Science Map)` : "";
     line.innerHTML = remaining > 0
       ? `<span class="fee-ok">${remaining} free assessment${remaining === 1 ? "" : "s"}
-         available${earned}. Winning a run on the
-         <a href="#" data-goto-tab="arcade">Science Map</a> earns more.</span>`
+         available. Winning a run on the
+         <a href="#" data-goto-tab="arcade">Science Map</a> earns piQ, which buys more.</span>`
       : `<span class="fee-warn">Free trial used. Connect a wallet or ORCID to continue —
-         or win a run on the <a href="#" data-goto-tab="arcade">Science Map</a> to earn more free
-         assessments.</span>`;
+         or win a run on the <a href="#" data-goto-tab="arcade">Science Map</a> to earn piQ.</span>`;
     return;
   }
   if (piqState.balance < fee) {
@@ -1457,6 +1458,19 @@ function renderResearchBuddy(profile) {
         fields is most crowded, where your work is most likely to be seen, and what to fix first.
         Nothing here is scored or shared — the profile only shapes advice.</p>
 
+        <!-- The second requirement, stated here because it is easy to satisfy
+             the profile and still see nothing. riB reads only the papers that
+             have been ticked, so an empty selection is as blocking as an empty
+             profile — and saying only one of the two would send the reader to
+             fix something that was not the problem. -->
+        <div class="buddy-onboard-step ${buddySelection.size ? "bc-done" : ""}">
+          <span class="bc-mark" aria-hidden="true">${buddySelection.size ? "✓" : "○"}</span>
+          <span><strong>Papers to read${buddySelection.size
+            ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the papers you want riB to
+            reason from, under <em>Your assessments</em>. It reads only what you choose, so it
+            never gives you advice assembled from someone else's work.</span>
+        </div>
+
         <button class="btn btn-primary" id="buddyGoProfile">Fill in your profile</button>
       </div>`;
 
@@ -1665,20 +1679,45 @@ function renderProfileSlots() {
   const active = profileSlots.find(p => p.active) || profileSlots[0] || null;
   activeSlotId = active ? active.id : null;
 
-  sel.innerHTML = profileSlots.length
-    ? profileSlots.map(p =>
-        `<option value="${p.id}"${p.active ? " selected" : ""}>${escapeHtml(p.name)}</option>`
-      ).join("")
-    : `<option value="">No saved profiles yet</option>`;
+  // The "new profile" action lives in the picker, after a separator, because
+  // choosing which profile to use and making another one are the same
+  // decision. `__new` is a sentinel rather than a real id — switchProfileSlot
+  // intercepts it before any request is made.
+  sel.innerHTML = (profileSlots.length
+      ? profileSlots.map(p =>
+          `<option value="${p.id}"${p.active ? " selected" : ""}>${escapeHtml(p.name)}</option>`
+        ).join("")
+      : `<option value="" selected>No saved profiles yet</option>`)
+    + `<option disabled>──────────</option>`
+    + `<option value="__new">+ New profile…</option>`;
   if (nameEl && active) nameEl.value = active.name;
 
   const del = document.getElementById("profileDeleteBtn");
   if (del) del.disabled = !profileSlots.length;
 }
 
+/** Begin a new, unsaved profile.
+ *
+ *  Nothing is written until Save, so choosing this can never lose what is
+ *  already stored — the previously active profile stays active on the server
+ *  until the new one is saved over it.
+ */
+function startNewProfile() {
+  activeSlotId = null;
+  writeProfileForm({});
+  const nameEl = document.getElementById("profileSlotName");
+  if (nameEl) { nameEl.value = ""; nameEl.focus(); }
+  const msg = document.getElementById("profileMsg");
+  if (msg) {
+    msg.textContent = "New profile — give it a name and save.";
+    msg.className = "profile-msg";
+  }
+}
+
 /** Switch the active profile and load it into the form. */
 async function switchProfileSlot(id) {
   if (!id) return;
+  if (id === "__new") { startNewProfile(); return; }
   try {
     const res = await fetch(`${API}/api/profiles/${encodeURIComponent(id)}/activate`, {
       method: "POST", headers: { "Content-Type": "application/json" },
@@ -1703,18 +1742,6 @@ async function switchProfileSlot(id) {
 {
   const sel = document.getElementById("profileSlotSelect");
   if (sel) sel.addEventListener("change", () => switchProfileSlot(sel.value));
-
-  const neu = document.getElementById("profileNewBtn");
-  if (neu) neu.addEventListener("click", () => {
-    // A new profile is an empty form plus a fresh name; nothing is written
-    // until Save, so clicking New cannot lose what is already stored.
-    activeSlotId = null;
-    writeProfileForm({});
-    const nameEl = document.getElementById("profileSlotName");
-    if (nameEl) { nameEl.value = ""; nameEl.focus(); }
-    const msg = document.getElementById("profileMsg");
-    if (msg) msg.textContent = "New profile — give it a name and save.";
-  });
 
   const del = document.getElementById("profileDeleteBtn");
   if (del) del.addEventListener("click", async () => {
@@ -1856,10 +1883,8 @@ function refreshAssessGate() {
         earn more.`;
       warn.classList.remove("hidden");
     } else {
-      const earned = bonus_allowance
-        ? ` (${bonus_allowance} earned in the Science Map)` : "";
       warn.innerHTML = `<strong>${remaining} of ${documents_allowed} free assessments
-        remaining</strong>${earned} on this connection. Re-assessing a paper you have already
+        remaining</strong> on this connection. Re-assessing a paper you have already
         submitted is always free.`;
       warn.classList.remove("hidden");
     }
@@ -3280,6 +3305,9 @@ async function showReportReviewModal(hash, reviewId, reopen) {
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
       openModal(`<h2>Report submitted</h2>
         <p class="lede">${escapeHtml(data.message || "A moderator will look at this review.")}</p>`);
+      // If the operator is the one reporting, their queue should show it now
+      // rather than on the next sign-in.
+      loadOwnerReviewReports();
     } catch (e) {
       msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
       submit.disabled = false; submit.textContent = "Submit report";
@@ -5827,42 +5855,6 @@ function escapeHtml(s) {
 // PROFILE RESET / ASSESSMENT HISTORY / BUG REPORTS
 // ---------------------------------------------------------------------------
 
-/** Clear the stored profile, server-side and locally.
- *
- *  Both copies must go. Clearing only the server row leaves the localStorage
- *  draft to repopulate the form on the next load, which reads as the reset
- *  having silently failed; clearing only the draft leaves the server still
- *  framing diagnostics with a profile the user believes is gone.
- */
-async function resetProfile() {
-  const btn = document.getElementById("profileResetBtn");
-  const msg = document.getElementById("profileMsg");
-  if (!confirm("Clear your saved research profile?\n\nYour field, goal, ideas and abstract will "
-             + "be deleted. Assessments you have already run are not affected.")) return;
-
-  btn.disabled = true;
-  const prev = btn.textContent;
-  btn.textContent = "Clearing…";
-  try {
-    if (Session.hasIdentity()) {
-      const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
-      const res = await fetch(`${API}/api/profile?${qs}`, { method: "DELETE" });
-      const data = await res.json().catch(() => ({}));
-      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      msg.textContent = data.message || "Profile cleared.";
-    } else {
-      msg.textContent = "Local draft cleared.";
-    }
-    localStorage.removeItem("sp_profile");
-    writeProfileForm({ field: "", goal: "", idea: "", abstract: "" });
-    loadBuddyCorpus();
-  } catch (e) {
-    msg.textContent = `Could not clear the profile: ${e.message}`;
-  } finally {
-    btn.disabled = false;
-    btn.textContent = prev;
-  }
-}
 
 /** The piQ figure for one history row.
  *
@@ -6225,11 +6217,24 @@ async function openBugReport() {
     status = await (await fetch(`${API}/api/bug-report/status`)).json();
   } catch (_) { /* the form still works; it just cannot promise email */ }
 
+  const kinds = (status.kinds && status.kinds.length) ? status.kinds : [
+    { id: "bug", label: "Something is broken" },
+    { id: "suggestion", label: "An idea or suggestion" },
+  ];
+
   openModal(`
-    <h2>Report a bug</h2>
+    <h2>Contact us</h2>
     <p class="hint">${escapeHtml(status.note || "")}</p>
     <form class="bug-form" id="bugForm" novalidate>
-      <label class="bug-label" for="bugMessage">What went wrong?</label>
+      <!-- What kind of message this is, asked first: it changes what the
+           prompt below should ask for, and a single "What went wrong?" field
+           quietly told anyone with an idea that this was not the place. -->
+      <label class="bug-label" for="bugKind">What is this about?</label>
+      <select class="bug-input" id="bugKind">
+        ${kinds.map(k => `<option value="${escapeHtml(k.id)}">${escapeHtml(k.label)}</option>`).join("")}
+      </select>
+
+      <label class="bug-label" for="bugMessage" id="bugMessageLabel">What went wrong?</label>
       <textarea class="bug-input" id="bugMessage" rows="6" maxlength="5000" required
         placeholder="What were you doing, what did you expect, and what happened instead? If you saw an error reference, paste it here."></textarea>
       <div class="bug-counter"><span id="bugCount">0</span> / 5000</div>
@@ -6240,7 +6245,7 @@ async function openBugReport() {
              placeholder="you@example.com" autocomplete="email">
 
       <div class="modal-actions">
-        <button type="submit" class="btn btn-primary" id="bugSendBtn" disabled>Send report</button>
+        <button type="submit" class="btn btn-primary" id="bugSendBtn" disabled>Send</button>
         <button type="button" class="btn btn-outline" id="bugCancelBtn">Cancel</button>
         <span class="profile-msg" id="bugMsg"></span>
       </div>
@@ -6248,6 +6253,25 @@ async function openBugReport() {
 
   const form = document.getElementById("bugForm");
   const message = document.getElementById("bugMessage");
+  const kindEl = document.getElementById("bugKind");
+
+  // Asking "what went wrong?" of someone submitting an idea is a small thing
+  // that tells them the form was not meant for them.
+  const PROMPTS = {
+    bug: ["What went wrong?",
+          "What were you doing, what did you expect, and what happened instead? "
+          + "If you saw an error reference, paste it here."],
+    suggestion: ["What would you like to see?",
+                 "What would you change or add, and what would it let you do that you "
+                 + "cannot do today?"],
+  };
+  const syncPrompt = () => {
+    const [label, placeholder] = PROMPTS[kindEl.value] || PROMPTS.bug;
+    document.getElementById("bugMessageLabel").textContent = label;
+    message.placeholder = placeholder;
+  };
+  kindEl.addEventListener("change", syncPrompt);
+  syncPrompt();
   const sendBtn = document.getElementById("bugSendBtn");
   const counter = document.getElementById("bugCount");
 
@@ -6308,13 +6332,14 @@ async function submitBugReport() {
         // Which tab they were on is the single most useful piece of context
         // for reproducing a report, and the cheapest to collect.
         page: (document.querySelector(".tab-btn.active") || {}).dataset?.tab || "",
+        kind: kindEl.value,
         wallet: Session.wallet, orcid: Session.orcid,
       }),
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
     document.getElementById("modalBody").innerHTML = `
-      <h2>Report sent</h2>
+      <h2>Message sent</h2>
       <p>${escapeHtml(data.message || "Thank you.")}</p>
       <p class="hint">Reference <code>#${escapeHtml(String(data.id))}</code> — quote this if you
       follow up.</p>`;
@@ -6786,22 +6811,28 @@ async function loadOwnerBugReports() {
     // The badge counts UNDELIVERED reports, not all of them. A delivered
     // report is already in the maintainer's inbox; the number that should
     // pull attention is the one for reports that exist only here.
+    const ideas = reports.filter(r => r.kind === "suggestion").length;
+    const bugs = reports.length - ideas;
     if (badge) {
-      badge.textContent = data.undelivered || 0;
+      badge.textContent = reports.length;
       badge.className = data.undelivered ? "pill q-warn" : "pill pill-muted";
-      badge.title = `${data.undelivered || 0} report${data.undelivered === 1 ? "" : "s"} `
-                  + `not delivered by email · ${data.count || 0} total`;
+      badge.title = `${bugs} bug report${bugs === 1 ? "" : "s"}, ${ideas} `
+                  + `suggestion${ideas === 1 ? "" : "s"} · ${data.undelivered || 0} not `
+                  + `delivered by email`;
     }
 
     if (!reports.length) {
-      body.innerHTML = `<p class="hint">No bug reports have been submitted.</p>`;
+      body.innerHTML = `<p class="hint">Nobody has sent a message yet.</p>`;
       return;
     }
 
     body.innerHTML = reports.map(r => `
-      <div class="owner-bug ${r.delivered ? "" : "owner-bug-undelivered"}">
+      <div class="owner-bug ${r.delivered ? "" : "owner-bug-undelivered"} ${
+        r.kind === "suggestion" ? "owner-bug-idea" : ""}">
         <div class="owner-bug-head">
-          <span class="owner-bug-when">${escapeHtml((r.created_at || "").slice(0, 16))}</span>
+          <span class="owner-bug-when">
+            <span class="owner-bug-kind">${r.kind === "suggestion" ? "idea" : "bug"}</span>
+            ${escapeHtml((r.created_at || "").slice(0, 16))}</span>
           <span class="owner-bug-state">${r.delivered
             ? "emailed"
             : `<strong>not emailed</strong>`}</span>
@@ -6819,7 +6850,7 @@ async function loadOwnerBugReports() {
   } catch (e) {
     // Kept visible with the reason. A blank panel would be indistinguishable
     // from "no bugs reported", which is the one wrong thing it could say.
-    body.innerHTML = `<p class="hint">Could not load bug reports (${
+    body.innerHTML = `<p class="hint">Could not load messages (${
       escapeHtml(e.message)}).</p>`;
   }
 }
@@ -6886,7 +6917,6 @@ document.getElementById("profileSaveBtn").addEventListener("click", saveProfile)
   ta.addEventListener("input", sync);
   sync();
 })();
-document.getElementById("profileResetBtn").addEventListener("click", resetProfile);
 document.getElementById("bugReportBtn").addEventListener("click", openBugReport);
 initSidebar();
 loadAssessmentHistory();

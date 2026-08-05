@@ -65,7 +65,7 @@ from database import (
     list_profile_slots, save_profile_slot, activate_profile_slot, delete_profile_slot,
     MAX_PROFILE_SLOTS,
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
-    store_bug_report, mark_bug_report_delivered, list_bug_reports,
+    store_bug_report, mark_bug_report_delivered, list_bug_reports, CONTACT_KINDS,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
@@ -1169,7 +1169,18 @@ def arcade_finish(payload: ArcadeRun, request: Request):
 
     # No time cooldown: a win is rewarded when it happens. The lifetime cap and
     # the difficulty ramp are what bound the faucet.
-    grant = grant_bonus_evals(ip, arcade.REWARD_PER_WIN, arcade.BONUS_CAP)
+    # A win pays in piQ, and only in piQ.
+    #
+    # It used to ALSO grant free assessments, so one reward was reported twice
+    # in two different units — "+3 free assessments" beside "+1.00 piQ" — and a
+    # player could not say what a win was worth. piQ is what buys an
+    # assessment, so the piQ credit already is the free assessment; granting
+    # both was paying twice for the same thing and describing it confusingly.
+    #
+    # `grant` is retained as a zeroed shape rather than removed, so the
+    # response keeps its fields and any older client reading `granted` sees a
+    # truthful zero instead of a missing key.
+    grant = {"granted": 0, "bonus": get_bonus_evals(ip)}
     
     # --- piQ reward -------------------------------------------------------
     # Credited through refund_piq_fee (a plain positive ledger entry against the
@@ -1224,23 +1235,16 @@ def arcade_finish(payload: ArcadeRun, request: Request):
                    "account, and this run was submitted without a proven session. If you are "
                    "signed in, re-link and play again.")
         else:
-            why = (f"This connection has already earned the maximum {arcade.BONUS_CAP} bonus "
-                   f"assessments, and the piQ credit did not go through. Nothing was taken "
-                   f"from you.")
+            why = ("The piQ credit did not go through. Nothing was taken from you — "
+                   "play again, and please report it if it keeps happening.")
         return {**result, "granted": 0, "bonus_total": grant["bonus"],
                 "piq_awarded": 0.0, "piq_balance": balance_after, "signed_in": signed_in,
                 "message": "You won, but nothing could be credited for it. " + why}
 
-    logging.info("Arcade win from %s granted %s free assessments and %s piQ (difficulty now %s)",
-                 ip, grant["granted"], piq_reward, progress["difficulty_level"])
+    logging.info("Arcade win from %s credited %s piQ (difficulty now %s)",
+                 ip, piq_reward, progress["difficulty_level"])
 
-    parts = []
-    if grant["granted"]:
-        parts.append(f"{grant['granted']} free assessment"
-                     f"{'s' if grant['granted'] != 1 else ''}")
-    if credited:
-        parts.append(f"{piq_reward:.2f} piQ")
-    earned = " and ".join(parts) if parts else "nothing"
+    earned = f"{piq_reward:.2f} piQ" if credited else "nothing"
 
     return {**result, "granted": grant["granted"], "bonus_total": grant["bonus"],
             "piq_awarded": piq_reward if credited else 0.0,
@@ -3264,6 +3268,9 @@ class BugReport(BaseModel):
     message: str
     contact: str = ""
     page: str = ""
+    # "bug" or "suggestion". Defaults to bug so an older client, which has no
+    # such field, keeps behaving exactly as it did.
+    kind: str = "bug"
     wallet: str = ""
     orcid: str = ""
 
@@ -3271,7 +3278,10 @@ class BugReport(BaseModel):
 @app.get("/api/bug-report/status")
 def bug_report_status():
     """What the form should promise before the user types anything."""
-    return bugreport.delivery_status()
+    # Kinds travel with the status so the form and the store share one
+    # vocabulary rather than each hardcoding its own.
+    return {**bugreport.delivery_status(),
+            "kinds": [{"id": k, "label": v} for k, v in CONTACT_KINDS.items()]}
 
 
 @app.post("/api/bug-report")
@@ -3291,11 +3301,13 @@ def submit_bug_report(payload: BugReport, request: Request):
     if problem:
         raise HTTPException(status_code=400, detail=problem)
 
+    kind = payload.kind if payload.kind in CONTACT_KINDS else "bug"
     key = _profile_key(payload.wallet, payload.orcid)
     report = bugreport.normalise(
         message=payload.message, contact=payload.contact, identity=key,
         page=payload.page, user_agent=request.headers.get("user-agent", ""),
     )
+    report["kind"] = kind
     # The raw IP is not stored: a bug report is not an abuse signal, and
     # keeping one would attach an identifier to a complaint for no operational
     # reason. The hash still supports rate limiting and duplicate detection.
@@ -3308,7 +3320,8 @@ def submit_bug_report(payload: BugReport, request: Request):
         raise HTTPException(status_code=500,
                             detail="The report could not be saved. Please try again.") from e
 
-    add_log(f"Bug report #{report['id']} received ({len(report['message'])} chars).")
+    add_log(f"Contact message #{report['id']} received ({kind}, "
+            f"{len(report['message'])} chars).")
     bugreport.send_async(report, on_result=lambda rid, res: mark_bug_report_delivered(
         rid, res["sent"], res.get("error") or ""))
 
@@ -3317,8 +3330,10 @@ def submit_bug_report(payload: BugReport, request: Request):
         "received": True,
         "id": report["id"],
         "emailed": emailed,
+        "kind": kind,
         "message": (
-            f"Thank you — report #{report['id']} was saved"
+            f"Thank you — {'suggestion' if kind == 'suggestion' else 'report'} "
+            f"#{report['id']} was saved"
             + (" and is being emailed to the maintainer." if emailed
                else ". Email delivery is not configured on this deployment, so it is stored "
                     "on the server for the maintainer to read.")

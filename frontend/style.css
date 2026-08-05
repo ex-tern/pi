@@ -275,6 +275,10 @@ input::placeholder { color: var(--faint); }
 /* Fee notice */
 .fee-notice { border: 1px solid var(--border); background: #fbfcfe; border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; }
 .fee-notice-main { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+/* The amount and its label are one sentence; the wrapper keeps them together
+   so a wrap breaks after the phrase rather than between the number and what it
+   refers to. */
+.fee-line { display: inline; }
 .fee-amount { font-size: 1.05rem; font-weight: 700; color: var(--accent); }
 .fee-label { font-size: 12.5px; color: var(--muted); }
 .fee-notice-bal { font-size: 12px; margin-top: 6px; }
@@ -1479,7 +1483,18 @@ a.btn { text-decoration: none; display: inline-block; }
 .opt-head { display: flex; align-items: center; justify-content: space-between;
   gap: 10px; margin-bottom: 6px; }
 .opt-card p { font-size: 12.5px; line-height: 1.6; margin: 0 0 10px; color: var(--muted); }
+/* Same size and rhythm as `.opt-card p` above. These notices sit inside the
+   same card as that body text, and inheriting the larger base size made them
+   read as a heading for the paragraph beneath rather than as a sibling of it.
+   The colour and weight still mark them as status, which is the distinction
+   that was actually wanted. */
+.opt-done, .opt-inactive {
+  font-size: 12.5px; line-height: 1.6; margin: 0 0 10px;
+}
 .opt-done { color: var(--success); font-weight: 600; }
+.opt-done strong, .opt-inactive strong { font-weight: 700; }
+/* A hint nested inside a status notice should not shrink again relative to it. */
+.opt-done .hint, .opt-inactive .hint { font-size: 12.5px; line-height: 1.6; }
 .opt-radio { display: flex; gap: 9px; align-items: flex-start; font-size: 12.5px;
   line-height: 1.55; margin-bottom: 10px; font-weight: 400; }
 .opt-radio input { margin-top: 3px; flex-shrink: 0; }
@@ -1822,23 +1837,51 @@ button.seal { font-family: inherit; cursor: pointer; }
 
 /* The field-paper list sits in the map's column, on the row under the canvas,
    so it appears where the bubble that opened it is — not below the taller
-   side panel with a screen of empty space above it. */
-#arcadeFieldPapers { grid-column: 1; margin: 12px 0 0; }
-@media (max-width: 900px) {
-  /* Single-column layout: normal document flow already puts it under the map. */
-  #arcadeFieldPapers { grid-column: auto; }
+   side panel with a screen of empty space above it.
+
+   Every item is placed EXPLICITLY rather than left to auto-placement. The list
+   sits between the canvas and the side panel in the DOM, so with auto-placement
+   the panel took the next free slot after it — which is row 2 — and the whole
+   Filters column jumped downwards the moment a bubble was clicked. Pinning the
+   panel to row 1 and letting it span both rows keeps it still whether the list
+   is showing or not.
+
+   Only applies where the two-column grid exists; below 900px the layout is a
+   single column and normal document flow already puts the list under the map. */
+#arcadeFieldPapers { margin: 12px 0 0; }
+@media (min-width: 901px) {
+  .arcade-canvas-wrap { grid-column: 1; grid-row: 1; }
+  #arcadeFieldPapers  { grid-column: 1; grid-row: 2; }
+  .arcade-side        { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
 }
 
 /* --- Named research profiles ------------------------------------------- */
+/* Two equal fields on one row, sized and labelled exactly like the profile
+   fields below them — the picker was a short inline-select beside a wide bare
+   input and two buttons, which read as four unrelated widgets rather than as
+   part of the same form. */
 .profile-slots {
-  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px;
-  margin: 0 0 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+  display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px;
+  margin: 0 0 18px; padding-bottom: 16px; border-bottom: 1px solid var(--border);
 }
-.profile-slots .ex-ctl { margin: 0; }
-.profile-slots .inline-select { min-width: 160px; }
-.profile-name-input { flex: 1 1 180px; min-width: 140px; margin: 0; }
-.profile-slots .btn { padding: 8px 12px; font-size: 12px; }
-@media (max-width: 620px) {
-  .profile-slots { flex-direction: column; align-items: stretch; }
-  .profile-slots .btn, .profile-slots .inline-select { width: 100%; }
+.profile-slot-field label {
+  display: block; font-size: 12px; font-weight: 600; color: var(--text);
+  margin-bottom: 5px;
 }
+/* Inherit the shared input rule rather than restating it, so these two fields
+   cannot drift from the rest of the form. */
+.profile-slot-field select,
+.profile-slot-field input[type="text"] { width: 100%; margin-bottom: 0; }
+@media (max-width: 620px) { .profile-slots { grid-template-columns: 1fr; } }
+
+/* Contact messages in the owner panel. A suggestion is not a fault report, so
+   it gets a different accent — the queue mixes both and the operator should be
+   able to tell at a glance which is which without reading. */
+.owner-bug-kind {
+  display: inline-block; margin-right: 6px; padding: 0 5px;
+  border-radius: 4px; font-size: 9.5px; font-weight: 700;
+  text-transform: uppercase; letter-spacing: 0.05em;
+  background: var(--border); color: var(--text);
+}
+.owner-bug-idea { border-left: 3px solid var(--accent); }
+.owner-bug-idea .owner-bug-kind { background: var(--accent-soft, #e0e7ff); color: var(--accent); }

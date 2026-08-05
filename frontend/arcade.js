@@ -559,7 +559,7 @@
     }
     if (!data.valid) {
       setMessage("Run rejected: " + (data.reason || "verification failed") + ".", "bad");
-    } else if (data.granted > 0 || Number(data.piq_awarded) > 0) {
+    } else if (Number(data.piq_awarded) > 0) {
       // A win that credits something says so in full, including the new
       // balance. Previously the piQ was credited server-side and nothing on
       // screen was refreshed, so a real payout was indistinguishable from no
@@ -642,18 +642,22 @@
     document.getElementById("arcadeOverlayTitle").textContent = won ? "Field absorbed" : "Consumed";
     const mass = (data && data.final_mass) || Math.round(state.player ? state.player.mass : 0);
     const eatenLive = state.bubbles.filter(b => b.eaten && b.live).length;
+    // One line about the run, not three saying the same thing.
+    //
+    // "Absorbed 90 of 90 fields." and "Absorbed 90 fields, 69 of them carrying
+    // real papers." were the same sentence twice, with the second silently
+    // dropping the denominator. Merged into one statement that carries both
+    // numbers.
     const parts = [
-      `Absorbed <strong>${state.absorbed.length}</strong> of ${state.bubbles.length} fields.`,
+      `Absorbed <strong>${state.absorbed.length}</strong> of ${state.bubbles.length} fields`
+        + (eatenLive ? `, <strong>${eatenLive}</strong> of them carrying real papers.` : "."),
       `Final mass <strong>${mass}</strong>.`,
-      `Absorbed <strong>${state.absorbed.length}</strong> fields` +
-        (eatenLive ? `, ${eatenLive} of them carrying real papers.` : "."),
     ];
-    // Say exactly what landed, and where. "+3 free assessments" alone left a
-    // player who had also earned piQ with no confirmation it had been credited.
+    // A win pays in piQ. The free-assessment grant is deliberately NOT
+    // announced: piQ is what buys an assessment, so reporting both made one
+    // reward look like two, in two different units, and left a player unable
+    // to say what a win is actually worth.
     const piq = Number((data && data.piq_awarded) || 0);
-    if (data && data.granted > 0) {
-      parts.push(`<span class="arcade-reward">+${data.granted} free assessments unlocked.</span>`);
-    }
     if (piq > 0) {
       parts.push(`<span class="arcade-reward">+${piq.toFixed(2)} piQ credited to your balance`
         + (data.piq_balance != null
@@ -661,7 +665,7 @@
             : ".")
         + `</span>`);
     }
-    if (!(data && (data.granted > 0 || piq > 0)) && won && data && data.message) {
+    if (!(data && piq > 0) && won && data && data.message) {
       parts.push(data.message);
     } else if (!won) {
       parts.push("You ran into a larger field. Grow on the small ones first.");
