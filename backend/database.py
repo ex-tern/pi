@@ -359,6 +359,52 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_review_jobs_by ON review_jobs(requested_by)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_review_jobs_status ON review_jobs(status)")
 
+    # An author's reply to a review of their paper.
+    #
+    # Kept in its own table rather than as a column on peer_reviews, because a
+    # rebuttal is a separate authored statement with its own author and its own
+    # timestamp — not an edit to someone else's review. Reviews are never
+    # modified by the person they are about; the reply sits beside the review
+    # and both are shown.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS review_rebuttals (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        review_id INTEGER NOT NULL,
+                        eval_hash TEXT NOT NULL,
+                        author_key TEXT NOT NULL,
+                        body TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rebuttals_review ON review_rebuttals(review_id)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_rebuttals_hash ON review_rebuttals(eval_hash)")
+
+    # Was this review useful? One vote per identity per review, enforced by the
+    # primary key rather than by a check-then-insert, so two tabs cannot race
+    # into two votes. Stored as a value (+1/-1) rather than two counters, so a
+    # voter can change their mind and the row is simply overwritten.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS review_ratings (
+                        review_id INTEGER NOT NULL,
+                        voter_key TEXT NOT NULL,
+                        value INTEGER NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (review_id, voter_key))""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ratings_review ON review_ratings(review_id)")
+
+    # A report is a moderation signal, not a vote, and is deliberately a
+    # different thing from a downvote: "I disagree with this review" and "this
+    # review is abusive, fabricated, or conflicted" must not share a counter,
+    # or the second gets buried under the first.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS review_reports (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        review_id INTEGER NOT NULL,
+                        eval_hash TEXT DEFAULT '',
+                        reporter_key TEXT NOT NULL,
+                        reason TEXT NOT NULL,
+                        detail TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        resolved INTEGER DEFAULT 0)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_reports_review ON review_reports(review_id)")
+    cursor.execute("CREATE UNIQUE INDEX IF NOT EXISTS idx_reports_once "
+                   "ON review_reports(review_id, reporter_key)")
+
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eval_hash ON papers_assessment(eval_hash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eth_book ON papers_assessment(eth_book)")
     try:
@@ -1972,8 +2018,11 @@ def review_summary(eval_hash: str) -> dict:
         # counted `reviewer_key = 'llm:panel'` — two definitions of the same
         # fact, which disagreed on any row where the verdict was stored without
         # the prefix. The badge appeared and the review list came back empty.
+        # `id` is selected so a review can be replied to, rated or reported.
+        # Without it the client had no handle on an individual review and could
+        # only ever address the paper as a whole.
         rows = conn.execute(
-            """SELECT verdict, comment, completed_at, reviewer_key FROM peer_reviews
+            """SELECT verdict, comment, completed_at, reviewer_key, id FROM peer_reviews
                WHERE eval_hash = ? AND completed_at IS NOT NULL
                ORDER BY completed_at DESC""", (eval_hash,)).fetchall()
         pending = conn.execute(
@@ -1992,10 +2041,184 @@ def review_summary(eval_hash: str) -> dict:
         # `is_llm` is the one exception, and it is not an identity — the panel
         # is not a person, and a reader must be able to tell machine from human.
         "reviews": [{
+            "id": r[4],
             "verdict": r[0], "comment": r[1], "completed_at": r[2],
             "is_llm": (r[3] == "llm:panel") or str(r[0] or "").startswith("llm"),
         } for r in rows],
     }
+
+
+REBUTTAL_MIN_CHARS = 120
+REPORT_REASONS = {
+    "fabricated": "The review shows no sign of having read the manuscript",
+    "abusive": "Abusive, demeaning, or unprofessional language",
+    "conflict": "The reviewer appears to have a conflict of interest",
+    "identifying": "The review reveals the reviewer's or author's identity",
+    "offtopic": "The review is about something other than this manuscript",
+    "other": "Something else",
+}
+
+
+def review_owner_key(review_id: int) -> dict:
+    """Who wrote the paper a review is about, and who wrote the review.
+
+    Both are needed to decide who may reply and who may vote: the author of the
+    paper is the only person who can rebut, and the author of the review is the
+    one person who must not be able to vote it up.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT r.eval_hash, r.reviewer_key, r.completed_at,
+                      p.user_id, p.author_openalex_id, p.published_by
+               FROM peer_reviews r
+               LEFT JOIN papers_assessment p ON p.eval_hash = r.eval_hash
+               WHERE r.id = ?""", (int(review_id),)).fetchone()
+    except (sqlite3.Error, ValueError, TypeError):
+        return {}
+    finally:
+        conn.close()
+    if not row:
+        return {}
+    return {"eval_hash": row[0], "reviewer_key": row[1] or "", "completed": bool(row[2]),
+            "paper_identities": [v for v in (row[3], row[4], row[5]) if v]}
+
+
+def add_review_rebuttal(review_id: int, eval_hash: str, author_key: str, body: str) -> dict:
+    """Record an author's reply to a review. One reply per author per review.
+
+    The review itself is never touched. A rebuttal is a second statement placed
+    next to the first, so a reader sees the criticism and the answer to it —
+    letting an author edit or suppress a review they disagree with would make
+    the Peer-reviewed badge worthless.
+    """
+    body = (body or "").strip()
+    if len(body) < REBUTTAL_MIN_CHARS:
+        return {"ok": False, "reason": (
+            f"A reply needs at least {REBUTTAL_MIN_CHARS} characters. A rebuttal that does not "
+            f"say what it disputes is not a rebuttal.")}
+    conn = get_db_connection()
+    try:
+        existing = conn.execute(
+            "SELECT 1 FROM review_rebuttals WHERE review_id = ? AND author_key = ? LIMIT 1",
+            (int(review_id), author_key)).fetchone()
+        if existing:
+            return {"ok": False, "reason": "You have already replied to this review."}
+        conn.execute(
+            """INSERT INTO review_rebuttals (review_id, eval_hash, author_key, body)
+               VALUES (?, ?, ?, ?)""",
+            (int(review_id), eval_hash, author_key, body[:6000]))
+        conn.commit()
+        return {"ok": True, "reason": ""}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not save rebuttal: %s", e)
+        return {"ok": False, "reason": "The reply could not be saved."}
+    finally:
+        conn.close()
+
+
+def rate_review(review_id: int, voter_key: str, value: int) -> dict:
+    """Record a usefulness vote. One per identity, changeable."""
+    value = 1 if int(value or 0) > 0 else -1
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO review_ratings (review_id, voter_key, value)
+               VALUES (?, ?, ?)
+               ON CONFLICT(review_id, voter_key)
+               DO UPDATE SET value = excluded.value, created_at = CURRENT_TIMESTAMP""",
+            (int(review_id), voter_key, value))
+        conn.commit()
+        return {"ok": True, "reason": "", **review_rating_summary(review_id, voter_key)}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not record review rating: %s", e)
+        return {"ok": False, "reason": "The rating could not be saved."}
+    finally:
+        conn.close()
+
+
+def review_rating_summary(review_id: int, voter_key: str = "") -> dict:
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT COALESCE(SUM(CASE WHEN value > 0 THEN 1 ELSE 0 END), 0),
+                      COALESCE(SUM(CASE WHEN value < 0 THEN 1 ELSE 0 END), 0)
+               FROM review_ratings WHERE review_id = ?""", (int(review_id),)).fetchone()
+        mine = None
+        if voter_key:
+            m = conn.execute(
+                "SELECT value FROM review_ratings WHERE review_id = ? AND voter_key = ?",
+                (int(review_id), voter_key)).fetchone()
+            mine = int(m[0]) if m else None
+    except (sqlite3.Error, ValueError, TypeError):
+        return {"helpful": 0, "unhelpful": 0, "my_vote": None}
+    finally:
+        conn.close()
+    return {"helpful": int(row[0] or 0), "unhelpful": int(row[1] or 0), "my_vote": mine}
+
+
+def report_review(review_id: int, eval_hash: str, reporter_key: str,
+                  reason: str, detail: str = "") -> dict:
+    """Flag a review for a moderator. One report per identity per review."""
+    if reason not in REPORT_REASONS:
+        return {"ok": False, "reason": "Choose a reason for the report."}
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """INSERT INTO review_reports (review_id, eval_hash, reporter_key, reason, detail)
+               VALUES (?, ?, ?, ?, ?)""",
+            (int(review_id), eval_hash or "", reporter_key, reason, (detail or "")[:2000]))
+        conn.commit()
+        return {"ok": True, "reason": ""}
+    except sqlite3.IntegrityError:
+        return {"ok": False, "reason": "You have already reported this review."}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not record review report: %s", e)
+        return {"ok": False, "reason": "The report could not be saved."}
+    finally:
+        conn.close()
+
+
+def rebuttals_for_paper(eval_hash: str) -> dict:
+    """Every reply on a paper, keyed by the review it answers."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT review_id, body, created_at FROM review_rebuttals
+               WHERE eval_hash = ? ORDER BY created_at ASC""", (eval_hash,)).fetchall()
+    except sqlite3.Error:
+        return {}
+    finally:
+        conn.close()
+    out = {}
+    for r in rows:
+        out.setdefault(int(r[0]), []).append({"body": r[1], "created_at": r[2]})
+    return out
+
+
+def list_review_reports(limit: int = 100, include_resolved: bool = False) -> list:
+    """Open moderation reports, for the operator."""
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            f"""SELECT rr.id, rr.review_id, rr.eval_hash, rr.reason, rr.detail,
+                       rr.created_at, rr.resolved, p.title
+                FROM review_reports rr
+                LEFT JOIN papers_assessment p ON p.eval_hash = rr.eval_hash
+                {"" if include_resolved else "WHERE rr.resolved = 0"}
+                ORDER BY rr.id DESC LIMIT ?""", (int(limit),)).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    # The reporter's identity is deliberately not returned: a moderation queue
+    # that names reporters invites retaliation against them.
+    return [{"id": r[0], "review_id": r[1], "eval_hash": r[2], "reason": r[3],
+             "detail": r[4], "created_at": r[5], "resolved": bool(r[6]),
+             "title": r[7] or "Untitled"} for r in rows]
 
 
 def has_open_review_request(eval_hash: str) -> bool:

@@ -2375,7 +2375,7 @@ async function showReviewModal(hash) {
   if (!hash) return;
   let state = {};
   try {
-    state = await (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+    state = await (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review?` + new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid }))).json();
   } catch (_) { /* the modal still explains the options */ }
 
   const peerFee = state.fee?.fee ?? 2;
@@ -2648,7 +2648,7 @@ async function showLlmReviewModal(hash) {
   let state = {};
   try {
     state = await (await fetch(
-      `${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+      `${API}/api/assessments/${encodeURIComponent(hash)}/review?` + new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid }))).json();
   } catch (e) {
     openModal(`<h2>LLM review</h2><p class="hint">Could not load the review: ${
       escapeHtml(e.message)}</p>`);
@@ -2662,22 +2662,14 @@ async function showLlmReviewModal(hash) {
     return;
   }
 
-  // The legacy "llm-" prefix is stripped for old rows; new ones store an
-  // ordinary editorial recommendation and need no translation.
-  const verdictLabel = (v) => String(v || "").replace(/^llm-/, "") || "unrecorded";
   openModal(`
     <h2>Referee report</h2>
     <p class="hint">An independent reading of the manuscript by a language model, in the
     conventions of ordinary peer review. It does not use ScholarPi's criteria and may disagree
     with the assessment. Not peer review — no human read the paper to produce this.</p>
-    ${reviews.map(r => `
-      <div class="opt-card">
-        <div class="opt-head">
-          <strong>Recommendation: ${escapeHtml(verdictLabel(r.verdict))}</strong>
-          <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
-        </div>
-        <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>
-      </div>`).join("")}`);
+    ${reviews.map(r => reviewCardHtml(r, null)).join("")}`);
+
+  bindReviewControls(hash, () => showLlmReviewModal(hash));
 }
 
 /** Write a peer review of someone else's paper.
@@ -2697,7 +2689,7 @@ async function showWriteReviewModal(hash) {
     [elig, open, state] = await Promise.all([
       (await fetch(`${API}/api/reviews/eligibility?${qs}`)).json(),
       (await fetch(`${API}/api/reviews/open?${qs}`)).json(),
-      (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json(),
+      (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review?` + new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid }))).json(),
     ]);
   } catch (e) {
     openModal(`<h2>Write a review</h2><p class="hint">Could not check your reviewer status: ${
@@ -2773,7 +2765,7 @@ async function showWriteReviewModal(hash) {
     ${reqList}
 
     <label class="bug-label" for="wrVerdict">Verdict</label>
-    <select id="wrVerdict">
+    <select class="bug-input" id="wrVerdict">
       <option value="">Choose a verdict…</option>
       <option value="sound">Sound — the claims are supported by the evidence</option>
       <option value="concerns">Concerns — publishable, but specific problems must be addressed</option>
@@ -2782,8 +2774,14 @@ async function showWriteReviewModal(hash) {
 
     <label class="bug-label" for="wrComment">Your report
       <span class="hint-inline">minimum ${minChars} characters</span></label>
-    <textarea id="wrComment" rows="14" placeholder="Cover the claims against the evidence, the methodology and any threat to validity, statistical soundness where it applies, novelty, reproducibility, and the specific revisions you would ask for. Refer to concrete parts of the manuscript. Be direct about weaknesses."></textarea>
-    <div class="hint" id="wrCount">0 / ${minChars}</div>
+    <!-- class="bug-input" is required. Without it the textarea falls back to
+         the browser default: a narrow monospace box about 20 characters wide,
+         which is what a reviewer was being asked to write 400 characters of
+         argument in. The global input rule covers text/number/select/file
+         only, so a textarea has to opt in explicitly. -->
+    <textarea class="bug-input" id="wrComment" rows="14"
+      placeholder="Cover the claims against the evidence, the methodology and any threat to validity, statistical soundness where it applies, novelty, reproducibility, and the specific revisions you would ask for. Refer to concrete parts of the manuscript. Be direct about weaknesses."></textarea>
+    <div class="bug-counter" id="wrCount">0 / ${minChars}</div>
 
     <div class="action-bar">
       <button class="btn btn-primary" id="wrSubmit" disabled>Submit review</button>
@@ -2800,7 +2798,7 @@ async function showWriteReviewModal(hash) {
   const revalidate = () => {
     const n = comment.value.trim().length;
     counter.textContent = `${n} / ${minChars}`;
-    counter.className = n >= minChars ? "hint fee-ok" : "hint";
+    counter.className = n >= minChars ? "bug-counter fee-ok" : "bug-counter";
     submit.disabled = !(n >= minChars && verdict.value);
   };
   comment.addEventListener("input", revalidate);
@@ -2848,7 +2846,7 @@ async function showPeerReviewModal(hash) {
   let state = {};
   try {
     state = await (await fetch(
-      `${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+      `${API}/api/assessments/${encodeURIComponent(hash)}/review?` + new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid }))).json();
   } catch (e) {
     openModal(`<h2>Peer review</h2><p class="hint">Could not load the review: ${
       escapeHtml(e.message)}</p>`);
@@ -2871,14 +2869,208 @@ async function showPeerReviewModal(hash) {
     <p class="hint">Written by an independent researcher who is not an author of this paper and
     did not commission the review. Reviewers are not named — this is single-blind, so that a
     negative verdict costs the person giving it nothing.</p>
-    ${reviews.map(r => `
-      <div class="opt-card">
-        <div class="opt-head">
-          <strong>Verdict: ${escapeHtml(VERDICTS[r.verdict] || r.verdict || "recorded")}</strong>
-          <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
-        </div>
-        <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>
-      </div>`).join("")}`);
+    ${reviews.map(r => reviewCardHtml(r, VERDICTS)).join("")}`);
+
+  bindReviewControls(hash, () => showPeerReviewModal(hash));
+}
+
+/** One review, with its reply and its controls.
+ *
+ *  Shared by the peer and machine review modals so the two cannot drift: a
+ *  review is the same object wherever it is shown, and the controls on it
+ *  should not depend on which button opened the window.
+ */
+function reviewCardHtml(r, verdictLabels) {
+  const rating = r.rating || { helpful: 0, unhelpful: 0, my_vote: null };
+  const label = verdictLabels
+    ? (verdictLabels[r.verdict] || r.verdict || "recorded")
+    : String(r.verdict || "").replace(/^llm-/, "") || "unrecorded";
+  const rid = r.id;
+
+  return `
+    <div class="opt-card">
+      <div class="opt-head">
+        <strong>${r.is_llm ? "Recommendation" : "Verdict"}: ${escapeHtml(label)}</strong>
+        <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
+      </div>
+      <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>
+
+      ${(r.rebuttals || []).map(rb => `
+        <div class="rebuttal">
+          <div class="rebuttal-head">Author's reply
+            <span class="rebuttal-date">${escapeHtml((rb.created_at || "").slice(0, 10))}</span>
+          </div>
+          <div class="review-body">${renderLightMarkdown(rb.body || "")}</div>
+        </div>`).join("")}
+
+      ${rid ? `
+      <div class="review-controls">
+        <button class="review-vote ${rating.my_vote === 1 ? "is-on" : ""}"
+                data-rv="up" data-rv-id="${rid}"
+                title="This review was useful">▲ Helpful <span>${rating.helpful}</span></button>
+        <button class="review-vote ${rating.my_vote === -1 ? "is-on" : ""}"
+                data-rv="down" data-rv-id="${rid}"
+                title="This review was not useful">▼ Not useful <span>${rating.unhelpful}</span></button>
+        ${r.may_rebut
+          ? `<button class="btn btn-quiet" data-rv="rebut" data-rv-id="${rid}"
+                     title="Publish a reply beneath this review">Refute this review</button>` : ""}
+        <button class="review-report" data-rv="report" data-rv-id="${rid}"
+                title="Flag this review for a moderator">Report</button>
+      </div>` : ""}
+    </div>`;
+}
+
+/** Wire the rate / refute / report controls inside an open review modal.
+ *
+ *  `reopen` re-renders the modal after an action that changes what it shows,
+ *  so the reply appears where it will actually live rather than as a
+ *  confirmation message the reader has to take on trust.
+ */
+function bindReviewControls(hash, reopen) {
+  document.querySelectorAll("[data-rv]").forEach(btn => {
+    btn.addEventListener("click", async (e) => {
+      e.preventDefault();
+      e.stopPropagation();
+      const id = Number(btn.dataset.rvId);
+      const what = btn.dataset.rv;
+
+      if (what === "up" || what === "down") {
+        // Optimistic disable only — the count comes back from the server, so a
+        // rejected vote never leaves a wrong number on screen.
+        btn.disabled = true;
+        try {
+          const res = await fetch(`${API}/api/reviews/rate`, {
+            method: "POST", headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ review_id: id, value: what === "up" ? 1 : -1,
+                                   wallet: Session.wallet, orcid: Session.orcid }),
+          });
+          const data = await res.json().catch(() => ({}));
+          if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+          reopen();
+        } catch (err) {
+          btn.disabled = false;
+          alert(err.message);
+        }
+        return;
+      }
+
+      if (what === "rebut") { showRebuttalModal(hash, id, reopen); return; }
+      if (what === "report") { showReportReviewModal(hash, id, reopen); return; }
+    });
+  });
+}
+
+/** The author's right of reply. */
+function showRebuttalModal(hash, reviewId, reopen) {
+  const MIN = 120;
+  openModal(`
+    <h2>Refute this review</h2>
+    <p class="lede">Your reply is published directly beneath the review, permanently and under
+    your name as the paper's author. The review itself is not changed, hidden or removed — a
+    reader sees the criticism and your answer to it together.</p>
+    <p class="hint">This is the place to correct a factual error, point to evidence the reviewer
+    missed, or explain a decision they questioned. It is not a place to argue with the verdict
+    for its own sake: a reply that only expresses disagreement tends to confirm the review to
+    everyone who reads it.</p>
+
+    <label class="bug-label" for="rbBody">Your reply
+      <span class="hint-inline">minimum ${MIN} characters</span></label>
+    <textarea class="bug-input" id="rbBody" rows="10"
+      placeholder="Address the specific points you dispute. Quote the part of the review you are answering, say what you think it got wrong, and point to the part of the manuscript or the data that shows it."></textarea>
+    <div class="bug-counter" id="rbCount">0 / ${MIN}</div>
+
+    <div class="modal-actions">
+      <button class="btn btn-primary" id="rbSubmit" disabled>Publish reply</button>
+      <span class="profile-msg" id="rbMsg"></span>
+    </div>`);
+
+  const body = document.getElementById("rbBody");
+  const submit = document.getElementById("rbSubmit");
+  const counter = document.getElementById("rbCount");
+  body.addEventListener("input", () => {
+    const n = body.value.trim().length;
+    counter.textContent = `${n} / ${MIN}`;
+    counter.className = n >= MIN ? "bug-counter fee-ok" : "bug-counter";
+    submit.disabled = n < MIN;
+  });
+
+  submit.addEventListener("click", async () => {
+    const msg = document.getElementById("rbMsg");
+    submit.disabled = true; submit.textContent = "Publishing…";
+    try {
+      const res = await fetch(`${API}/api/reviews/rebut`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ review_id: reviewId, body: body.value.trim(),
+                               wallet: Session.wallet, orcid: Session.orcid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      reopen();
+    } catch (e) {
+      msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+      submit.disabled = false; submit.textContent = "Publish reply";
+    }
+  });
+}
+
+/** Flag a review for a moderator. */
+async function showReportReviewModal(hash, reviewId, reopen) {
+  let reasons = [];
+  try {
+    reasons = (await (await fetch(`${API}/api/reviews/report-reasons`)).json()).reasons || [];
+  } catch (_) { /* the form still works with the fallback below */ }
+  if (!reasons.length) {
+    reasons = [{ id: "other", label: "Something else" }];
+  }
+
+  openModal(`
+    <h2>Report this review</h2>
+    <p class="lede">Reporting is for reviews that break the rules — not for reviews you disagree
+    with. A negative but honest review is the system working; if you think it is wrong on the
+    facts, reply to it instead.</p>
+    <p class="hint">The review stays visible while a moderator looks at it. Reports are not a way
+    to hide criticism, and the reviewer is not told who reported them.</p>
+
+    <label class="bug-label" for="rpReason">Reason</label>
+    <select class="bug-input" id="rpReason">
+      <option value="">Choose a reason…</option>
+      ${reasons.map(r => `<option value="${escapeHtml(r.id)}">${escapeHtml(r.label)}</option>`).join("")}
+    </select>
+
+    <label class="bug-label" for="rpDetail">What specifically?
+      <span class="hint-inline">optional, but it helps</span></label>
+    <textarea class="bug-input" id="rpDetail" rows="6"
+      placeholder="Point to the part of the review you are reporting and say what is wrong with it."></textarea>
+
+    <div class="modal-actions">
+      <button class="btn btn-danger-soft" id="rpSubmit" disabled>Submit report</button>
+      <span class="profile-msg" id="rpMsg"></span>
+    </div>`);
+
+  const reason = document.getElementById("rpReason");
+  const submit = document.getElementById("rpSubmit");
+  reason.addEventListener("change", () => { submit.disabled = !reason.value; });
+
+  submit.addEventListener("click", async () => {
+    const msg = document.getElementById("rpMsg");
+    submit.disabled = true; submit.textContent = "Submitting…";
+    try {
+      const res = await fetch(`${API}/api/reviews/report`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          review_id: reviewId, reason: reason.value,
+          detail: document.getElementById("rpDetail").value.trim(),
+          wallet: Session.wallet, orcid: Session.orcid }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      openModal(`<h2>Report submitted</h2>
+        <p class="lede">${escapeHtml(data.message || "A moderator will look at this review.")}</p>`);
+    } catch (e) {
+      msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+      submit.disabled = false; submit.textContent = "Submit report";
+    }
+  });
 }
 
 /** Publish options. Submit stays disabled until authorship is proven. */
