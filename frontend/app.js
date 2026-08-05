@@ -914,6 +914,59 @@ if (window.ethereum && window.ethereum.on) {
 }
 
 // --- Donations ---
+/** Decimal ether string to a wei BigInt, without going through a float.
+ *
+ *  Number(amount) * 1e18 loses precision for most decimal inputs — 0.1 ether
+ *  becomes 100000000000000001 wei — and a donation is a real transfer of real
+ *  value, so it is built from the digits the user typed rather than from a
+ *  binary approximation of them.
+ */
+function parseEtherToWei(amount) {
+  const [whole, frac = ""] = String(amount).trim().split(".");
+  const padded = (frac + "0".repeat(18)).slice(0, 18);
+  return BigInt(whole || "0") * 10n ** 18n + BigInt(padded || "0");
+}
+
+/** Switch MetaMask to the chain donations settle on, adding it if unknown.
+ *
+ *  Separate from ensureSepolia() on purpose. Donations go to Ethereum mainnet;
+ *  the proof-of-research ledger anchors on Sepolia. Sharing one function meant
+ *  the donate flow inherited the testnet, and contributions were paid in a
+ *  token that has no value.
+ */
+async function ensureDonationChain(d) {
+  if (!window.ethereum) return false;
+  const chainIdHex = d.chain_id_hex || "0x1";
+  try {
+    await window.ethereum.request({
+      method: "wallet_switchEthereumChain", params: [{ chainId: chainIdHex }],
+    });
+    return true;
+  } catch (err) {
+    // 4902 means the wallet does not know this chain. Mainnet is always known,
+    // so this only fires for a custom DONATION_CHAIN_ID.
+    if (err && err.code === 4902) {
+      try {
+        await window.ethereum.request({
+          method: "wallet_addEthereumChain",
+          params: [{
+            chainId: chainIdHex,
+            chainName: d.chain_name || "Ethereum",
+            nativeCurrency: { name: d.chain_name || "Ether",
+                              symbol: d.currency || "ETH", decimals: 18 },
+            rpcUrls: d.rpc_urls && d.rpc_urls.length
+              ? d.rpc_urls : ["https://ethereum-rpc.publicnode.com"],
+            blockExplorerUrls: [(d.tx_explorer_base || "https://etherscan.io/tx/")
+              .replace(/\/tx\/$/, "")],
+          }],
+        });
+        return true;
+      } catch (_) { return false; }
+    }
+    return false;
+  }
+}
+
 document.getElementById("donateBtn").addEventListener("click", showDonateModal);
 
 async function showDonateModal() {
@@ -942,7 +995,9 @@ async function showDonateModal() {
       <h2>Support ScholarPi</h2>
       <p>${escapeHtml(d.message)}</p>
 
-      <h3>Send ${escapeHtml(d.currency)} on ${escapeHtml(d.chain_name)}</h3>
+      <h3>Send ${escapeHtml(d.currency || "ETH")} on ${escapeHtml(d.chain_name || "Ethereum")}</h3>
+      ${d.settlement_chain_note
+        ? `<p class="hint">${escapeHtml(d.settlement_chain_note)}</p>` : ""}
       <div class="donate-amounts">
         ${d.suggested_amounts.map(a => `<button class="btn amount-btn" data-amount="${a}">${a}</button>`).join("")}
       </div>
@@ -998,19 +1053,27 @@ async function showDonateModal() {
     try {
       const accounts = await window.ethereum.request({ method: "eth_requestAccounts" });
       if (!accounts || !accounts.length) { statusEl.textContent = ""; return; }
-      const ok = await ensureSepolia();
+      // The DONATION chain, not the settlement chain. These were the same call
+      // before, which switched the wallet to Sepolia and sent test tokens —
+      // real intent, worthless transfer, and no indication anything was wrong.
+      const ok = await ensureDonationChain(d);
       if (!ok) {
-        statusEl.innerHTML = `<span class="fee-warn">Please switch MetaMask to ${escapeHtml(d.chain_name)} and try again.</span>`;
+        statusEl.innerHTML = `<span class="fee-warn">Please switch MetaMask to ${
+          escapeHtml(d.chain_name || "Ethereum")} and try again.</span>`;
         return;
       }
-      const valueWei = "0x" + BigInt(Math.round(Number(amount) * 1e18)).toString(16);
+      // Built from a decimal string rather than Number arithmetic. 0.1 * 1e18
+      // in floating point is not 10^17, and rounding a wei amount is a real
+      // transfer being off by a real (if small) sum.
+      const valueWei = "0x" + parseEtherToWei(amount).toString(16);
       statusEl.textContent = "Confirm the transaction in MetaMask…";
       const txHash = await window.ethereum.request({
         method: "eth_sendTransaction",
         params: [{ from: accounts[0], to: d.wallet, value: valueWei }],
       });
+      const txBase = d.tx_explorer_base || "https://etherscan.io/tx/";
       statusEl.innerHTML = `<span class="fee-ok">Thank you. Transaction submitted:</span>
-        <a href="https://sepolia.etherscan.io/tx/${escapeHtml(txHash)}" target="_blank" rel="noopener">${escapeHtml(txHash.slice(0, 18))}…</a>`;
+        <a href="${escapeHtml(txBase + txHash)}" target="_blank" rel="noopener">${escapeHtml(txHash.slice(0, 18))}…</a>`;
     } catch (err) {
       statusEl.innerHTML = err && err.code === 4001
         ? `<span class="fee-warn">Transaction rejected.</span>`
@@ -1177,8 +1240,16 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     // refresh left the tab insisting the trial was spent.
     if (btn.dataset.tab === "assess") refreshTrialStatus();
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
-    if (btn.dataset.tab === "journal") loadJournal();
-    if (btn.dataset.tab === "explorer") loadExplorer();
+    // Explore absorbed the old Journal, Explorer and leaderboard views, so
+    // opening it has to load all three. They were separate tabs describing the
+    // same question — what is in the corpus — and each one only ever showed a
+    // third of the answer.
+    if (btn.dataset.tab === "journal") {
+      loadJournal();
+      loadExplorer();
+      loadTopPapers();
+      loadLeaderboard();
+    }
     if (btn.dataset.tab === "diagram") {
       renderArchitectureDiagrams();
       const wp = document.querySelector(".wp-details");
@@ -1189,9 +1260,10 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     }
     // The map renders continuously, so it must be started when its tab opens
     // and stopped when it closes — otherwise it burns a frame budget (and
-    // battery) behind a hidden panel forever.
+    // battery) behind a hidden panel forever. The map now lives inside
+    // Analytics rather than in a tab of its own.
     if (window.ScholarPiArcade) {
-      if (btn.dataset.tab === "arcade") window.ScholarPiArcade.open();
+      if (btn.dataset.tab === "analytics") window.ScholarPiArcade.open();
       else window.ScholarPiArcade.exit();
     }
     // Analytics caches its first load; without this, assessing a paper and
@@ -1676,8 +1748,20 @@ document.addEventListener("click", e => {
   const link = e.target.closest("[data-goto-tab]");
   if (!link) return;
   e.preventDefault();
-  const target = document.querySelector(`.tab-btn[data-tab="${link.dataset.gotoTab}"]`);
-  if (target) target.click();
+  // Tabs that were merged away still have links pointing at them. Redirect
+  // rather than break: "arcade" now lives inside Analytics and "explorer"
+  // inside Explore, and a dead link is a worse outcome than a rewritten one.
+  const MERGED = { arcade: "analytics", explorer: "journal" };
+  const wanted = MERGED[link.dataset.gotoTab] || link.dataset.gotoTab;
+  const target = document.querySelector(`.tab-btn[data-tab="${wanted}"]`);
+  if (target) {
+    target.click();
+    // The merged views sit below the fold of their new home, so jumping to
+    // the tab alone would land the reader on something else entirely.
+    const anchor = link.dataset.gotoTab === "arcade"
+      ? document.getElementById("arcadeStage") : null;
+    if (anchor) anchor.scrollIntoView({ behavior: "smooth", block: "start" });
+  }
 });
 
 function countQueuedPapers() {
@@ -2017,8 +2101,30 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
     loadEmissionStatus();
     renderSidebar();
     loadAssessmentHistory();
+    // Same reason as the "done" line: the run changed the corpus, and every
+    // view of the corpus should say so without a browser reload.
+    refreshCorpusViews();
   }
 });
+
+/** Re-read every view that describes the corpus rather than one paper.
+ *
+ *  Called after anything that changes what the corpus contains — a completed
+ *  assessment, a finished review, a publication. Each loader is cheap and
+ *  guards its own missing DOM, so calling them all is simpler and more
+ *  reliable than tracking which tab happens to be open; the alternative was a
+ *  page that quietly disagreed with the server about what existed.
+ */
+function refreshCorpusViews() {
+  try { loadJournal(); } catch (_) {}
+  try { loadTopPapers(); } catch (_) {}
+  try { loadLeaderboard(); } catch (_) {}
+  try { loadExplorer(); } catch (_) {}
+  // Analytics caches its first load, so it must be invalidated rather than
+  // merely re-called or it will serve the numbers from before the run.
+  analyticsInitialized = false;
+  try { loadAnalyticsSummary(); } catch (_) {}
+}
 
 function handleStreamLine(obj, statusBox) {
   if (obj.type === "status") {
@@ -2043,10 +2149,22 @@ function handleStreamLine(obj, statusBox) {
       </div>`;
     }
   } else if (obj.type === "curation") {
-    statusBox.innerHTML += `<div class="status-line status-curation">
-      <strong>+${Number(obj.amount).toFixed(4)} piQ curation reward.</strong>
-      ${escapeHtml(obj.message || "")}</div>`;
+    // The server now reports every outcome, including the ones that pay
+    // nothing. A reward that correctly declined to pay used to emit no line at
+    // all, which was indistinguishable from the feature being broken.
+    const paid = obj.awarded !== false && Number(obj.amount) > 0;
+    statusBox.innerHTML += paid
+      ? `<div class="status-line status-curation">
+           <strong>+${Number(obj.amount).toFixed(4)} piQ curation reward.</strong>
+           ${escapeHtml(obj.message || "")}</div>`
+      : `<div class="status-line status-reward-none">
+           <strong>No curation reward for this paper.</strong>
+           ${escapeHtml(obj.message || "")}</div>`;
     if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
+    // The sidebar balance has to move too. Setting piqState alone updated the
+    // fee notice and left the profile showing the pre-reward figure, so a
+    // credited reward looked like nothing had happened.
+    if (paid) { loadEmissionStatus(); renderSidebar(); }
   } else if (obj.type === "fee_error") {
     statusBox.innerHTML += `<div class="status-line status-error">${escapeHtml(obj.message)}</div>`;
   } else if (obj.type === "result") {
@@ -2072,8 +2190,16 @@ function handleStreamLine(obj, statusBox) {
     // The rows are committed by the time "done" arrives. Refreshing here as
     // well as in the finally block covers the case where the stream ends
     // without the request settling — an aborted run still wrote its papers.
+    //
+    // The corpus-wide views are refreshed too. A finished assessment changes
+    // the leaderboards, the journal index and the analytics aggregate, and
+    // leaving those stale meant a paper the user had just watched being
+    // assessed was missing from every page that should have listed it until
+    // they reloaded the browser.
     loadAssessmentHistory();
     loadEmissionStatus();
+    renderSidebar();
+    refreshCorpusViews();
   }
   statusBox.scrollTop = statusBox.scrollHeight;
 }
@@ -2233,6 +2359,7 @@ function renderResultCard(item, idx) {
           ${qualityPill(meta)}
           ${integrityPills(item)}
           ${allBadges({ ...item, hash: item.hash || item.eval_hash })}
+          ${readsPill(item)}
           ${warnCount ? `<span class="pill q-warn">${warnCount} warning${warnCount === 1 ? "" : "s"}</span>` : ""}
         </div>
       </div>
@@ -2254,6 +2381,8 @@ async function showReviewModal(hash) {
   const peerFee = state.fee?.fee ?? 2;
   const llmFee = state.llm_fee?.fee ?? 0.5;
   const alreadyLlm = !!state.llm_reviewed;
+  const alreadyRequested = !!state.review_requested;
+  const alreadyPeer = Number(state.peer_review_count || 0) > 0;
 
   openModal(`
     <h2>${alreadyLlm ? "Request a new review" : "Request a review"}</h2>
@@ -2265,16 +2394,25 @@ async function showReviewModal(hash) {
             held piQ cannot be spent until you claim it from Your assessments.`
         : ""}</p>
 
-    <div class="opt-card opt-card-disabled">
+    <div class="opt-card">
       <div class="opt-head"><strong>Peer review</strong>
         <span class="pill p-piq">${peerFee.toFixed(2)} piQ</span></div>
-      <p>Another researcher — signed in with both a wallet and an ORCID, and not you — reads the
-      paper and submits a reasoned verdict. The fee is a bounty paid to them on completion, not a
-      price for the badge.</p>
-      <div class="opt-inactive">This function is inactive at the moment. Nothing is charged and no
-      request is placed.</div>
-      <button class="btn" id="reqPeer" disabled
-              title="Peer review is inactive at the moment">Request peer review</button>
+      <p>Another researcher — signed in with both a wallet and an ORCID, with at least one paper
+      published here, and not you — reads the paper and submits a reasoned verdict. The fee is a
+      bounty paid to them on completion, not a price for the badge.</p>
+      <p class="hint">A paper must be peer reviewed before it can be published, so this is the
+      step that unlocks publishing.</p>
+      ${alreadyRequested
+        ? `<div class="opt-done">A review has already been requested for this paper and is
+             waiting for a reviewer. It carries a <strong>Requested to be reviewed</strong>
+             marker until someone submits a report.</div>`
+        : ""}
+      <button class="btn ${alreadyRequested ? "" : "btn-primary"}" id="reqPeer"
+              ${alreadyRequested ? "disabled" : ""}
+              title="${alreadyRequested
+                ? "A review is already open for this paper"
+                : "Hold a bounty and put this paper in front of reviewers"}"
+              >${alreadyRequested ? "Review already requested" : "Request peer review"}</button>
     </div>
 
     <div class="opt-card">
@@ -2296,19 +2434,17 @@ async function showReviewModal(hash) {
     </div>
     <div class="profile-msg" id="reviewMsg"></div>`);
 
-  const post = async (path, label, cost) => {
+  const post = async (path, label, cost, btnId, note) => {
     // Confirm before spending. piQ is earned slowly and an accidental click
     // should not cost a paper's worth of it.
-    if (!confirm(`Request ${label}?\n\nThis costs ${Number(cost).toFixed(2)} piQ.`
-                 + `\n\nA badge is attached whatever the panel concludes, and the review is `
-                 + `saved so you can read it from the badge.`
+    if (!confirm(`Request ${label}?\n\nThis costs ${Number(cost).toFixed(2)} piQ.\n\n${note}`
                  + `\n\nYour spendable balance: ${Number(piqState.balance || 0).toFixed(2)} piQ`)) {
       return;
     }
     const msg = document.getElementById("reviewMsg");
-    const btn = document.getElementById("reqLlm");
-    if (btn) { btn.disabled = true; btn.textContent = "Reviewing…"; }
-    msg.textContent = "The panel is reading the evidence report. This takes a few seconds…";
+    const btn = document.getElementById(btnId);
+    if (btn) { btn.disabled = true; btn.textContent = "Requesting…"; }
+    msg.textContent = "Placing the request…";
     try {
       const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}${path}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
@@ -2316,22 +2452,154 @@ async function showReviewModal(hash) {
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-      msg.textContent = data.message || `${label} complete.`;
+      msg.textContent = data.message || `${label} requested.`;
       loadEmissionStatus();
-      // The badge and the button label both depend on this, so refresh what is
-      // on screen rather than leaving a stale "Request a Review".
-      markLocalLlmReviewed(hash);
-      renderResults();
-      loadAssessmentHistory();
-      if (btn) { btn.disabled = false; btn.textContent = "Request a new review"; }
-      showReviewButton(hash, msg);
+
+      if (data.queued) {
+        // The review is running server-side and will finish whether or not
+        // this window survives. Start the watcher, which is the thing that
+        // brings the result back — this modal is now optional to the outcome.
+        if (btn) { btn.disabled = true; btn.textContent = "Review in progress…"; }
+        startReviewJobWatch({ immediate: true });
+        msg.insertAdjacentHTML("beforeend",
+          `<div class="hint" style="margin-top:8px">You can close this window. The review
+           continues on the server and the badge appears here as soon as it lands.</div>`);
+      } else {
+        // A peer-review request: nothing to wait for, but the marker is new.
+        markLocalReviewRequested(hash);
+        renderResults();
+        loadAssessmentHistory();
+        refreshCorpusViews();
+        if (btn) { btn.disabled = true; btn.textContent = "Review already requested"; }
+      }
     } catch (e) {
       msg.textContent = `Could not request ${label}: ${e.message}`;
-      if (btn) { btn.disabled = false; btn.textContent = alreadyLlm ? "Request a new review" : "Request LLM review"; }
+      if (btn) { btn.disabled = false; btn.textContent = label; }
     }
   };
+
+  const p1 = document.getElementById("reqPeer");
+  if (p1 && !alreadyRequested) {
+    p1.addEventListener("click", () => post(
+      "/review/request", "peer review", peerFee, "reqPeer",
+      "The whole fee is held as a bounty and paid to the researcher who completes the review. "
+      + "The paper is marked as Requested to be reviewed until someone does. "
+      + "A Peer-reviewed badge appears only when a report is actually submitted."));
+  }
   const p2 = document.getElementById("reqLlm");
-  if (p2) p2.addEventListener("click", () => post("/review/llm", "LLM review", llmFee));
+  if (p2) {
+    p2.addEventListener("click", () => post(
+      "/review/llm", "LLM review", llmFee, "reqLlm",
+      "A badge is attached whatever the panel concludes, and the review is saved so you can "
+      + "read it from the badge. The review runs on the server — you can close this window."));
+  }
+}
+
+/** Mark an in-memory result as awaiting review, so the marker appears at once. */
+function markLocalReviewRequested(hash) {
+  evaluatedBuffer.forEach(it => {
+    if ((it.hash || it.eval_hash) === hash) it.review_requested = true;
+  });
+  persistResults();
+}
+
+// ---------------------------------------------------------------------------
+// Background review watcher
+//
+// A review is commissioned, paid for, and then takes up to a minute of model
+// time. Previously the browser held the request open for all of it, so closing
+// the tab abandoned a review the user had already been charged for — the piQ
+// was gone and nothing was written.
+//
+// The server now finishes the work regardless. This poller exists to notice
+// when it has, both for the window that asked and for any later visit: on load
+// it asks what happened while nobody was watching, which is how a review
+// requested and walked away from still turns up.
+// ---------------------------------------------------------------------------
+let reviewJobTimer = null;
+let seenReviewJobs = new Set();
+
+async function pollReviewJobs() {
+  if (!Session.wallet && !Session.orcid) return { pending: 0, jobs: [] };
+  const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+  try {
+    const data = await (await fetch(`${API}/api/reviews/jobs?${qs}`)).json();
+    const jobs = data.jobs || [];
+
+    // Anything that finished since the last look. First poll of a session
+    // seeds the set silently, so a week-old review does not announce itself
+    // as news every time the page is opened.
+    const finished = jobs.filter(j => j.status !== "running" && j.status !== "queued");
+    const fresh = seenReviewJobs.size
+      ? finished.filter(j => !seenReviewJobs.has(j.id)) : [];
+    finished.forEach(j => seenReviewJobs.add(j.id));
+    if (!seenReviewJobs.size) jobs.forEach(j => seenReviewJobs.add(j.id));
+
+    if (fresh.length) {
+      fresh.forEach(j => {
+        markLocalLlmReviewed(j.hash);
+        showReviewToast(j);
+      });
+      // The badge, the history row and the balance all changed. Refresh the
+      // things on screen rather than leaving a page that disagrees with the
+      // server about what has been reviewed.
+      renderResults();
+      loadAssessmentHistory();
+      loadEmissionStatus();
+      renderSidebar();
+      refreshCorpusViews();
+    }
+    return { pending: data.pending || 0, jobs };
+  } catch (_) {
+    return { pending: 0, jobs: [] };
+  }
+}
+
+/** Poll while work is outstanding, then stop. */
+function startReviewJobWatch({ immediate = false } = {}) {
+  if (reviewJobTimer) clearInterval(reviewJobTimer);
+  const tick = async () => {
+    const { pending } = await pollReviewJobs();
+    if (!pending && reviewJobTimer) { clearInterval(reviewJobTimer); reviewJobTimer = null; }
+  };
+  if (immediate) tick();
+  reviewJobTimer = setInterval(tick, 4000);
+}
+
+/** A finished review announces itself, with a way straight into it. */
+function showReviewToast(job) {
+  const ok = job.status === "complete";
+  const el = document.createElement("div");
+  el.className = `review-toast ${ok ? "review-toast-ok" : "review-toast-warn"}`;
+  el.innerHTML = `
+    <div class="review-toast-head">${ok ? "Review complete" : "Review not completed"}</div>
+    <div class="review-toast-title">${escapeHtml(job.title || "Your paper")}</div>
+    <div class="review-toast-msg">${escapeHtml(job.message || "")}</div>`;
+  if (ok && job.hash) {
+    const b = document.createElement("button");
+    b.className = "btn btn-quiet";
+    b.textContent = "Read the review";
+    b.addEventListener("click", () => { showLlmReviewModal(job.hash); el.remove(); });
+    el.appendChild(b);
+  }
+  const close = document.createElement("button");
+  close.className = "review-toast-close";
+  close.setAttribute("aria-label", "Dismiss");
+  close.textContent = "✕";
+  close.addEventListener("click", () => el.remove());
+  el.appendChild(close);
+
+  let host = document.getElementById("reviewToasts");
+  if (!host) {
+    host = document.createElement("div");
+    host.id = "reviewToasts";
+    host.className = "review-toasts";
+    document.body.appendChild(host);
+  }
+  host.appendChild(el);
+  // Long enough to read a sentence and click through; the badge is permanent
+  // either way, so nothing is lost by it going away.
+  setTimeout(() => el.remove(), 20000);
 }
 
 /** Mark an in-memory result as LLM-reviewed so the card updates without a reload. */
@@ -2401,6 +2669,207 @@ async function showLlmReviewModal(hash) {
       </div>`).join("")}`);
 }
 
+/** Write a peer review of someone else's paper.
+ *
+ *  Two-stage on purpose. The first thing this window does is state the
+ *  eligibility rule and the requirements a report has to meet, because the
+ *  worst possible moment to learn that you cannot review — or that a review
+ *  needs 400 words of argument — is after writing one.
+ */
+async function showWriteReviewModal(hash) {
+  if (!hash) return;
+  openModal(`<h2>Write a review</h2><p class="hint">Checking your reviewer status…</p>`);
+
+  const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+  let elig = {}, open = {}, state = {};
+  try {
+    [elig, open, state] = await Promise.all([
+      (await fetch(`${API}/api/reviews/eligibility?${qs}`)).json(),
+      (await fetch(`${API}/api/reviews/open?${qs}`)).json(),
+      (await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json(),
+    ]);
+  } catch (e) {
+    openModal(`<h2>Write a review</h2><p class="hint">Could not check your reviewer status: ${
+      escapeHtml(e.message)}</p>`);
+    return;
+  }
+
+  const bonus = Number(elig.bonus ?? 2).toFixed(2);
+  const minChars = Number(elig.min_chars || 400);
+  const requirements = elig.requirements || [];
+  const reqList = `
+    <h3>What a review has to meet</h3>
+    <ul class="review-reqs">
+      ${requirements.map(r => `<li>${escapeHtml(r.text)}</li>`).join("")}
+    </ul>`;
+
+  // --- Gate ---------------------------------------------------------------
+  if (!elig.signed_in) {
+    openModal(`
+      <h2>Become a reviewer</h2>
+      <p class="lede">Sign in with a wallet or ORCID to review. Reviews are paid, and payment
+      needs an account to pay into.</p>
+      ${reqList}`);
+    return;
+  }
+  if (!elig.eligible) {
+    openModal(`
+      <h2>Become a reviewer</h2>
+      <div class="warning-box">
+        <strong>You are not yet able to review.</strong>
+        <p>${escapeHtml(elig.reason || "You do not meet the reviewer requirements.")}</p>
+      </div>
+      <p class="lede">To become a reviewer you must have <strong>at least one paper published in
+      the journal list</strong>. You currently have
+      <strong>${Number(elig.published_count || 0)}</strong>. This is not a test of expertise — it
+      is a requirement that a reviewer has been through the same process they are judging, and
+      has their own work standing under the same rules.</p>
+      ${reqList}
+      <p class="hint">Completing a review pays <strong>${bonus} piQ</strong>, plus any bounty the
+      requester posted.</p>`);
+    return;
+  }
+
+  // --- Eligible: find the open request on this paper -----------------------
+  const openHere = (open.open || []).find(r => r.hash === hash);
+  if (!openHere) {
+    const already = Number(state.peer_review_count || 0) > 0;
+    openModal(`
+      <h2>Write a review</h2>
+      <p class="lede">${already
+        ? "This paper has already been peer reviewed."
+        : state.review_requested
+          ? "A review is open on this paper, but you cannot take it — you are the one who "
+            + "requested it. A requester reviewing their own request would make the badge "
+            + "self-issued through a longer route."
+          : "No review has been requested for this paper, so there is no open request to take. "
+            + "Reviews are commissioned by someone posting a bounty; ask the author, or request "
+            + "one yourself from the dossier."}</p>
+      ${reqList}`);
+    return;
+  }
+
+  const bounty = Number(openHere.bounty || 0);
+  openModal(`
+    <h2>Write a review</h2>
+    <p class="lede">You are reviewing <strong>${escapeHtml(openHere.title)}</strong>. Your report
+    is published with the paper; your name is not — reviews here are single-blind, so a negative
+    verdict costs you nothing.</p>
+    <p class="hint">On submission you receive <strong>${bounty.toFixed(2)} piQ</strong> bounty
+    plus a <strong>${bonus} piQ</strong> completion bonus, and the paper receives a
+    <strong>Peer-reviewed</strong> badge. Payment is for submitting a reasoned report, not for
+    reaching any particular verdict.</p>
+    ${reqList}
+
+    <label class="bug-label" for="wrVerdict">Verdict</label>
+    <select id="wrVerdict">
+      <option value="">Choose a verdict…</option>
+      <option value="sound">Sound — the claims are supported by the evidence</option>
+      <option value="concerns">Concerns — publishable, but specific problems must be addressed</option>
+      <option value="unsound">Unsound — the conclusions do not follow from the work</option>
+    </select>
+
+    <label class="bug-label" for="wrComment">Your report
+      <span class="hint-inline">minimum ${minChars} characters</span></label>
+    <textarea id="wrComment" rows="14" placeholder="Cover the claims against the evidence, the methodology and any threat to validity, statistical soundness where it applies, novelty, reproducibility, and the specific revisions you would ask for. Refer to concrete parts of the manuscript. Be direct about weaknesses."></textarea>
+    <div class="hint" id="wrCount">0 / ${minChars}</div>
+
+    <div class="action-bar">
+      <button class="btn btn-primary" id="wrSubmit" disabled>Submit review</button>
+    </div>
+    <div class="profile-msg" id="wrMsg"></div>`);
+
+  const comment = document.getElementById("wrComment");
+  const verdict = document.getElementById("wrVerdict");
+  const submit = document.getElementById("wrSubmit");
+  const counter = document.getElementById("wrCount");
+
+  // The bar is enforced live rather than at submission, so a reviewer can see
+  // themselves clearing it instead of being refused after finishing.
+  const revalidate = () => {
+    const n = comment.value.trim().length;
+    counter.textContent = `${n} / ${minChars}`;
+    counter.className = n >= minChars ? "hint fee-ok" : "hint";
+    submit.disabled = !(n >= minChars && verdict.value);
+  };
+  comment.addEventListener("input", revalidate);
+  verdict.addEventListener("change", revalidate);
+
+  submit.addEventListener("click", async () => {
+    const msg = document.getElementById("wrMsg");
+    submit.disabled = true; submit.textContent = "Submitting…";
+    msg.textContent = "";
+    try {
+      const res = await fetch(`${API}/api/reviews/submit`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          review_id: openHere.id, verdict: verdict.value, comment: comment.value.trim(),
+          wallet: Session.wallet, orcid: Session.orcid,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      openModal(`
+        <h2>Review submitted</h2>
+        <p class="lede">${escapeHtml(data.message || "Your review was recorded.")}</p>
+        <p class="hint">The paper now carries a Peer-reviewed badge, and its author can publish
+        it. Your report is readable from that badge; your identity is not attached to it.</p>`);
+      loadEmissionStatus();
+      renderSidebar();
+      loadAssessmentHistory();
+      refreshCorpusViews();
+    } catch (e) {
+      msg.innerHTML = `<span class="fee-warn">${escapeHtml(e.message)}</span>`;
+      submit.disabled = false; submit.textContent = "Submit review";
+    }
+  });
+}
+
+/** Every human review written for a paper, newest first.
+ *
+ *  Single-blind: the reports are shown, the reviewers are not. Publishing who
+ *  reviewed what would deter exactly the honest negative review the badge is
+ *  meant to be worth something for.
+ */
+async function showPeerReviewModal(hash) {
+  if (!hash) return;
+  openModal(`<h2>Peer review</h2><p class="hint">Loading the review…</p>`);
+  let state = {};
+  try {
+    state = await (await fetch(
+      `${API}/api/assessments/${encodeURIComponent(hash)}/review`)).json();
+  } catch (e) {
+    openModal(`<h2>Peer review</h2><p class="hint">Could not load the review: ${
+      escapeHtml(e.message)}</p>`);
+    return;
+  }
+
+  const reviews = state.reviews || [];
+  if (!reviews.length) {
+    openModal(`<h2>Peer review</h2><p class="hint">No peer review has been submitted for this
+      paper yet.${state.review_requested
+        ? " One has been requested and is waiting for a reviewer." : ""}</p>`);
+    return;
+  }
+
+  const VERDICTS = {
+    sound: "Sound", concerns: "Concerns raised", unsound: "Unsound",
+  };
+  openModal(`
+    <h2>Peer review</h2>
+    <p class="hint">Written by an independent researcher who is not an author of this paper and
+    did not commission the review. Reviewers are not named — this is single-blind, so that a
+    negative verdict costs the person giving it nothing.</p>
+    ${reviews.map(r => `
+      <div class="opt-card">
+        <div class="opt-head">
+          <strong>Verdict: ${escapeHtml(VERDICTS[r.verdict] || r.verdict || "recorded")}</strong>
+          <span class="pill p-piq">${escapeHtml((r.completed_at || "").slice(0, 10))}</span>
+        </div>
+        <div class="review-body">${renderLightMarkdown(r.comment || "No text was recorded.")}</div>
+      </div>`).join("")}`);
+}
+
 /** Publish options. Submit stays disabled until authorship is proven. */
 async function showPublishModal(hash) {
   if (!hash) return;
@@ -2412,12 +2881,46 @@ async function showPublishModal(hash) {
   } catch (_) { /* fall through; the server still enforces */ }
 
   const fee = st.fee_already_paid ? 0 : (st.fee?.fee ?? 1);
+  // Two independent gates: authorship, and a completed peer review. The server
+  // reports them separately so the modal can name the one that is actually
+  // blocking — telling a verified author their name does not match, when the
+  // real problem is that nobody has reviewed the paper, sends them to fix
+  // something that is not broken.
+  const authorOk = st.authorship_ok != null ? !!st.authorship_ok : !!st.may_publish;
+  const reviewed = st.reviewed != null ? !!st.reviewed : true;
   const may = !!st.may_publish;
+
+  // Review before publication. Shown first and on its own, because it is a
+  // rule about the paper rather than about the person, and it has a clear next
+  // action attached to it.
+  if (!reviewed) {
+    openModal(`
+      <h2>Publish this assessment</h2>
+      <div class="warning-box">
+        <strong>This paper has not been peer reviewed.</strong>
+        <p>${escapeHtml(st.review_blocked_reason
+          || "A paper must be reviewed before it can be published.")}</p>
+      </div>
+      <p class="lede">Review comes before publication here. A published badge on an unreviewed
+      paper would be a claim nobody had checked, which is precisely the thing this platform
+      argues against — so publishing stays off until a reviewer has submitted a report.</p>
+      ${st.review_requested
+        ? `<p class="hint">A review has already been requested for this paper and is waiting for
+             a reviewer. Nothing more is needed from you.</p>`
+        : `<p class="hint">Nobody has requested a review of this paper yet.</p>
+           <div class="action-bar">
+             <button class="btn btn-primary" id="pubGoReview">Request a peer review</button>
+           </div>`}`);
+    const go = document.getElementById("pubGoReview");
+    if (go) go.addEventListener("click", () => showReviewModal(hash));
+    return;
+  }
 
   openModal(`
     <h2>Publish this assessment</h2>
-    <p class="hint">Publishing attaches a badge to the assessment publicly. It is not a claim
-    of peer review.</p>
+    <p class="hint">Publishing attaches a badge to the assessment publicly. This paper carries a
+    peer review, which is what makes publishing available — the two badges remain separate
+    claims and are shown separately.</p>
 
     <div class="opt-card ${may ? "" : "opt-locked"}">
       <label class="opt-radio"><input type="radio" name="pubkind" value="author" checked>
@@ -2441,11 +2944,15 @@ async function showPublishModal(hash) {
 
     <div class="${may ? "opt-ok" : "opt-blocked"}">
       ${may
-        ? `Authorship verified via <strong>${escapeHtml(st.authorship_tier || "")}</strong>.
+        ? `Peer reviewed, and authorship verified via
+           <strong>${escapeHtml(st.authorship_tier || "")}</strong>.
            Publishing costs <strong>${fee.toFixed(2)} piQ</strong>${
              st.fee_already_paid ? " (already paid for this paper — free now)" : ""}.`
-        : `<strong>Names do not match yet.</strong> ${escapeHtml(st.reason || "")}
-           ${st.how_to_fix ? `<br>${escapeHtml(st.how_to_fix)}` : ""}`}
+        : !authorOk
+          ? `<strong>Names do not match yet.</strong> ${escapeHtml(st.reason || "")}
+             ${st.how_to_fix ? `<br>${escapeHtml(st.how_to_fix)}` : ""}`
+          : `<strong>Not publishable yet.</strong> ${escapeHtml(
+              st.review_blocked_reason || "A peer review is required first.")}`}
     </div>
 
     ${st.has_file ? `
@@ -2525,6 +3032,21 @@ async function showPublishModal(hash) {
 // handler, so a capability added in future appears in both places or neither.
 
 /** Normalise the two shapes into the fields the actions need. */
+/** How many people have opened this assessment.
+ *
+ *  Counted once per reader per day server-side, not per click, so it measures
+ *  readership rather than reloads. Hidden at zero: "0 reads" on a paper
+ *  assessed a minute ago says nothing except that it is new, and a zero next
+ *  to a score reads as a judgement when it is only an absence.
+ */
+function readsPill(item) {
+  const n = Number((item && item.reads) || 0);
+  if (!n) return "";
+  return `<span class="pill p-reads" title="Distinct readers who have opened this assessment. `
+       + `Counted at most once per reader per day, so it cannot be inflated by refreshing."`
+       + `>${n.toLocaleString()} read${n === 1 ? "" : "s"}</span>`;
+}
+
 function normalizeAssessment(x, idx) {
   if (!x) return null;
   const emission = x.emission || {};
@@ -2539,6 +3061,12 @@ function normalizeAssessment(x, idx) {
     // Whether a machine review already exists. History rows carry it from the
     // server; a freshly assessed paper never has one yet.
     llmReviewed: !!(x.llm_reviewed || x.llm_review_count),
+    // Human reviews, which are what gate publishing. Machine reviews are
+    // deliberately not counted here: "reviewed before published" would mean
+    // nothing if a model reading the paper satisfied it.
+    peerReviews: Number(x.peer_reviews || 0),
+    reviewRequested: !!x.review_requested,
+    reads: Number(x.reads || 0),
   };
 }
 
@@ -2590,22 +3118,42 @@ function authorshipActions(item, idx) {
 
   const claimable = a.escrowed > 0 && !a.claimed;
   const reviewLabel = a.llmReviewed ? "Request a new review" : "Request a Review";
+  const reviewed = Number(a.peerReviews || 0) > 0;
 
   return `
     <details class="dossier-details dossier-author-actions">
       <summary class="author-toggle">If this is your manuscript</summary>
       <p class="hint">Requesting a review spends piQ. Publishing attaches a badge to this
-      assessment publicly and requires verified authorship.</p>
+      assessment publicly, requires verified authorship, and — because review comes before
+      publication — requires a completed peer review.</p>
       <div class="action-bar">
         <button class="btn btn-quiet" data-a="review" ${d}>${reviewLabel}</button>
         ${claimable ? `<button class="btn btn-quiet" data-a="claim" ${d}
               title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held"
               >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
         <button class="btn btn-quiet" data-a="${a.published ? "withdraw" : "publish"}" ${d}
-                title="${a.published ? "Remove the published badge" : "Attach a badge publicly"}"
+                ${a.published || reviewed ? "" : "disabled"}
+                title="${a.published ? "Remove the published badge"
+                  : reviewed ? "Attach a badge publicly"
+                  : "This paper must be peer reviewed before it can be published"}"
                 >${a.published ? "Withdraw" : "Publish"}</button>
       </div>
-    </details>`;
+      ${!a.published && !reviewed
+        ? `<p class="hint opt-inactive">Publishing is unavailable until a reviewer has submitted
+             a report. Request a peer review above; once it lands, the paper carries a
+             Peer-reviewed badge and this button turns on.</p>`
+        : ""}
+    </details>
+
+    <!-- Reviewing is a separate role from authorship, so it gets its own
+         section rather than hiding under "if this is your manuscript" — the
+         person who should see this is explicitly not the author. -->
+    <div class="dossier-details dossier-review-actions">
+      <div class="action-bar">
+        <button class="btn btn-quiet" data-a="write-review" ${d}
+                title="Review this paper and earn piQ">Write a review</button>
+      </div>
+    </div>`;
 }
 
 // One delegated listener for every action bar on the page, however it was
@@ -2632,6 +3180,7 @@ document.addEventListener("click", async (e) => {
       else openDefenseByHash(hash);
       break;
     case "review":   showReviewModal(hash); break;
+    case "write-review": showWriteReviewModal(hash); break;
     case "publish":  showPublishModal(hash); break;
     case "withdraw": await togglePublish(hash, false); break;
     case "claim":    await claimEscrow(hash); break;
@@ -3012,6 +3561,8 @@ function renderDossierModal(item, idx) {
           ? publishedBadge({ ...item, hash: item.hash || item.eval_hash }) : ""}
       ${peerReviewBadge(item)}
       ${llmReviewBadge({ ...item, hash: item.hash || item.eval_hash })}
+      ${reviewRequestedBadge({ ...item, hash: item.hash || item.eval_hash })}
+      ${readsPill(item)}
     </div>
     ${authorshipActions(item, idx)}
   </div>`;
@@ -3229,7 +3780,11 @@ async function openDossierByHash(hash) {
   if (!hash) return;
   openModal(`<div class="dossier"><h2>Loading dossier…</h2><p class="hint">Retrieving the full assessment record from the ledger.</p></div>`);
   try {
-    const r = await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}`);
+    // Identity is passed so the read is attributed to a person rather than to
+    // a hashed IP. Opening the dossier is what counts as a read, and the
+    // server deduplicates per reader per day from this.
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const r = await fetch(`${API}/api/explorer/dossier/${encodeURIComponent(hash)}?${qs}`);
     if (!r.ok) {
       openModal(`<div class="dossier"><h2>Record unavailable</h2><p>No ledger record was found for this evaluation hash.</p></div>`);
       return;
@@ -3901,14 +4456,12 @@ async function loadAnalyticsSummary() {
     const vEl = document.getElementById("statVisitors");
     if (vEl) {
       vEl.textContent = formatCount(v.unique || 0);
-      // The recent-window figures go in the label rather than as a second
-      // headline: "unique visitors" is the number people came for, and the
-      // 7-day figure is context for it, not a competing statistic.
+      // Label kept to the statistic itself. The 7-day figure was a second
+      // number stapled under the first, and on a low-traffic deployment
+      // "1 in the last 7 days" read as the headline rather than as context.
+      // The full breakdown is still on the tooltip for anyone who wants it.
       const label = vEl.parentElement.querySelector(".stat-label");
-      if (label) {
-        label.innerHTML = "Unique Visitors"
-          + (v.week ? `<br><span class="stat-sub">${formatCount(v.week)} in the last 7 days</span>` : "");
-      }
+      if (label) label.textContent = "Unique Visitors";
       vEl.parentElement.title =
         `${formatCount(v.unique || 0)} distinct visitors, ${formatCount(v.total || 0)} visits. `
         + `${formatCount(v.day || 0)} today, ${formatCount(v.week || 0)} this week, `
@@ -4126,7 +4679,7 @@ async function loadJournal() {
     }
     body.innerHTML = `<div class="table-scroll"><table class="data-table journal-table"><thead><tr>
         <th>Paper</th><th>Author</th><th class="num">piX</th>
-        <th>Publication</th><th>Review</th><th class="num">Date</th>
+        <th>Publication</th><th>Review</th><th class="num">Reads</th><th class="num">Date</th>
       </tr></thead><tbody>` + data.entries.map(e => `
         <tr class="clickable-row" data-hash="${escapeHtml(e.hash)}">
           <td><div class="hist-title">${escapeHtml(e.title)}</div>
@@ -4134,8 +4687,9 @@ async function loadJournal() {
           <td class="cell-muted">${escapeHtml(e.author || "—")}</td>
           <td class="num strong">${e.score.toFixed(1)}</td>
           <td>${publishedBadge(e) || `<span class="cell-muted">—</span>`}</td>
-          <td>${[peerReviewBadge(e), llmReviewBadge(e)].filter(Boolean).join(" ")
-                || `<span class="cell-muted">—</span>`}</td>
+          <td>${[peerReviewBadge(e), llmReviewBadge(e), reviewRequestedBadge(e)]
+                .filter(Boolean).join(" ") || `<span class="cell-muted">—</span>`}</td>
+          <td class="num cell-muted">${Number(e.reads || 0) || "—"}</td>
           <td class="num cell-muted">${(e.published_at || e.assessed_at || "").slice(0, 10)}</td>
         </tr>`).join("") + `</tbody></table></div>
       <p class="hint">${escapeHtml(data.note || "")}</p>`;
@@ -4300,6 +4854,9 @@ const BADGE_MARKS = {
   check: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 1.8l2.4 1.86 3-.35 1.2 2.79 2.79 1.2-.35 3L23.4 12.6l-1.86 2.4.35 3-2.79 1.2-1.2 2.79-3-.35L12 23.4l-2.4-1.86-3 .35-1.2-2.79-2.79-1.2.35-3L1.1 12.6l1.86-2.4-.35-3 2.79-1.2 1.2-2.79 3 .35z"/><path d="M10.6 15.4l-2.9-2.9 1.4-1.4 1.5 1.5 4-4 1.4 1.4z" fill="#fff"/></svg>`,
   peer: `<svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="8.5" cy="8" r="3.2"/><circle cx="16" cy="9.5" r="2.6"/><path d="M2.6 20c0-3.2 2.6-5.4 5.9-5.4s5.9 2.2 5.9 5.4z"/><path d="M14.8 20c0-2.2 1.4-3.9 3.6-3.9 1.9 0 3.2 1.3 3.2 3.9z"/></svg>`,
   chip: `<svg viewBox="0 0 24 24" aria-hidden="true"><rect x="6.5" y="6.5" width="11" height="11" rx="2.2"/><path d="M9.6 2.8h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM9.6 18.2h1.5v3H9.6zm3.3 0h1.5v3h-1.5zM2.8 9.6h3v1.5h-3zm0 3.3h3v1.5h-3zM18.2 9.6h3v1.5h-3zm0 3.3h3v1.5h-3z"/></svg>`,
+  // An hourglass, for "asked for and not yet done". Visually unlike the other
+  // marks on purpose: this one is a pending state, not an achievement.
+  clock: `<svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 2.5h12v2H6zm0 17h12v2H6z"/><path d="M7.5 4.5h9v2.2c0 2.4-1.7 3.9-3.3 5.3 1.6 1.4 3.3 2.9 3.3 5.3v2.2h-9v-2.2c0-2.4 1.7-3.9 3.3-5.3C9.2 10.6 7.5 9.1 7.5 6.7z"/></svg>`,
 };
 
 /** Render a seal. When `open` is given the seal becomes a button that opens
@@ -4368,8 +4925,32 @@ function publishedBadge(item) {
 function peerReviewBadge(item) {
   const n = Number((item && item.peer_reviews) || 0);
   if (!n) return "";
+  const h = badgeHash(item);
+  // Openable, like the LLM badge. A badge asserting a paper was reviewed and
+  // giving no way to read the review is decoration; the report is the evidence
+  // the badge is standing on.
   return seal("peer", "peer", n > 1 ? `Peer-reviewed ×${n}` : "Peer-reviewed",
-    "An independent researcher — not an author — submitted a reasoned verdict.");
+    "An independent researcher — not an author — submitted a reasoned verdict.",
+    h ? { action: "peer-review", hash: h } : null);
+}
+
+/** A review has been commissioned and nobody has written it yet.
+ *
+ *  Deliberately styled and worded as the weakest mark on the platform. It
+ *  says something has been *asked for*, not that anything has been checked,
+ *  and the one failure mode that matters here is a reader glancing at it and
+ *  coming away thinking the paper was reviewed.
+ */
+function reviewRequestedBadge(item) {
+  if (!item || !item.review_requested) return "";
+  // Once a review exists the request is spent; showing both would imply two
+  // separate things happened.
+  if (Number(item.peer_reviews || 0) > 0) return "";
+  const h = badgeHash(item);
+  return seal("requested", "clock", "Requested to be reviewed",
+    "Someone has commissioned a peer review of this paper and it is waiting for a reviewer. "
+    + "This is not a review and says nothing about the work.",
+    h ? { action: "dossier", hash: h } : null);
 }
 
 function llmReviewBadge(item) {
@@ -4381,6 +4962,14 @@ function llmReviewBadge(item) {
 }
 
 // Delegated so badges keep working through every table redraw.
+//
+// Bound in the CAPTURE phase, which is what makes the LLM-reviewed badge work
+// inside a table of clickable rows. In the bubble phase this handler ran
+// *after* the row's own listener: clicking the badge opened the review modal
+// and then the row's openDossierByHash — which awaits a fetch, so it resolved
+// last and painted the dossier over the review the user had just asked for.
+// stopPropagation could not help, because by then the row handler had already
+// run. Capturing means the badge is decided first and the row never fires.
 document.addEventListener("click", (e) => {
   const el = e.target.closest("[data-seal]");
   if (!el) return;
@@ -4407,12 +4996,13 @@ document.addEventListener("click", (e) => {
   }
   if (!hash) return;
   if (action === "llm-review") showLlmReviewModal(hash);
+  else if (action === "peer-review") showPeerReviewModal(hash);
   else openDossierByHash(hash);
-});
+}, true);   // capture — see the note above
 
 function allBadges(item) {
-  return [publishedBadge(item), peerReviewBadge(item), llmReviewBadge(item)]
-    .filter(Boolean).join(" ");
+  return [publishedBadge(item), peerReviewBadge(item), llmReviewBadge(item),
+          reviewRequestedBadge(item)].filter(Boolean).join(" ");
 }
 
 function explorerRowHtml(r) {
@@ -5328,6 +5918,16 @@ for (const group of Object.keys(TAG_GROUPS)) {
 }
 initScilem();
 setInterval(loadChainStatus, 60000);
+
+// Ask, on load, what happened to any review commissioned in a previous
+// session. This is the half of the background-review change that the user
+// actually experiences: request a review, close the window, come back, and the
+// finished report is waiting rather than lost along with the piQ that bought
+// it. The first poll seeds the seen-set silently, so old reviews do not
+// announce themselves on every visit.
+startReviewJobWatch({ immediate: true });
+// A page left open for hours should still notice work that completed on it.
+setInterval(() => { if (!reviewJobTimer) startReviewJobWatch({ immediate: true }); }, 120000);
 
 // Narrow surface exposed to arcade.js so it can refresh the allowance banner
 // after a win. Kept explicit rather than leaking the whole module scope.

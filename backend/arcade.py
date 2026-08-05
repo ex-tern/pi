@@ -34,6 +34,7 @@ per-IP cooldown enforced in the database.
 import time
 import hmac
 import json
+import math
 import base64
 import hashlib
 import logging
@@ -265,19 +266,38 @@ def generate_field(seed: int, overlay: Optional[List] = None,
         domains_of = {UNASSIGNED: UNASSIGNED}
 
     # --- How many bubbles each field gets -------------------------------
-    # Proportional to its share of the corpus, with a floor of one so every
-    # assessed field is visible however small. Bubble COUNT is share of the
-    # corpus; bubble SIZE is the field's weight. Both come from paper counts,
-    # neither from the RNG.
+    # Share of the corpus, compressed, with a floor of one so every assessed
+    # field is visible however small and a ceiling so no single field can take
+    # over the map.
+    #
+    # Straight proportionality was the problem. On a young corpus one field
+    # runs far ahead of the rest — 16 Computer Science papers against 1 or 2
+    # in most others — and linear allocation turned that into a map that was
+    # nearly all one colour. That is a faithful rendering of the numbers and a
+    # useless rendering of the science: the map exists to show the shape of the
+    # corpus, and a shape dominated by whichever field happened to be seeded
+    # first shows nothing else at all.
+    #
+    # Square-root compression keeps the ordering exactly (more papers is still
+    # always more bubbles) while pulling the extremes together, which is the
+    # standard treatment for area-encoded counts — perceived quantity on a map
+    # scales with area, so encoding the count as area means taking its root.
+    # The cap is a second, blunter guarantee for the degenerate case of a
+    # corpus that is essentially one field.
     total_papers = sum(weights.values())
     quota = []
-    for name in fields:
-        if total_papers > 0:
-            share = weights[name] / total_papers
-            n = max(1, int(round(share * FIELD_SIZE)))
-        else:
-            n = max(1, FIELD_SIZE // len(fields))
-        quota.append([name, n])
+    if total_papers > 0:
+        compressed = {name: math.sqrt(weights[name]) for name in fields}
+        total_compressed = sum(compressed.values()) or 1.0
+        # No field takes more than this share of the visible map. With few
+        # fields the cap has to relax or the quota cannot be filled at all.
+        max_share = max(0.30, 1.5 / max(1, len(fields)))
+        for name in fields:
+            share = min(compressed[name] / total_compressed, max_share)
+            quota.append([name, max(1, int(round(share * FIELD_SIZE)))])
+    else:
+        for name in fields:
+            quota.append([name, max(1, FIELD_SIZE // len(fields))])
 
     # Reconcile rounding against FIELD_SIZE exactly, largest field absorbing
     # the slack. The field must be exactly FIELD_SIZE bubbles or verification

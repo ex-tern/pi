@@ -21,6 +21,7 @@ import hmac
 import logging
 import logging.handlers
 import colorsys
+import threading
 import traceback
 import urllib.parse
 from datetime import datetime
@@ -30,7 +31,8 @@ from typing import Optional, List, Dict
 import sqlite3
 
 import requests
-from fastapi import FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request
+from fastapi import (FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request,
+                     BackgroundTasks)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, PlainTextResponse, JSONResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +48,8 @@ from config import (
     RATE_LIMIT_WINDOW_SECONDS, RATE_LIMIT_MAX_REQUESTS, ENABLE_SCILEM_LOCAL_MODEL, config_summary,
     SCILEM_DISABLED_NOTICE, ENABLE_SCILEM_ASSISTANT, SCILEM_MODE, SCILEM_LIMITED_NOTICE,
     PIQ_PROCESSING_FEE, DONATION_WALLET,
+    DONATION_CHAIN_ID, DONATION_CHAIN_NAME, DONATION_CURRENCY,
+    DONATION_EXPLORER_URL, DONATION_RPC_URLS,
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, CEREBRAS_API_KEY, MISTRAL_API_KEY,
     DEEPSEEK_API_KEY, TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
@@ -61,12 +65,15 @@ from database import (
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
     store_bug_report, mark_bug_report_delivered, list_bug_reports,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
-    get_curation_stats, credit_curation_reward,
+    get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
     set_published, is_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
-    record_llm_review,
+    record_llm_review, has_open_review_request, has_human_review,
+    count_journal_publications,
+    record_paper_read, get_paper_reads,
+    create_review_job, finish_review_job, list_review_jobs, reclaim_stale_review_jobs,
     record_backup_cid, latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
     record_visit, visitor_stats,
@@ -97,6 +104,7 @@ from rubric import (
 from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
     compute_curation_reward, publication_fee, peer_review_fee, llm_review_fee,
+    peer_review_bonus, PEER_REVIEW_BONUS,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import pid_engine as forecast_engine
@@ -253,6 +261,21 @@ def on_startup():
                     "State restore took %.1fs of the startup window. If deploys begin failing "
                     "their healthcheck, lower RESTORE_BUDGET_SECONDS.", _elapsed)
         _STATE_RESTORED = True
+
+    # Refund reviews this process was killed in the middle of. A background
+    # worker does not survive a restart, so without this the fee for an
+    # interrupted review stays charged against a report that will never be
+    # written — the user would have paid for nothing and had no way to tell.
+    try:
+        for stale in reclaim_stale_review_jobs():
+            if stale["fee"] > 0:
+                refund_piq_fee(stale["fee"], stale["wallet"], stale["orcid"],
+                               eval_hash=stale["hash"],
+                               reason="LLM review refund (interrupted by restart)")
+                add_log(f"Refunded {stale['fee']:.2f} piQ for review job {stale['id']} "
+                        f"interrupted by a restart.")
+    except Exception as e:
+        logging.warning("Could not reclaim stale review jobs: %s", e)
 
     # Say plainly, at every boot, whether this deployment can survive a
     # redeploy. The failure mode is silent by construction: an ephemeral
@@ -800,14 +823,33 @@ def chain_status():
 
 @app.get("/api/donate/info")
 def donate_info():
+    """Where to send a real contribution.
+
+    Reports the DONATION chain, not the ledger chain. The two differ on
+    purpose: assessments are anchored on Sepolia because anchoring is free
+    there, but SepoliaETH has no value, so soliciting donations on it asked
+    people to fund inference credits with test tokens. Every field here is
+    namespaced to donation_* so a future edit cannot quietly reconnect this
+    endpoint to the settlement chain.
+    """
     return {
         "wallet": DONATION_WALLET,
-        "chain_id": CHAIN_ID,
-        "chain_id_hex": hex(CHAIN_ID),
-        "chain_name": CHAIN_NAME,
-        "currency": CHAIN_CURRENCY,
-        "explorer_url": f"{BLOCK_EXPLORER_URL.rstrip('/')}/address/{DONATION_WALLET}",
-        "suggested_amounts": ["0.005", "0.01", "0.05", "0.1"],
+        "chain_id": DONATION_CHAIN_ID,
+        "chain_id_hex": hex(DONATION_CHAIN_ID),
+        "chain_name": DONATION_CHAIN_NAME,
+        "currency": DONATION_CURRENCY,
+        "rpc_urls": DONATION_RPC_URLS,
+        "explorer_url": f"{DONATION_EXPLORER_URL.rstrip('/')}/address/{DONATION_WALLET}",
+        "tx_explorer_base": f"{DONATION_EXPLORER_URL.rstrip('/')}/tx/",
+        "is_mainnet": DONATION_CHAIN_ID == 1,
+        # Sized for real ETH. The old ladder was denominated in a testnet token
+        # that costs nothing, so "0.1" meant nothing; on mainnet it is a
+        # meaningful sum and the suggestions have to reflect that.
+        "suggested_amounts": ["0.001", "0.005", "0.01", "0.05"],
+        "settlement_chain_note": (
+            f"Assessments are anchored on {CHAIN_NAME} for provenance. Donations are separate "
+            f"and settle on {DONATION_CHAIN_NAME} in {DONATION_CURRENCY}."
+        ),
         "message": (
             "ScholarPi is independent, non-commercial research infrastructure. "
             "Contributions fund LLM inference credits, RPC access and hosting."
@@ -1651,10 +1693,21 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
         extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
     verified = bool(attribution.get("verified")) or bool(row[5])
 
+    # Review before publication. Reported here so the form can say why the
+    # button is off, rather than letting someone fill it in and be refused.
+    reviewed = has_human_review(file_hash)
+
     return {
         "published": published,
         "published_at": row[3],
-        "may_publish": verified,
+        "may_publish": verified and reviewed,
+        "authorship_ok": verified,
+        "reviewed": reviewed,
+        "review_requested": has_open_review_request(file_hash),
+        "review_blocked_reason": ("" if reviewed else
+            ("This paper has not been peer reviewed. A paper must be reviewed before it can be "
+             "published — request a review from this dossier, and publish once a reviewer has "
+             "submitted their report.")),
         # Journal claims need both factors and a DOI that survives verification,
         # so the form can disable that option up front instead of letting a user
         # fill it in and be refused.
@@ -1674,6 +1727,9 @@ def publish_status(file_hash: str, request: Request, wallet: str = Query(default
         "fee_already_paid": already_paid,
         "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
         "held": get_piq_balance(identity["wallet"], identity["orcid"]).get("held", 0.0),
+        # Two independent gates, reported separately. Collapsing them into one
+        # message would tell a verified author whose paper is unreviewed that
+        # their authorship is the problem, which it is not.
         "reason": ("" if verified else
                    (attribution.get("reason") or "Authorship is not verified for this paper.")),
         "how_to_fix": None if verified else attribution.get("how_to_verify"),
@@ -1719,6 +1775,21 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     kind = (payload.kind or "author").strip().lower()
     if kind not in ("author", "journal"):
         raise HTTPException(status_code=400, detail="Publication kind must be author or journal.")
+
+    # Review comes before publication. Checked before the fee is taken, before
+    # authorship is verified, and again inside set_published — this is the
+    # ordering rule the journal rests on, and a rule enforced in one place is a
+    # rule with one bug away from not existing. A machine review does not
+    # satisfy it: has_human_review excludes the panel deliberately.
+    if not has_human_review(file_hash):
+        raise HTTPException(
+            status_code=409,
+            detail=("This paper has not been peer reviewed, and a paper must be reviewed before "
+                    "it can be published. Request a review from the dossier; once a reviewer has "
+                    "submitted their report the paper carries a Peer-reviewed badge and "
+                    "publishing becomes available. No piQ has been charged."
+                    + (" A review has already been requested and is waiting for a reviewer."
+                       if has_open_review_request(file_hash) else "")))
 
     # Publication requires a readable manuscript, and permission to show it.
     #
@@ -1926,7 +1997,10 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
                           AND r.reviewer_key <> 'llm:panel') AS peer_count,
                       (SELECT COUNT(*) FROM peer_reviews r
                         WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NOT NULL
-                          AND r.reviewer_key = 'llm:panel') AS llm_count
+                          AND r.reviewer_key = 'llm:panel') AS llm_count,
+                      COALESCE(p.reads, 0) AS reads,
+                      (SELECT COUNT(*) FROM peer_reviews r
+                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NULL) AS requested
                FROM papers_assessment p
                ORDER BY COALESCE(p.published_at, p.timestamp) DESC"""
         ).fetchall()
@@ -1939,11 +2013,17 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
     out = []
     for r in rows:
         published, peer, llm = bool(r[6]), int(r[10] or 0), int(r[11] or 0)
-        if not (published or peer or llm):
+        requested = int(r[13] or 0)
+        # A paper awaiting a reviewer belongs here too. It is the one state the
+        # index used to hide, and it is the state where being visible actually
+        # does something — a reviewer cannot pick up a request they cannot see.
+        if not (published or peer or llm or requested):
             continue          # the Journal lists claims, not the whole corpus
         if kind == "published" and not published:
             continue
         if kind == "reviewed" and not (peer or llm):
+            continue
+        if kind == "requested" and not requested:
             continue
         try:
             fields = json.loads(r[8] or "[]")
@@ -1955,6 +2035,8 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
             "piq": round(safe_float(r[4], 0.0), 2), "doi": r[5] or "",
             "published": published, "publish_kind": (r[7] or "author") if published else None,
             "published_at": r[6], "peer_reviews": peer, "llm_reviewed": bool(llm),
+            "review_requested": requested > 0,
+            "reads": int(r[12] or 0),
             "fields": fields, "assessed_at": r[9],
             # Lets the badge link straight to the manuscript. Without it every
             # row fell back to the DOI or the dossier, so a published paper
@@ -1966,10 +2048,12 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
 
     return {
         "entries": out, "count": len(out),
-        "note": ("Published means the verified author attached their name. Journal-published "
-                 "additionally required a DOI that resolves in a registry. Peer-reviewed means "
-                 "an independent researcher submitted a reasoned verdict; LLM-reviewed means a "
-                 "model panel did. They are separate claims and are shown separately."),
+        "note": ("Peer-reviewed means an independent researcher submitted a reasoned verdict; "
+                 "LLM-reviewed means a model panel did. Published means the reviewed paper's "
+                 "verified author then attached their name — review comes first, and nothing "
+                 "here can be published without one. Journal-published additionally required a "
+                 "DOI that resolves in a registry. Requested means a review has been "
+                 "commissioned and is waiting for a reviewer; it is not a review."),
     }
 
 
@@ -1999,7 +2083,15 @@ def review_state(file_hash: str):
         "peer_review_count": len(human),
         "llm_reviewed": len(machine) > 0,
         "reviews": human, "llm_reviews": machine,
+        # A request is a distinct, weaker state than a review, and it is
+        # reported separately for exactly the reason the two badges are
+        # separate: "somebody asked for this to be checked" must never be
+        # readable as "this was checked".
+        "review_requested": has_open_review_request(file_hash),
+        "may_publish_gate": len(human) > 0,
         "fee": peer_review_fee(), "llm_fee": llm_review_fee(),
+        "bonus": peer_review_bonus(),
+        "reads": get_paper_reads(file_hash),
     }
 
 
@@ -2011,13 +2103,6 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
     researchers: a wallet proves control of the paying account, an ORCID ties
     the request to a real research identity that can be held to it.
     """
-    # Human peer review is switched off for now. Enforced here as well as in the
-    # UI: a disabled button is a courtesy, not a control, and this endpoint
-    # holds piQ against a bounty nobody is currently able to collect.
-    raise HTTPException(
-        status_code=503,
-        detail="Peer review is inactive at the moment. No piQ has been charged or held.")
-
     identity = require_identity(request, payload.wallet, payload.orcid)
     check_rate_limit(get_client_ip(request), bucket="review")
     if not (identity["wallet"] and identity["orcid"]):
@@ -2047,14 +2132,18 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
         raise HTTPException(status_code=402, detail="The bounty could not be held.")
 
     add_log(f"Review requested for {file_hash[:12]}… bounty {fee:.2f} piQ")
-    return {"requested": True, "bounty": fee,
+    return {"requested": True, "bounty": fee, "awaiting_review": True,
+            "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
             "message": (f"Review requested. {fee:.2f} piQ is held and will be paid to the "
-                        f"researcher who completes it. The Peer-reviewed badge appears only "
-                        f"once a review has been submitted.")}
+                        f"researcher who completes it, on top of their {PEER_REVIEW_BONUS:.2f} piQ "
+                        f"completion bonus. The paper now carries a Requested-to-be-reviewed "
+                        f"marker; the Peer-reviewed badge appears only once a review has actually "
+                        f"been submitted.")}
 
 
 @app.post("/api/assessments/{file_hash}/review/llm")
-def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request):
+def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request,
+                       background: BackgroundTasks = None):
     """Commission a machine review using an actual LLM panel call. Cheaper, and labelled as what it is.
 
     Recorded in the same table as human reviews but with a reviewer key of
@@ -2066,6 +2155,14 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
     legitimate thing to want; each review is kept and shown with its date
     rather than overwriting the last one. The fee is charged per review, which
     is what stops "again" from being free.
+
+    **The review runs in the background.** Everything that can be refused is
+    checked and refused here — balance, stored manuscript, identity — and only
+    then is the fee taken and a job queued. The model call itself, which is the
+    slow part, happens after the response has gone out, so closing the window
+    does not abandon a review the user has already paid for. The piQ is spent
+    either way; the only question is whether the thing it bought gets written,
+    and it now does. The page picks the result up from /api/reviews/jobs.
     """
     identity = require_identity(request, payload.wallet, payload.orcid)
     check_rate_limit(get_client_ip(request), bucket="review")
@@ -2125,10 +2222,77 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
                           eval_hash=file_hash, reason="LLM review fee"):
         raise HTTPException(status_code=402, detail="The fee could not be charged.")
 
-    # Call the actual LLM infrastructure for the review
-    from providers import build_routes, is_route_cooling, record_success, record_rate_limit, parse_retry_after, classify_provider_error
+    # The job row is the receipt. Written immediately after the charge and
+    # before any model call, so a crash mid-review leaves evidence that this
+    # identity paid for a review that never arrived — which is what
+    # reclaim_stale_review_jobs refunds against on the next start-up.
+    job_id = create_review_job(file_hash, key, identity["wallet"], identity["orcid"],
+                               fee, kind="llm")
+
+    def _run():
+        try:
+            result = _perform_llm_review(file_hash, row[0] or "Untitled", manuscript)
+        except Exception as e:                       # noqa: BLE001 - must never escape a worker
+            logging.exception("LLM review job %s failed for %s", job_id, file_hash[:12])
+            try:
+                refund_piq_fee(fee, identity["wallet"], identity["orcid"],
+                               eval_hash=file_hash, reason="LLM review refund (job failed)")
+            except Exception:
+                logging.warning("LLM review refund failed for %s", file_hash[:12])
+            finish_review_job(job_id, "failed", "",
+                              f"The review could not be completed and the {fee:.2f} piQ fee was "
+                              f"returned. ({str(e)[:120]})")
+            return
+
+        saved = record_llm_review(file_hash, result["verdict"], result["comment"])
+        if not saved["ok"]:
+            # The fee bought a review that could not be stored. Give it back
+            # rather than keep piQ for nothing.
+            try:
+                refund_piq_fee(fee, identity["wallet"], identity["orcid"],
+                               eval_hash=file_hash, reason="LLM review refund (not saved)")
+            except Exception:
+                logging.warning("LLM review refund failed for %s", file_hash[:12])
+            finish_review_job(job_id, "failed", result["verdict"], saved["reason"])
+            return
+
+        add_log(f"LLM referee report recorded for {file_hash[:12]}… ({result['verdict']})")
+        finish_review_job(
+            job_id, "complete", result["verdict"],
+            (f"Referee report complete — recommendation: {result['verdict']}. The badge is "
+             f"attached; open it to read the full report."
+             if result["reached_model"] else
+             "No model was reachable, so the review records that. The badge is attached and you "
+             "can request a new review to try again."))
+
+    if background is not None:
+        # BackgroundTasks runs after the response is sent, in the server
+        # process — the client disconnecting has no bearing on it.
+        background.add_task(_run)
+    else:
+        threading.Thread(target=_run, daemon=True).start()
+
+    return {
+        "requested": True, "queued": True, "job_id": job_id, "charged": fee,
+        "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
+        "message": (f"Review queued. {fee:.2f} piQ charged. The panel is reading the manuscript "
+                    f"now — this takes up to a minute, and it finishes whether or not you stay "
+                    f"on this page. The badge appears here as soon as it lands."),
+    }
+
+
+def _perform_llm_review(file_hash: str, title: str, manuscript: str) -> dict:
+    """Read a manuscript with the judge chain and return a referee report.
+
+    Split out of the endpoint so it can run after the response has been sent.
+    It takes no request and no identity: everything it needs was validated and
+    paid for before it was scheduled, and it returns a result rather than
+    writing one, so the caller owns refunding and recording.
+    """
+    from providers import (build_routes, is_route_cooling, record_success, record_rate_limit,
+                           parse_retry_after, classify_provider_error, is_scilm_route)
     from brain import request_model_assessment
-    
+
     # An ordinary scholarly peer review, in the reviewer's own terms.
     #
     # Deliberately free of ScholarPi's vocabulary: no piX, no piQ, no C1-C8, no
@@ -2160,10 +2324,15 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
         '  "concerns": array of short strings, most serious first\n\n'
         + ("NOTE: the manuscript was truncated for length; review what is present and say so "
            "if the ending is missing.\n\n" if truncated else "")
-        + f"TITLE: {row[0] or 'Untitled'}\n\nMANUSCRIPT:\n{manuscript}"
+        + f"TITLE: {title or 'Untitled'}\n\nMANUSCRIPT:\n{manuscript}"
     )
 
-    judge_routes = build_routes("judge")
+    # SciLM (siM) is excluded here for the same reason it is excluded from
+    # adjudication: it is ScholarPi's own engine, and a "referee report" written
+    # by the platform about a paper the platform scored is not an independent
+    # reading. build_routes already filters the judge chain; the second filter
+    # is cheap and makes the guarantee local to the thing that depends on it.
+    judge_routes = [r for r in build_routes("judge") if not is_scilm_route(r)]
     # The fallbacks are what make the badge unconditional. If no model answers,
     # the review still exists and says so plainly — an honest "the panel could
     # not be reached" is a result, and hiding it after taking the fee is not.
@@ -2227,57 +2396,133 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request)
             if classified["category"] == "rate_limit":
                 record_rate_limit(route["model"], route["provider"], parse_retry_after(raw_err))
 
-    # Written directly rather than through the request/complete pair, which
-    # rejects a completion by the same key that opened it — see record_llm_review.
-    saved = record_llm_review(file_hash, verdict, comment)
-    if not saved["ok"]:
-        # The fee bought a review that could not be stored. Give it back rather
-        # than keep piQ for nothing.
-        try:
-            refund_piq_fee(fee, identity["wallet"], identity["orcid"],
-                           eval_hash=file_hash, reason="LLM review refund (not saved)")
-        except Exception:
-            logging.warning("LLM review refund failed for %s", file_hash[:12])
-        raise HTTPException(status_code=503, detail=saved["reason"])
+    return {"verdict": verdict, "comment": comment,
+            "reached_model": reached_model, "model": review_model}
 
-    add_log(f"LLM referee report recorded for {file_hash[:12]}… ({verdict})")
-    return {"requested": True, "verdict": verdict, "charged": fee,
-            "reached_model": reached_model, "model": review_model,
-            "review": {"verdict": verdict, "comment": comment},
-            "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": (f"Referee report complete — recommendation: {verdict}. The badge is "
-                        f"attached; open it to read the full report."
-                        if reached_model else
-                        "No model was reachable, so the review records that. The badge is attached "
-                        "and you can request a new review to try again.")}
+
+@app.get("/api/reviews/jobs")
+def review_jobs(request: Request, wallet: str = Query(default=""),
+                orcid: str = Query(default="")):
+    """Review work this identity has commissioned, and what became of it.
+
+    The mechanism by which a review survives the window that asked for it: the
+    browser polls this instead of holding a request open, so a review requested
+    and then walked away from is still there — finished — on the next visit.
+    """
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if not identity["verified"]:
+        return {"signed_in": False, "jobs": [], "pending": 0}
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    jobs = list_review_jobs(key)
+    return {"signed_in": True, "jobs": jobs,
+            "pending": sum(1 for j in jobs if j["status"] in ("queued", "running"))}
+
+
+# What a review has to contain to count. Published rather than merely
+# enforced, so the writing window can show a reviewer the bar before they
+# spend an hour on a report and have it refused at submission.
+REVIEW_MIN_CHARS = 400
+REVIEW_REQUIREMENTS = [
+    {"id": "eligibility",
+     "text": ("You must have at least one paper published in the journal list. Reviewing is open "
+              "to people who have put their own work through the same process.")},
+    {"id": "identity",
+     "text": ("Both a signed wallet and a linked ORCID. The wallet proves control of the account "
+              "being paid; the ORCID ties the report to a research identity.")},
+    {"id": "independence",
+     "text": ("You cannot review your own paper, or one you requested a review of. Requester and "
+              "reviewer being the same person would make the badge self-issued.")},
+    {"id": "verdict",
+     "text": "A verdict: sound, concerns, or unsound."},
+    {"id": "length",
+     "text": (f"At least {REVIEW_MIN_CHARS} characters of reasoning, referring to specific parts "
+              f"of the manuscript. A verdict with no argument behind it is not a review.")},
+    {"id": "substance",
+     "text": ("Cover the claims against the evidence, the methodology, and reproducibility. Be "
+              "direct about weaknesses — a report that praises everything is useless to a reader.")},
+]
+
+
+@app.get("/api/reviews/eligibility")
+def review_eligibility(request: Request, wallet: str = Query(default=""),
+                       orcid: str = Query(default="")):
+    """Whether this identity may write reviews, and what is required of one.
+
+    Answered before the writing window opens rather than at submission. Telling
+    someone their report is refused after they have written it is the worst
+    possible moment to mention a rule they could have been told up front.
+    """
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if not identity["verified"]:
+        return {"signed_in": False, "eligible": False, "published_count": 0,
+                "requirements": REVIEW_REQUIREMENTS, "min_chars": REVIEW_MIN_CHARS,
+                "bonus": PEER_REVIEW_BONUS,
+                "reason": "Sign in with a wallet or ORCID to review."}
+
+    identities = _identity_values(identity["wallet"], identity["orcid"])
+    published = count_journal_publications(identities)
+    both_factors = bool(identity["wallet"] and identity["orcid"])
+    eligible = published >= 1 and both_factors
+
+    if published < 1:
+        reason = ("To become a reviewer you must have at least one paper published in the journal "
+                  "list. Publish an assessment of your own work first — it needs a review of its "
+                  "own to be publishable, so the requirement is a loop you enter by being "
+                  "reviewed, not by reviewing.")
+    elif not both_factors:
+        missing = "a signed wallet" if not identity["wallet"] else "a linked ORCID"
+        reason = f"Reviewing needs both a signed wallet and a linked ORCID; you are missing {missing}."
+    else:
+        reason = ""
+
+    return {"signed_in": True, "eligible": eligible, "published_count": published,
+            "requirements": REVIEW_REQUIREMENTS, "min_chars": REVIEW_MIN_CHARS,
+            "bonus": PEER_REVIEW_BONUS, "reason": reason}
 
 
 @app.post("/api/reviews/submit")
 def submit_review(payload: ReviewSubmission, request: Request):
-    """Complete a review and collect the bounty."""
+    """Complete a review and collect the bounty plus the completion bonus."""
     identity = require_identity(request, payload.wallet, payload.orcid)
     check_rate_limit(get_client_ip(request), bucket="review")
     if not (identity["wallet"] and identity["orcid"]):
         raise HTTPException(
             status_code=403,
             detail="Reviewing needs both a signed wallet and a linked ORCID.")
+
+    # Re-checked at submission, not only when the window opened. A page can be
+    # left open across a change in standing, and the eligibility endpoint is a
+    # courtesy to the reviewer — this is the control.
+    identities = _identity_values(identity["wallet"], identity["orcid"])
+    if count_journal_publications(identities) < 1:
+        raise HTTPException(
+            status_code=403,
+            detail=("To review, you must have at least one paper published in the journal list. "
+                    "Publish your own work first."))
+
     if payload.verdict not in ("sound", "concerns", "unsound"):
         raise HTTPException(status_code=400, detail="Verdict must be sound, concerns or unsound.")
-    if len((payload.comment or "").strip()) < 40:
+    if len((payload.comment or "").strip()) < REVIEW_MIN_CHARS:
         raise HTTPException(
             status_code=400,
-            detail=("A review needs at least 40 characters of comment. A verdict with no "
-                    "reasoning is not a review, and the badge would be worthless if it were."))
+            detail=(f"A review needs at least {REVIEW_MIN_CHARS} characters of reasoning; yours "
+                    f"has {len((payload.comment or '').strip())}. A verdict with no argument "
+                    f"behind it is not a review, and the badge would be worthless if it were."))
 
     key = _profile_key(identity["wallet"], identity["orcid"])
     result = complete_review(payload.review_id, key, payload.verdict, payload.comment)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["reason"])
     add_log(f"Review completed on {result['eval_hash'][:12]}… paid {result['paid']:.2f} piQ")
+    bounty, bonus = result.get("bounty", 0.0), result.get("bonus", PEER_REVIEW_BONUS)
     return {"submitted": True, "paid": result["paid"],
+            "bounty": bounty, "bonus": bonus,
+            "eval_hash": result["eval_hash"],
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
-            "message": (f"Review recorded. {result['paid']:.2f} piQ paid to you. The paper now "
-                        f"carries a Peer-reviewed badge.")}
+            "message": (f"Review recorded. {result['paid']:.2f} piQ paid to you"
+                        + (f" ({bounty:.2f} bounty + {bonus:.2f} completion bonus)"
+                           if bounty else f" ({bonus:.2f} completion bonus)")
+                        + ". The paper now carries a Peer-reviewed badge and can be published.")}
 
 
 @app.delete("/api/assessments/{file_hash}")
@@ -2727,6 +2972,12 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         nothing is awarded.
         """
         if not (fee_wallet or fee_orcid):
+            item["curation"] = {
+                "awarded": 0.0, "eligible": False,
+                "reason": ("Curation rewards are credited to an account. Sign in with a wallet or "
+                           "ORCID before running the pipeline and submitting other people's "
+                           "papers earns piQ."),
+            }
             return []
         emission_rec = item.get("emission") or {}
         attribution = emission_rec.get("attribution") or {}
@@ -2743,20 +2994,46 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             curation_count=stats["count"],
             curation_earned=stats["earned"],
         )
+        # Every outcome is reported, including the ones that pay nothing.
+        # Previously an ineligible reward wrote its reason into the payload and
+        # emitted no line, so from the browser a curation reward that correctly
+        # declined to pay and one that silently failed looked identical — which
+        # is why "the curation reward doesn't work" was indistinguishable from
+        # "the curation reward decided not to pay this time".
         if not reward.get("eligible"):
             item["curation"] = reward
-            return []
+            return [line({
+                "type": "curation",
+                "amount": 0.0,
+                "awarded": False,
+                "balance": get_piq_balance(fee_wallet, fee_orcid)["balance"],
+                "message": reward.get("reason") or "No curation reward for this paper.",
+            })]
 
+        eval_hash = item.get("eval_hash", "")
+        already = bool(eval_hash) and get_curation_award_for(
+            fee_wallet, fee_orcid, eval_hash)
         credited = credit_curation_reward(
             reward["awarded"], fee_wallet, fee_orcid,
-            eval_hash=item.get("eval_hash", ""), note=str(label)[:80],
+            eval_hash=eval_hash, note=str(label)[:80],
         )
         if not credited:
-            # Almost always a resubmission of a paper already rewarded.
-            reward = {**reward, "awarded": 0.0, "eligible": False,
-                      "reason": "You have already earned a curation reward for this manuscript."}
+            # Two different failures used to share one message. "You already
+            # earned this" is a correct, final answer; a database error is a
+            # bug the user should be told about rather than have explained away
+            # as something they did.
+            reason = ("You have already earned a curation reward for this manuscript. "
+                      "Resubmitting a paper does not earn it twice."
+                      if already else
+                      "The curation reward could not be credited to your account. This is a "
+                      "fault on our side, not a rule — please report it.")
+            reward = {**reward, "awarded": 0.0, "eligible": False, "reason": reason}
             item["curation"] = reward
-            return []
+            return [line({
+                "type": "curation", "amount": 0.0, "awarded": False,
+                "balance": get_piq_balance(fee_wallet, fee_orcid)["balance"],
+                "message": reason,
+            })]
 
         item["curation"] = reward
         bal = get_piq_balance(fee_wallet, fee_orcid)
@@ -2764,6 +3041,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         return [line({
             "type": "curation",
             "amount": reward["awarded"],
+            "awarded": True,
             "balance": bal["balance"],
             "message": reward["reason"],
         })]
@@ -4364,7 +4642,8 @@ def explorer_latest(
 
 
 @app.get("/api/explorer/dossier/{eval_hash}")
-def explorer_dossier(eval_hash: str):
+def explorer_dossier(eval_hash: str, request: Request = None,
+                     wallet: str = Query(default=""), orcid: str = Query(default="")):
     conn = get_db_connection()
     try:
         row = conn.execute(f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)).fetchone()
@@ -4408,6 +4687,26 @@ def explorer_dossier(eval_hash: str):
     # its author. Advertising an unpublished file would produce a link that
     # 404s for every reader who follows it.
     dossier["has_file"] = bool(dossier["published"] and paper_store.has_paper(eval_hash))
+
+    # A request is a weaker claim than a review and is carried separately, so
+    # the marker can never be mistaken for the badge.
+    dossier["review_requested"] = has_open_review_request(eval_hash)
+    dossier["review_bounty"] = peer_review_fee()["fee"]
+
+    # Opening the full dossier is what counts as a read. Not a leaderboard row
+    # scrolling past, not a card in a list — someone opened the record and
+    # looked at it. Deduplicated per reader per day inside record_paper_read.
+    reader = ""
+    try:
+        identity = auth.identity_from_request(request, wallet, orcid) if request else {}
+        if identity.get("verified"):
+            reader = _profile_key(identity.get("wallet", ""), identity.get("orcid", ""))
+        elif request is not None:
+            reader = "ip:" + hashlib.sha256(
+                get_client_ip(request).encode("utf-8")).hexdigest()[:24]
+    except Exception:
+        reader = ""
+    dossier["reads"] = record_paper_read(eval_hash, reader) if reader else get_paper_reads(eval_hash)
     return dossier
 
 

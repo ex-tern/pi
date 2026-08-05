@@ -2,6 +2,10 @@ import sqlite3
 import json
 import logging
 from datetime import datetime
+# Imported at module scope rather than inside complete_review: the bonus is
+# part of what a completed review pays, and a lazy import would let a bad
+# emission module fail at payment time instead of at start-up.
+from emission import PEER_REVIEW_BONUS
 from config import (
     DB_PATH, GENESIS_BLOCK_CONFIG, DEPLOYMENT_FINGERPRINT, compute_genesis_hash,
 )
@@ -309,6 +313,11 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # The epoch whose criteria weights produced final_score, plus the
         # unweighted mean, so a score stays interpretable after weights move.
         "scoring_epoch": "INTEGER DEFAULT 0", "unweighted_score": "REAL DEFAULT 0.0",
+        # How many times this assessment's dossier has been opened. Counted
+        # per identity/IP once a day (see record_paper_read) rather than per
+        # click, because a raw click counter is trivially inflatable and a
+        # reads number that can be manufactured is worse than no number.
+        "reads": "INTEGER DEFAULT 0",
     }
     cursor.execute("PRAGMA table_info(papers_assessment)")
     existing_cols = [row[1] for row in cursor.fetchall()]
@@ -316,6 +325,39 @@ def enforce_database_schema(conn: sqlite3.Connection):
         if col not in existing_cols:
             try: cursor.execute(f"ALTER TABLE papers_assessment ADD COLUMN {col} {dtype}")
             except: pass
+
+    # Reader log behind the `reads` column. One row per (paper, reader, day),
+    # so a refresh loop cannot inflate the count and the aggregate on
+    # papers_assessment stays reconstructible from evidence rather than being
+    # a number nobody can audit.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS paper_reads (
+                        eval_hash TEXT NOT NULL,
+                        reader TEXT NOT NULL,
+                        read_day TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (eval_hash, reader, read_day))""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_reads_hash ON paper_reads(eval_hash)")
+
+    # Queued LLM review work. The review outlives the HTTP request that asked
+    # for it: the fee is charged up front, so a user who closes the tab must
+    # still get what they paid for. The job row is what makes that recoverable
+    # — the request is durable before any model is called, and a crash leaves
+    # a "running" row that can be refunded rather than piQ spent on nothing.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS review_jobs (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        eval_hash TEXT NOT NULL,
+                        requested_by TEXT DEFAULT '',
+                        wallet TEXT DEFAULT '',
+                        orcid TEXT DEFAULT '',
+                        kind TEXT DEFAULT 'llm',
+                        status TEXT DEFAULT 'queued',
+                        fee REAL DEFAULT 0,
+                        verdict TEXT DEFAULT '',
+                        message TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        finished_at DATETIME)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_review_jobs_by ON review_jobs(requested_by)")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_review_jobs_status ON review_jobs(status)")
 
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eval_hash ON papers_assessment(eval_hash)")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_papers_eth_book ON papers_assessment(eth_book)")
@@ -1469,6 +1511,31 @@ def get_curation_stats(wallet: str = "", orcid: str = "") -> dict:
     return {"count": int(row[0] or 0), "earned": round(float(row[1] or 0.0), 4)}
 
 
+def get_curation_award_for(wallet: str = "", orcid: str = "", eval_hash: str = "") -> float:
+    """What this identity has already been paid for curating this paper.
+
+    Exists so a refused credit can be explained correctly. "Already rewarded"
+    and "the write failed" are different facts, and reporting the second as the
+    first tells the user they did something wrong when the platform did.
+    """
+    keys = _account_keys(wallet, orcid)
+    if not keys or not eval_hash:
+        return 0.0
+    accounts = [a for _, a in keys]
+    ph = ",".join("?" for _ in accounts)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT COALESCE(SUM(delta), 0) FROM piq_ledger
+                WHERE account IN ({ph}) AND eval_hash = ? AND reason LIKE ?""",
+            (*accounts, eval_hash, CURATION_REASON_PREFIX + "%")).fetchone()
+        return round(float(row[0] or 0.0), 4)
+    except sqlite3.Error:
+        return 0.0
+    finally:
+        conn.close()
+
+
 def credit_curation_reward(amount: float, wallet: str = "", orcid: str = "",
                            eval_hash: str = "", note: str = "") -> bool:
     """Credit a curation reward. One award per identity per paper.
@@ -1681,10 +1748,21 @@ def set_published(eval_hash: str, identities, account_key: str, published: bool,
     Withdrawal is always permitted. An endorsement a researcher cannot retract
     is not an endorsement, it is a trap — circumstances change, coauthors
     object, a preprint gets retracted.
+
+    Publication requires a completed human review. The check lives here, at the
+    write, and not only in the endpoint: this is the single function that can
+    set published_at, so putting the rule anywhere else leaves a path around
+    it. "Reviewed, then published" is only a rule if it is impossible to
+    publish something unreviewed, not merely discouraged in the interface.
     """
     values = [v for v in (identities or []) if v]
     if not eval_hash or not values:
         return {"ok": False, "reason": "Sign in to publish an assessment."}
+    if published and not has_human_review(eval_hash):
+        return {"ok": False, "reason": (
+            "This paper has not been peer reviewed yet. A paper must be reviewed before it can "
+            "be published — request a review from the dossier, and publish once a reviewer has "
+            "submitted their report.")}
     ph = ",".join("?" for _ in values)
     conn = get_db_connection()
     try:
@@ -1856,15 +1934,26 @@ def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: st
                    completed_at = CURRENT_TIMESTAMP WHERE id = ?""",
             (reviewer_key, verdict[:40], comment[:4000], review_id))
         bounty = round(float(row[2] or 0), 4)
+        kind = "orcid" if reviewer_key.startswith("orcid:") else "wallet"
+        account = reviewer_key.split(":", 1)[-1]
         if bounty > 0:
-            kind = "orcid" if reviewer_key.startswith("orcid:") else "wallet"
             conn.execute(
                 "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
                 "VALUES (?, ?, ?, ?, ?)",
-                (reviewer_key.split(":", 1)[-1], kind, bounty,
-                 "Peer review bounty", row[0]))
+                (account, kind, bounty, "Peer review bounty", row[0]))
+        # The completion bonus is separate from the bounty and unconditional on
+        # one having been posted, so reviewing a paper nobody commissioned still
+        # pays. Written as its own ledger line rather than folded into the
+        # bounty, so a reviewer can see which is which.
+        bonus = round(float(PEER_REVIEW_BONUS), 4)
+        if bonus > 0:
+            conn.execute(
+                "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (account, kind, bonus, "Peer review completion bonus", row[0]))
         conn.commit()
-        return {"ok": True, "eval_hash": row[0], "paid": bounty, "reason": ""}
+        return {"ok": True, "eval_hash": row[0], "paid": round(bounty + bonus, 4),
+                "bounty": bounty, "bonus": bonus, "reason": ""}
     except sqlite3.Error as e:
         conn.rollback()
         logging.warning("Could not complete review: %s", e)
@@ -1907,6 +1996,222 @@ def review_summary(eval_hash: str) -> dict:
             "is_llm": (r[3] == "llm:panel") or str(r[0] or "").startswith("llm"),
         } for r in rows],
     }
+
+
+def has_open_review_request(eval_hash: str) -> bool:
+    """Whether someone has asked for this paper to be reviewed and nobody has yet.
+
+    This is what the "Requested to be reviewed" marker is drawn from. It is a
+    request, not a credential, and it disappears the moment a review lands —
+    at which point the Peer-reviewed badge is the honest thing to show instead.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            "SELECT 1 FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1",
+            (eval_hash,)).fetchone()
+        return bool(row)
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def has_human_review(eval_hash: str) -> bool:
+    """Whether a *person* has reviewed this paper.
+
+    Machine reviews are excluded deliberately. This is the gate on publishing,
+    and a paper that cleared it because a language model read it would make
+    "reviewed before published" mean nothing.
+    """
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            """SELECT 1 FROM peer_reviews
+               WHERE eval_hash = ? AND completed_at IS NOT NULL
+                 AND reviewer_key <> 'llm:panel' LIMIT 1""", (eval_hash,)).fetchone()
+        return bool(row)
+    except sqlite3.Error:
+        return False
+    finally:
+        conn.close()
+
+
+def count_journal_publications(identities) -> int:
+    """How many papers this identity has published on the platform.
+
+    The reviewer eligibility test. Reviewing is a privilege of people who have
+    themselves put work into the journal and been through the same process —
+    it is not a gate on competence, it is a gate on having something at stake.
+    """
+    values = [v for v in (identities or []) if v]
+    if not values:
+        return 0
+    ph = ",".join("?" for _ in values)
+    conn = get_db_connection()
+    try:
+        row = conn.execute(
+            f"""SELECT COUNT(*) FROM papers_assessment
+                WHERE published_at IS NOT NULL
+                  AND (user_id IN ({ph}) OR author_openalex_id IN ({ph})
+                       OR published_by IN ({ph}))""",
+            (*values, *values, *values)).fetchone()
+        return int(row[0] or 0)
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Reads
+# ---------------------------------------------------------------------------
+def record_paper_read(eval_hash: str, reader: str) -> int:
+    """Count one read of an assessment, at most once per reader per day.
+
+    Returns the new total. Deduplicated on (paper, reader, day) because the
+    number is displayed publicly next to a score: a counter that goes up on
+    every page refresh measures nothing except how often a tab was reloaded,
+    and would be inflatable by anyone who wanted their paper to look read.
+
+    Never raises. Failing to count a read must not fail the read itself.
+    """
+    if not eval_hash:
+        return 0
+    reader = (reader or "anonymous")[:120]
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """INSERT OR IGNORE INTO paper_reads (eval_hash, reader, read_day)
+               VALUES (?, ?, DATE('now'))""", (eval_hash, reader))
+        if cur.rowcount:
+            conn.execute(
+                "UPDATE papers_assessment SET reads = COALESCE(reads, 0) + 1 "
+                "WHERE eval_hash = ?", (eval_hash,))
+        conn.commit()
+        row = conn.execute("SELECT COALESCE(reads, 0) FROM papers_assessment WHERE eval_hash = ?",
+                           (eval_hash,)).fetchone()
+        return int(row[0] or 0) if row else 0
+    except sqlite3.Error as e:
+        logging.warning("Could not record read for %s: %s", eval_hash[:12], e)
+        return 0
+    finally:
+        conn.close()
+
+
+def get_paper_reads(eval_hash: str) -> int:
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT COALESCE(reads, 0) FROM papers_assessment WHERE eval_hash = ?",
+                           (eval_hash,)).fetchone()
+        return int(row[0] or 0) if row else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Background review jobs
+# ---------------------------------------------------------------------------
+def create_review_job(eval_hash: str, requested_by: str, wallet: str, orcid: str,
+                      fee: float, kind: str = "llm") -> int:
+    """Record a review as owed before any model is called.
+
+    Written first, deliberately. The fee is charged up front, so the durable
+    record of "this person is owed a review" must exist before the part that
+    can fail — otherwise a crash between payment and completion leaves piQ
+    spent with nothing on record to recover it against.
+    """
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """INSERT INTO review_jobs (eval_hash, requested_by, wallet, orcid, kind,
+                                        status, fee)
+               VALUES (?, ?, ?, ?, ?, 'running', ?)""",
+            (eval_hash, requested_by, wallet, orcid, kind, float(fee or 0)))
+        conn.commit()
+        return int(cur.lastrowid)
+    except sqlite3.Error as e:
+        logging.warning("Could not create review job: %s", e)
+        return 0
+    finally:
+        conn.close()
+
+
+def finish_review_job(job_id: int, status: str, verdict: str = "", message: str = "") -> None:
+    if not job_id:
+        return
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            """UPDATE review_jobs SET status = ?, verdict = ?, message = ?,
+                   finished_at = CURRENT_TIMESTAMP WHERE id = ?""",
+            (str(status)[:20], str(verdict)[:60], str(message)[:600], int(job_id)))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not finish review job %s: %s", job_id, e)
+    finally:
+        conn.close()
+
+
+def list_review_jobs(requested_by: str, limit: int = 20) -> list:
+    """Recent review jobs for one identity, newest first.
+
+    This is what lets the page pick up a review that finished while the window
+    was closed: the browser asks what happened rather than needing to have
+    been present when it did.
+    """
+    if not requested_by:
+        return []
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT j.id, j.eval_hash, j.kind, j.status, j.verdict, j.message,
+                      j.created_at, j.finished_at, p.title
+               FROM review_jobs j
+               LEFT JOIN papers_assessment p ON p.eval_hash = j.eval_hash
+               WHERE j.requested_by = ?
+               ORDER BY j.id DESC LIMIT ?""", (requested_by, int(limit))).fetchall()
+    except sqlite3.Error:
+        return []
+    finally:
+        conn.close()
+    return [{"id": r[0], "hash": r[1], "kind": r[2], "status": r[3], "verdict": r[4],
+             "message": r[5], "created_at": r[6], "finished_at": r[7],
+             "title": r[8] or "Untitled"} for r in rows]
+
+
+def reclaim_stale_review_jobs(max_age_minutes: int = 30) -> list:
+    """Jobs left "running" by a process that died. Returns them for refund.
+
+    A worker thread does not survive a restart, so without this the fee for an
+    interrupted review would sit charged forever against a review that will
+    never be written.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT id, eval_hash, wallet, orcid, fee FROM review_jobs
+               WHERE status = 'running'
+                 AND created_at < DATETIME('now', ?)""",
+            (f"-{int(max_age_minutes)} minutes",)).fetchall()
+        if rows:
+            conn.execute(
+                """UPDATE review_jobs SET status = 'abandoned',
+                       message = 'The service restarted before this review finished; '
+                                 || 'the fee was returned.',
+                       finished_at = CURRENT_TIMESTAMP
+                   WHERE status = 'running' AND created_at < DATETIME('now', ?)""",
+                (f"-{int(max_age_minutes)} minutes",))
+            conn.commit()
+    except sqlite3.Error as e:
+        logging.warning("Could not reclaim stale review jobs: %s", e)
+        return []
+    finally:
+        conn.close()
+    return [{"id": r[0], "hash": r[1], "wallet": r[2], "orcid": r[3],
+             "fee": float(r[4] or 0)} for r in rows]
 
 
 # ---------------------------------------------------------------------------

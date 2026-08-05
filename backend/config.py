@@ -134,6 +134,27 @@ PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
 # Wallet that receives Support & Donate contributions.
 DONATION_WALLET = os.getenv("DONATION_WALLET", "0x6B89DD74DCa5d4DC98599206b1c2dE614066ef40")
 
+# Donations settle on Ethereum mainnet, NOT on the chain the ledger anchors to.
+#
+# These are deliberately separate settings. The proof-of-research ledger runs on
+# Sepolia because anchoring a hash costs nothing there and the testnet is the
+# right place for it — but SepoliaETH is worthless, so a "donate" button
+# pointing at Sepolia was asking people to send play money to fund real
+# inference bills. Nobody who followed the instructions was contributing
+# anything, and nobody was told.
+#
+# Overridable, so a deployment that genuinely wants testnet donations can have
+# them, but the default is the chain where the currency is real.
+DONATION_CHAIN_ID = int(os.getenv("DONATION_CHAIN_ID", "1"))
+DONATION_CHAIN_NAME = os.getenv("DONATION_CHAIN_NAME", "Ethereum")
+DONATION_CURRENCY = os.getenv("DONATION_CURRENCY", "ETH")
+DONATION_EXPLORER_URL = os.getenv("DONATION_EXPLORER_URL", "https://etherscan.io")
+_donation_rpcs_raw = os.getenv("DONATION_RPC_URLS", "").strip()
+DONATION_RPC_URLS = ([u.strip() for u in _donation_rpcs_raw.split(",") if u.strip()]
+                     if _donation_rpcs_raw else
+                     ["https://ethereum-rpc.publicnode.com", "https://eth.llamarpc.com",
+                      "https://rpc.ankr.com/eth"])
+
 # ---------------------------------------------------------------------------
 # Forecasting
 # ---------------------------------------------------------------------------

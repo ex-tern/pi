@@ -288,7 +288,32 @@ def build_routes(juror: str) -> List[Dict]:
             continue
         seen.add(ident)
         unique.append(r)
+
+    if juror == "judge":
+        # SciLM (siM) is a juror and never the judge. It is ScholarPi's own
+        # engine: letting it adjudicate the panel would mean the platform
+        # grading its own submission to the panel, and the whole claim of the
+        # adjudication step is that an outside model settles disagreements the
+        # jurors could not. Filtered here, at the one place judge routes are
+        # built, so no future edit to a chain can reintroduce it by accident.
+        unique = [r for r in unique if not is_scilm_route(r)]
+
     return unique
+
+
+# Anything that names the local engine, in any of the spellings the codebase
+# has used for it. Matched loosely on purpose: the cost of wrongly excluding an
+# unrelated model whose name happens to contain "scilm" is one fallback route,
+# and the cost of wrongly including SciLM is a self-adjudicated verdict.
+_SCILM_TOKENS = ("scilm", "scilem", "sim-local", "local")
+
+
+def is_scilm_route(route: dict) -> bool:
+    """Whether a route resolves to ScholarPi's own SciLM (siM) engine."""
+    if not route:
+        return True
+    blob = f"{route.get('model', '')} {route.get('provider', '')} {route.get('kind', '')}".lower()
+    return any(tok in blob for tok in _SCILM_TOKENS)
 
 
 # ---------------------------------------------------------------------------
