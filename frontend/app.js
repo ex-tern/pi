@@ -2495,6 +2495,17 @@ async function showReviewModal(hash) {
   }
 }
 
+/** Mark an in-memory result as published, so the seal appears at once. */
+function markLocalPublished(hash, kind) {
+  evaluatedBuffer.forEach(it => {
+    if ((it.hash || it.eval_hash) === hash) {
+      it.published = true;
+      it.publish_kind = kind || "author";
+    }
+  });
+  persistResults();
+}
+
 /** Mark an in-memory result as awaiting review, so the marker appears at once. */
 function markLocalReviewRequested(hash) {
   evaluatedBuffer.forEach(it => {
@@ -3010,7 +3021,15 @@ async function showPublishModal(hash) {
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
       msg.textContent = data.message || "Published.";
-      loadAssessmentHistory(); loadEmissionStatus();
+      // Publishing puts the paper in the journal index and moves the badge on
+      // every view that lists it. Marking the in-memory copy first so the card
+      // behind the modal updates without waiting on a round trip.
+      markLocalPublished(hash, kind);
+      renderResults();
+      loadAssessmentHistory();
+      loadEmissionStatus();
+      renderSidebar();
+      refreshCorpusViews();
     } catch (e) {
       msg.textContent = e.message; btn.disabled = false;
     }
@@ -5485,8 +5504,16 @@ async function togglePublish(hash, publish) {
       const st = await (await fetch(
         `${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`)).json();
       if (!st.may_publish) {
-        alert((st.reason || "Authorship is not verified for this paper.")
-              + (st.how_to_fix ? "\n\n" + st.how_to_fix : ""));
+        // Two separate gates, and naming the wrong one sends the author off to
+        // fix something that is not broken. Review is checked first because it
+        // is the newer rule and the more likely blocker.
+        if (st.reviewed === false) {
+          alert(st.review_blocked_reason
+                || "This paper must be peer reviewed before it can be published.");
+        } else {
+          alert((st.reason || "Authorship is not verified for this paper.")
+                + (st.how_to_fix ? "\n\n" + st.how_to_fix : ""));
+        }
         return;
       }
       fee = st.fee_already_paid ? 0 : (st.fee && st.fee.fee) || 0;
