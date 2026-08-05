@@ -1814,3 +1814,31 @@ button.seal { font-family: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 #arcadeFieldPapers { margin-top: 16px; }
+
+/* Actions inside an "already done" notice — currently the withdraw control on
+   an open review request. Separated from the text so the button does not read
+   as part of the sentence explaining the state. */
+.opt-done-actions { margin-top: 8px; }
+
+/* The field-paper list sits in the map's column, on the row under the canvas,
+   so it appears where the bubble that opened it is — not below the taller
+   side panel with a screen of empty space above it. */
+#arcadeFieldPapers { grid-column: 1; margin: 12px 0 0; }
+@media (max-width: 900px) {
+  /* Single-column layout: normal document flow already puts it under the map. */
+  #arcadeFieldPapers { grid-column: auto; }
+}
+
+/* --- Named research profiles ------------------------------------------- */
+.profile-slots {
+  display: flex; flex-wrap: wrap; align-items: flex-end; gap: 8px;
+  margin: 0 0 16px; padding-bottom: 14px; border-bottom: 1px solid var(--border);
+}
+.profile-slots .ex-ctl { margin: 0; }
+.profile-slots .inline-select { min-width: 160px; }
+.profile-name-input { flex: 1 1 180px; min-width: 140px; margin: 0; }
+.profile-slots .btn { padding: 8px 12px; font-size: 12px; }
+@media (max-width: 620px) {
+  .profile-slots { flex-direction: column; align-items: stretch; }
+  .profile-slots .btn, .profile-slots .inline-select { width: 100%; }
+}
