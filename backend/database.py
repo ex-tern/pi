@@ -2315,39 +2315,69 @@ def record_llm_review(eval_hash: str, verdict: str, comment: str) -> dict:
         conn.close()
 
 
-def list_open_reviews(exclude_key: str = "", limit: int = 50) -> list:
-    """Papers awaiting review, excluding the caller's own requests.
+def list_open_reviews(exclude_key: str = "", limit: int = 50,
+                      exclude_authored_by=None) -> list:
+    """Papers awaiting review, excluding ones the caller must not review.
 
-    Excluding your own is the point: a reviewer who requested the review is not
-    an independent reviewer, and letting the two coincide would make the badge
-    self-issued through a longer route.
+    Two different exclusions, and they are not the same:
+
+      * `exclude_key` drops requests this identity opened. For an ordinary
+        researcher that is their own paper, since requests are author-only.
+      * `exclude_authored_by` drops papers this identity AUTHORED, whoever
+        requested the review. This is the rule that actually matters, and it
+        is what an operator needs — they can open requests on other people's
+        work, so "did you request it" would wrongly hide those from them.
+
+    Pass `exclude_authored_by` to list everything a reviewer may legitimately
+    take; pass only `exclude_key` for the stricter, older behaviour.
     """
+    authored = [v for v in (exclude_authored_by or []) if v]
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            """SELECT r.id, r.eval_hash, r.bounty, r.requested_at,
+            """SELECT r.id, r.eval_hash, r.bounty, r.requested_at, p.user_id,
+                      p.author_openalex_id,
                       p.title, p.author_name, p.final_score
                FROM peer_reviews r
                JOIN papers_assessment p ON p.eval_hash = r.eval_hash
-               WHERE r.completed_at IS NULL AND r.requested_by <> ?
+               WHERE r.completed_at IS NULL AND (? = 1 OR r.requested_by <> ?)
                ORDER BY r.requested_at ASC LIMIT ?""",
-            (exclude_key or "\x00", int(limit))).fetchall()
+            (1 if authored else 0, exclude_key or "\x00", int(limit))).fetchall()
     except sqlite3.Error:
         return []
     finally:
         conn.close()
-    return [{"id": r[0], "hash": r[1], "bounty": round(float(r[2] or 0), 4),
-             "requested_at": r[3], "title": r[4] or "Untitled",
-             "author": r[5] or "", "score": round(float(r[6] or 0), 1)} for r in rows]
+    out = []
+    for r in rows:
+        # Drop anything this identity authored. Done here rather than in SQL
+        # because authorship can be recorded under either column and the list
+        # is small; correctness matters more than the query shape.
+        if authored and (r[4] in authored or r[5] in authored):
+            continue
+        out.append({"id": r[0], "hash": r[1], "bounty": round(float(r[2] or 0), 4),
+                    "requested_at": r[3], "title": r[6] or "Untitled",
+                    "author": r[7] or "", "score": round(float(r[8] or 0), 1)})
+    return out
 
 
-def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: str) -> dict:
-    """Record a completed review and pay the bounty to the reviewer.
+def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: str,
+                    reviewer_is_author: Optional[bool] = None) -> dict:
+    """Record a completed review and credit the reviewer.
 
-    The requester is re-checked here, not only at listing time: a request could
-    have been opened between a reviewer loading the list and submitting, and a
-    self-review must be impossible at the moment it is written, not merely
-    hidden from a page.
+    The rule being enforced is *the reviewer must not be an author of the
+    paper*. The requester check is a proxy for it, re-checked here rather than
+    only at listing time: a request could be opened between a reviewer loading
+    the list and submitting, and self-review must be impossible at the moment
+    it is written, not merely hidden from a page.
+
+    `reviewer_is_author` lets the caller supply the real answer when it knows
+    it. Since review requests became author-only, requester and author are the
+    same person, so the proxy started refusing legitimate reviews: an operator
+    who opened a request on someone ELSE'S paper was blocked from reviewing it
+    even though they authored nothing. Passing False here says "authorship was
+    checked and this is not their paper", and the proxy steps aside. Passing
+    None keeps the old, stricter behaviour for any caller that has not
+    checked.
     """
     conn = get_db_connection()
     try:
@@ -2358,8 +2388,11 @@ def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: st
             return {"ok": False, "reason": "No such review request."}
         if row[3]:
             return {"ok": False, "reason": "That review has already been completed."}
-        if row[1] == reviewer_key:
-            return {"ok": False, "reason": "You cannot review a paper you requested review of."}
+        if row[1] == reviewer_key and reviewer_is_author is not False:
+            return {"ok": False, "reason": (
+                "You cannot review a paper you requested review of. If this is your own "
+                "manuscript, it needs a reviewer other than you — a badge you issued to "
+                "yourself would certify nothing.")}
 
         conn.execute(
             """UPDATE peer_reviews SET reviewer_key = ?, verdict = ?, comment = ?,
@@ -2952,12 +2985,25 @@ def log_engine_observation(engine: str, features, target: float, result: dict,
         conn.close()
 
 
-def engine_observation_count(engine: str) -> int:
+def engine_observation_count(engine: str, source: str = "") -> int:
+    """How many observations an engine has learned from.
+
+    `source` narrows it — "user" for researcher feedback, "llm" for tutoring.
+    The distinction matters for riB: tutoring is supposed to stop once REAL
+    feedback is sufficient, and counting its own tutored observations toward
+    that threshold would let it switch itself off by talking to itself.
+    """
     conn = get_db_connection()
     try:
         _ensure_engine_tables(conn)
-        row = conn.execute(
-            "SELECT COUNT(*) FROM engine_observations WHERE engine = ?", (engine,)).fetchone()
+        if source:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM engine_observations WHERE engine = ? AND source = ?",
+                (engine, source)).fetchone()
+        else:
+            row = conn.execute(
+                "SELECT COUNT(*) FROM engine_observations WHERE engine = ?",
+                (engine,)).fetchone()
         return int(row[0] or 0)
     except sqlite3.Error:
         return 0

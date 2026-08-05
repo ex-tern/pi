@@ -1589,8 +1589,13 @@ async function loadBuddyCorpus() {
 
   const picks = data.picks;
   if (picks && picks.available) {
-    html += `<div class="buddy-picks"><h4>SciLM (siM)'s reading picks
-      <span class="picks-scope">from ${escapeHtml(picks.scope || "corpus")}</span></h4>`;
+    // riB, not SciLM. These picks come from the Research Buddy reading the
+    // papers the user selected; SciLM is the local scoring engine and has no
+    // part in this. Attributing one component's output to another makes both
+    // harder to reason about — and makes a wrong recommendation look like it
+    // came from the thing that assigns scores.
+    html += `<div class="buddy-picks"><h4>Research Buddy (riB) reading picks
+      <span class="picks-scope">from ${escapeHtml(picks.scope || "your selection")}</span></h4>`;
 
     const list = (items, kind) => items.map(p => `
       <div class="pick-item pick-${kind}">
@@ -1609,7 +1614,19 @@ async function loadBuddyCorpus() {
     if (picks.caution.length) {
       html += `<h5 class="pick-group">Read critically</h5>${list(picks.caution, "no")}`;
     }
-    if (!picks.recommended.length && !picks.caution.length) {
+    // Papers that share no field with the profile. Separated rather than mixed
+    // into the two judgement groups: "this is good work" and "this is not
+    // about what you do" are different statements, and folding the second into
+    // the first made riB look as though it rated an unrelated paper highly for
+    // the user's purposes.
+    if (picks.unrelated && picks.unrelated.length) {
+      html += `<h5 class="pick-group">Outside your stated fields</h5>
+        <p class="hint pick-group-note">These match none of the fields on your profile. They may
+        still be worth reading — riB is saying it cannot judge them against your work, not that
+        they are weak.</p>${list(picks.unrelated, "off")}`;
+    }
+    if (!picks.recommended.length && !picks.caution.length
+        && !(picks.unrelated && picks.unrelated.length)) {
       html += `<p class="buddy-empty">Nothing in the corpus sits clearly above or below the
         rubric thresholds yet.</p>`;
     }
@@ -5948,20 +5965,10 @@ function renderBuddyPickNote(total) {
   if (!el) return;
   const n = buddySelection.size;
   el.innerHTML = n === 0
-    ? `<span class="hint">Research Buddy is reading <strong>all ${total}</strong> of your
-       assessments. Tick specific papers to narrow it to one project.</span>`
+    ? `<span class="hint">Research Buddy is reading <strong>nothing yet</strong> — tick the
+       papers you want it to reason from.</span>`
     : `<span class="hint">Research Buddy is reading <strong>${n}</strong> selected
-       paper${n === 1 ? "" : "s"} instead of all ${total}.
-       <button class="btn btn-quiet" id="buddyPickClear">Use all</button></span>`;
-  const clear = document.getElementById("buddyPickClear");
-  if (clear) {
-    clear.addEventListener("click", () => {
-      buddySelection = new Set();
-      saveBuddySelection();
-      loadAssessmentHistory();
-      refreshBuddy();
-    });
-  }
+       paper${n === 1 ? "" : "s"} of ${total}.</span>`;
 }
 
 let historyLoad = null;

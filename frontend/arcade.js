@@ -1652,7 +1652,6 @@
     const search = document.getElementById("arcadeSearch");
     const minPapers = document.getElementById("arcadeMinPapers");
     const minOut = document.getElementById("arcadeMinPapersOut");
-    const liveOnly = document.getElementById("arcadeLiveOnly");
     const labels = document.getElementById("arcadeLabels");
     const mesh = document.getElementById("arcadeMesh");
     const scale = document.getElementById("arcadeScale");
@@ -1666,7 +1665,6 @@
       minOut.textContent = state.filters.minPapers;
       applyFilters();
     });
-    liveOnly.addEventListener("change", () => { state.filters.liveOnly = liveOnly.checked; applyFilters(); });
     labels.addEventListener("change", () => { state.look.labels = labels.checked; });
     mesh.addEventListener("change", () => { state.look.mesh = mesh.checked; });
     const gravity = document.getElementById("arcadeGravity");
@@ -1679,7 +1677,7 @@
     document.getElementById("arcadeResetFilters").addEventListener("click", () => {
       state.filters = { search: "", minPapers: 0, liveOnly: false, author: "" };
       search.value = ""; author.value = "";
-      minPapers.value = "0"; minOut.textContent = "0"; liveOnly.checked = false;
+      minPapers.value = "0"; minOut.textContent = "0";
       applyFilters();
     });
 

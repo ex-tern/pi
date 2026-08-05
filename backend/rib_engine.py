@@ -266,3 +266,178 @@ def engine_status() -> Dict:
     st["learns"] = "which suggestions to surface, from researcher feedback"
     st["never_learns"] = "the counts and means themselves, which stay measured"
     return st
+
+
+# ---------------------------------------------------------------------------
+# LLM tutoring
+#
+# The ranker learns from researcher feedback. A new deployment has none, so it
+# sits on its authored defaults until enough people vote — which on a quiet
+# platform may be never. Tutoring bootstraps it: while real feedback is scarce,
+# a language model judges whether a candidate is relevant to a stated profile,
+# and that judgement is fed in as a WEAK observation.
+#
+# Three properties make this a bootstrap rather than a dependency:
+#
+#   * It stops on its own once real feedback passes the threshold. A person's
+#     verdict about their own field beats a model's guess, and once there are
+#     enough of the former the latter is noise.
+#   * Every tutored observation is logged with source="llm", so the engine's
+#     history can always separate what people said from what a model said.
+#   * The learning rate is scaled down (RIB_TUTOR_WEIGHT), so a wrong model
+#     answer moves the ranker less than a right human one.
+#
+# It is never shown to the user as advice. The only thing that reaches the
+# interface is the ranking the engine already produced.
+# ---------------------------------------------------------------------------
+_TUTOR_CALLS = {"day": "", "count": 0}
+
+
+def tutor_status() -> Dict:
+    """Whether tutoring is on, and why it is or is not running."""
+    from config import (ENABLE_RIB_LLM_TUTOR, RIB_TUTOR_UNTIL_OBS,
+                        RIB_TUTOR_MAX_CALLS_PER_DAY)
+    from database import engine_observation_count
+    human = _human_observation_count()
+    return {
+        "enabled": bool(ENABLE_RIB_LLM_TUTOR),
+        "active": tutor_phase_active(),
+        "human_observations": human,
+        "stops_at": RIB_TUTOR_UNTIL_OBS,
+        "calls_today": _TUTOR_CALLS["count"] if _TUTOR_CALLS["day"] == _today() else 0,
+        "daily_cap": RIB_TUTOR_MAX_CALLS_PER_DAY,
+        "total_observations": engine_observation_count(_RIB_NAME),
+        "note": ("A language model is helping train riB's relevance ranking while real "
+                 "researcher feedback is scarce. It stops automatically once enough people "
+                 "have rated suggestions, and its judgements are recorded separately from "
+                 "theirs."),
+    }
+
+
+def _today() -> str:
+    from datetime import datetime as _dt
+    return _dt.now().strftime("%Y-%m-%d")
+
+
+def _human_observation_count() -> int:
+    """Observations that came from a person, not from the tutor."""
+    from database import engine_observation_count
+    try:
+        return engine_observation_count(_RIB_NAME, source="user")
+    except TypeError:
+        # Older signature with no source filter: fall back to the total rather
+        # than failing. It over-counts, which makes tutoring stop EARLIER —
+        # the safe direction to be wrong in.
+        return engine_observation_count(_RIB_NAME)
+
+
+def tutor_phase_active() -> bool:
+    from config import (ENABLE_RIB_LLM_TUTOR, RIB_TUTOR_UNTIL_OBS,
+                        RIB_TUTOR_MAX_CALLS_PER_DAY)
+    if not ENABLE_RIB_LLM_TUTOR:
+        return False
+    if _TUTOR_CALLS["day"] == _today() and _TUTOR_CALLS["count"] >= RIB_TUTOR_MAX_CALLS_PER_DAY:
+        return False
+    return _human_observation_count() < RIB_TUTOR_UNTIL_OBS
+
+
+def tutor_from_llm(candidates: List[Dict], profile: Dict, summary: Dict) -> Dict:
+    """Ask a model which candidates are relevant, and teach the ranker.
+
+    Returns a small record of what happened. Never raises: tutoring is an
+    optimisation, and a provider outage must not affect the report the user is
+    waiting for — which is why the caller runs this AFTER responding.
+    """
+    from config import RIB_TUTOR_WEIGHT, RIB_TUTOR_MAX_CALLS_PER_DAY
+    if not tutor_phase_active() or not candidates:
+        return {"tutored": 0, "reason": "not active"}
+
+    fields = ", ".join(parse_fields(profile)) or "unstated"
+    goal = (profile.get("goal") or "").strip() or "unstated"
+    # A handful per call. The point is a steady trickle of signal, not to
+    # label the whole corpus in one burst.
+    batch = candidates[:5]
+
+    listing = "\n".join(
+        f"{i + 1}. {str(c.get('title') or 'Untitled')[:160]} "
+        f"[fields: {', '.join(c.get('fields') or []) or 'unclassified'}]"
+        for i, c in enumerate(batch))
+    prompt = (
+        "You are helping calibrate a recommender that suggests papers to a researcher.\n\n"
+        f"The researcher works in: {fields}\n"
+        f"Their stated goal: {goal}\n\n"
+        "For each paper below, answer whether it is RELEVANT to that researcher — that is, "
+        "whether reading it would plausibly help them with their stated field and goal. "
+        "Judge relevance only. Do not judge quality; another part of the system does that.\n\n"
+        f"{listing}\n\n"
+        'Return JSON: {"verdicts": [{"n": 1, "relevant": true}, ...]}'
+    )
+
+    try:
+        from providers import build_routes, is_route_cooling, record_success, is_scilm_route
+        from brain import request_model_assessment
+        routes = [r for r in build_routes("judge") if not is_scilm_route(r)]
+        answer = None
+        for route in routes[:3]:
+            cooling, _ = is_route_cooling(route["model"], route["provider"])
+            if cooling:
+                continue
+            _, attempt = request_model_assessment(
+                "pidyne", route["model"], route["key"], route["base"], prompt)
+            if not attempt.get("api_failed", True):
+                record_success(route["model"], route["provider"])
+                answer = attempt
+                break
+        if not answer:
+            return {"tutored": 0, "reason": "no model reachable"}
+    except Exception as e:                                   # noqa: BLE001
+        logging.warning("riB tutoring call failed: %s", e)
+        return {"tutored": 0, "reason": "call failed"}
+
+    if _TUTOR_CALLS["day"] != _today():
+        _TUTOR_CALLS["day"], _TUTOR_CALLS["count"] = _today(), 0
+    _TUTOR_CALLS["count"] += 1
+
+    verdicts = answer.get("verdicts")
+    if not isinstance(verdicts, list):
+        return {"tutored": 0, "reason": "unparseable answer"}
+
+    from database import save_engine_state, log_engine_observation
+    model = _rib()
+    taught = 0
+    for v in verdicts:
+        try:
+            idx = int(v.get("n", 0)) - 1
+            relevant = bool(v.get("relevant"))
+        except (TypeError, ValueError):
+            continue
+        if not (0 <= idx < len(batch)):
+            continue
+        cand = batch[idx]
+        feats = cand.get("_features") or rib_features(cand, summary, False)
+        # Scaled down: a model's guess should move the ranker less than a
+        # researcher's verdict about their own field.
+        target = 1.0 if relevant else 0.0
+        result = model.observe(feats, target, weight=RIB_TUTOR_WEIGHT) \
+            if _observe_accepts_weight(model) else model.observe(feats, target)
+        log_engine_observation(_RIB_NAME, feats, target, result, source="llm")
+        taught += 1
+
+    if taught:
+        save_engine_state(_RIB_NAME, model.to_json())
+        logging.info("riB tutored on %d candidate(s); %d/%d calls used today.",
+                     taught, _TUTOR_CALLS["count"], RIB_TUTOR_MAX_CALLS_PER_DAY)
+    return {"tutored": taught, "reason": ""}
+
+
+def _observe_accepts_weight(model) -> bool:
+    """Whether the online model supports a per-observation learning weight.
+
+    Checked rather than assumed: the ranker predates tutoring, and calling it
+    with an argument it does not take would break ordinary user feedback too.
+    """
+    try:
+        import inspect
+        return "weight" in inspect.signature(model.observe).parameters
+    except (TypeError, ValueError):
+        return False

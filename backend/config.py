@@ -129,7 +129,12 @@ WEB3_RPC_ENDPOINTS = [WEB3_PROVIDER_URI] + [u for u in WEB3_FALLBACK_RPCS if u !
 # Every manuscript costs a flat fee, debited from the submitter's piQ balance.
 # This replaced the old "stake 0.1 piQ" checkbox, which was purely cosmetic —
 # nothing was ever escrowed, returned or accounted for.
-PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "0.1"))
+# Raised from 0.1 to 1.0. At a tenth of a piQ the fee was too small to be a
+# real signal — a qualifying paper mints tens of piQ, so processing cost was
+# effectively noise against it, and "0.10 piQ" read as a rounding artefact
+# rather than a price. One piQ per paper is legible and still comfortably
+# affordable from a single assessed manuscript.
+PIQ_PROCESSING_FEE = float(os.getenv("PIQ_PROCESSING_FEE", "1.0"))
 
 # Wallet that receives Support & Donate contributions.
 DONATION_WALLET = os.getenv("DONATION_WALLET", "0x6B89DD74DCa5d4DC98599206b1c2dE614066ef40")
@@ -478,3 +483,29 @@ SMTP_PASSWORD = get_secret("SMTP_PASSWORD")
 # Defaults to SMTP_USER because most providers reject a From: they do not own.
 SMTP_FROM = get_secret("SMTP_FROM") or SMTP_USER
 SMTP_USE_TLS = _env_bool("SMTP_USE_TLS", True)
+
+
+# ---------------------------------------------------------------------------
+# riB LLM tutoring
+# ---------------------------------------------------------------------------
+# riB's relevance ranker learns from researcher feedback ("useful" / "not
+# useful"). On a new deployment there is no feedback, so it ranks from its
+# authored defaults and stays there until enough people have voted — which on a
+# quiet platform may be never.
+#
+# Tutoring closes that gap: while real feedback is scarce, a language model is
+# asked to judge whether a candidate paper is relevant to a stated profile, and
+# its answer is fed to the ranker as a WEAK observation. It is a bootstrap, not
+# a permanent dependency, and it is bounded three ways:
+#
+#   * it stops automatically once real feedback passes RIB_TUTOR_UNTIL_OBS,
+#     because a human verdict about their own field beats a model's guess
+#   * it is capped per day, so a busy deployment cannot run up inference cost
+#   * every tutored observation is logged with source="llm", so the engine's
+#     history says which judgements came from people and which from a model
+#
+# Off unless explicitly enabled AND a provider key exists.
+ENABLE_RIB_LLM_TUTOR = _env_bool("ENABLE_RIB_LLM_TUTOR", False)
+RIB_TUTOR_UNTIL_OBS = int(os.getenv("RIB_TUTOR_UNTIL_OBS", "200"))
+RIB_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("RIB_TUTOR_MAX_CALLS_PER_DAY", "50"))
+RIB_TUTOR_WEIGHT = float(os.getenv("RIB_TUTOR_WEIGHT", "0.35"))

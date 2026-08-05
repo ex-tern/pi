@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=36">
+<link rel="stylesheet" href="style.css?v=40">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -581,6 +581,13 @@
 
       <div id="arcadeStage" class="arcade-stage">
         <div class="arcade-layout">
+          <!-- Map and its field listing are ONE column item, not two grid rows.
+               As separate rows the side panel had to span both, and a spanning
+               item taller than its tracks distributes the excess back into
+               them — so row one grew, the canvas stayed start-aligned at its
+               fixed height, and a gap opened between the map and the table.
+               Nesting removes the row structure the gap came from. -->
+          <div class="arcade-main-col">
           <div class="arcade-canvas-wrap">
             <canvas id="arcadeCanvas" aria-label="Interactive map of science. Drag to pan, scroll to zoom, click a field for detail."></canvas>
             <div class="arcade-toolbar">
@@ -603,6 +610,7 @@
                the layout, the list appeared a screen further down with a large
                empty gap above it, disconnected from the bubble that opened it. -->
           <div class="card hidden" id="arcadeFieldPapers"></div>
+          </div><!-- /.arcade-main-col -->
 
           <aside class="arcade-side">
             <details class="arcade-controls-group" open>
@@ -620,9 +628,6 @@
               </div>
               <label class="arcade-ctl-label">Minimum papers <output id="arcadeMinPapersOut">0</output></label>
               <input type="range" id="arcadeMinPapers" min="0" max="20" step="1" value="0">
-              <label class="arcade-ctl-check">
-                <input type="checkbox" id="arcadeLiveOnly"> Only fields in my corpus
-              </label>
               <button class="btn btn-outline btn-block" id="arcadeResetFilters">Reset filters</button>
             </details>
 
@@ -782,7 +787,7 @@
   </div>
 </div>
 
-<script src="app.js?v=36"></script>
-<script src="arcade.js?v=36"></script>
+<script src="app.js?v=40"></script>
+<script src="arcade.js?v=40"></script>
 </body>
 </html>
