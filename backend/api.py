@@ -73,6 +73,7 @@ from database import (
     set_published, is_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
     record_llm_review, has_open_review_request, has_human_review, cancel_review_request,
+    add_unsolicited_review,
     count_journal_publications,
     review_owner_key, add_review_rebuttal, rate_review, review_rating_summary,
     report_review, rebuttals_for_paper, list_review_reports,
@@ -2148,7 +2149,12 @@ class ReviewRequest(BaseModel):
 
 
 class ReviewSubmission(BaseModel):
-    review_id: int
+    # Either an open request to fulfil, or a paper to review unprompted.
+    # `review_id = 0` with an `eval_hash` is the second case: a paper that has
+    # already been reviewed, or already published, can still be reviewed again
+    # by someone else.
+    review_id: int = 0
+    eval_hash: str = ""
     verdict: str = "sound"          # sound | concerns | unsound
     comment: str = ""
     wallet: str = ""
@@ -3257,7 +3263,14 @@ def submit_review(payload: ReviewSubmission, request: Request):
     # rule that actually matters; "did you request it" was only ever a stand-in
     # for it. Answering it directly lets a legitimate reviewer through and
     # still refuses the case the stand-in existed to catch.
-    info = review_owner_key(payload.review_id)
+    # An unsolicited review names the paper directly; a commissioned one names
+    # the request. Both end up needing the same authorship check.
+    unsolicited = not payload.review_id
+    info = ({"eval_hash": (payload.eval_hash or "").strip()} if unsolicited
+            else review_owner_key(payload.review_id))
+    if unsolicited and not info["eval_hash"]:
+        raise HTTPException(status_code=400,
+                            detail="Name the paper you are reviewing.")
     reviewer_is_author = None
     if info and info.get("eval_hash"):
         conn = get_db_connection()
@@ -3304,9 +3317,14 @@ def submit_review(payload: ReviewSubmission, request: Request):
         add_log(f"OWNER SELF-REVIEW recorded on review {payload.review_id} "
                 f"(disclosed in the review text).")
 
-    result = complete_review(payload.review_id, key, payload.verdict, comment,
-                             reviewer_is_author=reviewer_is_author,
-                             allow_self_review=is_owner_self)
+    if unsolicited:
+        # Nobody commissioned this, so nothing is charged to the author and no
+        # bounty is released — only the completion bonus is credited.
+        result = add_unsolicited_review(info["eval_hash"], key, payload.verdict, comment)
+    else:
+        result = complete_review(payload.review_id, key, payload.verdict, comment,
+                                 reviewer_is_author=reviewer_is_author,
+                                 allow_self_review=is_owner_self)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["reason"])
     add_log(f"Review completed on {result['eval_hash'][:12]}… paid {result['paid']:.2f} piQ")
@@ -3318,7 +3336,10 @@ def submit_review(payload: ReviewSubmission, request: Request):
             "message": (f"Review recorded. {result['paid']:.2f} piQ credited to your balance"
                         + (f" ({bounty:.2f} set aside by the requester + {bonus:.2f} completion "
                            f"bonus)" if bounty else f" ({bonus:.2f} completion bonus)")
-                        + ". The paper now carries a Peer-reviewed badge and can be published.")}
+                        + (". The paper now carries a Peer-reviewed badge and can be published."
+                           if not unsolicited else
+                           ". Your review is added alongside the ones already there — the paper's "
+                           "review count goes up, and its author was not charged for it."))}
 
 
 @app.delete("/api/assessments/{file_hash}")

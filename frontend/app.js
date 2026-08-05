@@ -3003,7 +3003,13 @@ async function showWriteReviewModal(hash) {
 
   // --- Eligible: find the open request on this paper -----------------------
   const openHere = (open.open || []).find(r => r.hash === hash);
-  if (!openHere) {
+  // No open request is no longer a dead end. A paper that has already been
+  // reviewed — or already published — can be reviewed again by someone else,
+  // and that review costs its author nothing. The only case with nothing to
+  // do is a paper the viewer is not allowed to review at all.
+  const alreadyByMe = (state.reviews || []).length && state.may_rate === false;
+  const canReviewAnyway = !state.may_request || sessionState.is_owner;
+  if (!openHere && !canReviewAnyway) {
     const already = Number(state.peer_review_count || 0) > 0;
     openModal(`
       <h2>Write a review</h2>
@@ -3036,15 +3042,25 @@ async function showWriteReviewModal(hash) {
     return;
   }
 
-  const bounty = Number(openHere.bounty || 0);
+  const bounty = Number(openHere ? openHere.bounty || 0 : 0);
+  const existing = Number(state.peer_review_count || 0);
   openModal(`
     <h2>Write a review</h2>
     ${selfNote}${ownerNote}
-    <p class="lede">You are reviewing <strong>${escapeHtml(openHere.title)}</strong>. Your report
+    ${existing ? `<div class="opt-done">This paper already carries
+       ${existing} peer review${existing === 1 ? "" : "s"}. Yours is added alongside them —
+       reviews accumulate rather than replace one another, and a second reader who disagrees
+       with the first is worth showing.</div>` : ""}
+    ${!openHere ? `<p class="hint">Nobody commissioned this review, so nothing is charged to the
+       author. You still receive the ${bonus} piQ completion bonus.</p>` : ""}
+    <p class="lede">You are reviewing <strong>${escapeHtml(
+      openHere ? openHere.title : (state.title || "this paper"))}</strong>. Your report
     is published with the paper; your name is not — reviews here are single-blind, so a negative
     verdict costs you nothing.</p>
-    <p class="hint">On submission <strong>${bounty.toFixed(2)} piQ</strong> set aside by the
-    requester, plus a <strong>${bonus} piQ</strong> completion bonus, is credited to your piQ
+    <p class="hint">On submission ${bounty > 0
+      ? `<strong>${bounty.toFixed(2)} piQ</strong> set aside by the requester, plus a
+         <strong>${bonus} piQ</strong> completion bonus, is`
+      : `a <strong>${bonus} piQ</strong> completion bonus is`} credited to your piQ
     balance, and the paper receives a
     <strong>Peer-reviewed</strong> badge. The reward is for submitting a reasoned report, not
     for reaching any particular verdict.</p>
@@ -3098,7 +3114,11 @@ async function showWriteReviewModal(hash) {
       const res = await fetch(`${API}/api/reviews/submit`, {
         method: "POST", headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          review_id: openHere.id, verdict: verdict.value, comment: comment.value.trim(),
+          // No open request: name the paper instead. The server treats that as
+          // an unsolicited review — bonus credited, author not charged.
+          review_id: openHere ? openHere.id : 0,
+          eval_hash: openHere ? "" : hash,
+          verdict: verdict.value, comment: comment.value.trim(),
           wallet: Session.wallet, orcid: Session.orcid,
         }),
       });
@@ -3667,15 +3687,21 @@ function authorshipActions(item, idx) {
          there is nothing to claim, so the button led to a window whose only
          message was that it could not be used. Offering an action that cannot
          succeed is worse than not offering it. -->
-    ${a.reviewRequested ? `
     <div class="dossier-details dossier-review-actions">
       <div class="action-bar">
         <button class="btn btn-quiet" data-a="write-review" ${d}
-                title="This paper is waiting for a reviewer — review it and earn piQ"
+                title="${a.reviewRequested
+                  ? "This paper is waiting for a reviewer — review it and earn piQ"
+                  : "Review this paper and earn piQ. Its author is not charged."}"
                 >Write a review</button>
       </div>
-      <p class="hint">This paper has been submitted for review and is waiting for a reviewer.</p>
-    </div>` : ""}`;
+      <p class="hint">${a.reviewRequested
+        ? "This paper has been submitted for review and is waiting for a reviewer."
+        : Number(a.peerReviews || 0) > 0
+          ? `Already reviewed ${a.peerReviews} time${a.peerReviews === 1 ? "" : "s"}. Reviews
+             accumulate — another one adds to the count and costs the author nothing.`
+          : "Any eligible reviewer can review this paper. Nothing is charged to its author."}</p>
+    </div>`;
 }
 
 // One delegated listener for every action bar on the page, however it was
@@ -6088,8 +6114,8 @@ async function _loadAssessmentHistory() {
     // cheapest way to make that impossible to misread.
     body.innerHTML = `<p class="buddy-pick-lead">
         <strong>Tick a paper to include it in your Research Buddy (riB).</strong>
-        riB reads the ticked papers when suggesting what to work on next.
-        Ticking nothing means it reads all of them.</p>
+        riB reads only the papers you tick when suggesting what to work on next.
+        Ticking nothing means it has nothing to read.</p>
       <div class="table-scroll"><table class="data-table history-table"><thead><tr>
         <th class="col-pick" title="Tick a paper to include it in your Research Buddy (riB)">
           <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in Research Buddy"

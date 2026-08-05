@@ -1542,6 +1542,7 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
         rows = conn.execute(
             f"""SELECT eval_hash, title, author_name, final_score, fields, timestamp,
                       piq_minted, doi, filename, published_at, piq_escrowed, piq_claimed_at,
+                      publish_kind, COALESCE(reads, 0),
                       (SELECT COUNT(*) FROM peer_reviews r
                         WHERE r.eval_hash = papers_assessment.eval_hash
                           AND r.completed_at IS NOT NULL
@@ -1577,9 +1578,16 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
                     # Carried here so a history row can show the review badge and
                     # offer "Request a new review" without a second round trip
                     # per row.
-                    "llm_reviewed": bool(r[12]),
-                    "llm_review_count": int(r[12] or 0),
-                    "peer_reviews": int(r[13] or 0)})
+                    # Without publish_kind the history could not tell an
+                    # Author-published paper from a Journal-published one, so
+                    # every published row fell back to the weaker badge — the
+                    # result card said Journal-published and the history row
+                    # beside it said Author-published, about the same paper.
+                    "publish_kind": (r[12] or "author") if r[9] else None,
+                    "reads": int(r[13] or 0),
+                    "llm_reviewed": bool(r[14]),
+                    "llm_review_count": int(r[14] or 0),
+                    "peer_reviews": int(r[15] or 0)})
     return out
 
 
@@ -2436,6 +2444,64 @@ def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: st
     except sqlite3.Error as e:
         conn.rollback()
         logging.warning("Could not complete review: %s", e)
+        return {"ok": False, "reason": "The review could not be saved."}
+    finally:
+        conn.close()
+
+
+def add_unsolicited_review(eval_hash: str, reviewer_key: str, verdict: str,
+                           comment: str) -> dict:
+    """Record a review nobody commissioned, and credit the completion bonus.
+
+    A paper can be reviewed again after it has been reviewed, and after it has
+    been published. Review is not a gate that closes — a second reader who
+    disagrees with the first is exactly the thing a journal should be able to
+    show, and freezing the record at one verdict would make the badge a
+    one-shot claim rather than an accumulating one.
+
+    No bounty is involved, so THE AUTHOR IS NOT CHARGED. The requester's
+    deposit exists to commission work that has not happened yet; a review
+    nobody asked for costs the author nothing and is credited from the
+    completion bonus alone. That is what makes additional review free to
+    receive and still worth writing.
+
+    One review per reviewer per paper, so the count cannot be inflated by one
+    person submitting repeatedly.
+    """
+    if not eval_hash or not reviewer_key:
+        return {"ok": False, "reason": "Sign in to review."}
+    conn = get_db_connection()
+    try:
+        dup = conn.execute(
+            """SELECT 1 FROM peer_reviews
+               WHERE eval_hash = ? AND reviewer_key = ? AND completed_at IS NOT NULL
+               LIMIT 1""", (eval_hash, reviewer_key)).fetchone()
+        if dup:
+            return {"ok": False, "reason": (
+                "You have already reviewed this paper. A second opinion has to come from a "
+                "second reviewer.")}
+
+        cur = conn.execute(
+            """INSERT INTO peer_reviews
+                   (eval_hash, requested_by, bounty, reviewer_key, verdict, comment,
+                    completed_at)
+               VALUES (?, '', 0, ?, ?, ?, CURRENT_TIMESTAMP)""",
+            (eval_hash, reviewer_key, verdict[:40], comment[:4000]))
+
+        bonus = round(float(PEER_REVIEW_BONUS), 4)
+        if bonus > 0:
+            kind = "orcid" if reviewer_key.startswith("orcid:") else "wallet"
+            conn.execute(
+                "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+                "VALUES (?, ?, ?, ?, ?)",
+                (reviewer_key.split(":", 1)[-1], kind, bonus,
+                 "Peer review completion bonus", eval_hash))
+        conn.commit()
+        return {"ok": True, "reason": "", "id": cur.lastrowid,
+                "paid": bonus, "bounty": 0.0, "bonus": bonus, "eval_hash": eval_hash}
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("Could not record unsolicited review: %s", e)
         return {"ok": False, "reason": "The review could not be saved."}
     finally:
         conn.close()
