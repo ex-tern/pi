@@ -24,6 +24,35 @@
   const WORLD_W = 3400;
   const WORLD_H = 2200;
 
+  // --- Player size -------------------------------------------------------
+  // The player's DRAWN size is capped; its mass is not.
+  //
+  // These are two different quantities and conflating them was the bug. Mass
+  // is the game rule — what you can eat, and what the server independently
+  // recomputes when it verifies a run — so capping it would make honest runs
+  // fail verification and could leave large bubbles permanently uneatable,
+  // making the field unclearable. Radius is only how big the blob looks.
+  //
+  // Late in a run the radius grew past the point of usefulness: the body
+  // filled the viewport, and since the centre was clamped a full radius away
+  // from every wall, the corners of the world became literally unreachable.
+  // Growth now saturates — a square-root curve, so early growth still reads
+  // clearly and late growth flattens out instead of running away.
+  const PLAYER_RADIUS_CAP = 150;   // world units; ~4.4% of the world's width
+  const PLAYER_RADIUS_KNEE = 60;   // below this, radius tracks mass exactly
+
+  /** Drawn/collision radius for a given mass. Monotonic, and bounded. */
+  function playerRadius(mass) {
+    const m = Math.max(0, Number(mass) || 0);
+    if (m <= PLAYER_RADIUS_KNEE) return m;
+    // Above the knee, grow as a square root towards the cap: still always
+    // increasing, so a bigger player is always visibly bigger, but the
+    // increments shrink and never exceed PLAYER_RADIUS_CAP.
+    const over = m - PLAYER_RADIUS_KNEE;
+    const span = PLAYER_RADIUS_CAP - PLAYER_RADIUS_KNEE;
+    return PLAYER_RADIUS_KNEE + span * (1 - 1 / Math.sqrt(1 + over / span));
+  }
+
   // Colours are assigned by hashing the field name, not from a fixed table.
   //
   // The table this replaces listed fifteen named disciplines, which was the
@@ -791,12 +820,16 @@
     // The player is a body too: as it grows it visibly draws the field in.
     const p = state.player;
     if (p) {
+      // Gravity uses the drawn radius so the pull matches the body the player
+      // can see. Uncapped mass here would have an apparently fixed-size blob
+      // hoovering the entire field from across the world.
+      const pGrav = playerRadius(p.mass);
       for (const b of list) {
         if (b.eaten || b.mass >= p.mass) continue;   // only smaller ones fall in
         const dx = p.x - b.x, dy = p.y - b.y;
         const d2 = dx * dx + dy * dy + SOFT;
         const d = Math.sqrt(d2);
-        const pull = (G * p.mass) / d2 * dt;
+        const pull = (G * pGrav) / d2 * dt;
         b.vx += (dx / d) * pull;
         b.vy += (dy / d) * pull;
       }
@@ -891,18 +924,31 @@
       // a large blob was already inside its own deadzone whenever the cursor
       // sat near its centre, which read as unresponsiveness on top of the
       // speed loss. Scaling it keeps the feel identical at every size.
-      const easeRadius = Math.max(60, p.mass * 0.8);
+      const easeRadius = Math.max(60, playerRadius(p.mass) * 0.8);
       const throttle = Math.min(1, dist / easeRadius);
       p.x += (dx / dist) * speed * throttle * dt;
       p.y += (dy / dist) * speed * throttle * dt;
     }
-    p.x = Math.max(p.mass, Math.min(WORLD_W - p.mass, p.x));
-    p.y = Math.max(p.mass, Math.min(WORLD_H - p.mass, p.y));
+    // Corners must stay reachable.
+    //
+    // Clamping the centre a full radius from every wall meant a large player
+    // could not put itself anywhere near a corner — the bigger you grew, the
+    // more of the map was closed off, and bubbles that drifted into a corner
+    // became uncatchable. The blob is now allowed to overhang the boundary by
+    // most of its radius, so the centre can get close to the edge while the
+    // body still reads as bounded by the world.
+    const pr = playerRadius(p.mass);
+    const margin = Math.min(pr * 0.25, 30);
+    p.x = Math.max(margin, Math.min(WORLD_W - margin, p.x));
+    p.y = Math.max(margin, Math.min(WORLD_H - margin, p.y));
 
     for (const b of state.bubbles) {
       if (b.eaten) continue;
       const d = Math.hypot(b.x - p.x, b.y - p.y);
-      if (d < Math.max(b.mass, p.mass) * 0.86) {
+      // Contact is judged against the drawn radius, so what looks like a touch
+      // is a touch. Using raw mass here would have a capped-size blob eating
+      // bubbles it visibly never reached.
+      if (d < Math.max(b.mass, pr) * 0.86) {
         if (b.mass < p.mass) {
           b.eaten = true;
           p.mass += b.mass * state.rules.absorb_ratio;
@@ -1083,7 +1129,11 @@
   }
 
   function drawPlayer(ctx) {
-    const p = state.player, s = worldToScreen(p.x, p.y), r = p.mass * state.camera.zoom;
+    // Drawn from the capped radius, not from mass. Past the cap the blob stops
+    // growing on screen while its mass keeps rising — which is the point: the
+    // score continues, the body stops swallowing the viewport.
+    const p = state.player, s = worldToScreen(p.x, p.y),
+          r = playerRadius(p.mass) * state.camera.zoom;
     if (effectsQuality > 0) {
       const glow = ctx.createRadialGradient(s.x, s.y, r * 0.1, s.x, s.y, r * 2.1);
       glow.addColorStop(0, "rgba(56,189,248,0.5)"); glow.addColorStop(1, "rgba(56,189,248,0)");

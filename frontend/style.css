@@ -165,7 +165,12 @@ code.wrap { word-break: break-all; }
 .lede { font-size: 13.5px; line-height: 1.65; color: #334155; }
 
 .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: var(--shadow); }
-.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+/* `stretch`, not `start`. The two leaderboards sit side by side and almost
+   never hold the same number of rows, so aligning to the top left one card
+   visibly shorter than the other — two views of the same corpus, drawn as if
+   one mattered less. Stretching makes them one block; the row area inside each
+   card takes up the slack. */
+.two-col { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: stretch; }
 /* Forecast and map get the full width: both are dense visuals that were being
    squeezed into half a column beside each other. */
 .full-col { display: block; }
@@ -485,9 +490,23 @@ input::placeholder { color: var(--faint); }
 
 .color-box { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
-/* Leaderboard cards */
-.leaderboard-card { display: flex; flex-direction: column; }
+/* Leaderboard cards.
+   The card fills its grid cell, and the scrolling row area is the flexible
+   part — so the two leaderboards end at the same line no matter how many rows
+   each holds, and the pagination controls stay pinned to the bottom of both
+   rather than floating at different heights. */
+.leaderboard-card { display: flex; flex-direction: column; height: 100%; }
+.leaderboard-card .table-scroll { flex: 1 1 auto; }
+.leaderboard-card .pagination { margin-top: auto; padding-top: 12px; }
 .lb-head h2 { margin-bottom: 4px; }
+
+/* A heading for a section merged into a larger tab. Sits between the page h1
+   and a card's own h2 — the merged views are sections of Explore and Analytics
+   now, not pages, and they should not each open with a second page title. */
+.section-heading {
+  font-size: 1.15rem; margin: 28px 0 12px; padding-top: 20px;
+  border-top: 1px solid var(--border); color: var(--text);
+}
 .lb-scope { font-weight: 500; color: var(--muted); font-size: 0.86em; }
 .lb-toolbar { display: flex; gap: 8px; margin: 12px 0 0; flex-wrap: wrap; }
 .lb-search { flex: 1; min-width: 150px; margin-bottom: 0; }
