@@ -304,8 +304,9 @@ def _verdict(quality, visibility) -> str:
     return "quality" if quality else "visibility"
 
 
-def recommend_papers(papers: List[Dict], limit: int = 4) -> Dict:
-    """Scilem's picks: which assessed papers to read, which to treat with care.
+def recommend_papers(papers: List[Dict], limit: int = 4,
+                     user_fields: Optional[List[str]] = None) -> Dict:
+    """riB's picks: which assessed papers to read, which to treat with care.
 
     Grounded entirely in the per-criterion scores the engine already produced.
     Each verdict names the specific criteria driving it, because "recommended"
@@ -318,7 +319,7 @@ def recommend_papers(papers: List[Dict], limit: int = 4) -> Dict:
     """
     if not papers:
         return {"available": False, "reason": "No assessed papers to draw on yet.",
-                "recommended": [], "caution": []}
+                "recommended": [], "caution": [], "unrelated": []}
 
     def strengths(criteria, high=True):
         scored = [(k, v) for k, v in (criteria or {}).items() if isinstance(v, (int, float))]
@@ -327,6 +328,22 @@ def recommend_papers(papers: List[Dict], limit: int = 4) -> Dict:
         scored.sort(key=lambda kv: kv[1], reverse=high)
         picked = [k for k, v in scored[:2] if (v >= 60 if high else v < 45)]
         return [CRITERION_LABELS.get(k.upper(), k) for k in picked]
+
+    # Papers sharing no field with the profile are set aside rather than ranked
+    # against it. A rubric score says how well work is reported; it says nothing
+    # about whether the work is relevant to the reader. Mixing an unrelated
+    # paper into "worth reading" presents a relevance judgement the engine never
+    # made — and one it cannot make from scores alone.
+    wanted = {f.strip().lower() for f in (user_fields or []) if f and f.strip()}
+    unrelated_src = []
+    if wanted:
+        related = []
+        for p in papers:
+            fields = {str(f).strip().lower() for f in (p.get("fields") or []) if str(f).strip()}
+            # An unclassified paper is not "unrelated" — it is unknown, and
+            # filing it under a heading that says otherwise would be a claim.
+            (related if (not fields or fields & wanted) else unrelated_src).append(p)
+        papers = related
 
     ranked = sorted(papers, key=lambda p: p["score"], reverse=True)
 
@@ -356,13 +373,22 @@ def recommend_papers(papers: List[Dict], limit: int = 4) -> Dict:
                    else "Scores below the rubric threshold across several dimensions.",
         })
 
+    unrelated = [{
+        "eval_hash": p["eval_hash"], "title": p["title"],
+        "author_name": p["author_name"], "score": p["score"], "fields": p["fields"],
+        "why": ("Outside the fields on your profile"
+                + (" (" + ", ".join(p["fields"][:3]) + ")" if p["fields"] else "")
+                + ". riB cannot judge it against your work."),
+    } for p in sorted(unrelated_src, key=lambda p: p["score"], reverse=True)[:limit]]
+
     return {
-        "available": bool(recommended or caution),
+        "available": bool(recommended or caution or unrelated),
         "recommended": recommended,
         "caution": caution,
-        "considered": len(papers),
+        "unrelated": unrelated,
+        "considered": len(papers) + len(unrelated_src),
         "note": (
-            "Ranked by Scilem's rubric scores, which measure how well work is reported and "
+            "Ranked by riB's rubric scores, which measure how well work is reported and "
             "reproducible — not whether its conclusions are correct. A low score means the "
             "methods are hard to verify, so read critically rather than dismiss."
         ),

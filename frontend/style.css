@@ -1848,12 +1848,11 @@ button.seal { font-family: inherit; cursor: pointer; }
 
    Only applies where the two-column grid exists; below 900px the layout is a
    single column and normal document flow already puts the list under the map. */
+/* The map column: canvas, then the selected field's papers directly beneath
+   it. A plain block container, so the table is flush against the map and the
+   side panel beside it cannot influence where it sits. */
+.arcade-main-col { min-width: 0; }
 #arcadeFieldPapers { margin: 12px 0 0; }
-@media (min-width: 901px) {
-  .arcade-canvas-wrap { grid-column: 1; grid-row: 1; }
-  #arcadeFieldPapers  { grid-column: 1; grid-row: 2; }
-  .arcade-side        { grid-column: 2; grid-row: 1 / span 2; align-self: start; }
-}
 
 /* --- Named research profiles ------------------------------------------- */
 /* Two equal fields on one row, sized and labelled exactly like the profile
@@ -1885,3 +1884,9 @@ button.seal { font-family: inherit; cursor: pointer; }
 }
 .owner-bug-idea { border-left: 3px solid var(--accent); }
 .owner-bug-idea .owner-bug-kind { background: var(--accent-soft, #e0e7ff); color: var(--accent); }
+
+/* Papers outside the reader's stated fields. Neutral, not negative — the
+   point of the group is that riB is declining to judge, which must not look
+   like a low rating. */
+.pick-off { border-left: 3px solid var(--border-strong); background: #fbfcfe; }
+.pick-group-note { margin: 2px 0 8px; }

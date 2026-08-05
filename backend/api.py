@@ -1372,7 +1372,8 @@ class ResearcherProfile(BaseModel):
 
 @app.get("/api/buddy")
 def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default=""),
-                   hashes: str = Query(default="")):
+                   hashes: str = Query(default=""),
+                   background: BackgroundTasks = None):
     """riB — the researcher's stated fields against the live corpus.
 
     The analysis lives in rib_engine, which takes data and returns a report.
@@ -1414,7 +1415,9 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
         # is not applied on top of it — that would silently drop papers the
         # researcher had just deliberately ticked.
         candidates = get_papers_for_recommendation(fields=None, hashes=selected)
-        picks = diagnostics.recommend_papers(candidates)
+        # The profile's fields are passed so riB can separate papers it cannot
+        # judge against the reader's work from ones it can.
+        picks = diagnostics.recommend_papers(candidates, user_fields=fields)
         picks["scope"] = f"{len(candidates)} selected paper{'' if len(candidates) == 1 else 's'}"
         picks["selection_active"] = True
         picks["selection_count"] = len(candidates)
@@ -1425,6 +1428,21 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
 
     report = rib_engine.build_report(profile, corpus, picks)
     report["profile"] = profile
+
+    # Teach the relevance ranker, AFTER the response has gone out.
+    #
+    # Tutoring calls a model, which is slow and can fail; the report the user
+    # is waiting for must not depend on either. It is also self-limiting —
+    # rib_engine.tutor_phase_active() returns False once real feedback is
+    # sufficient or the daily cap is reached — so this becomes a no-op on a
+    # deployment that has outgrown it, without anything here changing.
+    try:
+        if background is not None and rib_engine.tutor_phase_active():
+            background.add_task(rib_engine.tutor_from_llm, candidates, profile, corpus)
+        report["tutor"] = rib_engine.tutor_status()
+    except Exception as e:                                   # noqa: BLE001
+        logging.warning("riB tutoring could not be scheduled: %s", e)
+
     return report
 
 
@@ -2211,8 +2229,15 @@ def open_reviews(request: Request, wallet: str = Query(default=""),
     """Papers awaiting review. Your own requests are excluded."""
     identity = auth.identity_from_request(request, wallet, orcid)
     key = _profile_key(identity["wallet"], identity["orcid"]) if identity["verified"] else ""
-    return {"signed_in": bool(key), "open": list_open_reviews(exclude_key=key),
-            "bounty": peer_review_fee()}
+    # The owner can open requests on other people's papers, so filtering their
+    # list by "requests you opened" would hide exactly the work they are
+    # entitled to review. Filter by AUTHORSHIP instead — the rule that matters.
+    if key and auth.is_owner(identity):
+        open_items = list_open_reviews(
+            exclude_authored_by=_identity_values(identity["wallet"], identity["orcid"]))
+    else:
+        open_items = list_open_reviews(exclude_key=key)
+    return {"signed_in": bool(key), "open": open_items, "bounty": peer_review_fee()}
 
 
 @app.get("/api/assessments/{file_hash}/review")
@@ -2360,7 +2385,14 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
         extracted_authors=row[0] or "", doi=row[1] or "", title=row[2] or "")
     # The escrow claim counts as standing evidence of authorship here, exactly
     # as it does for an author-published badge.
-    if not (attribution.get("verified") or bool(row[3])):
+    # The owner may open a request on ANY paper, not only their own.
+    #
+    # Author-only requests plus "you cannot review what you requested" left the
+    # operator unable to review anything: they could only request on their own
+    # papers, and reviewing those is correctly forbidden. Letting the owner put
+    # someone else's paper into review is what gives them something legitimate
+    # to review — they are not an author of it, so the badge is not self-issued.
+    if not (attribution.get("verified") or bool(row[3]) or auth.is_owner(identity)):
         raise HTTPException(
             status_code=403,
             detail=("Only the author of a paper can request a review of it. "
@@ -3206,7 +3238,41 @@ def submit_review(payload: ReviewSubmission, request: Request):
                     f"behind it is not a review, and the badge would be worthless if it were."))
 
     key = _profile_key(identity["wallet"], identity["orcid"])
-    result = complete_review(payload.review_id, key, payload.verdict, payload.comment)
+
+    # Is the reviewer an author of the paper they are reviewing? This is the
+    # rule that actually matters; "did you request it" was only ever a stand-in
+    # for it. Answering it directly lets a legitimate reviewer through and
+    # still refuses the case the stand-in existed to catch.
+    info = review_owner_key(payload.review_id)
+    reviewer_is_author = None
+    if info and info.get("eval_hash"):
+        conn = get_db_connection()
+        try:
+            prow = conn.execute(
+                "SELECT author_name, doi, title, user_id, author_openalex_id, piq_claimed_at "
+                "FROM papers_assessment WHERE eval_hash = ?", (info["eval_hash"],)).fetchone()
+        except sqlite3.Error:
+            prow = None
+        finally:
+            conn.close()
+        if prow:
+            attr = verify_authorship(
+                submitter_orcid=identity["orcid"], submitter_wallet=identity["wallet"],
+                extracted_authors=prow[0] or "", doi=prow[1] or "", title=prow[2] or "")
+            # Any of: the byline resolves to them, the row is filed under their
+            # identity, or they claimed the escrow on it.
+            owns_row = any(v and v in identities for v in (prow[3], prow[4]))
+            reviewer_is_author = bool(attr.get("verified") or owns_row
+                                      or (prow[5] and owns_row))
+
+    if reviewer_is_author:
+        raise HTTPException(
+            status_code=403,
+            detail=("You cannot review your own paper. A Peer-reviewed badge you issued to "
+                    "your own work would certify nothing — it needs a reviewer other than you."))
+
+    result = complete_review(payload.review_id, key, payload.verdict, payload.comment,
+                             reviewer_is_author=reviewer_is_author)
     if not result["ok"]:
         raise HTTPException(status_code=409, detail=result["reason"])
     add_log(f"Review completed on {result['eval_hash'][:12]}… paid {result['paid']:.2f} piQ")
