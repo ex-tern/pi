@@ -165,10 +165,11 @@ const HELP = {
       These are reproducible and cannot be talked around by a persuasive abstract.</p>`,
   },
   fee: {
-    title: "The 0.1 piQ Processing Fee",
-    body: `<p>Each manuscript costs a flat <strong>0.1 piQ</strong> to process, debited from your
-      balance at the moment that paper begins processing.</p>
-      <p>This replaced the earlier "stake 0.1 piQ" model. Staking implied an escrow that was
+    title: "The processing fee",
+    body: `<p>Each manuscript costs <strong>1 piQ</strong> to process, debited from your
+      balance at the moment that paper begins processing. Long documents cost more, up to a
+      ceiling — the live figure beside the Run button is always the one that will be charged.</p>
+      <p>This replaced an earlier "stake" model. Staking implied an escrow that was
       returned afterwards, but nothing was ever actually held or settled — it was a checkbox with
       no accounting behind it. A fee is honest about what is happening: assessment consumes real
       inference credits, and the fee reflects that cost.</p>
@@ -2995,13 +2996,27 @@ async function showWriteReviewModal(hash) {
       <h2>Write a review</h2>
       <p class="lede">${already
         ? "This paper has already been peer reviewed."
-        : state.review_requested
-          ? "A review is open on this paper, but you cannot take it — you are the one who "
-            + "requested it. A requester reviewing their own request would make the badge "
-            + "self-issued through a longer route."
-          : "No review has been requested for this paper, so there is no open request to take. "
+        : !state.review_requested
+          ? "No review has been requested for this paper, so there is no open request to take. "
             + "Reviews are commissioned by someone setting piQ aside; ask the author, or request "
-            + "one yourself from the dossier."}</p>
+            + "one yourself from the dossier."
+        : state.may_request
+          // may_request is the authorship test. If it is true, this is THEIR
+          // paper — and that, not who filed the request, is why they cannot
+          // review it. Naming the requester instead sent an author off to look
+          // for a request they could take, when no such request can exist.
+          ? "This is your own paper, so you cannot review it. A Peer-reviewed badge you issued "
+            + "to your own work would certify nothing — it needs a reviewer other than you. The "
+            + "request stays open until someone else takes it."
+          : "A review is open on this paper, but you are the one who requested it, and a "
+            + "requester reviewing their own request would make the badge self-issued through a "
+            + "longer route."}</p>
+      ${state.may_request && state.review_requested && !already ? `
+        <div class="warning-box">
+          <strong>Looking for something to review?</strong>
+          <p>Assess a paper you did not write — by DOI is easiest — then request a review on it
+          and take it yourself. You are not its author, so that review is a real one.</p>
+        </div>` : ""}
       ${reqList}`);
     return;
   }
