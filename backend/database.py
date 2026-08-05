@@ -2369,7 +2369,8 @@ def list_open_reviews(exclude_key: str = "", limit: int = 50,
 
 
 def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: str,
-                    reviewer_is_author: Optional[bool] = None) -> dict:
+                    reviewer_is_author: Optional[bool] = None,
+                    allow_self_review: bool = False) -> dict:
     """Record a completed review and credit the reviewer.
 
     The rule being enforced is *the reviewer must not be an author of the
@@ -2396,7 +2397,12 @@ def complete_review(review_id: int, reviewer_key: str, verdict: str, comment: st
             return {"ok": False, "reason": "No such review request."}
         if row[3]:
             return {"ok": False, "reason": "That review has already been completed."}
-        if row[1] == reviewer_key and reviewer_is_author is not False:
+        # `allow_self_review` is the operator exception. It is the ONLY way this
+        # guard is bypassed, it is never set for an ordinary account, and the
+        # caller is expected to disclose the fact inside the review text — the
+        # badge stays interrogable, so a reader who opens it sees who wrote it
+        # and about whose paper.
+        if row[1] == reviewer_key and reviewer_is_author is not False and not allow_self_review:
             return {"ok": False, "reason": (
                 "You cannot review a paper you requested review of. If this is your own "
                 "manuscript, it needs a reviewer other than you — a badge you issued to "
