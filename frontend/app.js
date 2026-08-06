@@ -653,10 +653,38 @@ function freeRemaining() {
   return Session.freeEvalsUsed > 0 ? 0 : 1;
 }
 
+let feeRetryTimer = null;
+
 function renderFeeNotice() {
   const fee = piqState.fee_per_paper;
-  document.getElementById("feeAmount").textContent =
-    fee == null ? "—" : `${formatPiq(fee)} piQ`;
+  const amountEl = document.getElementById("feeAmount");
+
+  // An unknown fee must not be PAINTED as a dash.
+  //
+  // The fee is only ever known from the server, and it is null until the first
+  // /api/user/piq-total resolves — so on every page load, and permanently
+  // whenever that one request failed, this wrote "—" over the markup and the
+  // notice read "— processing fee per paper". A dash where a price belongs
+  // reads as "free" or as "broken" depending on the reader, and neither is
+  // what it meant, which was simply "not fetched yet".
+  //
+  // The element keeps whatever it last showed, is marked as stale for styling
+  // and screen readers, and the fetch is retried — because the honest response
+  // to a missing number is to go and get it.
+  if (fee == null) {
+    amountEl.classList.add("fee-pending");
+    amountEl.setAttribute("aria-busy", "true");
+    if (!feeRetryTimer) {
+      feeRetryTimer = setTimeout(() => {
+        feeRetryTimer = null;
+        refreshPiqBalance();
+      }, 4000);
+    }
+  } else {
+    amountEl.classList.remove("fee-pending");
+    amountEl.removeAttribute("aria-busy");
+    amountEl.textContent = `${formatPiq(fee)} piQ`;
+  }
   const line = document.getElementById("feeBalanceLine");
 
   if (!Session.hasIdentity()) {
@@ -676,7 +704,10 @@ function renderFeeNotice() {
          or win a run on the <a href="#" data-goto-tab="arcade">Science Map</a> to earn piQ.</span>`;
     return;
   }
-  if (piqState.balance < fee) {
+  if (fee == null) {
+    line.innerHTML = `<span class="hint">Balance ${piqState.balance.toFixed(2)} piQ —
+      checking the current fee…</span>`;
+  } else if (piqState.balance < fee) {
     line.innerHTML = `<span class="fee-warn">Balance ${piqState.balance.toFixed(2)} piQ — below the ${fee.toFixed(2)} piQ fee. Earn piQ by having your own manuscripts assessed.</span>`;
   } else {
     line.innerHTML = `<span class="fee-ok">Balance ${piqState.balance.toFixed(2)} piQ — covers ${piqState.papers_affordable} paper${piqState.papers_affordable === 1 ? "" : "s"}.</span>`;

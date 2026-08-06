@@ -5033,14 +5033,40 @@ def aggregate_author_statistics(rows):
         ca = clean_author_name(author_str)
         if not ca or ca.lower() in ("unidentified", "unknown") or is_likely_institution(ca):
             continue
-        for a in [x.strip() for x in ca.split(",") if x.strip()]:
+        names = [x.strip() for x in ca.split(",") if x.strip()]
+        if not names:
+            continue
+
+        # --- Split the paper's piQ across its authors ----------------------
+        # Each co-author previously received the paper's FULL emission, so a
+        # five-author paper that minted 10 piQ put 10 piQ against all five and
+        # the leaderboard column summed to 50 for piQ that does not exist. The
+        # table was not describing a distribution of anything — it was counting
+        # one emission once per name on the byline.
+        #
+        # An equal split is used because the manuscript gives no basis for any
+        # other one. CRediT roles are extracted elsewhere, but role is not a
+        # share: "wrote the manuscript" and "ran the experiments" cannot be
+        # ranked against each other without inventing a weighting, and first or
+        # last position means opposite things in different fields. Equal shares
+        # are the only division the document actually supports, and the whole
+        # column now sums to what was really emitted.
+        #
+        # This is a DISPLAY split. The ledger is unchanged: piQ still settles
+        # to the one identity whose authorship was verified, because a
+        # co-author with no wallet and no ORCID has no account to settle into.
+        # See the note on the endpoint below.
+        share = 1.0 / len(names)
+        for a in names:
             rec = authors.setdefault(a, {"author": a, "minted": 0.0, "held": 0.0,
                                          "papers": 0, "_score_sum": 0.0})
-            rec["minted"] += safe_float(piq, 0.0)
+            rec["minted"] += safe_float(piq, 0.0) * share
             # Escrowed piQ counts as held only while it is unclaimed; once
             # claimed it has already been minted and would double-count.
             if not claimed:
-                rec["held"] += escrowed
+                rec["held"] += escrowed * share
+            # Papers are NOT split. Co-authoring a paper is authoring it — a
+            # five-author paper is one paper each, not a fifth of one.
             rec["papers"] += 1
             rec["_score_sum"] += safe_float(score, 0.0)
     results = []
