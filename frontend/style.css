@@ -1946,3 +1946,31 @@ button.seal { font-family: inherit; cursor: pointer; }
   font-variant-numeric: tabular-nums;
 }
 @media (max-width: 900px) { .engine-bar { grid-template-columns: 1fr; } }
+
+/* --- Dossier: compact ---------------------------------------------------- */
+/* The dossier is a reference document read on screen, not a printed report.
+   Nine full-width sections at report spacing meant several screens of
+   scrolling to reach the next finding, so the density is tightened and the
+   reference material collapses. */
+.dossier h3 { font-size: 0.95rem; margin: 18px 0 7px; }
+.dossier > h3:first-of-type { margin-top: 14px; }
+.dossier .data-table { margin: 0 0 10px; font-size: 12px; }
+.dossier .data-table td, .dossier .data-table th { padding: 5px 9px; }
+.dossier .report-body { font-size: 12.5px; line-height: 1.55; }
+.dossier-head { padding-bottom: 10px; margin-bottom: 2px; }
+.dossier-author { margin-bottom: 7px; }
+
+/* A collapsed section reads as one line until it is wanted. The summary keeps
+   the weight of the h3 it replaced, so the document still scans as a list of
+   sections rather than as a row of controls. */
+.dossier-sec { margin: 10px 0; border-top: 1px solid var(--border); }
+.dossier-sec > summary {
+  cursor: pointer; list-style: revert;
+  font-size: 0.95rem; font-weight: 700; color: var(--text);
+  padding: 9px 0 7px;
+}
+.dossier-sec > summary:hover { color: var(--accent); }
+.dossier-sec[open] > summary { margin-bottom: 4px; }
+.dossier-sec-body { padding-bottom: 2px; }
+/* The help button inside a summary must not swallow the toggle click. */
+.dossier-sec > summary .help-btn { margin-left: 7px; }

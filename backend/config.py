@@ -509,3 +509,11 @@ ENABLE_RIB_LLM_TUTOR = _env_bool("ENABLE_RIB_LLM_TUTOR", False)
 RIB_TUTOR_UNTIL_OBS = int(os.getenv("RIB_TUTOR_UNTIL_OBS", "200"))
 RIB_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("RIB_TUTOR_MAX_CALLS_PER_DAY", "50"))
 RIB_TUTOR_WEIGHT = float(os.getenv("RIB_TUTOR_WEIGHT", "0.35"))
+
+# siM LLM tutoring. Mirrors the riB settings above — same bootstrap problem
+# (an engine that learns from data a new deployment does not have yet), same
+# three bounds, same off-by-default.
+ENABLE_SIM_LLM_TUTOR = _env_bool("ENABLE_SIM_LLM_TUTOR", False)
+SIM_TUTOR_UNTIL_OBS = int(os.getenv("SIM_TUTOR_UNTIL_OBS", "150"))
+SIM_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("SIM_TUTOR_MAX_CALLS_PER_DAY", "40"))
+SIM_TUTOR_WEIGHT = float(os.getenv("SIM_TUTOR_WEIGHT", "0.35"))
