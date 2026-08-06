@@ -2003,3 +2003,8 @@ button.seal { font-family: inherit; cursor: pointer; }
   padding: 7px 11px;
   border-radius: 4px 4px 0 0;
 }
+
+
+/* The fee is not known yet — the last value is still shown rather than being
+   replaced by a dash, so it is dimmed to say "stale, not authoritative". */
+.fee-amount.fee-pending { opacity: 0.45; }
