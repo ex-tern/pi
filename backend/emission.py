@@ -261,7 +261,17 @@ def onboarding_grant(base_fee: float = None) -> Dict:
 # because the work got worse, but because the accounting became incoherent.
 # Scaling the fee by the same halving factor keeps the ratio of cost to reward
 # constant, so difficulty rises in absolute terms while the system stays usable.
-BASE_FEE = 0.1
+# Raised from 0.1 to 1.0 alongside PIQ_PROCESSING_FEE and MINIMUM_FEE.
+#
+# This is the DEFAULT used when a caller does not pass a base fee, and it was
+# the reason "0.10 piQ" survived after the config default was raised: several
+# call sites reach compute_processing_fee() and fee_manifest() without an
+# explicit base_fee, so they fell back to this constant instead. Three separate
+# constants held the same price and only one had been changed.
+BASE_FEE = 1.0
+# The absolute floor after the halving schedule has been applied. Kept far
+# below BASE_FEE on purpose: at halving epoch 10 the fee is BASE_FEE/1024, and
+# this floor is what stops it reaching zero. It is not the price of a paper.
 MIN_FEE = 0.001
 
 # --- Size-proportional pricing ---------------------------------------------

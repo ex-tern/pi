@@ -1570,7 +1570,13 @@ def list_assessments_for_identity(identities, limit: int = 100) -> list:
             fields = []
         out.append({"hash": r[0], "title": r[1] or "Untitled", "author": r[2] or "",
                     "score": round(float(r[3] or 0), 1), "fields": fields,
-                    "timestamp": r[5], "piq_minted": float(r[6] or 0),
+                    "timestamp": r[5],
+                    # Same rule as every other table: the row shows TOTAL
+                    # earned, with the held portion carried alongside.
+                    "piq_minted": float(r[6] or 0),
+                    "piq_held": 0.0 if r[11] else round(float(r[10] or 0), 4),
+                    "piq": round(float(r[6] or 0)
+                                 + (0.0 if r[11] else float(r[10] or 0)), 4),
                     "doi": r[7] or "", "filename": r[8] or "",
                     "published": bool(r[9]),
                     "escrowed": round(float(r[10] or 0), 4),
