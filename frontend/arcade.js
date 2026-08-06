@@ -860,13 +860,22 @@
     // In PLAY it is real gravity — see applyOrbitalGravity, called separately —
     // so the spring is skipped there rather than the whole mechanic.
     if (state.mode === "play") return;
-    if (!state.look.gravity) return;
     const ATTRACT = 0.9;
     const REST_SCALE = 2.6;      // preferred separation, in radii
     const REPEL = 26;
     const DAMP = 0.86;
 
-    for (const e of state.edges) {
+    // The SPRING is optional; COLLISION is not.
+    //
+    // This function used to return early when the gravity toggle was off,
+    // which took the overlap resolution out with it — so with the default
+    // settings bubbles simply passed through one another and nothing on the
+    // map behaved like an object. Attraction is a layout preference and
+    // belongs behind a switch; two bodies not occupying the same space is not
+    // a preference.
+    const springOn = !!state.look.gravity;
+
+    if (springOn) for (const e of state.edges) {
       const a = e.a, b = e.b;
       if (a.eaten || b.eaten) continue;
       if (state.grabbed && (state.grabbed.bubble === a || state.grabbed.bubble === b)) continue;
@@ -875,15 +884,45 @@
       const rest = (a.mass + b.mass) * REST_SCALE;
       // Hooke-style spring toward the rest length, normalised so distant
       // pairs don't get an enormous impulse on the first frame.
+      //
+      // CLAMPED, because an unbounded spring beats collision resolution. A
+      // distant pair produced an impulse large enough to drive both bodies
+      // straight through whatever lay between them, and the overlap solver
+      // only gets one pass per frame — so with the spring enabled the layout
+      // collapsed into a corner with bubbles 70% buried in each other. The cap
+      // costs nothing at rest length and only bites where the spring was
+      // behaving as a catapult rather than a spring.
       const force = ((d - rest) / d) * ATTRACT * dt;
-      a.vx += dx * force; a.vy += dy * force;
-      b.vx -= dx * force; b.vy -= dy * force;
+      // Clamp the IMPULSE, not the coefficient.
+      //
+      // `force` is a per-unit-distance term: the actual impulse is force × dx,
+      // and dx can be a thousand world units. Bounding `force` therefore
+      // bounded nothing — a distant pair still received an impulse large
+      // enough to punch through the overlap solver, which only runs one pass
+      // per frame. Limiting the resulting vector is what actually stops the
+      // spring from beating collision.
+      const MAX_IMPULSE = 1.2;
+      let ix = dx * force, iy = dy * force;
+      const im = Math.hypot(ix, iy);
+      if (im > MAX_IMPULSE) { ix = ix / im * MAX_IMPULSE; iy = iy / im * MAX_IMPULSE; }
+      a.vx += ix; a.vy += iy;
+      b.vx -= ix; b.vy -= iy;
     }
 
     // Overlap resolution. O(n^2) over ~90 bubbles is ~4k checks per frame,
     // which is negligible next to the render, and it is what keeps labels
     // legible.
     const list = state.bubbles;
+    // Two solver passes when the spring is running.
+    //
+    // One pass resolves each pair in isolation, but a bubble squeezed between
+    // two others is pushed out of one contact and straight into the next, and
+    // the spring re-injects energy every frame — so a single pass never
+    // converges and the layout settles with bodies visibly buried. A second
+    // pass is cheap (90 bubbles is ~4k checks) and removes most of what one
+    // pass leaves behind. With the spring off, one pass already reaches zero.
+    const PASSES = springOn ? 2 : 1;
+    for (let pass = 0; pass < PASSES; pass++)
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
       if (a.eaten) continue;
@@ -942,6 +981,42 @@
       // enough speed to shoot bubbles across the world.
       const sp = Math.hypot(b.vx, b.vy);
       if (sp > 6) { b.vx = (b.vx / sp) * 6; b.vy = (b.vy / sp) * 6; }
+
+      // --- Use the whole map ------------------------------------------
+      // Bubbles were seeded across the full world but drifted inward: the
+      // domain springs pull clusters together and nothing ever pushed them
+      // back out, so over a few minutes the map became a clump in the middle
+      // with empty margins. Two forces fix that, and they are not the same
+      // thing:
+      //
+      //  * A soft inward WALL, so a bubble that reaches the edge bounces
+      //    rather than pressing against it or drifting past.
+      //  * A gentle outward SPREAD in the empty margins, which counteracts the
+      //    spring's net inward pull. Applied only near the centre and scaled
+      //    by how central a bubble is, so it shapes the layout without ever
+      //    overpowering the constellation the springs are trying to form.
+      const pad = b.mass + 8;
+      if (b.x < pad)             { b.x = pad;             b.vx = Math.abs(b.vx) * 0.6; }
+      else if (b.x > WORLD_W - pad) { b.x = WORLD_W - pad; b.vx = -Math.abs(b.vx) * 0.6; }
+      if (b.y < pad)             { b.y = pad;             b.vy = Math.abs(b.vy) * 0.6; }
+      else if (b.y > WORLD_H - pad) { b.y = WORLD_H - pad; b.vy = -Math.abs(b.vy) * 0.6; }
+
+      if (springOn) {
+        // Normalised offset from centre, -1 … 1 on each axis.
+        const ox = (b.x - WORLD_W / 2) / (WORLD_W / 2);
+        const oy = (b.y - WORLD_H / 2) / (WORLD_H / 2);
+        const r = Math.hypot(ox, oy);
+        if (r < 0.75) {
+          // Strongest at dead centre, fading to nothing at the edge of the
+          // inner region. A constant push would flatten the clusters against
+          // the walls, which is the opposite failure.
+          const push = (0.75 - r) * 0.9 * dt;
+          const nx = r > 0.001 ? ox / r : (Math.random() - 0.5);
+          const ny = r > 0.001 ? oy / r : (Math.random() - 0.5);
+          b.vx += nx * push;
+          b.vy += ny * push;
+        }
+      }
     }
   }
 
