@@ -1463,6 +1463,10 @@ function syncProfileVisibility() {
   if (signedIn && typeof loadAssessmentHistory === "function") loadAssessmentHistory();
   // Un-hiding the card is not the same as populating it.
   if (signedIn && typeof refreshBuddy === "function") refreshBuddy();
+  // Checked on every identity change, because linking an ORCID is precisely
+  // the event that can turn held piQ into claimable piQ.
+  if (typeof loadClaimable === "function") loadClaimable();
+  else document.getElementById("claimableCard")?.classList.add("hidden");
 }
 
 /** Research Buddy (riB) — concrete next actions derived from the saved profile.
@@ -3824,9 +3828,14 @@ function removeResult(idx) { evaluatedBuffer.splice(idx, 1); renderResults(); }
 // Modals
 // ---------------------------------------------------------------------------
 const modalOverlay = document.getElementById("modalOverlay");
-document.getElementById("modalClose").addEventListener("click", () => modalOverlay.classList.add("hidden"));
-modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) modalOverlay.classList.add("hidden"); });
-document.addEventListener("keydown", (e) => { if (e.key === "Escape") modalOverlay.classList.add("hidden"); });
+/** Dismiss the modal. One definition, because three copies of
+ *  `modalOverlay.classList.add("hidden")` is three chances to change the way a
+ *  modal closes and miss one. */
+function closeModal() { modalOverlay.classList.add("hidden"); }
+
+document.getElementById("modalClose").addEventListener("click", closeModal);
+modalOverlay.addEventListener("click", (e) => { if (e.target === modalOverlay) closeModal(); });
+document.addEventListener("keydown", (e) => { if (e.key === "Escape") closeModal(); });
 
 function openModal(html) {
   document.getElementById("modalBody").innerHTML = html;
@@ -6304,8 +6313,18 @@ async function _loadAssessmentHistory() {
 
     count.textContent = data.count;
     if (!data.count) {
-      body.innerHTML = `<p class="hint">Nothing assessed under this identity yet. Papers you
-        assess while signed in appear here.</p>`;
+      // Say WHICH identity was looked under. "Nothing here" and "nothing here
+      // under this particular key" are different statements, and only the
+      // second is one the server can actually stand behind — a paper assessed
+      // while a different identity was the proven one is filed under that one.
+      const as = data.read_as || {};
+      const shown = as.orcid ? `ORCID ${as.orcid}`
+        : as.wallet ? `wallet ${as.wallet.slice(0, 6)}…${as.wallet.slice(-4)}`
+        : "this identity";
+      body.innerHTML = `<p class="hint">Nothing assessed under ${escapeHtml(shown)} yet.
+        Papers are filed under the identity your sign-in proves at the time you assess them,
+        so if you have assessed papers while signed in a different way, link that
+        wallet or ORCID to see them here.</p>`;
       return;
     }
     // Wrapped in a scroll container like every other wide table. Unwrapped, its
@@ -6430,6 +6449,136 @@ async function claimEscrow(hash) {
   }
   loadAssessmentHistory();
   loadEmissionStatus();
+  loadClaimable();
+}
+
+
+// ---------------------------------------------------------------------------
+// piQ held for papers you authored but did not submit
+// ---------------------------------------------------------------------------
+/** Surface held piQ that the escrow list could never show.
+ *
+ *  "Your escrow" lists papers you SUBMITTED. The common case escrow exists for
+ *  is the opposite one — a colleague put your manuscript through, or you
+ *  assessed it before linking an ORCID — and that piQ was sitting in the
+ *  database with no view anywhere that would display it. Someone linking an
+ *  ORCID for the first time is exactly when it should be said, so this runs on
+ *  sign-in and stays hidden whenever there is nothing to report.
+ */
+async function loadClaimable() {
+  const card = document.getElementById("claimableCard");
+  if (!card) return;
+  if (!Session.hasIdentity()) { card.classList.add("hidden"); return; }
+
+  let data;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    const res = await fetch(`${API}/api/assessments/claimable?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    data = await res.json();
+  } catch (e) {
+    // Silent. This is an opportunistic extra, not something the user asked
+    // for — an error box for a feature nobody invoked is just noise.
+    card.classList.add("hidden");
+    return;
+  }
+
+  const list = data.candidates || [];
+  if (!list.length) { card.classList.add("hidden"); return; }
+
+  card.classList.remove("hidden");
+  document.getElementById("claimableTotal").textContent =
+    `${Number(data.total || 0).toFixed(2)} piQ`;
+  document.getElementById("claimableNote").textContent =
+    `${list.length} paper${list.length === 1 ? "" : "s"} carry a byline matching `
+    + `${data.profile_name || "your ORCID name"}. Claiming re-checks authorship against the `
+    + `publisher and ORCID registries.`;
+
+  document.getElementById("claimableList").innerHTML = list.map(c => `
+    <div class="claimable-row">
+      <div class="claimable-paper">
+        <span class="claimable-paper-title" title="${escapeHtml(c.title || "")}"
+          >${escapeHtml(compactTitle(c.title || "Untitled", 46))}</span>
+        <span class="claimable-paper-meta">${escapeHtml(compactAuthors(c.author || ""))}</span>
+      </div>
+      <button class="btn btn-quiet claimable-btn" data-claim-hash="${escapeHtml(c.hash)}"
+              data-claim-title="${escapeHtml(c.title || "")}"
+              data-claim-author="${escapeHtml(c.author || "")}"
+              data-claim-matched="${escapeHtml(c.matched_author || "")}"
+              data-claim-amount="${Number(c.escrowed)}"
+              title="Confirm this is your paper, then verify authorship to release the ${
+                Number(c.escrowed).toFixed(2)} piQ held for it"
+        >Claim ${Number(c.escrowed).toFixed(2)}</button>
+    </div>`).join("");
+}
+
+document.addEventListener("click", async (e) => {
+  const btn = e.target.closest("[data-claim-hash]");
+  if (!btn) return;
+  confirmAuthorship({
+    hash: btn.dataset.claimHash,
+    title: btn.dataset.claimTitle || "",
+    author: btn.dataset.claimAuthor || "",
+    matched: btn.dataset.claimMatched || "",
+    amount: Number(btn.dataset.claimAmount || 0),
+  });
+});
+
+/** Ask before claiming: is this actually your paper?
+ *
+ *  The suggestion list is built from a NAME match, which is a guess. Two
+ *  researchers share a name more often than the arithmetic suggests, and the
+ *  byline is read out of a PDF, so it is sometimes not even the string the
+ *  authors would recognise. Putting a bare "Claim" button on a guess invites
+ *  people to press it without reading — and a wrong press here is a claim on
+ *  someone else's work.
+ *
+ *  Asking first also gives "no" somewhere to go. Without it the only way to
+ *  dismiss a wrong suggestion was to ignore it forever, so the sidebar would
+ *  keep offering a stranger's paper on every visit.
+ */
+function confirmAuthorship(c) {
+  const amount = c.amount.toFixed(2);
+  openModal(`
+    <h2>Is this your paper?</h2>
+    <div class="confirm-paper">
+      <div class="confirm-paper-title">${escapeHtml(c.title || "Untitled")}</div>
+      <div class="confirm-paper-authors">${escapeHtml(c.author || "No byline recorded")}</div>
+    </div>
+    <p>We matched <strong>${escapeHtml(c.matched || "your name")}</strong> on this paper's byline
+       against your ORCID profile name. That is a name match, not proof — please confirm before
+       we check it properly.</p>
+    <p class="hint">Saying yes re-verifies authorship against the publisher's deposited record
+       and your ORCID profile. If that check passes, ${escapeHtml(amount)} piQ held for this
+       paper is released to you. If it does not, nothing changes and you will be told why.</p>
+    <p class="hint">Saying no removes it from your suggestions. Nothing is given up — the piQ
+       stays held for whoever the author is.</p>
+    <div class="action-bar" style="margin-top:12px">
+      <button class="btn" id="confirmYesBtn">Yes, this is my paper</button>
+      <button class="btn btn-secondary" id="confirmNoBtn">No, not mine</button>
+    </div>`);
+
+  document.getElementById("confirmYesBtn").addEventListener("click", async () => {
+    closeModal();
+    await claimEscrow(c.hash);
+  });
+  document.getElementById("confirmNoBtn").addEventListener("click", async () => {
+    closeModal();
+    await disownPaper(c.hash);
+  });
+}
+
+/** Record "not mine" so the suggestion stops coming back. */
+async function disownPaper(hash) {
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
+    await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/disown?${qs}`,
+                { method: "POST" });
+  } catch (e) {
+    // Nothing was lost and nothing is owed — the suggestion simply stays.
+    // An error box here would be louder than the thing it is reporting.
+  }
+  loadClaimable();
 }
 
 /** Attach or withdraw the author's public endorsement. */

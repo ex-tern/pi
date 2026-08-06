@@ -382,6 +382,25 @@ def enforce_database_schema(conn: sqlite3.Connection):
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_assessment_content "
                    "ON papers_assessment(content_hash)")
 
+    # "Not mine." Papers a person has said are not theirs.
+    #
+    # Stored server-side rather than in localStorage because the answer is a
+    # statement about a person, not about a browser: someone who has disowned
+    # a paper should not be asked again on their phone. It is also the only
+    # place the answer is durable — clearing site data would otherwise revive
+    # a prompt they have already dismissed.
+    #
+    # A disowning is reversible and holds nothing: the piQ stays escrowed and
+    # claimable by whoever the author actually is. Saying "not mine" declines
+    # a suggestion; it does not dispose of anything.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS escrow_disowned (
+                        eval_hash TEXT NOT NULL,
+                        account_key TEXT NOT NULL,
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        PRIMARY KEY (eval_hash, account_key))""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_escrow_disowned_acct "
+                   "ON escrow_disowned(account_key)")
+
     # Contact messages are bugs OR suggestions. Added as a column rather than a
     # second table: they share every field, every delivery path and one
     # operator queue — the only thing that differs is what the sender is
@@ -2092,16 +2111,35 @@ def total_escrowed() -> float:
         conn.close()
 
 
-def release_escrow(eval_hash: str, identities, wallet: str = "", orcid: str = "") -> dict:
+def release_escrow(eval_hash: str, identities, wallet: str = "", orcid: str = "",
+                   authorship_proven: bool = False) -> dict:
     """Move an escrowed amount into the claimant's balance. Idempotent.
 
     The claim is marked and the ledger credited inside one transaction. If the
     two could drift, a retried claim would either pay twice or mark a payment
     that never happened — and this is the one place in the system where a
     double-write creates money.
+
+    `authorship_proven` says the caller has already established that this
+    identity authored THIS paper, and it changes who may claim.
+
+    Without it the release additionally required the claimant to be the
+    paper's SUBMITTER, which quietly defeated the entire mechanism. Escrow
+    exists for the case where a paper earned piQ that could not be attributed
+    at assessment time — very often because somebody else put the manuscript
+    through, or because the author assessed it before linking an ORCID. The
+    author would then verify authorship successfully and still be told
+    "nothing is held for this paper under your identity", because submitting
+    and authoring are different acts and only the first was being checked.
+
+    Authorship verification IS the authorisation. Once it passes, requiring
+    submission on top of it does not add safety — it only excludes the exact
+    people the escrow is holding piQ for.
     """
     values = [v for v in (identities or []) if v]
-    if not eval_hash or not values:
+    if not eval_hash:
+        return {"released": 0.0, "reason": "No claim to release."}
+    if not values and not authorship_proven:
         return {"released": 0.0, "reason": "No claim to release."}
     keys = _account_keys(wallet, orcid)
     if not keys:
@@ -2111,14 +2149,24 @@ def release_escrow(eval_hash: str, identities, wallet: str = "", orcid: str = ""
 
     conn = get_db_connection()
     try:
-        row = conn.execute(
-            f"""SELECT piq_escrowed FROM papers_assessment
-                WHERE eval_hash = ? AND piq_claimed_at IS NULL
-                  AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
-            (eval_hash, *values, *values),
-        ).fetchone()
+        if authorship_proven:
+            row = conn.execute(
+                """SELECT piq_escrowed FROM papers_assessment
+                   WHERE eval_hash = ? AND piq_claimed_at IS NULL""",
+                (eval_hash,),
+            ).fetchone()
+            miss = ("Nothing is held for this paper — it has either been claimed already or "
+                    "earned no held piQ.")
+        else:
+            row = conn.execute(
+                f"""SELECT piq_escrowed FROM papers_assessment
+                    WHERE eval_hash = ? AND piq_claimed_at IS NULL
+                      AND (user_id IN ({ph}) OR author_openalex_id IN ({ph}))""",
+                (eval_hash, *values, *values),
+            ).fetchone()
+            miss = "Nothing is held for this paper under your identity."
         if not row or not row[0]:
-            return {"released": 0.0, "reason": "Nothing is held for this paper under your identity."}
+            return {"released": 0.0, "reason": miss}
         amount = round(float(row[0]), 4)
 
         conn.execute(
@@ -3234,3 +3282,57 @@ def set_content_hash(eval_hash: str, content_hash: str) -> bool:
         return False
     finally:
         conn.close()
+
+
+def list_unclaimed_escrow(limit: int = 500) -> list:
+    """Every paper still holding piQ, whoever submitted it.
+
+    Deliberately NOT filtered by identity. This is the input to "is any of
+    this yours?", and the answer cannot be found by looking only at papers the
+    asker uploaded — the whole point is that somebody else may have put your
+    manuscript through, or that you assessed it before linking an ORCID.
+
+    Author-name matching happens in the caller, against the claimant's
+    verified ORCID profile name, because that comparison is a policy decision
+    about identity and does not belong in a SQL WHERE clause.
+    """
+    return [
+        {"hash": r[0], "title": r[1] or "Untitled", "author": r[2] or "",
+         "score": round(float(r[3] or 0), 1), "escrowed": round(float(r[4] or 0), 4),
+         "doi": r[5] or "", "timestamp": r[6]}
+        for r in query_all(
+            """SELECT eval_hash, title, author_name, final_score, piq_escrowed, doi, timestamp
+               FROM papers_assessment
+               WHERE piq_escrowed > 0 AND piq_claimed_at IS NULL
+               ORDER BY piq_escrowed DESC LIMIT ?""",
+            (int(limit),))
+    ]
+
+
+def disown_escrow(eval_hash: str, account_key: str) -> bool:
+    """Record that this person says the paper is not theirs.
+
+    Idempotent, and deliberately not destructive — see the table note. The
+    escrow is untouched; only the suggestion is silenced, for this person.
+    """
+    if not eval_hash or not account_key:
+        return False
+    conn = get_db_connection()
+    try:
+        conn.execute("INSERT OR IGNORE INTO escrow_disowned (eval_hash, account_key) "
+                     "VALUES (?, ?)", (eval_hash, account_key))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logging.warning("disown_escrow failed for %s: %s", eval_hash[:12], e)
+        return False
+    finally:
+        conn.close()
+
+
+def list_disowned(account_key: str) -> set:
+    """Hashes this person has already said are not theirs."""
+    if not account_key:
+        return set()
+    return {r[0] for r in query_all(
+        "SELECT eval_hash FROM escrow_disowned WHERE account_key = ?", (account_key,))}
