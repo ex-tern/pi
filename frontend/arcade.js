@@ -1028,10 +1028,18 @@
       if (b.eaten) continue;
       if (state.grabbed && state.grabbed.bubble === b) continue;
       if (b.wander === undefined) b.wander = Math.random() * Math.PI * 2;
+      // Amplitude raised ~6x from the first attempt. That version was moving —
+      // measurably, at 0.055 world units per frame — but a twentieth of a pixel
+      // per frame is not motion anybody can see, and "it moves" is a claim the
+      // eye has to be able to check. The cap on damping matters more than the
+      // force: DAMP removes 14% of velocity every frame, so a drift force only
+      // ever reaches a terminal speed of roughly WANDER/0.14.
       const ease = 6 / (6 + b.mass);            // big fields drift less
-      const WANDER = 0.055 * ease * dt * 60;
-      b.vx += Math.sin(t * 0.21 + b.wander) * WANDER;
-      b.vy += Math.cos(t * 0.17 + b.wander * 1.7) * WANDER;
+      const WANDER = 0.34 * ease * dt * 60;
+      // Three incommensurable periods rather than two, so the field never
+      // settles into a visible shared rhythm even over a long session.
+      b.vx += (Math.sin(t * 0.21 + b.wander) + 0.6 * Math.sin(t * 0.053 + b.wander * 2.3)) * WANDER;
+      b.vy += (Math.cos(t * 0.17 + b.wander * 1.7) + 0.6 * Math.cos(t * 0.041 + b.wander)) * WANDER;
     }
 
     for (const b of list) {
