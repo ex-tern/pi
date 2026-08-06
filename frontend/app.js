@@ -4078,7 +4078,7 @@ function renderIntegrityPanel(item) {
       unavailable: "not determined",
     }[b] || b);
     const conf = c => c >= 0.9 ? "q-high" : c >= 0.5 ? "q-mod" : "q-low";
-    html += `<h3>Bibliographic Provenance</h3><table class="data-table"><tbody>
+    html += `<details class="dossier-sec"><summary>Bibliographic provenance</summary><div class="dossier-sec-body"><table class="data-table"><tbody>
       <tr><td>Title source</td><td><span class="pill ${conf(bib.title_confidence)}">${
         escapeHtml(basisLabel(bib.title_basis))}</span>
         <span class="hint"> confidence ${((bib.title_confidence || 0) * 100).toFixed(0)}%</span></td></tr>
@@ -4094,6 +4094,7 @@ function renderIntegrityPanel(item) {
           `<li>${escapeHtml(a.value || a.text || "")} <span class="hint">(${escapeHtml(a.basis || "")})</span></li>`
         ).join("")}</ul></details>`;
     }
+    html += `</div></details>`;      // close: bibliographic provenance
   }
 
   if (refs.fabricated_dois && refs.fabricated_dois.length) {
@@ -4113,6 +4114,29 @@ function renderIntegrityPanel(item) {
     </div>`;
   }
   return html;
+}
+
+/** A dossier section. Reference material is collapsed; findings are not.
+ *
+ *  The dossier was nine full-width sections stacked vertically — warnings,
+ *  diagnostics, criteria, evidence, provenance, classification, signals,
+ *  ledger, export — every one expanded, so reading it meant scrolling past
+ *  several screens of reference tables to reach the next finding. The
+ *  distinction that matters is between what the assessment CONCLUDED and the
+ *  material it concluded it from: the first belongs on screen, the second
+ *  belongs one click away.
+ *
+ *  It also collapses the repeated `<h3>…</h3><table class="data-table">`
+ *  markup that every section was rebuilding by hand.
+ */
+function dossierSection(title, body, { open = true, help = "" } = {}) {
+  const h = help
+    ? `<button class="help-btn" data-help="${escapeHtml(help)}" aria-label="About ${escapeHtml(title)}">?</button>`
+    : "";
+  return `<details class="dossier-sec"${open ? " open" : ""}>
+    <summary>${escapeHtml(title)}${h}</summary>
+    <div class="dossier-sec-body">${body}</div>
+  </details>`;
 }
 
 function renderDossierModal(item, idx) {
@@ -4230,12 +4254,12 @@ function renderDossierModal(item, idx) {
       "insufficient-text": `<span class="pill pill-muted">Insufficient text</span>`,
       "no-vocabulary-match": `<span class="pill pill-muted">No match</span>`,
     }[cls.basis] || `<span class="pill pill-muted">${escapeHtml(cls.basis || "unknown")}</span>`;
-    html += `<h3>Field Classification</h3><table class="data-table"><tbody>
+    html += `<details class="dossier-sec"><summary>Field classification</summary><div class="dossier-sec-body"><table class="data-table"><tbody>
       <tr><td>Fields</td><td>${cls.fields.map(escapeHtml).join(", ")}</td></tr>
       ${cls.domains && cls.domains.length ? `<tr><td>Domains</td><td>${cls.domains.map(escapeHtml).join(", ")}</td></tr>` : ""}
       <tr><td>Basis</td><td>${basisLabel}${typeof cls.confidence === "number"
         ? ` <span class="hint">confidence ${(cls.confidence * 100).toFixed(0)}%</span>` : ""}</td></tr>
-      </tbody></table>`;
+      </tbody></table></div></details>`;
   }
 
   // --- Deterministic signals ---
@@ -4245,13 +4269,13 @@ function renderDossierModal(item, idx) {
   if (typeof item.repro_score === "number") signals.push(["Reproducibility signal", `${(item.repro_score * 100).toFixed(1)}%`]);
   if (typeof item.scilem_rating === "number") signals.push(["SciLM (siM) structural rating", item.scilem_rating.toFixed(2)]);
   if (signals.length) {
-    html += `<h3>Deterministic Signals</h3><table class="data-table"><tbody>` +
+    html += `<details class="dossier-sec"><summary>Deterministic signals</summary><div class="dossier-sec-body"><table class="data-table"><tbody>` +
       signals.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`).join("") +
-      `</tbody></table>`;
+      `</tbody></table></div></details>`;
   }
 
   // --- Ledger Record ---
-  html += `<h3>Ledger Record</h3><table class="data-table"><tbody>`;
+  html += `<details class="dossier-sec"><summary>Ledger record</summary><div class="dossier-sec-body"><table class="data-table"><tbody>`;
   html += `<tr><td>Evaluation hash</td><td><code class="wrap">${escapeHtml(item.eval_hash || "—")}</code></td></tr>`;
   html += `<tr><td>piQ minted</td><td><code>${Number(item.piq || 0).toFixed(2)}</code></td></tr>`;
   if (item.fee_charged) html += `<tr><td>Processing fee</td><td><code>${Number(item.fee_charged).toFixed(2)} piQ</code></td></tr>`;
@@ -4261,7 +4285,7 @@ function renderDossierModal(item, idx) {
   if (item.zk_proof) html += `<tr><td>zk-SNARK proof</td><td><code class="wrap">${escapeHtml(item.zk_proof)}</code></td></tr>`;
   if (item.doi && item.doi !== "None") html += `<tr><td>DOI</td><td><code>${escapeHtml(item.doi)}</code></td></tr>`;
   if (item.timestamp) html += `<tr><td>Assessed</td><td>${escapeHtml(new Date(item.timestamp).toLocaleString())}</td></tr>`;
-  html += `</tbody></table>`;
+  html += `</tbody></table></div></details>`;
 
   // --- Full synthesized report ---
   if (item.evidence_report_text) {

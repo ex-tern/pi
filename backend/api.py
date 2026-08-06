@@ -635,6 +635,26 @@ def piq_fields(minted, escrowed, claimed_at) -> dict:
     return {"piq": round(m + h, 4), "piq_minted": m, "piq_held": h}
 
 
+def require_affordable(bal: dict, fee: float, what: str) -> None:
+    """Refuse an action the caller cannot pay for, and say why in full.
+
+    Three endpoints repeated this block verbatim — publishing, peer review and
+    LLM review — differing only in the noun. Repetition here is worse than
+    ordinary duplication: the message explains HELD piQ and how to release it,
+    which is the single most confusing thing about the balance, so three copies
+    meant three chances for that explanation to drift or be dropped.
+    """
+    if bal["balance"] + 1e-9 >= fee:
+        return
+    raise HTTPException(
+        status_code=402,
+        detail=(f"{what} costs {fee:.2f} piQ and your balance is {bal['balance']:.2f} piQ."
+                + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
+                   f" not yet verified — claim those first and this becomes affordable."
+                   if bal.get("held") else
+                   " Have your own work assessed to earn piQ.")))
+
+
 def resolve_active_fee() -> float:
     """Processing fee at the corpus's current difficulty epoch."""
     return compute_processing_fee(count_assessed_papers(), PIQ_PROCESSING_FEE)
@@ -2079,15 +2099,7 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
     fee = publication_fee(safe_float(row[4], 0.0))["fee"]
     if fee > 0 and not publication_fee_paid(file_hash, identities):
         bal = get_piq_balance(identity["wallet"], identity["orcid"])
-        if bal["balance"] + 1e-9 < fee:
-            raise HTTPException(
-                status_code=402,
-                detail=(f"Publishing costs {fee:.2f} piQ and your balance is "
-                        f"{bal['balance']:.2f} piQ."
-            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
-               f" not yet verified — claim those first and this becomes affordable."
-               if bal.get("held") else
-               " Have your own work assessed to earn piQ.")))
+        require_affordable(bal, fee, "Publishing")
         if not charge_piq_fee(fee, identity["wallet"], identity["orcid"],
                               eval_hash=file_hash, reason="Publication fee"):
             raise HTTPException(status_code=402, detail="The publication fee could not be charged.")
@@ -2478,15 +2490,7 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
     key = _profile_key(identity["wallet"], identity["orcid"])
     fee = peer_review_fee()["fee"]
     bal = get_piq_balance(identity["wallet"], identity["orcid"])
-    if bal["balance"] + 1e-9 < fee:
-        raise HTTPException(
-            status_code=402,
-            detail=(f"A peer review costs {fee:.2f} piQ and your balance is "
-                    f"{bal['balance']:.2f} piQ."
-            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
-               f" not yet verified — claim those first and this becomes affordable."
-               if bal.get("held") else
-               " Have your own work assessed to earn piQ.")))
+    require_affordable(bal, fee, "A peer review")
 
     result = open_review_request(file_hash, key, fee)
     if not result["ok"]:
@@ -2578,15 +2582,7 @@ def request_llm_review(file_hash: str, payload: ReviewRequest, request: Request,
 
     fee = llm_review_fee()["fee"]
     bal = get_piq_balance(identity["wallet"], identity["orcid"])
-    if bal["balance"] + 1e-9 < fee:
-        raise HTTPException(
-            status_code=402,
-            detail=(f"An LLM review costs {fee:.2f} piQ and your balance is "
-                    f"{bal['balance']:.2f} piQ."
-            + (f" You have {bal['held']:.2f} piQ held against papers whose authorship is"
-               f" not yet verified — claim those first and this becomes affordable."
-               if bal.get("held") else
-               " Have your own work assessed to earn piQ.")))
+    require_affordable(bal, fee, "An LLM review")
 
     conn = get_db_connection()
     try:

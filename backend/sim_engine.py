@@ -429,3 +429,136 @@ def status() -> Dict:
                      "coverage) are deterministic measurements and are never adjusted."),
         },
     }
+
+
+# ---------------------------------------------------------------------------
+# LLM tutoring
+#
+# Same bootstrap as riB's, and for the same reason: siM learns the weighting of
+# four structural signals from PANEL CONSENSUS, and a new deployment has no
+# consensus to learn from. It sits on its authored defaults until enough
+# manuscripts have been through a multi-juror panel — which on a quiet
+# deployment may be a long time, or never.
+#
+# While real consensus is scarce, a language model is asked to judge how well a
+# manuscript is REPORTED — the same question the four signals proxy for — and
+# its answer is fed in as a weak observation. Bounded exactly as riB's is:
+#
+#   * it stops once real consensus observations pass SIM_TUTOR_UNTIL_OBS,
+#     because a five-model panel beats one model's guess
+#   * capped per day, so it cannot run up inference cost
+#   * every tutored observation is recorded with source="llm", and the
+#     threshold counts only consensus — otherwise it could switch itself off
+#     by talking to itself
+#
+# The MIN_INDEPENDENT_SOURCES guard does not apply to tutoring, because that
+# guard exists to stop siM learning imitation from a single juror. A tutor is
+# not a juror: it never sees the panel's verdict, so it cannot imitate it.
+# ---------------------------------------------------------------------------
+_SIM_TUTOR_CALLS = {"day": "", "count": 0}
+
+
+def _sim_today() -> str:
+    from datetime import datetime as _dt
+    return _dt.now().strftime("%Y-%m-%d")
+
+
+def _consensus_observation_count() -> int:
+    """Observations that came from a real panel, not from the tutor."""
+    state = load_state()
+    return int(state.get("consensus_observations", state.get("observations", 0)) or 0)
+
+
+def tutor_phase_active() -> bool:
+    from config import (ENABLE_SIM_LLM_TUTOR, SIM_TUTOR_UNTIL_OBS,
+                        SIM_TUTOR_MAX_CALLS_PER_DAY)
+    if not ENABLE_SIM_LLM_TUTOR:
+        return False
+    if (_SIM_TUTOR_CALLS["day"] == _sim_today()
+            and _SIM_TUTOR_CALLS["count"] >= SIM_TUTOR_MAX_CALLS_PER_DAY):
+        return False
+    return _consensus_observation_count() < SIM_TUTOR_UNTIL_OBS
+
+
+def tutor_status() -> Dict:
+    from config import (ENABLE_SIM_LLM_TUTOR, SIM_TUTOR_UNTIL_OBS,
+                        SIM_TUTOR_MAX_CALLS_PER_DAY)
+    return {
+        "enabled": bool(ENABLE_SIM_LLM_TUTOR),
+        "active": tutor_phase_active(),
+        "consensus_observations": _consensus_observation_count(),
+        "stops_at": SIM_TUTOR_UNTIL_OBS,
+        "calls_today": (_SIM_TUTOR_CALLS["count"]
+                        if _SIM_TUTOR_CALLS["day"] == _sim_today() else 0),
+        "daily_cap": SIM_TUTOR_MAX_CALLS_PER_DAY,
+        "note": ("A language model is helping calibrate SciLM's signal weighting while panel "
+                 "consensus is scarce. It stops automatically once enough manuscripts have "
+                 "been through a full panel, and its judgements are recorded separately."),
+    }
+
+
+def tutor_from_llm(signals: Dict[str, float], title: str, excerpt: str) -> Dict:
+    """Ask a model how well one manuscript is reported, and learn from it.
+
+    Never raises: tutoring is an optimisation, and the caller runs it after the
+    assessment the user is waiting for has already been returned.
+    """
+    from config import SIM_TUTOR_WEIGHT, SIM_TUTOR_MAX_CALLS_PER_DAY
+    if not tutor_phase_active():
+        return {"tutored": False, "reason": "not active"}
+
+    prompt = (
+        "You are calibrating a checker that scores how well a paper is REPORTED — not whether "
+        "its conclusions are correct, and not how important it is.\n\n"
+        "Judge only reporting quality: are methods described in enough detail to repeat the "
+        "work, are materials and resources identified, is data or code availability stated, "
+        "are results reported with enough numeric detail to check them?\n\n"
+        f"TITLE: {str(title or 'Untitled')[:200]}\n\n"
+        f"EXCERPT:\n{str(excerpt or '')[:6000]}\n\n"
+        'Return JSON: {"reporting_quality": 0.0 to 1.0}  '
+        "where 0 is unreproducible and 1 is exemplary."
+    )
+
+    try:
+        from providers import (build_routes, is_route_cooling, record_success,
+                               is_scilm_route)
+        from brain import request_model_assessment
+        # SciLM must not tutor itself: a model calibrating its own weighting
+        # from its own output learns nothing except its current bias.
+        routes = [r for r in build_routes("judge") if not is_scilm_route(r)]
+        answer = None
+        for route in routes[:3]:
+            cooling, _ = is_route_cooling(route["model"], route["provider"])
+            if cooling:
+                continue
+            _, attempt = request_model_assessment(
+                "pidyne", route["model"], route["key"], route["base"], prompt)
+            if not attempt.get("api_failed", True):
+                record_success(route["model"], route["provider"])
+                answer = attempt
+                break
+        if not answer:
+            return {"tutored": False, "reason": "no model reachable"}
+    except Exception as e:                                   # noqa: BLE001
+        logging.warning("siM tutoring call failed: %s", e)
+        return {"tutored": False, "reason": "call failed"}
+
+    if _SIM_TUTOR_CALLS["day"] != _sim_today():
+        _SIM_TUTOR_CALLS["day"], _SIM_TUTOR_CALLS["count"] = _sim_today(), 0
+    _SIM_TUTOR_CALLS["count"] += 1
+
+    try:
+        target = float(answer.get("reporting_quality"))
+    except (TypeError, ValueError):
+        return {"tutored": False, "reason": "unparseable answer"}
+    if not (0.0 <= target <= 1.0):
+        return {"tutored": False, "reason": "answer out of range"}
+
+    # source="llm" bypasses the independent-sources guard (a tutor is not a
+    # juror) and keeps tutored steps countable separately from consensus.
+    result = observe(signals, target, source="llm",
+                     independent_sources=0, eval_hash="")
+    logging.info("siM tutored toward %.3f (%d/%d calls today).",
+                 target, _SIM_TUTOR_CALLS["count"], SIM_TUTOR_MAX_CALLS_PER_DAY)
+    return {"tutored": bool(result.get("learned")), "target": target,
+            "reason": result.get("reason", "")}

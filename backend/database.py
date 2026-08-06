@@ -448,6 +448,42 @@ def enforce_database_schema(conn: sqlite3.Connection):
     conn.commit()
     _schema_initialized = True
 
+def query_one(sql: str, params=(), default=None):
+    """Run a SELECT and return its first row, or `default` on any failure.
+
+    Thirty-six call sites open a connection, run one statement, catch
+    sqlite3.Error, and close in a finally — the same eleven lines each time,
+    with only the SQL differing. Collapsing them removes the two ways that
+    shape goes wrong: a connection left unclosed on an early return, and an
+    error path that returns a bare None where the caller expected a tuple.
+    """
+    conn = get_db_connection()
+    try:
+        return conn.execute(sql, params).fetchone()
+    except sqlite3.Error as e:
+        logging.warning("query_one failed (%s): %s", sql.split()[0:3], e)
+        return default
+    finally:
+        conn.close()
+
+
+def query_all(sql: str, params=()) -> list:
+    """Run a SELECT and return every row, or [] on failure.
+
+    Same reasoning as query_one. Returning an empty list rather than raising is
+    deliberate: every caller of this shape already treated a database error as
+    "nothing to show", and a listing that raises takes a whole page down.
+    """
+    conn = get_db_connection()
+    try:
+        return conn.execute(sql, params).fetchall()
+    except sqlite3.Error as e:
+        logging.warning("query_all failed (%s): %s", sql.split()[0:3], e)
+        return []
+    finally:
+        conn.close()
+
+
 def get_db_connection():
     conn = sqlite3.connect(DB_PATH, check_same_thread=False, timeout=30.0)
     # WAL mode lets reads proceed concurrently with a write instead of
@@ -2209,15 +2245,9 @@ def set_published(eval_hash: str, identities, account_key: str, published: bool,
 
 
 def is_published(eval_hash: str) -> bool:
-    conn = get_db_connection()
-    try:
-        row = conn.execute("SELECT published_at FROM papers_assessment WHERE eval_hash = ?",
-                           (eval_hash,)).fetchone()
-        return bool(row and row[0])
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
+    row = query_one("SELECT published_at FROM papers_assessment WHERE eval_hash = ?",
+                    (eval_hash,))
+    return bool(row and row[0])
 
 
 def publication_fee_paid(eval_hash: str, identities) -> bool:
@@ -2733,16 +2763,9 @@ def has_open_review_request(eval_hash: str) -> bool:
     request, not a credential, and it disappears the moment a review lands —
     at which point the Peer-reviewed badge is the honest thing to show instead.
     """
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            "SELECT 1 FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1",
-            (eval_hash,)).fetchone()
-        return bool(row)
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
+    return bool(query_one(
+        "SELECT 1 FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1",
+        (eval_hash,)))
 
 
 def has_human_review(eval_hash: str) -> bool:
@@ -2752,17 +2775,10 @@ def has_human_review(eval_hash: str) -> bool:
     and a paper that cleared it because a language model read it would make
     "reviewed before published" mean nothing.
     """
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            """SELECT 1 FROM peer_reviews
-               WHERE eval_hash = ? AND completed_at IS NOT NULL
-                 AND reviewer_key <> 'llm:panel' LIMIT 1""", (eval_hash,)).fetchone()
-        return bool(row)
-    except sqlite3.Error:
-        return False
-    finally:
-        conn.close()
+    return bool(query_one(
+        """SELECT 1 FROM peer_reviews
+           WHERE eval_hash = ? AND completed_at IS NOT NULL
+             AND reviewer_key <> 'llm:panel' LIMIT 1""", (eval_hash,)))
 
 
 def count_journal_publications(identities) -> int:
@@ -2828,15 +2844,9 @@ def record_paper_read(eval_hash: str, reader: str) -> int:
 
 
 def get_paper_reads(eval_hash: str) -> int:
-    conn = get_db_connection()
-    try:
-        row = conn.execute("SELECT COALESCE(reads, 0) FROM papers_assessment WHERE eval_hash = ?",
-                           (eval_hash,)).fetchone()
-        return int(row[0] or 0) if row else 0
-    except sqlite3.Error:
-        return 0
-    finally:
-        conn.close()
+    row = query_one("SELECT COALESCE(reads, 0) FROM papers_assessment WHERE eval_hash = ?",
+                    (eval_hash,))
+    return int(row[0] or 0) if row else 0
 
 
 # ---------------------------------------------------------------------------
