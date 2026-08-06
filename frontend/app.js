@@ -2641,7 +2641,6 @@ async function showReviewModal(hash) {
   const llmFee = state.llm_fee?.fee ?? 0.5;
   const alreadyLlm = !!state.llm_reviewed;
   const alreadyRequested = !!state.review_requested;
-  const alreadyPeer = Number(state.peer_review_count || 0) > 0;
 
   openModal(`
     <h2>${alreadyLlm ? "Request a new review" : "Request a review"}</h2>

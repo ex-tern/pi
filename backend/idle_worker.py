@@ -147,7 +147,13 @@ def _pick_candidate():
     Imports are deferred to call time, not module scope: api imports this
     module, so importing api from the top of this file would be circular.
     """
-    from integrations import fetch_active_research_topics, search_open_access_works
+    # These live in two different modules and it matters which: topic discovery
+    # is a scientometrics concern, retrieval is an integrations one. Importing
+    # both from `integrations` raised ImportError on the first idle tick — the
+    # loop caught it and logged, so the worker degraded to doing nothing at all
+    # rather than failing loudly at start-up.
+    from scientometrics import fetch_active_research_topics
+    from integrations import search_open_access_works
 
     topics = []
     try:
