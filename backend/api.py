@@ -1352,18 +1352,43 @@ def engines_status():
     out = {"budget_note": ("All three learners are NumPy linear models with a few dozen "
                            "parameters each. No PyTorch is imported on this path, which is "
                            "what keeps the process inside a 500 MB envelope.")}
-    try:
-        out["piD"] = forecast_engine.engine_status(criteria_keys)
-    except Exception as e:
-        out["piD"] = {"error": str(e)}
-    try:
-        out["riB"] = rib_learning.engine_status()
-    except Exception as e:
-        out["riB"] = {"error": str(e)}
-    try:
-        out["siM"] = scilem_learning.status()
-    except Exception as e:
-        out["siM"] = {"error": str(e)}
+
+    def normalise(raw: dict) -> dict:
+        """One shape for all three engines.
+
+        They were written separately and each grew its own vocabulary for the
+        same three facts: siM says `baseline_mean_abs_error`, riB says
+        `baseline_abs_error`, piD says `total_observations` and reports no
+        error at all. A caller comparing them had to know each engine's
+        private naming, so the comparison lived in the client and drifted.
+
+        The engine-specific payload is preserved untouched under the same keys
+        it always used; these four are added alongside as the common view.
+        """
+        if not isinstance(raw, dict) or raw.get("error"):
+            return raw if isinstance(raw, dict) else {"error": "unavailable"}
+        obs = raw.get("observations")
+        if obs is None:
+            obs = raw.get("total_observations", raw.get("logged_observations", 0))
+        mine = raw.get("mean_abs_error")
+        base = raw.get("baseline_abs_error", raw.get("baseline_mean_abs_error"))
+        return {**raw,
+                "observations": int(obs or 0),
+                "mean_abs_error": mine,
+                "baseline_abs_error": base,
+                # `learning` means "measurably better than its own defaults".
+                # Reported as False rather than omitted when unknown: an engine
+                # that cannot show improvement should say so, not stay silent
+                # and let the interface assume the best.
+                "learning": bool(raw.get("learning", False))}
+
+    for key, fn in (("piD", lambda: forecast_engine.engine_status(criteria_keys)),
+                    ("riB", rib_learning.engine_status),
+                    ("siM", scilem_learning.status)):
+        try:
+            out[key] = normalise(fn())
+        except Exception as e:
+            out[key] = {"error": str(e)}
     return out
 
 
