@@ -2008,3 +2008,43 @@ button.seal { font-family: inherit; cursor: pointer; }
 /* The fee is not known yet — the last value is still shown rather than being
    replaced by a dash, so it is dimmed to say "stale, not authoritative". */
 .fee-amount.fee-pending { opacity: 0.45; }
+
+
+/* piQ held for papers this person authored but did not submit.
+   Hidden until there is something to claim — see the markup note. */
+.claimable-card {
+  margin-top: 10px;
+  padding: 9px 10px;
+  border: 1px solid rgba(70, 130, 90, 0.35);
+  background: rgba(70, 130, 90, 0.08);
+  border-radius: 5px;
+}
+.claimable-head {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+}
+.claimable-title { font-size: 12px; font-weight: 600; color: #2f5d42; }
+.claimable-note { margin: 5px 0 7px; font-size: 11px; line-height: 1.4; color: #4a6b57; }
+.claimable-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 5px 0; border-top: 1px solid rgba(70, 130, 90, 0.18);
+}
+.claimable-paper { min-width: 0; }          /* lets the title actually truncate */
+.claimable-paper-title {
+  display: block; font-size: 11.5px; color: #24402f;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+}
+.claimable-paper-meta { display: block; font-size: 10.5px; color: #6b8a76; }
+.claimable-btn { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; }
+
+
+/* The paper being confirmed, quoted back so the answer is given about
+   something the person can actually read rather than about a button. */
+.confirm-paper {
+  margin: 10px 0;
+  padding: 9px 11px;
+  background: rgba(0, 0, 0, 0.035);
+  border-left: 3px solid #6b8bbf;
+  border-radius: 3px;
+}
+.confirm-paper-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
+.confirm-paper-authors { margin-top: 3px; font-size: 12px; color: #5a6470; }

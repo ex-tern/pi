@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=61">
+<link rel="stylesheet" href="style.css?v=64">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -65,6 +65,19 @@
         <div class="ri-note" id="researcherAffordable"></div>
       </div>
       <button id="unlinkBtn" class="btn btn-secondary btn-block">Sign out</button>
+    </div>
+
+    <!-- piQ held against papers this person appears to have authored but did
+         not submit. Hidden until there is something to say: an always-present
+         "0.00 claimable" is noise, and the one moment it matters is the moment
+         somebody links an ORCID and discovers their work already earned. -->
+    <div id="claimableCard" class="claimable-card hidden">
+      <div class="claimable-head">
+        <span class="claimable-title">piQ held for you</span>
+        <span class="pill p-piq" id="claimableTotal">0.00</span>
+      </div>
+      <p class="claimable-note" id="claimableNote"></p>
+      <div id="claimableList"></div>
     </div>
 
     <hr>
@@ -802,7 +815,7 @@
   </div>
 </div>
 
-<script src="app.js?v=61"></script>
-<script src="arcade.js?v=61"></script>
+<script src="app.js?v=64"></script>
+<script src="arcade.js?v=64"></script>
 </body>
 </html>

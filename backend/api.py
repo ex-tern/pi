@@ -67,6 +67,7 @@ from database import (
     delete_researcher_profile, list_assessments_for_identity, delete_assessment,
     store_bug_report, mark_bug_report_delivered, list_bug_reports, CONTACT_KINDS,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
+    list_unclaimed_escrow, disown_escrow, list_disowned,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
@@ -96,7 +97,8 @@ from integrations import (
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
     build_pdf_from_text, search_open_access_works,
 )
-from attribution import verify_authorship, verify_journal_claim
+from attribution import (verify_authorship, verify_journal_claim,
+                         names_match, fetch_orcid_profile_name)
 from extraction import fetch_registry_metadata, full_text_from_pdf
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
@@ -1686,12 +1688,22 @@ def my_assessments(request: Request, wallet: str = Query(default=""),
                            "assessments. Anonymous runs are not linked to an identity.")}
     rows = list_assessments_for_identity(
         _identity_values(identity["wallet"], identity["orcid"]), limit=limit)
+
     # Annotated here rather than in the query: whether a file exists is a
     # filesystem fact, not a column, and the badge needs it to link to the
     # manuscript instead of falling back to the dossier.
     for r in rows:
         r["has_file"] = paper_store.has_paper(r.get("hash", ""))
-    return {"signed_in": True, "assessments": rows, "count": len(rows)}
+    # Which identity this history was read under.
+    #
+    # Reported because an empty list has two very different causes — nothing
+    # assessed, or assessed while a different identity was the proven one —
+    # and the interface cannot tell them apart without knowing which key was
+    # used. Stating the key is a fact; guessing that orphaned records exist
+    # would not be, since a paper filed under an identity we cannot prove is
+    # precisely a paper we cannot attribute to this user.
+    return {"signed_in": True, "assessments": rows, "count": len(rows),
+            "read_as": {"wallet": identity["wallet"], "orcid": identity["orcid"]}}
 
 
 @app.get("/api/assessments/escrow")
@@ -1710,6 +1722,88 @@ def my_escrow(request: Request, wallet: str = Query(default=""),
                  "once its DOI is registered against your ORCID, or once your ORCID profile "
                  "name matches the author line."),
     }
+
+
+@app.get("/api/assessments/claimable")
+def claimable_escrow(request: Request, wallet: str = Query(default=""),
+                     orcid: str = Query(default="")):
+    """piQ held against papers whose BYLINE matches this identity.
+
+    Distinct from /api/assessments/escrow, which lists papers this identity
+    SUBMITTED. That endpoint could never surface the case the escrow mostly
+    exists for: a paper somebody else put through the pipeline, or one you
+    assessed before linking an ORCID. Held piQ sat there unfindable, because
+    the only view of it was filtered by the one fact that did not apply.
+
+    This is a SHORTLIST, not a verdict. Matching is on the verified ORCID
+    profile name against the extracted byline, which is cheap and offline;
+    the real decision is still made by verify_authorship at claim time,
+    against the registries. Saying "this may be yours" and then checking
+    properly is the right order — the reverse would mean running a network
+    verification against every held paper in the corpus to render a sidebar.
+    """
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if not identity["verified"] or not identity["orcid"]:
+        # Without an ORCID there is no verified name to compare a byline
+        # against, and a wallet address is not a person's name.
+        return {"signed_in": bool(identity["verified"]), "candidates": [], "total": 0.0,
+                "reason": ("Link an ORCID to see piQ that may be held for papers you authored. "
+                           "A byline can only be matched against a verified profile name.")}
+
+    try:
+        profile_name = fetch_orcid_profile_name(identity["orcid"])
+    except Exception as e:
+        logging.debug("ORCID profile lookup failed during claimable scan: %s", e)
+        profile_name = None
+    if not profile_name:
+        return {"signed_in": True, "candidates": [], "total": 0.0,
+                "reason": "Your ORCID profile name could not be read, so no byline was compared."}
+
+    # Papers this person has already said are not theirs stay out of the list.
+    # Asking twice about the same paper turns a helpful prompt into nagging,
+    # and re-suggesting something somebody explicitly declined reads as not
+    # having listened.
+    dismissed = list_disowned(_profile_key(identity["wallet"], identity["orcid"]))
+
+    candidates = []
+    for paper in list_unclaimed_escrow():
+        if paper["hash"] in dismissed:
+            continue
+        authors = [a.strip() for a in (paper.get("author") or "").split(",") if a.strip()]
+        for a in authors:
+            if names_match(profile_name, a):
+                candidates.append({**paper, "matched_author": a})
+                break
+
+    return {
+        "signed_in": True,
+        "candidates": candidates,
+        "total": round(sum(c["escrowed"] for c in candidates), 4),
+        "profile_name": profile_name,
+        "note": ("Matched on your ORCID profile name against each paper's byline. Claiming "
+                 "re-checks authorship against the publisher and ORCID registries, so a match "
+                 "here is a candidate rather than a guarantee."),
+    }
+
+
+@app.post("/api/assessments/{file_hash}/disown")
+def disown_paper(file_hash: str, request: Request, wallet: str = Query(default=""),
+                 orcid: str = Query(default="")):
+    """"Not mine." Stop suggesting this paper to this person.
+
+    Nothing is forfeited. The piQ stays exactly where it was, still held and
+    still claimable by whoever the author turns out to be — this records a
+    person's answer to a question we asked them, and no more than that. A
+    stronger reading would be wrong: someone declining a suggestion has not
+    made a ruling about who the paper belongs to.
+    """
+    identity = require_identity(request, wallet, orcid)
+    key = _profile_key(identity["wallet"], identity["orcid"])
+    ok = disown_escrow(file_hash, key)
+    return {"disowned": bool(ok),
+            "message": ("Removed from your suggestions. The piQ stays held for this paper's "
+                        "author — nothing was given up.")
+                       if ok else "Could not record that. Please try again."}
 
 
 @app.post("/api/assessments/{file_hash}/claim")
@@ -1755,9 +1849,14 @@ def claim_escrow(file_hash: str, request: Request, wallet: str = Query(default="
             "how_to_fix": attribution.get("how_to_verify"),
         }
 
+    # verify_authorship has just passed for THIS paper and THIS identity, so
+    # the claimant is an author of it. That is the whole authorisation; adding
+    # "…and you must also have been the one who uploaded it" would refuse
+    # precisely the authors this piQ is being held for.
     result = release_escrow(file_hash,
                             _identity_values(identity["wallet"], identity["orcid"]),
-                            wallet=identity["wallet"], orcid=identity["orcid"])
+                            wallet=identity["wallet"], orcid=identity["orcid"],
+                            authorship_proven=True)
     if not result["released"]:
         return {"claimed": False, "message": result["reason"]}
 
@@ -4139,6 +4238,25 @@ async def assess_stream(
 ):
     client_ip = get_client_ip(request)
     check_rate_limit(client_ip, bucket="assess")
+
+    # File the paper under the PROVEN identity, not the one the browser claimed.
+    #
+    # This is why a completed assessment never reached "Your assessments". The
+    # pipeline stored `user_id` from the raw posted wallet/orcid, while the
+    # history endpoint reads back under the identity the SESSION proves — so
+    # the moment those two disagreed, the paper was filed in a bucket the
+    # history query could not see. And they disagree routinely: a browser that
+    # remembers an ORCID in localStorage posts it alongside a wallet-only
+    # session, `user_id` becomes that unproven ORCID, and history looks for the
+    # wallet. The assessment ran, was charged for, and vanished.
+    #
+    # It is the same fix already applied to arcade rewards, for the same
+    # reason: whatever writes a record and whatever reads it back have to agree
+    # on who you are, and only the signed session actually knows.
+    identity = auth.identity_from_request(request, wallet, orcid)
+    if identity["verified"] and (identity["wallet"] or identity["orcid"]):
+        wallet = identity["wallet"] or ""
+        orcid = identity["orcid"] or ""
 
     has_web3 = bool(wallet and w3.is_address(wallet))
     user_id = orcid if orcid else (wallet if has_web3 else "Anonymous")
