@@ -2680,6 +2680,17 @@ async function showReviewModal(hash) {
              the same authorship check that gates publishing. If this is your manuscript,
              claim authorship from the dossier first.</div>`
         : ""}
+      ${alreadyRequested || state.may_request === false ? "" : `
+        <label class="bounty-field">
+          <span>Offer to the reviewer</span>
+          <input type="number" id="peerBounty" step="0.5"
+                 min="${peerFee}" max="500" value="${peerFee.toFixed(2)}">
+          <span class="bounty-unit">piQ</span>
+        </label>
+        <p class="hint bounty-hint">Minimum ${peerFee.toFixed(2)} piQ. Offering more attracts
+          reviewers to a paper that might otherwise wait — the whole amount goes to whoever
+          completes the review, on top of their ${
+            Number(state.bonus?.bonus ?? 2).toFixed(2)} piQ completion bonus.</p>`}
       <button class="btn ${alreadyRequested ? "" : "btn-primary"}" id="reqPeer"
               ${alreadyRequested || state.may_request === false ? "disabled" : ""}
               title="${alreadyRequested
@@ -2709,6 +2720,15 @@ async function showReviewModal(hash) {
     </div>
     <div class="profile-msg" id="reviewMsg"></div>`);
 
+  /** What the author is offering. Read at click time, not at render time, so
+   *  the number confirmed is the number in the box. */
+  const chosenBounty = () => {
+    const el = document.getElementById("peerBounty");
+    if (!el) return null;
+    const v = Number(el.value);
+    return isFinite(v) ? v : null;
+  };
+
   const post = async (path, label, cost, btnId, note) => {
     // Confirm before spending. piQ is earned slowly and an accidental click
     // should not cost a paper's worth of it.
@@ -2723,7 +2743,13 @@ async function showReviewModal(hash) {
     try {
       const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}${path}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ wallet: Session.wallet, orcid: Session.orcid }),
+        body: JSON.stringify({
+          wallet: Session.wallet, orcid: Session.orcid,
+          // Only meaningful on the peer-review path; harmless elsewhere, where
+          // there is no input and this is null.
+          ...(path === "/review/request" && chosenBounty() != null
+              ? { bounty: chosenBounty() } : {}),
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
@@ -2790,7 +2816,7 @@ async function showReviewModal(hash) {
   const p1 = document.getElementById("reqPeer");
   if (p1 && !alreadyRequested && state.may_request !== false) {
     p1.addEventListener("click", () => post(
-      "/review/request", "peer review", peerFee, "reqPeer",
+      "/review/request", "peer review", chosenBounty() ?? peerFee, "reqPeer",
       "The whole amount is held and credited to the researcher who completes the review. "
       + "The paper is marked as Requested to be reviewed until someone does. "
       + "A Peer-reviewed badge appears only when a report is actually submitted."));
@@ -3660,7 +3686,11 @@ function normalizeAssessment(x, idx) {
     published: !!x.published,
     // History reports these directly; a fresh result carries them on emission.
     escrowed: Number(x.escrowed != null ? x.escrowed : (emission.escrowed || 0)),
-    claimed: x.claimed != null ? !!x.claimed : Number(x.piq || 0) > 0,
+    // `piq_claimed_at` is the authoritative column and the history endpoint
+    // sends it; it was not being read here, so after a successful claim the
+    // row still said "not claimed" and kept offering the button.
+    claimed: x.claimed != null ? !!x.claimed
+           : !!(x.piq_claimed_at || x.claimed_at) || Number(x.piq || 0) > 0,
     // Whether a machine review already exists. History rows carry it from the
     // server; a freshly assessed paper never has one yet.
     llmReviewed: !!(x.llm_reviewed || x.llm_review_count),
@@ -3719,7 +3749,12 @@ function authorshipActions(item, idx) {
   if (!a || !a.hash) return "";
   const d = `data-a-hash="${escapeHtml(a.hash)}"${a.idx != null ? ` data-a-idx="${a.idx}"` : ""}`;
 
-  const claimable = a.escrowed > 0 && !a.claimed;
+  // `claimed` arrives under several names depending on which endpoint built
+  // this row, and a missing flag was read as "not claimed" — so the Claim
+  // button survived its own success and the next press answered "this paper's
+  // piQ has already been claimed". Any positive signal counts as claimed.
+  const isClaimed = !!(a.claimed || a.piq_claimed_at || a.claimed_at);
+  const claimable = a.escrowed > 0 && !isClaimed;
   const reviewLabel = a.llmReviewed ? "Request a new review" : "Request a Review";
   const reviewed = Number(a.peerReviews || 0) > 0;
 
@@ -5405,7 +5440,9 @@ async function loadEngineBar() {
           ${delta >= 0 ? "▼" : "▲"} ${Math.abs(delta).toFixed(1)}% error
           ${delta >= 0 ? "below" : "above"} its defaults
         </div>`
-        : `<div class="engine-state">not enough observations to score yet</div>`}
+        : `<div class="engine-state">${obs > 0
+             ? "logging observations — no error baseline to score against yet"
+             : "not enough observations to score yet"}</div>`}
       <div class="engine-obs">${obs.toLocaleString()} observation${obs === 1 ? "" : "s"}</div>
       ${tutorLine(s.tutor)}
     </div>`;

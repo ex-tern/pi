@@ -114,6 +114,7 @@ from emission import (
     emission_manifest, compute_processing_fee, fee_manifest,
     compute_curation_reward, publication_fee, peer_review_fee, llm_review_fee,
     peer_review_bonus, PEER_REVIEW_BONUS,
+    MIN_REVIEW_BOUNTY, MAX_REVIEW_BOUNTY,
     onboarding_grant, NEW_PARTICIPANT_GRANT, compute_document_fee, MINIMUM_FEE,
 )
 import pid_engine as forecast_engine
@@ -2338,6 +2339,10 @@ def serve_paper_file(file_hash: str, request: Request,
 class ReviewRequest(BaseModel):
     wallet: str = ""
     orcid: str = ""
+    # What the author is willing to set aside for whoever reviews the paper.
+    # None means "use the minimum" — the field is optional so an older client,
+    # or a request that simply does not care, keeps working unchanged.
+    bounty: Optional[float] = None
 
 
 class ReviewSubmission(BaseModel):
@@ -2619,7 +2624,29 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
                        if attribution.get("how_to_verify") else "")))
 
     key = _profile_key(identity["wallet"], identity["orcid"])
-    fee = peer_review_fee()["fee"]
+
+    # The author chooses the bounty, above a floor.
+    #
+    # A flat price assumed every paper is equally easy to get read, which is
+    # not true of anything: a niche or long manuscript competes for the same
+    # reviewers as a short topical one, and the author is the only person who
+    # knows which theirs is. Letting them offer more is the mechanism that
+    # gets unattractive papers reviewed at all.
+    #
+    # Rejected rather than silently raised when below the floor. Quietly
+    # charging more than someone asked for is worse than refusing them.
+    fee = float(payload.bounty) if payload.bounty is not None else MIN_REVIEW_BOUNTY
+    if fee < MIN_REVIEW_BOUNTY:
+        raise HTTPException(
+            status_code=400,
+            detail=(f"The minimum review bounty is {MIN_REVIEW_BOUNTY:.2f} piQ. A review is a "
+                    f"researcher's afternoon, and less than this stops recognising that."))
+    if fee > MAX_REVIEW_BOUNTY:
+        raise HTTPException(
+            status_code=400,
+            detail=f"The most that can be offered for one review is {MAX_REVIEW_BOUNTY:.0f} piQ.")
+    fee = round(fee, 2)
+
     bal = get_piq_balance(identity["wallet"], identity["orcid"])
     require_affordable(bal, fee, "A peer review")
 
@@ -2630,7 +2657,8 @@ def request_review(file_hash: str, payload: ReviewRequest, request: Request):
                           eval_hash=file_hash, reason="Peer review bounty (held)"):
         raise HTTPException(status_code=402, detail="The bounty could not be held.")
 
-    add_log(f"Review requested for {file_hash[:12]}… bounty {fee:.2f} piQ")
+    add_log(f"Review requested for {file_hash[:12]}… bounty {fee:.2f} piQ"
+            + (" (above the minimum)" if fee > MIN_REVIEW_BOUNTY else ""))
     return {"requested": True, "bounty": fee, "awaiting_review": True,
             "balance": get_piq_balance(identity["wallet"], identity["orcid"])["balance"],
             "message": (f"Review requested. {fee:.2f} piQ is set aside and will be credited to "

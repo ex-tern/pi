@@ -2048,3 +2048,15 @@ button.seal { font-family: inherit; cursor: pointer; }
 }
 .confirm-paper-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
 .confirm-paper-authors { margin-top: 3px; font-size: 12px; color: #5a6470; }
+
+
+.bounty-field {
+  display: flex; align-items: center; gap: 7px;
+  margin: 9px 0 4px; font-size: 12.5px;
+}
+.bounty-field input {
+  width: 92px; padding: 4px 7px; font-size: 13px;
+  border: 1px solid rgba(0,0,0,0.2); border-radius: 4px;
+}
+.bounty-unit { color: #5a6470; font-size: 12px; }
+.bounty-hint { margin: 0 0 6px; }

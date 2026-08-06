@@ -617,16 +617,28 @@ def publication_fee(pix_score: float = 0.0) -> Dict:
 # a claim about quality. A badge that could be bought outright would be exactly
 # the purchasable credibility that DORA and CoARA exist to oppose, and it would
 # be worth nothing to a reader the moment they understood how it was obtained.
+# The FLOOR on a review bounty, not a fixed price.
+#
+# An author may offer more to attract a reviewer — a niche paper, or one that
+# has sat unclaimed, is worth more to get read than a paper reviewers are
+# already competing for, and the author is the only person who knows which
+# theirs is. What may not happen is offering less: a review is somebody's
+# afternoon, and a bounty below this stops reading as recognition of that.
 PEER_REVIEW_BOUNTY = 2.0
+MIN_REVIEW_BOUNTY = PEER_REVIEW_BOUNTY
+MAX_REVIEW_BOUNTY = 500.0   # a sanity bound, not a policy; catches typos
 
 
 def peer_review_fee() -> Dict:
     return {
         "fee": PEER_REVIEW_BOUNTY,
+        "minimum": MIN_REVIEW_BOUNTY,
+        "maximum": MAX_REVIEW_BOUNTY,
         "paid_to": "the reviewer, on completion",
         "refundable": False,
         "rationale": (
-            f"Opening a review sets aside {PEER_REVIEW_BOUNTY:.2f} piQ. The whole amount is "
+            f"Opening a review sets aside at least {PEER_REVIEW_BOUNTY:.2f} piQ, and an author "
+            f"may offer more to attract a reviewer. The whole amount is "
             f"credited to the researcher who completes the review — it recognises their time, it does not "
             f"purchase a badge. The Peer-reviewed badge appears only once a review has actually "
             f"been submitted by someone other than the requester."
