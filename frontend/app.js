@@ -571,8 +571,28 @@ async function renderSidebar() {
 
 async function refreshPiqBalance() {
   if (!Session.hasIdentity()) {
-    piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: piqState.fee_per_paper, papers_affordable: 0 };
+    // Signed out still needs the FEE, even though there is no balance to show.
+    //
+    // This branch used to return immediately, carrying forward whatever
+    // `fee_per_paper` already held — which, before any request had been made,
+    // was the hardcoded 0.1. So a signed-out visitor was shown a stale price
+    // that the server had never sent and that no later call would correct,
+    // because the only call that fetches it was the one being skipped.
+    //
+    // The endpoint answers anonymous callers with a zero balance and the real
+    // fee, so asking is both cheap and correct.
+    try {
+      const res = await fetch(`${API}/api/user/piq-total`);
+      const data = await res.json();
+      piqState = { balance: 0, minted: 0, fees_paid: 0,
+                   fee_per_paper: data.fee_per_paper ?? piqState.fee_per_paper,
+                   papers_affordable: 0 };
+    } catch (_) {
+      piqState = { balance: 0, minted: 0, fees_paid: 0,
+                   fee_per_paper: piqState.fee_per_paper, papers_affordable: 0 };
+    }
     renderFeeNotice();
+    updateEstimatedCost();
     return;
   }
   try {
@@ -5861,7 +5881,10 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
 // Rendered from live parameters; falls back to sensible defaults if the
 // endpoint is unavailable so the tab never shows a blank panel.
 const ARCH_FALLBACK = {
-  free_documents: 3, minimum_fee: 0.1, quality_threshold: 40, logic_floor: 35,
+  // Only used if /api/architecture is unreachable. Kept in step with the real
+  // defaults — a fallback that quietly states an old price is how "0.10 piQ"
+  // survived three separate corrections.
+  free_documents: 3, minimum_fee: 1.0, quality_threshold: 40, logic_floor: 35,
   halving_epoch: 0, jurors: ["llama", "mistral", "qwen", "gemini", "deepseek"],
   juror_count: 5, rubric_version: "pi-index-rubric/3.0", verifiable_share: 0.78,
   chain_name: "Sepolia", proof_of_work: true,
