@@ -1906,3 +1906,43 @@ button.seal { font-family: inherit; cursor: pointer; }
    like a low rating. */
 .pick-off { border-left: 3px solid var(--border-strong); background: #fbfcfe; }
 .pick-group-note { margin: 2px 0 8px; }
+
+/* --- Engine performance (Forecast) -------------------------------------- */
+/* Three learners, compared on the only axis that is comparable between them:
+   error against each engine's OWN frozen defaults. Their raw errors predict
+   different quantities and mean nothing side by side. */
+.engine-bar {
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+  margin: 0 0 16px;
+}
+.engine-card {
+  border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px;
+  background: #fbfcfe; min-width: 0;
+}
+.engine-learning { border-color: var(--success); background: #f6fefb; }
+.engine-err { opacity: 0.6; }
+.engine-name {
+  font-size: 12.5px; font-weight: 700; color: var(--text);
+  display: flex; align-items: baseline; gap: 6px;
+}
+.engine-key {
+  font-size: 10px; font-weight: 600; color: var(--faint);
+  text-transform: uppercase; letter-spacing: 0.05em;
+}
+.engine-what { font-size: 11px; color: var(--faint); line-height: 1.45; margin: 3px 0 8px; }
+.engine-track {
+  height: 6px; border-radius: 3px; background: var(--border); overflow: hidden;
+}
+/* Shorter bar = lower error = better. Stated in the tooltip too, because a
+   bar that is good when short is the opposite of the usual convention. */
+.engine-fill { height: 100%; background: var(--accent); border-radius: 3px; }
+.engine-learning .engine-fill { background: var(--success); }
+.engine-delta { font-size: 11px; font-weight: 600; margin-top: 5px; }
+.eng-up { color: var(--success); }
+.eng-down { color: var(--muted); }
+.engine-state { font-size: 11px; color: var(--faint); margin-top: 5px; }
+.engine-obs {
+  font-size: 10.5px; color: var(--faint); margin-top: 4px;
+  font-variant-numeric: tabular-nums;
+}
+@media (max-width: 900px) { .engine-bar { grid-template-columns: 1fr; } }

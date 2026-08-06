@@ -894,7 +894,42 @@
         const d = Math.hypot(dx, dy) || 1;
         const min = (a.mass + b.mass) * 1.15;
         if (d >= min) continue;
-        const push = ((min - d) / d) * REPEL * dt;
+
+        // --- Collision, not just repulsion ---------------------------------
+        // The soft push alone let bubbles sink into one another and ooze back
+        // out, which reads as fog rather than as objects. Two things are added:
+        // a positional correction that actually separates the overlap, and an
+        // impulse along the contact normal so they bounce off each other with
+        // momentum conserved by mass.
+        const nx = dx / d, ny = dy / d;
+        const overlap = min - d;
+
+        // Mass-weighted separation: the heavier field barely moves, which is
+        // what makes a big bubble feel heavy rather than merely large.
+        const total = a.mass + b.mass || 1;
+        const aShare = b.mass / total, bShare = a.mass / total;
+        const CORRECT = 0.5;                 // fraction of overlap resolved per frame
+        a.x -= nx * overlap * aShare * CORRECT;
+        a.y -= ny * overlap * aShare * CORRECT;
+        b.x += nx * overlap * bShare * CORRECT;
+        b.y += ny * overlap * bShare * CORRECT;
+
+        // Impulse only if they are actually approaching. Applying it to
+        // separating bodies adds energy on every frame of contact and the pair
+        // shakes itself apart.
+        const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
+        const along = rvx * nx + rvy * ny;
+        if (along < 0) {
+          const RESTITUTION = 0.45;          // partly inelastic; a full bounce never settles
+          const jImp = -(1 + RESTITUTION) * along / (1 / a.mass + 1 / b.mass);
+          a.vx -= (jImp / a.mass) * nx; a.vy -= (jImp / a.mass) * ny;
+          b.vx += (jImp / b.mass) * nx; b.vy += (jImp / b.mass) * ny;
+        }
+
+        // The original soft push is kept as a small residual, so a stack that
+        // settles exactly on the contact distance still drifts apart instead
+        // of locking together.
+        const push = ((overlap) / d) * REPEL * dt * 0.35;
         a.vx -= dx * push; a.vy -= dy * push;
         b.vx += dx * push; b.vy += dy * push;
       }
@@ -1201,11 +1236,29 @@
   }
 
   function drawStars(ctx, w, h) {
+    // The star field WRAPS in screen space instead of being a fixed patch of
+    // world.
+    //
+    // Parallax multiplies the camera offset by each star's depth, so a star at
+    // depth 0.25 moves a quarter as far as the world does. Stars were seeded
+    // once across the world and then drawn at that parallaxed position, which
+    // means panning away from the centre pulled them all toward the middle of
+    // the screen and left the edges empty — the further you explored, the more
+    // the sky bunched into a clump behind the origin.
+    //
+    // Wrapping the parallaxed position into a tile the size of the viewport
+    // makes the field infinite and uniform: every part of the map has sky, and
+    // the parallax still reads as depth because each layer wraps at its own
+    // rate.
     const z = state.camera.zoom;
+    const tileW = w + 40, tileH = h + 40;
     for (const s of state.stars) {
-      const px = (s.x - state.camera.x) * z * s.depth + w / 2;
-      const py = (s.y - state.camera.y) * z * s.depth + h / 2;
-      if (px < -10 || px > w + 10 || py < -10 || py > h + 10) continue;
+      const ox = (s.x - state.camera.x) * z * s.depth + w / 2;
+      const oy = (s.y - state.camera.y) * z * s.depth + h / 2;
+      // Positive modulo: JS % keeps the sign of the dividend, which would
+      // leave a blank band whenever the offset went negative.
+      const px = ((ox % tileW) + tileW) % tileW - 20;
+      const py = ((oy % tileH) + tileH) % tileH - 20;
       s.tw += 0.02;
       ctx.fillStyle = `rgba(190,215,255,${(0.25 + Math.abs(Math.sin(s.tw)) * 0.5) * s.depth})`;
       ctx.beginPath(); ctx.arc(px, py, s.r * s.depth, 0, Math.PI * 2); ctx.fill();
@@ -1225,6 +1278,32 @@
    *  guarantees every domain reads as a connected constellation at any
    *  density, and doing it once at load rather than per frame removes an
    *  O(n^2) pass from the render loop. */
+  /** Pull a dragged bubble's connected neighbours along with it.
+   *
+   *  One hop only, at a fraction of the movement. Propagating through the whole
+   *  graph would drag the entire domain across the map from any single node,
+   *  which stops reading as "these are related" and starts reading as a bug.
+   *  Velocity is added rather than position set, so the physics step still
+   *  owns separation and the cluster relaxes naturally afterwards.
+   */
+  function dragNeighbours(source, dx, dy) {
+    if (!dx && !dy) return;
+    for (const e of state.edges) {
+      const other = e.a === source ? e.b : (e.b === source ? e.a : null);
+      if (!other || other.eaten) continue;
+      // Heavier fields resist: a large bubble is a lot of assessed work and
+      // should not be flicked about by a neighbour a tenth its size.
+      const resist = Math.min(1, source.mass / Math.max(1, other.mass));
+      const follow = 0.35 * resist;
+      other.x = Math.max(other.mass, Math.min(WORLD_W - other.mass, other.x + dx * follow));
+      other.y = Math.max(other.mass, Math.min(WORLD_H - other.mass, other.y + dy * follow));
+      // A little residual motion, so releasing the drag leaves the group
+      // settling rather than frozen mid-arrangement.
+      other.vx += dx * follow * 0.02;
+      other.vy += dy * follow * 0.02;
+    }
+  }
+
   function buildEdges() {
     const byDomain = new Map();
     for (const b of state.bubbles) {
@@ -1805,11 +1884,19 @@
         const p = canvasPos(e.clientX, e.clientY);
         const w = screenToWorld(p.x, p.y);
         const b = state.grabbed.bubble;
+        const px = b.x, py = b.y;
         b.x = Math.max(b.mass, Math.min(WORLD_W - b.mass, w.x));
         b.y = Math.max(b.mass, Math.min(WORLD_H - b.mass, w.y));
         // A dragged bubble stops drifting, otherwise it slides out from under
         // the cursor and immediately undoes the arrangement being made.
         b.vx = 0; b.vy = 0;
+        // Neighbours follow. The edges are drawn to say "these fields are
+        // related", and a map where you can pull one node clean out of its
+        // own constellation contradicts the line still joining them. Pulling
+        // is elastic rather than rigid: a neighbour is nudged along a fraction
+        // of the movement, so the cluster deforms and settles instead of
+        // moving as a single block.
+        dragNeighbours(b, b.x - px, b.y - py);
         state.grabbed.moved = true;
         return;
       }

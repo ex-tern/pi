@@ -83,7 +83,15 @@ function persistResults() {
 
 let evaluatedBuffer = loadPersistedResults();
 let downloadErrors = [];
-let piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: 0.1, papers_affordable: 0 };
+// `fee_per_paper` starts NULL, not at a guessed number.
+//
+// It was seeded with 0.1 and every render fell back to the same literal, so
+// the interface confidently displayed "0.10 piQ" before the server had said
+// anything — and kept displaying it on any path where the balance call did not
+// run. When the real fee changed, three hardcoded copies in this file went on
+// asserting the old one. Null means "not known yet", which the renderer shows
+// as a placeholder rather than as a price.
+let piqState = { balance: 0, minted: 0, fees_paid: 0, fee_per_paper: null, papers_affordable: 0 };
 let chainState = null;
 let emissionState = null;
 let donationInfo = null;
@@ -626,8 +634,9 @@ function freeRemaining() {
 }
 
 function renderFeeNotice() {
-  const fee = piqState.fee_per_paper ?? 0.1;
-  document.getElementById("feeAmount").textContent = `${formatPiq(fee)} piQ`;
+  const fee = piqState.fee_per_paper;
+  document.getElementById("feeAmount").textContent =
+    fee == null ? "—" : `${formatPiq(fee)} piQ`;
   const line = document.getElementById("feeBalanceLine");
 
   if (!Session.hasIdentity()) {
@@ -1947,7 +1956,10 @@ function updateEstimatedCost() {
   const n = countQueuedPapers();
   if (!n) { box.classList.add("hidden"); return; }
 
-  const fee = piqState.fee_per_paper ?? 0.1;
+  // No literal fallback: an estimate built on a guessed fee is worse than no
+  // estimate, because it looks authoritative.
+  const fee = piqState.fee_per_paper;
+  if (fee == null) { box.classList.add("hidden"); return; }
   const freeLeft = freeRemaining();
   box.classList.remove("hidden");
 
@@ -5244,6 +5256,74 @@ async function loadTopPapers() {
 bindSortHeaders("#topPapersTable", topPapersState, loadTopPapers);
 
 
+/** How the three learning engines are performing, side by side.
+ *
+ *  All three are online linear models that learn from what the platform sees:
+ *  piD projects criteria weights, siM calibrates structural scoring, riB ranks
+ *  relevance. Each reports its own mean error against its OWN frozen defaults,
+ *  which is the only comparison that means anything — the engines predict
+ *  different quantities, so their raw errors are not comparable to each other,
+ *  but "is it beating the defaults it shipped with" is.
+ *
+ *  An engine that is not beating its defaults says so plainly. A dashboard that
+ *  only ever reports improvement is not measuring anything.
+ */
+async function loadEngineBar() {
+  const el = document.getElementById("engineBar");
+  if (!el) return;
+  let data;
+  try {
+    data = await (await fetch(`${API}/api/engines/status`)).json();
+  } catch (e) {
+    el.innerHTML = `<p class="hint">Engine status could not be loaded.</p>`;
+    return;
+  }
+
+  const ENGINES = [
+    ["piD", "pi-Dyne", "Projects the next epoch's criteria weights"],
+    ["siM", "SciLM",   "Calibrates structural scoring from panel consensus"],
+    ["riB", "Research Buddy", "Ranks which papers are worth your time"],
+  ];
+
+  el.innerHTML = ENGINES.map(([key, label, what]) => {
+    const s = data[key] || {};
+    if (s.error) {
+      return `<div class="engine-card engine-err">
+        <div class="engine-name">${escapeHtml(label)}</div>
+        <div class="engine-state">unavailable</div></div>`;
+    }
+    const obs = Number(s.observations ?? s.logged_observations ?? 0);
+    const mine = s.mean_abs_error, base = s.baseline_abs_error;
+    const haveErr = typeof mine === "number" && typeof base === "number" && base > 0;
+    // Percentage better (or worse) than the engine's own defaults.
+    const delta = haveErr ? (1 - mine / base) * 100 : null;
+    const learning = !!s.learning;
+
+    // The bar shows the engine's error as a fraction of its baseline, so a
+    // shorter bar is a better engine. Capped at 100% because an engine can be
+    // arbitrarily worse than its defaults and a runaway bar says nothing.
+    const pct = haveErr ? Math.max(4, Math.min(100, (mine / base) * 100)) : 0;
+
+    return `<div class="engine-card${learning ? " engine-learning" : ""}">
+      <div class="engine-name">${escapeHtml(label)}
+        <span class="engine-key">${escapeHtml(key)}</span></div>
+      <div class="engine-what">${escapeHtml(what)}</div>
+      ${haveErr ? `
+        <div class="engine-track" title="${escapeHtml(
+          `Mean error ${mine.toFixed(4)} against a baseline of ${base.toFixed(4)}. `
+          + `Shorter is better.`)}">
+          <div class="engine-fill" style="width:${pct}%"></div>
+        </div>
+        <div class="engine-delta ${delta >= 0 ? "eng-up" : "eng-down"}">
+          ${delta >= 0 ? "▼" : "▲"} ${Math.abs(delta).toFixed(1)}% error
+          ${delta >= 0 ? "below" : "above"} its defaults
+        </div>`
+        : `<div class="engine-state">not enough observations to score yet</div>`}
+      <div class="engine-obs">${obs.toLocaleString()} observation${obs === 1 ? "" : "s"}</div>
+    </div>`;
+  }).join("");
+}
+
 let analyticsInitialized = false;
 async function initAnalyticsTab() {
   if (!analyticsInitialized) {
@@ -5253,6 +5333,7 @@ async function initAnalyticsTab() {
     analyticsInitialized = true;
   }
   loadAnalyticsSummary();
+  loadEngineBar();
   loadForecast();
   loadLeaderboard();
   loadTopPapers();
