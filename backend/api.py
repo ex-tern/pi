@@ -612,6 +612,29 @@ def count_assessed_papers() -> int:
         conn.close()
 
 
+# One definition of "what this paper earned", used by every table.
+#
+# Papers carry piQ in two states: `piq_minted` (released to a verified author)
+# and `piq_escrowed` (earned but held, because authorship is unverified). Each
+# table used to pick one of them, so the same paper read 8.33 in the history,
+# 0.00 in the Top Papers board, and something else again in the journal — three
+# numbers, all sourced honestly, none agreeing.
+#
+# TOTAL is what a table shows: earned is a fact about the work. Whether it has
+# been released is a fact about an account, and travels alongside as `piq_held`
+# so a reader can still tell the two apart.
+PIQ_SELECT = ("COALESCE(piq_minted, 0) AS piq_minted, "
+              "CASE WHEN piq_claimed_at IS NULL THEN COALESCE(piq_escrowed, 0) ELSE 0 END "
+              "AS piq_held")
+
+
+def piq_fields(minted, escrowed, claimed_at) -> dict:
+    """The three figures every table reports, from the three stored columns."""
+    m = round(safe_float(minted, 0.0), 4)
+    h = 0.0 if claimed_at else round(safe_float(escrowed, 0.0), 4)
+    return {"piq": round(m + h, 4), "piq_minted": m, "piq_held": h}
+
+
 def resolve_active_fee() -> float:
     """Processing fee at the corpus's current difficulty epoch."""
     return compute_processing_fee(count_assessed_papers(), PIQ_PROCESSING_FEE)
@@ -1096,7 +1119,7 @@ def arcade_field_papers(field: str = Query(default=""),
     try:
         rows = conn.execute(
             """SELECT eval_hash, title, author_name, final_score, piq_minted,
-                      fields, timestamp, doi
+                      fields, timestamp, doi, piq_escrowed, piq_claimed_at
                FROM papers_assessment
                WHERE final_score IS NOT NULL
                ORDER BY final_score DESC LIMIT 400""").fetchall()
@@ -1121,7 +1144,7 @@ def arcade_field_papers(field: str = Query(default=""),
         out.append({
             "hash": r[0], "title": r[1] or "Untitled",
             "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
-            "piq": round(safe_float(r[4], 0.0), 2), "date": (r[6] or "")[:10],
+            **piq_fields(r[4], r[8], r[9]), "date": (r[6] or "")[:10],
             "doi": r[7] or "",
         })
         if len(out) >= limit:
@@ -2176,6 +2199,7 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
     try:
         rows = conn.execute(
             """SELECT p.eval_hash, p.title, p.author_name, p.final_score, p.piq_minted,
+                      p.piq_escrowed, p.piq_claimed_at,
                       p.doi, p.published_at, p.publish_kind, p.fields, p.timestamp,
                       (SELECT COUNT(*) FROM peer_reviews r
                         WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NOT NULL
@@ -2195,10 +2219,14 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
     finally:
         conn.close()
 
+    # Column order after adding the two piQ columns:
+    #  0 hash  1 title  2 author  3 score  4 minted  5 escrowed  6 claimed_at
+    #  7 doi   8 published_at  9 publish_kind  10 fields  11 timestamp
+    # 12 peer  13 llm  14 reads  15 requested
     out = []
     for r in rows:
-        published, peer, llm = bool(r[6]), int(r[10] or 0), int(r[11] or 0)
-        requested = int(r[13] or 0)
+        published, peer, llm = bool(r[8]), int(r[12] or 0), int(r[13] or 0)
+        requested = int(r[15] or 0)
         # A paper awaiting a reviewer belongs here too. It is the one state the
         # index used to hide, and it is the state where being visible actually
         # does something — a reviewer cannot pick up a request they cannot see.
@@ -2211,18 +2239,19 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
         if kind == "requested" and not requested:
             continue
         try:
-            fields = json.loads(r[8] or "[]")
+            fields = json.loads(r[10] or "[]")
         except (ValueError, TypeError):
             fields = []
         out.append({
             "hash": r[0], "title": r[1] or "Untitled",
             "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
-            "piq": round(safe_float(r[4], 0.0), 2), "doi": r[5] or "",
-            "published": published, "publish_kind": (r[7] or "author") if published else None,
-            "published_at": r[6], "peer_reviews": peer, "llm_reviewed": bool(llm),
+            **piq_fields(r[4], r[5], r[6]),
+            "doi": r[7] or "",
+            "published": published, "publish_kind": (r[9] or "author") if published else None,
+            "published_at": r[8], "peer_reviews": peer, "llm_reviewed": bool(llm),
             "review_requested": requested > 0,
-            "reads": int(r[12] or 0),
-            "fields": fields, "assessed_at": r[9],
+            "reads": int(r[14] or 0),
+            "fields": fields, "assessed_at": r[11],
             # Lets the badge link straight to the manuscript. Without it every
             # row fell back to the DOI or the dossier, so a published paper
             # with a stored file still did not open that file.
@@ -3374,7 +3403,13 @@ def remove_assessment(file_hash: str, request: Request,
     # considerably less than it says.
     file_removed = paper_store.delete_paper(file_hash)
 
-    add_log(f"Assessment {file_hash[:12]}… withdrawn by {key[:16] or 'owner'}"
+    # `key` was never defined in this function — the deletion itself succeeded
+    # and then this log line raised NameError, which the framework turned into
+    # a 500. The caller saw "Internal server error" for an operation that had
+    # already worked, which is the worst combination: the paper was gone and the
+    # interface said the request failed.
+    actor = _profile_key(identity["wallet"], identity["orcid"]) or "owner"
+    add_log(f"Assessment {file_hash[:12]}… withdrawn by {actor[:16]}"
             + (" (stored manuscript deleted)" if file_removed else ""))
     return {"deleted": True, "file_deleted": file_removed,
             "message": ("Paper removed from the corpus and all listings"
@@ -5161,8 +5196,13 @@ def analytics_top_papers(
     limit: int = Query(default=10, ge=1, le=100),
     offset: int = Query(default=0, ge=0),
 ):
-    sort_col = {"score": "final_score", "piq": "piq_minted", "date": "timestamp",
-                "title": "title", "logic": "logic_score"}[sort]
+    # Sorting by piQ orders by the TOTAL, which is the figure the column
+    # displays. Ordering by piq_minted while showing minted+held would put rows
+    # out of sequence with their own numbers.
+    sort_col = {"score": "final_score",
+                "piq": ("(COALESCE(piq_minted,0) + CASE WHEN piq_claimed_at IS NULL "
+                        "THEN COALESCE(piq_escrowed,0) ELSE 0 END)"),
+                "date": "timestamp", "title": "title", "logic": "logic_score"}[sort]
     order_sql = "DESC" if order == "desc" else "ASC"
 
     clauses = ["final_score >= ?", "final_score <= ?"]
@@ -5178,7 +5218,8 @@ def analytics_top_papers(
         total = conn.execute(f"SELECT COUNT(*) FROM papers_assessment WHERE {where_sql}", params).fetchone()[0]
         rows = conn.execute(
             f"""SELECT title, author_name, final_score, piq_minted, logic_score,
-                       mdar_adherence_score, reproducibility_score, timestamp, eval_hash, tx_hash
+                       mdar_adherence_score, reproducibility_score, timestamp, eval_hash, tx_hash,
+                       piq_escrowed, piq_claimed_at
                 FROM papers_assessment
                 WHERE {where_sql}
                 ORDER BY {sort_col} {order_sql}
@@ -5189,7 +5230,11 @@ def analytics_top_papers(
         conn.close()
 
     papers = [{
-        "title": r[0], "author": clean_author_name(r[1]), "score": r[2], "piq": r[3],
+        "title": r[0], "author": clean_author_name(r[1]), "score": r[2],
+        # Total earned, with the held portion alongside — the same rule every
+        # other table follows. Reporting piq_minted alone is why this board
+        # showed 0.00 for papers the history showed as 8.33.
+        **piq_fields(r[3], r[10], r[11]),
         "logic_score": r[4], "mdar_score": r[5], "repro_score": r[6], "date": r[7],
         "eval_hash": r[8], "tx_hash": r[9],
     } for r in rows]
@@ -5427,7 +5472,8 @@ def explorer_search(q: str = Query(default="")):
 _EXPLORER_SORTS = {
     "date": "p.timestamp",
     "score": "p.final_score",
-    "piq": "p.piq_minted",
+    "piq": ("(COALESCE(p.piq_minted,0) + CASE WHEN p.piq_claimed_at IS NULL "
+            "THEN COALESCE(p.piq_escrowed,0) ELSE 0 END)"),
     "title": "p.title",
     "author": "p.author_name",
 }
@@ -5468,7 +5514,7 @@ def explorer_latest(
                       p.tx_hash, p.zk_proof, p.piq_minted,
                       b.block_height, b.block_hash, b.previous_hash, b.validator_node,
                       b.por_proof, b.model_used, b.formulas_hash, p.fields,
-                      p.published_at
+                      p.published_at, p.piq_escrowed, p.piq_claimed_at
                FROM papers_assessment p
                LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
                WHERE COALESCE(p.final_score, 0) >= ? AND COALESCE(p.final_score, 0) <= ?
@@ -5507,7 +5553,7 @@ def explorer_latest(
             "eval_hash": r[3], "timestamp": r[4],
             "tx_hash": tx, "explorer_url": get_sepolia_explorer_url(tx, "tx"),
             "settled": bool(tx and isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66),
-            "zk_proof": r[6], "piq": r[7],
+            "zk_proof": r[6], **piq_fields(r[7], r[17], r[18]),
             "block_height": r[8], "block_hash": r[9], "previous_hash": r[10],
             "validator_node": r[11], "por_proof": r[12], "model_used": r[13],
             "formulas_hash": r[14],

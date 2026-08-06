@@ -5157,7 +5157,7 @@ async function showAuthorPapers(author) {
         `<tr class="clickable-row" data-hash="${escapeHtml(p.eval_hash || "")}">
           <td class="cell-primary">${escapeHtml(p.title)}</td>
           <td class="num strong">${(p.score || 0).toFixed(1)}</td>
-          <td class="num">${(p.piq || 0).toFixed(2)}</td>
+          <td class="num">${piqCell(p)}</td>
         </tr>`).join("");
       html += `</tbody></table>`;
     }
@@ -5225,7 +5225,7 @@ async function loadTopPapers() {
             <td class="cell-primary">${escapeHtml(compactTitle(p.title))}</td>
             <td class="cell-muted cell-author">${escapeHtml(compactAuthors(p.author))}</td>
             <td class="num strong">${(p.score || 0).toFixed(1)}</td>
-            <td class="num">${(p.piq || 0).toFixed(2)}</td>
+            <td class="num">${piqCell(p)}</td>
             <td class="num">${(p.logic_score || 0).toFixed(1)}</td>
             <td class="num cell-muted">${p.date ? new Date(p.date).toLocaleDateString() : "—"}</td>
           </tr>`;
@@ -5611,7 +5611,7 @@ function explorerRowHtml(r) {
       <div class="result-author">${escapeHtml(r.author_name || "—")}</div>
       <div class="result-pills">
         <span class="pill p-score">piX ${(r.score || 0).toFixed(1)}</span>
-        <span class="pill p-piq">piQ ${Number(r.piq || 0).toFixed(2)}</span>
+        <span class="pill p-piq">piQ ${piqCell(r)}</span>
         ${allBadges(r)}
         ${qualityPill(r.judge_metadata || {})}
         ${integrityPills(r)}
@@ -5954,10 +5954,27 @@ function escapeHtml(s) {
  *  Matches piqPill() on the cards and in the dossier, so the same paper reads
  *  the same everywhere.
  */
-function histPiq(a) {
-  const minted = Number(a.piq_minted || a.piq || 0);
-  const held = (a.claimed ? 0 : Number(a.escrowed || 0));
-  const total = minted + held;
+/** The piQ cell, identical in every table that has one.
+ *
+ *  One function, because the alternative was five: the Top Papers board showed
+ *  piq_minted, the history showed minted+escrowed, the journal showed something
+ *  else again, and the same paper therefore read 0.00 in one table and 8.33 in
+ *  another. The number displayed is always the TOTAL the work earned; whether
+ *  it has been released is shown as emphasis and in the tooltip, not by
+ *  changing the figure.
+ *
+ *  Accepts every row shape in the app — the server now sends piq / piq_minted /
+ *  piq_held, and older shapes carried escrowed + claimed.
+ */
+function piqCell(a) {
+  const minted = Number(a.piq_minted != null ? a.piq_minted : (a.piq || 0));
+  const held = a.piq_held != null
+    ? Number(a.piq_held)
+    : (a.claimed ? 0 : Number(a.escrowed || 0));
+  const total = a.piq != null && a.piq_held != null
+    ? Number(a.piq)                       // server already summed it
+    : minted + held;
+
   if (held > 0) {
     return `<span class="hist-piq-held" title="${escapeHtml(
       `${total.toFixed(2)} piQ earned. ${held.toFixed(2)} is held until authorship is verified `
@@ -5967,6 +5984,9 @@ function histPiq(a) {
     total > 0 ? `${total.toFixed(2)} piQ earned and claimed.` : "No piQ earned for this paper."
   )}">${total.toFixed(2)}</span>`;
 }
+
+// Kept as the historical name used by the assessment history table.
+const histPiq = piqCell;
 
 /** Assessment history for a signed-in identity. */
 // One history load at a time. The end of a pipeline run fires several
