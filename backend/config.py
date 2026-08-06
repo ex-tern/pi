@@ -517,3 +517,31 @@ ENABLE_SIM_LLM_TUTOR = _env_bool("ENABLE_SIM_LLM_TUTOR", False)
 SIM_TUTOR_UNTIL_OBS = int(os.getenv("SIM_TUTOR_UNTIL_OBS", "150"))
 SIM_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("SIM_TUTOR_MAX_CALLS_PER_DAY", "40"))
 SIM_TUTOR_WEIGHT = float(os.getenv("SIM_TUTOR_WEIGHT", "0.35"))
+
+# ---------------------------------------------------------------------------
+# Idle-time auto-assessment
+# ---------------------------------------------------------------------------
+# When nobody is using the site, assess open-access papers so the corpus and
+# the Map of Science keep growing on a quiet deployment.
+#
+# Off by default, and deliberately so: this is the only feature that spends
+# provider quota with no person present, and a deployment that has not asked
+# for it must not start doing so merely because it was left running.
+#
+# NO ACCOUNT IS CHARGED for these. The processing fee exists to price work a
+# user requested; nobody requested this one, so nobody's piQ balance moves.
+# Author emission is unaffected — a paper earns on its merits regardless of
+# who put it through the pipeline.
+ENABLE_IDLE_ASSESSMENTS = _env_bool("ENABLE_IDLE_ASSESSMENTS", False)
+
+# Papers per UTC day. Providers rate-limit well before this on a free tier, so
+# treat it as a ceiling rather than a target.
+IDLE_MAX_PER_DAY = int(os.getenv("IDLE_MAX_PER_DAY", "50"))
+
+# Quiet period, in seconds, before the site counts as idle. Measured from the
+# last real request served, not from a clock — background work must never
+# compete for provider quota with somebody who is waiting on a response.
+IDLE_AFTER_SECONDS = int(os.getenv("IDLE_AFTER_SECONDS", "300"))
+
+# How often the worker wakes to check. Jittered at the call site.
+IDLE_POLL_SECONDS = int(os.getenv("IDLE_POLL_SECONDS", "180"))

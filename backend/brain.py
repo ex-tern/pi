@@ -21,6 +21,7 @@ import random
 import hashlib
 import re
 import difflib
+import unicodedata
 import concurrent.futures
 from datetime import datetime
 from typing import Tuple, Dict
@@ -103,7 +104,7 @@ from config import (
     OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
     PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR
 )
-from database import get_db_connection
+from database import get_db_connection, find_existing_paper, set_content_hash
 from ledger import (
     backup_state_to_web3, generate_zk_snark_proof, mint_pi_quotient_token, 
     validate_block_por, generate_blockchain_pi
@@ -225,8 +226,50 @@ def assess_with_structural_analyzer(paper_text, canary=""):
         "scilem_score": scilem_numeric_score,
     }
 
+def content_fingerprint(text: str) -> str:
+    """A hash that identifies the WORK rather than the file it arrived in.
+
+    eval_hash is sha256 of the uploaded bytes. That is the right key for "have
+    I seen this exact file", and the wrong one for "have I seen this paper" —
+    re-exporting a PDF, downloading it from a different host, or opening and
+    saving it in a viewer changes the bytes without changing a word of the
+    scholarship.
+
+    Normalisation is deliberately aggressive, because everything it discards is
+    something that varies between two copies of one paper while carrying no
+    scholarly content:
+
+      * case, which viewers and OCR settings alter;
+      * all whitespace, since line breaks land differently at different page
+        sizes and column widths;
+      * every non-alphanumeric character, which absorbs ligature handling,
+        smart quotes, hyphenation at line ends and bullet glyphs.
+
+    What survives is the letters and digits of the manuscript in order. Two
+    files agreeing on that are the same paper. The residual risk runs one way
+    only: heavy normalisation can make two *different* papers collide, so this
+    is not used alone to overwrite anything — it selects an existing record to
+    merge into, and a real revision with changed text simply will not match.
+
+    An empty or unreadable extraction returns "" and merges nothing. A scanned
+    PDF with no text layer must not be treated as identical to every other
+    scanned PDF with no text layer.
+    """
+    # NFKD first, so typographic ligatures decompose to their letters. A PDF
+    # that preserves "ﬀ" as one glyph and one that emits "ff" are the same two
+    # letters, but stripping non-ASCII without decomposing first would delete
+    # the glyph entirely and silently change the hash.
+    normalised = unicodedata.normalize("NFKD", (text or "").lower())
+    normalised = re.sub(r"[^a-z0-9]+", "", normalised)
+    if len(normalised) < 500:
+        # Too little text to identify anything. Better to assess twice than to
+        # merge two unrelated manuscripts on the strength of a title page.
+        return ""
+    return hashlib.sha256(normalised.encode("utf-8")).hexdigest()
+
+
 def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
-                               independent_sources=0, eval_hash=""):
+                               independent_sources=0, eval_hash="", title=""):
     """Learn from this assessment: nudge the signal weighting toward the panel.
 
     Called once per assessed manuscript. The panel's verdict is the target and
@@ -235,9 +278,19 @@ def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
     scilem_learning.observe — an uncorroborated verdict teaches imitation of
     one model rather than assessment of research, so it is refused there.
     """
-    if target_quality is None:
-        return "No panel rating was available, so nothing was learned from this assessment."
     signals = measure_structural_signals(raw_text)
+    if target_quality is None:
+        # No panel verdict is the strongest case for tutoring, not a reason to
+        # skip it: there is nothing else to learn from at all.
+        try:
+            if scilem_learning.tutor_phase_active():
+                t = scilem_learning.tutor_from_llm(signals, title or "", (raw_text or "")[:4000])
+                if t.get("tutored"):
+                    return ("No panel rating was available. SciLM (siM) recorded a tutoring "
+                            "observation instead while it is still below its consensus threshold.")
+        except Exception as e:                                   # noqa: BLE001
+            logging.warning("SciLM (siM) tutoring step failed: %s", e)
+        return "No panel rating was available, so nothing was learned from this assessment."
     try:
         # The panel rates 0-100; the structural model works in 0-1.
         target = max(0.0, min(1.0, float(target_quality) / 100.0))
@@ -249,13 +302,34 @@ def update_structural_analyzer(raw_text, evidence_report, target_quality=None,
         logging.warning("SciLM (siM) learning step failed: %s", e)
         return "SciLM (siM) could not update its calibration from this assessment."
 
+    # Bootstrap path. A new deployment has almost no corroborated consensus, so
+    # the branch above refuses nearly every early assessment and SciLM sits at
+    # its default weighting indefinitely. During the tutoring phase only, a
+    # model is asked the same question the four signals proxy for — how
+    # completely is this manuscript reported — and its answer is learned at
+    # reduced weight, from a separately-counted source.
+    #
+    # The tutor never suppresses the consensus step; it runs alongside it. And
+    # tutored observations do not count toward the threshold that ends
+    # tutoring, so the phase cannot extend itself by talking to itself.
+    tutor_note = ""
+    try:
+        if scilem_learning.tutor_phase_active():
+            t = scilem_learning.tutor_from_llm(signals, title or "", (raw_text or "")[:4000])
+            if t.get("tutored"):
+                tutor_note = (" A tutoring observation was also recorded while SciLM is still "
+                              "below its consensus threshold.")
+    except Exception as e:                                       # noqa: BLE001
+        logging.warning("SciLM (siM) tutoring step failed: %s", e)
+
     if not report.get("learned"):
-        return f"SciLM (siM) did not learn from this assessment: {report.get('reason', 'update rejected.')}"
+        return (f"SciLM (siM) did not learn from this assessment: "
+                f"{report.get('reason', 'update rejected.')}{tutor_note}")
     return (
         f"SciLM (siM) calibration updated from panel consensus: predicted "
         f"{report['predicted'] * 100:.1f}, panel {report['target'] * 100:.1f} "
         f"(error {abs(report['error']) * 100:.1f} points). "
-        f"{report['observations']} observation(s) learned to date."
+        f"{report['observations']} observation(s) learned to date.{tutor_note}"
     )
 
 
@@ -1365,6 +1439,7 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
     scilem_opinion = update_structural_analyzer(
         text, evidence_report, pidyne_ai_rating,
         independent_sources=int(_quality_meta.get("independent_source_count") or 0),
+        title=select_consensus_value(consensus_results, "title")[0] or "",
     )
 
     best_title, title_support = select_consensus_value(consensus_results, "title")
@@ -1580,11 +1655,15 @@ def process_single_pdf(
 
     file_hash = hashlib.sha256(file_bytes).hexdigest()
 
-    conn = get_db_connection()
-    try:
-        cursor = conn.cursor()
+    def _cached_record(conn, eval_hash, note):
+        """Return the stored assessment tuple for `eval_hash`, or None.
 
-        cursor.execute(
+        Used by both duplicate paths — same file, and same paper in a different
+        file — so a resubmission is answered identically however it was
+        recognised. Only a record that reached the ledger qualifies; a run that
+        died before minting is not something to hand back.
+        """
+        row = conn.execute(
             """SELECT title, author_name, final_score, logic_score, c1, c2, c3, c4, c5, c6, c7, c8,
                       piq_minted, tx_hash, zk_proof, mdar_adherence_score, rrid_valid_count,
                       reproducibility_score, consensus_data, evidence_report, scilem_score,
@@ -1592,60 +1671,71 @@ def process_single_pdf(
                       topology_detail, classification, criteria_breakdown, fields, subfields,
                       author_metrics, emission_record
                FROM papers_assessment WHERE eval_hash = ?""",
-            (file_hash,),
+            (eval_hash,),
+        ).fetchone()
+        if not row:
+            return None
+        tx_prev = row[13]
+        if not ((isinstance(tx_prev, str) and tx_prev.startswith("0x") and len(tx_prev) == 66)
+                or tx_prev == "Simulated_Ledger_Record"):
+            return None
+
+        (e_title, e_author, e_score, e_logic, e_c1, e_c2, e_c3, e_c4, e_c5, e_c6, e_c7, e_c8,
+         e_piq, e_tx, e_zk, e_mdar, e_rrid, e_repro, e_consensus, e_report, e_scilem,
+         e_warnings, e_integrity, e_refaudit, e_authorship, e_topology,
+         e_classification, e_breakdown, e_fields, e_subfields, e_authormetrics,
+         e_emission) = row
+
+        def _load(raw, fallback):
+            try:
+                parsed = json.loads(raw) if raw else None
+                return parsed if parsed else fallback
+            except Exception:
+                return fallback
+
+        cached_warnings = _load(e_warnings, [])
+        if not isinstance(cached_warnings, list):
+            cached_warnings = []
+        cached_warnings = list(cached_warnings) + [note]
+        e_scores_dict = {
+            "C1_Semantic_Originality": e_c1, "C2_Methodological_Rigor_SciScore": e_c2,
+            "C3_Interdisciplinary_Entropy": e_c3, "C4_Societal_Impact": e_c4,
+            "C5_Open_Science_Repro": e_c5, "C6_Literature_Integration": e_c6,
+            "C7_Empirical_Density": e_c7, "C8_Future_Actionability_FAIR": e_c8,
+        }
+        # NOTE the eval_hash returned here is the ORIGINAL record's, not the
+        # newly uploaded file's. That is the entire point of merging: reviews,
+        # publication state, reads and the ledger entry all key on this hash,
+        # so the resubmission has to resolve to the record that already carries
+        # them rather than opening an empty parallel one.
+        return (
+            e_title, e_author, e_score, e_logic,
+            _load(e_classification, {}), _load(e_breakdown, []),
+            _load(e_fields, ["Unclassified"]), _load(e_subfields, ["Unclassified"]),
+            e_scores_dict, eval_hash,
+            e_piq, e_tx, e_zk, active_weights, e_mdar, e_rrid, e_repro, True,
+            cached_warnings,
+            _load(e_consensus, {}), e_report or "", e_scilem,
+            _load(e_integrity, _EMPTY_INTEGRITY()),
+            _load(e_refaudit, _EMPTY_REFERENCE_AUDIT()),
+            _load(e_authorship, _EMPTY_AUTHORSHIP()),
+            _load(e_topology, _EMPTY_TOPOLOGY()),
+            _load(e_authormetrics, {}),
+            _load(e_emission, {}),
         )
-        existing = cursor.fetchone()
-        if existing and not force_proceed:
-            tx_prev = existing[13]
-            was_minted_ok = (
-                (isinstance(tx_prev, str) and tx_prev.startswith("0x") and len(tx_prev) == 66)
-                or tx_prev == "Simulated_Ledger_Record"
-            )
-            if was_minted_ok:
-                (
-                    e_title, e_author, e_score, e_logic, e_c1, e_c2, e_c3, e_c4, e_c5, e_c6, e_c7, e_c8,
-                    e_piq, e_tx, e_zk, e_mdar, e_rrid, e_repro, e_consensus, e_report, e_scilem,
-                    e_warnings, e_integrity, e_refaudit, e_authorship, e_topology,
-                    e_classification, e_breakdown, e_fields, e_subfields, e_authormetrics,
-                    e_emission,
-                ) = existing
 
-                def _load(raw, fallback):
-                    try:
-                        parsed = json.loads(raw) if raw else None
-                        return parsed if parsed else fallback
-                    except Exception:
-                        return fallback
+    conn = get_db_connection()
+    try:
+        cursor = conn.cursor()
 
-                cached_warnings = _load(e_warnings, [])
-                if not isinstance(cached_warnings, list):
-                    cached_warnings = []
-                cached_warnings = list(cached_warnings) + [
-                    "CACHED RECORD: This manuscript was already assessed previously; the stored, "
-                    "already-minted record is being returned instead of re-processing. No new "
-                    "processing fee was charged."
-                ]
-                e_scores_dict = {
-                    "C1_Semantic_Originality": e_c1, "C2_Methodological_Rigor_SciScore": e_c2,
-                    "C3_Interdisciplinary_Entropy": e_c3, "C4_Societal_Impact": e_c4,
-                    "C5_Open_Science_Repro": e_c5, "C6_Literature_Integration": e_c6,
-                    "C7_Empirical_Density": e_c7, "C8_Future_Actionability_FAIR": e_c8,
-                }
-                return (
-                    e_title, e_author, e_score, e_logic,
-                    _load(e_classification, {}), _load(e_breakdown, []),
-                    _load(e_fields, ["Unclassified"]), _load(e_subfields, ["Unclassified"]),
-                    e_scores_dict, file_hash,
-                    e_piq, e_tx, e_zk, active_weights, e_mdar, e_rrid, e_repro, True,
-                    cached_warnings,
-                    _load(e_consensus, {}), e_report or "", e_scilem,
-                    _load(e_integrity, _EMPTY_INTEGRITY()),
-                    _load(e_refaudit, _EMPTY_REFERENCE_AUDIT()),
-                    _load(e_authorship, _EMPTY_AUTHORSHIP()),
-                    _load(e_topology, _EMPTY_TOPOLOGY()),
-                    _load(e_authormetrics, {}),
-                    _load(e_emission, {}),
-                )
+        if not force_proceed:
+            cached = _cached_record(
+                conn, file_hash,
+                "CACHED RECORD: This manuscript was already assessed previously; the stored, "
+                "already-minted record is being returned instead of re-processing. No new "
+                "processing fee was charged.")
+            if cached:
+                return cached
 
         try:
             doc = fitz.open(stream=file_bytes, filetype="pdf")
@@ -1655,6 +1745,36 @@ def process_single_pdf(
         except Exception as e:
             warnings_list.append(f"PyMuPDF parsing note: {e}")
             full_text = ""
+
+        # --- Same paper, different file ---------------------------------
+        # The byte check above only catches a re-upload of the identical file.
+        # This catches the far more common case: the same manuscript arriving
+        # as a different PDF. It runs here, after extraction but before the
+        # assessment panel, so a duplicate costs one text hash rather than a
+        # full round of model calls, a second ledger entry and a second review
+        # cycle for work that has already been through both.
+        paper_fingerprint = content_fingerprint(full_text)
+        if paper_fingerprint and not force_proceed:
+            twin = find_existing_paper(content_hash=paper_fingerprint,
+                                       doi=provided_doi, exclude_hash=file_hash)
+            if twin:
+                how = ("identical text" if twin["matched_on"] == "content_hash"
+                       else "the same DOI")
+                cached = _cached_record(
+                    conn, twin["eval_hash"],
+                    f"MERGED SUBMISSION: this file differs from one already assessed, but shares "
+                    f"{how} with it, so it is the same work. The existing record was returned "
+                    f"instead of creating a second one — its reviews, publication state and "
+                    f"ledger entry all still apply, and no new processing fee was charged.")
+                if cached:
+                    # A DOI match on a record assessed before fingerprints
+                    # existed: store the fingerprint now, so the next copy is
+                    # recognised even if it arrives without a DOI.
+                    if twin["matched_on"] == "doi":
+                        set_content_hash(twin["eval_hash"], paper_fingerprint)
+                    logging.info("Merged resubmission %s into existing paper %s (matched on %s).",
+                                 file_hash[:12], twin["eval_hash"][:12], twin["matched_on"])
+                    return cached
 
         mdar_score, rrid_count = measure_mdar_adherence(full_text)
         reproducibility_score, _repro_flags = measure_reproducibility_markers(full_text)
@@ -1981,8 +2101,8 @@ def process_single_pdf(
                 authorship_signal, topology_detail, classification, criteria_breakdown,
                 signal_vector, rubric_version, author_metrics, emission_record,
                 author_openalex_id, scoring_epoch, unweighted_score, attribution,
-                scilem_signals, piq_escrowed, contact_emails
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+                scilem_signals, piq_escrowed, contact_emails, content_hash
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
             (
                 file_hash, user_id, title, filename, scope, *scores_dict.values(),
                 logic_integrity, 0.0,
@@ -2006,6 +2126,10 @@ def process_single_pdf(
                 piq_escrowed,
                 json.dumps([e["email"] for e in
                             authorship_challenge.extract_candidate_emails(full_text)]),
+                # Identifies the work, so the next copy of this paper to arrive
+                # in a different file merges into this record instead of
+                # opening a second one.
+                paper_fingerprint,
             ),
         )
 

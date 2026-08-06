@@ -364,9 +364,42 @@
     c.height = Math.max(240, Math.floor(rect.height * state.dpr));
     c.style.width = rect.width + "px";
     c.style.height = rect.height + "px";
+
+    // Keep the map filling its container as the window changes shape — but
+    // only while the user has not chosen a zoom of their own. Overriding a
+    // deliberate zoom on every resize would fight the person using the map.
+    if (state.mode === "explore" && !state.userZoomed) {
+      state.camera.zoom = fitZoom();
+    }
   }
   function viewW() { return state.canvas.width / state.dpr; }
   function viewH() { return state.canvas.height / state.dpr; }
+  /** Zoom at which the whole world fits the canvas, with a small margin.
+   *
+   *  Replaces a hardcoded 0.34. That constant was chosen against one canvas
+   *  size, so on any other viewport it was simply wrong: too far in and the
+   *  map ran off the edges, too far out and the constellation sat in the
+   *  middle of a large empty canvas with unused margins all round — which is
+   *  what "the bubbles don't cover the whole map" describes. Deriving it from
+   *  the actual canvas means the map fills the space it is given, whatever
+   *  that space turns out to be.
+   */
+  function fitZoom() {
+    const w = viewW(), h = viewH();
+    if (!w || !h) return 0.34;                 // canvas not laid out yet
+    // COVER, not contain — Math.max rather than Math.min.
+    //
+    // Contain guarantees every bubble is on screen, but the world is 1.55:1
+    // and a desktop canvas is nearer 2:1, so containing it leaves a wide empty
+    // band down both sides: the map does not fill the map. Cover fills the
+    // canvas edge to edge and crops the world's short axis instead, which
+    // panning immediately recovers. Filling the space is the better default
+    // because the margins were the actual complaint, and nothing is lost —
+    // only moved slightly out of frame, on a surface built for panning.
+    const z = Math.max(w / WORLD_W, h / WORLD_H);
+    return Math.max(0.18, Math.min(2.2, z));   // same bounds the wheel enforces
+  }
+
   function worldToScreen(wx, wy) {
     const z = state.camera.zoom;
     return { x: (wx - state.camera.x) * z + viewW() / 2,
@@ -481,11 +514,14 @@
     }
     state.mode = "explore";
     state.player = null;
-    state.camera.zoom = 0.34;
+    state.userZoomed = false;
     state.camera.x = WORLD_W / 2;
     state.camera.y = WORLD_H / 2;
     syncModeUi();
+    // resize() first: fitZoom() reads the canvas, so it has to be measured
+    // before it is asked how much of the world will fit inside it.
     resize();
+    state.camera.zoom = fitZoom();
     startLoop();
   }
 
@@ -974,6 +1010,30 @@
       }
     }
 
+    // --- Ambient motion ---------------------------------------------
+    // The map was dead. Damping is 0.86 per frame, which removes ~99% of a
+    // bubble's speed in about half a second, and with the spring toggle off
+    // (the default) nothing else applied any force at all — so a few moments
+    // after load every bubble had stopped and stayed stopped. A map of a
+    // living corpus that does not move reads as a screenshot of itself.
+    //
+    // Each bubble gets its own slow wander, driven by two incommensurable
+    // sine terms so the field never falls into a visible common rhythm. The
+    // force is small enough to lose every argument with collision, the walls
+    // and the spring, and heavier bubbles wander proportionally less — a large
+    // field should feel anchored, not restless.
+    state.driftClock = (state.driftClock || 0) + dt;
+    const t = state.driftClock;
+    for (const b of list) {
+      if (b.eaten) continue;
+      if (state.grabbed && state.grabbed.bubble === b) continue;
+      if (b.wander === undefined) b.wander = Math.random() * Math.PI * 2;
+      const ease = 6 / (6 + b.mass);            // big fields drift less
+      const WANDER = 0.055 * ease * dt * 60;
+      b.vx += Math.sin(t * 0.21 + b.wander) * WANDER;
+      b.vy += Math.cos(t * 0.17 + b.wander * 1.7) * WANDER;
+    }
+
     for (const b of list) {
       if (b.eaten) continue;
       b.vx *= DAMP; b.vy *= DAMP;
@@ -1001,16 +1061,27 @@
       if (b.y < pad)             { b.y = pad;             b.vy = Math.abs(b.vy) * 0.6; }
       else if (b.y > WORLD_H - pad) { b.y = WORLD_H - pad; b.vy = -Math.abs(b.vy) * 0.6; }
 
-      if (springOn) {
+      {
+        // Applies whether or not the spring is on.
+        //
+        // Previously this was inside `if (springOn)`, on the reasoning that it
+        // existed to counteract the spring's inward pull. But the springs are
+        // not the only thing that concentrates the map: collision resolution
+        // pushes bubbles apart symmetrically, so a random seeding's dense
+        // regions push outward into its sparse ones and the whole distribution
+        // creeps toward the middle regardless. With the default settings the
+        // map therefore used its centre and left the margins empty — which is
+        // exactly the case the spread was written for.
+        //
         // Normalised offset from centre, -1 … 1 on each axis.
         const ox = (b.x - WORLD_W / 2) / (WORLD_W / 2);
         const oy = (b.y - WORLD_H / 2) / (WORLD_H / 2);
         const r = Math.hypot(ox, oy);
-        if (r < 0.75) {
+        if (r < 0.92) {
           // Strongest at dead centre, fading to nothing at the edge of the
           // inner region. A constant push would flatten the clusters against
           // the walls, which is the opposite failure.
-          const push = (0.75 - r) * 0.9 * dt;
+          const push = (0.92 - r) * 0.9 * dt;
           const nx = r > 0.001 ? ox / r : (Math.random() - 0.5);
           const ny = r > 0.001 ? oy / r : (Math.random() - 0.5);
           b.vx += nx * push;
@@ -1994,6 +2065,7 @@
       const before = screenToWorld(p.x, p.y);
       const factor = e.deltaY < 0 ? 1.12 : 1 / 1.12;
       state.camera.zoom = Math.max(0.18, Math.min(2.2, state.camera.zoom * factor));
+      state.userZoomed = true;
       const after = screenToWorld(p.x, p.y);
       state.camera.x += before.x - after.x;
       state.camera.y += before.y - after.y;
@@ -2026,6 +2098,7 @@
       }
       if (e.touches.length === 2 && pinch) {
         state.camera.zoom = Math.max(0.18, Math.min(2.2, pinch.zoom * (touchDist(e) / pinch.d)));
+        state.userZoomed = true;
         clampCamera();
       } else if (state.grabbed) {
         const p = canvasPos(e.touches[0].clientX, e.touches[0].clientY);
