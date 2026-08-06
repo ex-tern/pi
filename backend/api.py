@@ -123,6 +123,7 @@ import rib_engine as rib_learning
 import auth
 import authorship_challenge
 import sim_engine as scilem_learning
+import idle_worker
 import challenge as pow_challenge
 from scientometrics import FIELD_TO_DOMAIN, fetch_active_research_topics
 
@@ -245,6 +246,19 @@ async def unhandled_exception_handler(request: Request, exc: Exception):
     return JSONResponse(status_code=500, content={"detail": detail})
 
 
+@app.middleware("http")
+async def _track_activity(request: Request, call_next):
+    """Every served request marks the site as busy.
+
+    This is what makes idle_worker's notion of "idle" real rather than a timer.
+    It is deliberately the cheapest possible middleware — one clock read and an
+    assignment — because it runs on the hot path of every request including
+    static assets.
+    """
+    idle_worker.note_request()
+    return await call_next(request)
+
+
 @app.on_event("startup")
 def on_startup():
     global _STATE_RESTORED
@@ -288,6 +302,13 @@ def on_startup():
     # redeploy. The failure mode is silent by construction: an ephemeral
     # filesystem raises no error, it simply comes back empty, so the operator
     # discovers it only by noticing the corpus has reset.
+    # Started after restore, on a daemon thread, so it cannot lengthen the
+    # startup window that the platform healthcheck is timing.
+    try:
+        idle_worker.start()
+    except Exception as e:
+        logging.warning("Idle assessment worker could not start: %s", e)
+
     verdict = (PERSISTENCE_REPORT or {}).get("verdict")
     backups_on = False
     try:
@@ -1409,6 +1430,17 @@ def engines_status():
             out[key] = normalise(fn())
         except Exception as e:
             out[key] = {"error": str(e)}
+
+    # Whether either engine is currently being bootstrapped by a model. Shown
+    # rather than hidden: an engine whose numbers are partly model-taught is a
+    # materially different claim from one taught entirely by the platform's own
+    # data, and the panel should be able to say which it is looking at.
+    for key, mod in (("riB", rib_learning), ("siM", scilem_learning)):
+        try:
+            if isinstance(out.get(key), dict) and hasattr(mod, "tutor_status"):
+                out[key]["tutor"] = mod.tutor_status()
+        except Exception:
+            pass
     return out
 
 
@@ -3206,6 +3238,15 @@ def admin_overview(request: Request, wallet: str = Query(default="")):
     except Exception:
         stats["visitors"] = {}
 
+    # Idle-time corpus growth. Owner-only, alongside the rest of the operator
+    # numbers, because it is the one process that spends provider quota with
+    # nobody watching — so it is exactly the thing an operator needs visibility
+    # of rather than a feature to leave running unseen.
+    try:
+        stats["idle"] = idle_worker.status()
+    except Exception:
+        stats["idle"] = {"enabled": False}
+
     return stats
 
 
@@ -3620,6 +3661,12 @@ def build_result_payload(res, filename, profile=None):
         "evidence_report_text": res[20],
         "scilem_rating": res[21],
         "rubric_version": RUBRIC_VERSION,
+        # True when this submission resolved to an assessment that already
+        # existed — either the identical file, or the same work in a different
+        # file. Surfaced so the interface can say "you already have this" and
+        # link to the existing record, rather than presenting a stored result
+        # as though it were fresh work.
+        "duplicate": bool(res[17]) if len(res) > 17 else False,
     }
 
     # Reception diagnostic: why this work is or isn't landing. Deterministic
@@ -3770,6 +3817,30 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
     researcher_profile = researcher_profile or {}
 
     fee = active_fee
+
+    def refund_if_duplicate(item, label):
+        """Return the fee when a submission turned out to be a paper we have.
+
+        The fee buys an assessment. A duplicate consumes no model calls, mints
+        nothing and creates no new record, so charging for it would be charging
+        for work that did not happen — and the result panel says in plain words
+        that no fee was taken, which has to be true rather than reassuring.
+        """
+        if not item.get("duplicate") or not charge_fees or not item.get("fee_charged"):
+            return
+        amount = float(item.get("fee_charged") or 0.0)
+        if amount <= 0:
+            return
+        if refund_piq_fee(amount, fee_wallet, fee_orcid,
+                          eval_hash=item.get("eval_hash", ""),
+                          reason=f"Duplicate submission — {str(label)[:100]}"):
+            item["fee_charged"] = 0.0
+            bal = get_piq_balance(fee_wallet, fee_orcid)
+            yield line({"type": "fee", "amount": 0.0, "balance": bal["balance"],
+                        "message": (f"Already assessed — {amount:.4f} piQ returned. "
+                                    f"Balance: {bal['balance']:.2f} piQ.")})
+        else:
+            logging.warning("Duplicate refund failed for %s", item.get("eval_hash", "")[:12])
 
     def take_fee(label: str, word_count: int = 0):
         """Returns (ok, ndjson_lines_to_emit).
@@ -3970,6 +4041,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
+                for m in refund_if_duplicate(item, f"DOI {doi}"):
+                    yield m
                 for m in award_curation(item, f"DOI {doi}"):
                     yield m
                 for m in reward_notice(item, f"DOI {doi}"):
@@ -4006,6 +4079,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             if res:
                 item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
+                for m in refund_if_duplicate(item, title):
+                    yield m
                 for m in award_curation(item, title):
                     yield m
                 for m in reward_notice(item, title):
@@ -4031,6 +4106,8 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         if res:
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
+            for m in refund_if_duplicate(item, fname):
+                yield m
             for m in award_curation(item, fname):
                 yield m
             for m in reward_notice(item, fname):

@@ -2570,7 +2570,10 @@ function renderResultCard(item, idx) {
     (typeof v === "number" && isFinite(v)) ? v.toFixed(dp) : fallback;
 
   return `
-    <div class="result-card">
+    <div class="result-card${item.duplicate ? " result-duplicate" : ""}">
+      ${item.duplicate ? `<div class="dup-banner">Already assessed — this is the existing
+        record for this work, not a second one. Its reviews, publication state and ledger
+        entry are unchanged, and the processing fee was returned.</div>` : ""}
       <div class="result-main">
         <div class="result-title">${escapeHtml(item.title || "Untitled manuscript")}</div>
         <div class="result-author">${escapeHtml(item.author_name || "Unidentified author")}</div>
@@ -5364,8 +5367,22 @@ async function loadEngineBar() {
         </div>`
         : `<div class="engine-state">not enough observations to score yet</div>`}
       <div class="engine-obs">${obs.toLocaleString()} observation${obs === 1 ? "" : "s"}</div>
+      ${tutorLine(s.tutor)}
     </div>`;
   }).join("");
+}
+
+// An engine that is still being bootstrapped by a model is a materially
+// different claim from one taught entirely by the platform's own data, so the
+// card says so plainly rather than presenting both as the same number.
+function tutorLine(t) {
+  if (!t || !t.enabled || !t.active) return "";
+  const left = Math.max(0, Number(t.stops_at || 0) - Number(t.consensus_observations || 0));
+  return `<div class="engine-tutor" title="A model is answering the same question this engine
+    measures, at reduced weight, until the engine has enough of the platform's own observations.
+    Model-taught observations are counted separately and do not extend this phase.">
+    ⚗ bootstrapping — ${left.toLocaleString()} more of its own observation${left === 1 ? "" : "s"} to go
+  </div>`;
 }
 
 let analyticsInitialized = false;
@@ -6865,13 +6882,50 @@ async function loadOwnerStats() {
         ${row("Minted", Number(d.piq_minted || 0).toFixed(2), "Released to verified authors")}
         ${row("Held", Number(d.piq_held || 0).toFixed(2),
               "Earned but not released — authorship unverified")}
-      </div>`;
+      </div>
+      ${idleGroup(d.idle)}`;
   } catch (e) {
     // Visible with the reason. A blank panel reads as "nobody has signed up",
     // which is the one wrong thing it could say.
     body.innerHTML = `<p class="hint">Could not load deployment stats (${
       escapeHtml(e.message)}).</p>`;
   }
+}
+
+/** Idle-time corpus growth, owner-only.
+ *
+ *  Shown even when switched off, and it says so. A background process that
+ *  spends provider quota with nobody present is the one thing an operator
+ *  should never have to guess the state of — including whether it is running
+ *  at all. */
+function idleGroup(idle) {
+  const row = (label, value, title) =>
+    `<div class="ri-row"${title ? ` title="${escapeHtml(title)}"` : ""}>
+       <span>${escapeHtml(label)}</span><strong>${escapeHtml(String(value))}</strong></div>`;
+  if (!idle || !idle.enabled) {
+    return `<div class="owner-stats-group">
+      <div class="owner-stats-head">Idle assessments</div>
+      <p class="hint" style="margin:4px 0 0">Off. Set ENABLE_IDLE_ASSESSMENTS to have the site
+        assess open-access papers while nobody is using it. No account is charged for them.</p>
+    </div>`;
+  }
+  const state = idle.running ? "assessing now"
+    : idle.site_is_idle ? "idle — eligible to run"
+    : `waiting (${Math.max(0, idle.idle_threshold - idle.idle_seconds)}s of quiet needed)`;
+  return `<div class="owner-stats-group">
+    <div class="owner-stats-head">Idle assessments</div>
+    ${row("State", state)}
+    ${row("Today", `${idle.assessed_today} of ${idle.daily_cap}`,
+          "Assessed today against the daily cap. Retrievals that failed or turned out to be "
+          + "papers already in the corpus do not count against it.")}
+    ${row("Attempted", idle.attempted_today,
+          "Includes papers that could not be retrieved and duplicates that merged into an "
+          + "existing record.")}
+    ${idle.last_title ? row("Last", compactTitle(idle.last_title, 40)) : ""}
+    ${idle.last_error ? `<p class="hint" style="margin:4px 0 0;color:#a33">Last error: ${
+      escapeHtml(idle.last_error)}</p>` : ""}
+    <p class="hint" style="margin:4px 0 0">${escapeHtml(idle.funding || "")}</p>
+  </div>`;
 }
 
 // ---------------------------------------------------------------------------

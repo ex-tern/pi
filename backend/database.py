@@ -30,6 +30,9 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     "contact_emails",
     # Author-published state. See the column notes below.
     "published_at", "published_by", "publish_kind",
+    # Fingerprint of the manuscript's TEXT, used to merge re-submissions of the
+    # same paper that arrive as different files. See the column note below.
+    "content_hash",
 }
 
 def reset_schema_cache():
@@ -300,6 +303,21 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # a correction submitted weeks later can be turned into a learning step
         # without the deployment having to retain manuscript text.
         "scilem_signals": "TEXT DEFAULT '{}'",
+        # Fingerprint of the EXTRACTED TEXT, not of the file.
+        #
+        # eval_hash is sha256 of the uploaded bytes, which identifies a file
+        # rather than a paper. Re-exporting a PDF, downloading it from a
+        # different host, or letting a viewer rewrite its metadata all produce
+        # different bytes for identical scholarship — so the same manuscript
+        # came back as a brand-new assessment, was charged again, minted again,
+        # and had to be reviewed again as though nobody had ever seen it. Two
+        # ledger records for one piece of research is a correctness problem,
+        # not a tidiness one.
+        #
+        # The text fingerprint identifies the WORK. It is indexed and matched
+        # before the assessment panel runs, so a resubmission merges into the
+        # record that already exists.
+        "content_hash": "TEXT DEFAULT ''",
         # Emission was previously computed and then thrown away when authorship
         # could not be verified, so a researcher saw "0.00 piQ" with no
         # indication that anything had been earned at all. The amount is now
@@ -359,6 +377,10 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         PRIMARY KEY (eval_hash, reader, read_day))""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_paper_reads_hash ON paper_reads(eval_hash)")
+    # Matched on every submission, before the assessment panel runs, so it has
+    # to be an index lookup rather than a scan of every paper ever assessed.
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_assessment_content "
+                   "ON papers_assessment(content_hash)")
 
     # Contact messages are bugs OR suggestions. Added as a column rather than a
     # second table: they share every field, every delivery path and one
@@ -3161,5 +3183,54 @@ def rib_feedback_totals() -> dict:
         return {"count": int(row[0] or 0), "useful": int(row[1] or 0)}
     except sqlite3.Error:
         return {"count": 0, "useful": 0}
+    finally:
+        conn.close()
+
+
+# ---------------------------------------------------------------------------
+# Duplicate-submission merging
+# ---------------------------------------------------------------------------
+def find_existing_paper(content_hash: str = "", doi: str = "", exclude_hash: str = ""):
+    """Find an assessment of the SAME WORK submitted as a different file.
+
+    Two manuscripts are the same work if their extracted text fingerprints
+    match, or if they carry the same DOI. Either is decisive: a DOI is a
+    registered claim that two files are one paper, and identical text is that
+    claim demonstrated.
+
+    Only records that actually completed — one with a ledger record — can be
+    merged into. A previous run that crashed before minting is not a paper the
+    system knows about, and merging into it would strand the new submission on
+    a broken record instead of assessing it.
+    """
+    for column, value in (("content_hash", (content_hash or "").strip()),
+                          ("doi", (doi or "").strip().lower())):
+        if not value:
+            continue
+        row = query_one(
+            f"""SELECT eval_hash, title, tx_hash FROM papers_assessment
+                WHERE LOWER({column}) = ? AND eval_hash != ?
+                  AND tx_hash IS NOT NULL AND tx_hash != '' AND tx_hash != 'None'
+                ORDER BY timestamp ASC LIMIT 1""",
+            (value.lower(), exclude_hash or ""),
+        )
+        if row:
+            return {"eval_hash": row[0], "title": row[1], "matched_on": column}
+    return None
+
+
+def set_content_hash(eval_hash: str, content_hash: str) -> bool:
+    """Backfill the text fingerprint for an assessment that predates it."""
+    if not eval_hash or not content_hash:
+        return False
+    conn = get_db_connection()
+    try:
+        conn.execute("UPDATE papers_assessment SET content_hash = ? WHERE eval_hash = ?",
+                     (content_hash, eval_hash))
+        conn.commit()
+        return True
+    except sqlite3.Error as e:
+        logging.warning("set_content_hash failed for %s: %s", eval_hash[:12], e)
+        return False
     finally:
         conn.close()
