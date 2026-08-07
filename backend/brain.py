@@ -2041,7 +2041,22 @@ def process_single_pdf(
 
         zk_proof = generate_zk_snark_proof(file_hash, pidyne_ai_rating, logic_integrity, "None")
         
-        if external_active and book_address and book_address != "0x0000000000000000000000000000000000000000" and piq_minted > 0:
+        # Settlement no longer depends on whether a language model answered.
+        #
+        # `external_active` used to gate this. It means "at least one external
+        # juror was reachable", which is a statement about provider uptime and
+        # has nothing to do with whether a token should settle. A paper with
+        # verified authorship, a qualifying score and a connected wallet was
+        # silently given a simulated record because a provider happened to be
+        # down — and, since nothing re-tried, it stayed unsettled forever.
+        #
+        # The quality caveat that condition was standing in for is already
+        # handled honestly, and separately, by the "no external juror" warning
+        # appended below. One concern, one mechanism: a warning describes the
+        # assessment, the ledger records what was earned.
+        if (book_address
+                and book_address != "0x0000000000000000000000000000000000000000"
+                and piq_minted > 0):
             tx_hash = mint_pi_quotient_token(book_address, piq_minted, file_hash, zk_proof)
         else:
             tx_hash = "Simulated_Ledger_Record"

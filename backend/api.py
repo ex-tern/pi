@@ -68,6 +68,7 @@ from database import (
     store_bug_report, mark_bug_report_delivered, list_bug_reports, CONTACT_KINDS,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
     list_unclaimed_escrow, disown_escrow, list_disowned,
+    list_unsettled_mintable, record_settlement,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
@@ -89,7 +90,8 @@ from database import (
 import arcade
 import diagnostics
 import paper_store
-from ledger import restore_state_from_web3, get_sepolia_explorer_url, get_chain_status
+from ledger import (restore_state_from_web3, get_sepolia_explorer_url, get_chain_status,
+                    mint_pi_quotient_token)
 import ledger as ledger_backup
 from integrations import (
     normalize_doi,
@@ -242,11 +244,52 @@ def safe_float(val, default=0.0):
 
 @app.exception_handler(Exception)
 async def unhandled_exception_handler(request: Request, exc: Exception):
-    """Never leak stack traces / internal details to clients in production;
-    always log the full traceback server-side so it's still debuggable."""
-    logging.error("Unhandled exception on %s %s: %s\n%s", request.method, request.url.path, exc, traceback.format_exc())
-    detail = "Internal server error." if IS_PRODUCTION else f"{type(exc).__name__}: {exc}"
-    return JSONResponse(status_code=500, content={"detail": detail})
+    """Never leak stack traces to clients; always keep them debuggable.
+
+    The full traceback goes to the process log, as before. What is new is that
+    a one-line summary also goes to `add_log`, which is what feeds the owner's
+    Live System Monitor.
+
+    Without that, a 500 was invisible from inside the running application: the
+    caller saw "Internal server error." with no endpoint, no exception type and
+    no location, and the only copy of the useful information was in the hosting
+    platform's log stream. Diagnosing a fault should not require leaving the
+    product — especially when the person who has to diagnose it is the one
+    already looking at the sidebar.
+
+    A short reference is returned to the client too. It identifies nothing
+    about the request; it just gives the caller something to quote that can be
+    matched against the log line, so "I got a 500" becomes answerable.
+    """
+    tb = traceback.format_exc()
+    logging.error("Unhandled exception on %s %s: %s\n%s",
+                  request.method, request.url.path, exc, tb)
+
+    # The deepest frame inside this codebase, which is almost always where the
+    # bug is. The last frame overall is frequently in a library and says
+    # nothing useful about which of our lines was wrong.
+    where = ""
+    try:
+        frames = [f for f in traceback.extract_tb(exc.__traceback__)
+                  if BASE_DIR in (f.filename or "")]
+        if frames:
+            f = frames[-1]
+            where = f" at {os.path.basename(f.filename)}:{f.lineno} in {f.name}()"
+    except Exception:                                            # noqa: BLE001
+        pass
+
+    ref = uuid.uuid4().hex[:8]
+    try:
+        add_log(f"500 [{ref}] {request.method} {request.url.path} — "
+                f"{type(exc).__name__}: {str(exc)[:200]}{where}")
+    except Exception:                                            # noqa: BLE001
+        # A logging failure must never replace the error being reported.
+        pass
+
+    detail = ("Internal server error." if IS_PRODUCTION
+              else f"{type(exc).__name__}: {exc}{where}")
+    return JSONResponse(status_code=500,
+                        content={"detail": detail, "ref": ref})
 
 
 @app.middleware("http")
@@ -3375,6 +3418,80 @@ def admin_overview(request: Request, wallet: str = Query(default="")):
         stats["idle"] = {"enabled": False}
 
     return stats
+
+
+@app.get("/api/admin/settlement")
+def settlement_queue(request: Request, wallet: str = Query(default="")):
+    """What earned piQ but never reached the chain, and why it can't right now."""
+    require_owner(request, wallet)
+    pending = list_unsettled_mintable()
+    chain = {}
+    try:
+        chain = get_chain_status() or {}
+    except Exception as e:                                       # noqa: BLE001
+        chain = {"error": str(e)[:200]}
+
+    # Name the specific missing piece rather than reporting a generic failure.
+    # "Settlement unavailable" is not actionable; "no contract address is
+    # configured" is a instruction.
+    blockers = []
+    if not PIQ_CONTRACT_ADDRESS:
+        blockers.append("PIQ_CONTRACT_ADDRESS is not set — there is no contract to mint against.")
+    if not ETH_ADMIN_PRIVATE_KEY:
+        blockers.append("ETH_ADMIN_PRIVATE_KEY is not set — nothing can sign a transaction.")
+    if chain.get("connected") is False:
+        blockers.append(f"No {CHAIN_NAME} RPC endpoint is reachable.")
+
+    return {
+        "pending": pending,
+        "count": len(pending),
+        "total_piq": round(sum(p["piq"] for p in pending), 4),
+        "chain": chain,
+        "blockers": blockers,
+        "can_settle": not blockers,
+        "note": ("These assessments earned piQ against a real wallet, but minting was skipped —"
+                 " no contract, no key, no gas, or a provider outage at the time. The piQ was"
+                 " earned; the settlement is owed."),
+    }
+
+
+@app.post("/api/admin/settle")
+def settle_pending(request: Request, wallet: str = Query(default=""),
+                   limit: int = Query(default=10, ge=1, le=100)):
+    """Mint the outstanding records, one transaction each.
+
+    Batched with a low default rather than draining the queue in one call: each
+    mint costs gas and can fail independently, and a loop that runs for minutes
+    inside a request handler will be killed by the proxy halfway through with no
+    record of where it stopped. Small batches are resumable by construction.
+    """
+    require_owner(request, wallet)
+    settled, failed = [], []
+    for paper in list_unsettled_mintable(limit=limit):
+        try:
+            tx = mint_pi_quotient_token(paper["wallet"], paper["piq"],
+                                        paper["eval_hash"], "")
+        except Exception as e:                                   # noqa: BLE001
+            failed.append({**paper, "reason": str(e)[:200]})
+            continue
+        # mint_pi_quotient_token reports refusals as a STRING rather than
+        # raising, so a skip reads as success unless the shape is checked.
+        if isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66:
+            if record_settlement(paper["eval_hash"], tx):
+                settled.append({**paper, "tx_hash": tx})
+                add_log(f"Settled {paper['eval_hash'][:12]}… on chain: {tx[:14]}…")
+            else:
+                # The mint succeeded but the row would not take it — almost
+                # certainly settled by a concurrent call. Reported rather than
+                # swallowed, because it means gas was spent twice.
+                failed.append({**paper, "reason": f"Minted {tx[:14]}… but the record was "
+                                                  f"already settled. Check for a double spend."})
+        else:
+            failed.append({**paper, "reason": str(tx)[:200]})
+
+    return {"settled": settled, "failed": failed,
+            "settled_count": len(settled), "failed_count": len(failed),
+            "remaining": len(list_unsettled_mintable())}
 
 
 @app.get("/api/admin/review-reports")
