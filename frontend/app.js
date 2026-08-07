@@ -7100,6 +7100,7 @@ async function loadOwnerStats() {
               "Earned but not released — authorship unverified")}
       </div>
       ${idleGroup(d.idle)}`;
+    loadSettlementQueue();
   } catch (e) {
     // Visible with the reason. A blank panel reads as "nobody has signed up",
     // which is the one wrong thing it could say.
@@ -7142,6 +7143,58 @@ function idleGroup(idle) {
       escapeHtml(idle.last_error)}</p>` : ""}
     <p class="hint" style="margin:4px 0 0">${escapeHtml(idle.funding || "")}</p>
   </div>`;
+}
+
+/** Owner: piQ that was earned but never reached the chain.
+ *
+ *  Surfaced because the failure is completely silent otherwise. A skipped mint
+ *  leaves a row reading "Local" in the ledger table, which looks like a design
+ *  choice rather than an unpaid debt — and nothing ever retried it, so those
+ *  papers stayed unsettled permanently.
+ */
+async function loadSettlementQueue() {
+  const panel = document.getElementById("settlementPanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+
+  let d;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet });
+    const res = await fetch(`${API}/api/admin/settlement?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    d = await res.json();
+  } catch (e) { panel.classList.add("hidden"); return; }
+
+  if (!d.count) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+  document.getElementById("settlementBody").innerHTML = `
+    <div class="ri-row"><span>Unsettled papers</span><strong>${d.count}</strong></div>
+    <div class="ri-row"><span>piQ owed on chain</span><strong>${
+      Number(d.total_piq).toFixed(2)}</strong></div>
+    <p class="hint" style="margin:6px 0">${escapeHtml(d.note || "")}</p>
+    ${d.blockers.length
+      ? `<div class="settle-blockers">${d.blockers.map(b =>
+          `<div>· ${escapeHtml(b)}</div>`).join("")}</div>`
+      : `<button class="btn btn-quiet btn-block" id="settleBtn">Settle up to 10 on chain</button>`}`;
+
+  const btn = document.getElementById("settleBtn");
+  if (btn) btn.addEventListener("click", async () => {
+    // Each mint spends real gas, so the count is stated before it is spent.
+    if (!confirm(`Mint up to 10 outstanding records on chain?\n\n`
+      + `Each is a separate transaction and costs gas from the admin account. `
+      + `${d.count} paper(s) are outstanding, totalling ${Number(d.total_piq).toFixed(2)} piQ.`)) return;
+    btn.disabled = true; btn.textContent = "Settling…";
+    try {
+      const qs = new URLSearchParams({ wallet: Session.wallet });
+      const r = await (await fetch(`${API}/api/admin/settle?${qs}`, { method: "POST" })).json();
+      alert(`Settled ${r.settled_count}. Failed ${r.failed_count}. `
+            + `${r.remaining} still outstanding.`
+            + (r.failed_count ? `\n\nFirst failure: ${(r.failed[0] || {}).reason || ""}` : ""));
+    } catch (e) {
+      alert(`Settlement failed: ${e.message}`);
+    }
+    loadSettlementQueue();
+  });
 }
 
 // ---------------------------------------------------------------------------

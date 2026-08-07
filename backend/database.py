@@ -3336,3 +3336,63 @@ def list_disowned(account_key: str) -> set:
         return set()
     return {r[0] for r in query_all(
         "SELECT eval_hash FROM escrow_disowned WHERE account_key = ?", (account_key,))}
+
+
+# ---------------------------------------------------------------------------
+# Retroactive on-chain settlement
+# ---------------------------------------------------------------------------
+def list_unsettled_mintable(limit: int = 200) -> list:
+    """Papers that earned piQ and have a wallet, but never reached the chain.
+
+    A paper lands here when minting was attempted and skipped — no contract
+    configured, no RPC reachable, no gas, or (historically) because no external
+    juror happened to answer. In every one of those cases the piQ was genuinely
+    earned and the failure was on the platform's side, so the record is a debt
+    the deployment owes rather than a decision it made.
+
+    `eth_book` must be a real address: settlement needs somewhere to send to,
+    and the zero address is the placeholder for "no wallet was connected".
+    Those are not unsettled — there is nothing to settle to.
+    """
+    return [
+        {"eval_hash": r[0], "title": r[1] or "Untitled", "wallet": r[2],
+         "piq": round(float(r[3] or 0), 4), "tx_hash": r[4] or "", "timestamp": r[5]}
+        for r in query_all(
+            """SELECT eval_hash, title, eth_book, piq_minted, tx_hash, timestamp
+               FROM papers_assessment
+               WHERE piq_minted > 0
+                 AND eth_book IS NOT NULL AND eth_book <> ''
+                 AND eth_book <> '0x0000000000000000000000000000000000000000'
+                 AND (tx_hash IS NULL OR tx_hash = '' OR tx_hash NOT LIKE '0x%'
+                      OR LENGTH(tx_hash) <> 66)
+               ORDER BY timestamp ASC LIMIT ?""",
+            (int(limit),))
+    ]
+
+
+def record_settlement(eval_hash: str, tx_hash: str) -> bool:
+    """Attach a real transaction hash to a previously unsettled assessment.
+
+    Guarded so a settlement can never overwrite one that already exists: paying
+    twice for the same paper is the one mistake here that costs real money, and
+    a retry after a timeout is exactly the situation where it would happen.
+    """
+    if not eval_hash or not tx_hash:
+        return False
+    if not (tx_hash.startswith("0x") and len(tx_hash) == 66):
+        return False
+    conn = get_db_connection()
+    try:
+        cur = conn.execute(
+            """UPDATE papers_assessment SET tx_hash = ?
+               WHERE eval_hash = ?
+                 AND (tx_hash IS NULL OR tx_hash = '' OR tx_hash NOT LIKE '0x%'
+                      OR LENGTH(tx_hash) <> 66)""",
+            (tx_hash, eval_hash))
+        conn.commit()
+        return cur.rowcount > 0
+    except sqlite3.Error as e:
+        logging.warning("record_settlement failed for %s: %s", eval_hash[:12], e)
+        return False
+    finally:
+        conn.close()

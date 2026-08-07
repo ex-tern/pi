@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=67">
+<link rel="stylesheet" href="style.css?v=68">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -136,6 +136,14 @@
     <!-- Owner only. Counts of PEOPLE and platform activity, kept out of the
          public Analytics tab: publishing them would tell every visitor the
          size of the user base and how thin the activity is. -->
+    <!-- Owner only. piQ earned against a real wallet that never reached the
+         chain — an unpaid debt rather than a setting, so it is shown only when
+         there is something outstanding. -->
+    <details class="sidebar-expander hidden" id="settlementPanel">
+      <summary>On-chain settlement</summary>
+      <div id="settlementBody"></div>
+    </details>
+
     <details class="sidebar-expander hidden" id="ownerStatsPanel">
       <summary>Deployment<span class="pill pill-muted" id="ownerStatsBadge">–</span></summary>
       <div id="ownerStatsBody"><p class="hint">Loading…</p></div>
@@ -815,7 +823,7 @@
   </div>
 </div>
 
-<script src="app.js?v=67"></script>
-<script src="arcade.js?v=67"></script>
+<script src="app.js?v=68"></script>
+<script src="arcade.js?v=68"></script>
 </body>
 </html>
