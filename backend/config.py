@@ -55,13 +55,34 @@ if os.path.exists(_ENV_PATH):
                 # file, so container and CI configuration keeps precedence.
                 os.environ.setdefault(_parsed[0], _parsed[1])
 
-PRIMARY_MODEL = "llama-3.3-70b-versatile"
+# The general-purpose model on Groq, used as the universal last-resort route
+# for every juror and as the judge's final fallback.
+#
+# WAS llama-3.3-70b-versatile. GroqCloud decommissioned that model on
+# 16 August 2026 and directed workloads to GPT-OSS 120B / Qwen3 32B, so every
+# route naming it would start returning model-not-found — and since it is the
+# route every juror falls back to, the whole panel would fail at once rather
+# than degrading.
+#
+# Env-overridable, unlike before: a provider renaming a model should be a
+# variable change on the host, not a code edit and a redeploy.
+PRIMARY_MODEL = os.getenv("PRIMARY_MODEL", "openai/gpt-oss-120b")
+
+# Groq's Qwen3, which replaces the decommissioned Llama for the Qwen juror's
+# fastest route. Named separately so the Qwen juror stays Qwen-lineage — the
+# panel's independence claim rests on juror errors being uncorrelated, and
+# silently substituting a GPT model under a "qwen" label would quietly break
+# that while still looking like five jurors.
+GROQ_QWEN_MODEL = os.getenv("GROQ_QWEN_MODEL", "qwen/qwen3-32b")
+
+# The small, cheap Groq model for when the large one is rate-limited.
+GROQ_SMALL_MODEL = os.getenv("GROQ_SMALL_MODEL", "openai/gpt-oss-20b")
 
 # Gemini model to try first. Override if your account has access to a newer
 # one; the provider chain falls back through older flash models automatically,
 # which matters because the free tier rate-limits aggressively.
 GEMINI_PRIMARY_MODEL = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
-FALLBACK_MODEL = "llama-3.1-8b-instant"
+FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 MAX_TEXT_TOKENS = 15000
 EPOCH_BLOCK_SIZE = 5
 
@@ -458,12 +479,45 @@ def compute_genesis_hash(g=None) -> str:
         .encode("utf-8")
     ).hexdigest()
 
+# A seed pool, sampled from rather than shown whole.
+#
+# The row displays ten chips. When the list WAS ten, every visitor saw the same
+# ten in the same order on every visit — which teaches a returning user that
+# the suggestions are decoration and stops them looking. A larger pool with a
+# random draw per request means the row is worth glancing at each time, and
+# widens the corpus, since a suggestion nobody is ever shown is a topic nobody
+# assesses.
+#
+# Spread deliberately across disciplines: a pool of ten physics topics would
+# make the map of science a map of physics.
 HOT_TOPICS = [
-    "Quantum Error Correction", "Generative AI in Oncology", "CRISPR-Cas12 Therapeutics",
-    "Solid-State Battery Electrolytes", "Perovskite Solar Cell Efficiency",
-    "Neuromorphic Computing Hardware", "Neural Radiance Fields 3D Reconstruction",
+    # Physical sciences and engineering
+    "Quantum Error Correction", "Solid-State Battery Electrolytes",
+    "Perovskite Solar Cell Efficiency", "Neuromorphic Computing Hardware",
     "Carbon Capture Metal-Organic Frameworks", "Fusion Energy Plasma Confinement",
-    "Exoplanet Atmospheric Spectroscopy"
+    "Exoplanet Atmospheric Spectroscopy", "Topological Superconductors",
+    "Metamaterial Acoustic Cloaking", "Green Hydrogen Electrolysis",
+    "Additive Manufacturing Fatigue Life", "Room-Temperature Superconductivity Claims",
+    # Life and health sciences
+    "Generative AI in Oncology", "CRISPR-Cas12 Therapeutics",
+    "mRNA Vaccine Thermostability", "Gut Microbiome and Immunity",
+    "Organoid Disease Modelling", "Antimicrobial Resistance Surveillance",
+    "Single-Cell Spatial Transcriptomics", "Alzheimer's Biomarker Validation",
+    "Wearable Continuous Glucose Monitoring", "Protein Structure Prediction Accuracy",
+    # Computing and mathematics
+    "Neural Radiance Fields 3D Reconstruction", "Retrieval-Augmented Generation",
+    "Federated Learning Privacy Guarantees", "Formal Verification of Neural Networks",
+    "Post-Quantum Cryptography Migration", "Graph Neural Networks for Chemistry",
+    "Mechanistic Interpretability", "Differential Privacy in Practice",
+    # Earth, climate and environment
+    "Climate Tipping Point Detection", "Microplastics in Freshwater Systems",
+    "Soil Carbon Sequestration Measurement", "Urban Heat Island Mitigation",
+    "Biodiversity Loss and Ecosystem Services", "Permafrost Methane Release",
+    # Social sciences, humanities and research policy
+    "Responsible Research Assessment", "Open Peer Review Outcomes",
+    "Replication Crisis in Psychology", "Science Funding Allocation Models",
+    "Digital Humanities Text Mining", "Misinformation Diffusion Networks",
+    "Research Software Sustainability", "Citation Bias and Equity",
 ]
 
 
@@ -536,7 +590,12 @@ ENABLE_IDLE_ASSESSMENTS = _env_bool("ENABLE_IDLE_ASSESSMENTS", False)
 
 # Papers per UTC day. Providers rate-limit well before this on a free tier, so
 # treat it as a ceiling rather than a target.
-IDLE_MAX_PER_DAY = int(os.getenv("IDLE_MAX_PER_DAY", "50"))
+#
+# Lowered from 50 to 10. Fifty unattended assessments a day is a lot of
+# provider quota spent with nobody watching, and it competes with the quota a
+# real submission needs — the corpus grows either way, just more slowly and
+# without eating the allowance a waiting user depends on.
+IDLE_MAX_PER_DAY = int(os.getenv("IDLE_MAX_PER_DAY", "10"))
 
 # Quiet period, in seconds, before the site counts as idle. Measured from the
 # last real request served, not from a clock — background work must never

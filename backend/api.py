@@ -17,6 +17,7 @@ import uuid
 import decimal
 import time
 import concurrent.futures
+import random
 import hashlib
 import hmac
 import logging
@@ -4961,10 +4962,26 @@ def discover_hot_topics():
     OpenAlex is unreachable, and the response says which source was used so
     the UI never implies staleness is freshness.
     """
-    result = fetch_active_research_topics(limit=10)
-    if result["topics"]:
-        return result
-    return {"topics": HOT_TOPICS, "source": "fallback-seed", "cached": False}
+    # A fresh draw per request, from both sources.
+    #
+    # This row was static: the same ten chips in the same order on every visit,
+    # which teaches a returning user that the suggestions are decoration and
+    # stops them looking. Sampling means the row is worth a glance each time,
+    # and it widens the corpus — a topic nobody is ever shown is a topic nobody
+    # assesses.
+    #
+    # OpenAlex first when reachable, and its picks are shuffled too: "most
+    # active concepts" is a stable ranking, so taking the top ten produced the
+    # same list every time even though the source was live.
+    result = fetch_active_research_topics(limit=30)
+    live = list(result.get("topics") or [])
+    if live:
+        random.shuffle(live)
+        return {**result, "topics": live[:10], "sampled": True}
+
+    seeds = list(HOT_TOPICS)
+    random.shuffle(seeds)
+    return {"topics": seeds[:10], "source": "fallback-seed", "cached": False, "sampled": True}
 
 
 @app.get("/api/discover/search")
