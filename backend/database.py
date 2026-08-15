@@ -3256,6 +3256,18 @@ def rib_feedback_totals() -> dict:
 # ---------------------------------------------------------------------------
 # Duplicate-submission merging
 # ---------------------------------------------------------------------------
+# Values that mean "no DOI" but are not empty. "None" is the pipeline's own
+# default — a Python None stringified on its way into the database — and the
+# rest turn up in user input and imported metadata. Compared lower-cased.
+DOI_SENTINELS = {"none", "null", "nil", "n/a", "na", "-", "unknown", "not available"}
+
+
+def real_doi(value) -> str:
+    """A DOI, or "" if the value is one of the placeholders that means none."""
+    v = str(value or "").strip()
+    return "" if v.lower() in DOI_SENTINELS else v
+
+
 def find_existing_paper(content_hash: str = "", doi: str = "", exclude_hash: str = ""):
     """Find an assessment of the SAME WORK submitted as a different file.
 
@@ -3268,9 +3280,21 @@ def find_existing_paper(content_hash: str = "", doi: str = "", exclude_hash: str
     merged into. A previous run that crashed before minting is not a paper the
     system knows about, and merging into it would strand the new submission on
     a broken record instead of assessing it.
+
+    THE SENTINEL CHECK IS LOAD-BEARING. `provided_doi` defaults to the STRING
+    "None" through the whole pipeline, and that string is what gets stored in
+    the doi column for every upload without a DOI. This function used to test
+    `if not value`, which is false for "none" — so every DOI-less submission
+    matched `LOWER(doi) = 'none'` and was merged into the FIRST DOI-less paper
+    in the corpus. The symptom is unmistakable once you know it: every
+    assessment resolves to one paper, and it is whichever one was uploaded
+    first. A missing DOI is not a DOI two papers share.
     """
+    doi_clean = (doi or "").strip().lower()
+    if doi_clean in DOI_SENTINELS:
+        doi_clean = ""
     for column, value in (("content_hash", (content_hash or "").strip()),
-                          ("doi", (doi or "").strip().lower())):
+                          ("doi", doi_clean)):
         if not value:
             continue
         row = query_one(

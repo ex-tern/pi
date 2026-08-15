@@ -69,7 +69,7 @@ from database import (
     store_bug_report, mark_bug_report_delivered, list_bug_reports, CONTACT_KINDS,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
     list_unclaimed_escrow, disown_escrow, list_disowned,
-    list_unsettled_mintable, record_settlement,
+    list_unsettled_mintable, record_settlement, real_doi,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
@@ -1301,7 +1301,9 @@ def arcade_field_papers(field: str = Query(default=""),
             "hash": r[0], "title": r[1] or "Untitled",
             "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
             **piq_fields(r[4], r[8], r[9]), "date": (r[6] or "")[:10],
-            "doi": r[7] or "",
+            # real_doi(): the column holds the string "None" for a paper with
+            # no DOI, and shipping that renders a DOI chip that reads "None".
+            "doi": real_doi(r[7]),
         })
         if len(out) >= limit:
             break
@@ -2537,7 +2539,9 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
             "hash": r[0], "title": r[1] or "Untitled",
             "author": clean_author_name(r[2]), "score": round(safe_float(r[3], 0.0), 1),
             **piq_fields(r[4], r[5], r[6]),
-            "doi": r[7] or "",
+            # real_doi(): the column holds the string "None" for a paper with
+            # no DOI, and shipping that renders a DOI chip that reads "None".
+            "doi": real_doi(r[7]),
             "published": published, "publish_kind": (r[9] or "author") if published else None,
             "published_at": r[8], "peer_reviews": peer, "llm_reviewed": bool(llm),
             "review_requested": requested > 0,
@@ -6046,7 +6050,7 @@ def build_dossier_from_row(r):
         "scilem_rating": r[22],
         "warnings": parse_json_or_default(r[23], []),
         "judge_metadata": judge_meta,
-        "timestamp": r[25], "doi": r[26], "submitted_by": r[27], "eth_book": r[28],
+        "timestamp": r[25], "doi": real_doi(r[26]), "submitted_by": r[27], "eth_book": r[28],
         "integrity": parse_json_or_default(r[29], {}),
         "reference_audit": parse_json_or_default(r[30], {}),
         "authorship_signal": parse_json_or_default(r[31], {}),
