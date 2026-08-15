@@ -102,7 +102,8 @@ def torch_available() -> bool:
 from config import (
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY,
     OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
-    PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR
+    PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR,
+    PANEL_BUDGET_SECONDS,
 )
 from database import get_db_connection, find_existing_paper, set_content_hash, real_doi
 from ledger import (
@@ -755,6 +756,22 @@ def assess_with_deepseek(paper_text, canary=""):
     return assess_with_route_chain("deepseek", paper_text, canary)
 
 def collect_independent_model_assessments(paper_text, canary=""):
+    """Ask every configured juror, under a WALL-CLOCK BUDGET.
+
+    Without the budget this call has no bound. Each route allows 45s with one
+    retry, `build_routes` can return several routes per juror, and six jurors
+    run three at a time — so on a host that cannot reach the providers at all,
+    the arithmetic reaches ten minutes or more. The stream emits
+    "Analyzing X..." immediately before this and nothing until it returns, so
+    the entire wait is a single frozen line with no error and no way to tell a
+    slow run from a hung one. That is the "assessment is stuck" report.
+
+    The budget converts an unbounded wait into a bounded one. Jurors that have
+    not answered by the deadline are recorded as failures with a category of
+    their own, and the assessment proceeds on whoever did answer — which is
+    exactly what already happens when a provider is down, including the
+    "no external juror was reachable" warning on the result.
+    """
     results = {}
     llm_funcs = {
         "llama": assess_with_llama,
@@ -765,11 +782,52 @@ def collect_independent_model_assessments(paper_text, canary=""):
         "scilem": assess_with_structural_analyzer
     }
 
-    with concurrent.futures.ThreadPoolExecutor(max_workers=3) as executor:
-        futures = {executor.submit(func, paper_text, canary): name for name, func in llm_funcs.items()}
-        for future in concurrent.futures.as_completed(futures):
-            provider, data = future.result()
-            results[provider] = data
+    # NOT a `with` block. ThreadPoolExecutor.__exit__ calls shutdown(wait=True),
+    # which would sit and wait for exactly the stragglers the budget exists to
+    # abandon — the timeout would be measured and then ignored.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=3)
+    try:
+        futures = {executor.submit(func, paper_text, canary): name
+                   for name, func in llm_funcs.items()}
+        deadline = time.time() + max(10.0, float(PANEL_BUDGET_SECONDS))
+        try:
+            for future in concurrent.futures.as_completed(
+                    futures, timeout=max(1.0, deadline - time.time())):
+                try:
+                    provider, data = future.result()
+                    results[provider] = data
+                except Exception as e:                           # noqa: BLE001
+                    name = futures.get(future, "unknown")
+                    logging.warning("Juror %s raised: %s", name, e)
+                    results[name] = {
+                        "title": "N/A", "authors": "N/A",
+                        "opinion": f"This juror failed: {type(e).__name__}.",
+                        "references": [], "api_failed": True,
+                        "failure_category": "exception",
+                    }
+        except concurrent.futures.TimeoutError:
+            for future, name in futures.items():
+                if name in results:
+                    continue
+                future.cancel()
+                results[name] = {
+                    "title": "N/A", "authors": "N/A",
+                    "opinion": (f"This juror did not answer within the "
+                                f"{int(PANEL_BUDGET_SECONDS)}s panel budget and was "
+                                f"abandoned so the assessment could finish."),
+                    "references": [], "api_failed": True,
+                    "failure_category": "budget_exhausted",
+                }
+            logging.warning("Panel budget of %ss exhausted; %d of %d jurors answered.",
+                            PANEL_BUDGET_SECONDS, len(results) - 
+                            sum(1 for v in results.values()
+                                if v.get("failure_category") == "budget_exhausted"),
+                            len(llm_funcs))
+    finally:
+        # Threads already in a blocking socket read cannot be killed, but they
+        # are daemon-like from our point of view: nothing waits on them, and
+        # their results are discarded when they eventually land.
+        executor.shutdown(wait=False, cancel_futures=True)
     return results
 
 def merge_assessments_into_report(consensus_results):

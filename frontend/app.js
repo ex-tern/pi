@@ -2345,10 +2345,24 @@ async function runDiscoverySearch(query) {
   box.innerHTML = `<div class="hint">Searching open-access sources…</div>`;
   try {
     const res = await fetch(`${API}/api/discover/search?q=${encodeURIComponent(query.trim())}&limit=15`);
-    if (!res.ok) { box.innerHTML = `<div class="hint">Search failed. Try again shortly.</div>`; return; }
+    if (!res.ok) {
+      const detail = await res.json().catch(() => ({}));
+      box.innerHTML = `<div class="warning-box">Search failed (HTTP ${res.status}).
+        ${escapeHtml(detail.detail || "")}</div>`;
+      return;
+    }
     const data = await res.json();
-    if (!data.results.length) {
-      box.innerHTML = `<div class="hint">No open-access papers found for "${escapeHtml(query)}". Try a broader topic.</div>`;
+    if (!(data.results || []).length) {
+      // A failed lookup and an empty topic are different answers, and telling
+      // someone to "try a broader topic" when the server cannot reach the
+      // internet sends them to fix the one thing that is not wrong.
+      box.innerHTML = data.error
+        ? `<div class="warning-box"><strong>Could not search right now.</strong>
+             <div class="err-detail">${escapeHtml(data.error)}</div>
+             <p class="hint" style="margin-top:6px">This is a problem reaching the paper
+             providers, not with your query. Uploading a PDF or entering a DOI still works.</p>
+           </div>`
+        : `<div class="hint">No open-access papers found for "${escapeHtml(query)}". Try a broader topic.</div>`;
       return;
     }
     box.innerHTML = data.results.map(p => {
@@ -2360,7 +2374,7 @@ async function runDiscoverySearch(query) {
           <input type="checkbox" class="discover-checkbox" data-key="${escapeHtml(key)}" ${isSelected ? "checked" : ""} ${hasSource ? "" : "disabled"}>
           <div class="discover-row-body">
             <div class="discover-row-title">${escapeHtml(p.title || "Untitled")}</div>
-            <div class="discover-row-meta">${escapeHtml(p.authors || "Unknown authors")}${p.doi ? ` · DOI: ${escapeHtml(p.doi)}` : ""}${!hasSource ? " · No retrievable source" : ""}</div>
+            <div class="discover-row-meta">${escapeHtml(p.authors || "Unknown authors")}${p.doi ? ` · DOI: ${escapeHtml(p.doi)}` : ""}${p.source ? ` · ${escapeHtml(p.source)}` : ""}${!hasSource ? " · No retrievable source" : ""}</div>
           </div>
         </label>`;
     }).join("");
@@ -2528,6 +2542,7 @@ document.getElementById("runPipelineBtn").addEventListener("click", async () => 
       </div>`;
     }
   } finally {
+    stopStatusTicker();
     pipelineAbort = null;
     pipelineProof = null;   // single-use: a solved challenge cannot be replayed
     stopBtn.classList.add("hidden");
@@ -2583,10 +2598,37 @@ function refreshCorpusViews() {
   }
 }
 
+/** A live elapsed counter on the newest status line.
+ *
+ *  A single line reading "Analyzing X..." looks identical after two seconds
+ *  and after four minutes, so a slow paper is indistinguishable from a hung
+ *  one and the honest report is "it is stuck". The model panel can legitimately
+ *  take a couple of minutes when a provider is slow — it is now bounded
+ *  server-side, but bounded is not the same as visibly alive.
+ */
+let statusTicker = null;
+function tickStatusLine(el, startedAt) {
+  clearInterval(statusTicker);
+  statusTicker = setInterval(() => {
+    if (!el.isConnected) { clearInterval(statusTicker); return; }
+    const s = Math.round((Date.now() - startedAt) / 1000);
+    if (s < 3) return;
+    el.dataset.elapsed = s < 60 ? `${s}s` : `${Math.floor(s / 60)}m ${s % 60}s`;
+    el.setAttribute("data-hint", s > 90
+      ? "the model panel is slow to answer — it is bounded and will finish"
+      : "");
+  }, 1000);
+}
+function stopStatusTicker() { clearInterval(statusTicker); statusTicker = null; }
+
 function handleStreamLine(obj, statusBox) {
   if (obj.type === "status") {
-    statusBox.innerHTML += `<div class="status-line">${escapeHtml(obj.message)}</div>`;
+    stopStatusTicker();
+    statusBox.insertAdjacentHTML("beforeend",
+      `<div class="status-line status-live">${escapeHtml(obj.message)}</div>`);
+    tickStatusLine(statusBox.lastElementChild, Date.now());
   } else if (obj.type === "fee") {
+    stopStatusTicker();
     statusBox.innerHTML += `<div class="status-line status-fee">${escapeHtml(obj.message)}</div>`;
     if (typeof obj.balance === "number") { piqState.balance = obj.balance; renderFeeNotice(); }
   } else if (obj.type === "reward") {
@@ -5628,7 +5670,10 @@ async function loadEngineBar() {
 
     return `<div class="engine-card${learning ? " engine-learning" : ""}">
       <div class="engine-name">${escapeHtml(label)}
-        <span class="engine-key">${escapeHtml(key)}</span></div>
+        <span class="engine-key">${escapeHtml(key)}</span>
+        ${learning ? `<span class="engine-flag" title="This engine's recent error is lower
+          than its own frozen defaults. It is a readout, not a setting — these cards are not
+          selectable.">improving</span>` : ""}</div>
       <div class="engine-what">${escapeHtml(what)}</div>
       ${haveErr ? `
         <div class="engine-track" title="${escapeHtml(
