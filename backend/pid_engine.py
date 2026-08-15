@@ -277,12 +277,42 @@ def engine_status(criteria: List[str]) -> Dict:
         if st.get("learning"):
             improving += 1
         models.append(st)
+    # Aggregate error across the eight criteria.
+    #
+    # Every per-criterion model already carries `mean_abs_error` and
+    # `baseline_abs_error`; this function summed only the observation counts,
+    # so piD published a five-figure observation total and no score, and the
+    # engine card read "no error baseline to score against yet" against 39,696
+    # observations. The numbers were there the whole time — nothing was adding
+    # them up.
+    #
+    # Weighted by how many outcomes each criterion was actually scored over, so
+    # a criterion evaluated twice cannot swing the headline as hard as one
+    # evaluated a thousand times.
+    num_m = num_b = weight = 0.0
+    scored = 0
+    for st in models:
+        n = float(st.get("evaluated_over") or 0)
+        m, bl = st.get("mean_abs_error"), st.get("baseline_abs_error")
+        if n <= 0 or m is None or bl is None:
+            continue
+        num_m += float(m) * n
+        num_b += float(bl) * n
+        weight += n
+        scored += 1
+
     return {
         "engine": "piD",
         "kind": "online linear forecaster (5 parameters per criterion)",
         "criteria": models,
         "total_observations": total_obs,
         "criteria_improving": improving,
+        # None rather than 0 when nothing has been scored: zero error would be
+        # a perfect forecaster, which is the opposite of "no data".
+        "mean_abs_error": round(num_m / weight, 4) if weight else None,
+        "baseline_abs_error": round(num_b / weight, 4) if weight else None,
+        "evaluated_over": int(weight),
+        "criteria_scored": scored,
         "memory_note": ("NumPy only. ~40 parameters total; no PyTorch import, "
                         "so the 500 MB process budget is unaffected."),
     }

@@ -5640,13 +5640,41 @@ async function loadEngineBar() {
           ${delta >= 0 ? "▼" : "▲"} ${Math.abs(delta).toFixed(1)}% error
           ${delta >= 0 ? "below" : "above"} its defaults
         </div>`
-        : `<div class="engine-state">${obs > 0
-             ? "logging observations — no error baseline to score against yet"
-             : "not enough observations to score yet"}</div>`}
+        : `<div class="engine-state">${engineWaitingFor(key, s, obs)}</div>`}
       <div class="engine-obs">${obs.toLocaleString()} observation${obs === 1 ? "" : "s"}</div>
       ${tutorLine(s.tutor)}
     </div>`;
   }).join("");
+}
+
+/** What an unscored engine is actually waiting for.
+ *
+ *  The two sentences this replaces were dead ends: "logging observations — no
+ *  error baseline to score against yet" and "not enough observations to score
+ *  yet" both tell the reader that nothing is here, and neither says what would
+ *  put something here or how close it is. An engine with no score should still
+ *  report its state, because "learning, 12 of 30 scored outcomes" is progress
+ *  and "0 observations" with a reason is at least an explanation.
+ */
+function engineWaitingFor(key, s, obs) {
+  const scored = Number(s.evaluated_over || 0);
+  if (obs > 0 && scored > 0) {
+    // It IS being scored, there is just no aggregate yet — a transient state,
+    // so say what is accumulating rather than that nothing is.
+    return `learning — ${scored.toLocaleString()} outcome${scored === 1 ? "" : "s"} scored so far`;
+  }
+  if (obs > 0) {
+    return "learning from every assessment — its first score lands once a "
+         + "forecast can be checked against what actually happened";
+  }
+  // Zero observations. Name the event that produces the first one, so the
+  // reader knows whether this is broken or simply untouched.
+  const FIRST = {
+    piD: "scores its first forecast after two assessed papers",
+    siM: "learns whenever a model panel and the structural score disagree",
+    riB: "learns once you tick papers for it to read, under Your assessments",
+  };
+  return FIRST[key] || "no observations yet";
 }
 
 // An engine that is still being bootstrapped by a model is a materially
