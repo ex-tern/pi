@@ -1772,6 +1772,17 @@ function initBuddyWindow() {
             stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="1.6" y="3.6"
             width="6.8" height="6.8" rx="1.1"/><path d="M4 3.6V2.4A1 1 0 0 1 5 1.4h5A1 1 0 0 1 11
             2.4v5a1 1 0 0 1-1 1H8.4"/></svg>`,
+    // Re-open from minimised. A chevron, NOT the square that `max` uses.
+    //
+    // This is the two-squares bug: while minimised, the first button showed
+    // "restore" and the second showed "maximise", and both were drawn as a
+    // plain square. The bar became the word ResBD next to two identical
+    // controls that do different things — and since minimising also hid the
+    // subtitle, there was nothing else on the bar to read either. An icon set
+    // is only doing its job if no two states in the same row look alike.
+    expand: `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none"
+            stroke="currentColor" stroke-width="1.7" stroke-linecap="round"
+            stroke-linejoin="round"><path d="M3 7.2L6 4.2l3 3"/></svg>`,
   };
 
   const KEY = "sp_buddy_win";
@@ -1811,12 +1822,17 @@ function initBuddyWindow() {
 
   function setMin(on) {
     win.classList.toggle("is-min", on);
+    // Hidden while minimised: with the body collapsed, "maximise" is a second
+    // route out of a state the chevron beside it already leaves, and two
+    // controls for one action on a bar this small is what made the pair
+    // unreadable in the first place.
+    const maxBtn = document.getElementById("buddyMax");
+    if (maxBtn) maxBtn.style.display = on ? "none" : "";
     const btn = document.getElementById("buddyMin");
     if (btn) {
-      btn.innerHTML = on ? ICON.max : ICON.min;
-      btn.title = on ? "Restore" : "Minimise";
-      btn.setAttribute("aria-label", on ? "Restore the ResBD"
-                                        : "Minimise the ResBD");
+      btn.innerHTML = on ? ICON.expand : ICON.min;
+      btn.title = on ? "Re-open" : "Minimise";
+      btn.setAttribute("aria-label", on ? "Re-open ResBD" : "Minimise ResBD");
     }
     write({ min: on });
   }
@@ -3878,9 +3894,27 @@ async function showPublishModal(hash) {
       return;
     }
     btn.disabled = true; msg.textContent = "Publishing…";
+
+    // A journal claim goes out to Crossref, OpenAlex and ORCID before it can
+    // be granted, so this one button can legitimately take many seconds. Two
+    // things follow from that: it has to say it is still working, and it has
+    // to give up rather than sit disabled forever if the request never
+    // settles. A dead button with "Publishing…" on it is the worst of both —
+    // nothing published, and no way to try again without reloading.
+    const startedAt = Date.now();
+    const tick = setInterval(() => {
+      const s = Math.round((Date.now() - startedAt) / 1000);
+      msg.textContent = kind === "journal"
+        ? `Checking the DOI against Crossref and OpenAlex… ${s}s`
+        : `Publishing… ${s}s`;
+    }, 1000);
+    const ctl = new AbortController();
+    const giveUp = setTimeout(() => ctl.abort(), 45000);
+
     try {
       const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`, {
         method: "POST", headers: { "Content-Type": "application/json" },
+        signal: ctl.signal,
         body: JSON.stringify({ published: true, kind, doi,
                                distribute_file: !!(distEl && distEl.checked),
                                wallet: Session.wallet, orcid: Session.orcid }),
@@ -3898,7 +3932,15 @@ async function showPublishModal(hash) {
       renderSidebar();
       refreshCorpusViews();
     } catch (e) {
-      msg.textContent = e.message; btn.disabled = false;
+      msg.textContent = e && e.name === "AbortError"
+        ? ("Gave up after 45 seconds. The server could not reach the DOI registries, so "
+           + "nothing was published and nothing was charged. Author-publish now if you want "
+           + "the paper visible — you can switch to a journal claim later.")
+        : e.message;
+      btn.disabled = false;
+    } finally {
+      clearInterval(tick);
+      clearTimeout(giveUp);
     }
   });
 }

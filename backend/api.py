@@ -2333,9 +2333,31 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
                         f"claim, the ORCID ties it to a research identity the registry can be "
                         f"checked against. Author-publishing needs only one and is available now."))
 
-        journal_check = verify_journal_claim(
-            doi=(payload.doi or row[1] or ""), orcid=identity["orcid"],
-            assessed_title=row[2] or "", assessed_authors=row[0] or "")
+        # Bounded, because this is the one publish path that goes to the
+        # internet. It resolves the DOI in Crossref, falls back to OpenAlex,
+        # then reads the claimant's ORCID profile — each with its own retries.
+        # On a host that cannot reach those registries the calls do not fail
+        # fast, they fail slowly, and the button sits on "Publishing…" for a
+        # minute or more with nothing to show for it. A refusal a user can act
+        # on beats an indefinite wait.
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            fut = pool.submit(
+                verify_journal_claim,
+                doi=(payload.doi or row[1] or ""), orcid=identity["orcid"],
+                assessed_title=row[2] or "", assessed_authors=row[0] or "")
+            journal_check = fut.result(timeout=JOURNAL_CHECK_BUDGET_SECONDS)
+        except concurrent.futures.TimeoutError:
+            add_log(f"Journal claim on {file_hash[:12]}… timed out verifying the DOI.")
+            raise HTTPException(
+                status_code=504,
+                detail=(f"The DOI could not be checked within "
+                        f"{JOURNAL_CHECK_BUDGET_SECONDS}s — Crossref and OpenAlex are not "
+                        f"answering from this server. Nothing was published and nothing was "
+                        f"charged. Author-publish now if you want the paper visible, and "
+                        f"switch to a journal claim once the registries are reachable."))
+        finally:
+            pool.shutdown(wait=False)
         if not journal_check["ok"]:
             add_log(f"Journal claim REFUSED on {file_hash[:12]}… — {journal_check['reason'][:120]}")
             raise HTTPException(
@@ -4687,6 +4709,11 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
 # Short enough to stay under any reasonable proxy idle timeout, long
 # enough that it costs nothing.
 HEARTBEAT_SECONDS = int(os.getenv("STREAM_HEARTBEAT_SECONDS", "10"))
+
+# Ceiling on verifying a journal DOI against the registries. Generous
+# enough for a slow-but-working Crossref, short enough that an
+# unreachable one is reported rather than waited out.
+JOURNAL_CHECK_BUDGET_SECONDS = int(os.getenv("JOURNAL_CHECK_BUDGET_SECONDS", "25"))
 
 MAX_DISCOVERY_BATCH = 10
 

@@ -382,7 +382,11 @@ input::placeholder { color: var(--faint); }
 /* Legend can grow long; keep it scrollable with a pinned header so the map
    stays visible rather than being pushed off-screen. */
 .legend-scroll {
-  max-height: 210px; overflow-y: auto; border: 1px solid var(--border);
+  /* Raised now that the table pages. 210px was sized for a scrolling list of
+     every field; against a fixed six-row page it cut the last row off and made
+     a paged table look broken. Overflow stays as a safety valve for a page of
+     unusually long field names. */
+  max-height: 330px; overflow-y: auto; border: 1px solid var(--border);
   border-radius: 9px; margin-top: 8px;
 }
 .legend-scroll .data-table { margin: 0; border: none; border-radius: 0; }
@@ -1155,7 +1159,10 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .buddy-float.is-min { max-height: none; }
 .buddy-float.is-min .buddy-scroll,
 .buddy-float.is-min .buddy-resize { display: none; }
-.buddy-float.is-min .buddy-sub { display: none; }
+/* The subtitle STAYS while minimised. Hiding it left the bar reading "ResBD"
+   and nothing else — and a minimised window is all bar, so that line is the
+   only thing left to say what the window is. It only shrinks. */
+.buddy-float.is-min .buddy-sub { font-size: 10px; }
 
 /* Maximised: anchored to the viewport rather than resized in place, so it
    lands somewhere predictable however far it had been dragged. */
@@ -2251,3 +2258,13 @@ button.seal { font-family: inherit; cursor: pointer; }
 .grant-msg { font-size: 11px; line-height: 1.5; }
 .grant-msg.ok { color: var(--success); }
 .grant-msg.bad { color: var(--danger); }
+
+
+/* --- Map legend pager ----------------------------------------------------- */
+/* The shared .pagination is sized for a full-width table; this one lives in a
+   288px sidebar, so the gap, the buttons and the indicator all come down and
+   the arrows are glyphs rather than words. */
+.legend-pagination { gap: 6px; margin-top: 8px; }
+.legend-pagination .btn { font-size: 12px; padding: 2px 8px; line-height: 1.4; min-height: 0; }
+.legend-pagination .page-indicator { font-size: 10.5px; white-space: nowrap; }
+.legend-pagination:empty { display: none; }
