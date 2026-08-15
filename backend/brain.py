@@ -103,7 +103,7 @@ from config import (
     GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY,
     OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
     PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR,
-    PANEL_BUDGET_SECONDS,
+    PANEL_BUDGET_SECONDS, PROVIDER_TIMEOUT_SECONDS,
 )
 from database import get_db_connection, find_existing_paper, set_content_hash, real_doi
 from ledger import (
@@ -132,6 +132,7 @@ from attribution import verify_authorship
 from providers import (
     build_routes, classify_provider_error, redact_provider_text,
     is_route_cooling, record_rate_limit, record_success, parse_retry_after,
+    is_provider_unreachable, record_provider_unreachable,
     is_scilm_route,
 )
 from emission import compute_piq_emission, emission_manifest
@@ -464,8 +465,15 @@ def request_model_assessment(provider_name, model_name, api_key, base_url, promp
                 
             extra_body = {"provider": provider_prefs}
 
+        # 45s with max_retries=1 meant a single dead endpoint cost up to 90
+        # seconds to rule out — multiplied by every route in every juror's
+        # chain, which is where "the assessment takes forever" came from. A
+        # model that has not started responding in 20s is not going to save the
+        # run, and the chain has several more routes to try; retrying the same
+        # dead endpoint is the least valuable way to spend the budget.
         client = OpenAI(api_key=api_key.strip(), base_url=base_url,
-                        default_headers=headers or None, timeout=45.0, max_retries=1)
+                        default_headers=headers or None,
+                        timeout=PROVIDER_TIMEOUT_SECONDS, max_retries=0)
 
         request_args = {
             "model": model_name,
@@ -689,6 +697,17 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
     attempts = []
     classified = None
     for route in routes:
+        # Cheapest check first: a provider the run has already found
+        # unreachable costs microseconds to skip and a full connection timeout
+        # to rediscover.
+        down, left = is_provider_unreachable(route["provider"])
+        if down:
+            attempts.append({
+                "model": route["model"], "provider": route["provider"],
+                "category": "provider_down", "seconds_remaining": round(left, 1),
+            })
+            continue
+
         cooling, remaining = is_route_cooling(route["model"], route["provider"])
         if cooling:
             attempts.append({
@@ -716,6 +735,10 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
             record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
         elif classified["category"] in ("credit", "auth"):
             record_rate_limit(route["model"], route["provider"], 600)
+        elif classified["category"] == "network":
+            # Not this model's problem — the host could not reach the provider
+            # at all, so every other route to it will fail the same way.
+            record_provider_unreachable(route["provider"])
 
         logging.warning("Juror %s route %s (%s) failed [%s]: %s",
                         juror, route["model"], route["provider"],
@@ -1138,6 +1161,13 @@ Respond strictly in JSON with keys:
 
     if judge_routes and active_count > 0:
         for route in judge_routes:
+            down, left = is_provider_unreachable(route["provider"])
+            if down:
+                judge_attempts.append({"model": route["model"], "provider": route["provider"],
+                                       "category": "provider_down",
+                                       "seconds_remaining": round(left, 1)})
+                continue
+
             cooling, remaining = is_route_cooling(route["model"], route["provider"])
             if cooling:
                 judge_attempts.append({"model": route["model"], "provider": route["provider"],
@@ -1163,6 +1193,8 @@ Respond strictly in JSON with keys:
                 record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
             elif classified["category"] in ("credit", "auth"):
                 record_rate_limit(route["model"], route["provider"], 600)
+            elif classified["category"] == "network":
+                record_provider_unreachable(route["provider"])
             logging.warning("Judge route %s (%s) failed [%s]: %s",
                             route["model"], route["provider"],
                             classified["category"], classified["internal"][:200])

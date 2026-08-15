@@ -23,6 +23,7 @@ all of which is useful to someone probing the deployment. Errors are now
 classified into a small set of neutral, public-safe categories, with the full
 provider text logged server-side and exposed only to the operator.
 """
+import os
 import re
 import time
 import logging
@@ -82,6 +83,59 @@ def is_route_cooling(model: str, provider: str) -> Tuple[bool, float]:
         return True, remaining
 
 
+# --- Provider-level circuit breaker ------------------------------------------
+#
+# The per-ROUTE breaker above is the right shape for a rate limit: one model on
+# one provider is throttled, the others are fine. It is the wrong shape for an
+# unreachable provider, and unreachable is the case that actually hurts.
+#
+# When a host cannot reach Groq at all, every Groq route fails identically —
+# and the panel has five jurors, each with its own chain, each ending in the
+# same shared Groq fallback. Route-level cooling does not help, because each
+# juror tries a DIFFERENT Groq model and none of them is cooling yet. So the
+# run pays the connection timeout once per juror per Groq route: the same dead
+# endpoint, discovered from scratch a dozen times, which is most of where a
+# three-minute assessment goes.
+#
+# Marking the PROVIDER lets the second juror skip in microseconds what the
+# first spent twenty seconds learning. The window is deliberately short: a
+# provider that was down a minute ago may be up now, and this must not turn a
+# transient blip into a lasting outage of its own making.
+PROVIDER_DOWN_SECONDS = int(os.getenv("PROVIDER_UNREACHABLE_COOLDOWN", "120"))
+_providers_down: Dict[str, float] = {}
+
+
+def record_provider_unreachable(provider: str):
+    """Mark a whole provider unreachable after a connection-level failure."""
+    if not provider:
+        return
+    with _breaker_lock:
+        first = provider not in _providers_down or _providers_down[provider] <= time.time()
+        _providers_down[provider] = time.time() + PROVIDER_DOWN_SECONDS
+    if first:
+        logging.warning("Provider %s looks unreachable; skipping its routes for %ds.",
+                        provider, PROVIDER_DOWN_SECONDS)
+
+
+def is_provider_unreachable(provider: str) -> Tuple[bool, float]:
+    with _breaker_lock:
+        until = _providers_down.get(provider)
+        if not until:
+            return False, 0.0
+        remaining = until - time.time()
+        if remaining <= 0:
+            _providers_down.pop(provider, None)
+            return False, 0.0
+        return True, remaining
+
+
+def record_provider_reachable(provider: str):
+    """Any successful call proves the provider is up; clear the mark at once."""
+    if provider:
+        with _breaker_lock:
+            _providers_down.pop(provider, None)
+
+
 def record_rate_limit(model: str, provider: str, retry_after: Optional[float] = None):
     """Open the breaker for a route, honouring Retry-After when supplied."""
     key = _route_key(model, provider)
@@ -102,6 +156,7 @@ def record_success(model: str, provider: str):
     """Close the breaker: one success clears the accumulated backoff."""
     with _breaker_lock:
         _cooldowns.pop(_route_key(model, provider), None)
+        _providers_down.pop(provider, None)
 
 
 def parse_retry_after(error_text: str) -> Optional[float]:
