@@ -2097,6 +2097,20 @@ button.seal { font-family: inherit; cursor: pointer; }
 .engine-delta { font-size: 11px; font-weight: 600; margin-top: 5px; }
 .eng-up { color: var(--success); }
 .eng-down { color: var(--muted); }
+/* The plain-language explanation. Collapsed by default: a reader who already
+   knows what the engine does should not have to scroll past a paragraph of it
+   three times, and one who does not needs somewhere obvious to look. */
+.engine-explain { margin-top: 7px; }
+.engine-explain > summary {
+  cursor: pointer; font-size: 10.5px; font-weight: 600; color: var(--accent);
+  list-style: none;
+}
+.engine-explain > summary::-webkit-details-marker { display: none; }
+.engine-explain > summary::before { content: "▸ "; }
+.engine-explain[open] > summary::before { content: "▾ "; }
+.engine-explain p {
+  font-size: 11px; line-height: 1.55; color: #334155; margin: 6px 0 0;
+}
 .engine-state { font-size: 11px; color: var(--faint); margin-top: 5px; }
 .engine-obs {
   font-size: 10.5px; color: var(--faint); margin-top: 4px;

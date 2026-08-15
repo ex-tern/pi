@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=81">
+<link rel="stylesheet" href="style.css?v=83">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -208,7 +208,7 @@
         <div class="signin-notice-body">
           <strong>Sign in to unlock the full tool.</strong>
           <p>Connect a wallet or link ORCID in the sidebar to save a research profile, get a
-          tailored Research Buddy (riB), keep your piQ balance, and have diagnostics framed against
+          tailored ResBD, keep your piQ balance, and have diagnostics framed against
           your own goals. You can still assess manuscripts on the free trial without signing in.</p>
         </div>
       </div>
@@ -237,7 +237,7 @@
           <div class="profile-slot-field">
             <label for="profileSlotSelect">Profile</label>
             <select id="profileSlotSelect"
-                    title="Which profile frames your diagnostics and Research Buddy"></select>
+                    title="Which profile frames your diagnostics and ResBD"></select>
           </div>
           <div class="profile-slot-field">
             <label for="profileSlotName">Profile name</label>
@@ -295,7 +295,7 @@
         </div>
       </details>
 
-      <!-- Research Buddy (riB): derived from the saved profile plus the live
+      <!-- ResBD: derived from the saved profile plus the live
            corpus. A floating window rather than a card in the column — it is
            advice ABOUT the work being done on this tab, so it should stay in
            view while the page scrolls instead of being scrolled past.
@@ -341,8 +341,10 @@
             <path d="M20.5 9.2c1-2.2 3-3.2 3.5-1.4.6-1.9 2.6-1 3.4 1.2"
                   fill="none" stroke="#6f452c" stroke-width="1.8" stroke-linecap="round"/>
           </svg>
-          <span class="buddy-title"><strong>Research Buddy (riB)</strong></span>
-          <span class="buddy-sub">Tailored to your profile</span>
+          <span class="buddy-title"><strong>ResBD</strong></span>
+          <span class="buddy-sub" title="Research Buddy: suggests what to read next and what to
+            fix first, from your profile and the papers you tick">Research Buddy · what to read
+            next</span>
           <!-- Icons are inline SVG, not characters. &minus; and &#9633; both
                depend on the system font having those glyphs, and where it does
                not the browser draws the missing-glyph box — which is exactly
@@ -350,14 +352,14 @@
                was invisible until both controls rendered as empty squares. -->
           <span class="buddy-win-actions">
             <button type="button" class="buddy-win-btn" id="buddyMin"
-                    aria-label="Minimise the Research Buddy" title="Minimise">
+                    aria-label="Minimise the ResBD" title="Minimise">
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
                    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
                 <path d="M2.5 6.5h7"/>
               </svg>
             </button>
             <button type="button" class="buddy-win-btn" id="buddyMax"
-                    aria-label="Maximise the Research Buddy" title="Maximise">
+                    aria-label="Maximise the ResBD" title="Maximise">
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
                    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
                 <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1.2"/>
@@ -717,7 +719,10 @@
                immediately above four dropdowns that ARE controls, so the
                expectation that they can be picked comes from their position
                as much as from their styling. -->
-          <p class="engine-bar-note">How each engine is performing — a readout, not a setting. The chart below always shows pi-Dyne's projection.</p>
+          <p class="engine-bar-note">The three learners behind ScholarPi, and how well each is
+          doing against its own starting point. This row is a readout, not a setting — open
+          <em>What does it actually do?</em> on any card for a plain-language description. The
+          chart below always shows PiDN's projection.</p>
 
           <div class="forecast-toolbar">
             <select id="lookbackSelect" class="inline-select">
@@ -817,7 +822,7 @@
           <span class="al-item"><span class="al-swatch sw-intake"></span>Intake &amp; Identity</span>
           <span class="al-item"><span class="al-swatch sw-extract"></span>Extraction &amp; Heuristics</span>
           <span class="al-item"><span class="al-swatch sw-panel"></span>Multi-LLM Panel</span>
-          <span class="al-item"><span class="al-swatch sw-judge"></span>pi-Dyne Judge</span>
+          <span class="al-item"><span class="al-swatch sw-judge"></span>PiDN Judge (adjudication)</span>
           <span class="al-item"><span class="al-swatch sw-chain"></span>Ledger &amp; Chain</span>
           <span class="al-item"><span class="al-swatch sw-ui"></span>Outputs</span>
         </div>
@@ -826,7 +831,7 @@
           <div class="mermaid" id="archDiagram"></div>
         </div>
         <p class="hint diagram-caption">End-to-end processing flow: intake and identity, extraction and
-        deterministic scoring, the independent model panel, pi-Dyne adjudication, and Proof-of-Research
+        deterministic scoring, the independent model panel, PiDN adjudication, and Proof-of-Research
         settlement on Sepolia.</p>
       </div>
 
@@ -864,9 +869,11 @@
             <tr><td><span class="stage-tag st-intake">1</span></td><td>Unified Intake &amp; ZK-Identity Registry</td><td>ORCID iD / W3C DID verification, local PDF, Unpaywall DOI resolution and OpenAlex discovery, ZK double-blind assignment.</td></tr>
             <tr><td><span class="stage-tag st-extract">2</span></td><td>Extraction &amp; Deterministic Scoring</td><td>PyMuPDF layout-aware text extraction, MDAR adherence, RRID validation, reproducibility markers, empirical density.</td></tr>
             <tr><td><span class="stage-tag st-panel">3</span></td><td>Independent Model Panel</td><td>Llama, Mistral, Qwen and Gemini each assess the manuscript separately, alongside the local SciLM (siM) structural analyser.</td></tr>
-            <tr><td><span class="stage-tag st-judge">4</span></td><td>pi-Dyne Adjudication</td><td>Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
+            <tr><td><span class="stage-tag st-judge">4</span></td><td>PiDN Adjudication</td><td>Weighs the panel's independent verdicts into one
+              judgement, and records the criteria weighting this paper implies — the input the
+              PiDN forecast is built from. Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
             <tr><td><span class="stage-tag st-chain">5</span></td><td>Proof-of-Research &amp; Tokenomics</td><td>Block validation, zk-SNARK proof generation, criteria-weight recording, soulbound piQ minting on Sepolia.</td></tr>
-            <tr><td><span class="stage-tag st-ui">6</span></td><td>Dossiers, Cartography &amp; Forecasting</td><td>CoARA/DORA dossiers, AI defence rebuttal strategy, global map of science, pi-Dyne LSTM epoch forecasting.</td></tr>
+            <tr><td><span class="stage-tag st-ui">6</span></td><td>Dossiers, Cartography &amp; Forecasting</td><td>CoARA/DORA dossiers, AI defence rebuttal strategy, global map of science, PiDN LSTM epoch forecasting.</td></tr>
           </tbody>
         </table>
       </div>
@@ -925,7 +932,7 @@
   </div>
 </div>
 
-<script src="app.js?v=81"></script>
-<script src="arcade.js?v=81"></script>
+<script src="app.js?v=83"></script>
+<script src="arcade.js?v=83"></script>
 </body>
 </html>
