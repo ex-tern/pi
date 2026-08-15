@@ -7479,6 +7479,7 @@ async function loadOwnerStats() {
       </div>
       ${idleGroup(d.idle)}`;
     loadSettlementQueue();
+    initGrantPanel();
   } catch (e) {
     // Visible with the reason. A blank panel reads as "nobody has signed up",
     // which is the one wrong thing it could say.
@@ -7530,6 +7531,68 @@ function idleGroup(idle) {
  *  choice rather than an unpaid debt — and nothing ever retried it, so those
  *  papers stayed unsettled permanently.
  */
+/** Owner-only piQ grant. Hidden entirely for everyone else.
+ *
+ *  `sessionState.is_owner` decides whether the panel is even rendered, but it
+ *  is a CONVENIENCE, not the control: the server re-checks ownership against a
+ *  signed session on every call, because anything the browser asserts about
+ *  itself is a claim, not a fact.
+ */
+function initGrantPanel() {
+  const panel = document.getElementById("grantPanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+  panel.classList.remove("hidden");
+
+  const btn = document.getElementById("grantBtn");
+  if (!btn || btn.dataset.bound) return;
+  btn.dataset.bound = "1";
+
+  btn.addEventListener("click", async () => {
+    const msg = document.getElementById("grantMsg");
+    const target = document.getElementById("grantTarget").value.trim();
+    const amount = Number(document.getElementById("grantAmount").value);
+    const reason = document.getElementById("grantReason").value.trim();
+
+    if (!Number.isFinite(amount) || amount === 0) {
+      msg.className = "grant-msg bad";
+      msg.textContent = "Enter an amount.";
+      return;
+    }
+    btn.disabled = true;
+    msg.className = "grant-msg";
+    msg.textContent = "Crediting…";
+    try {
+      // An ORCID looks like 0000-0000-0000-0000; anything starting 0x is a
+      // wallet. Guessing here saves a second field for a value whose shape
+      // already says which it is.
+      const isOrcid = /^\d{4}-\d{4}-\d{4}-[\dX]{4}$/i.test(target);
+      const res = await fetch(`${API}/api/admin/grant?wallet=${encodeURIComponent(Session.wallet)}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          wallet: isOrcid ? "" : target,
+          orcid: isOrcid ? target : "",
+          amount, reason,
+        }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      msg.className = "grant-msg ok";
+      msg.textContent = data.message || "Credited.";
+      // The balance moved, so every view of it has to be re-read rather than
+      // left showing a number that is now wrong.
+      renderSidebar();
+      loadEmissionStatus();
+    } catch (e) {
+      msg.className = "grant-msg bad";
+      msg.textContent = String(e && e.message ? e.message : e);
+    } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
 async function loadSettlementQueue() {
   const panel = document.getElementById("settlementPanel");
   if (!panel) return;
