@@ -74,7 +74,8 @@ from database import (
     store_challenge, get_challenge, record_challenge_attempt,
     set_published, is_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
-    record_llm_review, has_open_review_request, has_human_review, cancel_review_request,
+    record_llm_review, has_open_review_request, open_review_bounty,
+    has_human_review, cancel_review_request,
     add_unsolicited_review,
     count_journal_publications,
     review_owner_key, add_review_rebuttal, rate_review, review_rating_summary,
@@ -690,16 +691,31 @@ def count_assessed_papers() -> int:
 # TOTAL is what a table shows: earned is a fact about the work. Whether it has
 # been released is a fact about an account, and travels alongside as `piq_held`
 # so a reader can still tell the two apart.
+#
+# The total therefore includes escrowed piQ WHETHER OR NOT it has been claimed.
+# It previously dropped the escrowed part the moment the author claimed it, so
+# verifying your own authorship made your paper's piQ fall by exactly the
+# amount you had just been credited, and the paper slid down — sometimes off —
+# every board ranked on piQ. Claiming is a movement between two states of the
+# same award; it does not un-earn anything. `piq_held` (unclaimed) and
+# `piq_claimed` (released) split the escrow, and always sum back to it.
+PIQ_TOTAL_SQL = "(COALESCE(piq_minted, 0) + COALESCE(piq_escrowed, 0))"
 PIQ_SELECT = ("COALESCE(piq_minted, 0) AS piq_minted, "
               "CASE WHEN piq_claimed_at IS NULL THEN COALESCE(piq_escrowed, 0) ELSE 0 END "
-              "AS piq_held")
+              "AS piq_held, "
+              f"{PIQ_TOTAL_SQL} AS piq")
 
 
 def piq_fields(minted, escrowed, claimed_at) -> dict:
-    """The three figures every table reports, from the three stored columns."""
+    """The figures every table reports, from the three stored columns.
+
+    `piq` is stable across a claim; `piq_held` and `piq_claimed` are what move.
+    """
     m = round(safe_float(minted, 0.0), 4)
-    h = 0.0 if claimed_at else round(safe_float(escrowed, 0.0), 4)
-    return {"piq": round(m + h, 4), "piq_minted": m, "piq_held": h}
+    e = round(safe_float(escrowed, 0.0), 4)
+    held = 0.0 if claimed_at else e
+    return {"piq": round(m + e, 4), "piq_minted": m, "piq_held": held,
+            "piq_claimed": round(e - held, 4)}
 
 
 def require_affordable(bal: dict, fee: float, what: str) -> None:
@@ -2425,7 +2441,13 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
                           AND r.reviewer_key = 'llm:panel') AS llm_count,
                       COALESCE(p.reads, 0) AS reads,
                       (SELECT COUNT(*) FROM peer_reviews r
-                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NULL) AS requested
+                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NULL) AS requested,
+                      -- What a reviewer would earn for picking up the open
+                      -- request. Carried here so the badge can name the reward
+                      -- instead of making the reviewer open the dossier to
+                      -- find out whether it is worth their afternoon.
+                      (SELECT COALESCE(MAX(r.bounty), 0) FROM peer_reviews r
+                        WHERE r.eval_hash = p.eval_hash AND r.completed_at IS NULL) AS open_bounty
                FROM papers_assessment p
                ORDER BY COALESCE(p.published_at, p.timestamp) DESC"""
         ).fetchall()
@@ -2438,7 +2460,7 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
     # Column order after adding the two piQ columns:
     #  0 hash  1 title  2 author  3 score  4 minted  5 escrowed  6 claimed_at
     #  7 doi   8 published_at  9 publish_kind  10 fields  11 timestamp
-    # 12 peer  13 llm  14 reads  15 requested
+    # 12 peer  13 llm  14 reads  15 requested  16 open_bounty
     out = []
     for r in rows:
         published, peer, llm = bool(r[8]), int(r[12] or 0), int(r[13] or 0)
@@ -2466,6 +2488,9 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
             "published": published, "publish_kind": (r[9] or "author") if published else None,
             "published_at": r[8], "peer_reviews": peer, "llm_reviewed": bool(llm),
             "review_requested": requested > 0,
+            # The reward on the open request, so the badge can advertise it.
+            # A published, already-reviewed paper can still be carrying one.
+            "review_bounty": round(safe_float(r[16], 0.0), 2) if requested else 0.0,
             "reads": int(r[14] or 0),
             "fields": fields, "assessed_at": r[11],
             # Lets the badge link straight to the manuscript. Without it every
@@ -2483,7 +2508,10 @@ def journal(limit: int = Query(default=100, ge=1, le=300),
                  "verified author then attached their name — review comes first, and nothing "
                  "here can be published without one. Journal-published additionally required a "
                  "DOI that resolves in a registry. Requested means a review has been "
-                 "commissioned and is waiting for a reviewer; it is not a review."),
+                 "commissioned and is waiting for a reviewer; it is not a review, and it can "
+                 "sit alongside the other badges — an already-reviewed or published paper can "
+                 "still have an open request, and the piQ shown on it is what the next "
+                 "reviewer earns."),
     }
 
 
@@ -4981,8 +5009,44 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
     except sqlite3.Error as e:
         add_log(f"Forecast ledger read failed: {e}")
         return {"ready": False, "message": "The Proof-of-Research ledger is unavailable.",
-                "blocks_recorded": 0, "blocks_required": 3, "history": [],
+                "blocks_recorded": 0, "blocks_required": 2, "history": [],
                 "forecast": None, "criteria": []}
+
+    # ---- Make the series reflect the papers, not just the ledger -----------
+    #
+    # An observation is a block whose weights actually differ from the uniform
+    # genesis vector; a block that carries [1.0] * 8 says nothing happened.
+    # When the ledger holds fewer observations than there are assessed papers —
+    # a fresh deployment, blocks written before per-block weighting, or a
+    # ledger that simply has not caught up — the papers still carry their
+    # C1–C8 scores, so the series is replayed from them instead.
+    #
+    # This is what makes the section work from the first assessed manuscript.
+    # Before it, the reconstruction was attempted only after the ledger had
+    # already produced a flat series AND required three reconstructed points to
+    # be usable, so a user with one or two assessed papers was shown "Not
+    # enough ledger history yet" over an empty box — while the data needed to
+    # draw something real sat in papers_assessment the whole time.
+    def _observations(rs):
+        """Indices of blocks that record an actual measurement."""
+        return [i for i, r in enumerate(rs)
+                if any(abs(safe_float(v, 1.0) - 1.0) > 1e-9 for v in r[1:9])]
+
+    forced_source = None
+    if len(_observations(rows)) < 2:
+        reconstructed = reconstruct_weight_history()
+        if len(reconstructed) > len(_observations(rows)):
+            # Block numbering restarts at 1: these are derived observations in
+            # paper order, not ledger blocks, and `series_source` says so.
+            rows = [(i + 1, *w, None) for i, w in enumerate(reconstructed)]
+            forced_source = "reconstructed"
+
+    # How many manuscripts actually exist, so the empty state can tell "nothing
+    # assessed yet" apart from "assessed, but every weight came out uniform".
+    try:
+        papers_assessed = int(count_assessed_papers() or 0)
+    except Exception:
+        papers_assessed = 0
 
     # Two regimes, because "forecast" and "report" are different claims.
     #
@@ -5005,16 +5069,22 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
     # 0.0, and drew eight zero-length bars: a chart that is present, correct,
     # and completely invisible. That is the "forecast shows nothing" state a
     # fresh deployment sits in.
-    only_genesis = len(rows) == 1 and all(
-        abs(safe_float(v, 1.0) - 1.0) < 1e-9 for v in rows[0][1:9])
+    #
+    # The regime is chosen by how many OBSERVATIONS there are, not how many
+    # rows: zero observations is the baseline chart, one is the measured delta,
+    # two or more is a projection. Counting rows instead meant a genesis block
+    # padded the count — and, worse, that two real observations (a direction,
+    # which is projectable) were still routed to the single-point delta.
+    obs_idx = _observations(rows)
+    only_genesis = not obs_idx
 
-    if not only_genesis and len(rows) in (1, 2):
-        if len(rows) == 2:
-            baseline = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
-            current = np.array([safe_float(v, 1.0) for v in rows[1][1:9]], dtype=np.float32)
-        else:
-            baseline = np.full(8, 1.0, dtype=np.float32)
-            current = np.array([safe_float(v, 1.0) for v in rows[0][1:9]], dtype=np.float32)
+    if len(obs_idx) == 1:
+        i_cur = obs_idx[0]
+        current = np.array([safe_float(v, 1.0) for v in rows[i_cur][1:9]], dtype=np.float32)
+        # Measured against the block before it when there is one, and against
+        # the uniform genesis weighting when the observation is the first row.
+        baseline = (np.array([safe_float(v, 1.0) for v in rows[i_cur - 1][1:9]], dtype=np.float32)
+                    if i_cur > 0 else np.full(8, 1.0, dtype=np.float32))
         criteria = []
         for i, key_c in enumerate(CRITERIA_KEYS):
             delta = float(current[i] - baseline[i])
@@ -5033,11 +5103,13 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
             "mode": "delta",
             "method": "observed-delta",
             "message": (
-                "One assessment recorded. This is the measured shift from the genesis "
-                "baseline, not a projection — a trend needs at least two assessed papers "
+                "One assessment recorded. This is the measured shift from the baseline "
+                "weighting, not a projection — a trend needs a second assessed paper "
                 "before a direction can be inferred."
             ),
-            "blocks_recorded": len(rows), "blocks_required": 3,
+            "blocks_recorded": len(rows), "blocks_required": 2,
+            "series_source": forced_source or "ledger",
+            "observations": 1,
             "history": [], "forecast": None,
             "criteria": criteria,
             "insight": (
@@ -5074,23 +5146,39 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
                 "This is the genesis weighting: all eight criteria weighted equally, which is "
                 "where every deployment starts. It is the baseline, not a prediction — assess a "
                 "manuscript and this chart shows how its evidence profile moves the weighting."
+            ) if not papers_assessed else (
+                "The assessed corpus has not moved the weighting off its uniform baseline yet: "
+                "every criterion is carrying equal evidence. This is a measurement, not an "
+                "empty chart — it will separate as the corpus grows."
             ),
-            "blocks_recorded": len(rows), "blocks_required": 3,
+            "blocks_recorded": len(rows), "blocks_required": 2,
+            "series_source": forced_source or "ledger",
+            "observations": 0,
             "history": [], "forecast": None,
             "criteria": criteria,
             "insight": (
                 "Nothing has been assessed yet, so no criterion carries more weight than any "
                 "other. The framework does not assume which criteria matter — it learns that "
                 "from the evidence profiles of the manuscripts it sees."
+            ) if not papers_assessed else (
+                f"{papers_assessed} paper{'s' if papers_assessed != 1 else ''} assessed, and "
+                "the derived weighting is still indistinguishable from uniform — the evidence "
+                "so far is evenly spread across all eight criteria."
             ),
         }
 
     weight_matrix = np.array([[safe_float(v, 1.0) for v in r[1:9]] for r in rows], dtype=np.float32)
 
-    series_source = "ledger"
+    # Belt and braces. Reaching here means at least two observations, so the
+    # series already varies; this only catches a series that varies between
+    # rows but is column-wise constant. Two reconstructed points are enough —
+    # two points are a direction, and Holt projects from a direction. The old
+    # floor of three is what turned a corpus of two assessed papers into "not
+    # enough ledger history".
+    series_source = forced_source or "ledger"
     if float(np.max(np.ptp(weight_matrix, axis=0))) < 1e-6:
         reconstructed = reconstruct_weight_history()
-        if len(reconstructed) >= 3:
+        if len(reconstructed) >= 2:
             weight_matrix = np.array(reconstructed, dtype=np.float32)
             rows = [(i + 1, *w, None) for i, w in enumerate(reconstructed)]
             series_source = "reconstructed"
@@ -5100,12 +5188,14 @@ def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
                 "message": (
                     "The recorded blocks all carry identical criteria weights (they predate "
                     "per-block weighting), and there are not yet enough assessed papers to "
-                    "reconstruct a series. Assess a few manuscripts to build one."
+                    "reconstruct a series. Assess a manuscript to build one."
                 ),
-                "blocks_recorded": len(rows), "blocks_required": 3,
+                "blocks_recorded": len(rows), "blocks_required": 2,
                 "history": [], "forecast": None, "criteria": [],
             }
 
+    # At least one step back, at most everything we have. With two rows this is
+    # 1, which is what makes a two-observation corpus projectable at all.
     actual_lookback = max(1, min(lookback, len(rows) - 1))
 
     try:
@@ -5277,8 +5367,18 @@ def aggregate_author_statistics(rows):
       * `minted`  — released to a verified author. Spendable.
       * `held`    — earned by the paper but not yet released, because
                     authorship has not been verified. Not spendable.
-      * `piq`     — the total the work has earned, minted + held. This is what
-                    the leaderboard ranks and displays.
+      * `claimed` — escrow the author has since claimed. Already credited to
+                    their account, so it is no longer held — but it was still
+                    earned by the work, and the total keeps counting it.
+      * `piq`     — the total the work has earned, minted + held + claimed.
+                    This is what the leaderboard ranks and displays.
+
+    `claimed` exists because of a real regression: an author who verified
+    their authorship and claimed their escrow watched their leaderboard row
+    fall by the amount they had just been paid, because the claim moved the
+    piQ out of `held` and nothing counted it afterwards. Claiming is not
+    un-earning. The total is now invariant across a claim; only the split
+    between held and claimed moves.
 
     The leaderboard ranks on the TOTAL. It previously ranked and displayed
     `minted` alone, which read as 0.00 for every author on a corpus where
@@ -5322,11 +5422,15 @@ def aggregate_author_statistics(rows):
         share = 1.0 / len(names)
         for a in names:
             rec = authors.setdefault(a, {"author": a, "minted": 0.0, "held": 0.0,
-                                         "papers": 0, "_score_sum": 0.0})
+                                         "claimed": 0.0, "papers": 0, "_score_sum": 0.0})
             rec["minted"] += safe_float(piq, 0.0) * share
-            # Escrowed piQ counts as held only while it is unclaimed; once
-            # claimed it has already been minted and would double-count.
-            if not claimed:
+            # Escrow counts either way — as held while unclaimed, as claimed
+            # once released. It is NOT folded into `minted`: releasing escrow
+            # credits the piQ ledger and leaves piq_minted untouched, so adding
+            # it there would double-count against the spendable balance.
+            if claimed:
+                rec["claimed"] += escrowed * share
+            else:
                 rec["held"] += escrowed * share
             # Papers are NOT split. Co-authoring a paper is authoring it — a
             # five-author paper is one paper each, not a fifth of one.
@@ -5337,8 +5441,10 @@ def aggregate_author_statistics(rows):
         rec["avg_score"] = round(rec["_score_sum"] / rec["papers"], 2) if rec["papers"] else 0.0
         rec["minted"] = round(rec["minted"], 2)
         rec["held"] = round(rec["held"], 2)
+        rec["claimed"] = round(rec["claimed"], 2)
         # `piq` is the total, and is the field the leaderboard sorts and shows.
-        rec["piq"] = round(rec["minted"] + rec["held"], 2)
+        # Invariant across a claim: claiming moves piQ from held to claimed.
+        rec["piq"] = round(rec["minted"] + rec["held"] + rec["claimed"], 2)
         del rec["_score_sum"]
         results.append(rec)
     return results
@@ -5586,9 +5692,10 @@ def analytics_top_papers(
     # Sorting by piQ orders by the TOTAL, which is the figure the column
     # displays. Ordering by piq_minted while showing minted+held would put rows
     # out of sequence with their own numbers.
+    # Escrow is counted claimed or not — the same rule piq_fields() displays by,
+    # so claiming cannot move a paper's rank.
     sort_col = {"score": "final_score",
-                "piq": ("(COALESCE(piq_minted,0) + CASE WHEN piq_claimed_at IS NULL "
-                        "THEN COALESCE(piq_escrowed,0) ELSE 0 END)"),
+                "piq": PIQ_TOTAL_SQL,
                 "date": "timestamp", "title": "title", "logic": "logic_score"}[sort]
     order_sql = "DESC" if order == "desc" else "ASC"
 
@@ -5859,8 +5966,9 @@ def explorer_search(q: str = Query(default="")):
 _EXPLORER_SORTS = {
     "date": "p.timestamp",
     "score": "p.final_score",
-    "piq": ("(COALESCE(p.piq_minted,0) + CASE WHEN p.piq_claimed_at IS NULL "
-            "THEN COALESCE(p.piq_escrowed,0) ELSE 0 END)"),
+    # Total earned, claimed or not — see PIQ_TOTAL_SQL. Claiming an award must
+    # not reorder the explorer.
+    "piq": "(COALESCE(p.piq_minted,0) + COALESCE(p.piq_escrowed,0))",
     "title": "p.title",
     "author": "p.author_name",
 }
@@ -6012,7 +6120,11 @@ def explorer_dossier(eval_hash: str, request: Request = None,
     # A request is a weaker claim than a review and is carried separately, so
     # the marker can never be mistaken for the badge.
     dossier["review_requested"] = has_open_review_request(eval_hash)
-    dossier["review_bounty"] = peer_review_fee()["fee"]
+    # The reward actually escrowed on the open request, not the standard fee —
+    # a requester who offered more to attract a reviewer should have that
+    # number shown, and it is the figure the badge advertises.
+    dossier["review_bounty"] = (open_review_bounty(eval_hash)
+                                or peer_review_fee()["fee"])
 
     # Opening the full dossier is what counts as a read. Not a leaderboard row
     # scrolling past, not a card in a list — someone opened the record and

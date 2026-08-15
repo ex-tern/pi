@@ -1060,14 +1060,99 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .pick-meta { font-size: 11px; color: var(--faint); margin-bottom: 5px; }
 .pick-why { font-size: 12px; color: #334155; line-height: 1.55; margin: 0; }
 
-/* ---- Research Buddy: collapsible ---- */
-.buddy-card > summary {
-  cursor: pointer; display: flex; align-items: center; justify-content: space-between;
-  gap: 10px; font-size: 14px;
+/* ---- Research Buddy: floating window ----------------------------------
+   Fixed to the viewport, draggable by its bar, minimisable to the bar alone
+   and maximisable to most of the screen. It sits inside #tab-assess, so the
+   tab machinery (.tab-panel { display: none }) hides it on every other tab
+   without any JavaScript needing to know about it.
+
+   z-index sits below the modal overlay: a dialog must always be able to cover
+   the buddy, never the other way round. */
+.buddy-float {
+  /* Clear of the floating GitHub link (42px + 18px inset), which shares
+     this corner and this z-index. */
+  position: fixed; right: 22px; bottom: 76px; z-index: 60;
+  width: 340px; max-width: calc(100vw - 32px);
+  display: flex; flex-direction: column;
+  background: var(--card-bg); border: 1px solid var(--border-strong);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius);
+  box-shadow: 0 10px 30px -8px rgba(15, 23, 42, 0.28), 0 2px 6px rgba(15, 23, 42, 0.06);
+  /* Height is driven by content up to a ceiling; the body scrolls past it, so
+     a long buddy can never grow taller than the window it floats over. */
+  max-height: min(60vh, 560px);
+  overflow: hidden;
 }
-.buddy-card > summary::marker { color: var(--faint); }
-.buddy-card[open] > summary {
-  margin-bottom: 14px; padding-bottom: 12px; border-bottom: 1px solid var(--border);
+.buddy-float.hidden { display: none; }
+
+.buddy-bar {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 10px 9px 13px;
+  background: var(--accent-soft); border-bottom: 1px solid var(--border);
+  cursor: grab; user-select: none; flex: 0 0 auto;
+}
+.buddy-bar:active { cursor: grabbing; }
+
+/* riB's face. Blinks on a slow cycle — a mascot with fixed eyes reads as a
+   logo, and the point of a buddy is that it looks like it is paying
+   attention. The transform is on the pupil group only, so a blink costs one
+   composited transform rather than a repaint of the whole head. */
+.rib-face { width: 26px; height: 26px; flex: 0 0 auto; display: block; }
+.rib-face .rib-eyes { transform-origin: 24px 22.4px; animation: ribBlink 6.4s infinite; }
+@keyframes ribBlink {
+  0%, 92%, 100% { transform: scaleY(1); }
+  94%, 96%      { transform: scaleY(0.1); }
+}
+.buddy-float.is-min .rib-face { width: 22px; height: 22px; }
+@media (prefers-reduced-motion: reduce) {
+  .rib-face .rib-eyes { animation: none; }
+}
+
+.buddy-title { font-size: 13px; color: var(--text); }
+.buddy-sub {
+  font-size: 10.5px; color: var(--faint); margin-left: auto;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.buddy-actions { display: flex; gap: 4px; flex: 0 0 auto; }
+.buddy-btn {
+  width: 22px; height: 22px; padding: 0; line-height: 1;
+  display: inline-flex; align-items: center; justify-content: center;
+  font-size: 13px; color: var(--muted); cursor: pointer;
+  background: transparent; border: 1px solid transparent; border-radius: 5px;
+}
+.buddy-btn:hover { background: #fff; border-color: var(--border); color: var(--text); }
+
+.buddy-scroll { padding: 13px; overflow-y: auto; flex: 1 1 auto; }
+
+/* Minimised: the bar alone. Kept as a real element rather than being replaced
+   by a separate launcher, so drag position and maximise state survive it. */
+.buddy-float.is-min { max-height: none; }
+.buddy-float.is-min .buddy-scroll,
+.buddy-float.is-min .buddy-resize { display: none; }
+.buddy-float.is-min .buddy-sub { display: none; }
+
+/* Maximised: anchored to the viewport rather than resized in place, so it
+   lands somewhere predictable however far it had been dragged. */
+.buddy-float.is-max {
+  right: 3vw; bottom: 4vh; left: auto; top: auto;
+  width: min(760px, 94vw);
+  max-height: 84vh;
+}
+
+.buddy-resize {
+  position: absolute; right: 2px; bottom: 2px; width: 14px; height: 14px;
+  cursor: nwse-resize;
+  background:
+    linear-gradient(135deg, transparent 0 45%, var(--border-strong) 45% 55%, transparent 55% 70%,
+                    var(--border-strong) 70% 80%, transparent 80%);
+}
+.buddy-float.is-max .buddy-resize { display: none; }
+
+/* On a phone the window spans the width and sits above the thumb, because a
+   340px draggable panel on a 360px screen is a modal that pretends not to be. */
+@media (max-width: 640px) {
+  .buddy-float { left: 10px; right: 10px; bottom: 70px; width: auto; max-height: 52vh; }
+  .buddy-float.is-max { left: 6px; right: 6px; bottom: 6px; width: auto; max-height: 88vh; }
 }
 
 /* --- Assessment history, bug report, profile reset ---------------------- */

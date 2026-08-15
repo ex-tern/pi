@@ -2830,12 +2830,30 @@ def has_open_review_request(eval_hash: str) -> bool:
     """Whether someone has asked for this paper to be reviewed and nobody has yet.
 
     This is what the "Requested to be reviewed" marker is drawn from. It is a
-    request, not a credential, and it disappears the moment a review lands —
-    at which point the Peer-reviewed badge is the honest thing to show instead.
+    request, not a credential. It survives alongside the Peer-reviewed badge:
+    a paper that has been reviewed once can still have an open request on it,
+    and hiding that would strand the request — and the reward attached to it —
+    where no reviewer can find it.
     """
     return bool(query_one(
         "SELECT 1 FROM peer_reviews WHERE eval_hash = ? AND completed_at IS NULL LIMIT 1",
         (eval_hash,)))
+
+
+def open_review_bounty(eval_hash: str) -> float:
+    """The largest reward waiting on an open review request for this paper.
+
+    MAX rather than SUM: a reviewer fulfils one request and is paid for that
+    one, so the sum would advertise money nobody can earn in a single sitting.
+    Zero means either no open request or one opened with no bounty attached.
+    """
+    row = query_one(
+        "SELECT COALESCE(MAX(bounty), 0) FROM peer_reviews "
+        "WHERE eval_hash = ? AND completed_at IS NULL", (eval_hash,))
+    try:
+        return round(float(row[0] or 0), 4) if row else 0.0
+    except (TypeError, ValueError):
+        return 0.0
 
 
 def has_human_review(eval_hash: str) -> bool:
