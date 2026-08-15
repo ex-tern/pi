@@ -260,6 +260,7 @@
         ? "All fields"
         : `${shown} of ${total}${active.length ? " · " + active.join(", ") : ""}`;
     }
+    legendPage.offset = 0;
     renderLegend();
   }
 
@@ -278,6 +279,37 @@
     // Hiding the control when the corpus has no authors is more honest than
     // showing a filter that can only ever return nothing.
     if (wrap) wrap.classList.toggle("hidden", state.authors.length === 0);
+  }
+
+  // Which page of the legend is showing, and how many rows fit on one.
+  //
+  // The table lists every field in the corpus, which on a mature deployment is
+  // dozens of rows in a sidebar column — so it was scrolled, which works but
+  // hides how much there is and gives no way to jump. Paging states the size
+  // ("Page 2 of 4 · 47 total") and keeps the panel a fixed height whatever the
+  // corpus does.
+  const legendPage = { offset: 0, limit: 6, total: 0 };
+
+  function renderLegendPager(reload) {
+    const el = document.getElementById("arcadeLegendPager");
+    if (!el) return;
+    const pages = Math.max(1, Math.ceil(legendPage.total / legendPage.limit));
+    if (pages <= 1) { el.innerHTML = ""; return; }
+    const current = Math.floor(legendPage.offset / legendPage.limit) + 1;
+    el.innerHTML = `
+      <button class="btn btn-ghost" id="legendPrev" ${current <= 1 ? "disabled" : ""}>‹</button>
+      <span class="page-indicator">Page ${current} of ${pages} · ${legendPage.total} fields</span>
+      <button class="btn btn-ghost" id="legendNext" ${current >= pages ? "disabled" : ""}>›</button>`;
+    document.getElementById("legendPrev").addEventListener("click", () => {
+      legendPage.offset = Math.max(0, legendPage.offset - legendPage.limit);
+      reload();
+    });
+    document.getElementById("legendNext").addEventListener("click", () => {
+      if (legendPage.offset + legendPage.limit < legendPage.total) {
+        legendPage.offset += legendPage.limit;
+        reload();
+      }
+    });
   }
 
   function renderLegend() {
@@ -302,15 +334,29 @@
 
     if (!rows.length) {
       body.innerHTML = `<tr><td colspan="4" class="arcade-detail-empty">No fields match.</td></tr>`;
+      legendPage.total = 0;
+      renderLegendPager(renderLegend);
       return;
     }
-    body.innerHTML = rows.map(r => `
+
+    // Clamp before slicing. Filtering the map can shrink the list under the
+    // current offset, which would otherwise leave the table blank on a page
+    // that no longer exists — with a pager saying "Page 4 of 2".
+    legendPage.total = rows.length;
+    if (legendPage.offset >= rows.length) {
+      legendPage.offset = Math.max(0, (Math.ceil(rows.length / legendPage.limit) - 1)
+                                      * legendPage.limit);
+    }
+    const pageRows = rows.slice(legendPage.offset, legendPage.offset + legendPage.limit);
+
+    body.innerHTML = pageRows.map(r => `
       <tr data-field="${escapeHtml(r.field)}">
         <td><span class="arcade-swatch" style="background:${colorFor(r.field)}"></span></td>
         <td>${escapeHtml(r.field)}</td>
         <td class="num">${r.papers}</td>
         <td class="num">${r.avg_score === null || r.avg_score === undefined ? "—" : r.avg_score.toFixed(1)}</td>
       </tr>`).join("");
+    renderLegendPager(renderLegend);
   }
 
   /** Centre the camera on a field and select it — the legend's focus action. */
