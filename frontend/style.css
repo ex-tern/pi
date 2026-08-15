@@ -2239,3 +2239,15 @@ button.seal { font-family: inherit; cursor: pointer; }
   border-left: 2px solid rgba(170, 51, 51, 0.4);
   padding: 5px 8px; border-radius: 3px;
 }
+
+
+/* --- Owner: piQ grant ---------------------------------------------------- */
+.grant-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
+.grant-field { display: flex; flex-direction: column; gap: 3px; font-size: 11px; color: var(--muted); }
+.grant-field input {
+  font-size: 12px; padding: 6px 8px; border: 1px solid var(--border);
+  border-radius: 7px; font-family: inherit; width: 100%;
+}
+.grant-msg { font-size: 11px; line-height: 1.5; }
+.grant-msg.ok { color: var(--success); }
+.grant-msg.bad { color: var(--danger); }

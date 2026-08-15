@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=83">
+<link rel="stylesheet" href="style.css?v=84">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -142,6 +142,28 @@
     <details class="sidebar-expander hidden" id="settlementPanel">
       <summary>On-chain settlement</summary>
       <div id="settlementBody"></div>
+    </details>
+
+    <!-- Owner only. Credits piQ for testing a paid path without hand-editing
+         the database — a hand-written UPDATE is unattributable and easy to get
+         subtly wrong, while this writes one audited ledger row. -->
+    <details class="sidebar-expander hidden" id="grantPanel">
+      <summary>Grant piQ (owner)</summary>
+      <div class="grant-body">
+        <p class="hint">Credits piQ to an identity as a ledger entry, with a reason. Leave the
+        recipient blank to credit the owner wallet. A negative amount reverses a grant.</p>
+        <label class="grant-field">Recipient
+          <input type="text" id="grantTarget" placeholder="wallet or ORCID — blank = you">
+        </label>
+        <label class="grant-field">Amount
+          <input type="number" id="grantAmount" value="1000" min="0.01" step="1">
+        </label>
+        <label class="grant-field">Reason
+          <input type="text" id="grantReason" value="Testing" maxlength="120">
+        </label>
+        <button class="btn btn-quiet btn-block" id="grantBtn">Credit piQ</button>
+        <div class="grant-msg" id="grantMsg"></div>
+      </div>
     </details>
 
     <details class="sidebar-expander hidden" id="ownerStatsPanel">
@@ -932,7 +954,7 @@
   </div>
 </div>
 
-<script src="app.js?v=83"></script>
-<script src="arcade.js?v=83"></script>
+<script src="app.js?v=84"></script>
+<script src="arcade.js?v=84"></script>
 </body>
 </html>

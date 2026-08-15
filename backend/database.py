@@ -834,6 +834,46 @@ def refund_piq_fee(amount: float, wallet: str = "", orcid: str = "",
         conn.close()
 
 
+def grant_piq(amount: float, wallet: str = "", orcid: str = "",
+              reason: str = "Owner grant") -> dict:
+    """Credit piQ to an identity, as an auditable ledger entry.
+
+    Deliberately a LEDGER WRITE and nothing else. The alternative — raising
+    `piq_minted` on some paper — would attribute the piQ to work that did not
+    earn it, corrupt the emission totals the Envision tab reports, and leave no
+    trace of who created it or why. A ledger row is reversible, attributable
+    and shows up in the fee history like every other movement.
+
+    Returns the identity credited and the resulting balance so the caller can
+    report both rather than asserting success.
+    """
+    amt = round(float(amount), 4)
+    if amt <= 0:
+        return {"granted": 0.0, "reason": "A grant must be a positive amount."}
+    keys = _account_keys(wallet, orcid)
+    if not keys:
+        return {"granted": 0.0, "reason": "No identity to credit."}
+    kind, account = keys[0]
+    conn = get_db_connection()
+    try:
+        conn.execute(
+            "INSERT INTO piq_ledger (account, account_kind, delta, reason, eval_hash) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (account, kind, amt, (reason or "Owner grant")[:200], ""),
+        )
+        conn.commit()
+    except sqlite3.Error as e:
+        conn.rollback()
+        logging.warning("piQ grant failed for %s: %s", account[:12], e)
+        return {"granted": 0.0, "reason": "The grant could not be recorded."}
+    finally:
+        conn.close()
+    return {
+        "granted": amt, "account": account, "account_kind": kind,
+        "balance": get_piq_balance(wallet, orcid)["balance"], "reason": "",
+    }
+
+
 def get_piq_fee_history(wallet: str = "", orcid: str = "", limit: int = 25) -> list:
     keys = _account_keys(wallet, orcid)
     if not keys:

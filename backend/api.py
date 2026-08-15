@@ -70,7 +70,7 @@ from database import (
     store_bug_report, mark_bug_report_delivered, list_bug_reports, CONTACT_KINDS,
     get_arcade_progress, record_arcade_run, reset_arcade_difficulty, arcade_leaderboard,
     list_unclaimed_escrow, disown_escrow, list_disowned,
-    list_unsettled_mintable, record_settlement, real_doi,
+    list_unsettled_mintable, record_settlement, real_doi, grant_piq,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
     list_escrowed_for_identity, total_escrowed, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
@@ -3631,6 +3631,72 @@ def start_auto_settlement():
     logging.info("Automatic settlement on: up to %d records every %ds.",
                  AUTO_SETTLE_BATCH, AUTO_SETTLE_INTERVAL_SECONDS)
     return True
+
+
+class GrantRequest(BaseModel):
+    """An owner-issued piQ credit. Amount is bounded at the edge."""
+    wallet: str = ""
+    orcid: str = ""
+    amount: float = 0.0
+    reason: str = "Owner grant"
+
+
+# The ceiling is a guard against a slipped decimal point, not a policy: an
+# owner who genuinely wants more can issue two grants, and each one is a
+# separate audited row.
+MAX_SINGLE_GRANT = 100_000.0
+
+
+@app.post("/api/admin/grant")
+def admin_grant(req: GrantRequest, request: Request, wallet: str = Query(default="")):
+    """Credit piQ to an identity. Owner only, and written to the ledger.
+
+    Exists so testing a paid path does not require hand-editing the database.
+    A hand-written UPDATE is unattributable, unreversible and easy to get
+    subtly wrong — raising `piq_minted` on a paper, for instance, would credit
+    the balance AND inflate the corpus emission totals, which are a published
+    figure. This writes one ledger row with a reason, which is the same
+    mechanism every fee, refund and escrow release already uses.
+
+    `require_owner` demands a session token minted from an EIP-191 signature by
+    OWNER_ID. OWNER_ID is public — it is served at /api/chain/status — so a
+    query parameter alone would let any reader mint themselves piQ.
+    """
+    require_owner(request, wallet)
+
+    if req.amount <= 0:
+        raise HTTPException(status_code=400, detail="A grant must be a positive amount.")
+    if req.amount > MAX_SINGLE_GRANT:
+        raise HTTPException(
+            status_code=400,
+            detail=f"A single grant is capped at {MAX_SINGLE_GRANT:,.0f} piQ. "
+                   f"Issue several if you genuinely need more.")
+
+    target_wallet = (req.wallet or "").strip()
+    target_orcid = (req.orcid or "").strip()
+    if not target_wallet and not target_orcid:
+        # Defaulting to the owner's own wallet is the common case — "give me
+        # some piQ so I can test" — and saves pasting an address you are
+        # already signed in as.
+        target_wallet = OWNER_ID or ""
+    if not target_wallet and not target_orcid:
+        raise HTTPException(status_code=400,
+                            detail="No recipient given and OWNER_ID is not configured.")
+
+    result = grant_piq(req.amount, target_wallet, target_orcid,
+                       reason=f"Owner grant: {(req.reason or '').strip()[:120]}".strip(": "))
+    if not result.get("granted"):
+        raise HTTPException(status_code=400, detail=result.get("reason") or "Grant failed.")
+
+    who = result.get("account", "")
+    add_log(f"Owner granted {result['granted']:.2f} piQ to {who[:16]}… "
+            f"(balance now {result['balance']:.2f}).")
+    return {
+        **result,
+        "message": (f"{result['granted']:.2f} piQ credited to {who}. "
+                    f"Balance is now {result['balance']:.2f} piQ. This is a ledger entry — "
+                    f"it appears in the fee history and can be reversed with a negative grant."),
+    }
 
 
 @app.get("/api/admin/settlement")
