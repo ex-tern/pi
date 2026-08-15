@@ -363,9 +363,11 @@ const HELP = {
         <li><strong>Block hash</strong> — chains to its predecessor, so altering any historical
           block invalidates every block after it.</li>
         <li><strong>Validator</strong> — HMAC signature over the block index and timestamp.</li>
-        <li><strong>Settlement</strong> — "On-chain" links to the Sepolia transaction that minted
-          the piQ. "Local" means the block exists but was not settled on-chain, usually because no
-          signing key is configured or the wallet has no gas.</li>
+        <li><strong>Settlement</strong> — "On-chain" links to the transaction that minted the
+          piQ. "Pending" means piQ was earned against a connected wallet and the mint has not
+          landed yet; it is retried automatically. "Local" means no wallet is attached to the
+          assessment, so there is nothing to settle — that is its finished state, not a
+          failure.</li>
       </ul>
       <h4>On-chain addresses</h4>
       <div id="chainAddressList" class="addr-list"><span class="hint">Loading addresses…</span></div>`,
@@ -1489,27 +1491,26 @@ function renderResearchBuddy(profile) {
     // it is empty. "Fill in your profile" gives no reason to; a checklist of
     // what is still missing plus what each item unlocks does.
     const checklist = [
-      ["Research fields", fields.length > 0,
-       "compares your fields against everything assessed here"],
-      ["Keywords and Focus areas", Boolean(goal),
-       "finds papers in the corpus worth reading"],
-      ["Core ideas", Boolean(idea),
-       "checks whether your framing is already crowded"],
+      ["Your fields", fields.length > 0,
+       "see how busy they are here"],
+      ["Keywords", Boolean(goal),
+       "find papers worth reading"],
+      ["Your main idea", Boolean(idea),
+       "see who else is working on it"],
     ];
     const done = checklist.filter(c => c[1]).length;
 
     body.innerHTML = `
       <div class="buddy-onboard">
-        <p class="buddy-onboard-lede">Your Research Buddy (riB) is <strong>not active yet</strong>.
-        It works from the profile above — without it there is nothing to reason from, and
-        inventing advice would be worse than saying so.</p>
+        <p class="buddy-onboard-lede">riB is <strong>not on yet</strong>. It reads your profile
+        above. With nothing to read, it would just be making things up — so it waits.</p>
 
         <div class="buddy-progress">
           <div class="buddy-progress-track">
             <div class="buddy-progress-fill" style="width:${(done / checklist.length) * 100}%"></div>
           </div>
-          <span class="buddy-progress-label">${done} of ${checklist.length} filled${
-            filled >= 2 ? "" : ` — ${2 - filled} more to activate`}</span>
+          <span class="buddy-progress-label">${done} of ${checklist.length} done${
+            filled >= 2 ? "" : ` — fill in ${2 - filled} more`}</span>
         </div>
 
         <ul class="buddy-checklist">
@@ -1520,9 +1521,9 @@ function renderResearchBuddy(profile) {
             </li>`).join("")}
         </ul>
 
-        <p class="buddy-onboard-foot">Once two of these are filled it will tell you which of your
-        fields is most crowded, where your work is most likely to be seen, and what to fix first.
-        Nothing here is scored or shared — the profile only shapes advice.</p>
+        <p class="buddy-onboard-foot">Fill in any two and riB will tell you which of your fields
+        is busiest, where your work is most likely to be noticed, and what to fix first. None of
+        this is scored or shared. It only shapes the advice you get.</p>
 
         <!-- The second requirement, stated here because it is easy to satisfy
              the profile and still see nothing. riB reads only the papers that
@@ -1532,9 +1533,9 @@ function renderResearchBuddy(profile) {
         <div class="buddy-onboard-step${buddySelection.size ? " bc-done" : ""}">
           <span class="bc-mark" aria-hidden="true">${buddySelection.size ? "✓" : "○"}</span>
           <span><strong>Papers to read${buddySelection.size
-            ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the papers you want riB to
-            reason from, under <em>Your assessments</em>. It reads only what you choose, so it
-            never gives you advice assembled from someone else's work.</span>
+            ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the ones you want riB to use,
+            under <em>Your assessments</em>. It reads only what you tick, so its advice is never
+            built from someone else's work.</span>
         </div>
 
         <button class="btn btn-primary" id="buddyGoProfile">Fill in your profile</button>
@@ -1749,6 +1750,22 @@ function initBuddyWindow() {
   if (!win || !bar || win.dataset.bound) return;
   win.dataset.bound = "1";
 
+  // Icons live here, next to the code that swaps them, and are inline SVG for
+  // the same reason the markup is: a character entity depends on the system
+  // font having the glyph, and when it does not the browser draws a box.
+  const ICON = {
+    min: `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none"
+            stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M2.5 6.5h7"/></svg>`,
+    max: `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none"
+            stroke="currentColor" stroke-width="1.6" stroke-linejoin="round"><rect x="2.2" y="2.2"
+            width="7.6" height="7.6" rx="1.2"/></svg>`,
+    // Restore down: two offset panes, the convention every desktop window uses.
+    restore: `<svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true" fill="none"
+            stroke="currentColor" stroke-width="1.5" stroke-linejoin="round"><rect x="1.6" y="3.6"
+            width="6.8" height="6.8" rx="1.1"/><path d="M4 3.6V2.4A1 1 0 0 1 5 1.4h5A1 1 0 0 1 11
+            2.4v5a1 1 0 0 1-1 1H8.4"/></svg>`,
+  };
+
   const KEY = "sp_buddy_win";
   const read = () => {
     try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; }
@@ -1788,7 +1805,7 @@ function initBuddyWindow() {
     win.classList.toggle("is-min", on);
     const btn = document.getElementById("buddyMin");
     if (btn) {
-      btn.innerHTML = on ? "&#9633;" : "&minus;";
+      btn.innerHTML = on ? ICON.max : ICON.min;
       btn.title = on ? "Restore" : "Minimise";
       btn.setAttribute("aria-label", on ? "Restore the Research Buddy"
                                         : "Minimise the Research Buddy");
@@ -1807,7 +1824,7 @@ function initBuddyWindow() {
     const btn = document.getElementById("buddyMax");
     if (btn) {
       btn.title = on ? "Restore down" : "Maximise";
-      btn.innerHTML = on ? "&#10064;" : "&#9633;";
+      btn.innerHTML = on ? ICON.restore : ICON.max;
     }
     write({ max: on });
   }
@@ -1828,7 +1845,7 @@ function initBuddyWindow() {
 
   // Double-clicking the bar toggles minimise, the way a title bar usually does.
   bar.addEventListener("dblclick", (e) => {
-    if (e.target.closest(".buddy-btn")) return;
+    if (e.target.closest(".buddy-win-btn")) return;
     if (win.classList.contains("is-max")) setMax(false);
     setMin(!win.classList.contains("is-min"));
   });
@@ -1840,7 +1857,7 @@ function initBuddyWindow() {
   // drop.
   let drag = null;
   bar.addEventListener("pointerdown", (e) => {
-    if (e.target.closest(".buddy-btn")) return;      // buttons are not a handle
+    if (e.target.closest(".buddy-win-btn")) return;  // controls are not a handle
     if (win.classList.contains("is-max")) return;    // maximised does not move
     const r = win.getBoundingClientRect();
     drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
@@ -5819,6 +5836,30 @@ async function loadExplorer() {
   }
 }
 
+/** The Settlement cell.
+ *
+ *  Three states, because the two the table used to have were hiding the one
+ *  distinction an operator actually needs. A record with no wallet attached
+ *  can never settle and is finished; a record with earned piQ whose mint has
+ *  not landed is money the deployment owes. Both rendered as "Local", so a
+ *  stalled settlement queue looked exactly like a healthy corpus.
+ *
+ *  Falls back to the old two-state logic when `settlement` is absent, so a
+ *  browser holding a cached page against a newer server still renders.
+ */
+function settlementCell(r) {
+  const state = r.settlement || (r.settled ? "on-chain" : "local");
+  const note = r.settlement_note || "";
+  if (state === "on-chain" && r.explorer_url) {
+    return `<a href="${escapeHtml(r.explorer_url)}" target="_blank" rel="noopener"
+              class="pill q-high" title="${escapeHtml(note)}">On-chain</a>`;
+  }
+  if (state === "pending") {
+    return `<span class="pill p-pending" title="${escapeHtml(note)}">Pending</span>`;
+  }
+  return `<span class="pill pill-muted" title="${escapeHtml(note)}">Local</span>`;
+}
+
 /** Draw the current page of the chain table. Called on load and on paging. */
 function renderExplorerChain() {
   const container = document.getElementById("explorerResults");
@@ -5843,9 +5884,7 @@ function renderExplorerChain() {
             <td><code class="mono">${escapeHtml((r.validator_node || "—").replace("Validator_Pi_", ""))}</code></td>
             <td class="num strong">${(r.score || 0).toFixed(1)}</td>
             <td class="num">${Number(r.piq || 0).toFixed(3)}</td>
-            <td>${r.settled && r.explorer_url
-              ? `<a href="${escapeHtml(r.explorer_url)}" target="_blank" rel="noopener" class="pill q-high">On-chain</a>`
-              : `<span class="pill pill-muted">Local</span>`}</td>
+            <td>${settlementCell(r)}</td>
           </tr>`).join("") +
         `</tbody></table></div>
         <div class="pagination" id="explorerPager"></div>

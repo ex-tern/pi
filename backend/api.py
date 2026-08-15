@@ -54,6 +54,7 @@ from config import (
     DEEPSEEK_API_KEY, TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
     CHAIN_ID, CHAIN_NAME, CHAIN_CURRENCY, BLOCK_EXPLORER_URL, ETH_ADMIN_PRIVATE_KEY,
     TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK, USE_LSTM_FORECAST,
+    ENABLE_AUTO_SETTLEMENT, AUTO_SETTLE_BATCH, AUTO_SETTLE_INTERVAL_SECONDS,
 )
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
@@ -355,6 +356,13 @@ def on_startup():
         idle_worker.start()
     except Exception as e:
         logging.warning("Idle assessment worker could not start: %s", e)
+
+    # Drains the settlement queue on a timer. Daemon thread, same as above, so
+    # it cannot delay the healthcheck or hold the process open on shutdown.
+    try:
+        start_auto_settlement()
+    except Exception as e:
+        logging.warning("Automatic settlement could not start: %s", e)
 
     verdict = (PERSISTENCE_REPORT or {}).get("verdict")
     backups_on = False
@@ -716,6 +724,51 @@ def piq_fields(minted, escrowed, claimed_at) -> dict:
     held = 0.0 if claimed_at else e
     return {"piq": round(m + e, 4), "piq_minted": m, "piq_held": held,
             "piq_claimed": round(e - held, 4)}
+
+
+ZERO_ADDRESS = "0x0000000000000000000000000000000000000000"
+
+
+def is_tx_hash(tx) -> bool:
+    """A real transaction hash, as opposed to a stored failure message.
+
+    `tx_hash` is overloaded: on a successful mint it holds the hash, and on a
+    skip it holds the REASON as plain text ("Eth Tx Skipped: no admin signing
+    key configured"). Anything that is not 0x + 64 hex is therefore an
+    explanation, not a settlement.
+    """
+    return bool(tx and isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66)
+
+
+def settlement_state(tx, wallet, minted) -> dict:
+    """What the Settlement column should say, and why.
+
+    Three states, because two were hiding a real distinction. A paper assessed
+    for an author who never connected a wallet has nowhere to settle TO — it is
+    finished, and "Local" is the whole truth. A paper with a wallet and minted
+    piQ whose transaction never landed is a debt the deployment owes, and it
+    was rendering identically to the first. An operator reading that column
+    could not tell a healthy corpus from a stalled settlement queue.
+    """
+    if is_tx_hash(tx):
+        return {"state": "on-chain", "label": "On-chain",
+                "note": "Minted on the settlement chain. Opens the transaction."}
+
+    has_wallet = bool(wallet) and str(wallet) not in ("", "None", ZERO_ADDRESS)
+    if has_wallet and safe_float(minted, 0.0) > 0:
+        # The stored text IS the reason it did not settle, so it is passed
+        # through rather than replaced with a generic message.
+        reason = str(tx or "").strip()
+        generic = ("This assessment earned piQ against a connected wallet, but the mint has not "
+                   "landed yet. It is queued and will be retried.")
+        return {"state": "pending", "label": "Pending",
+                "note": f"{generic} Last attempt: {reason[:160]}" if reason and reason != "Simulated_Ledger_Record"
+                        else generic}
+
+    return {"state": "local", "label": "Local",
+            "note": ("Recorded in the Proof-of-Research ledger only. No wallet is attached to "
+                     "this assessment, so there is nothing to settle on-chain — this is the "
+                     "finished state for it, not a pending one.")}
 
 
 def require_affordable(bal: dict, fee: float, what: str) -> None:
@@ -3448,6 +3501,119 @@ def admin_overview(request: Request, wallet: str = Query(default="")):
     return stats
 
 
+def settlement_blockers() -> list:
+    """Why settlement cannot run right now, in the operator's own terms.
+
+    Named specifically rather than as a generic failure: "settlement
+    unavailable" is not actionable, "PIQ_CONTRACT_ADDRESS is not set" is an
+    instruction. Shared by the admin view and the automatic sweep so the queue
+    page and the background worker can never disagree about why nothing moved.
+    """
+    blockers = []
+    if not PIQ_CONTRACT_ADDRESS:
+        blockers.append("PIQ_CONTRACT_ADDRESS is not set — there is no contract to mint against.")
+    if not ETH_ADMIN_PRIVATE_KEY:
+        blockers.append("ETH_ADMIN_PRIVATE_KEY is not set — nothing can sign a transaction.")
+    try:
+        if (get_chain_status() or {}).get("connected") is False:
+            blockers.append(f"No {CHAIN_NAME} RPC endpoint is reachable.")
+    except Exception:                                            # noqa: BLE001
+        blockers.append(f"The {CHAIN_NAME} RPC endpoint could not be queried.")
+    return blockers
+
+
+def settle_batch(limit: int = 10) -> dict:
+    """Mint outstanding records, one transaction each. Returns what happened.
+
+    One transaction per record rather than a batch call: each mint costs gas
+    and can fail independently, and a partial batch that reverts as a unit
+    would lose the successes with it.
+    """
+    settled, failed = [], []
+    for paper in list_unsettled_mintable(limit=limit):
+        try:
+            tx = mint_pi_quotient_token(paper["wallet"], paper["piq"],
+                                        paper["eval_hash"], "")
+        except Exception as e:                                   # noqa: BLE001
+            failed.append({**paper, "reason": str(e)[:200]})
+            continue
+        # mint_pi_quotient_token reports refusals as a STRING rather than
+        # raising, so a skip reads as success unless the shape is checked.
+        if is_tx_hash(tx):
+            if record_settlement(paper["eval_hash"], tx):
+                settled.append({**paper, "tx_hash": tx})
+                add_log(f"Settled {paper['eval_hash'][:12]}… on chain: {tx[:14]}…")
+            else:
+                # The mint succeeded but the row would not take it — almost
+                # certainly settled by a concurrent call. Reported rather than
+                # swallowed, because it means gas was spent twice.
+                failed.append({**paper, "reason": f"Minted {tx[:14]}… but the record was "
+                                                  f"already settled. Check for a double spend."})
+        else:
+            failed.append({**paper, "reason": str(tx)[:200]})
+    return {"settled": settled, "failed": failed,
+            "settled_count": len(settled), "failed_count": len(failed),
+            "remaining": len(list_unsettled_mintable())}
+
+
+# --- Automatic settlement ---------------------------------------------------
+#
+# Until now the ONLY way an unsettled record ever reached the chain was the
+# owner opening the admin panel and pressing a button. Everything else in the
+# pipeline retries; settlement did not, so a mint skipped by a provider outage
+# or an unfunded gas wallet stayed skipped forever, and the queue grew silently.
+# brain.py already carries a comment about that exact failure — "since nothing
+# re-tried, it stayed unsettled forever" — for the case it had just fixed. This
+# is the retry.
+#
+# Deliberately conservative, because this spends real money:
+#   * it does nothing at all while any blocker is present, so a misconfigured
+#     deployment burns no gas and logs one clear reason instead of a loop of
+#     failures;
+#   * it takes a small batch per pass, so a backlog drains over minutes rather
+#     than in one unbounded burst;
+#   * it can be switched off entirely with AUTO_SETTLE=0.
+_settle_state = {"last": None, "last_result": None, "reason": ""}
+
+
+def _settlement_loop():
+    interval = max(60, int(AUTO_SETTLE_INTERVAL_SECONDS))
+    while True:
+        time.sleep(interval)
+        try:
+            blockers = settlement_blockers()
+            if blockers:
+                _settle_state["reason"] = blockers[0]
+                continue
+            if not list_unsettled_mintable(limit=1):
+                _settle_state["reason"] = "Nothing outstanding."
+                continue
+            result = settle_batch(limit=AUTO_SETTLE_BATCH)
+            _settle_state["last"] = datetime.now().isoformat()
+            _settle_state["last_result"] = {k: result[k] for k in
+                                            ("settled_count", "failed_count", "remaining")}
+            _settle_state["reason"] = ""
+            if result["settled_count"]:
+                add_log(f"Auto-settlement: {result['settled_count']} minted, "
+                        f"{result['remaining']} still outstanding.")
+        except Exception as e:                                   # noqa: BLE001
+            # A settlement sweep must never take the process down: it runs
+            # unattended, and the queue is still there next pass.
+            logging.warning("Auto-settlement pass failed: %s", e)
+            _settle_state["reason"] = str(e)[:200]
+
+
+def start_auto_settlement():
+    if not ENABLE_AUTO_SETTLEMENT:
+        logging.info("Automatic settlement is off (AUTO_SETTLE=0). "
+                     "Unsettled records wait for the admin panel.")
+        return False
+    threading.Thread(target=_settlement_loop, name="auto-settlement", daemon=True).start()
+    logging.info("Automatic settlement on: up to %d records every %ds.",
+                 AUTO_SETTLE_BATCH, AUTO_SETTLE_INTERVAL_SECONDS)
+    return True
+
+
 @app.get("/api/admin/settlement")
 def settlement_queue(request: Request, wallet: str = Query(default="")):
     """What earned piQ but never reached the chain, and why it can't right now."""
@@ -3459,16 +3625,7 @@ def settlement_queue(request: Request, wallet: str = Query(default="")):
     except Exception as e:                                       # noqa: BLE001
         chain = {"error": str(e)[:200]}
 
-    # Name the specific missing piece rather than reporting a generic failure.
-    # "Settlement unavailable" is not actionable; "no contract address is
-    # configured" is a instruction.
-    blockers = []
-    if not PIQ_CONTRACT_ADDRESS:
-        blockers.append("PIQ_CONTRACT_ADDRESS is not set — there is no contract to mint against.")
-    if not ETH_ADMIN_PRIVATE_KEY:
-        blockers.append("ETH_ADMIN_PRIVATE_KEY is not set — nothing can sign a transaction.")
-    if chain.get("connected") is False:
-        blockers.append(f"No {CHAIN_NAME} RPC endpoint is reachable.")
+    blockers = settlement_blockers()
 
     return {
         "pending": pending,
@@ -3477,6 +3634,15 @@ def settlement_queue(request: Request, wallet: str = Query(default="")):
         "chain": chain,
         "blockers": blockers,
         "can_settle": not blockers,
+        # So the operator can see the sweep is alive without reading logs.
+        "auto": {
+            "enabled": bool(ENABLE_AUTO_SETTLEMENT),
+            "every_seconds": AUTO_SETTLE_INTERVAL_SECONDS,
+            "batch": AUTO_SETTLE_BATCH,
+            "last_run": _settle_state.get("last"),
+            "last_result": _settle_state.get("last_result"),
+            "idle_reason": _settle_state.get("reason"),
+        },
         "note": ("These assessments earned piQ against a real wallet, but minting was skipped —"
                  " no contract, no key, no gas, or a provider outage at the time. The piQ was"
                  " earned; the settlement is owed."),
@@ -3494,32 +3660,9 @@ def settle_pending(request: Request, wallet: str = Query(default=""),
     record of where it stopped. Small batches are resumable by construction.
     """
     require_owner(request, wallet)
-    settled, failed = [], []
-    for paper in list_unsettled_mintable(limit=limit):
-        try:
-            tx = mint_pi_quotient_token(paper["wallet"], paper["piq"],
-                                        paper["eval_hash"], "")
-        except Exception as e:                                   # noqa: BLE001
-            failed.append({**paper, "reason": str(e)[:200]})
-            continue
-        # mint_pi_quotient_token reports refusals as a STRING rather than
-        # raising, so a skip reads as success unless the shape is checked.
-        if isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66:
-            if record_settlement(paper["eval_hash"], tx):
-                settled.append({**paper, "tx_hash": tx})
-                add_log(f"Settled {paper['eval_hash'][:12]}… on chain: {tx[:14]}…")
-            else:
-                # The mint succeeded but the row would not take it — almost
-                # certainly settled by a concurrent call. Reported rather than
-                # swallowed, because it means gas was spent twice.
-                failed.append({**paper, "reason": f"Minted {tx[:14]}… but the record was "
-                                                  f"already settled. Check for a double spend."})
-        else:
-            failed.append({**paper, "reason": str(tx)[:200]})
-
-    return {"settled": settled, "failed": failed,
-            "settled_count": len(settled), "failed_count": len(failed),
-            "remaining": len(list_unsettled_mintable())}
+    # Same code path the automatic sweep uses, so pressing the button and
+    # waiting for the timer cannot behave differently.
+    return settle_batch(limit=limit)
 
 
 @app.get("/api/admin/review-reports")
@@ -6009,7 +6152,10 @@ def explorer_latest(
                       p.tx_hash, p.zk_proof, p.piq_minted,
                       b.block_height, b.block_hash, b.previous_hash, b.validator_node,
                       b.por_proof, b.model_used, b.formulas_hash, p.fields,
-                      p.published_at, p.piq_escrowed, p.piq_claimed_at
+                      p.published_at, p.piq_escrowed, p.piq_claimed_at,
+                      -- Needed to tell "nothing to settle to" apart from
+                      -- "settlement owed": both used to render as "Local".
+                      p.eth_book
                FROM papers_assessment p
                LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
                WHERE COALESCE(p.final_score, 0) >= ? AND COALESCE(p.final_score, 0) <= ?
@@ -6040,6 +6186,7 @@ def explorer_latest(
         if wanted_fields and not any(f.lower() in wanted_fields for f in row_fields):
             continue
         tx = r[5]
+        st = settlement_state(tx, r[19] if len(r) > 19 else "", r[7])
         records.append({
             "fields": row_fields,
             "published": bool(r[16]),
@@ -6047,7 +6194,12 @@ def explorer_latest(
             "title": r[0], "author": clean_author_name(r[1]), "score": r[2],
             "eval_hash": r[3], "timestamp": r[4],
             "tx_hash": tx, "explorer_url": get_sepolia_explorer_url(tx, "tx"),
-            "settled": bool(tx and isinstance(tx, str) and tx.startswith("0x") and len(tx) == 66),
+            "settled": st["state"] == "on-chain",
+            # Three states, not two. "Local" for both an unsettleable record and
+            # one the deployment owes money on made a real backlog invisible.
+            "settlement": st["state"],
+            "settlement_label": st["label"],
+            "settlement_note": st["note"],
             "zk_proof": r[6], **piq_fields(r[7], r[17], r[18]),
             "block_height": r[8], "block_hash": r[9], "previous_hash": r[10],
             "validator_node": r[11], "por_proof": r[12], "model_used": r[13],
