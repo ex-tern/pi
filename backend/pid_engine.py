@@ -313,6 +313,12 @@ def engine_status(criteria: List[str]) -> Dict:
         "baseline_abs_error": round(num_b / weight, 4) if weight else None,
         "evaluated_over": int(weight),
         "criteria_scored": scored,
+        # Top-level `learning`, in the same vocabulary the other two engines
+        # use. Without it piD reported `criteria_improving` and nothing else,
+        # so the shared normaliser defaulted it to False and piD's card could
+        # never take the "learning" highlight — it was the only one of the
+        # three that could not, however well it was doing.
+        "learning": bool(weight and num_m < num_b),
         "memory_note": ("NumPy only. ~40 parameters total; no PyTorch import, "
                         "so the 500 MB process budget is unaffected."),
     }

@@ -104,7 +104,7 @@ from config import (
     OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
     PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR
 )
-from database import get_db_connection, find_existing_paper, set_content_hash
+from database import get_db_connection, find_existing_paper, set_content_hash, real_doi
 from ledger import (
     backup_state_to_web3, generate_zk_snark_proof, mint_pi_quotient_token, 
     validate_block_por, generate_blockchain_pi
@@ -1755,8 +1755,12 @@ def process_single_pdf(
         # cycle for work that has already been through both.
         paper_fingerprint = content_fingerprint(full_text)
         if paper_fingerprint and not force_proceed:
+            # real_doi(), not provided_doi. The parameter defaults to the
+            # STRING "None", which is not empty, so passing it raw asked the
+            # database for "another paper whose DOI is also 'None'" — and every
+            # DOI-less upload in the corpus answers to that.
             twin = find_existing_paper(content_hash=paper_fingerprint,
-                                       doi=provided_doi, exclude_hash=file_hash)
+                                       doi=real_doi(provided_doi), exclude_hash=file_hash)
             if twin:
                 how = ("identical text" if twin["matched_on"] == "content_hash"
                        else "the same DOI")

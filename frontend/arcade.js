@@ -1035,7 +1035,10 @@
         // shakes itself apart.
         const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
         const along = rvx * nx + rvy * ny;
-        if (along < 0) {
+        // A zero mass makes 1/mass infinite, the impulse -0, and -0/0 a NaN
+        // that spreads to position on the next integration step and takes the
+        // whole bubble off the map. Skip the impulse rather than divide.
+        if (along < 0 && a.mass > 1e-6 && b.mass > 1e-6) {
           // Near-elastic. 0.45 absorbed more than half the energy of every
           // impact, so a hit ended the motion it was supposed to transfer —
           // the opposite of a billiard table, where the struck ball leaves
@@ -1138,6 +1141,31 @@
           b.vy += ny * push;
         }
       }
+    }
+
+    sanitiseBubbles();
+  }
+
+  /** Repair any bubble whose state has gone non-finite.
+   *
+   *  Canvas throws on a NaN coordinate — `createRadialGradient` and
+   *  `createConicGradient` both reject non-finite arguments — and that
+   *  exception aborts the rest of the frame. One corrupt bubble therefore
+   *  blanks the entire map, including the ninety that are fine.
+   *
+   *  This is a backstop, not a substitute for correct arithmetic: the known
+   *  division-by-zero is fixed above. But the physics has many multiplying
+   *  terms and a map that silently disappears is a far worse failure than a
+   *  single bubble being nudged back to the middle, so the invariant is
+   *  enforced rather than assumed.
+   */
+  function sanitiseBubbles() {
+    for (const b of state.bubbles) {
+      if (!Number.isFinite(b.mass) || b.mass <= 0) b.mass = Number(b.baseMass) || 12;
+      if (!Number.isFinite(b.vx)) b.vx = 0;
+      if (!Number.isFinite(b.vy)) b.vy = 0;
+      if (!Number.isFinite(b.x)) b.x = WORLD_W / 2;
+      if (!Number.isFinite(b.y)) b.y = WORLD_H / 2;
     }
   }
 
@@ -1694,6 +1722,9 @@
       ctx.beginPath(); ctx.arc(s.x, s.y, r * 1.7 * pulse, 0, Math.PI * 2); ctx.fill();
     }
 
+    // Never hand a non-finite value to a canvas gradient: it throws, and the
+    // throw takes every bubble after this one out of the frame with it.
+    if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(r)) return;
     drawSoapFilm(ctx, s.x, s.y, r * pulse, color, {
       alpha: playing && !edible ? 0.42 : baseAlpha,
       live: b.live,
@@ -2187,81 +2218,62 @@
       ctx.beginPath(); ctx.arc(0, 0, halo, 0, Math.PI * 2); ctx.fill();
     }
 
-    // --- Body and cranium -------------------------------------------------
+    // --- Body: a ghost ----------------------------------------------------
     //
-    // A big friendly brain. The dome and the body are filled as ONE path so
-    // the head reads as a single creature rather than a ball with a hat on
-    // it — stroke first at a doubled width, then fill over it, which leaves
-    // only the outer half of the outline visible and erases the seam where
-    // the two shapes cross.
+    // A dome with a scalloped hem. The silhouette is the point: every other
+    // object on this map is a circle, so a shape with a flat-ish bottom and
+    // four soft points is findable at a glance in a crowded field, which a
+    // differently-coloured circle never is.
     //
-    // The crown overhangs the collision radius by about 12%. That is
-    // deliberate and small: `r` still governs what π can eat and what eats it,
-    // and the overhang sits at the top of the skull, where a contact is least
-    // likely to be the one that decides a run.
-    const body = ctx.createRadialGradient(-r * 0.3, -r * 0.45, r * 0.1, 0, 0, r * 1.15);
+    // Kept inside the collision radius. `r` governs what π can eat and what
+    // eats it, and a body that draws outside it would let a player be caught
+    // by a bubble they can see they are clear of.
+    const body = ctx.createRadialGradient(-r * 0.32, -r * 0.42, r * 0.1, 0, 0, r);
     body.addColorStop(0, "#e0f2fe"); body.addColorStop(1, "#0284c7");
 
+    // The hem drifts, so a stationary ghost is still alive — the same job the
+    // idle breath does, on a different period so the two never lock together.
+    const hemPhase = t * 2.3;
+    const SCALLOPS = 4;
+    const hemY = r * 0.60;
+    const domeR = r * 0.92;
+
     ctx.beginPath();
-    ctx.arc(0, 0, r, 0, Math.PI * 2);
-    ctx.moveTo(r * 0.86, -r * 0.36);
-    ctx.ellipse(0, -r * 0.36, r * 0.86, r * 0.66, 0, 0, Math.PI * 2);
-    ctx.lineWidth = 4; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
+    ctx.arc(0, -r * 0.06, domeR, Math.PI, 0);       // the head, left to right
+    ctx.lineTo(domeR, hemY);
+    for (let i = 0; i < SCALLOPS; i++) {
+      const w = (domeR * 2) / SCALLOPS;
+      const x0 = domeR - w * i;
+      // Alternating dip depth, shifted by the phase, so the hem ripples
+      // instead of pulsing as one piece.
+      const dip = r * 0.30 * Math.sin(hemPhase + i * 1.7);
+      ctx.quadraticCurveTo(x0 - w * 0.5, hemY + r * 0.34 + dip, x0 - w, hemY);
+    }
+    ctx.closePath();
     ctx.fillStyle = body; ctx.fill();
+    ctx.lineWidth = 2.5; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
 
     // --- Face -------------------------------------------------------------
     // Only drawn once the body is big enough to hold it. Below that the eyes
     // collapse into two dots touching each other, which looks like damage
     // rather than a face — so a small π keeps the plain glyph.
     if (r > 13) {
-      // Brain folds. Rounded loops that curl back on themselves, the way a
-      // cartoon brain is drawn — the earlier version used straight radiating
-      // lines, which read as a cracked shell rather than as a mind. Soft blue
-      // at low alpha so they sit under the skin instead of on top of it.
-      ctx.save();
-      ctx.strokeStyle = "rgba(3,105,161,0.40)";
-      ctx.lineWidth = Math.max(1.3, r * 0.06);
-      ctx.lineCap = "round";
-      for (const side of [-1, 1]) {
-        for (let i = 0; i < 2; i++) {
-          const y = -r * (0.88 - i * 0.24);
-          const w = r * (0.34 + i * 0.20);
-          ctx.beginPath();
-          ctx.moveTo(side * r * 0.08, y + r * 0.06);
-          // Up and over, then tucked back under: one lobe of a gyrus.
-          ctx.bezierCurveTo(side * w * 0.5, y - r * 0.20,
-                            side * w * 1.5, y - r * 0.16,
-                            side * w * 1.35, y + r * 0.10);
-          ctx.stroke();
-        }
-      }
-      ctx.restore();
-
-      // The π is a marking on the forehead, not a label on a disc.
-      //
-      // Fixed dark ink rather than theme().playerText: that value flips to
-      // near-white under the light theme, and the cranium is the pale end of
-      // the body gradient in BOTH themes, so the marking needs a colour chosen
-      // against the skull rather than against the page.
+      // The π is a marking, high on the dome above the eyes.
       ctx.fillStyle = "rgba(8,47,73,0.85)";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = `700 ${Math.min(18, r * 0.42)}px -apple-system, system-ui, sans-serif`;
-      ctx.fillText("π", 0, -r * 0.30);
+      ctx.font = `700 ${Math.min(19, r * 0.40)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText("π", 0, -r * 0.58);
 
       // Blink: mostly open, with a brief close every few seconds. Driven by a
       // sine threshold rather than a timer so it needs no extra state.
       const blink = Math.sin(t * 1.1) > 0.985 ? 0.1 : 1;
 
-      // --- Eyes -------------------------------------------------------------
-      // Big, round, and white, with a dark pupil and two catchlights. Every
-      // one of those choices is doing the same job: roundness, a high
-      // white-to-pupil ratio and visible highlights are what the eye reads as
-      // friendly. The previous solid-black almonds had none of them, which is
-      // precisely why they read as a predator.
-      const eyeR = r * 0.26;
-      const eyeY = r * 0.10;
-      const eyeDX = r * 0.32;
-      const px = p._lookX * eyeR * 0.30, py = p._lookY * eyeR * 0.30;
+      // Two big round eyes. The pupils track the direction of travel, which is
+      // what makes the ghost look where it is going rather than through you.
+      const eyeR = r * 0.21;
+      const eyeY = -r * 0.10;
+      const eyeDX = r * 0.33;
+      const px = p._lookX * eyeR * 0.38, py = p._lookY * eyeR * 0.38;
 
       for (const side of [-1, 1]) {
         ctx.save();
@@ -2270,58 +2282,25 @@
         ctx.fillStyle = "#ffffff";
         ctx.beginPath(); ctx.arc(0, 0, eyeR, 0, Math.PI * 2); ctx.fill();
         ctx.fillStyle = "#12263f";
-        ctx.beginPath(); ctx.arc(px, py, eyeR * 0.56, 0, Math.PI * 2); ctx.fill();
-        // Two highlights, one big and one small: a single dot looks painted
-        // on, a pair looks wet.
+        ctx.beginPath(); ctx.arc(px, py, eyeR * 0.52, 0, Math.PI * 2); ctx.fill();
+        // A single catchlight, offset against the pupil so it reads as wet.
         ctx.fillStyle = "rgba(255,255,255,0.95)";
         ctx.beginPath();
-        ctx.arc(px - eyeR * 0.22, py - eyeR * 0.26, eyeR * 0.22, 0, Math.PI * 2);
-        ctx.fill();
-        ctx.beginPath();
-        ctx.arc(px + eyeR * 0.20, py + eyeR * 0.20, eyeR * 0.10, 0, Math.PI * 2);
+        ctx.arc(px - eyeR * 0.2, py - eyeR * 0.24, eyeR * 0.19, 0, Math.PI * 2);
         ctx.fill();
         ctx.restore();
       }
 
-      // Cheeks. Two soft warm patches under the eyes — the cheapest possible
-      // signal that this thing means well.
-      ctx.fillStyle = "rgba(251,113,133,0.28)";
-      for (const side of [-1, 1]) {
-        ctx.beginPath();
-        ctx.ellipse(side * r * 0.55, eyeY + r * 0.28, r * 0.14, r * 0.09, 0, 0, Math.PI * 2);
-        ctx.fill();
-      }
-
-      // --- Mouth ------------------------------------------------------------
-      // A wide open grin with rounded corners and a big tongue — no teeth. It
-      // grows as π swallows, on the same `_pop` the body pulse uses, so eating
-      // stays one reaction read two ways rather than two effects that happen
-      // to coincide.
+      // Mouth: a small oval that grows into a round gulp. It sits on the same
+      // `_pop` the body pulse uses, so eating stays one reaction read two ways
+      // rather than two effects that happen to coincide.
       const openness = p._pop;                     // 0 at rest, 1 mid-swallow
-      const mouthY = r * 0.44;
-      const mouthW = r * (0.46 + openness * 0.10);
-      const mouthH = r * (0.24 + openness * 0.34);
-
-      ctx.save();
-      // Half an ellipse closed with a flat top: a "D" on its side, which is
-      // the shape of an open smile. A full ellipse would be a gasp.
-      ctx.beginPath();
-      ctx.moveTo(-mouthW, mouthY - mouthH * 0.32);
-      ctx.quadraticCurveTo(0, mouthY - mouthH * 0.55, mouthW, mouthY - mouthH * 0.32);
-      ctx.bezierCurveTo(mouthW * 0.98, mouthY + mouthH,
-                        -mouthW * 0.98, mouthY + mouthH,
-                        -mouthW, mouthY - mouthH * 0.32);
-      ctx.closePath();
       ctx.fillStyle = "#3f1d2e";
-      ctx.fill();
-      // The tongue is clipped to the mouth, so it can never spill over the lip
-      // however wide the grin gets.
-      ctx.clip();
-      ctx.fillStyle = "#fb7185";
       ctx.beginPath();
-      ctx.ellipse(0, mouthY + mouthH * 0.78, mouthW * 0.62, mouthH * 0.60, 0, 0, Math.PI * 2);
+      ctx.ellipse(0, r * 0.26,
+                  r * (0.11 + openness * 0.17),
+                  r * (0.09 + openness * 0.22), 0, 0, Math.PI * 2);
       ctx.fill();
-      ctx.restore();
     } else {
       ctx.fillStyle = theme().playerText;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
