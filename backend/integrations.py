@@ -186,48 +186,147 @@ def collect_pdf_candidates(work):
 
 
 def search_open_access_works(topic_query, limit=100):
-    """Search OpenAlex for open-access works with a retrievable full text."""
+    """Back-compatible wrapper: results only, errors swallowed.
+
+    Kept because the cron and idle paths only want a list and have nowhere to
+    put a reason. Anything user-facing should call search_scholarly_works and
+    show the reason.
+    """
+    results, _err = search_scholarly_works(topic_query, limit=limit)
+    return results
+
+
+def search_scholarly_works(topic_query, limit=100):
+    """Find open-access papers. Returns ``(results, error)``.
+
+    Two providers, tried in order, because one upstream is a single point of
+    failure for a feature the user experiences as "search is broken". OpenAlex
+    is preferred — it reports open-access status and usually a direct PDF —
+    and Crossref backs it up: no PDF links, but a DOI is enough for the
+    pipeline to retrieve the paper itself.
+
+    The ERROR IS RETURNED RATHER THAN LOGGED AND DISCARDED. Previously every
+    failure — a 403 from the provider, a DNS failure on a locked-down host, a
+    timeout, a genuinely empty topic — collapsed into an empty list, and the
+    interface said "No open-access papers found for X. Try a broader topic."
+    for all of them. That sentence sends someone to rephrase their query when
+    the actual problem is that the server cannot reach the internet.
+    """
+    results, error = _search_openalex(topic_query, limit)
+    if results:
+        return results, ""
+
+    fallback, fb_error = _search_crossref(topic_query, limit)
+    if fallback:
+        return fallback, ""
+
+    # Neither worked. Prefer the first provider's reason; it is the one whose
+    # absence actually explains the outcome.
+    return [], (error or fb_error or "")
+
+
+def _search_openalex(topic_query, limit):
+    params = {
+        "search": topic_query,
+        "filter": "is_oa:true,has_doi:true",
+        "per_page": min(int(limit), 50),
+        "sort": "relevance_score:desc",
+    }
     try:
-        params = {
-            "search": topic_query,
-            # has_fulltext narrows results to works OpenAlex believes it can
-            # actually reach, which materially raises the retrieval hit rate.
-            "filter": "is_oa:true,has_doi:true",
-            "per_page": min(int(limit), 50),
-            "sort": "relevance_score:desc",
-        }
         res = requests.get("https://api.openalex.org/works", params=params,
                            headers={"User-Agent": "ScholarPi-PiIndex/2.2 (mailto:research@pi-index.org)"},
                            timeout=12)
-        if res.status_code != 200:
-            return []
+    except requests.RequestException as e:
+        return [], f"OpenAlex could not be reached ({type(e).__name__})."
+    if res.status_code != 200:
+        # The body carries OpenAlex's own explanation of a rejected query,
+        # which is far more useful than the status code alone.
+        detail = ""
+        try:
+            detail = (res.json().get("message") or "")[:160]
+        except Exception:                                        # noqa: BLE001
+            detail = (res.text or "")[:160]
+        return [], f"OpenAlex returned HTTP {res.status_code}. {detail}".strip()
 
-        extracted = []
-        for item in res.json().get("results", []):
-            doi = normalize_doi(item.get("doi", ""))
-            candidates = collect_pdf_candidates(item)
-            if not doi and not candidates:
-                continue
+    try:
+        items = res.json().get("results", [])
+    except ValueError:
+        return [], "OpenAlex returned a response that could not be parsed."
 
-            authors = [a.get("author", {}).get("display_name", "")
-                       for a in (item.get("authorships") or [])]
-            authors_str = ", ".join(a for a in authors if a) or "Unidentified"
+    extracted = []
+    for item in items:
+        doi = normalize_doi(item.get("doi", ""))
+        candidates = collect_pdf_candidates(item)
+        if not doi and not candidates:
+            continue
+        authors = [a.get("author", {}).get("display_name", "")
+                   for a in (item.get("authorships") or [])]
+        extracted.append({
+            "title": item.get("title") or "Untitled Paper",
+            "doi": doi,
+            # Kept for backward compatibility with existing callers.
+            "pdf_url": candidates[0] if candidates else "",
+            "pdf_candidates": candidates[:5],
+            "authors": ", ".join(a for a in authors if a) or "Unidentified",
+            "year": item.get("publication_year"),
+            "oa_status": (item.get("open_access") or {}).get("oa_status"),
+            "source": "OpenAlex",
+        })
+    if not extracted:
+        return [], ""          # a real empty result, not a failure
+    return extracted, ""
 
-            extracted.append({
-                "title": item.get("title") or "Untitled Paper",
-                "doi": doi,
-                # Kept for backward compatibility with existing callers.
-                "pdf_url": candidates[0] if candidates else "",
-                "pdf_candidates": candidates[:5],
-                "authors": authors_str,
-                "year": item.get("publication_year"),
-                "oa_status": (item.get("open_access") or {}).get("oa_status"),
-            })
-        return extracted
-    except Exception as e:
-        import logging
-        logging.warning("Open-access search failed for %r: %s", topic_query, e)
-        return []
+
+def _search_crossref(topic_query, limit):
+    """Crossref fallback. No PDF URLs, but a DOI the pipeline can resolve."""
+    params = {
+        "query.bibliographic": topic_query,
+        "rows": min(int(limit), 30),
+        "filter": "has-full-text:true,type:journal-article",
+        "select": "DOI,title,author,issued",
+    }
+    try:
+        res = requests.get("https://api.crossref.org/works", params=params,
+                           headers={"User-Agent": "ScholarPi-PiIndex/2.2 (mailto:research@pi-index.org)"},
+                           timeout=12)
+    except requests.RequestException as e:
+        return [], f"Crossref could not be reached either ({type(e).__name__})."
+    if res.status_code != 200:
+        return [], f"Crossref returned HTTP {res.status_code}."
+
+    try:
+        items = (res.json().get("message") or {}).get("items", [])
+    except ValueError:
+        return [], "Crossref returned a response that could not be parsed."
+
+    out = []
+    for it in items:
+        doi = normalize_doi(it.get("DOI", ""))
+        if not doi:
+            continue
+        title = (it.get("title") or ["Untitled Paper"])
+        names = []
+        for a in (it.get("author") or []):
+            n = " ".join(x for x in [a.get("given"), a.get("family")] if x).strip()
+            if n:
+                names.append(n)
+        year = None
+        try:
+            year = (it.get("issued") or {}).get("date-parts", [[None]])[0][0]
+        except Exception:                                        # noqa: BLE001
+            year = None
+        out.append({
+            "title": (title[0] if isinstance(title, list) and title else "Untitled Paper"),
+            "doi": doi,
+            "pdf_url": "",
+            "pdf_candidates": [],
+            "authors": ", ".join(names) or "Unidentified",
+            "year": year,
+            "oa_status": "unknown",
+            "source": "Crossref",
+        })
+    return out, ""
+
 
 def fetch_doi_metadata(doi):
     clean_doi = (

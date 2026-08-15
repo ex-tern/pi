@@ -96,7 +96,7 @@ from ledger import (restore_state_from_web3, get_sepolia_explorer_url, get_chain
                     mint_pi_quotient_token)
 import ledger as ledger_backup
 from integrations import (
-    normalize_doi,
+    normalize_doi, search_scholarly_works,
     clean_author_name, is_likely_institution, fetch_doi_metadata,
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
     build_pdf_from_text, search_open_access_works,
@@ -2442,12 +2442,26 @@ def serve_paper_file(file_hash: str, request: Request,
                 status_code=404,
                 detail="No public manuscript file is available for this assessment.")
 
-    safe_title = re.sub(r"[^\w \-.]", "", (row[1] or "manuscript"))[:80].strip() or "manuscript"
+    # HTTP header values are latin-1. `\w` in the pattern below matches Unicode
+    # letters, so a title containing π — or an accent, or any non-Western
+    # script — survived this filter and then blew up on the way out as
+    #   UnicodeEncodeError: 'latin-1' codec can't encode character '\u03c0'
+    # which surfaced as a 500 on a paper that was perfectly fine. The paper this
+    # framework is named after cannot be the one paper it fails to serve.
+    #
+    # RFC 6266/5987 exists precisely for this: `filename` carries an ASCII
+    # fallback for old clients, `filename*` carries the real UTF-8 name
+    # percent-encoded. Every current browser prefers the second.
+    raw_title = (row[1] or "manuscript")[:80].strip() or "manuscript"
+    ascii_title = re.sub(r"[^A-Za-z0-9 \-.]", "", raw_title).strip() or "manuscript"
+    utf8_title = urllib.parse.quote(re.sub(r'[\\"\r\n]', "", raw_title), safe="")
     return FileResponse(
         path, media_type="application/pdf",
         # inline: a reader clicking a badge wants to read the paper, not to
         # find it in their downloads folder.
-        headers={"Content-Disposition": f'inline; filename="{safe_title}.pdf"'})
+        headers={"Content-Disposition":
+                 f'inline; filename="{ascii_title}.pdf"; '
+                 f"filename*=UTF-8''{utf8_title}.pdf"})
 
 
 class ReviewRequest(BaseModel):
@@ -4796,12 +4810,19 @@ def discover_search(
     limit: int = Query(default=15, ge=1, le=30),
 ):
     check_rate_limit(get_client_ip(request), bucket="discover")
+    error = ""
     try:
-        results = search_open_access_works(q, limit=limit)
-    except Exception as e:
+        results, error = search_scholarly_works(q, limit=limit)
+    except Exception as e:                                       # noqa: BLE001
         add_log(f"Discovery search error: {e}")
-        results = []
-    return {"results": results, "query": q}
+        results, error = [], f"The search could not be completed ({type(e).__name__})."
+    if error:
+        add_log(f"Discovery search for {q!r}: {error}")
+    # `error` is carried to the client rather than folded into an empty list.
+    # An empty result and an unreachable provider are different facts, and the
+    # interface cannot tell a user which one they are looking at unless the
+    # server says so.
+    return {"results": results, "query": q, "error": error}
 
 
 class TextAssessRequest(BaseModel):

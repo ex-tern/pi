@@ -300,6 +300,19 @@ input::placeholder { color: var(--faint); }
 
 .status-box { margin-top: 14px; background: #f8fafc; border: 1px solid var(--border); border-radius: 8px; padding: 12px 14px; font-size: 12.5px; max-height: 300px; overflow-y: auto; }
 .status-box .status-line { margin: 3px 0; color: #334155; line-height: 1.5; }
+/* The step currently running. The elapsed time is written to a data
+   attribute and rendered by CSS, so the ticker updates one attribute per
+   second instead of rewriting the line's markup — and the text stays
+   selectable while it counts. */
+.status-line.status-live::after {
+  content: attr(data-elapsed);
+  margin-left: 8px; font-variant-numeric: tabular-nums;
+  font-size: 11px; color: var(--faint);
+}
+.status-line.status-live[data-hint]:not([data-hint=""])::before {
+  content: attr(data-hint);
+  display: block; font-size: 11px; color: var(--warn); margin-top: 2px;
+}
 .status-line.status-error { color: var(--danger); font-weight: 600; }
 .status-line.status-fee { color: var(--accent); }
 .status-line.status-done { color: var(--success); font-weight: 600; margin-top: 6px; }
@@ -2046,7 +2059,24 @@ button.seal { font-family: inherit; cursor: pointer; }
   border: 1px solid var(--border); border-radius: 9px; padding: 11px 12px;
   background: #fbfcfe; min-width: 0;
 }
-.engine-learning { border-color: var(--success); background: #f6fefb; }
+/* NOT a coloured border. These cards are status readouts, not controls — a
+   green ring around a card in a row of three is the universal look of "this
+   one is selected", so two engines beating their defaults read as two
+   selections, and a reader tries to click one and cannot. The state is carried
+   by an explicit badge (.engine-flag) and by the bar colour instead, neither of
+   which can be mistaken for selection. */
+.engine-learning { border-color: var(--border); background: #fbfcfe; }
+.engine-flag {
+  margin-left: auto; flex: 0 0 auto;
+  font-size: 9.5px; font-weight: 700; letter-spacing: 0.04em; text-transform: uppercase;
+  color: var(--success); background: var(--success-bg);
+  border: 1px solid #bbf7d0; border-radius: 999px; padding: 2px 7px;
+}
+/* Says plainly that nothing here is clickable — the row sits directly above
+   four dropdowns that ARE controls, which is where the expectation comes from. */
+.engine-bar-note {
+  font-size: 10.5px; color: var(--faint); margin: -8px 0 14px;
+}
 .engine-err { opacity: 0.6; }
 .engine-name {
   font-size: 12.5px; font-weight: 700; color: var(--text);

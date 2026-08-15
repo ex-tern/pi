@@ -571,3 +571,19 @@ AUTO_SETTLE_BATCH = int(os.getenv("AUTO_SETTLE_BATCH", "5"))
 # Seconds between passes. Floored at 60 at the call site — settlement is not
 # time-critical, and a tight loop against an RPC endpoint gets rate-limited.
 AUTO_SETTLE_INTERVAL_SECONDS = int(os.getenv("AUTO_SETTLE_INTERVAL_SECONDS", "600"))
+
+
+# ---------------------------------------------------------------------------
+# Assessment panel budget
+# ---------------------------------------------------------------------------
+# Wall-clock ceiling, in seconds, on collecting the model panel's verdicts for
+# ONE paper. Each route allows 45s with a retry and a juror can have several
+# routes, so without a ceiling a host that cannot reach any provider makes the
+# pipeline sit for ten minutes or more behind a single "Analyzing…" line with
+# no output and no error.
+#
+# Jurors that miss the deadline are recorded as failed and the assessment
+# continues on whoever answered — the same path a provider outage already
+# takes, warning included. Raise it on a deployment with slow but working
+# providers; lower it if you would rather fail fast than wait.
+PANEL_BUDGET_SECONDS = int(os.getenv("PANEL_BUDGET_SECONDS", "150"))

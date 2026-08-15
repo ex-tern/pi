@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=78">
+<link rel="stylesheet" href="style.css?v=81">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -713,6 +713,11 @@
                against its own frozen defaults, so "is it actually learning?"
                is answerable rather than asserted. -->
           <div class="engine-bar" id="engineBar"></div>
+          <!-- Says outright that the row is a readout. The three cards sit
+               immediately above four dropdowns that ARE controls, so the
+               expectation that they can be picked comes from their position
+               as much as from their styling. -->
+          <p class="engine-bar-note">How each engine is performing — a readout, not a setting. The chart below always shows pi-Dyne's projection.</p>
 
           <div class="forecast-toolbar">
             <select id="lookbackSelect" class="inline-select">
@@ -920,7 +925,7 @@
   </div>
 </div>
 
-<script src="app.js?v=78"></script>
-<script src="arcade.js?v=78"></script>
+<script src="app.js?v=81"></script>
+<script src="arcade.js?v=81"></script>
 </body>
 </html>
