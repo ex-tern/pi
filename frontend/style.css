@@ -325,6 +325,9 @@ input::placeholder { color: var(--faint); }
 .p-logic { background: #ecfeff; color: #0e7490; }
 .p-judge { background: var(--accent); color: #fff; margin-left: 6px; }
 .q-high { background: var(--success-bg); color: var(--success); }
+/* Settlement owed: amber, because it is neither done nor inert. Distinct
+   from the grey "Local" pill, which is a finished state. */
+.p-pending { background: var(--warn-bg); color: var(--warn); }
 .q-mod { background: var(--warn-bg); color: var(--warn); }
 .q-low { background: #fef2f2; color: var(--danger); }
 .q-warn { background: var(--warn-bg); color: var(--warn); }
@@ -1113,14 +1116,24 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   font-size: 10.5px; color: var(--faint); margin-left: auto;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
 }
-.buddy-actions { display: flex; gap: 4px; flex: 0 0 auto; }
-.buddy-btn {
-  width: 22px; height: 22px; padding: 0; line-height: 1;
+/* NAMED `-win-` deliberately. The first version of these called themselves
+   .buddy-actions / .buddy-btn, which collide with the riB body's own
+   .buddy-actions — a COLUMN of full-width action buttons, defined earlier in
+   this file. The later rule here set display and gap but not flex-direction,
+   so `column` survived and the window's minimise and maximise controls stacked
+   on top of each other. Two different things had the same name; renaming one
+   fixes it in a way that adding `flex-direction: row` would not, because the
+   next property either of them gains would collide again. */
+.buddy-win-actions { display: flex; flex-direction: row; gap: 4px; flex: 0 0 auto; }
+.buddy-win-btn {
+  width: 24px; height: 24px; padding: 0; line-height: 1;
   display: inline-flex; align-items: center; justify-content: center;
-  font-size: 13px; color: var(--muted); cursor: pointer;
+  color: var(--muted); cursor: pointer;
   background: transparent; border: 1px solid transparent; border-radius: 5px;
 }
-.buddy-btn:hover { background: #fff; border-color: var(--border); color: var(--text); }
+.buddy-win-btn svg { display: block; }
+.buddy-win-btn:hover { background: #fff; border-color: var(--border); color: var(--text); }
+.buddy-win-btn:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
 
 .buddy-scroll { padding: 13px; overflow-y: auto; flex: 1 1 auto; }
 
@@ -1761,6 +1774,35 @@ button.seal { font-family: inherit; cursor: pointer; }
 .gh-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 @media (max-width: 620px) {
   .gh-fab { right: 12px; bottom: 12px; width: 38px; height: 38px; }
+}
+
+/* --- Architecture, as a floating button ---------------------------------- */
+/* It is still a .tab-btn — the tab handler finds it by data-tab — so every
+   tab-row rule has to be undone here rather than avoided. Matched to .gh-fab
+   in size and shape and parked immediately to its left, so the corner reads as
+   one stack of two secondary entrances rather than two unrelated buttons. */
+.arch-fab {
+  position: fixed; right: 68px; bottom: 18px; z-index: 60;
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 42px; height: 42px; padding: 0; border-radius: 50%;
+  background: #fff; color: var(--muted);
+  border: 1px solid var(--border-strong);
+  box-shadow: 0 2px 10px rgba(15, 23, 42, 0.12);
+  cursor: pointer;
+  transition: transform 0.15s ease, color 0.15s ease, border-color 0.15s ease,
+              background 0.15s ease;
+}
+.arch-fab:hover { transform: translateY(-2px); color: var(--accent); border-color: var(--accent); }
+.arch-fab:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+/* Open state. Without this the button gives no sign the panel it opened is the
+   one on screen — the tab row it left had an underline doing that job. */
+.arch-fab.active {
+  background: var(--accent); color: #fff; border-color: var(--accent);
+}
+@media (max-width: 620px) {
+  /* min-height is reset explicitly: the touch-target rule above sets 40px
+     on every .tab-btn, which would make this circle an oval. */
+  .arch-fab { right: 58px; bottom: 12px; width: 38px; height: 38px; min-height: 0; }
 }
 
 /* --- Uniform assessment action bar --------------------------------------- */

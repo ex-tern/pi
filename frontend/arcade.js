@@ -2187,74 +2187,151 @@
       ctx.beginPath(); ctx.arc(0, 0, halo, 0, Math.PI * 2); ctx.fill();
     }
 
-    const body = ctx.createRadialGradient(-r * 0.3, -r * 0.3, r * 0.1, 0, 0, r);
+    // --- Body and cranium -------------------------------------------------
+    //
+    // π is a xenomorph now: a swollen brain case over a wide symbiote jaw.
+    // Both are filled as ONE path so the head reads as a single organism
+    // rather than a ball with a hat on it — stroke first with a doubled width,
+    // then fill over it, which leaves only the outer half of the outline
+    // visible and erases the seam where the two shapes cross.
+    //
+    // The crown overhangs the collision radius by about 12%. That is
+    // deliberate and small: `r` still governs what π can eat and what eats it,
+    // and the overhang sits at the top of the skull, where a contact is least
+    // likely to be the one that decides a run.
+    const body = ctx.createRadialGradient(-r * 0.3, -r * 0.45, r * 0.1, 0, 0, r * 1.15);
     body.addColorStop(0, "#e0f2fe"); body.addColorStop(1, "#0284c7");
-    ctx.fillStyle = body;
-    ctx.beginPath(); ctx.arc(0, 0, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 2; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
+
+    ctx.beginPath();
+    ctx.arc(0, 0, r, 0, Math.PI * 2);
+    ctx.moveTo(r * 0.82, -r * 0.42);
+    ctx.ellipse(0, -r * 0.42, r * 0.82, r * 0.7, 0, 0, Math.PI * 2);
+    ctx.lineWidth = 4; ctx.strokeStyle = "#7dd3fc"; ctx.stroke();
+    ctx.fillStyle = body; ctx.fill();
 
     // --- Face -------------------------------------------------------------
     // Only drawn once the body is big enough to hold it. Below that the eyes
     // collapse into two dots touching each other, which looks like damage
     // rather than a face — so a small π keeps the plain glyph.
     if (r > 13) {
-      // The π sits high, leaving room for eyes below it: the glyph becomes
-      // the character's hair rather than competing with its face.
-      ctx.fillStyle = theme().playerText;
+      // Brain. Two hemispheres divided by a central sulcus, with folds drawn
+      // as arcs that fall away from the midline. Alpha rather than a solid
+      // colour so it reads as structure UNDER the skin — an opaque brain on
+      // top of the head is a hat again.
+      ctx.save();
+      ctx.strokeStyle = "rgba(12,74,110,0.38)";
+      ctx.lineWidth = Math.max(1, r * 0.035);
+      ctx.lineCap = "round";
+      ctx.beginPath();
+      ctx.moveTo(0, -r * 1.05); ctx.lineTo(0, -r * 0.42);          // sulcus
+      ctx.stroke();
+      for (const side of [-1, 1]) {
+        for (let i = 0; i < 3; i++) {
+          const y = -r * (0.98 - i * 0.19);
+          ctx.beginPath();
+          ctx.moveTo(side * r * 0.06, y);
+          ctx.quadraticCurveTo(side * r * (0.34 + i * 0.10), y - r * 0.10,
+                               side * r * (0.52 + i * 0.11), y + r * 0.08);
+          ctx.stroke();
+        }
+      }
+      ctx.restore();
+
+      // The π is a marking on the forehead, not a label on a disc — high on
+      // the skull between the brain and the eyes.
+      //
+      // Fixed dark ink rather than theme().playerText. That value flips to
+      // near-white under the light theme, which was legible on the old
+      // mid-blue disc but is not on this skull: the cranium is the pale end of
+      // the body gradient in BOTH themes, so the marking needs a colour chosen
+      // against the skull rather than against the page.
+      ctx.fillStyle = "rgba(8,47,73,0.88)";
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
-      ctx.font = `700 ${Math.min(20, r * 0.62)}px -apple-system, system-ui, sans-serif`;
-      ctx.fillText("π", 0, -r * 0.34);
+      ctx.font = `700 ${Math.min(20, r * 0.56)}px -apple-system, system-ui, sans-serif`;
+      ctx.fillText("π", 0, -r * 0.52);
 
       // Blink: mostly open, with a brief close every few seconds. Driven by a
       // sine threshold rather than a timer so it needs no extra state.
       const blink = Math.sin(t * 1.1) > 0.985 ? 0.12 : 1;
-      const eyeR = r * 0.15;
-      const eyeY = r * 0.26;
-      const eyeDX = r * 0.3;
-      // Pupils track the direction of travel, clamped inside the eye.
-      const px = p._lookX * eyeR * 0.42, py = p._lookY * eyeR * 0.42;
-
-      for (const dx of [-eyeDX, eyeDX]) {
+      // Big slanted almond eyes — the one feature that does all the work of
+      // saying "not human". Solid black with a single moving glint, because an
+      // eye with a white and a pupil reads as a cartoon animal instead.
+      const eyeRX = r * 0.30, eyeRY = r * 0.22;
+      const eyeY = r * 0.02, eyeDX = r * 0.34;
+      for (const side of [-1, 1]) {
         ctx.save();
-        ctx.translate(dx, eyeY);
+        ctx.translate(side * eyeDX, eyeY);
         ctx.scale(1, blink);
-        ctx.fillStyle = "#f8fafc";
-        ctx.beginPath(); ctx.arc(0, 0, eyeR, 0, Math.PI * 2); ctx.fill();
-        ctx.fillStyle = "#0f172a";
-        ctx.beginPath(); ctx.arc(px, py, eyeR * 0.52, 0, Math.PI * 2); ctx.fill();
+        // Tilted toward the midline: the inward slant is what makes a pair of
+        // ovals menacing rather than doe-eyed.
+        ctx.rotate(side * 0.42);
+        ctx.fillStyle = "#0b1220";
+        ctx.beginPath(); ctx.ellipse(0, 0, eyeRX, eyeRY, 0, 0, Math.PI * 2); ctx.fill();
+        // The glint tracks the direction of travel, so the gaze still leads
+        // the movement now that there is no pupil to move.
+        ctx.fillStyle = "rgba(226,232,240,0.9)";
+        ctx.beginPath();
+        ctx.ellipse(p._lookX * eyeRX * 0.35 - side * eyeRX * 0.2,
+                    p._lookY * eyeRY * 0.35 - eyeRY * 0.3,
+                    eyeRX * 0.22, eyeRY * 0.28, 0, 0, Math.PI * 2);
+        ctx.fill();
         ctx.restore();
       }
 
-      // Mouth. Open when swallowing, a small smile otherwise — so the face
-      // reports what just happened rather than holding one expression. The
-      // width follows the same pop value the body pulse uses, which is what
-      // keeps the two reading as one reaction instead of two effects that
-      // happen to coincide.
-      const mouthY = eyeY + r * 0.3;
-      const openness = p._pop;                       // 0 at rest, 1 mid-swallow
-      ctx.lineCap = "round";
-      if (openness > 0.15) {
-        // An open "O", taller as the swallow peaks.
-        ctx.fillStyle = "#0f172a";
+      // --- Jaw ------------------------------------------------------------
+      // A symbiote grin: a wide lens spanning most of the face, ringed with
+      // interlocking teeth. It gapes as π swallows, driven by the same `_pop`
+      // the body pulse uses — one reaction, read two ways, rather than two
+      // effects that happen to coincide.
+      const openness = p._pop;                      // 0 at rest, 1 mid-swallow
+      const mouthY = r * 0.46;
+      const mouthRX = r * (0.60 + openness * 0.06);
+      const mouthRY = r * (0.11 + openness * 0.30);
+
+      ctx.save();
+      ctx.beginPath();
+      ctx.ellipse(0, mouthY, mouthRX, mouthRY, 0, 0, Math.PI * 2);
+      ctx.fillStyle = "#140a12";
+      ctx.fill();
+      // Teeth are clipped to the mouth, so a tooth can never poke out through
+      // the cheek when the jaw is nearly shut.
+      ctx.clip();
+
+      // Interlocking triangles top and bottom, offset by half a tooth so they
+      // mesh rather than meet point to point.
+      const TEETH = 9;
+      const step = (mouthRX * 2) / TEETH;
+      ctx.fillStyle = "#f1f5f9";
+      for (const row of [-1, 1]) {
         ctx.beginPath();
-        ctx.ellipse(0, mouthY, r * (0.12 + openness * 0.06),
-                    r * (0.07 + openness * 0.13), 0, 0, Math.PI * 2);
-        ctx.fill();
-        // A tongue, but only once the mouth is wide enough to hold one —
-        // below that it renders as a stray red pixel.
-        if (openness > 0.5) {
-          ctx.fillStyle = "#fb7185";
-          ctx.beginPath();
-          ctx.ellipse(0, mouthY + r * 0.06, r * 0.06, r * 0.04, 0, 0, Math.PI * 2);
-          ctx.fill();
+        for (let i = 0; i < TEETH; i++) {
+          const x0 = -mouthRX + i * step + (row > 0 ? step * 0.5 : 0);
+          const depth = mouthRY * (0.55 + (i % 2) * 0.2);
+          ctx.moveTo(x0, mouthY + row * mouthRY);
+          ctx.lineTo(x0 + step * 0.5, mouthY + row * (mouthRY - depth));
+          ctx.lineTo(x0 + step, mouthY + row * mouthRY);
         }
-      } else {
-        ctx.strokeStyle = "#0f172a";
-        ctx.lineWidth = Math.max(1.4, r * 0.035);
-        ctx.beginPath();
-        ctx.arc(0, mouthY - r * 0.06, r * 0.16, 0.22 * Math.PI, 0.78 * Math.PI);
-        ctx.stroke();
+        ctx.fill();
       }
+
+      // The tongue only appears once the jaw is genuinely open. Below that it
+      // is a stray pink pixel between two teeth.
+      if (openness > 0.35) {
+        ctx.fillStyle = "#e11d48";
+        ctx.beginPath();
+        ctx.moveTo(-mouthRX * 0.16, mouthY);
+        ctx.quadraticCurveTo(0, mouthY + mouthRY * 1.9,
+                             mouthRX * 0.16, mouthY);
+        ctx.fill();
+      }
+      ctx.restore();
+
+      // Lip line, drawn after the clip is released so it closes the shape.
+      ctx.strokeStyle = "rgba(8,47,73,0.75)";
+      ctx.lineWidth = Math.max(1, r * 0.03);
+      ctx.beginPath();
+      ctx.ellipse(0, mouthY, mouthRX, mouthRY, 0, 0, Math.PI * 2);
+      ctx.stroke();
     } else {
       ctx.fillStyle = theme().playerText;
       ctx.textAlign = "center"; ctx.textBaseline = "middle";

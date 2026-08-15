@@ -545,3 +545,29 @@ IDLE_AFTER_SECONDS = int(os.getenv("IDLE_AFTER_SECONDS", "300"))
 
 # How often the worker wakes to check. Jittered at the call site.
 IDLE_POLL_SECONDS = int(os.getenv("IDLE_POLL_SECONDS", "180"))
+
+
+# ---------------------------------------------------------------------------
+# Automatic on-chain settlement
+# ---------------------------------------------------------------------------
+# An assessment with a connected wallet and minted piQ tries to settle at the
+# moment it is written. When that attempt is skipped — no RPC reachable, the
+# gas wallet empty, a provider blip — the record used to sit unsettled forever,
+# because the only retry in the system was the owner opening the admin panel
+# and pressing a button. Everything else in the pipeline retries; this now does
+# too.
+#
+# ON by default: an operator who has configured a contract, a signing key and a
+# funded wallet has already said they want piQ to settle, and leaving earned
+# tokens stranded is the worse default. It spends gas, so it is one env var to
+# turn off, and it refuses to run at all while any blocker is present.
+ENABLE_AUTO_SETTLEMENT = _env_bool("AUTO_SETTLE", True)
+
+# Records per pass. Small on purpose: a backlog should drain over several
+# minutes rather than in one unbounded burst that empties the gas wallet before
+# anyone notices it is misconfigured.
+AUTO_SETTLE_BATCH = int(os.getenv("AUTO_SETTLE_BATCH", "5"))
+
+# Seconds between passes. Floored at 60 at the call site — settlement is not
+# time-critical, and a tight loop against an RPC endpoint gets rate-limited.
+AUTO_SETTLE_INTERVAL_SECONDS = int(os.getenv("AUTO_SETTLE_INTERVAL_SECONDS", "600"))

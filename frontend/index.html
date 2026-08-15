@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=71">
+<link rel="stylesheet" href="style.css?v=74">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -188,7 +188,13 @@
       <button class="tab-btn active" data-tab="assess">Review</button>
       <button class="tab-btn" data-tab="journal">Research</button>
       <button class="tab-btn" data-tab="analytics">Report</button>
-      <button class="tab-btn" data-tab="diagram">Architecture</button>
+      <!-- Architecture is NOT here. It moved out of the row and down to the
+           floating buttons beside the GitHub link: it is reference material
+           read once, and it was taking a quarter of the primary navigation
+           from the three things people come here to do. The element is still a
+           `.tab-btn` with `data-tab="diagram"` — only its position and styling
+           changed — so the tab handler, the deep link and the merged-tab
+           redirect all keep working untouched. -->
     </nav>
 
     <!-- TAB: ASSESS -->
@@ -337,11 +343,26 @@
           </svg>
           <span class="buddy-title"><strong>Research Buddy (riB)</strong></span>
           <span class="buddy-sub">Tailored to your profile</span>
-          <span class="buddy-actions">
-            <button type="button" class="buddy-btn" id="buddyMin"
-                    aria-label="Minimise the Research Buddy" title="Minimise">&minus;</button>
-            <button type="button" class="buddy-btn" id="buddyMax"
-                    aria-label="Maximise the Research Buddy" title="Maximise">&#9633;</button>
+          <!-- Icons are inline SVG, not characters. &minus; and &#9633; both
+               depend on the system font having those glyphs, and where it does
+               not the browser draws the missing-glyph box — which is exactly
+               what a maximise button is supposed to look like, so the failure
+               was invisible until both controls rendered as empty squares. -->
+          <span class="buddy-win-actions">
+            <button type="button" class="buddy-win-btn" id="buddyMin"
+                    aria-label="Minimise the Research Buddy" title="Minimise">
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
+                   fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
+                <path d="M2.5 6.5h7"/>
+              </svg>
+            </button>
+            <button type="button" class="buddy-win-btn" id="buddyMax"
+                    aria-label="Maximise the Research Buddy" title="Maximise">
+              <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
+                   fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
+                <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1.2"/>
+              </svg>
+            </button>
           </span>
         </div>
         <div class="buddy-scroll"><div id="buddyBody"></div></div>
@@ -858,7 +879,26 @@
   </main>
 </div>
 
-<!-- ===================== GITHUB LINK ===================== -->
+<!-- ===================== FLOATING BUTTONS ===================== -->
+<!-- Architecture, moved out of the tab row. Still a .tab-btn carrying
+     data-tab="diagram", so the existing tab handler opens it with no new
+     wiring — this is a restyle and a reparent, not a second code path. Placed
+     before the GitHub link so it sits to its left in the corner stack. -->
+<button class="tab-btn arch-fab" data-tab="diagram"
+        title="Framework Architecture" aria-label="Framework Architecture">
+  <svg viewBox="0 0 24 24" width="21" height="21" aria-hidden="true"
+       fill="none" stroke="currentColor" stroke-width="1.9"
+       stroke-linecap="round" stroke-linejoin="round">
+    <!-- A pipeline: one source feeding three stages, which is what the
+         diagram behind this button actually shows. -->
+    <rect x="9" y="2.5" width="6" height="5" rx="1.4"/>
+    <rect x="2" y="16.5" width="6" height="5" rx="1.4"/>
+    <rect x="9" y="16.5" width="6" height="5" rx="1.4"/>
+    <rect x="16" y="16.5" width="6" height="5" rx="1.4"/>
+    <path d="M12 7.5v4M5 16.5v-2.5h14v2.5M12 14v2.5"/>
+  </svg>
+</button>
+
 <a class="gh-fab" href="https://github.com/neurophilic/Scholar_Pi" target="_blank"
    rel="noopener noreferrer" title="Scholar Pi on GitHub" aria-label="Scholar Pi on GitHub">
   <svg viewBox="0 0 16 16" width="22" height="22" aria-hidden="true" fill="currentColor">
@@ -880,7 +920,7 @@
   </div>
 </div>
 
-<script src="app.js?v=71"></script>
-<script src="arcade.js?v=71"></script>
+<script src="app.js?v=74"></script>
+<script src="arcade.js?v=74"></script>
 </body>
 </html>
