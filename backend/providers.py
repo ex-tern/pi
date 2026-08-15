@@ -33,13 +33,16 @@ try:
     from config import (CEREBRAS_API_KEY, MISTRAL_API_KEY, DEEPSEEK_API_KEY,
                         TOGETHER_API_KEY, GITHUB_MODELS_TOKEN,
                         GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY, PRIMARY_MODEL,
+                        GROQ_QWEN_MODEL, GROQ_SMALL_MODEL,
                         FALLBACK_MODEL, GEMINI_PRIMARY_MODEL)
 except ImportError:
     GROQ_API_KEY = OR_API_KEY = GEMINI_API_KEY = ""
     CEREBRAS_API_KEY = MISTRAL_API_KEY = DEEPSEEK_API_KEY = ""
     TOGETHER_API_KEY = GITHUB_MODELS_TOKEN = ""
-    PRIMARY_MODEL = "llama-3.3-70b-versatile"
+    PRIMARY_MODEL = "openai/gpt-oss-120b"
     FALLBACK_MODEL = "llama-3.1-8b-instant"
+    GROQ_QWEN_MODEL = "qwen/qwen3-32b"
+    GROQ_SMALL_MODEL = "openai/gpt-oss-20b"
     GEMINI_PRIMARY_MODEL = "gemini-2.5-flash"
 
 # ---------------------------------------------------------------------------
@@ -165,7 +168,13 @@ def build_routes(juror: str) -> List[Dict]:
     """
     chains = {
         "llama": [
-            _route(PRIMARY_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
+            # Groq's llama-3.3-70b-versatile led this chain until GroqCloud
+            # decommissioned it on 16 Aug 2026. It is not replaced with a Groq
+            # model here: the substitutes Groq offers are GPT and Qwen lineage,
+            # and this juror is Llama BY DESIGN — the panel's claim rests on
+            # juror errors being uncorrelated, so a "llama" juror silently
+            # answering as GPT would keep the label and lose the property.
+            # Cerebras and Together still serve real Llama, so they lead now.
             _route("llama-3.3-70b", CEREBRAS_API_KEY, CEREBRAS_BASE, "Cerebras"),
             _route("llama-3.1-8b-instant", GROQ_API_KEY, GROQ_BASE, "Groq"),
             _route("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
@@ -181,11 +190,19 @@ def build_routes(juror: str) -> List[Dict]:
             _route("mistralai/mistral-large", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("mistralai/mistral-nemo", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
             _route("mistralai/mistral-7b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
-            # Groq hosts Mixtral directly, which bypasses OpenRouter routing
-            # policy entirely — the single most useful fallback for this juror.
-            _route("mixtral-8x7b-32768", GROQ_API_KEY, GROQ_BASE, "Groq"),
+            # Groq's mixtral-8x7b-32768 sat here as the one route that bypassed
+            # OpenRouter's routing policy. Groq has retired it, and for the same
+            # reason as the llama juror above it is not swapped for a
+            # different-lineage Groq model: this juror's value to the panel is
+            # that it is NOT another GPT. The universal fallback appended below
+            # still keeps it answering when Mistral's own API is unreachable.
         ],
         "qwen": [
+            # Groq's Qwen3 is the fastest real-Qwen route available and is one
+            # of the two models GroqCloud named as the migration target, so it
+            # leads — same lineage, so nothing about this juror's independence
+            # changes.
+            _route(GROQ_QWEN_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
             _route("qwen-3-32b", CEREBRAS_API_KEY, CEREBRAS_BASE, "Cerebras"),
             _route("Qwen/Qwen2.5-72B-Instruct-Turbo", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
             _route("qwen/qwen-2.5-72b-instruct", OR_API_KEY, OPENROUTER_BASE, "OpenRouter"),
@@ -240,16 +257,16 @@ def build_routes(juror: str) -> List[Dict]:
         _route("gpt-4o-mini", GITHUB_MODELS_TOKEN, GITHUB_MODELS_BASE, "GitHub Models"),
         _route("meta-llama/Llama-3.3-70B-Instruct-Turbo-Free", TOGETHER_API_KEY, TOGETHER_BASE, "Together"),
         _route(GEMINI_PRIMARY_MODEL, GEMINI_API_KEY, GEMINI_BASE, "Google"),
-        # Shared with the llama juror — deliberately last, since if the panel
-        # exhausted this quota the judge will find it exhausted too.
+        # Shared with every juror's fallback — deliberately last, since if the
+        # panel exhausted this quota the judge will find it exhausted too.
         _route(PRIMARY_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
-        _route("llama-3.1-8b-instant", GROQ_API_KEY, GROQ_BASE, "Groq"),
+        _route(GROQ_SMALL_MODEL, GROQ_API_KEY, GROQ_BASE, "Groq"),
     ]
 
     routes = [r for r in chains.get(juror, []) if r]
 
     # Universal last resort #1: the Groq-hosted PRIMARY_MODEL
-    # (llama-3.3-70b-versatile). Every juror ends here because it is the one
+    # (GPT-OSS 120B since the Llama 3.3 decommission). Every juror ends here because it is the one
     # route this deployment is most likely to actually have configured — Groq's
     # free tier needs no billing relationship, and unlike the OpenRouter Auto
     # Router it names a known model of known quality rather than whatever the
@@ -262,7 +279,7 @@ def build_routes(juror: str) -> List[Dict]:
     # keeps the Llama juror (where it is already primary) from listing it
     # twice. FALLBACK_MODEL follows it as the smallest, most consistently
     # available model on the same account, for when the 70B quota is spent.
-    for fallback_model in (PRIMARY_MODEL, FALLBACK_MODEL):
+    for fallback_model in (PRIMARY_MODEL, GROQ_SMALL_MODEL, FALLBACK_MODEL):
         route = _route(fallback_model, GROQ_API_KEY, GROQ_BASE, "Groq")
         if route:
             routes.append(route)

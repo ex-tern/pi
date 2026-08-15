@@ -1311,7 +1311,11 @@ document.querySelectorAll(".tab-btn").forEach(btn => {
     // (per distinct manuscript), so re-read it on the way back to Assess.
     // Relying only on the arcade's own post-win callback meant any missed
     // refresh left the tab insisting the trial was spent.
-    if (btn.dataset.tab === "assess") refreshTrialStatus();
+    if (btn.dataset.tab === "assess") {
+      refreshTrialStatus();
+      // A new set of suggestions each time the tab is opened.
+      if (typeof loadHotTopicsRow === "function") loadHotTopicsRow(true);
+    }
     if (btn.dataset.tab === "analytics") initAnalyticsTab();
     // Explore absorbed the old Journal, Explorer and leaderboard views, so
     // opening it has to load all three. They were separate tabs describing the
@@ -2342,8 +2346,12 @@ let discoverHotTopicsLoaded = false;
 
 function discoveryKey(p) { return p.doi || p.pdf_url || p.title; }
 
-async function loadHotTopicsRow() {
-  if (discoverHotTopicsLoaded) return;
+async function loadHotTopicsRow(force) {
+  // `discoverHotTopicsLoaded` used to make this a once-per-page-load fetch,
+  // which cancelled out the server's per-request sampling: the draw was random
+  // but the browser only ever asked for one. It now caches within a visit to
+  // the tab and re-draws when you come back to it.
+  if (discoverHotTopicsLoaded && !force) return;
   try {
     const res = await fetch(`${API}/api/discover/hot-topics`);
     const data = await res.json();
@@ -3109,6 +3117,18 @@ function markLocalPublished(hash, kind) {
     if ((it.hash || it.eval_hash) === hash) {
       it.published = true;
       it.publish_kind = kind || "author";
+    }
+  });
+  persistResults();
+}
+
+/** The inverse. Used to repaint an unpublish before the server confirms it. */
+function markLocalUnpublished(hash) {
+  evaluatedBuffer.forEach(it => {
+    if ((it.hash || it.eval_hash) === hash) {
+      it.published = false;
+      it.publish_kind = null;
+      it.published_at = null;
     }
   });
   persistResults();
@@ -4068,12 +4088,21 @@ function authorshipActions(item, idx) {
         ${claimable ? `<button class="btn btn-quiet" data-a="claim" ${d}
               title="Verify authorship and release ${a.escrowed.toFixed(2)} piQ held"
               >Claim ${a.escrowed.toFixed(2)}</button>` : ""}
-        <button class="btn btn-quiet" data-a="${a.published ? "withdraw" : "publish"}" ${d}
-                ${a.published || reviewed ? "" : "disabled"}
-                title="${a.published ? "Remove the published badge"
-                  : reviewed ? "Attach a badge publicly"
-                  : "This paper must be peer reviewed before it can be published"}"
-                >${a.published ? "Withdraw" : "Publish"}</button>
+        ${a.published ? `
+          <!-- Two different acts, so two buttons. "Withdraw" alone did the
+               first one and read like the second: authors expected the paper
+               to leave the journal and got a badge removed instead. -->
+          <button class="btn btn-quiet" data-a="withdraw" ${d}
+                  title="Remove the published badge. The paper stays in the corpus and the
+                         journal; re-publishing later is free.">Unpublish</button>
+          <button class="btn btn-danger-outline" data-a="remove" ${d}
+                  title="Take the paper out of the journal, the corpus and every listing.
+                         Its ledger block stays — the chain is append-only.">Withdraw</button>`
+        : `
+          <button class="btn btn-quiet" data-a="publish" ${d} ${reviewed ? "" : "disabled"}
+                  title="${reviewed ? "Attach a badge publicly"
+                    : "This paper must be peer reviewed before it can be published"}"
+                  >Publish</button>`}
       </div>
       ${!a.published && !reviewed
         ? `<p class="hint opt-inactive">Publishing is unavailable until a reviewer has submitted
@@ -7067,10 +7096,19 @@ async function togglePublish(hash, publish) {
         : `Publish this assessment?\n\nThe fee for this paper has already been paid, so this is free.`;
       if (!confirm(msg)) return;
     } catch (_) { /* fall through and let the server decide */ }
-  } else if (!confirm("Withdraw your endorsement?\n\nThe badge is removed. "
-                      + "Re-publishing later is free.")) {
+  } else if (!confirm("Unpublish this assessment?\n\nThe badge is removed and the paper "
+                      + "stops appearing as published. It stays in the corpus, and "
+                      + "re-publishing later is free.\n\nTo take it out of the journal "
+                      + "entirely, use Withdraw instead.")) {
     return;
   }
+
+  // Repaint FIRST, then confirm. Unpublishing is a local state change the
+  // server almost never refuses, and waiting for a round trip before moving
+  // the badge made the button look broken — the card sat there still saying
+  // "Published" until the history reloaded seconds later.
+  if (publish) markLocalPublished(hash, null); else markLocalUnpublished(hash);
+  renderResults();
 
   try {
     const res = await fetch(`${API}/api/assessments/${encodeURIComponent(hash)}/publish?${qs}`, {
@@ -7079,12 +7117,17 @@ async function togglePublish(hash, publish) {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    alert(data.message || (publish ? "Published." : "Withdrawn."));
+    alert(data.message || (publish ? "Published." : "Unpublished."));
   } catch (e) {
+    // The optimistic repaint below has to be undone, or the interface keeps
+    // asserting a state the server rejected.
+    if (publish) markLocalUnpublished(hash); else markLocalPublished(hash, null);
+    renderResults();
     alert(`Could not update: ${e.message}`);
   }
   loadAssessmentHistory();
   loadEmissionStatus();
+  refreshCorpusViews();
 }
 
 async function removeAssessment(hash) {
