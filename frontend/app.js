@@ -150,7 +150,7 @@ const HELP = {
           to ten papers at once.</li>
       </ul>
       <p>Every processed manuscript writes a Proof-of-Research block, which is what makes the
-      pi-Dyne forecast on the Report tab possible.</p>`,
+      pi-Dyne forecast on the Envision tab possible.</p>`,
   },
   assess: {
     title: "How Assessment Works",
@@ -2728,7 +2728,7 @@ function renderResults() {
           <div class="result-title">${escapeHtml(item && item.title ? item.title : "Assessed manuscript")}</div>
           <div class="result-author warning-text">This result was assessed and saved, but could
             not be displayed here (${escapeHtml(e.message)}). It is still in the ledger and the
-            Report tables.</div>
+            Envision tables.</div>
         </div>
         <div class="result-actions">
           <div class="action-bar">

@@ -512,7 +512,7 @@
       // papers did land.
       el.innerHTML = `<strong>${corpus.total_papers} paper${corpus.total_papers === 1 ? "" : "s"}
         assessed, but none could be classified into a field.</strong> They are in the ledger and
-        the Report tables, they just cannot be placed on the map yet. This usually means the
+        the Envision tables, they just cannot be placed on the map yet. This usually means the
         model panel was unavailable during assessment — check the juror status, then re-assess.`;
     } else {
       const unclassified = corpus.unclassified_papers
