@@ -960,7 +960,7 @@ def grade_adjudication_quality(consensus_results) -> dict:
         tier, confidence = "Strong", 0.90 + min(0.08, 0.02 * (n_external - 3))
         rationale = (
             f"{n_external} independent external LLMs plus the local SciLM (siM) engine each assessed this "
-            f"manuscript separately, and the pi-Dyne engine adjudicated their combined evidence. "
+            f"manuscript separately, and the PiDN engine adjudicated their combined evidence. "
             f"The jurors come from different providers and model families, so their errors are "
             f"partly independent and agreement carries real information. Note the limit of this: "
             f"these models share overlapping training corpora and architectures, so agreement "
@@ -1101,7 +1101,7 @@ def collect_panel_lists(consensus_results, field: str, heading: str) -> str:
     return f"\n#### {heading}\n\n" + "\n".join(items[:8]) + "\n"
 
 def adjudicate_panel_verdict(consensus_results, text=None):
-    prompt = "You are the pi-Dyne Assessment Engine. Review these independent model assessments:\n\n"
+    prompt = "You are the PiDN Assessment Engine. Review these independent model assessments:\n\n"
     active_count = 0
     for provider, data in consensus_results.items():
         if provider.startswith("_"):

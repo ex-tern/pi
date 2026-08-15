@@ -16,6 +16,7 @@ import json
 import uuid
 import decimal
 import time
+import concurrent.futures
 import hashlib
 import hmac
 import logging
@@ -1622,7 +1623,7 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
         return {
             "available": False,
             "needs_selection": True,
-            "reason": ("Tick the papers you want the Research Buddy to read, under Your "
+            "reason": ("Tick the papers you want the ResBD to read, under Your "
                        "assessments. It reasons only from the papers you choose, so it never "
                        "gives you advice assembled from someone else's work."),
             "profile": profile,
@@ -1732,7 +1733,7 @@ def write_profile_slot(payload: ProfileSlotRequest, request: Request):
 
 @app.post("/api/profiles/{slot_id}/activate")
 def activate_profile(slot_id: int, payload: ResearcherProfile, request: Request):
-    """Switch which profile frames diagnostics and the Research Buddy."""
+    """Switch which profile frames diagnostics and the ResBD."""
     key = _profile_key(payload.wallet, payload.orcid)
     if not key:
         raise HTTPException(status_code=400, detail="Sign in to switch profiles.")
@@ -4245,6 +4246,51 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         # completed assessment.
         return json.dumps(obj, default=_json_safe) + "\n"
 
+
+    # --- Keeping the stream alive -----------------------------------------
+    #
+    # Processing one paper is a single blocking call that can run for minutes:
+    # extraction, then the model panel, then enrichment. The generator emits
+    # "Analyzing X..." immediately before it and nothing at all until it
+    # returns, so for that whole window the response body is silent.
+    #
+    # A silent body is what gets a streaming connection dropped. Proxies, load
+    # balancers and browsers all reap connections that have sent nothing for a
+    # while, and when that happens the client sees a bare "network error" mid-
+    # run while the server carries on none the wiser — which is exactly the
+    # failure being reported: a long "Analyzing…", then a lost connection, and
+    # nothing in the server log because the server did not fail.
+    #
+    # So the work runs on a thread and the generator emits a heartbeat every
+    # few seconds while it waits. Bytes keep flowing, nothing along the path
+    # sees an idle connection, and the client gets an honest elapsed time
+    # instead of a frozen line.
+    def run_with_heartbeat(label, fn, *args, **kwargs):
+        """Run `fn` off-thread, yielding heartbeat lines until it finishes.
+
+        Yields (payload_line_or_None, result_or_MISSING) pairs: the caller
+        forwards the lines and takes the result from the final pair.
+        """
+        started = time.time()
+        pool = concurrent.futures.ThreadPoolExecutor(max_workers=1)
+        try:
+            future = pool.submit(fn, *args, **kwargs)
+            while True:
+                try:
+                    yield None, future.result(timeout=HEARTBEAT_SECONDS)
+                    return
+                except concurrent.futures.TimeoutError:
+                    yield line({
+                        "type": "heartbeat",
+                        "label": label,
+                        "elapsed": int(time.time() - started),
+                        "message": f"Still analyzing {label}…",
+                    }), None
+        finally:
+            # wait=False: the result has already been taken, or the client has
+            # gone and nothing is waiting for it.
+            pool.shutdown(wait=False)
+
     # A missing profile is normal (anonymous users have none); it only frames
     # the wording of the diagnostic summary and never changes the findings.
     researcher_profile = researcher_profile or {}
@@ -4470,7 +4516,14 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
                 return
             yield line({"type": "status", "message": "Assessing document..."})
-            res = process_single_pdf(pdf_bytes, f"DOI_{doi}.pdf", "", user_id, book_address, provided_doi=doi)
+            res = None
+            for hb, out in run_with_heartbeat(
+                    f"DOI {doi}", process_single_pdf, pdf_bytes, f"DOI_{doi}.pdf", "",
+                    user_id, book_address, provided_doi=doi):
+                if hb:
+                    yield hb
+                else:
+                    res = out
             if res:
                 item = build_result_payload(res, f"DOI_{doi}.pdf", profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
@@ -4508,7 +4561,14 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
                 yield line({"type": "done", "message": "Stopped: insufficient piQ balance."})
                 return
             yield line({"type": "status", "message": f"Assessing: {title[:80]}..."})
-            res = process_single_pdf(pdf_bytes, fname, "", user_id, book_address, provided_doi=p_doi or "None")
+            res = None
+            for hb, out in run_with_heartbeat(
+                    fname, process_single_pdf, pdf_bytes, fname, "", user_id,
+                    book_address, provided_doi=p_doi or "None"):
+                if hb:
+                    yield hb
+                else:
+                    res = out
             if res:
                 item = build_result_payload(res, fname, profile=researcher_profile)
                 item["fee_charged"] = fee if charge_fees else 0.0
@@ -4535,7 +4595,13 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
             return
 
         yield line({"type": "status", "message": f"Analyzing {fname}..."})
-        res = process_single_pdf(raw_bytes, fname, "", user_id, book_address)
+        res = None
+        for hb, out in run_with_heartbeat(
+                fname, process_single_pdf, raw_bytes, fname, "", user_id, book_address):
+            if hb:
+                yield hb
+            else:
+                res = out
         if res:
             item = build_result_payload(res, fname, profile=researcher_profile)
             item["fee_charged"] = fee if charge_fees else 0.0
@@ -4550,6 +4616,11 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
 
     yield line({"type": "done", "message": "Complete."})
 
+
+# Seconds between stream heartbeats while one paper is being processed.
+# Short enough to stay under any reasonable proxy idle timeout, long
+# enough that it costs nothing.
+HEARTBEAT_SECONDS = int(os.getenv("STREAM_HEARTBEAT_SECONDS", "10"))
 
 MAX_DISCOVERY_BATCH = 10
 
@@ -5154,7 +5225,7 @@ def run_forecast(
 
 def _run_forecast_impl(lookback: int = 3, alpha: float = 0.6,
                        beta: float = 0.3, gain: float = 2.5):
-    """Trains the pi-Dyne LSTM on the recorded per-block criteria weights and
+    """Trains the PiDN LSTM on the recorded per-block criteria weights and
     projects the next epoch's weighting.
 
     The chart this feeds used to be meaningless because every block was

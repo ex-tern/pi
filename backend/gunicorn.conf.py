@@ -36,7 +36,15 @@ worker_class = "uvicorn.workers.UvicornWorker"
 # per additional worker).
 workers = int(os.getenv("WEB_CONCURRENCY", "1"))
 
-timeout = int(os.getenv("GUNICORN_TIMEOUT", "120"))  # PDF assessment can take a while
+# One paper can legitimately occupy a worker for minutes: extraction, then the
+# model panel (bounded by PANEL_BUDGET_SECONDS), then enrichment. 120s was
+# under that ceiling, so a slow-but-healthy assessment could be killed by the
+# arbiter mid-request and reach the browser as a bare "network error".
+#
+# The stream also heartbeats every few seconds now, which keeps intermediaries
+# from reaping the connection — but the two are separate protections: a
+# heartbeat cannot stop gunicorn's own arbiter from reaping the worker.
+timeout = int(os.getenv("GUNICORN_TIMEOUT", "300"))
 graceful_timeout = 30
 keepalive = 5
 

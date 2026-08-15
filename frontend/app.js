@@ -134,7 +134,7 @@ function bootstrapFromQueryParams() {
 // ---------------------------------------------------------------------------
 // Contextual help. Every major section carries a circled "?" that explains
 // the idea behind it, so the interface is self-documenting rather than
-// assuming the reader already knows what piX, piQ or pi-Dyne mean.
+// assuming the reader already knows what piX, piQ or PiDN mean.
 // ---------------------------------------------------------------------------
 const HELP = {
   intake: {
@@ -150,14 +150,14 @@ const HELP = {
           to ten papers at once.</li>
       </ul>
       <p>Every processed manuscript writes a Proof-of-Research block, which is what makes the
-      pi-Dyne forecast on the Envision tab possible.</p>`,
+      PiDN forecast on the Envision tab possible.</p>`,
   },
   assess: {
     title: "How Assessment Works",
     body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
       several large language models — Llama, Mistral, Qwen and Gemini — while the local SciLM (siM)
       engine performs deterministic structural analysis in parallel.</p>
-      <p>The <strong>pi-Dyne engine</strong> then adjudicates a single verdict from the panel's
+      <p>The <strong>PiDN engine</strong> then adjudicates a single verdict from the panel's
       independent assessments. Because the jurors come from different providers, agreement between
       them carries real information.</p>
       <p><strong>The limit of that claim, stated plainly:</strong> these models share overlapping
@@ -207,17 +207,21 @@ const HELP = {
   },
   analytics: {
     title: "Analytics & Map",
-    body: `<p>Corpus-level views of everything assessed so far: the pi-Dyne forecast of where
+    body: `<p>Corpus-level views of everything assessed so far: the PiDN forecast of where
       evaluation weight is heading, a network map of the scientific fields represented, and the
       two leaderboards ranking papers by piX and authors by piQ.</p>`,
   },
   pidyne: {
-    title: "The pi-Dyne Forecast",
-    body: `<p>The eight Pi-Index criteria are not weighted equally forever. Every time a manuscript
+    title: "PiDN — the forecast engine",
+    body: `<p class="lede"><strong>PiDN</strong> (pi-Dynamic) predicts what the next batch of
+      papers will be judged on. It does not score your paper — it forecasts which of the eight
+      criteria the corpus is starting to reward, so you can see the standard moving before it
+      reaches you.</p>
+      <p>The eight Pi-Index criteria are not weighted equally forever. Every time a manuscript
       is assessed, a Proof-of-Research block records the criteria weighting that paper's evidence
       profile implies: criteria the corpus consistently evidences well gain weight, sparsely
       evidenced ones lose it.</p>
-      <p><strong>pi-Dyne</strong> is an LSTM neural network trained on that recorded sequence of
+      <p><strong>PiDN</strong> is an LSTM neural network trained on that recorded sequence of
       block weights. It learns the trajectory the corpus is on and projects where the weighting
       lands in the next epoch.</p>
       <h4>Reading the chart</h4>
@@ -290,10 +294,14 @@ const HELP = {
       <p>Select a row to see that author's assessed papers.</p>`,
   },
   buddy: {
-    title: "Research Buddy (riB)",
-    body: `<p>A short, tailored plan derived from your saved profile — your fields, how many
+    title: "ResBD — your reading assistant",
+    body: `<p class="lede"><strong>ResBD</strong> (Research Buddy) tells you which papers in the
+      corpus are worth your time and what to fix in your own work first. It reads your saved
+      profile and only the papers you have ticked under <em>Your assessments</em> — never anyone
+      else's work.</p>
+      <p>A short, tailored plan derived from your saved profile — your fields, how many
       fields you work across, and whether you have articulated a core claim.</p>
-      <p><strong>It is heuristics, not analysis.</strong> Research Buddy (riB) reads what you typed
+      <p><strong>It is heuristics, not analysis.</strong> ResBD reads what you typed
       about yourself; it has not read your publications. It says so at the bottom of every
       report, and it deliberately refuses to generate advice from an almost-empty profile —
       a buddy that invents suggestions from nothing is worse than one that stays quiet, because
@@ -376,7 +384,7 @@ const HELP = {
     title: "Framework Architecture",
     body: `<p>The flowchart traces a manuscript end to end: intake and identity verification,
       text extraction and deterministic scoring, independent assessment by the model panel,
-      pi-Dyne adjudication, and Proof-of-Research settlement on Sepolia.</p>
+      PiDN adjudication, and Proof-of-Research settlement on Sepolia.</p>
       <p>Colour indicates the stage a step belongs to; see the legend above the diagram.</p>`,
   },
   integrity: {
@@ -1472,7 +1480,7 @@ function syncProfileVisibility() {
   else document.getElementById("claimableCard")?.classList.add("hidden");
 }
 
-/** Research Buddy (riB) — concrete next actions derived from the saved profile.
+/** ResBD — concrete next actions derived from the saved profile.
  *
  *  Deliberately states what it does not know. A "buddy" that invents advice
  *  from an empty profile is worse than one that says the profile is thin,
@@ -1598,7 +1606,7 @@ function renderResearchBuddy(profile) {
   loadBuddyCorpus();
 }
 
-/** The grounded half of Research Buddy (riB): the researcher's stated fields
+/** The grounded half of ResBD: the researcher's stated fields
  *  measured against what has actually been assessed in this deployment. */
 async function loadBuddyCorpus() {
   const slot = document.getElementById("buddyCorpus");
@@ -1656,12 +1664,12 @@ async function loadBuddyCorpus() {
 
   const picks = data.picks;
   if (picks && picks.available) {
-    // riB, not SciLM. These picks come from the Research Buddy reading the
+    // riB, not SciLM. These picks come from the ResBD reading the
     // papers the user selected; SciLM is the local scoring engine and has no
     // part in this. Attributing one component's output to another makes both
     // harder to reason about — and makes a wrong recommendation look like it
     // came from the thing that assigns scores.
-    html += `<div class="buddy-picks"><h4>Research Buddy (riB) reading picks
+    html += `<div class="buddy-picks"><h4>ResBD reading picks
       <span class="picks-scope">from ${escapeHtml(picks.scope || "your selection")}</span></h4>`;
 
     const list = (items, kind) => items.map(p => `
@@ -1725,14 +1733,14 @@ function refreshBuddy() {
   } catch (e) {
     const body = document.getElementById("buddyBody");
     if (body) {
-      body.innerHTML = `<p class="buddy-empty">The Research Buddy (riB) could not be rendered.
+      body.innerHTML = `<p class="buddy-empty">The ResBD could not be rendered.
         <code>${escapeHtml(String(e && e.message ? e.message : e))}</code></p>`;
     }
   }
 }
 
 /* ---------------------------------------------------------------------------
- * Research Buddy: window behaviour
+ * ResBD: window behaviour
  *
  * The buddy is a floating window over the Assessment tab — draggable by its
  * bar, minimisable to that bar, maximisable, and resizable from the corner.
@@ -1807,8 +1815,8 @@ function initBuddyWindow() {
     if (btn) {
       btn.innerHTML = on ? ICON.max : ICON.min;
       btn.title = on ? "Restore" : "Minimise";
-      btn.setAttribute("aria-label", on ? "Restore the Research Buddy"
-                                        : "Minimise the Research Buddy");
+      btn.setAttribute("aria-label", on ? "Restore the ResBD"
+                                        : "Minimise the ResBD");
     }
     write({ min: on });
   }
@@ -1934,7 +1942,7 @@ if (document.readyState !== "loading") initBuddyWindow();
 // Named research profiles
 //
 // One account, several profiles, exactly one active. The active one is what
-// frames the diagnostics and feeds the Research Buddy — everything downstream
+// frames the diagnostics and feeds the ResBD — everything downstream
 // still asks for "the profile", so switching is a single write rather than a
 // change to every consumer.
 // ---------------------------------------------------------------------------
@@ -2627,6 +2635,13 @@ function handleStreamLine(obj, statusBox) {
     statusBox.insertAdjacentHTML("beforeend",
       `<div class="status-line status-live">${escapeHtml(obj.message)}</div>`);
     tickStatusLine(statusBox.lastElementChild, Date.now());
+  } else if (obj.type === "heartbeat") {
+    // Not a new line. The server sends these every few seconds purely so the
+    // response body is never silent — a silent stream is what proxies and
+    // browsers reap, and that reaping is what surfaced as "network error"
+    // mid-run. Appending one line per beat would bury the actual progress.
+    const live = statusBox.querySelector(".status-line.status-live:last-of-type");
+    if (live) live.dataset.serverElapsed = `${obj.elapsed}s`;
   } else if (obj.type === "fee") {
     stopStatusTicker();
     statusBox.innerHTML += `<div class="status-line status-fee">${escapeHtml(obj.message)}</div>`;
@@ -4734,7 +4749,7 @@ async function showDefenseModal(idx) {
 }
 
 // ---------------------------------------------------------------------------
-// ANALYTICS TAB — pi-Dyne forecast
+// ANALYTICS TAB — PiDN forecast
 // ---------------------------------------------------------------------------
 let forecastChart = null;
 const CRITERIA_KEYS = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
@@ -4995,7 +5010,7 @@ async function loadForecast() {
 
   const lookback = document.getElementById("lookbackSelect").value;
   const view = readForecastControls();
-  msg.textContent = "Training pi-Dyne LSTM on recorded ledger weights…";
+  msg.textContent = "Training PiDN LSTM on recorded ledger weights…";
   [empty, chartWrap, metaBox, insight, table, heading].forEach(el => el.classList.add("hidden"));
 
   try {
@@ -5643,13 +5658,36 @@ async function loadEngineBar() {
     return;
   }
 
+  // [api key, display name, one-line job, plain-language explanation]
+  //
+  // The API KEY is not the display name and must not be renamed with it. It is
+  // the join between this payload, the persisted learner state (rows keyed
+  // "pid:C1") and the server — renaming it would orphan everything those
+  // models have learned. So the label changes and the key stays.
+  //
+  // Each engine now carries a sentence saying what it actually does, in words
+  // that assume nothing. A three-letter name over a percentage tells a reader
+  // that something is working without telling them what.
   const ENGINES = [
-    ["piD", "pi-Dyne", "Projects the next epoch's criteria weights"],
-    ["siM", "SciLM",   "Calibrates structural scoring from panel consensus"],
-    ["riB", "Research Buddy", "Ranks which papers are worth your time"],
+    ["piD", "PiDN", "Predicts what the next batch of papers will be judged on",
+     "Every assessed paper records how much each of the eight criteria mattered "
+     + "to it. PiDN reads that history and projects where the weighting is "
+     + "heading next — which is the chart below. It does not score your paper; "
+     + "it forecasts what the corpus is starting to reward."],
+    ["siM", "SciLM", "Learns to read a paper's structure the way the panel does",
+     "SciLM scores a manuscript from its structure alone — methods, data "
+     + "statements, statistics, references — with no model involved. Each time "
+     + "the model panel reaches a verdict, SciLM compares its own score against "
+     + "it and adjusts, so the fast structural check keeps getting closer to "
+     + "the slow expensive one."],
+    ["riB", "ResBD", "Picks which papers in the corpus are worth your time",
+     "ResBD compares your saved profile against the papers you have ticked "
+     + "under Your assessments, and suggests what to read and what to fix "
+     + "first. It reads only the papers you tick — never anyone else's work — "
+     + "and it learns from whether you found each suggestion useful."],
   ];
 
-  el.innerHTML = ENGINES.map(([key, label, what]) => {
+  el.innerHTML = ENGINES.map(([key, label, what, explain]) => {
     const s = data[key] || {};
     if (s.error) {
       return `<div class="engine-card engine-err">
@@ -5670,11 +5708,15 @@ async function loadEngineBar() {
 
     return `<div class="engine-card${learning ? " engine-learning" : ""}">
       <div class="engine-name">${escapeHtml(label)}
-        <span class="engine-key">${escapeHtml(key)}</span>
+        <span class="engine-key" title="Internal engine key">${escapeHtml(key)}</span>
         ${learning ? `<span class="engine-flag" title="This engine's recent error is lower
           than its own frozen defaults. It is a readout, not a setting — these cards are not
           selectable.">improving</span>` : ""}</div>
       <div class="engine-what">${escapeHtml(what)}</div>
+      <details class="engine-explain">
+        <summary>What does it actually do?</summary>
+        <p>${escapeHtml(explain)}</p>
+      </details>
       ${haveErr ? `
         <div class="engine-track" title="${escapeHtml(
           `Mean error ${mine.toFixed(4)} against a baseline of ${base.toFixed(4)}. `
@@ -6247,7 +6289,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   CANARY --> ${jurorChain}
   PARSE --> L5
 
-  subgraph S4["4 · pi-Dyne adjudication"]
+  subgraph S4["4 · PiDN adjudication"]
     direction TB
     SYN["Evidence synthesis"]:::judge
     AGREE["Inter-model agreement"]:::judge
@@ -6303,7 +6345,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   subgraph S7["7 · Outputs"]
     direction LR
     DOSS["Dossier<br/>per-signal attribution"]:::ui
-    FORE["pi-Dyne forecast<br/>Holt default · LSTM optional"]:::ui
+    FORE["PiDN forecast<br/>Holt default · LSTM optional"]:::ui
     MAPS["Map of science<br/>fields from dossiers"]:::ui
     BOARD["piX / piQ boards"]:::ui
     DEF["GA rebuttal strategy"]:::ui
@@ -6551,7 +6593,7 @@ const histPiq = piqCell;
 // sidebar re-render), and without this they raced: each set "Loading…", each
 // awaited, and the slowest overwrote the newest. Sharing one in-flight promise
 // makes the extra callers free instead of harmful.
-// Which of the researcher's own papers the Research Buddy reasons from.
+// Which of the researcher's own papers the ResBD reasons from.
 //
 // Empty means "all of them", which is the right default: a new user has made
 // no statement about scope, and silently feeding riB nothing would make it
@@ -6626,9 +6668,9 @@ function renderBuddyPickNote(total) {
   if (!el) return;
   const n = buddySelection.size;
   el.innerHTML = n === 0
-    ? `<span class="hint">Research Buddy is reading <strong>nothing yet</strong> — tick the
+    ? `<span class="hint">ResBD is reading <strong>nothing yet</strong> — tick the
        papers you want it to reason from.</span>`
-    : `<span class="hint">Research Buddy is reading <strong>${n}</strong> selected
+    : `<span class="hint">ResBD is reading <strong>${n}</strong> selected
        paper${n === 1 ? "" : "s"} of ${total}.</span>`;
 }
 
@@ -6715,12 +6757,12 @@ async function _loadAssessmentHistory() {
     // deletion. Naming what it does, above the thing it does it to, is the
     // cheapest way to make that impossible to misread.
     body.innerHTML = `<p class="buddy-pick-lead">
-        <strong>Tick a paper to include it in your Research Buddy (riB).</strong>
+        <strong>Tick a paper to include it in your ResBD.</strong>
         riB reads only the papers you tick when suggesting what to work on next.
         Ticking nothing means it has nothing to read.</p>
       <div class="table-scroll"><table class="data-table history-table"><thead><tr>
-        <th class="col-pick" title="Tick a paper to include it in your Research Buddy (riB)">
-          <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in Research Buddy"
+        <th class="col-pick" title="Tick a paper to include it in your ResBD">
+          <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in ResBD"
                  ${anySelected && buddySelection.size === live.size ? "checked" : ""}></th>
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => {
@@ -6729,8 +6771,8 @@ async function _loadAssessmentHistory() {
         <tr${buddySelection.has(h) ? ' class="row-picked"' : ""}>
           <td class="col-pick"><input type="checkbox" class="buddy-pick"
               data-pick="${escapeHtml(h)}" ${buddySelection.has(h) ? "checked" : ""}
-              title="Include this paper in your Research Buddy (riB)"
-              aria-label="Include this paper in your Research Buddy"></td>
+              title="Include this paper in your ResBD"
+              aria-label="Include this paper in your ResBD"></td>
           <td><div class="hist-title">${escapeHtml(a.title)} ${allBadges(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
@@ -7775,7 +7817,7 @@ function signOut() {
   Session.orcid = "";
   Session.researcherName = "";
   sessionState = { verified: false, two_factor: false, is_owner: false };
-  // The Research Buddy selection belongs to the person who just left.
+  // The ResBD selection belongs to the person who just left.
   resetBuddyStateForIdentityChange();
 
   const row = document.getElementById("sessionRow");
