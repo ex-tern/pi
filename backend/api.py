@@ -10,6 +10,7 @@ Run with:  uvicorn api:app --host 127.0.0.1 --port 8000 --reload
 Production:  gunicorn api:app -c gunicorn.conf.py   (see README)
 """
 import os
+import shutil
 import io
 import re
 import json
@@ -28,7 +29,7 @@ import traceback
 import urllib.parse
 from datetime import datetime
 from collections import deque, defaultdict
-from typing import Optional, List, Dict
+from typing import Optional, List, Dict, Tuple
 
 import sqlite3
 
@@ -3720,6 +3721,185 @@ def admin_grant(req: GrantRequest, request: Request, wallet: str = Query(default
                     f"Balance is now {result['balance']:.2f} piQ. This is a ledger entry — "
                     f"it appears in the fee history and can be reversed with a negative grant."),
     }
+
+
+def _dir_size(path: str) -> Tuple[int, int]:
+    """(bytes, file count) under a directory. Missing directory reads as empty."""
+    total = files = 0
+    for root, _dirs, names in os.walk(path):
+        for n in names:
+            try:
+                total += os.path.getsize(os.path.join(root, n))
+                files += 1
+            except OSError:
+                continue
+    return total, files
+
+
+def _human(n: float) -> str:
+    for unit in ("B", "KB", "MB", "GB", "TB"):
+        if abs(n) < 1024 or unit == "TB":
+            return f"{n:.1f} {unit}" if unit != "B" else f"{int(n)} B"
+        n /= 1024
+    return f"{n:.1f} TB"
+
+
+@app.get("/api/admin/storage")
+def storage_report(request: Request, wallet: str = Query(default="")):
+    """What is actually using the data volume. Owner only.
+
+    A hosting alert says "the volume is at 88%" and nothing else, which leaves
+    an operator guessing between the database, the retained manuscripts and the
+    logs — three things with completely different remedies. This measures each,
+    and names the one item that is always safe to delete: a stored PDF whose
+    assessment no longer exists.
+    """
+    require_owner(request, wallet)
+
+    db_bytes = 0
+    for suffix in ("", "-wal", "-shm"):          # WAL can be larger than the DB
+        try:
+            db_bytes += os.path.getsize(DB_PATH + suffix)
+        except OSError:
+            pass
+
+    store_bytes, store_files = _dir_size(paper_store.PAPER_STORE_DIR)
+    log_bytes, log_files = _dir_size(os.path.join(BASE_DIR, "logs"))
+
+    # Orphans: a file on disk with no row pointing at it. These accumulate
+    # because a paper is stored at UPLOAD time, before the pipeline has decided
+    # whether the submission produces a record at all — a duplicate merge, a
+    # failed extraction or a refused run all leave the bytes behind.
+    orphans, orphan_bytes = [], 0
+    try:
+        conn = get_db_connection()
+        try:
+            known = {r[0] for r in conn.execute(
+                "SELECT eval_hash FROM papers_assessment").fetchall()}
+        finally:
+            conn.close()
+        for name in os.listdir(paper_store.PAPER_STORE_DIR):
+            if not name.endswith(".pdf"):
+                continue
+            if name[:-4] not in known:
+                p = os.path.join(paper_store.PAPER_STORE_DIR, name)
+                try:
+                    orphan_bytes += os.path.getsize(p)
+                except OSError:
+                    pass
+                orphans.append(name[:-4])
+    except Exception as e:                                       # noqa: BLE001
+        logging.warning("Orphan scan failed: %s", e)
+
+    try:
+        usage = shutil.disk_usage(BASE_DIR)
+        disk = {"total": usage.total, "used": usage.used, "free": usage.free,
+                "percent_used": round(usage.used / usage.total * 100, 1) if usage.total else None}
+    except Exception:                                            # noqa: BLE001
+        disk = {}
+
+    # Rows whose payload is a BLOB. The queue is transient by design, so a row
+    # still sitting here is a submission that was never drained.
+    queue_rows = 0
+    try:
+        conn = get_db_connection()
+        try:
+            queue_rows = conn.execute("SELECT COUNT(*) FROM ingestion_queue").fetchone()[0]
+        finally:
+            conn.close()
+    except sqlite3.Error:
+        queue_rows = 0
+
+    return {
+        "path": BASE_DIR,
+        "disk": disk,
+        "database": {"bytes": db_bytes, "human": _human(db_bytes),
+                     "ingestion_queue_rows": queue_rows},
+        "manuscripts": {"bytes": store_bytes, "human": _human(store_bytes),
+                        "files": store_files},
+        "logs": {"bytes": log_bytes, "human": _human(log_bytes), "files": log_files},
+        "orphans": {"count": len(orphans), "bytes": orphan_bytes,
+                    "human": _human(orphan_bytes)},
+        "note": ("Manuscripts are retained so a published assessment can serve the paper it "
+                 "assessed. Orphans are stored files with no assessment left — always safe to "
+                 "delete. VACUUM reclaims database pages freed by withdrawals; SQLite does not "
+                 "return that space to the filesystem on its own."),
+    }
+
+
+class CleanupRequest(BaseModel):
+    orphans: bool = True
+    vacuum: bool = False
+    drain_queue: bool = False
+
+
+@app.post("/api/admin/storage/cleanup")
+def storage_cleanup(req: CleanupRequest, request: Request, wallet: str = Query(default="")):
+    """Reclaim space. Owner only, and every step is opt-in.
+
+    Nothing here touches a manuscript that still has an assessment. Deleting
+    those is a retention POLICY decision — it silently breaks the file link on
+    every published paper — so it is deliberately not offered as a button.
+    """
+    require_owner(request, wallet)
+    done = {"orphans_removed": 0, "bytes_freed": 0, "queue_rows_cleared": 0,
+            "vacuumed": False}
+
+    if req.orphans:
+        try:
+            conn = get_db_connection()
+            try:
+                known = {r[0] for r in conn.execute(
+                    "SELECT eval_hash FROM papers_assessment").fetchall()}
+            finally:
+                conn.close()
+            for name in os.listdir(paper_store.PAPER_STORE_DIR):
+                if not name.endswith(".pdf") or name[:-4] in known:
+                    continue
+                p = os.path.join(paper_store.PAPER_STORE_DIR, name)
+                try:
+                    size = os.path.getsize(p)
+                    os.remove(p)
+                    done["orphans_removed"] += 1
+                    done["bytes_freed"] += size
+                except OSError:
+                    continue
+        except Exception as e:                                   # noqa: BLE001
+            logging.warning("Orphan cleanup failed: %s", e)
+
+    if req.drain_queue:
+        try:
+            conn = get_db_connection()
+            try:
+                cur = conn.execute("DELETE FROM ingestion_queue")
+                done["queue_rows_cleared"] = cur.rowcount or 0
+                conn.commit()
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            logging.warning("Queue drain failed: %s", e)
+
+    if req.vacuum:
+        # VACUUM rewrites the database, so it needs free space roughly equal to
+        # the current file while it runs. On a volume that is already nearly
+        # full that is the one operation most likely to fail — so it runs last,
+        # after the deletions above have made room for it.
+        try:
+            conn = get_db_connection()
+            try:
+                conn.execute("VACUUM")
+                done["vacuumed"] = True
+            finally:
+                conn.close()
+        except sqlite3.Error as e:
+            logging.warning("VACUUM failed: %s", e)
+            done["vacuum_error"] = str(e)[:200]
+
+    add_log(f"Storage cleanup: {done['orphans_removed']} orphaned files "
+            f"({_human(done['bytes_freed'])}), queue rows {done['queue_rows_cleared']}, "
+            f"vacuum={done['vacuumed']}.")
+    done["human_freed"] = _human(done["bytes_freed"])
+    return done
 
 
 @app.get("/api/admin/settlement")

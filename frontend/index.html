@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=88">
+<link rel="stylesheet" href="style.css?v=89">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -147,6 +147,13 @@
     <!-- Owner only. Credits piQ for testing a paid path without hand-editing
          the database — a hand-written UPDATE is unattributable and easy to get
          subtly wrong, while this writes one audited ledger row. -->
+    <!-- Owner only. Turns a hosting alert ("the volume is at 88%") into the
+         three numbers that decide what to do about it. -->
+    <details class="sidebar-expander hidden" id="storagePanel">
+      <summary>Storage<span class="pill pill-muted" id="storageBadge">–</span></summary>
+      <div id="storageBody"><p class="hint">Loading…</p></div>
+    </details>
+
     <details class="sidebar-expander hidden" id="grantPanel">
       <summary>Grant piQ (owner)</summary>
       <div class="grant-body">
@@ -958,7 +965,7 @@
   </div>
 </div>
 
-<script src="app.js?v=88"></script>
-<script src="arcade.js?v=88"></script>
+<script src="app.js?v=89"></script>
+<script src="arcade.js?v=89"></script>
 </body>
 </html>

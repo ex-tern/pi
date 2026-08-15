@@ -645,4 +645,13 @@ AUTO_SETTLE_INTERVAL_SECONDS = int(os.getenv("AUTO_SETTLE_INTERVAL_SECONDS", "60
 # continues on whoever answered — the same path a provider outage already
 # takes, warning included. Raise it on a deployment with slow but working
 # providers; lower it if you would rather fail fast than wait.
-PANEL_BUDGET_SECONDS = int(os.getenv("PANEL_BUDGET_SECONDS", "150"))
+PANEL_BUDGET_SECONDS = int(os.getenv("PANEL_BUDGET_SECONDS", "90"))
+
+# How long one model call may take before it is abandoned. Applies per route.
+#
+# Was 45s with one automatic retry, i.e. 90s to rule out a single dead
+# endpoint — and a run walks a dozen of them across five jurors. A model that
+# has not begun responding within 20s is not going to rescue the assessment,
+# and there are more routes waiting; the retry in particular spent the budget
+# on the least promising thing available, the endpoint that just failed.
+PROVIDER_TIMEOUT_SECONDS = float(os.getenv("PROVIDER_TIMEOUT_SECONDS", "20"))

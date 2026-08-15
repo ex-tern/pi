@@ -7565,6 +7565,7 @@ async function loadOwnerStats() {
       ${idleGroup(d.idle)}`;
     loadSettlementQueue();
     initGrantPanel();
+    loadStoragePanel();
   } catch (e) {
     // Visible with the reason. A blank panel reads as "nobody has signed up",
     // which is the one wrong thing it could say.
@@ -7673,6 +7674,74 @@ function initGrantPanel() {
       msg.className = "grant-msg bad";
       msg.textContent = String(e && e.message ? e.message : e);
     } finally {
+      btn.disabled = false;
+    }
+  });
+}
+
+/** Owner-only storage readout, with the one safe cleanup offered inline. */
+async function loadStoragePanel() {
+  const panel = document.getElementById("storagePanel");
+  if (!panel) return;
+  if (!sessionState.is_owner) { panel.classList.add("hidden"); return; }
+
+  let d;
+  try {
+    const qs = new URLSearchParams({ wallet: Session.wallet });
+    const res = await fetch(`${API}/api/admin/storage?${qs}`);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    d = await res.json();
+  } catch (e) { panel.classList.add("hidden"); return; }
+
+  panel.classList.remove("hidden");
+  const pct = d.disk && d.disk.percent_used;
+  const badge = document.getElementById("storageBadge");
+  if (badge && pct != null) {
+    badge.textContent = `${pct}%`;
+    // Amber past 75, red past 90: a volume that fills up stops accepting
+    // assessments, so this is a number worth noticing before the host says so.
+    badge.className = "pill " + (pct >= 90 ? "q-low" : pct >= 75 ? "q-mod" : "pill-muted");
+  }
+
+  const row = (k, v) => `<div class="ri-row"><span>${escapeHtml(k)}</span><strong>${
+    escapeHtml(v)}</strong></div>`;
+  document.getElementById("storageBody").innerHTML = `
+    ${pct != null ? row("Volume used", `${pct}%`) : ""}
+    ${row("Database", d.database.human)}
+    ${row("Manuscripts", `${d.manuscripts.human} · ${d.manuscripts.files} files`)}
+    ${row("Logs", d.logs.human)}
+    ${row("Orphaned files", `${d.orphans.count} · ${d.orphans.human}`)}
+    <p class="hint" style="margin:6px 0">${escapeHtml(d.note || "")}</p>
+    <button class="btn btn-quiet btn-block" id="storageCleanBtn"
+            ${d.orphans.count ? "" : "disabled"}>
+      Delete ${d.orphans.count} orphaned file${d.orphans.count === 1 ? "" : "s"}</button>
+    <label class="checkbox-row" style="margin-top:6px">
+      <input type="checkbox" id="storageVacuum"> Also VACUUM the database
+    </label>
+    <div class="grant-msg" id="storageMsg"></div>`;
+
+  const btn = document.getElementById("storageCleanBtn");
+  if (btn) btn.addEventListener("click", async () => {
+    const msg = document.getElementById("storageMsg");
+    const vacuum = document.getElementById("storageVacuum").checked;
+    btn.disabled = true;
+    msg.className = "grant-msg";
+    msg.textContent = vacuum ? "Cleaning and vacuuming…" : "Cleaning…";
+    try {
+      const res = await fetch(`${API}/api/admin/storage/cleanup?wallet=${
+        encodeURIComponent(Session.wallet)}`, {
+        method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ orphans: true, vacuum, drain_queue: false }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
+      msg.className = "grant-msg ok";
+      msg.textContent = `Freed ${data.human_freed} from ${data.orphans_removed} file(s)`
+        + (data.vacuumed ? ", database vacuumed." : ".");
+      loadStoragePanel();
+    } catch (e) {
+      msg.className = "grant-msg bad";
+      msg.textContent = String(e && e.message ? e.message : e);
       btn.disabled = false;
     }
   });
