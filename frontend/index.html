@@ -9,7 +9,7 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#2563eb">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
-<link rel="stylesheet" href="style.css?v=68">
+<link rel="stylesheet" href="style.css?v=71">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -173,14 +173,21 @@
   <!-- ===================== MAIN ===================== -->
   <main class="main">
     <nav class="nav-tabs">
-      <!-- Four tabs, in the order the work actually happens: assess a paper,
-           explore what has been assessed, look at the aggregate, then read how
-           the thing is built. The Ledger Explorer moved inside Explore and the
-           Science Map inside Analytics — both were sub-views of a larger idea
-           that had been promoted to top-level navigation. -->
-      <button class="tab-btn active" data-tab="assess">Assessment</button>
-      <button class="tab-btn" data-tab="journal">Explore</button>
-      <button class="tab-btn" data-tab="analytics">Analytics</button>
+      <!-- Four tabs, in the order the work actually happens: review a paper,
+           research what has been assessed, read the aggregate report, then see
+           how the thing is built. The Ledger Explorer moved inside Research and
+           the Science Map inside Report — both were sub-views of a larger idea
+           that had been promoted to top-level navigation.
+
+           The `data-tab` keys are NOT renamed with the labels. They are the
+           join between this markup, the panel ids (#tab-assess, #tab-journal,
+           #tab-analytics), the deep-link hash and the saved last-tab
+           preference — renaming them would break every existing bookmark and
+           silently reset everyone's remembered tab, to change a string nobody
+           sees. -->
+      <button class="tab-btn active" data-tab="assess">Review</button>
+      <button class="tab-btn" data-tab="journal">Research</button>
+      <button class="tab-btn" data-tab="analytics">Report</button>
       <button class="tab-btn" data-tab="diagram">Architecture</button>
     </nav>
 
@@ -282,14 +289,64 @@
         </div>
       </details>
 
-      <!-- Research Buddy (riB): derived from the saved profile plus the live corpus. -->
-      <details class="card buddy-card hidden" id="buddyCard" open>
-        <summary>
-          <span><strong>Research Buddy (riB)</strong></span>
-          <span class="profile-toggle-hint">Tailored to your profile</span>
-        </summary>
-        <div id="buddyBody"></div>
-      </details>
+      <!-- Research Buddy (riB): derived from the saved profile plus the live
+           corpus. A floating window rather than a card in the column — it is
+           advice ABOUT the work being done on this tab, so it should stay in
+           view while the page scrolls instead of being scrolled past.
+
+           It lives inside #tab-assess deliberately. The panel is display:none
+           when its tab is inactive, which hides the floating child with it, so
+           "only on the Assessment tab" needs no JavaScript to enforce. -->
+      <div class="buddy-float hidden" id="buddyCard">
+        <div class="buddy-bar" id="buddyBar">
+          <!-- riB, drawn rather than named. Inline SVG, not an image file: it
+               is 1KB, it cannot 404, it inherits the page's colours, and it
+               scales to any DPI. aria-hidden because the heading beside it
+               already carries the name — a screen reader announcing "monkey"
+               here would add nothing. -->
+          <svg class="rib-face" id="ribFace" viewBox="0 0 48 48" aria-hidden="true">
+            <!-- ears -->
+            <circle cx="6.5" cy="24" r="7" fill="#8d5a3b"/>
+            <circle cx="41.5" cy="24" r="7" fill="#8d5a3b"/>
+            <circle cx="6.5" cy="24" r="3.6" fill="#c98b63"/>
+            <circle cx="41.5" cy="24" r="3.6" fill="#c98b63"/>
+            <!-- head -->
+            <ellipse cx="24" cy="23.5" rx="16" ry="15" fill="#8d5a3b"/>
+            <!-- face plate: the pale muzzle-and-brow mask a chimp actually has -->
+            <path d="M24 9.5c8.4 0 13 6.2 13 13.2 0 8.2-5.6 13.8-13 13.8S11 30.9 11 22.7C11 15.7 15.6 9.5 24 9.5z"
+                  fill="#e8bb92"/>
+            <!-- brow ridge -->
+            <path d="M13.6 18.6c3-2.6 6.4-3.9 10.4-3.9s7.4 1.3 10.4 3.9"
+                  fill="none" stroke="#a76a45" stroke-width="2.1" stroke-linecap="round"/>
+            <!-- eyes: the pupils are their own group so JS can blink them -->
+            <g class="rib-eyes">
+              <circle cx="18.4" cy="22.4" r="2.5" fill="#3b2417"/>
+              <circle cx="29.6" cy="22.4" r="2.5" fill="#3b2417"/>
+              <circle cx="19.2" cy="21.6" r="0.85" fill="#fff"/>
+              <circle cx="30.4" cy="21.6" r="0.85" fill="#fff"/>
+            </g>
+            <!-- muzzle -->
+            <ellipse cx="24" cy="30.5" rx="8.2" ry="5.6" fill="#f2cfae"/>
+            <ellipse cx="21.4" cy="28.6" rx="0.95" ry="1.25" fill="#7a4a2e"/>
+            <ellipse cx="26.6" cy="28.6" rx="0.95" ry="1.25" fill="#7a4a2e"/>
+            <path d="M20 31.8c1.5 1.9 6.5 1.9 8 0" fill="none"
+                  stroke="#7a4a2e" stroke-width="1.7" stroke-linecap="round"/>
+            <!-- tuft, so the silhouette is not a plain circle at 26px -->
+            <path d="M20.5 9.2c1-2.2 3-3.2 3.5-1.4.6-1.9 2.6-1 3.4 1.2"
+                  fill="none" stroke="#6f452c" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>
+          <span class="buddy-title"><strong>Research Buddy (riB)</strong></span>
+          <span class="buddy-sub">Tailored to your profile</span>
+          <span class="buddy-actions">
+            <button type="button" class="buddy-btn" id="buddyMin"
+                    aria-label="Minimise the Research Buddy" title="Minimise">&minus;</button>
+            <button type="button" class="buddy-btn" id="buddyMax"
+                    aria-label="Maximise the Research Buddy" title="Maximise">&#9633;</button>
+          </span>
+        </div>
+        <div class="buddy-scroll"><div id="buddyBody"></div></div>
+        <span class="buddy-resize" id="buddyResize" aria-hidden="true"></span>
+      </div>
 
       <div class="card">
         <h2>Assess a Manuscript<button class="help-btn" data-help="assess" aria-label="About assessment">?</button></h2>
@@ -375,7 +432,7 @@
          of claims, the rankings those claims produce, and the raw ledger
          underneath them. They were three tabs describing the same question. -->
     <section id="tab-journal" class="tab-panel">
-      <div class="page-header"><h1>Explore</h1></div>
+      <div class="page-header"><h1>Research</h1></div>
       <div class="card">
         <h2>The journal</h2>
         <p class="lede">Papers that have been reviewed, and papers their authors then published.
@@ -589,7 +646,7 @@
 
             <details class="arcade-controls-group" open>
               <summary>Map legend &amp; data</summary>
-              <div class="table-wrap">
+              <div class="legend-scroll">
                 <table class="data-table" id="arcadeLegendTable">
                   <thead><tr><th>Color</th><th>Field</th><th class="num">Papers</th><th class="num">Avg piX</th></tr></thead>
                   <tbody></tbody>
@@ -823,7 +880,7 @@
   </div>
 </div>
 
-<script src="app.js?v=68"></script>
-<script src="arcade.js?v=68"></script>
+<script src="app.js?v=71"></script>
+<script src="arcade.js?v=71"></script>
 </body>
 </html>

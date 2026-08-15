@@ -316,7 +316,7 @@
   /** Centre the camera on a field and select it — the legend's focus action. */
   function focusField(name) {
     const target = state.bubbles
-      .filter(b => !b.eaten && b.domain === name)
+      .filter(b => !isGone(b) && b.domain === name)
       .sort((a, b) => b.mass - a.mass)[0];
     if (!target) return;
     state.camera.x = target.x;
@@ -341,6 +341,23 @@
       });
     }
   }
+
+  /** One standard-normal sample (Box–Muller).
+   *
+   *  Brownian motion needs Gaussian increments, not uniform ones: a sum of
+   *  uniform kicks has bounded steps and a visibly flat-topped step
+   *  distribution, which reads as jitter. Gaussian kicks give the occasional
+   *  large excursion that makes the walk look like real diffusion.
+   */
+  function gauss() {
+    let u = 0, v = 0;
+    while (u === 0) u = Math.random();
+    while (v === 0) v = Math.random();
+    return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v);
+  }
+
+  /** Hidden from the map: absorbed by the player, or fused into another field. */
+  function isGone(b) { return b.eaten || b.fused; }
 
   function spawnBurst(x, y, color, n) {
     if (effectsQuality === 0) return;
@@ -443,6 +460,7 @@
     state.corpus = data.corpus;
     state.absorbed = [];
     state.particles = [];
+    state.pops = [];
     state.selected = null;
     state.over = false;
     state.submitting = false;
@@ -452,6 +470,13 @@
       x: b.x * WORLD_W, y: b.y * WORLD_H,
       vx: b.vx * WORLD_W, vy: b.vy * WORLD_H,
       eaten: false, dimmed: false, pulse: Math.random() * Math.PI * 2,
+      // Fusion bookkeeping (EXPLORE only). `baseMass` is what the corpus says
+      // this field weighs; `fusedFrom` holds the bubbles currently absorbed
+      // into this one, so an explosion can put every one of them back exactly
+      // as it was. `fused` hides a bubble WITHOUT using `eaten`, which carries
+      // play-mode meaning — a run's win condition reads `eaten`, and a fused
+      // bubble must never count as absorbed.
+      baseMass: b.mass, fused: false, fusedFrom: [],
     }));
     // Drives the player's size ceiling — see playerRadiusCap().
     state.maxBubbleMass = state.bubbles.reduce((m, b) => Math.max(m, b.mass), 0);
@@ -487,7 +512,7 @@
       // papers did land.
       el.innerHTML = `<strong>${corpus.total_papers} paper${corpus.total_papers === 1 ? "" : "s"}
         assessed, but none could be classified into a field.</strong> They are in the ledger and
-        the Analytics tables, they just cannot be placed on the map yet. This usually means the
+        the Report tables, they just cannot be placed on the map yet. This usually means the
         model panel was unavailable during assessment — check the juror status, then re-assess.`;
     } else {
       const unclassified = corpus.unclassified_papers
@@ -899,7 +924,15 @@
     const ATTRACT = 0.9;
     const REST_SCALE = 2.6;      // preferred separation, in radii
     const REPEL = 26;
-    const DAMP = 0.86;
+    // Damping is what decides whether this reads as fog or as a table of
+    // billiard balls. At 0.86 a bubble loses 99% of its speed in half a
+    // second, so every collision died on contact and nothing ever travelled
+    // far enough to hit a third body. Near-elastic damping lets momentum carry
+    // across the table; the spring still needs the heavier value, because an
+    // undamped spring oscillates forever.
+    const springOnPre = !!state.look.gravity;
+    const DAMP = springOnPre ? 0.94 : 0.995;
+    const MAX_SPEED_EXPLORE = 11;
 
     // The SPRING is optional; COLLISION is not.
     //
@@ -961,14 +994,23 @@
     for (let pass = 0; pass < PASSES; pass++)
     for (let i = 0; i < list.length; i++) {
       const a = list[i];
-      if (a.eaten) continue;
+      if (isGone(a)) continue;
       for (let j = i + 1; j < list.length; j++) {
         const b = list[j];
-        if (b.eaten) continue;
+        if (isGone(b) || isGone(a)) continue;
         const dx = b.x - a.x, dy = b.y - a.y;
         const d = Math.hypot(dx, dy) || 1;
         const min = (a.mass + b.mass) * 1.15;
         if (d >= min) continue;
+        const nx = dx / d, ny = dy / d;
+
+        // --- Same domain? Then this is a fusion, not a bounce --------------
+        // Two bubbles of the same field that run into each other coalesce, and
+        // a bubble that grows past its breaking point on such a hit blows
+        // apart into everything it swallowed. Different fields only ever
+        // bounce: a map where unrelated disciplines merge on contact would be
+        // asserting a relationship that is not in the corpus.
+        if (a.domain === b.domain && tryFuse(a, b, nx, ny)) continue;
 
         // --- Collision, not just repulsion ---------------------------------
         // The soft push alone let bubbles sink into one another and ooze back
@@ -976,7 +1018,6 @@
         // a positional correction that actually separates the overlap, and an
         // impulse along the contact normal so they bounce off each other with
         // momentum conserved by mass.
-        const nx = dx / d, ny = dy / d;
         const overlap = min - d;
 
         // Mass-weighted separation: the heavier field barely moves, which is
@@ -995,7 +1036,12 @@
         const rvx = b.vx - a.vx, rvy = b.vy - a.vy;
         const along = rvx * nx + rvy * ny;
         if (along < 0) {
-          const RESTITUTION = 0.45;          // partly inelastic; a full bounce never settles
+          // Near-elastic. 0.45 absorbed more than half the energy of every
+          // impact, so a hit ended the motion it was supposed to transfer —
+          // the opposite of a billiard table, where the struck ball leaves
+          // with most of what the cue ball brought. Kept under 1 so a
+          // many-body pile-up still settles instead of ringing forever.
+          const RESTITUTION = 0.92;
           const jImp = -(1 + RESTITUTION) * along / (1 / a.mass + 1 / b.mass);
           a.vx -= (jImp / a.mass) * nx; a.vy -= (jImp / a.mass) * ny;
           b.vx += (jImp / b.mass) * nx; b.vy += (jImp / b.mass) * ny;
@@ -1010,45 +1056,41 @@
       }
     }
 
-    // --- Ambient motion ---------------------------------------------
-    // The map was dead. Damping is 0.86 per frame, which removes ~99% of a
-    // bubble's speed in about half a second, and with the spring toggle off
-    // (the default) nothing else applied any force at all — so a few moments
-    // after load every bubble had stopped and stayed stopped. A map of a
-    // living corpus that does not move reads as a screenshot of itself.
+    // --- Brownian motion --------------------------------------------
+    // Each bubble is kicked by an independent Gaussian impulse every frame:
+    // a random walk in velocity, which is what suspended particles actually
+    // do and what the paired sine waves this replaces only imitated. Those
+    // waves were deterministic and periodic — over a long session the field
+    // fell into a visible shared rhythm, and every bubble retraced the same
+    // closed loop, so nothing ever wandered anywhere.
     //
-    // Each bubble gets its own slow wander, driven by two incommensurable
-    // sine terms so the field never falls into a visible common rhythm. The
-    // force is small enough to lose every argument with collision, the walls
-    // and the spring, and heavier bubbles wander proportionally less — a large
-    // field should feel anchored, not restless.
-    state.driftClock = (state.driftClock || 0) + dt;
-    const t = state.driftClock;
+    // The step is scaled by sqrt(dt), not dt. That is the defining property
+    // of diffusion: variance accumulates linearly in time, so the walk looks
+    // the same at 30fps as at 120fps. Scaling by dt would make the motion
+    // frame-rate dependent and far too smooth.
+    //
+    // Heavier fields are kicked proportionally less, the same way a large
+    // particle is jostled less by the same bombardment — a big discipline
+    // should feel anchored, not restless.
     for (const b of list) {
-      if (b.eaten) continue;
+      if (isGone(b)) continue;
       if (state.grabbed && state.grabbed.bubble === b) continue;
-      if (b.wander === undefined) b.wander = Math.random() * Math.PI * 2;
-      // Amplitude raised ~6x from the first attempt. That version was moving —
-      // measurably, at 0.055 world units per frame — but a twentieth of a pixel
-      // per frame is not motion anybody can see, and "it moves" is a claim the
-      // eye has to be able to check. The cap on damping matters more than the
-      // force: DAMP removes 14% of velocity every frame, so a drift force only
-      // ever reaches a terminal speed of roughly WANDER/0.14.
-      const ease = 6 / (6 + b.mass);            // big fields drift less
-      const WANDER = 0.34 * ease * dt * 60;
-      // Three incommensurable periods rather than two, so the field never
-      // settles into a visible shared rhythm even over a long session.
-      b.vx += (Math.sin(t * 0.21 + b.wander) + 0.6 * Math.sin(t * 0.053 + b.wander * 2.3)) * WANDER;
-      b.vy += (Math.cos(t * 0.17 + b.wander * 1.7) + 0.6 * Math.cos(t * 0.041 + b.wander)) * WANDER;
+      const ease = 6 / (6 + b.mass);
+      const KICK = 2.6 * ease * Math.sqrt(dt);
+      b.vx += gauss() * KICK;
+      b.vy += gauss() * KICK;
     }
 
     for (const b of list) {
-      if (b.eaten) continue;
+      if (isGone(b)) continue;
       b.vx *= DAMP; b.vy *= DAMP;
-      // Terminal velocity: without it a long-settling layout can build up
-      // enough speed to shoot bubbles across the world.
+      // Terminal velocity: without it the random walk keeps adding energy and
+      // bubbles eventually shoot across the world.
       const sp = Math.hypot(b.vx, b.vy);
-      if (sp > 6) { b.vx = (b.vx / sp) * 6; b.vy = (b.vy / sp) * 6; }
+      if (sp > MAX_SPEED_EXPLORE) {
+        b.vx = (b.vx / sp) * MAX_SPEED_EXPLORE;
+        b.vy = (b.vy / sp) * MAX_SPEED_EXPLORE;
+      }
 
       // --- Use the whole map ------------------------------------------
       // Bubbles were seeded across the full world but drifted inward: the
@@ -1096,6 +1138,118 @@
           b.vy += ny * push;
         }
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Fusion and fission (EXPLORE only)
+  // ---------------------------------------------------------------------
+  //
+  // Two bubbles of the SAME field that collide hard enough coalesce into one;
+  // a bubble that grows past its breaking point on such a hit detonates and
+  // gives every constituent back. Nothing is created or destroyed — the pieces
+  // are stashed on the survivor and restored intact — so the map still totals
+  // the corpus at every moment, and no fusion can quietly lose a field.
+  //
+  // Only same-domain pairs fuse. Merging two unrelated disciplines because
+  // they happened to touch would draw a relationship the corpus does not
+  // contain, which is the one thing a map of science must not do.
+
+  /** Radius of a merged pair. Areas add, so two equal bubbles make one √2
+   *  times as wide rather than twice — mass is conserved, not doubled. */
+  function fusedMass(m1, m2) { return Math.sqrt(m1 * m1 + m2 * m2); }
+
+  /** Breaking point: a bubble may reach ~2.4× the field's natural weight
+   *  before the next same-domain hit blows it apart. Relative to the biggest
+   *  bubble on the map so it scales with difficulty rather than pretending a
+   *  fixed pixel count means the same thing on every field. */
+  function burstMass() {
+    return Math.max(28, (state.maxBubbleMass || 30) * 1.6);
+  }
+
+  /** Collide two same-domain bubbles. Returns true if the pair was consumed
+   *  by a fusion or an explosion and needs no bounce. */
+  function tryFuse(a, b, nx, ny) {
+    if (state.mode !== "explore") return false;
+    // A bubble being dragged is under the user's control; swallowing it (or
+    // detonating out from under the cursor) would take the map away mid-grab.
+    if (state.grabbed && (state.grabbed.bubble === a || state.grabbed.bubble === b)) return false;
+
+    // Only a real impact fuses. Without a speed floor, two same-field bubbles
+    // resting against each other would merge on the first frame of contact and
+    // the whole domain would collapse the moment the map settled.
+    const along = (b.vx - a.vx) * nx + (b.vy - a.vy) * ny;
+    if (along > -1.1) return false;
+
+    const big = a.mass >= b.mass ? a : b;
+    const small = big === a ? b : a;
+
+    // Already over the line? The hit that would have grown it further breaks
+    // it instead.
+    if (big.mass >= burstMass()) { explodeBubble(big, small); return true; }
+
+    // Momentum is conserved across the merge, so a fused pair carries on along
+    // the path the pair was already taking rather than stopping dead.
+    const total = big.mass + small.mass || 1;
+    big.vx = (big.mass * big.vx + small.mass * small.vx) / total;
+    big.vy = (big.mass * big.vy + small.mass * small.vy) / total;
+    big.mass = fusedMass(big.mass, small.mass);
+
+    // The small one is stashed, not deleted — with everything IT had already
+    // swallowed, flattened into one list so an explosion restores the whole
+    // chain in a single step rather than leaving nested survivors hidden.
+    small.fused = true;
+    big.fusedFrom.push(small, ...small.fusedFrom);
+    small.fusedFrom = [];
+
+    popBubble(small.x, small.y, small.mass, colorFor(small.domain), 0.7);
+    if (state.selected === small) selectBubble(big);
+    return true;
+  }
+
+  /** Blow a bubble apart, returning every field it had swallowed.
+   *
+   *  `trigger` is the bubble whose impact caused it, and is pushed clear so it
+   *  does not immediately re-fuse with a fragment on the next frame.
+   */
+  function explodeBubble(big, trigger) {
+    const pieces = big.fusedFrom.slice();
+    big.fusedFrom = [];
+    big.mass = big.baseMass;
+
+    // Fragments are placed on a ring around the parent and thrown outward.
+    // The ring radius clears the parent's own body, so nothing spawns inside
+    // it and gets squeezed out by the overlap solver on the next frame.
+    const n = pieces.length;
+    pieces.forEach((p, i) => {
+      const ang = (i / Math.max(1, n)) * Math.PI * 2 + Math.random() * 0.4;
+      const r = big.mass + p.mass + 6;
+      p.fused = false;
+      p.x = Math.max(p.mass, Math.min(WORLD_W - p.mass, big.x + Math.cos(ang) * r));
+      p.y = Math.max(p.mass, Math.min(WORLD_H - p.mass, big.y + Math.sin(ang) * r));
+      const speed = 5 + Math.random() * 4;
+      p.vx = Math.cos(ang) * speed;
+      p.vy = Math.sin(ang) * speed;
+    });
+
+    if (trigger) {
+      const dx = trigger.x - big.x, dy = trigger.y - big.y;
+      const d = Math.hypot(dx, dy) || 1;
+      trigger.vx += (dx / d) * 6;
+      trigger.vy += (dy / d) * 6;
+    }
+
+    popBubble(big.x, big.y, big.mass + 6, colorFor(big.domain), 1.8);
+    // Each returning fragment announces itself, so an explosion reads as one
+    // bubble becoming many rather than as a single ring with debris.
+    for (const p2 of pieces) popBubble(p2.x, p2.y, p2.mass, colorFor(p2.domain), 0.5);
+    // Nothing to give back: a bubble at its natural weight cannot have been
+    // over the line by fusing, so this only happens on an unusually heavy
+    // field. Kick it instead of silently doing nothing, so the impact still
+    // reads as an impact.
+    if (!n) {
+      big.vx -= (trigger ? (trigger.x - big.x) : 1) * 0.02;
+      big.vy -= (trigger ? (trigger.y - big.y) : 1) * 0.02;
     }
   }
 
@@ -1193,7 +1347,7 @@
     if (state.mode === "play") applyOrbitalGravity(dt);
     else applyGravity(dt);
     for (const b of state.bubbles) {
-      if (b.eaten) continue;
+      if (isGone(b)) continue;
       if (state.grabbed && state.grabbed.bubble === b) continue;
       b.x += b.vx * dt * 60;
       b.y += b.vy * dt * 60;
@@ -1209,7 +1363,12 @@
   }
 
   function update(dt) {
+    // Wall clock for anything that animates on its own — currently the
+    // slow turn of the soap-film iridescence. Advanced here rather than
+    // inside the physics so it keeps running in every mode.
+    state.driftClock = (state.driftClock || 0) + dt;
     drift(dt);
+    stepPops(dt);
     for (let i = state.particles.length - 1; i >= 0; i--) {
       const q = state.particles[i];
       q.x += q.vx * dt; q.y += q.vy * dt;
@@ -1339,7 +1498,10 @@
       // from hoovering a speck.
       p._pop = Math.min(1, (p._pop || 0) + 0.5 + Math.min(0.5, contact.mass / p.mass));
       state.absorbed.push({ id: contact.id, t: Math.round(nowMs) });
-      spawnBurst(contact.x, contact.y, bubbleColor(contact), contact.live ? 26 : 14);
+      // Eating a field pops it, for the same reason fusing two does: they
+      // are bubbles, and a bubble that is removed should burst.
+      popBubble(contact.x, contact.y, contact.mass, bubbleColor(contact),
+                contact.live ? 1 : 0.7);
       selectBubble(contact);        // absorbing IS inspecting
     }
 
@@ -1375,7 +1537,8 @@
     // screen, so they are simply absent rather than recoloured.
     if (T.stars) drawStars(ctx, w, h);
     if (effectsQuality > 0 && state.look.mesh) drawMesh(ctx);
-    for (const b of state.bubbles) if (!b.eaten) drawBubble(ctx, b);
+    for (const b of state.bubbles) if (!isGone(b)) drawBubble(ctx, b);
+    drawPops(ctx);
     drawParticles(ctx);
     // Pickups sit under π so the blob is never hidden by one it is about to
     // collect, and the timer sits above the HUD where it reads as status.
@@ -1489,7 +1652,7 @@
     ctx.lineWidth = 1;
     const w = viewW(), h = viewH();
     for (const e of state.edges) {
-      if (e.a.eaten || e.b.eaten) continue;
+      if (isGone(e.a) || isGone(e.b)) continue;
       // Filtered-out fields fade their links too, so the constellation
       // matches the selection rather than contradicting it.
       const faded = e.a.dimmed || e.b.dimmed;
@@ -1531,12 +1694,19 @@
       ctx.beginPath(); ctx.arc(s.x, s.y, r * 1.7 * pulse, 0, Math.PI * 2); ctx.fill();
     }
 
-    ctx.fillStyle = rgba(color, playing && !edible ? 0.42 : baseAlpha);
-    ctx.beginPath(); ctx.arc(s.x, s.y, r * pulse, 0, Math.PI * 2); ctx.fill();
+    drawSoapFilm(ctx, s.x, s.y, r * pulse, color, {
+      alpha: playing && !edible ? 0.42 : baseAlpha,
+      live: b.live,
+      // Each bubble's iridescence starts at its own point in the cycle and
+      // turns slowly, so a cluster shimmers instead of reading as one decal
+      // stamped repeatedly.
+      phase: b.pulse,
+    });
 
     if (playing && !edible) { ctx.lineWidth = 2.6; ctx.strokeStyle = "#fca5a5"; }
     else if (isSelected)    { ctx.lineWidth = 3;   ctx.strokeStyle = "#ffffff"; }
     else                    { ctx.lineWidth = b.live ? 1.6 : 1; ctx.strokeStyle = rgba(color, 0.9); }
+    ctx.beginPath(); ctx.arc(s.x, s.y, r * pulse, 0, Math.PI * 2);
     ctx.stroke();
 
     if (r > 20 && state.look.labels) {
@@ -1549,6 +1719,191 @@
         ctx.font = `500 ${Math.min(12, r / 4)}px -apple-system, system-ui, sans-serif`;
         ctx.fillText(`${b.papers} paper${b.papers === 1 ? "" : "s"}`, s.x, s.y + 9);
       }
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Soap film
+  // ---------------------------------------------------------------------
+  //
+  // A real bubble is not a coloured disc. It is a transparent shell whose
+  // colour lives almost entirely at the rim: thin-film interference makes the
+  // soap layer refract into bands that shift with viewing angle, the middle
+  // shows whatever is behind it, and one or two hard specular dots mark the
+  // light source. Drawing those four things in order is what makes this read
+  // as a bubble rather than as a circle with a gradient on it.
+  //
+  // The field's own colour is kept as the CENTRE of the iridescent sweep
+  // rather than being replaced by a full rainbow. Colour on this map means
+  // discipline — a legend maps hue to field — so a bubble that shimmered
+  // through every hue would be prettier and unreadable.
+
+  /** Rotate a hex colour's hue by `deg`, keeping saturation and lightness.
+   *  Used to build the interference bands either side of the field's hue. */
+  function shiftHue(hex, deg) {
+    const n = parseInt(hex.slice(1), 16);
+    let r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, bl = (n & 255) / 255;
+    const max = Math.max(r, g, bl), min = Math.min(r, g, bl);
+    const l = (max + min) / 2;
+    let h = 0, sat = 0;
+    const d = max - min;
+    if (d) {
+      sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
+      if (max === r) h = ((g - bl) / d + (g < bl ? 6 : 0));
+      else if (max === g) h = (bl - r) / d + 2;
+      else h = (r - g) / d + 4;
+      h /= 6;
+    }
+    h = (h + deg / 360 + 1) % 1;
+    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
+    const p = 2 * l - q;
+    const chan = (t) => {
+      t = (t + 1) % 1;
+      if (t < 1 / 6) return p + (q - p) * 6 * t;
+      if (t < 1 / 2) return q;
+      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
+      return p;
+    };
+    return [chan(h + 1 / 3), chan(h), chan(h - 1 / 3)].map(v => Math.round(v * 255));
+  }
+
+  const rgbaArr = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
+
+  /** Draw one soap bubble at (x, y) with radius r. */
+  function drawSoapFilm(ctx, x, y, r, color, opts) {
+    const alpha = opts.alpha;
+    const live = opts.live;
+    const phase = opts.phase || 0;
+
+    // 1. The body. Densest at the rim and nearly clear through the middle,
+    //    which is the whole visual difference between a bubble and a ball.
+    //    `live` fields hold a little more colour so the corpus still reads
+    //    louder than the taxonomy around it.
+    const body = ctx.createRadialGradient(x, y, r * 0.05, x, y, r);
+    body.addColorStop(0.00, rgba(color, alpha * (live ? 0.13 : 0.06)));
+    body.addColorStop(0.55, rgba(color, alpha * (live ? 0.20 : 0.10)));
+    body.addColorStop(0.82, rgba(color, alpha * (live ? 0.52 : 0.26)));
+    body.addColorStop(1.00, rgba(color, alpha * (live ? 0.98 : 0.58)));
+    ctx.fillStyle = body;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+
+    // Below this size the film detail is sub-pixel and costs more than it
+    // shows, so a small bubble is just the body and its outline.
+    if (effectsQuality === 0 || r < 9) return;
+
+    // 2. Interference bands. A ring stroked with a sweep that runs through the
+    //    field's hue and ±70° of it — the same asymmetric magenta/cyan/green
+    //    split a real film produces, anchored to a colour that still names the
+    //    discipline.
+    const t = phase + (state.driftClock || 0) * 0.25;
+    const bandW = Math.max(1.8, r * 0.20);
+    ctx.save();
+    ctx.lineWidth = bandW;
+    let sweep = null;
+    if (typeof ctx.createConicGradient === "function") {
+      sweep = ctx.createConicGradient(t, x, y);
+      const stops = [-70, -25, 15, 60, 110, 200, 290];
+      stops.forEach((deg, i) => {
+        sweep.addColorStop(i / (stops.length - 1),
+                           rgbaArr(shiftHue(color, deg), alpha * 0.72));
+      });
+    } else {
+      // Safari before 16 has no conic gradient. A linear sweep across the
+      // bubble is a weaker imitation but keeps the rim iridescent rather than
+      // flat, which is the part that matters.
+      sweep = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
+      sweep.addColorStop(0.0, rgbaArr(shiftHue(color, -60), alpha * 0.5));
+      sweep.addColorStop(0.5, rgbaArr(shiftHue(color, 40), alpha * 0.5));
+      sweep.addColorStop(1.0, rgbaArr(shiftHue(color, 150), alpha * 0.5));
+    }
+    ctx.strokeStyle = sweep;
+    ctx.beginPath(); ctx.arc(x, y, r - bandW / 2, 0, Math.PI * 2); ctx.stroke();
+    ctx.restore();
+
+    // 3. Rim light. A thin bright edge just inside the boundary — the film
+    //    catching the light all the way round, which is what gives a bubble
+    //    its shell rather than its silhouette.
+    const rim = ctx.createRadialGradient(x, y, r * 0.82, x, y, r);
+    rim.addColorStop(0, "rgba(255,255,255,0)");
+    rim.addColorStop(0.75, `rgba(255,255,255,${alpha * 0.20})`);
+    rim.addColorStop(1, `rgba(255,255,255,${alpha * 0.55})`);
+    ctx.fillStyle = rim;
+    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
+
+    // 4. Speculars: one large soft highlight upper-left where the key light
+    //    sits, one small hard dot lower-right from the light passing through
+    //    and reflecting off the far wall of the shell. Both are needed — the
+    //    second is what tells the eye the surface is a sphere and hollow.
+    const hx = x - r * 0.34, hy = y - r * 0.40;
+    const hi = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.42);
+    hi.addColorStop(0, `rgba(255,255,255,${alpha * 0.75})`);
+    hi.addColorStop(1, "rgba(255,255,255,0)");
+    ctx.fillStyle = hi;
+    ctx.beginPath(); ctx.ellipse(hx, hy, r * 0.34, r * 0.24, -0.7, 0, Math.PI * 2); ctx.fill();
+
+    if (r > 16) {
+      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.5})`;
+      ctx.beginPath();
+      ctx.arc(x + r * 0.42, y + r * 0.46, Math.max(1, r * 0.07), 0, Math.PI * 2);
+      ctx.fill();
+    }
+  }
+
+  // ---------------------------------------------------------------------
+  // Pops
+  // ---------------------------------------------------------------------
+  //
+  // A bubble does not fade out — the film ruptures, snaps back into a ring of
+  // droplets, and is gone in about a fifth of a second. Anything slower reads
+  // as a dissolve, which is the wrong physics and, more practically, makes the
+  // map feel laggy. The ring is drawn expanding and thinning past the original
+  // radius, because that is where the film goes.
+
+  /** Rupture a bubble at (x, y). `r` is its radius in WORLD units. */
+  function popBubble(x, y, r, color, strength = 1) {
+    if (effectsQuality === 0) return;
+    state.pops = state.pops || [];
+    state.pops.push({ x, y, r, color, life: 1, strength });
+    if (state.pops.length > 40) state.pops.splice(0, state.pops.length - 40);
+    // Droplets fly outward from the RIM, not from the centre: the film is at
+    // the edge, so that is where the liquid was.
+    const n = Math.round((10 + r * 0.5) * strength);
+    for (let i = 0; i < Math.round(n * effectsQuality); i++) {
+      const a = Math.random() * Math.PI * 2;
+      const sp = (30 + Math.random() * 130) * strength;
+      state.particles.push({
+        x: x + Math.cos(a) * r * 0.9, y: y + Math.sin(a) * r * 0.9,
+        vx: Math.cos(a) * sp, vy: Math.sin(a) * sp,
+        life: 1, decay: 1.6 + Math.random() * 1.6, color,
+      });
+    }
+    if (state.particles.length > 400) state.particles.splice(0, state.particles.length - 400);
+  }
+
+  function stepPops(dt) {
+    if (!state.pops || !state.pops.length) return;
+    for (const p of state.pops) p.life -= dt * 5.2;    // ~190ms, then gone
+    state.pops = state.pops.filter(p => p.life > 0);
+  }
+
+  function drawPops(ctx) {
+    if (!state.pops || !state.pops.length) return;
+    for (const p of state.pops) {
+      const s = worldToScreen(p.x, p.y);
+      // Radius runs past the original as the film snaps outward; the ring
+      // thins as it goes, so it reads as breaking up rather than growing.
+      const grow = 1 + (1 - p.life) * 0.7;
+      const r = p.r * state.camera.zoom * grow;
+      ctx.save();
+      ctx.lineWidth = Math.max(0.6, p.r * state.camera.zoom * 0.16 * p.life);
+      ctx.strokeStyle = rgba(p.color, Math.max(0, p.life) * 0.75);
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.stroke();
+      // A second, fainter ring a beat behind: real film ruptures unevenly and
+      // one clean circle looks like a UI ripple.
+      ctx.lineWidth = Math.max(0.4, p.r * state.camera.zoom * 0.07 * p.life);
+      ctx.strokeStyle = `rgba(255,255,255,${Math.max(0, p.life) * 0.4})`;
+      ctx.beginPath(); ctx.arc(s.x, s.y, r * 0.86, 0, Math.PI * 2); ctx.stroke();
+      ctx.restore();
     }
   }
 
@@ -1912,10 +2267,21 @@
 
 
   function drawParticles(ctx) {
+    // Droplets, not sparks: what a bubble leaves behind is liquid, so each one
+    // gets the same treatment as its parent in miniature — a tinted body with
+    // a white catchlight — and shrinks as it dries rather than only fading.
     for (const q of state.particles) {
       const s = worldToScreen(q.x, q.y);
-      ctx.fillStyle = rgba(q.color, Math.max(0, q.life) * 0.8);
-      ctx.beginPath(); ctx.arc(s.x, s.y, 2.4 * state.camera.zoom + 1, 0, Math.PI * 2); ctx.fill();
+      const life = Math.max(0, q.life);
+      const r = (2.4 * state.camera.zoom + 1) * (0.45 + life * 0.55);
+      ctx.fillStyle = rgba(q.color, life * 0.8);
+      ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
+      if (r > 1.8) {
+        ctx.fillStyle = `rgba(255,255,255,${life * 0.6})`;
+        ctx.beginPath();
+        ctx.arc(s.x - r * 0.3, s.y - r * 0.3, r * 0.32, 0, Math.PI * 2);
+        ctx.fill();
+      }
     }
   }
 
@@ -1943,7 +2309,7 @@
     const mx = w - mw - 12, my = h - mh - 12;
     ctx.fillStyle = theme().hud; roundRect(ctx, mx, my, mw, mh, 8); ctx.fill();
     for (const b of state.bubbles) {
-      if (b.eaten) continue;
+      if (isGone(b)) continue;
       ctx.fillStyle = rgba(bubbleColor(b), b.live ? 0.85 : 0.4);
       ctx.beginPath();
       ctx.arc(mx + (b.x / WORLD_W) * mw, my + (b.y / WORLD_H) * mh,
@@ -1987,7 +2353,7 @@
     const w = screenToWorld(sx, sy);
     let hit = null;
     for (const b of state.bubbles) {
-      if (b.eaten) continue;
+      if (isGone(b)) continue;
       if (Math.hypot(b.x - w.x, b.y - w.y) <= b.mass) {
         if (!hit || b.mass < hit.mass) hit = b;   // prefer the smallest under cursor
       }

@@ -150,7 +150,7 @@ const HELP = {
           to ten papers at once.</li>
       </ul>
       <p>Every processed manuscript writes a Proof-of-Research block, which is what makes the
-      pi-Dyne forecast on the Analytics tab possible.</p>`,
+      pi-Dyne forecast on the Report tab possible.</p>`,
   },
   assess: {
     title: "How Assessment Works",
@@ -228,8 +228,9 @@ const HELP = {
           heavily than baseline, and below 1.0 less heavily.</li>
       </ul>
       <p>A rising criterion means the assessed literature is producing stronger and more consistent
-      evidence on that dimension. The forecast needs at least three recorded blocks before it can
-      identify a trend.</p>`,
+      evidence on that dimension. The chart works from the very first assessment: with none it
+      shows the genesis baseline, with one the measured shift away from it, and from two onwards
+      a projected trend.</p>`,
   },
   criteria: {
     title: "Criteria Weights",
@@ -1729,6 +1730,189 @@ function refreshBuddy() {
   }
 }
 
+/* ---------------------------------------------------------------------------
+ * Research Buddy: window behaviour
+ *
+ * The buddy is a floating window over the Assessment tab — draggable by its
+ * bar, minimisable to that bar, maximisable, and resizable from the corner.
+ *
+ * Where it sits and what state it is in are remembered across sessions.
+ * Someone who parks it bottom-left and minimises it is telling you where they
+ * want it; asking again every reload is the same as not listening. Position is
+ * stored as left/top in pixels and re-clamped into the viewport on restore, so
+ * a window dragged to the edge of a large monitor is not stranded off-screen
+ * when the same profile is opened on a laptop.
+ * ------------------------------------------------------------------------- */
+function initBuddyWindow() {
+  const win = document.getElementById("buddyCard");
+  const bar = document.getElementById("buddyBar");
+  if (!win || !bar || win.dataset.bound) return;
+  win.dataset.bound = "1";
+
+  const KEY = "sp_buddy_win";
+  const read = () => {
+    try { return JSON.parse(localStorage.getItem(KEY) || "{}") || {}; }
+    catch (_) { return {}; }
+  };
+  const write = (patch) => {
+    try { localStorage.setItem(KEY, JSON.stringify({ ...read(), ...patch })); }
+    catch (_) { /* private browsing: the window still works, it just forgets */ }
+  };
+
+  /** Keep the window inside the viewport. Called on restore and after a drag,
+   *  because both can put it somewhere it cannot be dragged back from. */
+  function clampIntoView() {
+    if (!win.style.left) return;
+    const r = win.getBoundingClientRect();
+    // At least a bar's width and height stay reachable on every edge — a
+    // window whose title bar is off-screen can never be recovered.
+    const KEEP = 90;
+    const left = Math.min(Math.max(-r.width + KEEP, parseFloat(win.style.left)),
+                          window.innerWidth - KEEP);
+    const top = Math.min(Math.max(0, parseFloat(win.style.top)),
+                         window.innerHeight - 34);
+    win.style.left = `${left}px`;
+    win.style.top = `${top}px`;
+  }
+
+  function place(left, top) {
+    win.style.left = `${left}px`;
+    win.style.top = `${top}px`;
+    // Anchoring by left/top and by right/bottom at the same time stretches the
+    // window instead of moving it.
+    win.style.right = "auto";
+    win.style.bottom = "auto";
+  }
+
+  function setMin(on) {
+    win.classList.toggle("is-min", on);
+    const btn = document.getElementById("buddyMin");
+    if (btn) {
+      btn.innerHTML = on ? "&#9633;" : "&minus;";
+      btn.title = on ? "Restore" : "Minimise";
+      btn.setAttribute("aria-label", on ? "Restore the Research Buddy"
+                                        : "Minimise the Research Buddy");
+    }
+    write({ min: on });
+  }
+
+  function setMax(on) {
+    win.classList.toggle("is-max", on);
+    if (on) {
+      // Maximising drops any dragged position and any hand-set size, so the
+      // window lands where the stylesheet says rather than half off-screen.
+      win.style.left = win.style.top = "";
+      win.style.width = win.style.height = "";
+    }
+    const btn = document.getElementById("buddyMax");
+    if (btn) {
+      btn.title = on ? "Restore down" : "Maximise";
+      btn.innerHTML = on ? "&#10064;" : "&#9633;";
+    }
+    write({ max: on });
+  }
+
+  document.getElementById("buddyMin")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    // Minimising a maximised window restores it down first, otherwise the bar
+    // alone would sit stretched across most of the screen.
+    if (win.classList.contains("is-max")) setMax(false);
+    setMin(!win.classList.contains("is-min"));
+  });
+
+  document.getElementById("buddyMax")?.addEventListener("click", (e) => {
+    e.stopPropagation();
+    if (win.classList.contains("is-min")) setMin(false);
+    setMax(!win.classList.contains("is-max"));
+  });
+
+  // Double-clicking the bar toggles minimise, the way a title bar usually does.
+  bar.addEventListener("dblclick", (e) => {
+    if (e.target.closest(".buddy-btn")) return;
+    if (win.classList.contains("is-max")) setMax(false);
+    setMin(!win.classList.contains("is-min"));
+  });
+
+  // --- Drag -----------------------------------------------------------
+  // Pointer events rather than mouse events, so a touch drag works with the
+  // same code path; setPointerCapture keeps the drag alive when the pointer
+  // outruns the window, which is exactly when a fast drag would otherwise
+  // drop.
+  let drag = null;
+  bar.addEventListener("pointerdown", (e) => {
+    if (e.target.closest(".buddy-btn")) return;      // buttons are not a handle
+    if (win.classList.contains("is-max")) return;    // maximised does not move
+    const r = win.getBoundingClientRect();
+    drag = { dx: e.clientX - r.left, dy: e.clientY - r.top };
+    place(r.left, r.top);
+    bar.setPointerCapture(e.pointerId);
+    e.preventDefault();
+  });
+  bar.addEventListener("pointermove", (e) => {
+    if (!drag) return;
+    place(e.clientX - drag.dx, e.clientY - drag.dy);
+  });
+  const endDrag = (e) => {
+    if (!drag) return;
+    drag = null;
+    try { bar.releasePointerCapture(e.pointerId); } catch (_) { /* already gone */ }
+    clampIntoView();
+    write({ left: parseFloat(win.style.left), top: parseFloat(win.style.top) });
+  };
+  bar.addEventListener("pointerup", endDrag);
+  bar.addEventListener("pointercancel", endDrag);
+
+  // --- Resize ---------------------------------------------------------
+  const grip = document.getElementById("buddyResize");
+  let rs = null;
+  grip?.addEventListener("pointerdown", (e) => {
+    const r = win.getBoundingClientRect();
+    rs = { x: e.clientX, y: e.clientY, w: r.width, h: r.height };
+    place(r.left, r.top);      // resizing from the corner needs a fixed origin
+    grip.setPointerCapture(e.pointerId);
+    e.preventDefault();
+    e.stopPropagation();
+  });
+  grip?.addEventListener("pointermove", (e) => {
+    if (!rs) return;
+    const w = Math.max(240, Math.min(window.innerWidth - 24, rs.w + (e.clientX - rs.x)));
+    const h = Math.max(120, Math.min(window.innerHeight - 24, rs.h + (e.clientY - rs.y)));
+    win.style.width = `${w}px`;
+    // maxHeight, not height: the window is a flex column whose body scrolls,
+    // so the ceiling is the thing that actually governs its size.
+    win.style.maxHeight = `${h}px`;
+  });
+  const endResize = (e) => {
+    if (!rs) return;
+    rs = null;
+    try { grip.releasePointerCapture(e.pointerId); } catch (_) { /* already gone */ }
+    write({ w: parseFloat(win.style.width), h: parseFloat(win.style.maxHeight) });
+  };
+  grip?.addEventListener("pointerup", endResize);
+  grip?.addEventListener("pointercancel", endResize);
+
+  // --- Restore --------------------------------------------------------
+  const saved = read();
+  if (saved.max) setMax(true);
+  else {
+    if (Number.isFinite(saved.left) && Number.isFinite(saved.top)) {
+      place(saved.left, saved.top);
+      clampIntoView();
+    }
+    if (Number.isFinite(saved.w)) win.style.width = `${saved.w}px`;
+    if (Number.isFinite(saved.h)) win.style.maxHeight = `${saved.h}px`;
+  }
+  if (saved.min) setMin(true);
+
+  // A window positioned for yesterday's viewport can be entirely off today's.
+  window.addEventListener("resize", clampIntoView);
+}
+
+document.addEventListener("DOMContentLoaded", initBuddyWindow);
+// DOMContentLoaded has already fired if this script is loaded late; binding is
+// idempotent (guarded by dataset.bound), so calling both ways is safe.
+if (document.readyState !== "loading") initBuddyWindow();
+
 // ---------------------------------------------------------------------------
 // Named research profiles
 //
@@ -2527,7 +2711,7 @@ function renderResults() {
           <div class="result-title">${escapeHtml(item && item.title ? item.title : "Assessed manuscript")}</div>
           <div class="result-author warning-text">This result was assessed and saved, but could
             not be displayed here (${escapeHtml(e.message)}). It is still in the ledger and the
-            Analytics tables.</div>
+            Report tables.</div>
         </div>
         <div class="result-actions">
           <div class="action-bar">
@@ -4788,7 +4972,7 @@ async function loadForecast() {
       msg.textContent = "";
       empty.classList.remove("hidden");
       const recorded = data.blocks_recorded ?? 0;
-      const required = data.blocks_required ?? 3;
+      const required = data.blocks_required ?? 2;
       empty.innerHTML = `
         <div class="empty-title">Not enough ledger history yet</div>
         <p>${escapeHtml(data.message || "")}</p>
@@ -5528,6 +5712,11 @@ async function loadJournal() {
 // ---------------------------------------------------------------------------
 const explorerState = { minScore: "", sort: "date", order: "desc" };
 let explorerFieldsLoaded = false;
+// The fetched result set, and where in it the visible page starts. Shape
+// matches what renderPagination expects (offset / limit / total).
+let explorerRecords = [];
+let explorerChain = {};
+const explorerPage = { offset: 0, limit: 25, total: 0 };
 
 document.getElementById("explorerSearch").addEventListener("input", debounced(loadExplorer));
 ["explorerMinScore", "explorerSort", "explorerOrder"].forEach(id => {
@@ -5575,7 +5764,10 @@ async function loadExplorer() {
         max_score: 100,
         field: TAG_GROUPS.exField.tags.join(","),
         sort: explorerState.sort, order: explorerState.order,
-        limit: 100,
+        // The server's ceiling. Now that the table pages, fetching the full
+        // allowance costs one request and gives the reader something to page
+        // through rather than a hard stop at 100.
+        limit: 200,
       });
       const res = await fetch(`${API}/api/explorer/latest?${qs}`);
       if (!res.ok) {
@@ -5613,14 +5805,34 @@ async function loadExplorer() {
           : `<div class="hint">No assessments recorded yet.</div>`;
         return;
       }
-      const chain = data.chain || {};
-      container.innerHTML = `
+      // Hold the page in memory and draw one slice at a time. Paging locally
+      // rather than refetching keeps Prev/Next instant and costs nothing —
+      // the whole result set is already here.
+      explorerRecords = data.records;
+      explorerChain = data.chain || {};
+      explorerPage.total = data.records.length;
+      explorerPage.offset = 0;   // a new query always starts at page one
+      renderExplorerChain();
+    }
+  } catch (e) {
+    container.innerHTML = `<div class="warning-box">Error loading ledger.</div>`;
+  }
+}
+
+/** Draw the current page of the chain table. Called on load and on paging. */
+function renderExplorerChain() {
+  const container = document.getElementById("explorerResults");
+  if (!container) return;
+  const chain = explorerChain || {};
+  const slice = explorerRecords.slice(explorerPage.offset,
+                                      explorerPage.offset + explorerPage.limit);
+  container.innerHTML = `
         <h3>Proof-of-Research Chain <span class="hint">${escapeHtml(chain.network || "")} · chain ${escapeHtml(String(chain.chain_id || ""))}</span></h3>
         <div class="table-scroll"><table class="data-table ledger-table"><thead><tr>
           <th class="num">Block</th><th>Manuscript</th><th>Eval Hash</th><th>Block Hash</th>
           <th>Validator</th><th class="num">piX</th><th class="num">piQ</th><th>Settlement</th>
         </tr></thead><tbody>` +
-        data.records.map(r => `
+        slice.map(r => `
           <tr class="clickable-row" data-hash="${escapeHtml(r.eval_hash || "")}">
             <td class="num mono">${r.block_height ?? "—"}</td>
             <td class="cell-primary">${escapeHtml((r.title || "Untitled").slice(0, 60))}
@@ -5636,15 +5848,18 @@ async function loadExplorer() {
               : `<span class="pill pill-muted">Local</span>`}</td>
           </tr>`).join("") +
         `</tbody></table></div>
+        <div class="pagination" id="explorerPager"></div>
         <p class="hint">Each row is one Proof-of-Research block. The block hash chains to its
         predecessor, the validator signature is derived from the server's signing secret, and
         "On-chain" links to the Sepolia settlement transaction. Select a row for the full dossier.</p>`;
-      container.querySelectorAll(".clickable-row").forEach(tr => {
-        tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
-      });
-    }
-  } catch (e) {
-    container.innerHTML = `<div class="warning-box">Error loading ledger.</div>`;
+  container.querySelectorAll(".clickable-row").forEach(tr => {
+    tr.addEventListener("click", () => openDossierByHash(tr.dataset.hash));
+  });
+  // Same pager the leaderboards use, so paging behaves identically everywhere.
+  // Hidden when everything fits on one page — a pager with nowhere to go is
+  // just noise.
+  if (explorerPage.total > explorerPage.limit) {
+    renderPagination("explorerPager", explorerPage, renderExplorerChain);
   }
 }
 
@@ -5760,12 +5975,21 @@ function peerReviewBadge(item) {
  */
 function reviewRequestedBadge(item) {
   if (!item || !item.review_requested) return "";
-  // Once a review exists the request is spent; showing both would imply two
-  // separate things happened.
-  if (Number(item.peer_reviews || 0) > 0) return "";
+  // Shown even next to Peer-reviewed and Author-published. An open request is
+  // a live offer of work, not a statement about the paper's status: once a
+  // paper is reviewed or published its request used to vanish, which hid the
+  // reward from the only people who could act on it. The two claims stay
+  // visually distinct — this seal is the weakest mark on the platform and
+  // reads as a request, so it cannot borrow the others' credibility.
   const h = badgeHash(item);
-  return seal("requested", "clock", "Requested to be reviewed",
+  const reward = Number(item.review_bounty || 0);
+  // The reward goes in the label, not a tooltip. A reviewer scanning the list
+  // decides on what they can see.
+  const label = "Requested to be reviewed"
+              + (reward > 0 ? ` · ${reward.toFixed(2)} piQ` : "");
+  return seal("requested", "clock", label,
     "Someone has commissioned a peer review of this paper and it is waiting for a reviewer. "
+    + (reward > 0 ? `Whoever submits the next review earns ${reward.toFixed(2)} piQ. ` : "")
     + "This is not a review and says nothing about the work.",
     h ? { action: "dossier", hash: h } : null);
 }
