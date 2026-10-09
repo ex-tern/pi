@@ -756,3 +756,26 @@ It refreshes every 30 s (only while the tab is visible) and after your own asses
 - The download response is `attachment` with `?download=1` and `inline` without.
 - Account dot: red, yellow with ORCID only, green with both.
 - 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: RiBD: papers to read and hot topics
+
+**What:**
+- **Papers to read:** besides the ledger paper and the scanned manuscript, RiBD suggests up to three more relevant papers ("Also worth reading"), best match first, then highest piX. Never the researcher's own.
+- **Hot topics to research:** fields with at least two assessed papers, ranked by 0.4 × average piX, 0.4 × average piQ minted per paper and 0.2 × papers in the last 30 days, each scaled across fields.
+  - Each line shows avg piX, avg piQ per paper, new in 30 days, the paper count and a heat bar, and marks the researcher's own fields.
+  - It is shown even before a profile is filled in, and is labelled as what has paid off here so far, not a promise.
+
+The backend is `rib_suggest.hot_topics` and the `more` and `hot` fields of `/api/buddy/suggest`, read over the newest 2,000 assessments.
+
+**Verified:**
+- `tests/test_rib_suggest.py` (now 8 tests):
+  - more reading is relevant and distinct
+  - hot topics rank by piX, piQ and activity
+  - fields with a single paper are left out
+  - "your field" is marked
+  - it works without a profile
+- Against a local database:
+  - Neuroscience ranked hottest (avg piX 71.7, 1.77 piQ, 3 new) and Physics coldest
+  - the reading list was glioblastoma and stroke papers
+  - the panel renders at 1440 and 390 px with no page errors or horizontal scroll
+- pytest at baseline (12 pre-existing failures); `build_hal.py` builds.

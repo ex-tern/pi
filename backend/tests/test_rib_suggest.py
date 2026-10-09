@@ -50,3 +50,36 @@ def test_empty_profile_asks_for_one():
 def test_only_public_fields_returned():
     out = rs.suggest(PROFILE, ROWS)
     assert set(out["explorer"]) <= {"eval_hash", "title", "author", "fields", "score", "timestamp", "why", "relevance"}
+
+
+def test_more_reading_is_relevant_and_distinct():
+    rows = ROWS + [row("f", "Stroke rehabilitation trial", '["Medicine"]', 70),
+                   row("g", "Glioblastoma genetics", '["Biology"]', 65)]
+    out = rs.suggest(PROFILE, rows)
+    picked = {out["explorer"]["eval_hash"], out["manuscript"]["eval_hash"]}
+    more = [m["eval_hash"] for m in out["more"]]
+    assert more and not picked & set(more) and "a" not in more and "e" not in more
+
+
+def test_hot_topics_rank_by_pix_piq_and_activity():
+    from datetime import datetime, timedelta
+    now = datetime(2026, 10, 9)
+    recent = (now - timedelta(days=3)).isoformat(sep=" ")
+    old = (now - timedelta(days=90)).isoformat(sep=" ")
+    rows = [
+        {"fields": '["Neuroscience"]', "score": 80, "piq": 2.0, "timestamp": recent},
+        {"fields": '["Neuroscience"]', "score": 70, "piq": 1.5, "timestamp": recent},
+        {"fields": '["Physics"]', "score": 40, "piq": 0.2, "timestamp": old},
+        {"fields": '["Physics"]', "score": 45, "piq": 0.1, "timestamp": old},
+        {"fields": '["Art"]', "score": 99, "piq": 9.0, "timestamp": recent},   # one paper: not enough to call
+    ]
+    hot = rs.hot_topics(rows, ["physics"], now=now)
+    assert [h["field"] for h in hot] == ["Neuroscience", "Physics"]
+    assert hot[0]["avg_pix"] == 75.0 and hot[0]["avg_piq"] == 1.75 and hot[0]["recent"] == 2
+    assert hot[1]["yours"] is True and hot[0]["yours"] is False
+
+
+def test_hot_topics_even_without_a_profile():
+    rows = [{"eval_hash": str(i), "title": "t", "fields": '["Physics"]', "score": 50, "piq": 1, "timestamp": "2026-10-01"} for i in range(3)]
+    out = rs.suggest({}, rows)
+    assert out["hot"] and out["hot"][0]["field"] == "Physics"
