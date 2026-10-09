@@ -51,3 +51,15 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Headless Chromium, every tab at 1440 and 390 px, signed out and as a mocked owner: no page errors and no horizontal scroll. The Storage panel was screenshotted with the warning showing.
 
 **Files:** `backend/paper_store.py`, `backend/api.py`, `backend/tests/test_paper_store.py`, `frontend/app.js`, `EVOLUTION.md`.
+
+## 2026-10-09: The circling mark returns
+
+**What:** the owner preferred the circle. The logo is back to the circle and its diameter, now without a centre dot, and the diameter turns slowly with the cobalt point riding its end: on the welcome screen inside the ruled ring, and in the sidebar mark. The favicon stays still. The friendlier welcome layout (greeting, four doors, nightly-improvement line) stays.
+
+**Verified:**
+- Browser at 1440 and 390 px, with no page errors and no horizontal scroll.
+- The diameter's rotation is measured mid-turn.
+- No centre dot is present.
+- With reduced motion, the mark is still and fully drawn.
+
+**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.

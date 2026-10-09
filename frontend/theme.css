@@ -256,10 +256,14 @@ html.welcome-open { overflow: hidden; }
 
 /* --- greeting --- */
 .welcome-hero { text-align: center; max-width: 620px; }
-.welcome-mark { width: 84px; height: 84px; display: block; margin: 0 auto 22px; overflow: visible; }
-.wm-tile { fill: var(--cobalt); }
-.wm-stroke { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; }
-.wm-spark { fill: #fff; transform-box: fill-box; transform-origin: center; }
+.welcome-mark { width: min(300px, 62vw); height: auto; display: block; margin: 0 auto 18px; overflow: visible; }
+.wi-ticks line { stroke: var(--hair-strong); stroke-width: 1.2; }
+.wi-ring { fill: none; stroke: var(--hair-strong); stroke-width: 1.2; }
+.wi-circle { fill: none; stroke: var(--ink); stroke-width: 3; }
+.wi-diameter { stroke: var(--ink); stroke-width: 3; }
+.wi-point { fill: var(--cobalt); }
+.wi-halo { fill: none; stroke: var(--cobalt); stroke-width: 1.5; opacity: 0.3; transform-box: fill-box; transform-origin: center; }
+.wi-orbit { transform-origin: 200px 200px; }
 .welcome-title {
   font-size: clamp(2.3rem, 5.4vw, 3.6rem); font-weight: 500; letter-spacing: -0.045em;
   line-height: 1.02; margin: 0 0 14px;
@@ -303,30 +307,37 @@ html.welcome-open { overflow: hidden; }
 }
 .welcome-skip:hover { color: var(--ink); }
 
-/* --- the one moment --- */
-.welcome.in .welcome-mark { animation: wm-pop 0.6s cubic-bezier(.2, .9, .3, 1.3) both; }
-.welcome.in .wm-stroke { stroke-dasharray: 1; stroke-dashoffset: 1; animation: wm-draw 0.55s ease forwards; }
-.welcome.in .wm-bar { animation-delay: 0.35s; }
-.welcome.in .wm-left { animation-delay: 0.65s; }
-.welcome.in .wm-right { animation-delay: 0.85s; }
-.welcome.in .wm-spark { animation: wm-twinkle 0.8s ease 1.35s both; }
+/* --- the one moment: draw the circle, lay the diameter, then let it turn --- */
+.welcome.in .welcome-mark .wi-circle { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: wi-draw 1.4s cubic-bezier(.65, 0, .35, 1) forwards; }
+.welcome.in .welcome-mark .wi-diameter { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: wi-draw 0.7s cubic-bezier(.65, 0, .35, 1) 1.1s forwards; }
+.welcome.in .welcome-mark .wi-ticks { animation: wi-fade 1.2s ease 0.2s both; }
+.welcome.in .welcome-mark .wi-point, .welcome.in .welcome-mark .wi-halo { animation: wi-fade 0.4s ease 1.7s both; }
+.welcome.in .welcome-mark .wi-orbit { animation: wi-turn 22s linear 1.9s infinite; }
+.welcome.in .welcome-mark .wi-halo { animation: wi-fade 0.4s ease 1.7s both, wi-pulse 2.6s ease-in-out 2.1s infinite; }
 .welcome.in .welcome-hero > :not(.welcome-mark),
 .welcome.in .welcome-choices, .welcome.in .welcome-new {
-  animation: wm-rise 0.7s cubic-bezier(.2, .7, .2, 1) 0.25s both;
+  animation: wm-rise 0.7s cubic-bezier(.2, .7, .2, 1) 0.4s both;
 }
-@keyframes wm-pop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
-@keyframes wm-draw { to { stroke-dashoffset: 0; } }
-@keyframes wm-twinkle { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 60% { transform: scale(1.5) rotate(10deg); opacity: 1; } 100% { transform: none; opacity: 1; } }
+@keyframes wi-draw { to { stroke-dashoffset: 0; } }
+@keyframes wi-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wi-turn { to { transform: rotate(-360deg); } }
+@keyframes wi-pulse { 0%, 100% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.7); opacity: 0; } }
 @keyframes wm-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+/* The sidebar mark turns too, slowly enough to read as alive, not busy. */
+.brand-mark { color: var(--ink); }
+.brand-mark .mark-spin { transform-origin: 16px 16px; animation: wi-turn 30s linear infinite; }
 
 @media (max-width: 680px) {
   .welcome-choices { grid-template-columns: minmax(0, 1fr); margin-top: 30px; }
-  .welcome-mark { width: 68px; height: 68px; }
+  .welcome-mark { width: min(220px, 60vw); }
   .welcome-sub { font-size: 16px; }
   .welcome-begin { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .welcome .wm-stroke, .welcome.in .wm-stroke { stroke-dashoffset: 0; animation: none; }
+  .welcome.in .welcome-mark .wi-circle, .welcome.in .welcome-mark .wi-diameter { stroke-dashoffset: 0; animation: none; }
+  .welcome.in .welcome-mark *, .brand-mark .mark-spin { animation: none; opacity: 1; }
+  .welcome.in .welcome-mark .wi-halo { opacity: 0.3; }
 }
 
 /* ---------- Experimental channel (channel.js) ----------

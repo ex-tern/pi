@@ -25,12 +25,14 @@
     { tab: "lab", icon: "lab", title: "Experiment and test in the Lab",
       text: "Run live experiments in your browser, from a self-teaching neural machine to quantum circuits." },
   ];
+  // The instrument: a ruled ring, the circle, and its diameter, which turns
+  // with the cobalt point riding its end. Drawn once, then it keeps turning.
   const MARK =
-    '<rect class="wm-tile" width="32" height="32" rx="9"/>' +
-    '<path class="wm-stroke wm-bar" d="M8.5 11.6H23.5" pathLength="1"/>' +
-    '<path class="wm-stroke wm-left" d="M13.2 11.6c0 4.6-.5 8.4-2.1 11.9" pathLength="1"/>' +
-    '<path class="wm-stroke wm-right" d="M19.6 11.6v8.6c0 2.3 1.6 3.4 3.7 2.4" pathLength="1"/>' +
-    '<path class="wm-spark" d="M25.4 3.6l.7 1.9 1.9.7-1.9.7-.7 1.9-.7-1.9-1.9-.7 1.9-.7z"/>';
+    '<g class="wi-ticks"></g>' +
+    '<circle class="wi-ring" cx="200" cy="200" r="186"/>' +
+    '<circle class="wi-circle" cx="200" cy="200" r="150" pathLength="1000"/>' +
+    '<g class="wi-orbit"><line class="wi-diameter" x1="50" y1="200" x2="350" y2="200" pathLength="1000"/>' +
+    '<circle class="wi-halo" cx="350" cy="200" r="16"/><circle class="wi-point" cx="350" cy="200" r="8"/></g>';
 
   function seen() { try { return sessionStorage.getItem(KEY) === "1"; } catch (_) { return false; } }
   function remember() { try { sessionStorage.setItem(KEY, "1"); } catch (_) { /* private mode: shows again, harmless */ } }
@@ -46,7 +48,7 @@
     root.innerHTML = `
       <div class="welcome-inner">
         <div class="welcome-hero">
-          <svg class="welcome-mark" viewBox="0 0 32 32" aria-hidden="true">${MARK}</svg>
+          <svg class="welcome-mark" viewBox="0 0 400 400" aria-hidden="true">${MARK}</svg>
           <h1 id="welcomeTitle" class="welcome-title">Welcome to PiTechLab</h1>
           <p class="welcome-sub">A research lab you can use from your browser. Assess papers fairly, research what has been reviewed,
           run experiments, and help ideas get better.</p>
@@ -74,6 +76,15 @@
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     });
+    // 72 ticks on the outer ring, every sixth longer: a measuring instrument.
+    const ticks = root.querySelector(".wi-ticks");
+    for (let i = 0; i < 72; i++) {
+      const a = (i / 72) * Math.PI * 2, r2 = i % 6 === 0 ? 172 : 179;
+      const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
+      l.setAttribute("x1", 200 + 186 * Math.cos(a)); l.setAttribute("y1", 200 + 186 * Math.sin(a));
+      l.setAttribute("x2", 200 + r2 * Math.cos(a)); l.setAttribute("y2", 200 + r2 * Math.sin(a));
+      ticks.appendChild(l);
+    }
     document.body.appendChild(root);
     // On the experimental site, "what's new" is that branch's log.
     fetch("/api/build", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(b => {
