@@ -25,7 +25,7 @@
     { tab: "lab", icon: "lab", title: "Experiment and test in the Lab",
       text: "Run live experiments in your browser, from a self-teaching neural machine to quantum circuits." },
   ];
-  // The instrument: a ruled ring and the black circle; its blue diameter
+  // The mark: a black circle; its blue diameter
   // sweeps round with a fading trail behind each half.
   const TRAIL = Array.from({ length: 30 }, (_, i) => {
     const k = i + 1;                        // the sweep turns anticlockwise, so the
@@ -34,8 +34,6 @@
       '<line class="wi-r1" x1="200" y1="200" x2="350" y2="200"/><line class="wi-r2" x1="200" y1="200" x2="50" y2="200"/></g>';
   }).join("");
   const MARK =
-    '<g class="wi-ticks"></g>' +
-    '<circle class="wi-ring" cx="200" cy="200" r="186"/>' +
     '<circle class="wi-circle" cx="200" cy="200" r="150" pathLength="1000"/>' +
     '<g class="wi-orbit"><g class="wi-trail">' + TRAIL + '</g>' +
     '<line class="wi-r1 wi-radius" x1="200" y1="200" x2="350" y2="200" pathLength="1000"/>' +
@@ -55,8 +53,8 @@
     root.innerHTML = `
       <div class="welcome-inner">
         <div class="welcome-hero">
-          <svg class="welcome-mark" viewBox="0 0 400 400" aria-hidden="true">${MARK}</svg>
-          <h1 id="welcomeTitle" class="welcome-title">Welcome to Pi Tech Lab</h1>
+          <svg class="welcome-mark" viewBox="40 40 320 320" aria-hidden="true">${MARK}</svg>
+          <h1 id="welcomeTitle" class="welcome-title">Welcome to <span class="nowrap">Pi Tech Lab</span></h1>
           <p class="welcome-sub">A research lab you can use from your browser. Assess papers fairly, research what has been reviewed,
           run experiments, and help ideas get better.</p>
           <button class="welcome-begin" type="button" data-tab="assess">Let's begin</button>
@@ -66,8 +64,6 @@
             <svg class="wc-icon" viewBox="0 0 24 24" aria-hidden="true">${ICONS[c.icon]}</svg>
             <span class="wc-title">${c.title}</span><span class="wc-text">${c.text}</span></button></li>`).join("")}
         </ul>
-        <p class="welcome-new"><span class="wn-dot" aria-hidden="true"></span>This site improves a little every night, and every change is tested first.
-          <a class="wn-link" href="https://github.com/ex-tern/pi/blob/main/EVOLUTION.md" target="_blank" rel="noopener">See what's new</a></p>
       </div>`;
     root.addEventListener("click", e => {
       const b = e.target.closest("button[data-tab]");
@@ -76,28 +72,13 @@
     root.addEventListener("keydown", e => {
       if (e.key === "Escape") { e.preventDefault(); go(null); }
       if (e.key === "Tab") {                    // keep focus inside the dialog
-        const f = root.querySelectorAll("button, a[href]");
+        const f = root.querySelectorAll("button");
         const first = f[0], last = f[f.length - 1];
         if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
         else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
       }
     });
-    // 72 ticks on the outer ring, every sixth longer: a measuring instrument.
-    const ticks = root.querySelector(".wi-ticks");
-    for (let i = 0; i < 72; i++) {
-      const a = (i / 72) * Math.PI * 2, r2 = i % 6 === 0 ? 172 : 179;
-      const l = document.createElementNS("http://www.w3.org/2000/svg", "line");
-      l.setAttribute("x1", 200 + 186 * Math.cos(a)); l.setAttribute("y1", 200 + 186 * Math.sin(a));
-      l.setAttribute("x2", 200 + r2 * Math.cos(a)); l.setAttribute("y2", 200 + r2 * Math.sin(a));
-      ticks.appendChild(l);
-    }
     document.body.appendChild(root);
-    // On the experimental site, "what's new" is that branch's log.
-    fetch("/api/build", { cache: "no-store" }).then(r => (r.ok ? r.json() : null)).then(b => {
-      if (b && b.branch && /^[\w.-]+$/.test(b.branch)) {
-        root.querySelector(".wn-link").href = "https://github.com/ex-tern/pi/blob/" + b.branch + "/EVOLUTION.md";
-      }
-    }).catch(() => { /* keep the main-branch link */ });
   }
 
   function open() {
