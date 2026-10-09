@@ -30,9 +30,9 @@ ScholarPi runs as two copies of this repository:
 ```
 backend/        FastAPI app (api.py), Lab private projects (lab.py),
                 permission requests (consent.py), signed-in layout sync (layout.py),
-                PiEn shared model (pien.py), tests/
+                PiEN shared model (pien.py), recent assessments (recent.py), tests/
 frontend/       index.html, app.js (the app), style.css + theme.css (look),
-                orbit.js + orbit.css (orbit layout around the centre mark), pi-worker.js (live π digits), pien.js (PiEn, the mark that learns), numbers.js + consts-worker.js (π and friends: e, φ, γ), capabilities.js (the Capabilities pill), architecture.js (the Architecture flowchart), peeks.js (glimpses inside pills), lab.js (Lab tab), channel.js (experimental banner),
+                orbit.js + orbit.css (orbit layout around the centre mark), pi-worker.js (live π digits), pien.js (PiEn, the mark that learns), numbers.js + consts-worker.js (π and friends: e, φ, γ), capabilities.js (the Capabilities pill), architecture.js (the Architecture flowchart), peeks.js (glimpses inside pills), recent.js (Recent assessments), lab.js (Lab tab), channel.js (experimental banner),
                 hal/ (HAL-OS web portal + v86 emulator), confirm/ (permission-request page),
                 quvi/ (browser port of Murtaza Vefadar's QuVI; `node frontend/quvi/engine.test.mjs`)
 scripts/        build_hal.py (builds HAL-OS's boot image from its own repo)

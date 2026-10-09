@@ -298,3 +298,11 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 - **Scrolling anywhere on the page** (outside windows) resizes PiEN. Scrolling on the π box resizes only the π box.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/architecture.js`, `frontend/peeks.js`, `frontend/capabilities.js`, `frontend/pien.js`, `frontend/app.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: Recent assessments, for everyone
+
+**What:** a "Recent assessments" pill (in Explore). It lists every assessment made on the site, newest first, including those made without signing in, so visitors can see the site in use. At the owner's choice, only the field, the piX score, the day and whether the person was signed in are shown. Never the title, the file, the author, the hash, any address or the time of day: people upload unpublished work. The pill shows the latest one, and the list refreshes when a run finishes.
+
+Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tests in `backend/tests/test_recent.py` that check nothing identifying leaks.
+
+**Files:** `backend/recent.py`, `backend/api.py`, `backend/tests/test_recent.py`, `frontend/recent.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
