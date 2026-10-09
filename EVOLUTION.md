@@ -247,3 +247,4 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 - **All seven constants are visible at once.** The window opens at full width, with a compact grid (three columns on desktop, one on phones). Each constant shows its two newest lines of digits; scroll back for the rest. Notes are hidden on phones.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+- π and friends is now π with three friends, at the owner's choice: Euler's number e, the golden ratio φ and the Euler–Mascheroni constant γ. √2, √3 and ln 2 are removed. Two columns on wider screens, one on phones; notes are hidden only on short phones. All four are visible at every tested size, from 320×568 to 1920×1080.

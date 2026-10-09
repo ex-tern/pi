@@ -2,7 +2,7 @@
 //
 // π, computed digit by digit for as long as the page is open (pi-worker.js),
 // and its companions, computed exactly to more and more digits
-// (consts-worker.js): e, φ, √2, √3, ln 2 and γ. Digits are revealed at a steady
+// (consts-worker.js): e, φ and γ. Digits are revealed at a steady
 // pace, so every number visibly keeps growing.
 (function () {
   "use strict";
@@ -10,9 +10,6 @@
     { key: "pi", sym: "π", name: "Pi", note: "The ratio of a circle's circumference to its diameter." },
     { key: "e", sym: "e", name: "Euler's number", note: "The base of natural growth: (1 + 1/n)ⁿ as n grows without end." },
     { key: "phi", sym: "φ", name: "The golden ratio", note: "(1 + √5) / 2: a line cut so the whole is to the longer part as the longer is to the shorter." },
-    { key: "sqrt2", sym: "√2", name: "Pythagoras' constant", note: "The diagonal of a unit square; the first number shown not to be a fraction." },
-    { key: "sqrt3", sym: "√3", name: "Theodorus' constant", note: "The height of an equilateral triangle with side 2." },
-    { key: "ln2", sym: "ln 2", name: "Natural log of 2", note: "The time for anything growing continuously at rate 1 to double." },
     { key: "gamma", sym: "γ", name: "Euler–Mascheroni constant", note: "How far 1 + ½ + ⅓ + … + 1/n stays above ln n. Nobody yet knows whether it is a fraction." },
   ];
   const PACE = 16;                 // digits a second, the same pace as π
