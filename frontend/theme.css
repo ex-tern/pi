@@ -232,3 +232,123 @@ input[type=password], select, textarea {
 @media (prefers-reduced-motion: reduce) {
   * { transition: none !important; animation: none !important; }
 }
+
+/* ======================================================================
+   Welcome screen (welcome.js)
+   One orchestrated moment: the circle draws itself, the diameter extends,
+   then a single point keeps orbiting. Nothing else moves.
+   ====================================================================== */
+html.welcome-open { overflow: hidden; }
+.welcome {
+  position: fixed; inset: 0; z-index: 200;
+  background:
+    radial-gradient(circle at 30% 50%, rgba(47, 64, 232, 0.05), transparent 46%),
+    var(--paper);
+  display: flex; align-items: center; justify-content: center;
+  padding: 32px 24px; overflow-y: auto;
+  opacity: 0; transition: opacity 0.4s ease;
+}
+.welcome.in { opacity: 1; }
+.welcome.leaving { opacity: 0; pointer-events: none; }
+.welcome[hidden] { display: none; }
+/* faint measuring grid, the only texture on the page */
+.welcome::before {
+  content: ""; position: absolute; inset: 0; pointer-events: none;
+  background-image:
+    linear-gradient(var(--hair) 1px, transparent 1px),
+    linear-gradient(90deg, var(--hair) 1px, transparent 1px);
+  background-size: 64px 64px;
+  opacity: 0.35;
+  mask-image: radial-gradient(circle at 30% 50%, #000 0, transparent 70%);
+  -webkit-mask-image: radial-gradient(circle at 30% 50%, #000 0, transparent 70%);
+}
+.welcome-inner {
+  position: relative; width: 100%; max-width: 1120px;
+  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 56px; align-items: center;
+}
+
+/* --- the instrument --- */
+.welcome-instrument { width: 100%; max-width: 520px; justify-self: center; overflow: visible; }
+.wi-ticks line { stroke: var(--hair-strong); stroke-width: 1; }
+.wi-ring { fill: none; stroke: var(--hair); stroke-width: 1; }
+.wi-circle { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 1000; stroke-dashoffset: 1000; }
+.wi-diameter { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 1000; stroke-dashoffset: 1000; }
+.wi-centre { fill: var(--ink); opacity: 0; }
+.wi-point { fill: var(--cobalt); }
+.wi-halo { fill: none; stroke: var(--cobalt); stroke-width: 1; opacity: 0.35; }
+.wi-orbit { transform-origin: 200px 200px; opacity: 0; }
+
+.welcome.in .wi-circle { animation: wi-draw 1.5s cubic-bezier(.65, 0, .35, 1) forwards; }
+.welcome.in .wi-diameter { animation: wi-draw 0.7s cubic-bezier(.65, 0, .35, 1) 1.25s forwards; }
+.welcome.in .wi-centre { animation: wi-fade 0.3s ease 1.9s forwards; }
+.welcome.in .wi-orbit { animation: wi-fade 0.4s ease 1.9s forwards, wi-orbit 26s linear 2.1s infinite; }
+.welcome.in .wi-ticks { animation: wi-fade 1.2s ease 0.3s both; }
+.welcome.in .wi-halo { animation: wi-pulse 2.6s ease-in-out 2.1s infinite; transform-origin: 350px 200px; }
+@keyframes wi-draw { to { stroke-dashoffset: 0; } }
+@keyframes wi-fade { from { opacity: 0; } to { opacity: 1; } }
+@keyframes wi-orbit { to { transform: rotate(-360deg); } }
+@keyframes wi-pulse { 0%, 100% { transform: scale(1); opacity: 0.35; } 50% { transform: scale(1.6); opacity: 0; } }
+
+/* --- the words --- */
+.welcome-copy { max-width: 480px; min-width: 0; }
+.welcome.in .welcome-copy { animation: wi-rise 0.8s cubic-bezier(.2, .7, .2, 1) 0.5s both; }
+@keyframes wi-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+.welcome-title {
+  font-size: clamp(3.2rem, 7vw, 5.6rem); font-weight: 400; letter-spacing: -0.055em;
+  line-height: 0.92; margin: 0 0 18px;
+}
+.welcome-sub { font-size: 17px; line-height: 1.5; color: var(--graphite); margin: 0 0 32px; max-width: 34ch; }
+.welcome-begin {
+  display: inline-flex; align-items: center; gap: 12px;
+  background: var(--ink); color: #fff; border: 0; border-radius: 999px;
+  padding: 15px 30px 15px 26px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer;
+}
+.welcome-begin::before {
+  content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--cobalt);
+  box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.25);
+}
+.welcome-begin:hover { background: #000; }
+
+.welcome-choices { list-style: none; margin: 36px 0 0; padding: 0; border-top: 1px solid var(--hair); }
+.welcome-choices li { border-bottom: 1px solid var(--hair); }
+.welcome-choices button {
+  position: relative; width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
+  padding: 14px 8px 14px 24px; font: inherit; color: var(--ink); display: block;
+}
+.welcome-choices button::before {
+  content: ""; position: absolute; left: 2px; top: 21px; width: 9px; height: 9px; border-radius: 50%;
+  border: 1.4px solid var(--hair-strong); transition: background 0.15s ease, border-color 0.15s ease;
+}
+.welcome-choices button:hover::before, .welcome-choices button:focus-visible::before { background: var(--cobalt); border-color: var(--cobalt); }
+.wc-title { display: block; font-size: 15.5px; font-weight: 500; letter-spacing: -0.01em; }
+.wc-text { display: block; font-size: 13px; color: var(--graphite); margin-top: 2px; }
+.welcome-pi {
+  margin: 28px 0 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+
+@media (max-width: 860px) {
+  .welcome { align-items: flex-start; }
+  .welcome-inner { grid-template-columns: minmax(0, 1fr); gap: 8px; }
+  .welcome-instrument { max-width: 260px; }
+  .welcome-copy { max-width: none; }
+  .welcome-sub { margin-bottom: 24px; }
+  .welcome-begin { width: 100%; justify-content: center; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .welcome .wi-circle, .welcome .wi-diameter { stroke-dashoffset: 0; }
+  .welcome .wi-centre, .welcome .wi-orbit, .welcome .wi-ticks { opacity: 1; }
+}
+
+/* ---------- Experimental channel (channel.js) ----------
+   A slim strip in the page flow, above everything: always seen, never
+   covering content or the corner buttons. */
+.channel-bar {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: var(--ink); color: #fff; padding: 8px 16px 8px 56px;
+  font-size: 12.5px; line-height: 1.4; text-align: center;
+}
+.channel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.4); flex: none; }
+.channel-link { color: #fff; text-decoration: underline; white-space: nowrap; }
+html.is-experimental .sidebar-toggle { top: 4px; color: #fff; opacity: 0.85; }

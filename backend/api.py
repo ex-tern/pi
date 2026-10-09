@@ -422,13 +422,27 @@ BUILD_INFO = {
     # Bumped by hand when a change must be verifiable as live. Cheap, and it
     # works even where the platform injects no git metadata at all.
     "app_version": "2026.07.31",
+    # "stable" for the main site, "experimental" for the copy that evolves
+    # constantly (exp.<domain>, deployed from the `experimental` branch).
+    # The frontend shows a banner on anything that is not stable.
+    "channel": (os.getenv("SCHOLARPI_CHANNEL", "stable").strip().lower() or "stable"),
+    "stable_url": os.getenv("SCHOLARPI_STABLE_URL", "").strip() or None,
 }
+IS_EXPERIMENTAL = BUILD_INFO["channel"] != "stable"
 
 
 @app.get("/api/build")
 def build_info():
     """Public, and deliberately so: it identifies a build, not its contents."""
     return BUILD_INFO
+
+
+@app.get("/robots.txt", include_in_schema=False)
+def robots_txt():
+    """The experimental site must never compete with the real one in search."""
+    if IS_EXPERIMENTAL:
+        return PlainTextResponse("User-agent: *\nDisallow: /\n")
+    return PlainTextResponse("User-agent: *\nAllow: /\n")
 
 
 @app.get("/api/health")
@@ -7038,8 +7052,10 @@ if os.path.isdir(_FRONTEND_DIR):
         aggressively cacheable, which is where the benefit actually is.
         """
         try:
-            return HTMLResponse(_versioned_index(),
-                                headers={"Cache-Control": "no-store, must-revalidate"})
+            headers = {"Cache-Control": "no-store, must-revalidate"}
+            if IS_EXPERIMENTAL:
+                headers["X-Robots-Tag"] = "noindex, nofollow"
+            return HTMLResponse(_versioned_index(), headers=headers)
         except OSError:
             raise HTTPException(status_code=404, detail="Frontend is not available.")
 
