@@ -14,7 +14,7 @@
 // 60 ms (0 quietest, 9 loudest), so no two passes of the loop sound alike.
 (function () {
   "use strict";
-  const SRC = "sound/dd.mp3?v=7";
+  const SRC = "sound/dd.mp3?v=8";
   const LOOP = 14.4;          // seconds: 24 beats at 100 BPM
   const FIRST_BEAT = 0;      // the loop starts on a beat
   const BEAT = 0.6;
