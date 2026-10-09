@@ -368,3 +368,7 @@ html.is-experimental .sidebar-toggle { top: 4px; color: #fff; opacity: 0.85; }
 .consent-link input { flex: 1 1 320px; min-width: 0; font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: 1px solid var(--hair-strong); background: #fbfbfa; color: var(--ink); }
 .consent-history { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
 .consent-history li { margin: 4px 0; }
+
+/* QuVI sits on paper, not on HAL-OS's dark instrument frame. */
+.lab-frame.lab-frame-light { background: var(--paper); }
+.lab-frame.lab-frame-light iframe { height: min(1100px, 90vh); }

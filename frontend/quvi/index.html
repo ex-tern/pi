@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="robots" content="noindex, nofollow">
+<title>QuVI · PiTechLab Lab</title>
+<link rel="icon" type="image/svg+xml" href="../icon.svg">
+<link rel="preload" href="../fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
+<link rel="stylesheet" href="quvi.css">
+</head>
+<body>
+<div class="page">
+  <header class="head">
+    <div>
+      <h1>QuVI</h1>
+      <p class="sub">Build a quantum circuit on wires, then inspect what it does: probabilities, state vector, Bloch spheres, density matrix and entanglement.</p>
+    </div>
+    <p class="credit">After <a href="https://arxiv.org/abs/2602.00643" target="_blank" rel="noopener">QuVI</a> by Murtaza Vefadar · <a href="LICENSE-QuVI.txt" target="_blank">MIT licence</a></p>
+  </header>
+
+  <div id="gate" class="notice" hidden></div>
+
+  <main id="app" hidden>
+    <section class="controls" aria-label="Circuit controls">
+      <label>Example
+        <select id="example">
+          <option value="">Empty circuit</option>
+        </select>
+      </label>
+      <div class="qubits" role="group" aria-label="Number of qubits">
+        <span>Qubits</span>
+        <button type="button" id="qMinus" aria-label="Remove a qubit">−</button>
+        <output id="qCount">2</output>
+        <button type="button" id="qPlus" aria-label="Add a qubit">+</button>
+      </div>
+      <button type="button" id="rerun" title="Measurements are random; sample them again">Measure again</button>
+      <button type="button" id="clear">Clear</button>
+    </section>
+
+    <p class="example-note" id="exNote"></p>
+
+    <section class="palette" aria-label="Gates">
+      <div class="tools" id="tools"></div>
+      <label class="angle" id="angleWrap" hidden>θ =
+        <input type="number" id="angle" value="0.5" step="0.125" aria-label="Angle in multiples of π"> π
+      </label>
+      <p class="hint" id="toolHint">Pick a gate, then click a spot on a wire. Click a placed gate to remove it.</p>
+    </section>
+
+    <section class="diagram-wrap" aria-label="Circuit">
+      <div class="diagram" id="diagram"></div>
+    </section>
+
+    <section class="timeline">
+      <label for="step">Inspect after step <output id="stepOut"></output></label>
+      <input type="range" id="step" min="0" value="0">
+    </section>
+
+    <section class="inspect">
+      <div class="tabs" role="tablist" id="tabs">
+        <button role="tab" data-tab="prob" aria-selected="true">Probabilities</button>
+        <button role="tab" data-tab="state">State vector</button>
+        <button role="tab" data-tab="bloch">Bloch spheres</button>
+        <button role="tab" data-tab="rho">Density matrix</button>
+        <button role="tab" data-tab="ent">Entanglement</button>
+      </div>
+      <div class="panel" id="panel" role="tabpanel"></div>
+      <p class="measured" id="measured"></p>
+    </section>
+
+    <footer class="foot">
+      <p>QuVI is a LabVIEW toolkit for composing and simulating quantum circuits by <strong>Murtaza Vefadar</strong>
+      (Department of Physics, Gebze Technical University), described in
+      “<a href="https://arxiv.org/abs/2602.00643" target="_blank" rel="noopener">From Block Diagrams to Bloch Spheres: Graphical Quantum Circuit Simulation in LabVIEW</a>”.
+      The original runs in LabVIEW and is available from <a href="https://github.com/MurVefa/QuVI---Quantum-Circuit-Toolkit" target="_blank" rel="noopener">GitHub</a>
+      and <a href="https://www.vipm.io/package/murtaza_vefadar_lib_quvi___quantum_circuit_toolkit/" target="_blank" rel="noopener">VIPM</a>.</p>
+      <p>This page is an independent browser implementation of the same model, made for the PiTechLab Lab. It is not the original software.
+      QuVI is © 2026 Murtaza Vefadar, released under the <a href="LICENSE-QuVI.txt" target="_blank">MIT licence</a>.</p>
+    </footer>
+  </main>
+</div>
+<script type="module" src="quvi.js"></script>
+</body>
+</html>

@@ -965,6 +965,25 @@
         </div>
       </div>
 
+      <!-- QuVI: a browser port of Murtaza Vefadar's LabVIEW toolkit. Shown to the
+           owner only until the author approves and QUVI_PUBLIC is set. -->
+      <div class="card lab-card hidden" id="labQuvi">
+        <div class="lab-head">
+          <div>
+            <h2>QuVI <span class="pill pill-muted" id="quviBadge">preview, only you can see this</span></h2>
+            <p class="hint">Compose quantum circuits on wires and inspect them: probabilities, state vector, Bloch
+            spheres, density matrix and entanglement. A browser version of QuVI, the LabVIEW toolkit by Murtaza
+            Vefadar (<a href="https://arxiv.org/abs/2602.00643" target="_blank" rel="noopener">paper</a>, MIT licence).</p>
+          </div>
+          <div class="lab-actions">
+            <a class="btn btn-outline" href="quvi/" target="_blank" rel="noopener">Open full screen</a>
+          </div>
+        </div>
+        <div class="lab-frame lab-frame-light">
+          <iframe id="quviFrame" title="QuVI" data-src="quvi/" loading="lazy"></iframe>
+        </div>
+      </div>
+
       <!-- Owner only. The list and every file come from owner-authorised
            endpoints (backend/lab.py); for anyone else this card stays hidden
            and the server refuses the requests anyway. -->

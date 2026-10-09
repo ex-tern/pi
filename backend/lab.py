@@ -181,3 +181,24 @@ def build_router(base_dir: str, require_owner: Callable) -> APIRouter:
                         headers=PRIVATE_HEADERS)
 
     return router
+
+
+# ---------------------------------------------------------------------------
+# Public feature flags for the Lab.
+#
+# Some Lab experiments are built before they may be shown: QuVI is a port of
+# another author's work, and the promise to him was that nothing goes live
+# without his approval. Until QUVI_PUBLIC is set, the Lab shows QuVI to the
+# signed-in owner only (lab.js and quvi/quvi.js both check this).
+def _flag(name: str) -> bool:
+    return os.getenv(name, "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def build_features_router() -> APIRouter:
+    router = APIRouter(prefix="/api/lab", tags=["lab"])
+
+    @router.get("/features")
+    def features():
+        return {"quvi_public": _flag("QUVI_PUBLIC")}
+
+    return router

@@ -98,3 +98,15 @@ def test_bad_names_and_types_are_refused(client, project, name):
 def test_size_limit(client, monkeypatch):
     monkeypatch.setattr(lab, "MAX_FILE_BYTES", 10)
     assert put(client, "p", "big.txt", b"x" * 11, bearer(OWNER)).status_code == 413
+
+
+def test_quvi_flag_defaults_to_private(monkeypatch):
+    app = FastAPI()
+    app.include_router(lab.build_features_router())
+    c = TestClient(app)
+    monkeypatch.delenv("QUVI_PUBLIC", raising=False)
+    assert c.get("/api/lab/features").json() == {"quvi_public": False}
+    monkeypatch.setenv("QUVI_PUBLIC", "1")
+    assert c.get("/api/lab/features").json() == {"quvi_public": True}
+    monkeypatch.setenv("QUVI_PUBLIC", "no")
+    assert c.get("/api/lab/features").json() == {"quvi_public": False}
