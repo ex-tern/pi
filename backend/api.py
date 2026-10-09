@@ -3758,6 +3758,18 @@ def _human(n: float) -> str:
     return f"{n:.1f} TB"
 
 
+def _known_eval_hashes():
+    conn = get_db_connection()
+    try:
+        return {r[0] for r in conn.execute("SELECT eval_hash FROM papers_assessment").fetchall()}
+    finally:
+        conn.close()
+
+
+# Lets the paper store evict orphans before assessed manuscripts when it is full.
+paper_store.set_known_hashes_provider(_known_eval_hashes)
+
+
 @app.get("/api/admin/storage")
 def storage_report(request: Request, wallet: str = Query(default="")):
     """What is actually using the data volume. Owner only.
@@ -3834,11 +3846,27 @@ def storage_report(request: Request, wallet: str = Query(default="")):
         "logs": {"bytes": log_bytes, "human": _human(log_bytes), "files": log_files},
         "orphans": {"count": len(orphans), "bytes": orphan_bytes,
                     "human": _human(orphan_bytes)},
+        "manuscript_cap": _cap_report(store_bytes),
         "note": ("Manuscripts are retained so a published assessment can serve the paper it "
                  "assessed. Orphans are stored files with no assessment left — always safe to "
                  "delete. VACUUM reclaims database pages freed by withdrawals; SQLite does not "
                  "return that space to the filesystem on its own."),
     }
+
+
+def _cap_report(store_bytes: int) -> dict:
+    """How close the manuscript store is to its total cap, for the owner panel."""
+    cap = paper_store.MAX_TOTAL_BYTES
+    if not cap:
+        return {"bytes": 0, "human": "none", "percent_used": None, "warning": ""}
+    pct = round(store_bytes / cap * 100, 1)
+    warning = ""
+    if pct >= 80:
+        warning = (f"Manuscripts are at {pct}% of their {_human(cap)} cap. Past the cap, new "
+                   "uploads evict orphaned files first, then the oldest stored manuscripts, "
+                   "whose published papers then lose their file link. Raise "
+                   "PAPER_STORE_MAX_TOTAL_BYTES if the volume has room.")
+    return {"bytes": cap, "human": _human(cap), "percent_used": pct, "warning": warning}
 
 
 class CleanupRequest(BaseModel):
