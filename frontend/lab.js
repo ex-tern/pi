@@ -22,7 +22,8 @@
     if (halFrame && !halFrame.src) halFrame.src = halFrame.dataset.src;
     else halMessage({ hal: "resume" });
     loadPrivate();
-    try { history.replaceState(null, "", "#lab"); } catch (_) { /* file:// or sandboxed */ }
+    // (No longer writes #lab into the address: in the orbit layout that link
+    // reopened a Lab window by itself on the next visit.)
   }
   document.querySelectorAll(".tab-btn").forEach(btn => btn.addEventListener("click", () => {
     if (btn.dataset.tab === "lab") openLab();
