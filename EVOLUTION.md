@@ -63,3 +63,22 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - With reduced motion, the mark is still and fully drawn.
 
 **Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+
+## 2026-10-09: Name written as "Pi Tech Lab"
+
+**What:** the owner's preferred spelling. Every visible name (titles, the sidebar brand, the welcome greeting, the permission page, the QuVI footer and the permission-request defaults) now reads "Pi Tech Lab". The domain stays pitechlab.com.
+
+**Files:** `frontend/index.html`, `frontend/welcome.js`, `frontend/confirm/*`, `frontend/quvi/index.html`.
+
+## 2026-10-09: Black circle, blue sweeping diameter; no dot, no skip link
+
+**What:**
+- The logo is now a black circle with a blue diameter, sweeping round with a smooth fading trail, on the welcome screen and in the sidebar. The cobalt dot is gone. The favicon and the permission page show it still.
+- "Skip to the site" is removed from the welcome screen. Esc, "Let's begin" or any door still leads in.
+
+**Verified:**
+- Browser at 1440 and 390 px, with no page errors and no horizontal scroll.
+- The rotation is measured mid-sweep.
+- With reduced motion, the mark is still and the trail is hidden.
+
+**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.

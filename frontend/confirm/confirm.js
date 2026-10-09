@@ -20,7 +20,7 @@
   }
 
   function render(r) {
-    document.title = r.title + " · PiTechLab";
+    document.title = r.title + " · Pi Tech Lab";
     $("title").textContent = r.title;
     $("from").textContent = r.requester ? "From " + r.requester : "";
     $("to").textContent = "To " + r.recipient;

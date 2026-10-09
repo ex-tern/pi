@@ -260,9 +260,8 @@ html.welcome-open { overflow: hidden; }
 .wi-ticks line { stroke: var(--hair-strong); stroke-width: 1.2; }
 .wi-ring { fill: none; stroke: var(--hair-strong); stroke-width: 1.2; }
 .wi-circle { fill: none; stroke: var(--ink); stroke-width: 3; }
-.wi-diameter { stroke: var(--ink); stroke-width: 3; }
-.wi-point { fill: var(--cobalt); }
-.wi-halo { fill: none; stroke: var(--cobalt); stroke-width: 1.5; opacity: 0.3; transform-box: fill-box; transform-origin: center; }
+.wi-r1 { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; }
+.wi-r2 { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; }
 .wi-orbit { transform-origin: 200px 200px; }
 .welcome-title {
   font-size: clamp(2.3rem, 5.4vw, 3.6rem); font-weight: 500; letter-spacing: -0.045em;
@@ -295,25 +294,19 @@ html.welcome-open { overflow: hidden; }
 .wc-title { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; align-self: end; }
 .wc-text { font-size: 13.5px; color: var(--graphite); line-height: 1.45; }
 
-/* --- what's new, and a quiet way out --- */
+/* --- what's new --- */
 .welcome-new {
   margin: 26px 0 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
   color: var(--graphite); font-size: 14px; text-align: center;
 }
 .wn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); flex: none; }
-.welcome-skip {
-  margin-top: 18px; background: none; border: 0; color: var(--graphite); font: inherit; font-size: 13.5px;
-  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
-}
-.welcome-skip:hover { color: var(--ink); }
 
 /* --- the one moment: draw the circle, lay the diameter, then let it turn --- */
 .welcome.in .welcome-mark .wi-circle { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: wi-draw 1.4s cubic-bezier(.65, 0, .35, 1) forwards; }
-.welcome.in .welcome-mark .wi-diameter { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: wi-draw 0.7s cubic-bezier(.65, 0, .35, 1) 1.1s forwards; }
+.welcome.in .welcome-mark .wi-radius { stroke-dasharray: 1000; stroke-dashoffset: 1000; animation: wi-draw 0.6s cubic-bezier(.65, 0, .35, 1) 1.1s forwards; }
 .welcome.in .welcome-mark .wi-ticks { animation: wi-fade 1.2s ease 0.2s both; }
-.welcome.in .welcome-mark .wi-point, .welcome.in .welcome-mark .wi-halo { animation: wi-fade 0.4s ease 1.7s both; }
-.welcome.in .welcome-mark .wi-orbit { animation: wi-turn 22s linear 1.9s infinite; }
-.welcome.in .welcome-mark .wi-halo { animation: wi-fade 0.4s ease 1.7s both, wi-pulse 2.6s ease-in-out 2.1s infinite; }
+.welcome.in .welcome-mark .wi-trail { animation: wi-fade 0.8s ease 1.9s both; }
+.welcome.in .welcome-mark .wi-orbit { animation: wi-turn 16s linear 1.8s infinite; }
 .welcome.in .welcome-hero > :not(.welcome-mark),
 .welcome.in .welcome-choices, .welcome.in .welcome-new {
   animation: wm-rise 0.7s cubic-bezier(.2, .7, .2, 1) 0.4s both;
@@ -321,7 +314,6 @@ html.welcome-open { overflow: hidden; }
 @keyframes wi-draw { to { stroke-dashoffset: 0; } }
 @keyframes wi-fade { from { opacity: 0; } to { opacity: 1; } }
 @keyframes wi-turn { to { transform: rotate(-360deg); } }
-@keyframes wi-pulse { 0%, 100% { transform: scale(1); opacity: 0.3; } 50% { transform: scale(1.7); opacity: 0; } }
 @keyframes wm-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
 
 /* The sidebar mark turns too, slowly enough to read as alive, not busy. */
@@ -335,9 +327,9 @@ html.welcome-open { overflow: hidden; }
   .welcome-begin { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .welcome.in .welcome-mark .wi-circle, .welcome.in .welcome-mark .wi-diameter { stroke-dashoffset: 0; animation: none; }
+  .welcome.in .welcome-mark .wi-circle, .welcome.in .welcome-mark .wi-radius { stroke-dashoffset: 0; animation: none; }
   .welcome.in .welcome-mark *, .brand-mark .mark-spin { animation: none; opacity: 1; }
-  .welcome.in .welcome-mark .wi-halo { opacity: 0.3; }
+  .welcome.in .welcome-mark .wi-trail { opacity: 0; }
 }
 
 /* ---------- Experimental channel (channel.js) ----------
