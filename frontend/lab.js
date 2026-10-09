@@ -308,3 +308,30 @@
     if (document.getElementById("tab-lab").classList.contains("active") && loadedFor !== (localStorage.getItem("sp_token") || "")) load(true);
   }, 2000);
 })();
+
+// ------------------------------------------------------------ QuVI (owner preview until approved)
+(function () {
+  "use strict";
+  const card = document.getElementById("labQuvi"), frame = document.getElementById("quviFrame");
+  const tabBtn = document.querySelector('.tab-btn[data-tab="lab"]');
+  if (!card || !frame || !tabBtn) return;
+  let checkedFor = null;
+
+  async function update() {
+    const token = localStorage.getItem("sp_token") || "";
+    if (checkedFor === token) return;
+    checkedFor = token;
+    let isPublic = false, isOwner = false;
+    try { isPublic = (await (await fetch("/api/lab/features", { cache: "no-store" })).json()).quvi_public === true; } catch (_) { /* treat as not public */ }
+    if (!isPublic && token) {
+      try { isOwner = (await (await fetch("/api/auth/session", { cache: "no-store" })).json()).is_owner === true; } catch (_) { /* not owner */ }
+    }
+    const show = isPublic || isOwner;
+    card.classList.toggle("hidden", !show);
+    document.getElementById("quviBadge").classList.toggle("hidden", isPublic);
+    if (show && !frame.src) frame.src = frame.dataset.src;
+  }
+  tabBtn.addEventListener("click", update);
+  if (location.hash === "#lab") setTimeout(update, 0);
+  setInterval(() => { if (document.getElementById("tab-lab").classList.contains("active")) update(); }, 2000);
+})();

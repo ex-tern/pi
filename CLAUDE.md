@@ -32,8 +32,11 @@ backend/        FastAPI app (api.py), Lab private projects (lab.py),
                 permission requests (consent.py), tests/
 frontend/       index.html, app.js (the app), style.css + theme.css (look),
                 welcome.js (arrival screen), lab.js (Lab tab), channel.js (experimental banner),
-                hal/ (HAL-OS web portal + v86 emulator), confirm/ (permission-request page)
+                hal/ (HAL-OS web portal + v86 emulator), confirm/ (permission-request page),
+                quvi/ (browser port of Murtaza Vefadar's QuVI; `node frontend/quvi/engine.test.mjs`)
 scripts/        build_hal.py (builds HAL-OS's boot image from its own repo)
 ```
 
 `SCHOLARPI_CHANNEL=experimental` turns on the experimental banner, `robots.txt: Disallow` and `X-Robots-Tag: noindex`.
+
+**QuVI is owner-only until its author approves.** `QUVI_PUBLIC=1` shows it to everyone. Do not set it, or work around it, unless the owner says the author has given permission (see the Lab's permission requests).
