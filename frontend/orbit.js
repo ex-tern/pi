@@ -1,11 +1,13 @@
 // orbit.js — the whole site as an orbit around the Pi Tech Lab mark.
 //
-// The mark sits fixed in the centre of the screen on every page. Every card
-// of every section orbits it on elliptical rings. A card can be dragged to a
-// new orbit (remembered per browser) and clicked to expand into a floating
-// window that can be dragged, resized and maximised. The mark's size follows
-// what the site is doing: large when nothing is open, small while cards are
-// open, spinning faster while the site is working.
+// The mark sits in the middle of the screen on every page (drag it elsewhere;
+// double-click brings it back). Every card of every section is a pill around
+// it. Pills stay where they are put and never overlap: drag one and the others
+// make room. Click one to expand it into a floating window that can be
+// dragged, resized and maximised. The more a card is used, the larger its pill
+// and the closer it sits to the mark. The mark's size follows what you do:
+// large when nothing is open, stepping back as windows open, pulsing when one
+// opens, spinning faster while the site is working.
 //
 // The cards are the app's own live elements, MOVED (never copied), so every
 // listener, id and form in app.js, lab.js and the Lab keeps working. Opening a
@@ -113,14 +115,29 @@
   stage.innerHTML =
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
-    '<button type="button" class="orbit-core" aria-label="Pi Tech Lab, close all open cards">' +
+    '<h1 class="orbit-title">Pi Tech Lab</h1>' +
+    '<button type="button" class="orbit-core" aria-label="Pi Tech Lab. Drag to move; click to close all open cards">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g></svg></button>' +
-    '<div class="orbit-caption"><h1>Pi Tech Lab</h1><p>Drag anything. Click to open.</p>' +
-    '<div class="orbit-pi" aria-live="off"><span class="op-digits"></span><span class="op-count"></span></div></div></div>' +
+    '<div class="orbit-pi" aria-live="off"><span class="op-digits"></span><span class="op-count"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
+
+  // ------------------------------------------------------------ use: what you use grows
+  // Each card keeps a score in this browser: opening it counts 1, moving it a
+  // third. The score sets how prominent its pill is and how close to the mark
+  // it sits.
+  const useOf = it => load("orbit:use:" + it.key) || 0;
+  function bumpUse(it, by) {
+    it.use = Math.min(999, useOf(it) + by);
+    store("orbit:use:" + it.key, Math.round(it.use * 100) / 100);
+    setTier(it);
+  }
+  function setTier(it) {
+    const u = it.use || 0;
+    it.bubble.dataset.tier = u >= 8 ? 3 : u >= 3 ? 2 : u >= 1 ? 1 : 0;
+  }
 
   // ------------------------------------------------------------ bubbles
   function makeBubbles() {
@@ -136,7 +153,11 @@
       b.title = it.section.name + ": " + it.title;
       b.setAttribute("aria-label", it.section.name + ": " + it.title + ". Open");
       it.bubble = b;
-      it.custom = load("orbit:pos:" + it.key);
+      it.order = i;
+      it.use = useOf(it);
+      setTier(it);
+      it.custom = load("orbit:at:" + it.key);       // {dx, dy} from the mark's centre
+      store("orbit:pos:" + it.key);                  // the old moving-orbit format
       wireDrag(it);
       wrap.appendChild(b);
     });
@@ -147,108 +168,160 @@
   }
 
   // ------------------------------------------------------------ geometry
-  let W = 0, H = 0, top = 0, cx = 0, cy = 0, coreR = 0, rings = [];
-  let t = 0, paused = 0, dragging = null;
-  const SPEED = 0.018;                       // radians per second, inner ring
+  // Nothing moves by itself. Pills get fixed places around the mark, chosen so
+  // no two overlap and none covers the mark, its π line, the title or the
+  // corner buttons. They only move when you move them, move the mark, or the
+  // set of cards or the window size changes.
+  let W = 0, H = 0, top = 0, R = 0, small = false;
+  let lx = 0, ly = 0;                    // the mark's centre, in stage coordinates
+  let logoAt = load("orbit:logo");       // {fx, fy}: where it was left, as a share of the screen
+  let piBox = { w: 320, h: 40 };
+  let draggingLogo = false;
+  const GAP = () => (small ? 6 : 10);
 
+  function idleR() {
+    const base = Math.min(W, H);
+    return Math.min(118, base * (small ? 0.15 : 0.16), H * 0.12);
+  }
+  function shownR() {
+    const open = document.documentElement.classList.contains("orbit-open");
+    if (!open) return R;
+    // the more windows are open, the further the mark steps back
+    const n = items.filter(i => i.panel).length;
+    return Math.max(20, Math.min(32, R * 0.3) - (n - 1) * 3);
+  }
+
+  function clampLogo() {
+    const m = R + 8;
+    lx = Math.min(W - m, Math.max(m, lx));
+    ly = Math.min(H - R - piBox.h - 18, Math.max(m + (small ? 36 : 44), ly));
+  }
+
+  // the π line hangs under the mark but never leaves the screen
+  const piX = () => Math.min(W - piBox.w / 2 - 4, Math.max(piBox.w / 2 + 4, lx));
+  function placeMark() {
+    const r = shownR();
+    const core = $(".orbit-core");
+    core.style.width = core.style.height = r * 2 + "px";
+    core.style.left = lx - r + "px";
+    core.style.top = top + ly - r + "px";
+    const pi = $(".orbit-pi");
+    pi.style.left = piX() + "px";
+    pi.style.top = top + ly + r + 10 + "px";
+  }
+
+  const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
+  const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => hit(r, p));
+  function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
+
+  function obstacles() {
+    const g = GAP();
+    const out = [
+      grow({ x: lx - R, y: ly - R, w: 2 * R, h: 2 * R }, g),
+      grow({ x: piX() - piBox.w / 2, y: ly + R + 8, w: piBox.w, h: piBox.h + 4 }, g),
+    ];
+    const t = $(".orbit-title");
+    if (t) { const b = t.getBoundingClientRect(); out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g)); }
+    document.querySelectorAll(".gh-fab, .buddy-float").forEach(el => {
+      const b = el.getBoundingClientRect();
+      if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
+    });
+    return out;
+  }
+
+  // The nearest free spot to (x, y), searching outwards in a widening spiral.
+  function nearestFree(x, y, w, h, placed) {
+    for (let d = 0; d < Math.max(W, H); d += 6) {
+      const steps = d === 0 ? 1 : Math.max(8, Math.round((2 * Math.PI * d) / 10));
+      for (let s = 0; s < steps; s++) {
+        const a = (s / steps) * Math.PI * 2;
+        const r = { x: x + d * Math.cos(a) - w / 2, y: y + d * Math.sin(a) - h / 2, w, h };
+        if (freeAt(r, placed)) return r;
+      }
+    }
+    return null;
+  }
+
+  let usedRings = [];
   function layout() {
     const bar = $(".channel-bar");
     top = bar ? bar.offsetHeight : 0;
     stage.style.top = top + "px";
     document.documentElement.style.setProperty("--orbit-top", top + "px");
     W = window.innerWidth; H = window.innerHeight - top;
-    cx = W / 2; cy = H / 2;
-    const open = document.documentElement.classList.contains("orbit-open");
-    const base = Math.min(W, H), small = W < 700;
-    coreR = open ? Math.min(30, base * 0.07) : Math.min(118, base * (small ? 0.15 : 0.16), H * 0.12);
-    const core = $(".orbit-core");
-    core.style.width = core.style.height = coreR * 2 + "px";
-    core.style.left = cx - coreR + "px";
-    core.style.top = top + cy - coreR + "px";
-    const cap = $(".orbit-caption");
-    cap.style.top = top + cy + coreR + 10 + "px";
-    const capH = open ? 40 : (cap.offsetHeight || 110);
+    small = W < 700;
+    R = idleR();
+    const pi = $(".orbit-pi");
+    if (!document.documentElement.classList.contains("orbit-open") && pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
+    if (!draggingLogo) {
+      if (logoAt) { lx = logoAt.fx * W; ly = logoAt.fy * H; }
+      else { lx = W / 2; ly = H / 2 - (small ? 20 : 10); }
+    }
+    clampLogo();
+    placeMark();
 
-    const vis = items.filter(it => visible(it));
     items.forEach(it => { it.bubble.hidden = !visible(it); });
+    const vis = items.filter(it => !it.bubble.hidden);
     vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
 
-    // Rings: the innermost clears the mark and its caption; the outermost
-    // stays inside the screen with room for a card's half-width.
-    const widest = Math.max(80, ...vis.map(it => it.w));
-    const capW = open ? 0 : Math.min(Math.max(...[...cap.children].map(c => c.offsetWidth || 0), 0), 420);
-    const maxRx = W / 2 - Math.min(widest / 2 + 8, W * 0.2), maxRy = H / 2 - 22;
-    // the inner ring clears the mark and the whole caption block beneath it
-    const minRx = Math.min(maxRx, small ? coreR + 62 : Math.max(coreR, capW / 2) + widest / 2 + 24);
-    const minRy = Math.min(maxRy, coreR + capH + (small ? 40 : 44));
-    // as many rings as there is room for, at least ~44px apart
-    const nRings = small ? 2 : Math.max(1, Math.min(3, Math.floor((maxRy - minRy) / 44) + 1));
-    rings = Array.from({ length: nRings }, (_, k) => {
-      const f = nRings === 1 ? 0.5 : k / (nRings - 1);
-      // on phones every ring turns the same way, so cards never cross paths
-      return { rx: minRx + (maxRx - minRx) * f, ry: minRy + (maxRy - minRy) * f, dir: small ? 1 : (k % 2 ? -1 : 1), items: [] };
+    const g = GAP();
+    const placed = obstacles();
+    // 1. pills you have put somewhere keep that spot (relative to the mark), or the nearest free one
+    vis.filter(it => it.custom && it !== dragging).forEach(it => {
+      const r = nearestFree(lx + it.custom.dx, ly + it.custom.dy, it.w, it.h, placed);
+      it.at = r; if (r) placed.push(grow(r, g / 2));
     });
-    const len = r => Math.PI * (3 * (r.rx + r.ry) - Math.sqrt((3 * r.rx + r.ry) * (r.rx + 3 * r.ry)));
-    // Fill rings from the inside out by the room each one has, so cards do
-    // not pile up; sections stay together in reading order.
-    const placeable = vis.filter(it => !it.custom);
-    const need = placeable.reduce((a, it) => a + it.w + 14, 0);
-    const cap0 = rings.reduce((a, r) => a + len(r), 0);
-    const fill = Math.min(1, need / cap0) + 0.02;
-    let idx = 0;
-    rings.forEach((r, k) => {
-      let used = 0;
-      const room = len(r) * fill;
-      while (idx < placeable.length && (k === rings.length - 1 || used + placeable[idx].w + 14 <= room)) {
-        r.items.push(placeable[idx]); used += placeable[idx].w + 14; idx++;
+    // 2. the rest go round the mark on widening rings, most used first
+    const auto = vis.filter(it => !it.custom && it !== dragging)
+      .sort((a, b) => (b.use || 0) - (a.use || 0) || a.order - b.order);
+    const ax = small ? 1.2 : 1.75;                 // pills are wide: rings are wider than tall
+    const step = (small ? 26 : 36);
+    const r0 = R + g + (small ? 14 : 20);
+    let ang = -Math.PI / 2;
+    usedRings = [];
+    for (const it of auto) {
+      it.at = null;
+      for (let k = 0; k < 80 && !it.at; k++) {
+        const ry = r0 + k * step, rx = ry * ax;
+        const n = Math.max(12, Math.round((Math.PI * (rx + ry)) / 9));
+        for (let j = 0; j < n; j++) {
+          const a = ang + (j / n) * Math.PI * 2;
+          const r = { x: lx + rx * Math.cos(a) - it.w / 2, y: ly + ry * Math.sin(a) - it.h / 2, w: it.w, h: it.h };
+          if (freeAt(r, placed)) { it.at = r; ang = a; if (!usedRings.includes(k)) usedRings.push(k); break; }
+        }
+        if (it.at) { usedRings.ring = { r0, step, ax }; }
       }
-      // spread by width so neighbours keep an even gap
-      let acc = 0;
-      const total = r.items.reduce((a, it) => a + it.w + 14, 0) || 1;
-      r.items.forEach(it => { it.ring = k; it.phase = ((acc + (it.w + 14) / 2) / total) * Math.PI * 2 + k * 0.7; acc += it.w + 14; });
+      if (!it.at) it.at = nearestFree(lx, ly, it.w, it.h, placed);  // a very small screen: anywhere free
+      if (it.at) placed.push(grow(it.at, g / 2));
+    }
+    vis.forEach(it => {
+      if (it === dragging) return;
+      const r = it.at || { x: Math.min(W - it.w - 6, Math.max(6, lx - it.w / 2)), y: Math.min(H - it.h - 6, ly + R + piBox.h + 20), w: it.w, h: it.h };
+      it.bubble.style.transform = "translate(" + r.x.toFixed(1) + "px," + r.y.toFixed(1) + "px)";
     });
     drawRings();
-    place();
   }
 
   function drawRings() {
     const svg = $(".orbit-rings", stage);
     svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-    svg.innerHTML = rings.map(r => '<ellipse cx="' + cx + '" cy="' + cy + '" rx="' + r.rx.toFixed(1) + '" ry="' + r.ry.toFixed(1) + '"/>').join("");
+    const p = usedRings.ring;
+    if (!p) { svg.innerHTML = ""; return; }
+    svg.innerHTML = usedRings.slice().sort((a, b) => a - b).filter((k, i) => i < 4).map(k => {
+      const ry = p.r0 + k * p.step;
+      return '<ellipse cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" rx="' + (ry * p.ax).toFixed(1) + '" ry="' + ry.toFixed(1) + '"/>';
+    }).join("");
   }
 
-  function posOf(it) {
-    if (it.custom) {
-      const r = rings[0] || { dir: 1 };
-      const a = it.custom.a + t * SPEED * 0.8;
-      const rx = it.custom.f * (W / 2 - it.w / 2 - 8), ry = it.custom.f * (H / 2 - 22);
-      return [cx + rx * Math.cos(a), cy + ry * Math.sin(a)];
-    }
-    const r = rings[it.ring];
-    if (!r) return [cx, cy];
-    const a = it.phase + t * SPEED * r.dir * (W < 700 ? 1 : 1 - it.ring * 0.25);
-    return [cx + r.rx * Math.cos(a), cy + r.ry * Math.sin(a)];
-  }
-
-  function place() {
-    for (const it of items) {
-      if (it.bubble.hidden || it === dragging) continue;
-      let [x, y] = posOf(it);
-      x = Math.min(W - it.w / 2 - 4, Math.max(it.w / 2 + 4, x));
-      y = Math.min(H - it.h / 2 - 4, Math.max(it.h / 2 + 4, y));
-      it.bubble.style.transform = "translate(" + (x - it.w / 2).toFixed(1) + "px," + (y - it.h / 2).toFixed(1) + "px)";
-    }
-  }
-
-  let last = performance.now();
-  function frame(now) {
-    const dt = Math.min(0.1, (now - last) / 1000); last = now;
-    if (!paused && !reduceMotion.matches) t += dt * (document.documentElement.classList.contains("orbit-busy") ? 3 : 1);
-    place();
-    requestAnimationFrame(frame);
+  let pendingLayout = false;
+  function layoutSoon() {
+    if (pendingLayout) return;
+    pendingLayout = true;
+    requestAnimationFrame(() => { pendingLayout = false; layout(); });
   }
 
   // ------------------------------------------------------------ drag + click
+  let dragging = null;
   function wireDrag(it) {
     const b = it.bubble;
     let sx = 0, sy = 0, moved = false, ox = 0, oy = 0;
@@ -262,28 +335,72 @@
       if (!b.hasPointerCapture(e.pointerId)) return;
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
       moved = true; dragging = it; b.classList.add("dragging");
-      b.style.transform = "translate(" + (e.clientX - ox) + "px," + (e.clientY - top - oy) + "px)";
+      const x = Math.min(W - it.w, Math.max(0, e.clientX - ox)), y = Math.min(H - it.h, Math.max(0, e.clientY - top - oy));
+      b.style.transform = "translate(" + x + "px," + y + "px)";
     });
-    b.addEventListener("pointerup", e => {
+    const end = e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
       b.releasePointerCapture(e.pointerId);
       b.classList.remove("dragging");
       if (!moved) return;                 // a click: handled by the click event
-      // Adopt the orbit through the drop point: its angle and its relative distance.
-      const x = e.clientX - ox + it.w / 2 - cx, y = e.clientY - top - oy + it.h / 2 - cy;
-      const rx = W / 2 - it.w / 2 - 8, ry = H / 2 - 22;
-      const f = Math.max(0.25, Math.min(1, Math.hypot(x / rx, y / ry)));
-      it.custom = { f, a: Math.atan2(y / ry, x / rx) - t * SPEED * 0.8 };
-      store("orbit:pos:" + it.key, it.custom);
+      const x = Math.min(W - it.w, Math.max(0, e.clientX - ox)) + it.w / 2;
+      const y = Math.min(H - it.h, Math.max(0, e.clientY - top - oy)) + it.h / 2;
+      it.custom = { dx: Math.round(x - lx), dy: Math.round(y - ly) };
+      store("orbit:at:" + it.key, it.custom);
       dragging = null;
+      bumpUse(it, 1 / 3);
+      layout();                            // it lands on the nearest free spot; the others make room
       b.dataset.justDragged = "1";
       setTimeout(() => delete b.dataset.justDragged, 0);
-    });
+    };
+    b.addEventListener("pointerup", end);
+    b.addEventListener("pointercancel", end);
     b.addEventListener("click", () => { if (!b.dataset.justDragged) openItem(it); });
-    b.addEventListener("pointerenter", () => { paused++; });
-    b.addEventListener("pointerleave", () => { paused = Math.max(0, paused - 1); });
-    b.addEventListener("focus", () => { paused++; });
-    b.addEventListener("blur", () => { paused = Math.max(0, paused - 1); });
+  }
+
+  // The mark moves too; everything around it comes along.
+  function wireLogo() {
+    const core = $(".orbit-core");
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
+    core.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      sx = e.clientX; sy = e.clientY; ox = e.clientX - lx; oy = e.clientY - top - ly; moved = false;
+      core.setPointerCapture(e.pointerId);
+      core.classList.add("pressed");
+    });
+    core.addEventListener("pointermove", e => {
+      if (!core.hasPointerCapture(e.pointerId)) return;
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+      if (!moved) { moved = true; draggingLogo = true; document.documentElement.classList.add("orbit-moving"); }
+      lx = e.clientX - ox; ly = e.clientY - top - oy;
+      clampLogo(); placeMark(); layoutSoon();
+    });
+    const end = e => {
+      if (!core.hasPointerCapture(e.pointerId)) return;
+      core.releasePointerCapture(e.pointerId);
+      core.classList.remove("pressed");
+      if (!moved) return;
+      draggingLogo = false;
+      document.documentElement.classList.remove("orbit-moving");
+      logoAt = { fx: +(lx / W).toFixed(4), fy: +(ly / H).toFixed(4) };
+      store("orbit:logo", logoAt);
+      layout();
+      core.dataset.justDragged = "1";
+      setTimeout(() => delete core.dataset.justDragged, 0);
+    };
+    core.addEventListener("pointerup", end);
+    core.addEventListener("pointercancel", end);
+    core.addEventListener("click", () => {
+      if (core.dataset.justDragged) return;
+      items.filter(it => it.panel).forEach(closeItem);
+    });
+    // double-click: back to the middle
+    core.addEventListener("dblclick", () => { logoAt = null; store("orbit:logo"); layout(); });
+  }
+
+  function pulse() {
+    const core = $(".orbit-core");
+    core.classList.remove("pulse"); void core.offsetWidth; core.classList.add("pulse");
   }
 
   // ------------------------------------------------------------ windows
@@ -332,7 +449,9 @@
     front(p);
     wirePanel(it, p);
     if (it.nodes.some(n => n.id === "labHal")) setTimeout(keepAlive, 300);
-    layout();
+    bumpUse(it, 1);
+    pulse();
+    placeMark();
     p.querySelector(".op-close").focus();
   }
 
@@ -346,7 +465,7 @@
       try { window.ScholarPiArcade.exit(); } catch (_) { /* fine */ }
     }
     if (!openCount) document.documentElement.classList.remove("orbit-open");
-    layout();
+    placeMark();
     it.bubble.focus({ preventScroll: true });
   }
 
@@ -431,7 +550,7 @@
     stage.center = center;
     document.documentElement.classList.add("orbit-on");
     makeBubbles();
-    $(".orbit-core").addEventListener("click", () => items.filter(it => it.panel).forEach(closeItem));
+    wireLogo();
     // Esc closes the window on top, wherever the keyboard focus happens to be
     // (the map and HAL-OS take focus for their own keys).
     document.addEventListener("keydown", e => {
@@ -457,7 +576,7 @@
     setTimeout(layout, 600);              // after fonts and app.js's first render
     setTimeout(layout, 2000);
     if (location.hash) setTimeout(fromHash, 300);
-    requestAnimationFrame(frame);
+    requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
     window.PiOrbit = { open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
   }
