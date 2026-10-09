@@ -2319,3 +2319,9 @@ button.seal { font-family: inherit; cursor: pointer; }
 .bug-card.is-window > #bugReportBtn, .bug-card.is-window > .bug-hint:empty { display: none; }
 .bug-host h2 { font-size: 18px; font-weight: 500; margin: 0 0 6px; }
 .bug-host .bug-form { margin-top: 8px; }
+
+/* The dossier's Download paper button (download.js) */
+.dl-row { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-top: 12px; }
+.dl-btn { display: inline-flex; align-items: center; gap: 6px; width: auto; }
+.dl-btn svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.6; stroke-linecap: round; stroke-linejoin: round; }
+.dl-msg { font-size: 12.5px; color: var(--graphite); }

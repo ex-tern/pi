@@ -4582,6 +4582,7 @@ function renderDossierModal(item, idx) {
       ${readsPill(item)}
     </div>
     ${authorshipActions(item, idx)}
+    ${window.PaperDownload ? window.PaperDownload.button(item) : ""}
   </div>`;
 
   // --- Warnings: the most important thing to surface, so it goes first ---

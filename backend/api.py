@@ -2556,7 +2556,8 @@ def publish_assessment(file_hash: str, payload: PublishRequest, request: Request
 
 @app.get("/api/papers/{file_hash}/file")
 def serve_paper_file(file_hash: str, request: Request,
-                     wallet: str = Query(default=""), orcid: str = Query(default="")):
+                     wallet: str = Query(default=""), orcid: str = Query(default=""),
+                     download: bool = Query(default=False)):
     """The manuscript a published assessment is an assessment of.
 
     Two ways to be allowed to read it, and no third:
@@ -2615,9 +2616,10 @@ def serve_paper_file(file_hash: str, request: Request,
     return FileResponse(
         path, media_type="application/pdf",
         # inline: a reader clicking a badge wants to read the paper, not to
-        # find it in their downloads folder.
+        # find it in their downloads folder. ?download=1 (the dossier's
+        # Download button) asks for a file to save instead.
         headers={"Content-Disposition":
-                 f'inline; filename="{ascii_title}.pdf"; '
+                 f'{"attachment" if download else "inline"}; filename="{ascii_title}.pdf"; '
                  f"filename*=UTF-8''{utf8_title}.pdf"})
 
 
