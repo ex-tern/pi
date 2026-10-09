@@ -1030,11 +1030,13 @@
       cnt.textContent = (digits.length - 1).toLocaleString() + " decimals and counting";
     };
     try {
-      const w = new Worker("pi-worker.js");
+      const w = new Worker("pi-worker.js?v=2");
       w.onmessage = e => {
         digits += e.data.digit; piDigits = digits;
         if (!pending) { pending = true; requestAnimationFrame(show); }
       };
+      // logosound.js asks for the digits to fall on the song's beat
+      document.addEventListener("pi:beat", e => w.postMessage({ sync: true, delay: (e.detail && e.detail.delay) || 0 }));
     } catch (_) {
       out.textContent = "π = 3.14159 26535 89793 23846";
     }

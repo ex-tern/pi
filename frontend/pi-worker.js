@@ -5,9 +5,15 @@
 // digits are wanted; it simply keeps going while the page stays open, and
 // each digit costs a little more than the last. Paced so the number visibly
 // grows instead of racing ahead.
+//
+// The pace is exact: one digit every 60 ms, ten digits a beat at 100 BPM,
+// the tempo of the logo song (logosound.js), so a 19.2 s loop of the song is
+// exactly 320 digits. The schedule corrects its own drift, and a {sync: true}
+// message restarts it so the next digit lands on the song's beat.
 let q = 1n, r = 0n, t = 1n, k = 1n, n = 3n, l = 3n;
 let count = 0;
-const PACE_MS = 60;     // about 16 digits a second
+const PACE_MS = 60;     // 1000 digits a minute: 10 a beat at 100 BPM
+let due = 0, timer = 0;
 
 function next() {
   for (;;) {
@@ -29,6 +35,19 @@ function tick() {
   const d = next();
   count++;
   postMessage({ digit: d, count });
-  setTimeout(tick, PACE_MS);
+  due += PACE_MS;
+  const now = performance.now();
+  if (due < now - 4 * PACE_MS) due = now;          // fell far behind (tab asleep): skip, don't burst
+  timer = setTimeout(tick, Math.max(0, due - now));
 }
+
+onmessage = e => {
+  if (e.data && e.data.sync) {
+    clearTimeout(timer);
+    due = performance.now() + (+e.data.delay || 0);
+    timer = setTimeout(tick, Math.max(0, due - performance.now()));
+  }
+};
+
+due = performance.now();
 tick();
