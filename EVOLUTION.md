@@ -835,3 +835,11 @@ The mark also gets a soft cobalt glow while working.
 ## 2026-10-09: deploy fix, ASCII commit messages
 
 **What:** the last two production deploys failed at Railway's "Build image" step within 5 seconds, before any Dockerfile step ran. Their commit subjects were the only ones containing a non-ASCII character (π); every deploy with an ASCII subject, before and since, built. The code is unchanged. This commit has an ASCII message so the same code builds, and CLAUDE.md now asks for ASCII commit messages.
+
+## 2026-10-09: the real deploy failure, Docker Hub's rate limit
+
+**Correction:** the entry above blamed the π in commit messages. The build log shows the real cause: `load metadata for docker.io/library/python:3.11-slim` → `429 Too Many Requests` from registry-1.docker.io. Railway's builders share Docker Hub's anonymous pull limit, and the commit messages had nothing to do with it.
+
+**Fix:** the Dockerfile now pulls the same official image from AWS's public mirror, `public.ecr.aws/docker/library/python:3.11-slim`, which has no Docker Hub limit. CLAUDE.md rule 6 now records this instead of the wrong ASCII rule.
+
+**Verified:** pytest at baseline; `build_hal.py` builds. The sandbox cannot reach public.ecr.aws, so the experimental deploy of this commit is the first real build check.
