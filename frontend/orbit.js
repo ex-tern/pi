@@ -243,8 +243,15 @@
   }
 
   let usedRings = [];
+  // Re-place pills when something they avoid changes size: the experimental
+  // banner fills in late (and may wrap), fonts arrive, the π line grows.
+  const watched = new WeakSet();
+  const ro = window.ResizeObserver ? new ResizeObserver(() => layoutSoon()) : null;
+  function watch(el) { if (ro && el && !watched.has(el)) { watched.add(el); ro.observe(el); } }
+
   function layout() {
     const bar = $(".channel-bar");
+    watch(bar); watch($(".orbit-pi")); watch($(".orbit-title"));
     top = bar ? bar.offsetHeight : 0;
     stage.style.top = top + "px";
     document.documentElement.style.setProperty("--orbit-top", top + "px");
@@ -565,6 +572,9 @@
     const mo = new MutationObserver(() => { clearTimeout(start.t); start.t = setTimeout(layout, 120); });
     items.forEach(it => it.nodes.forEach(n => mo.observe(n, { attributes: true, attributeFilter: ["class", "hidden"] })));
     window.addEventListener("resize", () => { clearTimeout(start.r); start.r = setTimeout(layout, 80); });
+    new MutationObserver(() => { if ($(".channel-bar") && !watched.has($(".channel-bar"))) layoutSoon(); })
+      .observe(document.body, { childList: true });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => layoutSoon());
     // Deep links (/#lab, /#journal …) open that section's first card.
     const fromHash = () => {
       const key = (location.hash || "").slice(1);

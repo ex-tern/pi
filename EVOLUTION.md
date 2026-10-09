@@ -114,4 +114,6 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 **Checks:** at 1440, 1280 and 390 px there are no overlaps after loading, after dropping a pill on another, after moving the mark and after reload. Pills stay still over time and when a window opens. There is no horizontal scroll and no new page errors.
 
+- Pills re-place themselves when the experimental banner fills in late, so nothing ends up under the π line.
+
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.

@@ -55,10 +55,10 @@ html.orbit-moving .orbit-pi { transition: none; }
   display: flex; flex-direction: column; align-items: center; gap: 2px;
   transition: left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.3s ease;
 }
-.orbit-pi .op-digits { white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
+.orbit-pi .op-digits { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
 .orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
 .orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
-.orbit-pi .op-count { font-family: var(--font); font-size: 11.5px; color: var(--faint); }
+.orbit-pi .op-count { font-family: var(--font); font-size: 11.5px; color: var(--faint); min-height: 1.3em; }
 
 /* --- orbiting cards --- */
 .orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
