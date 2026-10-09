@@ -1054,7 +1054,7 @@ async function showDonateModal() {
       // outcome; the server is the only source of truth for where funds go.
       openModal(`
         <div class="donate-modal">
-          <h2>Support ScholarPi</h2>
+          <h2>Support Pi</h2>
           <p>The donation address could not be loaded because the ScholarPi server is
           unreachable. Please try again in a moment — no address is shown rather than
           risk displaying an out-of-date one.</p>
@@ -1065,7 +1065,7 @@ async function showDonateModal() {
   const d = donationInfo;
   openModal(`
     <div class="donate-modal">
-      <h2>Support ScholarPi</h2>
+      <h2>Support Pi</h2>
       <p>${escapeHtml(d.message)}</p>
 
       <h3>Send ${escapeHtml(d.currency || "ETH")} on ${escapeHtml(d.chain_name || "Ethereum")}</h3>

@@ -18,6 +18,7 @@
   let pick = null;                          // what PiEN suggests right now
   // Cards that were renamed or merged: what was learned about them carries over.
   const ALIAS = {
+    "account:Support ScholarPi": "account:Support Pi",
     "analytics:Key numbers": "analytics:Analytics",
     "analytics:Forecast": "analytics:Performance",
     "diagram:Overview": "diagram:Architecture",

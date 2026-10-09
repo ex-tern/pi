@@ -47,7 +47,7 @@
       [null, "Drag anything; pills move only when pushed. Sign in and your layout follows you to any device."],
       ["Your account", "Sign in with a wallet or ORCID, and manage your account."],
       ["Invite a researcher", "Bring a colleague in."],
-      ["Support ScholarPi", "Help keep it running."],
+      ["Support Pi", "Help keep it running."],
       ["Contact us", "Questions, bugs and ideas."],
     ]],
   ];

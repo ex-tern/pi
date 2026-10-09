@@ -139,7 +139,8 @@
   // Renamed pills keep what was remembered about them (place, size, use, window).
   const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
                     "account:SciLM (siM) Assistant": "account:SciM Assistant", "account:siM Assistant": "account:SciM Assistant",
-                    "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]" };
+                    "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]",
+                    "account:Support ScholarPi": "account:Support Pi" };
   const RETITLE = { "assess:Assess a Manuscript": "Assess Manuscripts [Pi]", "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
   // Pills that hold other pills: the group's bubble shows its members inside it.
   const GROUPS = [
