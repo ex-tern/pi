@@ -466,3 +466,19 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** the song and the live π digits now share one tempo. The song measured 99.94 BPM, so it was nudged to exactly 100 BPM (a 0.06% change); π comes at one digit every 60 ms, which is exactly ten digits a beat. The loop is now exactly 8 bars (19.2 s, 320 digits) with a short beat-aligned crossfade. `pi-worker.js` keeps its 60 ms pace without drift and accepts a `sync` message; while the song plays, `logosound.js` re-syncs the digits to the song's beat once per loop (`pi:beat` event, handled in `orbit.js`).
 
 **Verified:** the tiled loop measures 99.99 BPM with the beat at 0.516 s; π runs at 16.6 digits/s idle and while playing; loop, stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: logo song with less noise, a higher voice, an undetectable loop and π-driven volume
+
+**What:**
+- **Stems:** the original was split into vocals and accompaniment with Spleeter (2 stems, run offline; only the final mix is committed).
+- **Voice:** the vocals went up 2 semitones with formants preserved, so the tempo is unchanged.
+- **Noise:** stronger FFT denoising on both stems (22 and 20 dB), a gentle gate on the vocals and a low-pass at 14.5 kHz.
+- **Loop:** the song turned out to repeat every 24 beats, so the loop is now those 6 bars (14.4 s = 240 digits of π). It is cut on matching beats with a one-bar crossfade, and it still runs at 100 BPM.
+- **Volume:** the level follows π. `orbit.js` emits `pi:digit` for every computed digit, and `logosound.js` sets the gain to 40% + 60% × digit/9 with a 12 ms glide. The digits are beat-synced at ten a beat, so no two passes of the loop sound alike.
+
+**Verified:**
+- **Loop:** the tiled loop measures 99.98 BPM with its beat at the loop start.
+- **Volume:** every digit produced exactly the expected volume step (17 a second).
+- **π pace:** 16.6 digits a second, whether or not the song plays.
+- **Browser:** loop, stop and double-press checks pass at 1440 and 390 px with no page errors.
+- **Checks:** pytest at baseline; `build_hal.py` builds.

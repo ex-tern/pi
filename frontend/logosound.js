@@ -7,14 +7,20 @@
 // The song runs at 100 BPM, the tempo of π: pi-worker.js emits a digit every
 // 60 ms, ten a beat, and the loop is exactly 8 bars (19.2 s = 320 digits).
 // On every pass of the loop the digit stream is re-synced to the beat.
+//
+// The loop is 6 bars (14.4 s = 240 digits), cut where the song repeats itself
+// (it has a 24-beat pattern) with a one-bar crossfade, so the cycle can't be
+// heard. And the volume follows π: each new digit sets the level for its
+// 60 ms (0 quietest, 9 loudest), so no two passes of the loop sound alike.
 (function () {
   "use strict";
-  const SRC = "sound/dd.mp3?v=6";
-  const LOOP = 19.2;          // seconds: 32 beats at 100 BPM
-  const FIRST_BEAT = 0.516;  // seconds into the loop
+  const SRC = "sound/dd.mp3?v=7";
+  const LOOP = 14.4;          // seconds: 24 beats at 100 BPM
+  const FIRST_BEAT = 0;      // the loop starts on a beat
   const BEAT = 0.6;
   let ctx = null, buf = null, loopStart = 0, loopEnd = 0, node = null, gain = null, loading = null;
-  let fallback = null, want = false, syncT = 0;
+  let fallback = null, want = false, syncT = 0, piGain = null;
+  const level = d => 0.4 + 0.6 * d / 9;   // digit 0 → 40%, 9 → 100%
 
   function edges(b) {
     const d = b.getChannelData(0), n = d.length, th = 1e-4;
@@ -40,7 +46,9 @@
     gain = ctx.createGain();
     gain.gain.setValueAtTime(0, ctx.currentTime);
     gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
-    node.connect(gain).connect(ctx.destination);
+    piGain = ctx.createGain();
+    piGain.gain.value = 0.7;
+    node.connect(gain).connect(piGain).connect(ctx.destination);
     const t0 = ctx.currentTime + 0.03;
     node.start(t0, loopStart);
     core.classList.add("is-playing");
@@ -69,7 +77,7 @@
       g.gain.setValueAtTime(g.gain.value, t);
       g.gain.linearRampToValueAtTime(0, t + 0.12);
       n.stop(t + 0.13);
-      node = gain = null;
+      node = gain = piGain = null;
     }
     core.classList.remove("is-playing");
   }
@@ -93,6 +101,10 @@
     const core = document.querySelector(".orbit-core");
     if (!core) return;
     core.addEventListener("click", () => { if (!core.dataset.justDragged) toggle(core); });
+    // the volume follows the digits of π as they are computed
+    document.addEventListener("pi:digit", e => {
+      if (piGain && ctx) piGain.gain.setTargetAtTime(level(+e.detail), ctx.currentTime, 0.012);
+    });
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
 })();
