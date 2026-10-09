@@ -1296,6 +1296,7 @@
     document.body.appendChild(center);
     stage.center = center;
     stage.appendChild($(".orbit-pi", center));
+    stage.appendChild($(".orbit-title", center));     // the name sits behind everything, too
     document.documentElement.classList.add("orbit-on");
     makeBubbles();
     setSizes();

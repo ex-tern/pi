@@ -351,3 +351,21 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .in-points { margin: 0 0 12px; padding-left: 18px; font-size: 13px; line-height: 1.6; }
 .in-note { font-size: 12.5px; color: var(--faint); margin: 0 0 12px; }
 .orbit-panel.leaving { opacity: 0.45; transform: scale(0.97); transition: opacity 0.15s ease, transform 0.15s ease; }
+
+/* the name lives in the stage, behind pills and windows */
+.orbit-stage > .orbit-title { top: 16px; z-index: 1; pointer-events: auto; }
+@media (max-width: 700px) { .orbit-stage > .orbit-title { top: 12px; } }
+
+/* PiEN's name shows only when you point at the mark (or reach it by keyboard) */
+.om-name { opacity: 0; transition: opacity 0.2s ease; }
+.orbit-core:hover .om-name, .orbit-core:focus-visible .om-name { opacity: 1; }
+
+/* siM's chat box: the send button sits inside the right end of the field */
+.orbit-bubble.is-chat { padding-right: 0.4em; }
+.ob-chat { position: relative; gap: 0; }
+.ob-chat input { padding-right: 2.3em; height: 2.1em; box-sizing: border-box; }
+.ob-chat button {
+  position: absolute; right: 0.22em; top: 50%; transform: translateY(-50%);
+  width: 1.6em; height: 1.6em; display: grid; place-items: center; padding: 0; font-size: 0.82em; line-height: 1;
+}
+.ob-chat input { margin: 0; } .ob-chat { height: 2.1em; align-items: center; }
