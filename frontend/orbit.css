@@ -387,3 +387,4 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .perf-more { margin-top: 16px; border-top: 1px solid var(--hair); padding-top: 10px; }
 .perf-more > summary { cursor: pointer; font-size: 13px; color: var(--graphite); }
 .perf-more[open] > summary { margin-bottom: 12px; }
+.orbit-bubble.is-group > .ob-label { white-space: nowrap; flex: none; }
