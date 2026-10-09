@@ -8,7 +8,7 @@
     ["Assess research", [
       ["Assess Manuscripts [Pi]", "Upload a paper or give a DOI: a staged, AI-assisted assessment with a score you can trace step by step."],
       ["FaceMace", "Sort photos by face, on your own device: groups photos by person and saves them as folders."],
-      ["Assist a Diagnosis [Intern]", "Intern, an AI electronic health record for doctors (iOS app), in the Tools bubble."],
+      ["Assist Diagnosis [Intern]", "Intern, an AI electronic health record for doctors (iOS app), in the Tools bubble."],
       ["Assessment results", "Your latest assessment, stage by stage."],
       ["RiBD", "Your research mentor: what to read next and what to fix first, from your profile and the corpus."],
       ["Research profile", "Your fields and interests, which shape suggestions."],
@@ -29,9 +29,12 @@
       ["HAL-OS", "A bare-metal ternary network booting in your browser: feed it images and watch it learn."],
       ["QuVI", "Build quantum circuits and inspect probabilities, Bloch spheres and entanglement."],
       ["Unigyro", "Unigyro II, Murtaza Vefadar's single-seater robot vehicle: his video."],
-      ["NeuroFrenzy", "A game: fill in neuroscience blanks before the clock runs out."],
       ["Private projects", "Owner-only work in progress."],
       ["Permission requests", "Ask authors for permission, with a link they answer."],
+    ]],
+    ["Lib", [
+      ["Neuro Frenzy", "A game: fill in neuroscience blanks before the clock runs out."],
+      ["MD", "A public road to graduation in medicine: CFU progress, remaining courses and to-dos, no grades."],
     ]],
     ["Ask and understand", [
       ["SciM Assistant", "Ask questions about the corpus and the method, right from its pill."],

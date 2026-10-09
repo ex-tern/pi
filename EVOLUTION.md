@@ -532,3 +532,14 @@ It lasts exactly one beat (0.6 s), so the song drops in on the beat. Stopping pl
 - After a reload the context waits suspended, then runs after the first click.
 - The game plays as before, and the toggle doesn't overlap the header.
 - 1440 and 390 px with no page errors and no horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: renamed pills
+
+**What:** three pill titles changed, keeping their storage keys so positions, use counts and open windows carry over:
+- "Assist a Diagnosis [Intern]" → "Assist Diagnosis [Intern]"
+- "NeuroFrenzy" → "Neuro Frenzy" (and the game's heading)
+- "Medicine" → "MD"
+
+The Capabilities pill lists them under a new Lib section; Neuro Frenzy was listed under Lab before, and MD wasn't listed.
+
+**Verified:** each opens by its new title at 1440 and 390 px; the group contents are Tools [Assess Manuscripts [Pi], Assist Diagnosis [Intern], FaceMace] and Lib [Neuro Frenzy, MD]; the MD plan and the game music checks pass with no page errors; pytest at baseline; `build_hal.py` builds.

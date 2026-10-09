@@ -18,7 +18,7 @@
     '<p class="in-note">Intern runs on iPhone and iPad (iOS 13 or later), not in the browser, so it is not live here.</p>' +
     '<p><a class="btn btn-outline" href="https://github.com/in-tern/Intern" target="_blank" rel="noopener">Source on GitHub ↗</a></p>';
   function start() {
-    window.PiOrbit.addPill({ key: "assess:Intern", section: { key: "assess", name: "Tools" }, title: "Assist a Diagnosis [Intern]", content, inGroup: "Tools" });
+    window.PiOrbit.addPill({ key: "assess:Intern", section: { key: "assess", name: "Tools" }, title: "Assist Diagnosis [Intern]", content, inGroup: "Tools" });
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
 })();
