@@ -7,6 +7,7 @@
   const GROUPS = [
     ["Assess research", [
       ["Assess a Manuscript", "Upload a paper or give a DOI: a staged, AI-assisted assessment with a score you can trace step by step."],
+      ["Intern", "An AI electronic health record for doctors (iOS app), in the Tools bubble."],
       ["Assessment results", "Your latest assessment, stage by stage."],
       ["ResBD", "Your research buddy: what to read next, from your profile and the corpus."],
       ["Research profile", "Your fields and interests, which shape suggestions."],

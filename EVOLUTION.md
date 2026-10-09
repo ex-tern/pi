@@ -315,3 +315,9 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 - On phones the leaderboard table was wider than the screen and silently cut. It now scrolls sideways.
 
 **Files:** `frontend/style.css`, `frontend/app.js`, `frontend/index.html`.
+
+## 2026-10-09: Intern, in the Tools bubble
+
+**What:** an "Intern" pill inside the Tools bubble, beside Assess a Manuscript. Intern ([in-tern/Intern](https://github.com/in-tern/Intern)) is a separate project: an iOS app, an AI electronic health record for doctors, built on Firebase, Azure Communication Services and MessageKit. It runs on iPhone and iPad, not in a browser, so its window says what it is and links to its source. Modules can now place a pill inside a group's bubble (`addPill({..., inGroup: "Tools"})`).
+
+**Files:** `frontend/intern.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
