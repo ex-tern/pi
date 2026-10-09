@@ -1,5 +1,6 @@
-// logosound.js — pressing the PiEN mark (the π logo) plays a song on a
-// seamless loop; press again to stop. The file itself is cut so its end
+// logosound.js — clicking the PiEN mark (the π logo) three times plays a song
+// on a seamless loop; three clicks again stop it. Single clicks keep their
+// usual job (setting windows aside). The file itself is cut so its end
 // crossfades into its start, and it plays through Web Audio with the
 // encoder's silent padding trimmed, so there is no gap at the loop point.
 // The audio loads only on the first press; a drag never counts as a press.
@@ -8,9 +9,8 @@
 // 60 ms, ten a beat, and the loop is exactly 8 bars (19.2 s = 320 digits).
 // On every pass of the loop the digit stream is re-synced to the beat.
 //
-// The loop is 6 bars (14.4 s = 240 digits), cut where the song repeats itself
-// (it has a 24-beat pattern) with a one-bar crossfade, so the cycle can't be
-// heard. And the volume follows π: each new digit sets the level for its
+// The loop is the owner's chosen 8-bar cut (19.2 s = 320 digits), with a
+// beat-aligned crossfade at the join. And the volume follows π: each new digit sets the level for its
 // 60 ms (0 quietest, 9 loudest), so no two passes of the loop sound alike.
 //
 // A press starts with a futuristic whoosh, synthesised on the spot (filtered
@@ -19,9 +19,9 @@
 // plays a shorter whoosh going down.
 (function () {
   "use strict";
-  const SRC = "sound/dd.mp3?v=8";
-  const LOOP = 14.4;          // seconds: 24 beats at 100 BPM
-  const FIRST_BEAT = 0;      // the loop starts on a beat
+  const SRC = "sound/dd.mp3?v=9";
+  const LOOP = 19.2;          // seconds: 32 beats (8 bars) at 100 BPM
+  const FIRST_BEAT = 0.516;  // seconds into the loop
   const BEAT = 0.6;
   let ctx = null, buf = null, loopStart = 0, loopEnd = 0, node = null, gain = null, loading = null;
   let fallback = null, want = false, syncT = 0, piGain = null;
@@ -115,9 +115,11 @@
     const tick = () => {
       if (!node) return;
       const pos = (ctx.currentTime - t0) % LOOP;
-      let next = FIRST_BEAT - pos;
-      while (next < 0.05) next += BEAT;
-      document.dispatchEvent(new CustomEvent("pi:beat", { detail: { delay: Math.round((next + lat) * 1000) } }));
+      // Digits come every 60 ms, a tenth of a beat, so lining the digit grid
+      // up with the beat grid only needs a shift of under 60 ms.
+      const STEP = BEAT / 10;
+      const next = (((FIRST_BEAT - pos + lat) % STEP) + STEP) % STEP;
+      document.dispatchEvent(new CustomEvent("pi:beat", { detail: { delay: Math.round(next * 1000) } }));
       syncT = setTimeout(tick, LOOP * 1000);
     };
     tick();
@@ -155,7 +157,15 @@
   function start() {
     const core = document.querySelector(".orbit-core");
     if (!core) return;
-    core.addEventListener("click", () => { if (!core.dataset.justDragged) toggle(core); });
+    // three clicks in quick succession (each within 450 ms of the last)
+    let n = 0, last = 0;
+    core.addEventListener("click", () => {
+      if (core.dataset.justDragged) { n = 0; return; }
+      const now = performance.now();
+      n = now - last < 450 ? n + 1 : 1;
+      last = now;
+      if (n === 3) { n = 0; toggle(core); }
+    });
     // the volume follows the digits of π as they are computed
     document.addEventListener("pi:digit", e => {
       if (piGain && ctx) piGain.gain.setTargetAtTime(level(+e.detail), ctx.currentTime, 0.012);

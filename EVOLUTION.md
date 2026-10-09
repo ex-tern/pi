@@ -501,3 +501,17 @@ It lasts exactly one beat (0.6 s), so the song drops in on the beat. Stopping pl
 - An offline render: the whoosh peaks at -4.4 dB against the song's -4.1 dB, with no page errors.
 - Loop, stop, double-press, π-volume and tempo checks pass at 1440 and 390 px.
 - pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: triple-click to play, and the owner's chosen loop
+
+**What:**
+- **Triple click:** the song now starts and stops with three clicks on the logo, each within 450 ms of the last. A single click only sets windows aside, as before, and only the first click of a burst does so. A double click still re-centres the logo, but that now waits 380 ms and is cancelled if a third click follows.
+- **Audio:** back to the version the owner picked (`dd-100-preview`): the cleaned 100 BPM mix with the original vocal pitch and bass, an 8-bar loop (19.2 s = 320 digits) with a beat-aligned join.
+- **Kept:** the whoosh and the π-driven volume.
+- **Beat sync:** the digits now shift by under 60 ms to meet the beat (any tenth of a beat will do) instead of pausing up to a beat.
+
+**Verified:**
+- One or two clicks don't play, and three play and stop.
+- A double click still re-centres the logo, and a triple click leaves it in place.
+- Loop, π-volume and tempo checks pass at 1440 and 390 px with no page errors.
+- pytest at baseline; `build_hal.py` builds.
