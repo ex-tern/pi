@@ -1,7 +1,11 @@
 # ScholarPi — production image.
 # Build:  docker build -t scholarpi .
 # Run:    docker run -p 8000:8000 --env-file backend/.env -v scholarpi_data:/data scholarpi
-FROM python:3.11-slim
+# Pulled from AWS's public mirror of the Docker official images rather than
+# Docker Hub: Railway's builders share Docker Hub's anonymous pull limit, and
+# on 2026-10-09 three deploys in a row failed with "429 Too Many Requests"
+# fetching python:3.11-slim. Same image, same tag, no Hub rate limit.
+FROM public.ecr.aws/docker/library/python:3.11-slim
 
 # System deps: PyMuPDF and cryptography need a compiler + a few libs to
 # build from source on some platforms; keep the image slim otherwise.
