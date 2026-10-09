@@ -598,3 +598,9 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 **What:** scrolling down on the main page opens "Proof-of-Research Ledger Explorer" and "The journal", with the journal in front, and brings back any windows set aside. On touch screens a swipe up does the same. This only counts on the page itself, not inside a window, a pill, the π box or the logo, and there is a 0.9 s cool-down. Scrolling up on the page still grows the logo, and the wheel over the logo still resizes it both ways. Scrolling down used to shrink the logo.
 
 **Verified:** a wheel-down on empty page opened both, with the journal in front and the logo size unchanged; a wheel-up grew the logo and opened nothing; a swipe up at 390 px opened both; no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: the framework author links to his page
+
+**What:** in the Architecture window, "Ali Vafadar Yengejeh" (the framework credit) now links to https://alivafadar.carrd.co/ in a new tab. The same goes for the older "Framework Author" note in the Architecture tab markup. The link is in the cobalt interactive colour.
+
+**Verified:** the link opens the page in a new tab at 1440 and 390 px; no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.

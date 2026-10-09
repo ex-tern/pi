@@ -41,7 +41,7 @@
     '<li><b>Algorithms audit, people judge.</b> The scores support peer review; they do not replace it.</li>' +
     '<li><b>More than papers count.</b> Datasets, code and runnable environments are assessed as research outputs.</li>' +
     '<li><b>Open and owned.</b> Every weight and score is public, and researchers own their record through ORCID or a DID.</li>' +
-    '</ul><p class="arch-cite">Built to the CoARA principles. Framework by Ali Vafadar Yengejeh, Università degli Studi di Milano-Bicocca.</p></aside>';
+    '</ul><p class="arch-cite">Built to the CoARA principles. Framework by <a href="https://alivafadar.carrd.co/" target="_blank" rel="noopener">Ali Vafadar Yengejeh</a>, Università degli Studi di Milano-Bicocca.</p></aside>';
   const flow = root.querySelector(".arch-flow"), detail = root.querySelector(".arch-detail");
   let current = 0;
   function show(i) {
