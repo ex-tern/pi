@@ -82,3 +82,11 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - With reduced motion, the mark is still and the trail is hidden.
 
 **Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+
+## 2026-10-09: Simpler welcome mark; no "improves every night" line
+
+**What:**
+- The degree ring (ticks and outer circle) is removed from the welcome mark. It's now just the black circle and the sweeping blue diameter, cropped to fit.
+- The line "This site improves a little every night…" and its link are removed from the welcome screen, at the owner's request.
+
+**Files:** `frontend/welcome.js`, `frontend/theme.css`.
