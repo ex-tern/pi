@@ -8,6 +8,7 @@
 //
 // The pace is exact: one digit every 60 ms (1000 a minute). The schedule
 // corrects its own drift, and a {sync: true, delay} message restarts it.
+// {pause: true} stops it where it is; {resume: true} carries on.
 let q = 1n, r = 0n, t = 1n, k = 1n, n = 3n, l = 3n;
 let count = 0;
 const PACE_MS = 60;     // 1000 digits a minute
@@ -40,6 +41,13 @@ function tick() {
 }
 
 onmessage = e => {
+  if (e.data && e.data.pause) { clearTimeout(timer); timer = 0; return; }
+  if (e.data && e.data.resume) {
+    clearTimeout(timer);
+    due = performance.now();
+    timer = setTimeout(tick, 0);
+    return;
+  }
   if (e.data && e.data.sync) {
     clearTimeout(timer);
     due = performance.now() + (+e.data.delay || 0);
