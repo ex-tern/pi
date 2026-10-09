@@ -41,3 +41,5 @@ scripts/        build_hal.py (builds HAL-OS's boot image from its own repo)
 `SCHOLARPI_CHANNEL=experimental` turns on the experimental banner, `robots.txt: Disallow` and `X-Robots-Tag: noindex`.
 
 **QuVI is owner-only until its author approves.** `QUVI_PUBLIC=1` shows it to everyone. Do not set it, or work around it, unless the owner says the author has given permission (see the Lab's permission requests).
+
+Status: the owner set `QUVI_PUBLIC=1` on **production** on 2026-10-09, so QuVI is public at pitechlab.com. The experimental environment still has it owner-only unless the owner sets the same variable there.
