@@ -23,7 +23,7 @@ html.orbit-on .arch-fab { display: none !important; }
 .orbit-core {
   position: absolute; z-index: 2; pointer-events: auto; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
   transition: width 0.6s cubic-bezier(.2, .7, .2, 1), height 0.6s cubic-bezier(.2, .7, .2, 1),
-              left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1);
+              left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), transform 0.2s ease, opacity 0.3s ease;
 }
 .orbit-mark { width: 100%; height: 100%; display: block; overflow: visible; }
 .om-circle { fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
@@ -33,23 +33,32 @@ html.orbit-busy .om-sweep { animation-duration: 2.2s; }
 html.orbit-busy .orbit-core { filter: drop-shadow(0 0 18px rgba(47, 64, 232, 0.35)); }
 @keyframes wi-turn { to { transform: rotate(-360deg); } }
 
-.orbit-caption { position: absolute; left: 0; right: 0; z-index: 2; text-align: center; pointer-events: none; transition: opacity 0.3s ease; }
-.orbit-caption > * { width: fit-content; margin-left: auto !important; margin-right: auto !important; }
-.orbit-caption h1 { font-size: clamp(1.6rem, 3.2vw, 2.5rem); font-weight: 500; letter-spacing: -0.04em; margin: 0; line-height: 1.1; }
-.orbit-caption p { color: var(--graphite); font-size: 13px; margin: 4px 0 0; }
-html.orbit-open .orbit-caption h1, html.orbit-open .orbit-caption p { display: none; }
+.orbit-core.pressed { transform: scale(0.95); }
+.orbit-core:hover { transform: scale(1.04); }
+.orbit-core { transform-origin: 50% 50%; cursor: grab; touch-action: none; }
+html.orbit-moving .orbit-core { cursor: grabbing; transition: none; transform: scale(1.06); }
+html.orbit-moving .orbit-pi { transition: none; }
+.orbit-core.pulse { animation: om-pulse 0.6s cubic-bezier(.2, .7, .2, 1); }
+@keyframes om-pulse { 40% { transform: scale(1.18); } }
 
-/* --- π, computed live, gaining digits while the site stays open --- */
+/* the name, quietly in the top-left corner */
+.orbit-title {
+  position: absolute; left: 20px; top: calc(var(--orbit-top, 0px) + 16px); margin: 0; pointer-events: none;
+  font-size: 20px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.1; color: var(--ink);
+}
+
+/* --- π, computed live under the mark, gaining digits while the site stays open --- */
 .orbit-pi {
-  margin: 10px auto 0; width: fit-content; padding: 3px 10px; border-radius: 999px; background: rgba(246, 246, 244, 0.86); max-width: min(560px, 86vw);
+  position: absolute; transform: translateX(-50%); pointer-events: none;
+  width: 47ch; max-width: 92vw; box-sizing: border-box; padding: 3px 10px; border-radius: 999px; background: rgba(246, 246, 244, 0.86);
   font-family: var(--font-mono); font-size: 12px; color: var(--graphite);
   display: flex; flex-direction: column; align-items: center; gap: 2px;
+  transition: left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.3s ease;
 }
 .orbit-pi .op-digits { white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
 .orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
 .orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
 .orbit-pi .op-count { font-family: var(--font); font-size: 11.5px; color: var(--faint); }
-html.orbit-open .orbit-pi { margin-top: 4px; font-size: 10.5px; max-width: 260px; }
 
 /* --- orbiting cards --- */
 .orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
@@ -62,6 +71,14 @@ html.orbit-open .orbit-pi { margin-top: 4px; font-size: 10.5px; max-width: 260px
   touch-action: none; user-select: none; -webkit-user-select: none; will-change: transform;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
+/* pills glide to a new place only when something moved them */
+html.orbit-ready .orbit-bubble { transition: border-color 0.15s ease, background 0.15s ease, transform 0.45s cubic-bezier(.2, .7, .2, 1); }
+html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-color 0.15s ease, background 0.15s ease !important; }
+/* what you use grows */
+.orbit-bubble[data-tier="1"] { font-size: 14px; padding: 8px 16px 8px 12px; }
+.orbit-bubble[data-tier="2"] { font-size: 15.5px; padding: 9px 18px 9px 13px; font-weight: 500; border-color: var(--hair-strong); max-width: 260px; }
+.orbit-bubble[data-tier="3"] { font-size: 17px; padding: 10px 20px 10px 14px; font-weight: 500; border-color: var(--ink); max-width: 290px; }
+.orbit-bubble[data-tier="3"] .ob-dot { width: 10px; height: 10px; }
 .orbit-bubble[hidden] { display: none; }
 .orbit-bubble:hover { border-color: var(--cobalt); }
 .orbit-bubble.dragging { cursor: grabbing; border-color: var(--cobalt); z-index: 5; }
@@ -104,6 +121,10 @@ html.orbit-open .orbit-pi { margin-top: 4px; font-size: 10.5px; max-width: 260px
 
 @media (max-width: 700px) {
   .orbit-bubble { font-size: 11px; padding: 4px 9px 4px 7px; max-width: 104px; gap: 5px; }
+  .orbit-bubble[data-tier="1"] { font-size: 12px; padding: 5px 10px 5px 8px; max-width: 120px; }
+  .orbit-bubble[data-tier="2"] { font-size: 13px; padding: 6px 11px 6px 8px; max-width: 140px; }
+  .orbit-bubble[data-tier="3"] { font-size: 14px; padding: 7px 12px 7px 9px; max-width: 160px; }
+  .orbit-title { left: 14px; top: calc(var(--orbit-top, 0px) + 12px); font-size: 17px; }
   .ob-dot { width: 7px; height: 7px; }
   .orbit-panel, .orbit-panel.max {
     left: 8px !important; top: calc(var(--orbit-top, 0px) + 8px) !important;
@@ -117,14 +138,17 @@ html.orbit-open .orbit-pi { margin-top: 4px; font-size: 10.5px; max-width: 260px
   .orbit-core { transition: none; }
 }
 
-/* While cards are open the mark stays centred but steps back: smaller,
-   see-through and click-through, so it never covers a button. */
-html.orbit-open .orbit-core { pointer-events: none; opacity: 0.55; }
-@media (max-width: 700px) { html.orbit-open .orbit-core { opacity: 0.35; } html.orbit-open .orbit-pi { opacity: 0.5; } }
-html.orbit-open .orbit-pi { opacity: 0.7; background: transparent; }
+/* While cards are open the mark steps back: smaller and see-through
+   (still there to drag, or to click to close everything). */
+html.orbit-open .orbit-core { opacity: 0.6; }
+html.orbit-open .orbit-core:hover { opacity: 1; }
+html.orbit-open .orbit-pi { opacity: 0.7; background: transparent; font-size: 10.5px; width: 40ch; }
 @media (max-width: 700px) {
-  .orbit-caption > * { width: fit-content; margin-left: auto !important; margin-right: auto !important; }
-.orbit-caption h1 { font-size: 1.5rem; }
-  .orbit-caption p { display: none; }
-  .orbit-pi { font-size: 10.5px; margin-top: 4px; }
+  html.orbit-open .orbit-core { opacity: 0.4; }
+  html.orbit-open .orbit-pi { opacity: 0.5; }
+  .orbit-pi { font-size: 10.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.orbit-ready .orbit-bubble, .orbit-pi { transition: none; }
+  .orbit-core.pulse { animation: none; }
 }
