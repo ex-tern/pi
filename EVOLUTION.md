@@ -739,3 +739,20 @@ It refreshes every 30 s (only while the tab is visible) and after your own asses
 - Folded at 1024, 390 and 360 px, the tab overlaps no pill and opens the panel.
 - The 15-size layout audit passes; no page errors or horizontal scroll.
 - pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
+
+## 2026-10-09: Download paper in the dossier; a yellow account dot for one sign-in
+
+**What:**
+- **Download paper:** every dossier has a "Download paper" button (`frontend/download.js`). The server still decides who may have the file (`/api/papers/{hash}/file`, now with `?download=1` for a file to save). That is anyone once the author has published the assessment, or the author for their own upload; the session token goes with the request.
+  - If the file isn't available but the paper has a DOI (as auto-assessed open-access papers do), the button opens the publisher's copy.
+  - Otherwise it says the manuscript stays private until its author publishes it.
+- **Account pill:** the dot is red when signed out, yellow (muted, #c9a53e) with one sign-in (a wallet or ORCID), and a green check with both. Its title says which one is missing.
+
+**Verified:**
+- Download:
+  - a published paper downloads as "Published paper π test.pdf" (UTF-8 name kept)
+  - an idle open-access paper opens its DOI
+  - a private draft shows the message, and its file stays 404
+- The download response is `attachment` with `?download=1` and `inline` without.
+- Account dot: red, yellow with ORCID only, green with both.
+- 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.

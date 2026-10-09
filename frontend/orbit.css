@@ -250,9 +250,11 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .pp-pairs li span { color: var(--faint); margin-left: 8px; font-variant-numeric: tabular-nums; }
 .pp-empty { font-size: 12.5px; color: var(--faint); margin: 12px 0 0; }
 
-/* --- the account pill: red when signed out, a green check when signed in --- */
+/* --- the account pill: red signed out, yellow with one sign-in, a green check with both --- */
 .orbit-bubble.is-account .ob-dot { width: 1em; height: 1em; border: 0; border-radius: 50%; background: #c0645c; position: relative; }
 .orbit-bubble.is-account[data-signed="true"] .ob-dot { background: #4f8f5a; }
+.orbit-bubble.is-account[data-signed="partial"] .ob-dot { background: #c9a53e; }
+.orbit-bubble.is-account[data-signed="partial"] .ob-dot::after,
 .orbit-bubble.is-account[data-signed="true"] .ob-dot::after {
   content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 0.72em; font-weight: 700; line-height: 1;
 }

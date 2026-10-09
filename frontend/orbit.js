@@ -1332,15 +1332,26 @@
 
   // ------------------------------------------------------------ signed in?
   // The account pill shows it: a red dot when signed out, a green check when in.
+  // The account pill's dot: red signed out, yellow with one sign-in (a wallet
+  // or ORCID), green with both. Read from what app.js keeps in localStorage:
+  // a session token plus the identities linked to it.
   function markSignedIn() {
-    let token = "", who = "";
-    try { token = localStorage.getItem("sp_token") || ""; who = localStorage.getItem("sp_wallet") || localStorage.getItem("sp_orcid") || ""; } catch (_) { /* private mode */ }
-    const on = !!(token && who);
+    let token = "", wallet = "", orcid = "";
+    try {
+      token = localStorage.getItem("sp_token") || "";
+      wallet = localStorage.getItem("sp_wallet") || "";
+      orcid = localStorage.getItem("sp_orcid") || "";
+    } catch (_) { /* private mode */ }
+    const n = token ? (wallet ? 1 : 0) + (orcid ? 1 : 0) : 0;
+    const state = n >= 2 ? "true" : n === 1 ? "partial" : "false";
+    const words = { "true": "signed in with a wallet and ORCID",
+                    partial: "signed in with " + (wallet ? "a wallet" : "ORCID") + " only; add " + (wallet ? "ORCID" : "a wallet") + " too",
+                    "false": "not signed in" }[state];
     items.filter(i => i.key === "account:Your account").forEach(it => {
-      if (it.bubble.dataset.signed === String(on)) return;
-      it.bubble.dataset.signed = String(on);
-      it.bubble.setAttribute("aria-label", "Your account: " + (on ? "signed in" : "not signed in") + ". Open");
-      it.bubble.title = on ? "Signed in" : "Not signed in";
+      if (it.bubble.dataset.signed === state) return;
+      it.bubble.dataset.signed = state;
+      it.bubble.setAttribute("aria-label", "Your account: " + words + ". Open");
+      it.bubble.title = words.charAt(0).toUpperCase() + words.slice(1);
     });
   }
 
