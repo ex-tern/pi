@@ -787,3 +787,13 @@ The backend is `rib_suggest.hot_topics` and the `more` and `hot` fields of `/api
 **Fix:** signing in from one of the site's own addresses (pitechlab.com, www, exp) asks ORCID to return to that address's own callback, `https://<host>/api/auth/orcid/callback`, whatever `ORCID_REDIRECT_URI` says. The token exchange uses the same value. Other hosts keep the old behaviour. Each callback must be registered in the ORCID app.
 
 **Verified:** `tests/test_orcid_return.py` (7 tests): the login URL and token exchange use `https://pitechlab.com/api/auth/orcid/callback`, the visitor lands back on pitechlab.com, and the earlier return-origin, error and open-redirect tests still pass. pytest at baseline (12 pre-existing failures); `build_hal.py` builds; the site loads with no page errors.
+
+## 2026-10-09: the Lib bubble becomes Library, with RiBD and the Map of Science
+
+**What:** the "Lib" bubble is renamed "Library" and now holds RiBD and The Global Map of Science as well as Neuro Frenzy and MD.
+- The bubble's key moves from `lib:Lib group` to `lib:Library group`, and the stored position migrates with it.
+- RiBD still only shows when signed in, as before.
+- A window opened from a bubble is now labelled with the bubble (Library, Tools, Lab) instead of its old tab name (Evaluate, Envision).
+- Capabilities lists the four under "Library".
+
+**Verified:** signed in, the bubble lists RiBD, The Global Map of Science, Neuro Frenzy and MD, and none of them is left as a loose pill. Each opens with the "Library" label. A position saved under the old key is carried over. No pills overlap, the 15-size layout audit passes, and there are no page errors or horizontal scroll at 1440 and 390 px. pytest at baseline; `build_hal.py` builds.

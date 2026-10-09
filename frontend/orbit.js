@@ -142,14 +142,14 @@
   const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
                     "account:SciLM (siM) Assistant": "account:SciM Assistant", "account:siM Assistant": "account:SciM Assistant",
                     "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]",
-                    "account:Support ScholarPi": "account:Support Pi" };
+                    "account:Support ScholarPi": "account:Support Pi", "lib:Lib group": "lib:Library group" };
   const RETITLE = { "assess:Assess a Manuscript": "Assess Manuscripts [Pi]", "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
   // Pills that hold other pills: the group's bubble shows its members inside it.
   const GROUPS = [
     { section: "lab", title: "Lab" },
     { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
-    // filled by modules (NeuroFrenzy); exists even before they arrive
-    { title: "Lib", members: [], section: { key: "lib", name: "Lib" } },
+    // RiBD and the Map of Science, plus what modules add (Neuro Frenzy, MD)
+    { title: "Library", members: ["RiBD", "The Global Map of Science"], section: { key: "lib", name: "Library" } },
   ];
   function migrateRenamed() {
     try {
@@ -327,7 +327,7 @@
     GROUPS.forEach(G => {
       const members = items.filter(it => (G.members ? G.members.includes(it.title) : it.section.key === G.section) && !it.groupOf);
       if (!members.length && !(G.section && typeof G.section === "object")) return;
-      const sec = members.length ? members[0].section : G.section;
+      const sec = (G.section && typeof G.section === "object") ? G.section : members[0].section;
       const g = { section: sec, title: G.title, key: sec.key + ":" + G.title + " group",
                   nodes: [], content: document.createElement("div"), group: true, always: true,
                   action: () => { const first = items.find(m => m.groupOf === g && visible(m) && !isHal(m)); if (first) openItem(first); } };
@@ -870,7 +870,9 @@
     p.setAttribute("aria-labelledby", hid);
     p.innerHTML = '<header class="op-head"><span class="op-section"></span><h2 class="op-title"></h2></header><div class="op-body"></div>';
     // the section's name, unless the title already says it
-    p.querySelector(".op-section").textContent = it.section.name === it.title ? "" : it.section.name;
+    // a pill inside a bubble is labelled with the bubble (Library, Tools, Lab)
+    const where = it.groupOf ? it.groupOf.title : it.section.name;
+    p.querySelector(".op-section").textContent = where === it.title ? "" : where;
     const title = p.querySelector(".op-title"); title.id = hid; title.textContent = it.title;
     p.querySelector(".op-body").appendChild(it.content);
     document.body.appendChild(p);
