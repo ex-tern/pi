@@ -592,3 +592,9 @@ The Capabilities pill lists them under a new Lib section; Neuro Frenzy was liste
 - extra origins come from the env
 
 pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site loads at 1440 and 390 px with no page errors.
+
+## 2026-10-09: scroll down to open the journal and the ledger
+
+**What:** scrolling down on the main page opens "Proof-of-Research Ledger Explorer" and "The journal", with the journal in front, and brings back any windows set aside. On touch screens a swipe up does the same. This only counts on the page itself, not inside a window, a pill, the π box or the logo, and there is a 0.9 s cool-down. Scrolling up on the page still grows the logo, and the wheel over the logo still resizes it both ways. Scrolling down used to shrink the logo.
+
+**Verified:** a wheel-down on empty page opened both, with the journal in front and the logo size unchanged; a wheel-up grew the logo and opened nothing; a swipe up at 390 px opened both; no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.

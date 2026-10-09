@@ -678,9 +678,45 @@
     core.addEventListener("dblclick", () => setStill(!still));
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
-    // Scrolling anywhere on the page itself (not inside a window, a pill or
-    // the π box) resizes the mark too.
-    wheelResize(stage, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
+    // Scrolling down anywhere on the page itself (not inside a window, a pill
+    // or the π box) opens the journal and the ledger explorer; scrolling up
+    // still grows the mark. On touch screens, a swipe up does the same as
+    // scrolling down.
+    wireScrollOpen(setLogo);
+  }
+
+  const SCROLL_OPENS = ["Proof-of-Research Ledger Explorer", "The journal"];   // the last ends in front
+  function openOnScroll() {
+    setAside(false);
+    SCROLL_OPENS.forEach(t => openTitle(t));
+  }
+  function wireScrollOpen(setLogo) {
+    const off = t => t.closest && t.closest(".orbit-panel, .orbit-bubble, .orbit-pi, .orbit-core, input, textarea, select");
+    let acc = 0, cool = 0, t;
+    stage.addEventListener("wheel", e => {
+      if (e.defaultPrevented || off(e.target)) return;
+      e.preventDefault();
+      if (e.deltaY > 0) {
+        acc += e.deltaY;
+        if (acc > 40 && performance.now() > cool) { acc = 0; cool = performance.now() + 900; openOnScroll(); }
+        return;
+      }
+      acc = 0;
+      setLogo(Math.min(LOGO_MAX, Math.max(LOGO_MIN, logoScale * Math.exp(-e.deltaY * 0.0015))));
+      layoutSoon();
+      clearTimeout(t); t = setTimeout(() => store("orbit:logo:scale", +logoScale.toFixed(3)), 300);
+    }, { passive: false });
+    let ty = null, tx = 0;
+    stage.addEventListener("touchstart", e => {
+      ty = (e.touches.length === 1 && !off(e.target)) ? e.touches[0].clientY : null;
+      if (ty !== null) tx = e.touches[0].clientX;
+    }, { passive: true });
+    stage.addEventListener("touchend", e => {
+      if (ty === null || !e.changedTouches.length) return;
+      const dy = e.changedTouches[0].clientY - ty, dx = e.changedTouches[0].clientX - tx;
+      ty = null;
+      if (dy < -60 && Math.abs(dy) > 1.5 * Math.abs(dx) && performance.now() > cool) { cool = performance.now() + 900; openOnScroll(); }
+    }, { passive: true });
   }
 
   // Resize by dragging a handle away from (or towards) the thing's centre,
