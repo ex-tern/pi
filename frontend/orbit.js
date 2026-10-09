@@ -177,7 +177,7 @@
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
@@ -674,8 +674,8 @@
       if (items.some(it => it.panel)) setAside(!document.documentElement.classList.contains("orbit-aside"));
       pulse();
     });
-    // double-click: back to the middle, at the usual size
-    core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
+    // double-click: the mark stops turning and π stops growing; again to carry on
+    core.addEventListener("dblclick", () => setStill(!still));
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     // Scrolling anywhere on the page itself (not inside a window, a pill or
@@ -1017,6 +1017,16 @@
     const it = items.find(i => i.key === "numbers:Numbers");
     if (it) openItem(it);
   }
+  // Stillness: a double-click on the mark stops it turning and π growing,
+  // for this visit (π starts again from 3. on every load, so a remembered
+  // pause would only show an empty π).
+  let still = false, piWorker = null, showPi = null;
+  function setStill(on) {
+    still = on;
+    document.documentElement.classList.toggle("orbit-still", on);
+    if (piWorker) piWorker.postMessage(on ? { pause: true } : { resume: true });
+    if (showPi) showPi();
+  }
   function startPi() {
     const out = $(".op-digits"), cnt = $(".op-count");
     let pending = false;
@@ -1028,10 +1038,12 @@
       out.innerHTML = "";
       out.append("π = 3." + lead + tail.slice(0, -1));
       const b = document.createElement("b"); b.textContent = tail.slice(-1); out.append(b);
-      cnt.textContent = (digits.length - 1).toLocaleString() + " decimals and counting";
+      cnt.textContent = (digits.length - 1).toLocaleString() + (still ? " decimals, paused" : " decimals and counting");
     };
+    showPi = show;
     try {
-      const w = new Worker("pi-worker.js?v=2");
+      const w = new Worker("pi-worker.js?v=3");
+      piWorker = w;
       w.onmessage = e => {
         digits += e.data.digit; piDigits = digits;
         if (!pending) { pending = true; requestAnimationFrame(show); }

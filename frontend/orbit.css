@@ -31,6 +31,7 @@ html.orbit-on .gh-fab { display: none !important; }
 .om-r { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
 .om-sweep { transform-origin: 200px 200px; animation: wi-turn 16s linear infinite; }
 html.orbit-busy .om-sweep { animation-duration: 2.2s; }
+html.orbit-still .om-sweep { animation-play-state: paused; }   /* double-click on the mark */
 html.orbit-busy .orbit-core { filter: drop-shadow(0 0 18px rgba(47, 64, 232, 0.35)); }
 @keyframes wi-turn { to { transform: rotate(-360deg); } }
 

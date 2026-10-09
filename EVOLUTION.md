@@ -549,3 +549,9 @@ The Capabilities pill lists them under a new Lib section; Neuro Frenzy was liste
 **What:** the support pill, its window heading, both donation dialogs and the Capabilities entry now read "Support Pi". The pill key changes with its title, so `account:Support ScholarPi` is migrated to `account:Support Pi` (positions, use, window state, priority and open lists), and PiEN aliases the old key so what it has learned carries over. The body text describing ScholarPi is unchanged.
 
 **Verified:** a stored position and priority under the old key moved to the new one; the pill opens by its new title at 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: double-click the logo to stop π
+
+**What:** a double-click on the PiEN mark now freezes it: the sweep stops turning (`html.orbit-still`, animation paused) and π stops growing (`pi-worker.js` takes `{pause}` / `{resume}`), with the π box reading "N decimals, paused". Another double-click carries on from the same digit. This lasts for the visit only, because π restarts from 3. on every load. Double-click used to re-centre the logo; that is gone (drag it back instead).
+
+**Verified:** the digits stop (0 new in 2 s) and the sweep's animation is paused; a second double-click resumes both; windows aren't left aside; 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
