@@ -155,7 +155,7 @@ const HELP = {
   assess: {
     title: "How Assessment Works",
     body: `<p>A manuscript is never scored by a single model. Each paper is sent independently to
-      several large language models — Llama, Mistral, Qwen and Gemini — while the local SciLM (siM)
+      several large language models — Llama, Mistral, Qwen and Gemini — while the local SciM
       engine performs deterministic structural analysis in parallel.</p>
       <p>The <strong>PiDN engine</strong> then adjudicates a single verdict from the panel's
       independent assessments. Because the jurors come from different providers, agreement between
@@ -294,14 +294,14 @@ const HELP = {
       <p>Select a row to see that author's assessed papers.</p>`,
   },
   buddy: {
-    title: "ResBD — your reading assistant",
-    body: `<p class="lede"><strong>ResBD</strong> (Research Buddy) tells you which papers in the
+    title: "RiBD, your research mentor",
+    body: `<p class="lede"><strong>RiBD</strong> is your research mentor. It tells you which papers in the
       corpus are worth your time and what to fix in your own work first. It reads your saved
       profile and only the papers you have ticked under <em>Your assessments</em> — never anyone
       else's work.</p>
       <p>A short, tailored plan derived from your saved profile — your fields, how many
       fields you work across, and whether you have articulated a core claim.</p>
-      <p><strong>It is heuristics, not analysis.</strong> ResBD reads what you typed
+      <p><strong>It is heuristics, not analysis.</strong> RiBD reads what you typed
       about yourself; it has not read your publications. It says so at the bottom of every
       report, and it deliberately refuses to generate advice from an almost-empty profile —
       a buddy that invents suggestions from nothing is worse than one that stays quiet, because
@@ -1196,7 +1196,7 @@ async function pollLogs() {
 let logPollTimer = setInterval(pollLogs, 4000);
 pollLogs();
 
-// --- SciLM (siM) assistant -------------------------------------------------------
+// --- SciM assistant -------------------------------------------------------
 // Grounded rather than generative: it answers from the live database and a
 // knowledge base built from the running rubric, so it cannot invent a balance.
 const SCILEM_SUGGESTIONS = [
@@ -1487,7 +1487,7 @@ function syncProfileVisibility() {
   else document.getElementById("claimableCard")?.classList.add("hidden");
 }
 
-/** ResBD — concrete next actions derived from the saved profile.
+/** RiBD — concrete next actions derived from the saved profile.
  *
  *  Deliberately states what it does not know. A "buddy" that invents advice
  *  from an empty profile is worse than one that says the profile is thin,
@@ -1517,7 +1517,7 @@ function renderResearchBuddy(profile) {
 
     body.innerHTML = `
       <div class="buddy-onboard">
-        <p class="buddy-onboard-lede">riB is <strong>not on yet</strong>. It reads your profile
+        <p class="buddy-onboard-lede">RiBD is <strong>not on yet</strong>. It reads your profile
         above. With nothing to read, it would just be making things up — so it waits.</p>
 
         <div class="buddy-progress">
@@ -1536,19 +1536,19 @@ function renderResearchBuddy(profile) {
             </li>`).join("")}
         </ul>
 
-        <p class="buddy-onboard-foot">Fill in any two and riB will tell you which of your fields
+        <p class="buddy-onboard-foot">Fill in any two and RiBD will tell you which of your fields
         is busiest, where your work is most likely to be noticed, and what to fix first. None of
         this is scored or shared. It only shapes the advice you get.</p>
 
         <!-- The second requirement, stated here because it is easy to satisfy
-             the profile and still see nothing. riB reads only the papers that
+             the profile and still see nothing. RiBD reads only the papers that
              have been ticked, so an empty selection is as blocking as an empty
              profile — and saying only one of the two would send the reader to
              fix something that was not the problem. -->
         <div class="buddy-onboard-step${buddySelection.size ? " bc-done" : ""}">
           <span class="bc-mark" aria-hidden="true">${buddySelection.size ? "✓" : "○"}</span>
           <span><strong>Papers to read${buddySelection.size
-            ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the ones you want riB to use,
+            ? `: ${buddySelection.size} ticked` : ""}</strong> — tick the ones you want RiBD to use,
             under <em>Your assessments</em>. It reads only what you tick, so its advice is never
             built from someone else's work.</span>
         </div>
@@ -1613,7 +1613,7 @@ function renderResearchBuddy(profile) {
   loadBuddyCorpus();
 }
 
-/** The grounded half of ResBD: the researcher's stated fields
+/** The grounded half of RiBD: the researcher's stated fields
  *  measured against what has actually been assessed in this deployment. */
 async function loadBuddyCorpus() {
   const slot = document.getElementById("buddyCorpus");
@@ -1622,7 +1622,7 @@ async function loadBuddyCorpus() {
   try {
     // The ticked papers, if any. Sent as a plain list so the server decides
     // scope — the client never filters the report itself, or the two would
-    // disagree about what riB actually read.
+    // disagree about what RiBD actually read.
     const qs = new URLSearchParams({ wallet: Session.wallet, orcid: Session.orcid });
     if (buddySelection.size) qs.set("hashes", [...buddySelection].join(","));
     const res = await fetch(`${API}/api/buddy?${qs}`);
@@ -1671,12 +1671,12 @@ async function loadBuddyCorpus() {
 
   const picks = data.picks;
   if (picks && picks.available) {
-    // riB, not SciLM. These picks come from the ResBD reading the
-    // papers the user selected; SciLM is the local scoring engine and has no
+    // RiBD, not SciM. These picks come from the RiBD reading the
+    // papers the user selected; SciM is the local scoring engine and has no
     // part in this. Attributing one component's output to another makes both
     // harder to reason about — and makes a wrong recommendation look like it
     // came from the thing that assigns scores.
-    html += `<div class="buddy-picks"><h4>ResBD reading picks
+    html += `<div class="buddy-picks"><h4>RiBD reading picks
       <span class="picks-scope">from ${escapeHtml(picks.scope || "your selection")}</span></h4>`;
 
     const list = (items, kind) => items.map(p => `
@@ -1699,12 +1699,12 @@ async function loadBuddyCorpus() {
     // Papers that share no field with the profile. Separated rather than mixed
     // into the two judgement groups: "this is good work" and "this is not
     // about what you do" are different statements, and folding the second into
-    // the first made riB look as though it rated an unrelated paper highly for
+    // the first made RiBD look as though it rated an unrelated paper highly for
     // the user's purposes.
     if (picks.unrelated && picks.unrelated.length) {
       html += `<h5 class="pick-group">Outside your stated fields</h5>
         <p class="hint pick-group-note">These match none of the fields on your profile. They may
-        still be worth reading — riB is saying it cannot judge them against your work, not that
+        still be worth reading — RiBD is saying it cannot judge them against your work, not that
         they are weak.</p>${list(picks.unrelated, "off")}`;
     }
     if (!picks.recommended.length && !picks.caution.length
@@ -1740,14 +1740,14 @@ function refreshBuddy() {
   } catch (e) {
     const body = document.getElementById("buddyBody");
     if (body) {
-      body.innerHTML = `<p class="buddy-empty">The ResBD could not be rendered.
+      body.innerHTML = `<p class="buddy-empty">The RiBD could not be rendered.
         <code>${escapeHtml(String(e && e.message ? e.message : e))}</code></p>`;
     }
   }
 }
 
 /* ---------------------------------------------------------------------------
- * ResBD: window behaviour
+ * RiBD: window behaviour
  *
  * The buddy is a floating window over the Assessment tab — draggable by its
  * bar, minimisable to that bar, maximisable, and resizable from the corner.
@@ -1783,7 +1783,7 @@ function initBuddyWindow() {
     //
     // This is the two-squares bug: while minimised, the first button showed
     // "restore" and the second showed "maximise", and both were drawn as a
-    // plain square. The bar became the word ResBD next to two identical
+    // plain square. The bar became the word RiBD next to two identical
     // controls that do different things — and since minimising also hid the
     // subtitle, there was nothing else on the bar to read either. An icon set
     // is only doing its job if no two states in the same row look alike.
@@ -1839,7 +1839,7 @@ function initBuddyWindow() {
     if (btn) {
       btn.innerHTML = on ? ICON.expand : ICON.min;
       btn.title = on ? "Re-open" : "Minimise";
-      btn.setAttribute("aria-label", on ? "Re-open ResBD" : "Minimise ResBD");
+      btn.setAttribute("aria-label", on ? "Re-open RiBD" : "Minimise RiBD");
     }
     write({ min: on });
   }
@@ -1965,7 +1965,7 @@ if (document.readyState !== "loading") initBuddyWindow();
 // Named research profiles
 //
 // One account, several profiles, exactly one active. The active one is what
-// frames the diagnostics and feeds the ResBD — everything downstream
+// frames the diagnostics and feeds the RiBD — everything downstream
 // still asks for "the profile", so switching is a single write rather than a
 // change to every consumer.
 // ---------------------------------------------------------------------------
@@ -2042,7 +2042,7 @@ async function switchProfileSlot(id) {
     profileSlots = data.profiles || profileSlots;
     writeProfileForm(data.profile || {});
     renderProfileSlots();
-    // The diagnostics and riB read the active profile, so both change here.
+    // The diagnostics and RiBD read the active profile, so both change here.
     refreshBuddy();
     loadBuddyCorpus();
     const msg = document.getElementById("profileMsg");
@@ -4216,7 +4216,7 @@ function showDetailsModal(idx) { renderDossierModal(evaluatedBuffer[idx], idx); 
 // --- Full report & dossier -------------------------------------------------
 const MODEL_LABELS = {
   llama: "Llama 3.3 70B", mistral: "Mistral Large", qwen: "Qwen 2.5 72B",
-  gemini: "Gemini 2.0 Flash", scilem: "SciLM (siM) Local Neural Engine",
+  gemini: "Gemini 2.0 Flash", scilem: "SciM Local Neural Engine",
 };
 
 function renderJudgePanel(meta, consensus) {
@@ -4678,7 +4678,7 @@ function renderDossierModal(item, idx) {
   if (typeof item.mdar_score === "number") signals.push(["MDAR adherence", `${(item.mdar_score * 100).toFixed(1)}%`]);
   if (typeof item.rrid_count === "number") signals.push(["Valid RRIDs detected", item.rrid_count]);
   if (typeof item.repro_score === "number") signals.push(["Reproducibility signal", `${(item.repro_score * 100).toFixed(1)}%`]);
-  if (typeof item.scilem_rating === "number") signals.push(["SciLM (siM) structural rating", item.scilem_rating.toFixed(2)]);
+  if (typeof item.scilem_rating === "number") signals.push(["SciM structural rating", item.scilem_rating.toFixed(2)]);
   if (signals.length) {
     html += `<details class="dossier-sec"><summary>Deterministic signals</summary><div class="dossier-sec-body"><table class="data-table"><tbody>` +
       signals.map(([k, v]) => `<tr><td>${escapeHtml(k)}</td><td class="num">${escapeHtml(String(v))}</td></tr>`).join("") +
@@ -5714,7 +5714,7 @@ bindSortHeaders("#topPapersTable", topPapersState, loadTopPapers);
 /** How the three learning engines are performing, side by side.
  *
  *  All three are online linear models that learn from what the platform sees:
- *  piD projects criteria weights, siM calibrates structural scoring, riB ranks
+ *  piD projects criteria weights, siM calibrates structural scoring, RiBD ranks
  *  relevance. Each reports its own mean error against its OWN frozen defaults,
  *  which is the only comparison that means anything — the engines predict
  *  different quantities, so their raw errors are not comparable to each other,
@@ -5750,14 +5750,14 @@ async function loadEngineBar() {
      + "to it. PiDN reads that history and projects where the weighting is "
      + "heading next — which is the chart below. It does not score your paper; "
      + "it forecasts what the corpus is starting to reward."],
-    ["siM", "SciLM", "Learns to read a paper's structure the way the panel does",
-     "SciLM scores a manuscript from its structure alone — methods, data "
+    ["siM", "SciM", "Learns to read a paper's structure the way the panel does",
+     "SciM scores a manuscript from its structure alone — methods, data "
      + "statements, statistics, references — with no model involved. Each time "
-     + "the model panel reaches a verdict, SciLM compares its own score against "
+     + "the model panel reaches a verdict, SciM compares its own score against "
      + "it and adjusts, so the fast structural check keeps getting closer to "
      + "the slow expensive one."],
-    ["riB", "ResBD", "Picks which papers in the corpus are worth your time",
-     "ResBD compares your saved profile against the papers you have ticked "
+    ["riB", "RiBD", "Your research mentor: picks which papers are worth your time",
+     "RiBD compares your saved profile against the papers you have ticked "
      + "under Your assessments, and suggests what to read and what to fix "
      + "first. It reads only the papers you tick — never anyone else's work — "
      + "and it learns from whether you found each suggestion useful."],
@@ -6398,7 +6398,7 @@ ${jurorNodes || '    LX["No external juror configured"]:::gate'}
   AGREE --> LOGIC
   ZERO --> LOGIC
 
-  subgraph S5b["5b · SciLM (siM) calibration (learned)"]
+  subgraph S5b["5b · SciM calibration (learned)"]
     direction TB
     LEARN["Weighting of 4 signals<br/>online, 5 parameters"]:::learn
     GATE2{"≥2 independent<br/>sources?"}:::gate
@@ -6678,10 +6678,10 @@ const histPiq = piqCell;
 // sidebar re-render), and without this they raced: each set "Loading…", each
 // awaited, and the slowest overwrote the newest. Sharing one in-flight promise
 // makes the extra callers free instead of harmful.
-// Which of the researcher's own papers the ResBD reasons from.
+// Which of the researcher's own papers the RiBD reasons from.
 //
 // Empty means "all of them", which is the right default: a new user has made
-// no statement about scope, and silently feeding riB nothing would make it
+// no statement about scope, and silently feeding RiBD nothing would make it
 // look broken. A selection is a narrowing, never a requirement.
 //
 // Persisted per identity, because it is a statement about a person's own work
@@ -6693,7 +6693,7 @@ let buddySelection = new Set();
  *  Returns null rather than falling back to an "anon" bucket. An anonymous
  *  bucket is how a selection made before signing in leaked into a signed-in
  *  session: the papers were assessed by nobody in particular, but the key
- *  survived the sign-in and went on narrowing riB with them. A selection is a
+ *  survived the sign-in and went on narrowing RiBD with them. A selection is a
  *  statement about a person's own work, so with no person there is nothing to
  *  store and nothing to restore.
  */
@@ -6719,10 +6719,10 @@ function saveBuddySelection() {
   } catch (_) { /* storage full or blocked; the selection still works in memory */ }
 }
 
-/** Drop anything riB might otherwise carry across an identity change.
+/** Drop anything RiBD might otherwise carry across an identity change.
  *
  *  Called on sign-in and sign-out. Without it, the in-memory selection and the
- *  legacy "anon" bucket outlived the session that created them, so riB could
+ *  legacy "anon" bucket outlived the session that created them, so RiBD could
  *  be reasoning from papers chosen by a different person — or by nobody.
  */
 function resetBuddyStateForIdentityChange() {
@@ -6747,15 +6747,15 @@ function syncClearHistoryVisibility(total) {
   btn.classList.toggle("hidden", !all);
 }
 
-/** Say plainly what riB is currently reading, so the scope is never a guess. */
+/** Say plainly what RiBD is currently reading, so the scope is never a guess. */
 function renderBuddyPickNote(total) {
   const el = document.getElementById("buddyPickNote");
   if (!el) return;
   const n = buddySelection.size;
   el.innerHTML = n === 0
-    ? `<span class="hint">ResBD is reading <strong>nothing yet</strong> — tick the
+    ? `<span class="hint">RiBD is reading <strong>nothing yet</strong> — tick the
        papers you want it to reason from.</span>`
-    : `<span class="hint">ResBD is reading <strong>${n}</strong> selected
+    : `<span class="hint">RiBD is reading <strong>${n}</strong> selected
        paper${n === 1 ? "" : "s"} of ${total}.</span>`;
 }
 
@@ -6764,7 +6764,7 @@ let historyAgain = false;
 
 function loadAssessmentHistory() {
   // Re-read the selection per identity: it is keyed to whoever is signed in,
-  // and a stale in-memory set from a previous session would narrow riB for
+  // and a stale in-memory set from a previous session would narrow RiBD for
   // the wrong person.
   loadBuddySelection();
   // Coalesce, but do not simply drop. A caller that arrives while a load is in
@@ -6842,12 +6842,12 @@ async function _loadAssessmentHistory() {
     // deletion. Naming what it does, above the thing it does it to, is the
     // cheapest way to make that impossible to misread.
     body.innerHTML = `<p class="buddy-pick-lead">
-        <strong>Tick a paper to include it in your ResBD.</strong>
-        riB reads only the papers you tick when suggesting what to work on next.
+        <strong>Tick a paper to include it in your RiBD.</strong>
+        RiBD reads only the papers you tick when suggesting what to work on next.
         Ticking nothing means it has nothing to read.</p>
       <div class="table-scroll"><table class="data-table history-table"><thead><tr>
-        <th class="col-pick" title="Tick a paper to include it in your ResBD">
-          <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in ResBD"
+        <th class="col-pick" title="Tick a paper to include it in your RiBD">
+          <input type="checkbox" id="buddyPickAll" aria-label="Include all papers in RiBD"
                  ${anySelected && buddySelection.size === live.size ? "checked" : ""}></th>
         <th>Paper</th><th class="num">piX</th><th class="num">piQ</th><th></th>
       </tr></thead><tbody>` + data.assessments.map(a => {
@@ -6856,8 +6856,8 @@ async function _loadAssessmentHistory() {
         <tr${buddySelection.has(h) ? ' class="row-picked"' : ""}>
           <td class="col-pick"><input type="checkbox" class="buddy-pick"
               data-pick="${escapeHtml(h)}" ${buddySelection.has(h) ? "checked" : ""}
-              title="Include this paper in your ResBD"
-              aria-label="Include this paper in your ResBD"></td>
+              title="Include this paper in your RiBD"
+              aria-label="Include this paper in your RiBD"></td>
           <td><div class="hist-title">${escapeHtml(a.title)} ${allBadges(a)}</div>
               <div class="hist-meta">${escapeHtml((a.timestamp || "").slice(0, 10))}${
                 a.doi ? ` · <code>${escapeHtml(a.doi)}</code>` : ""}</div></td>
@@ -8052,7 +8052,7 @@ function signOut() {
   Session.orcid = "";
   Session.researcherName = "";
   sessionState = { verified: false, two_factor: false, is_owner: false };
-  // The ResBD selection belongs to the person who just left.
+  // The RiBD selection belongs to the person who just left.
   resetBuddyStateForIdentityChange();
 
   const row = document.getElementById("sessionRow");

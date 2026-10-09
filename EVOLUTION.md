@@ -369,3 +369,12 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - PiEN's separate panel is replaced by its card; pien.js exposes `window.PiEN.stats()` for it.
 
 **Files:** `frontend/performance.js`, `frontend/pien.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: RiBD, your research mentor; SciM
+
+**What (owner's choices):**
+- **ResBD is now RiBD,** introduced as "your research mentor": in its window bar, its help text, its Performance card and Capabilities. The monkey face drawn in its window bar is removed.
+- **SciLM / siM is now SciM:** the "SciM Assistant" pill (with "Ask SciM…" in its chat box), its Performance card, Architecture, and the app's own labels.
+- Only visible names changed. The engines' data keys (`siM`, `riB`) and element ids stay, so the server and app.js are unaffected. Remembered places, use and PiEN's learning carry over from the old names.
+
+**Files:** `frontend/index.html`, `frontend/app.js`, `frontend/orbit.js`, `frontend/pien.js`, `frontend/capabilities.js`, `frontend/performance.js`, `frontend/architecture.js`.

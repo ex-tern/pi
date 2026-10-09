@@ -9,7 +9,7 @@
       ["Assess a Manuscript", "Upload a paper or give a DOI: a staged, AI-assisted assessment with a score you can trace step by step."],
       ["Intern", "An AI electronic health record for doctors (iOS app), in the Tools bubble."],
       ["Assessment results", "Your latest assessment, stage by stage."],
-      ["ResBD", "Your research buddy: what to read next, from your profile and the corpus."],
+      ["RiBD", "Your research mentor: what to read next and what to fix first, from your profile and the corpus."],
       ["Research profile", "Your fields and interests, which shape suggestions."],
     ]],
     ["Explore the record", [
@@ -31,7 +31,7 @@
       ["Permission requests", "Ask authors for permission, with a link they answer."],
     ]],
     ["Ask and understand", [
-      ["siM Assistant", "Ask questions about the corpus and the method, right from its pill."],
+      ["SciM Assistant", "Ask questions about the corpus and the method, right from its pill."],
       ["Architecture", "How a paper is assessed, as a six-step flowchart, and how judging stays fair."],
       ["Whitepaper", "The full method."],
     ]],
