@@ -84,7 +84,7 @@ a { color: var(--cobalt); text-underline-offset: 2px; text-decoration-thickness:
   display: flex; align-items: center; gap: 12px;
   margin: 2px 0 26px; color: var(--ink); text-decoration: none;
 }
-.brand-mark { width: 30px; height: 30px; flex: none; }
+.brand-mark { width: 34px; height: 34px; flex: none; }
 .brand-name { font-size: 19px; font-weight: 500; letter-spacing: -0.03em; }
 .brand-name small { display: block; font-size: 11.5px; letter-spacing: 0; color: var(--graphite); font-weight: 400; margin-top: 1px; }
 
@@ -235,110 +235,98 @@ input[type=password], select, textarea {
 
 /* ======================================================================
    Welcome screen (welcome.js)
-   One orchestrated moment: the circle draws itself, the diameter extends,
-   then a single point keeps orbiting. Nothing else moves.
+   Friendly and plain: a greeting, four doors, one line about what's new.
+   The single motion moment is the mark drawing its π, then the spark
+   catching the light.
    ====================================================================== */
 html.welcome-open { overflow: hidden; }
 .welcome {
-  position: fixed; inset: 0; z-index: 200;
+  position: fixed; inset: 0; z-index: 200; overflow-y: auto;
   background:
-    radial-gradient(circle at 30% 50%, rgba(47, 64, 232, 0.05), transparent 46%),
+    radial-gradient(60rem 30rem at 50% -8rem, rgba(47, 64, 232, 0.10), transparent 70%),
     var(--paper);
-  display: flex; align-items: center; justify-content: center;
-  padding: 32px 24px; overflow-y: auto;
+  display: flex; justify-content: center; align-items: flex-start;
+  padding: clamp(28px, 7vh, 72px) 20px 40px;
   opacity: 0; transition: opacity 0.4s ease;
 }
 .welcome.in { opacity: 1; }
 .welcome.leaving { opacity: 0; pointer-events: none; }
 .welcome[hidden] { display: none; }
-/* faint measuring grid, the only texture on the page */
-.welcome::before {
-  content: ""; position: absolute; inset: 0; pointer-events: none;
-  background-image:
-    linear-gradient(var(--hair) 1px, transparent 1px),
-    linear-gradient(90deg, var(--hair) 1px, transparent 1px);
-  background-size: 64px 64px;
-  opacity: 0.35;
-  mask-image: radial-gradient(circle at 30% 50%, #000 0, transparent 70%);
-  -webkit-mask-image: radial-gradient(circle at 30% 50%, #000 0, transparent 70%);
-}
-.welcome-inner {
-  position: relative; width: 100%; max-width: 1120px;
-  display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
-  gap: 56px; align-items: center;
-}
+.welcome-inner { width: 100%; max-width: 880px; display: flex; flex-direction: column; align-items: center; }
 
-/* --- the instrument --- */
-.welcome-instrument { width: 100%; max-width: 520px; justify-self: center; overflow: visible; }
-.wi-ticks line { stroke: var(--hair-strong); stroke-width: 1; }
-.wi-ring { fill: none; stroke: var(--hair); stroke-width: 1; }
-.wi-circle { fill: none; stroke: var(--ink); stroke-width: 2; stroke-dasharray: 1000; stroke-dashoffset: 1000; }
-.wi-diameter { stroke: var(--ink); stroke-width: 2; stroke-dasharray: 1000; stroke-dashoffset: 1000; }
-.wi-centre { fill: var(--ink); opacity: 0; }
-.wi-point { fill: var(--cobalt); }
-.wi-halo { fill: none; stroke: var(--cobalt); stroke-width: 1; opacity: 0.35; }
-.wi-orbit { transform-origin: 200px 200px; opacity: 0; }
-
-.welcome.in .wi-circle { animation: wi-draw 1.5s cubic-bezier(.65, 0, .35, 1) forwards; }
-.welcome.in .wi-diameter { animation: wi-draw 0.7s cubic-bezier(.65, 0, .35, 1) 1.25s forwards; }
-.welcome.in .wi-centre { animation: wi-fade 0.3s ease 1.9s forwards; }
-.welcome.in .wi-orbit { animation: wi-fade 0.4s ease 1.9s forwards, wi-orbit 26s linear 2.1s infinite; }
-.welcome.in .wi-ticks { animation: wi-fade 1.2s ease 0.3s both; }
-.welcome.in .wi-halo { animation: wi-pulse 2.6s ease-in-out 2.1s infinite; transform-origin: 350px 200px; }
-@keyframes wi-draw { to { stroke-dashoffset: 0; } }
-@keyframes wi-fade { from { opacity: 0; } to { opacity: 1; } }
-@keyframes wi-orbit { to { transform: rotate(-360deg); } }
-@keyframes wi-pulse { 0%, 100% { transform: scale(1); opacity: 0.35; } 50% { transform: scale(1.6); opacity: 0; } }
-
-/* --- the words --- */
-.welcome-copy { max-width: 480px; min-width: 0; }
-.welcome.in .welcome-copy { animation: wi-rise 0.8s cubic-bezier(.2, .7, .2, 1) 0.5s both; }
-@keyframes wi-rise { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: none; } }
+/* --- greeting --- */
+.welcome-hero { text-align: center; max-width: 620px; }
+.welcome-mark { width: 84px; height: 84px; display: block; margin: 0 auto 22px; overflow: visible; }
+.wm-tile { fill: var(--cobalt); }
+.wm-stroke { fill: none; stroke: #fff; stroke-width: 2.6; stroke-linecap: round; }
+.wm-spark { fill: #fff; transform-box: fill-box; transform-origin: center; }
 .welcome-title {
-  font-size: clamp(3.2rem, 7vw, 5.6rem); font-weight: 400; letter-spacing: -0.055em;
-  line-height: 0.92; margin: 0 0 18px;
+  font-size: clamp(2.3rem, 5.4vw, 3.6rem); font-weight: 500; letter-spacing: -0.045em;
+  line-height: 1.02; margin: 0 0 14px;
 }
-.welcome-sub { font-size: 17px; line-height: 1.5; color: var(--graphite); margin: 0 0 32px; max-width: 34ch; }
+.welcome-sub { font-size: 17px; line-height: 1.55; color: var(--graphite); margin: 0 auto 26px; max-width: 46ch; }
 .welcome-begin {
-  display: inline-flex; align-items: center; gap: 12px;
   background: var(--ink); color: #fff; border: 0; border-radius: 999px;
-  padding: 15px 30px 15px 26px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer;
-}
-.welcome-begin::before {
-  content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--cobalt);
-  box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.25);
+  padding: 15px 34px; font: inherit; font-size: 16px; font-weight: 500; cursor: pointer;
+  transition: background 0.15s ease;
 }
 .welcome-begin:hover { background: #000; }
 
-.welcome-choices { list-style: none; margin: 36px 0 0; padding: 0; border-top: 1px solid var(--hair); }
-.welcome-choices li { border-bottom: 1px solid var(--hair); }
+/* --- four doors --- */
+.welcome-choices {
+  list-style: none; padding: 0; margin: 40px 0 0; width: 100%;
+  display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px;
+}
 .welcome-choices button {
-  position: relative; width: 100%; text-align: left; background: none; border: 0; cursor: pointer;
-  padding: 14px 8px 14px 24px; font: inherit; color: var(--ink); display: block;
+  width: 100%; height: 100%; text-align: left; cursor: pointer; font: inherit; color: var(--ink);
+  background: var(--surface); border: 1px solid var(--hair); border-radius: 16px;
+  padding: 18px 20px 18px 20px; display: grid; grid-template-columns: 44px 1fr; column-gap: 14px; row-gap: 3px;
+  transition: border-color 0.15s ease, background 0.15s ease;
 }
-.welcome-choices button::before {
-  content: ""; position: absolute; left: 2px; top: 21px; width: 9px; height: 9px; border-radius: 50%;
-  border: 1.4px solid var(--hair-strong); transition: background 0.15s ease, border-color 0.15s ease;
+.welcome-choices button:hover { border-color: var(--cobalt); background: #fcfcff; }
+.wc-icon {
+  grid-row: span 2; width: 44px; height: 44px; padding: 10px; border-radius: 12px;
+  background: #ececfd; stroke: var(--cobalt); stroke-width: 1.6; fill: none; stroke-linecap: round; stroke-linejoin: round;
 }
-.welcome-choices button:hover::before, .welcome-choices button:focus-visible::before { background: var(--cobalt); border-color: var(--cobalt); }
-.wc-title { display: block; font-size: 15.5px; font-weight: 500; letter-spacing: -0.01em; }
-.wc-text { display: block; font-size: 13px; color: var(--graphite); margin-top: 2px; }
-.welcome-pi {
-  margin: 28px 0 0; font-family: var(--font-mono); font-size: 11.5px; color: var(--faint);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
-}
+.wc-title { font-size: 16px; font-weight: 500; letter-spacing: -0.01em; align-self: end; }
+.wc-text { font-size: 13.5px; color: var(--graphite); line-height: 1.45; }
 
-@media (max-width: 860px) {
-  .welcome { align-items: flex-start; }
-  .welcome-inner { grid-template-columns: minmax(0, 1fr); gap: 8px; }
-  .welcome-instrument { max-width: 260px; }
-  .welcome-copy { max-width: none; }
-  .welcome-sub { margin-bottom: 24px; }
-  .welcome-begin { width: 100%; justify-content: center; }
+/* --- what's new, and a quiet way out --- */
+.welcome-new {
+  margin: 26px 0 0; display: flex; align-items: center; gap: 10px; flex-wrap: wrap; justify-content: center;
+  color: var(--graphite); font-size: 14px; text-align: center;
+}
+.wn-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); flex: none; }
+.welcome-skip {
+  margin-top: 18px; background: none; border: 0; color: var(--graphite); font: inherit; font-size: 13.5px;
+  cursor: pointer; text-decoration: underline; text-underline-offset: 3px;
+}
+.welcome-skip:hover { color: var(--ink); }
+
+/* --- the one moment --- */
+.welcome.in .welcome-mark { animation: wm-pop 0.6s cubic-bezier(.2, .9, .3, 1.3) both; }
+.welcome.in .wm-stroke { stroke-dasharray: 1; stroke-dashoffset: 1; animation: wm-draw 0.55s ease forwards; }
+.welcome.in .wm-bar { animation-delay: 0.35s; }
+.welcome.in .wm-left { animation-delay: 0.65s; }
+.welcome.in .wm-right { animation-delay: 0.85s; }
+.welcome.in .wm-spark { animation: wm-twinkle 0.8s ease 1.35s both; }
+.welcome.in .welcome-hero > :not(.welcome-mark),
+.welcome.in .welcome-choices, .welcome.in .welcome-new {
+  animation: wm-rise 0.7s cubic-bezier(.2, .7, .2, 1) 0.25s both;
+}
+@keyframes wm-pop { from { transform: scale(0.6); opacity: 0; } to { transform: none; opacity: 1; } }
+@keyframes wm-draw { to { stroke-dashoffset: 0; } }
+@keyframes wm-twinkle { 0% { transform: scale(0) rotate(-45deg); opacity: 0; } 60% { transform: scale(1.5) rotate(10deg); opacity: 1; } 100% { transform: none; opacity: 1; } }
+@keyframes wm-rise { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: none; } }
+
+@media (max-width: 680px) {
+  .welcome-choices { grid-template-columns: minmax(0, 1fr); margin-top: 30px; }
+  .welcome-mark { width: 68px; height: 68px; }
+  .welcome-sub { font-size: 16px; }
+  .welcome-begin { width: 100%; }
 }
 @media (prefers-reduced-motion: reduce) {
-  .welcome .wi-circle, .welcome .wi-diameter { stroke-dashoffset: 0; }
-  .welcome .wi-centre, .welcome .wi-orbit, .welcome .wi-ticks { opacity: 1; }
+  .welcome .wm-stroke, .welcome.in .wm-stroke { stroke-dashoffset: 0; animation: none; }
 }
 
 /* ---------- Experimental channel (channel.js) ----------
