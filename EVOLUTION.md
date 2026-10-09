@@ -152,3 +152,14 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 **Checks:** dropping a pill on empty space moves only that pill. Dropping onto another moves just the pill it lands on. Positions survive a reload. Opening cards moves no pills.
 
 **Files:** `frontend/orbit.js`, `frontend/index.html`.
+
+## 2026-10-09: Windows stay open, fit their content, and come to the centre when clicked
+
+**What (owner's requests):**
+- The maximise and close buttons are removed. Windows never close: Esc and the mark no longer close them, and open windows reopen in the same order on the next visit.
+- Clicking a pill, or a window behind another, brings that window to the front and glides it to the centre.
+- A click on the mark sets every window aside (faded out, still open) to show the pills; another click, or opening any pill, brings them back.
+- Windows fit their content. Width runs from about 320 px for a few lines up to 440–820 px depending on the card's complexity, and 960 px for tools and tables. Height matches the content up to the screen. They refit as content loads, until you resize one yourself. On phones they are full-width and as tall as needed, up to 86% of the screen.
+- The π box sits beneath windows; the mark stays above them. The focus ring on a clicked window is gone.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.

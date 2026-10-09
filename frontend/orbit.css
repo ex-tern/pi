@@ -118,13 +118,17 @@ html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-col
 
 /* --- expanded cards: floating windows --- */
 .orbit-panel {
-  position: fixed; display: flex; flex-direction: column; min-width: 300px; min-height: 180px; max-width: 100vw;
+  position: fixed; display: flex; flex-direction: column; min-width: 260px; min-height: 120px; max-width: 100vw;
   background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 16px; overflow: hidden; resize: both;
   filter: drop-shadow(0 22px 36px rgba(25, 25, 25, 0.16));
 }
-.orbit-panel.max { left: 16px !important; top: calc(var(--orbit-top, 0px) + 16px) !important; width: calc(100vw - 32px) !important; height: calc(100vh - var(--orbit-top, 0px) - 32px) !important; resize: none; }
+.orbit-panel.gliding { transition: left 0.38s cubic-bezier(.2, .7, .2, 1), top 0.38s cubic-bezier(.2, .7, .2, 1); }
+.orbit-panel:focus, .orbit-panel:focus-visible { outline: none !important; }
+/* set aside (a click on the mark): windows step out of the way, still open */
+.orbit-panel { transition: opacity 0.25s ease, transform 0.25s ease; }
+html.orbit-aside .orbit-panel { opacity: 0; transform: scale(0.96); pointer-events: none; }
 .op-head {
-  display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 18px; flex: none;
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px; flex: none;
   background: var(--surface); border-bottom: 1px solid var(--hair); cursor: move; touch-action: none; user-select: none;
 }
 .op-section { font-size: 12px; color: var(--graphite); flex: none; }
@@ -144,10 +148,7 @@ html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-col
 @media (max-width: 700px) {
   .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: 10.5em; gap: 0.45em; }
   .orbit-title { left: 14px; top: calc(var(--orbit-top, 0px) + 12px); font-size: 26px; }
-  .orbit-panel, .orbit-panel.max {
-    left: 8px !important; top: calc(var(--orbit-top, 0px) + 8px) !important;
-    width: calc(100vw - 16px) !important; height: calc(100vh - var(--orbit-top, 0px) - 16px) !important; resize: none;
-  }
+  .orbit-panel { min-width: 0; }
   .op-head { cursor: default; }
   .op-body { padding: 14px; }
 }
@@ -179,3 +180,5 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .op-body .buddy-float .buddy-bar { cursor: default; }
 .op-body .buddy-float .buddy-bar button, .op-body .buddy-float .buddy-resize { display: none !important; }
 .op-body .buddy-float.is-min .buddy-scroll { display: block !important; }
+
+.orbit-stage > .orbit-pi { z-index: 4; }

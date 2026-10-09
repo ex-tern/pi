@@ -282,7 +282,7 @@
     pi.style.setProperty("--pi-scale", piScale);
     const [px, py] = piCentre();
     pi.style.left = px + "px";
-    pi.style.top = top + py + "px";
+    pi.style.top = py + "px";            // the π box lives in the stage, under any windows
   }
 
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -504,9 +504,12 @@
     };
     core.addEventListener("pointerup", end);
     core.addEventListener("pointercancel", end);
+    // Windows never close. A click on the mark sets them all aside to show the
+    // pills; another click (or opening any pill) brings them back.
     core.addEventListener("click", () => {
       if (core.dataset.justDragged) return;
-      items.filter(it => it.panel).forEach(closeItem);
+      if (items.some(it => it.panel)) setAside(!document.documentElement.classList.contains("orbit-aside"));
+      pulse();
     });
     // double-click: back to the middle, at the usual size
     core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
@@ -617,35 +620,88 @@
 
   function openItem(it) {
     if (it.href) { window.open(it.href, "_blank", "noopener"); bumpUse(it, 1); pulse(); return; }
-    if (it.panel) { front(it.panel); it.panel.querySelector(".op-close").focus(); return; }
+    setAside(false);
+    if (it.panel) { raise(it.panel, true); bumpUse(it, 1); pulse(); return; }
     activateSection(it.section.key);
     const p = document.createElement("section");
     p.className = "orbit-panel";
     p.setAttribute("role", "dialog");
     const hid = "op-" + Math.random().toString(36).slice(2);
     p.setAttribute("aria-labelledby", hid);
-    p.innerHTML = '<header class="op-head"><span class="op-section"></span><h2 class="op-title"></h2>' +
-      '<button type="button" class="op-max" aria-label="Maximise">⤢</button>' +
-      '<button type="button" class="op-close" aria-label="Close">×</button></header><div class="op-body"></div>';
+    p.innerHTML = '<header class="op-head"><span class="op-section"></span><h2 class="op-title"></h2></header><div class="op-body"></div>';
     p.querySelector(".op-section").textContent = it.section.name;
     const title = p.querySelector(".op-title"); title.id = hid; title.textContent = it.title;
     p.querySelector(".op-body").appendChild(it.content);
-    const n = openCount;
-    const w = Math.min(820, window.innerWidth - 32), h = Math.min(window.innerHeight - top - 48, 760);
-    p.style.width = w + "px"; p.style.height = h + "px";
-    p.style.left = Math.max(16, (window.innerWidth - w) / 2 + (n % 5) * 28 - 56) + "px";
-    p.style.top = Math.max(top + 16, top + (window.innerHeight - top - h) / 2 + (n % 5) * 24 - 48) + "px";
     document.body.appendChild(p);
+    fit(it, p);
+    centre(p);
+    // content that loads later (lists, results) refits the window, until you resize it yourself
+    if (window.ResizeObserver) {
+      const ro2 = new ResizeObserver(() => {
+        if (p.userSized || !p.isConnected) return;
+        if (Math.abs(p.offsetWidth - p.fitW) > 2 || Math.abs(p.offsetHeight - p.fitH) > 2) { p.userSized = true; return; }
+        const cx = p.offsetLeft + p.offsetWidth / 2, cy = p.offsetTop + p.offsetHeight / 2;
+        fit(it, p);
+        p.style.left = Math.max(8, Math.min(window.innerWidth - p.offsetWidth - 8, cx - p.offsetWidth / 2)) + "px";
+        p.style.top = Math.max(top + 8, Math.min(window.innerHeight - p.offsetHeight - 8, cy - p.offsetHeight / 2)) + "px";
+      });
+      ro2.observe(it.content);
+    }
     it.panel = p; openCount++;
     document.documentElement.classList.add("orbit-open");
     it.bubble.classList.add("is-open");
     front(p);
     wirePanel(it, p);
     if (it.nodes.some(n => n.id === "labHal")) setTimeout(keepAlive, 300);
-    bumpUse(it, 1);
+    if (!restoring) bumpUse(it, 1);
     pulse();
     placeMark();
-    p.querySelector(".op-close").focus();
+    rememberOpen();
+  }
+
+  // A window is as big as what is in it: narrow for a few lines, wide for a
+  // tool (the emulator, the map, tables), and only as tall as its content.
+  function fit(it, p) {
+    const sm = window.innerWidth < 700;
+    const H0 = window.innerHeight - top;
+    const wide = it.content.querySelector("iframe, canvas, #arcadeStage, table, .leaderboard");
+    const q = it.q != null ? it.q : 0.5;
+    const maxW = sm ? window.innerWidth - 20 : Math.min(window.innerWidth - 32, wide ? 960 : 440 + q * 380);
+    const maxH = sm ? H0 * 0.86 : H0 - 48;
+    p.style.height = "auto";
+    p.style.width = "max-content";
+    let w = Math.min(maxW, Math.max(sm ? 0 : 320, p.offsetWidth));
+    if (wide || sm) w = maxW;
+    p.style.width = w + "px";
+    const body = p.querySelector(".op-body"), head = p.querySelector(".op-head");
+    const h = Math.max(140, Math.min(maxH, head.offsetHeight + body.scrollHeight + 2));
+    p.style.height = h + "px";
+    p.fitW = p.offsetWidth; p.fitH = p.offsetHeight;
+  }
+
+  // Bring a window to the front and, when asked, glide it to the centre.
+  function centre(p) {
+    const w = p.offsetWidth, h = p.offsetHeight;
+    p.style.left = Math.max(8, (window.innerWidth - w) / 2) + "px";
+    p.style.top = Math.max(top + 8, top + (window.innerHeight - top - h) / 2) + "px";
+  }
+  function raise(p, toCentre) {
+    front(p);
+    if (toCentre) {
+      p.classList.add("gliding");
+      centre(p);
+      clearTimeout(p.glide); p.glide = setTimeout(() => p.classList.remove("gliding"), 420);
+    }
+    rememberOpen();
+  }
+  function setAside(on) {
+    document.documentElement.classList.toggle("orbit-aside", on && items.some(it => it.panel));
+  }
+  // Open windows are remembered, in their stacking order, and come back on the next visit.
+  let restoring = false;
+  function rememberOpen() {
+    if (restoring) return;
+    store("orbit:open", items.filter(i => i.panel).sort((a, b) => a.panel.style.zIndex - b.panel.style.zIndex).map(i => i.key));
   }
 
   function closeItem(it) {
@@ -675,9 +731,17 @@
   function wirePanel(it, p) {
     const head = p.querySelector(".op-head");
     let sx, sy, px, py, drag = false;
-    p.addEventListener("pointerdown", () => front(p));
+    // a click on a window behind brings it to the front and the centre
+    let wasTop = true, cx0 = 0, cy0 = 0;
+    p.tabIndex = -1;
+    p.addEventListener("pointerdown", e => {
+      wasTop = +p.style.zIndex === zTop; cx0 = e.clientX; cy0 = e.clientY;
+      front(p);
+    });
+    p.addEventListener("pointerup", e => {
+      if (!wasTop && Math.hypot(e.clientX - cx0, e.clientY - cy0) < 6) raise(p, true);
+    });
     head.addEventListener("pointerdown", e => {
-      if (e.target.closest("button") || p.classList.contains("max")) return;
       drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
       head.setPointerCapture(e.pointerId);
     });
@@ -687,11 +751,6 @@
       p.style.top = Math.min(window.innerHeight - 48, Math.max(top, py + e.clientY - sy)) + "px";
     });
     head.addEventListener("pointerup", () => { drag = false; });
-    p.querySelector(".op-close").addEventListener("click", () => closeItem(it));
-    p.querySelector(".op-max").addEventListener("click", () => {
-      p.classList.toggle("max");
-      p.querySelector(".op-max").setAttribute("aria-label", p.classList.contains("max") ? "Restore" : "Maximise");
-    });
   }
 
   // ------------------------------------------------------------ busy: the mark spins faster
@@ -742,20 +801,12 @@
     const center = $(".orbit-center", stage);
     document.body.appendChild(center);
     stage.center = center;
+    stage.appendChild($(".orbit-pi", center));
     document.documentElement.classList.add("orbit-on");
     makeBubbles();
     setSizes();
     wireLogo();
     wirePi();
-    // Esc closes the window on top, wherever the keyboard focus happens to be
-    // (the map and HAL-OS take focus for their own keys).
-    document.addEventListener("keydown", e => {
-      if (e.key !== "Escape" || e.defaultPrevented) return;
-      const modal = document.getElementById("modalOverlay");
-      if (modal && !modal.classList.contains("hidden")) return;
-      const topIt = items.filter(i => i.panel).sort((a, b) => b.panel.style.zIndex - a.panel.style.zIndex)[0];
-      if (topIt) { e.preventDefault(); closeItem(topIt); }
-    });
     // Cards appear and disappear as app.js decides (sign-in, owner panels,
     // results): keep the orbit in step.
     const mo = new MutationObserver(() => { clearTimeout(start.t); start.t = setTimeout(layout, 120); });
@@ -774,10 +825,19 @@
     layout();
     setTimeout(layout, 600);              // after fonts and app.js's first render
     setTimeout(layout, 2000);
-    if (location.hash) setTimeout(fromHash, 300);
+    // windows open last time open again, in the same order
+    const reopen = (load("orbit:open") || []).map(k => items.find(x => x.key === k && visible(x))).filter(Boolean);
+    if (reopen.length) setTimeout(() => {
+      restoring = true;
+      reopen.forEach(it => { if (!it.panel) openItem(it); });
+      restoring = false;
+      rememberOpen();
+      if (location.hash) fromHash();
+    }, 350);
+    else if (location.hash) setTimeout(fromHash, 300);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
-    window.PiOrbit = { open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);
