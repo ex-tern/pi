@@ -831,3 +831,7 @@ The mark also gets a soft cobalt glow while working.
 **What:** the owner found π grew too fast. Digits now come at 1 a second while quiet (was 2.5), 2.5 a second while a paper is assessed (was 11) and 5 a second with several (was 25). The sweep speeds are unchanged.
 
 **Verified:** the measured rates over 4 s at each level were 1.0, 2.5 and 5.0 digits/s at 1440 and 390 px, with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: deploy fix, ASCII commit messages
+
+**What:** the last two production deploys failed at Railway's "Build image" step within 5 seconds, before any Dockerfile step ran. Their commit subjects were the only ones containing a non-ASCII character (π); every deploy with an ASCII subject, before and since, built. The code is unchanged. This commit has an ASCII message so the same code builds, and CLAUDE.md now asks for ASCII commit messages.

@@ -23,7 +23,8 @@ ScholarPi runs as two copies of this repository:
    - the π circle as the only ornament
 
    Change it deliberately, not by accident.
-6. **`app.js` is large and load-bearing.** Prefer small, separate modules (`lab.js`, `orbit.js` and `channel.js` are the pattern) over growing it.
+6. **Commit messages in plain ASCII.** Railway's image build fails within seconds when the deployed commit's message contains a non-ASCII character such as π (2026-10-09: the two deploys whose subjects began "The π mark…" and "Slower π…" both failed at "Build image", while every ASCII-subject deploy built). Write "pi", "phi", "gamma" instead.
+7. **`app.js` is large and load-bearing.** Prefer small, separate modules (`lab.js`, `orbit.js` and `channel.js` are the pattern) over growing it.
 
 ## Layout
 
