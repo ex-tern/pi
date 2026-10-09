@@ -668,13 +668,18 @@
     core.addEventListener("pointercancel", end);
     // Windows never close. A click on the mark sets them all aside to show the
     // pills; another click (or opening any pill) brings them back.
-    core.addEventListener("click", () => {
+    core.addEventListener("click", e => {
       if (core.dataset.justDragged) return;
+      if (e.detail >= 3) clearTimeout(core.resetT);    // a triple click (logosound.js) is not a double click
+      if (e.detail > 1) return;                        // only the first click of a burst sets windows aside
       if (items.some(it => it.panel)) setAside(!document.documentElement.classList.contains("orbit-aside"));
       pulse();
     });
-    // double-click: back to the middle, at the usual size
-    core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
+    // double-click: back to the middle, at the usual size (unless a third click follows)
+    core.addEventListener("dblclick", () => {
+      clearTimeout(core.resetT);
+      core.resetT = setTimeout(() => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); }, 380);
+    });
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     // Scrolling anywhere on the page itself (not inside a window, a pill or
