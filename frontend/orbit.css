@@ -1,0 +1,130 @@
+/* orbit.css — the orbit layout (orbit.js). Loaded after theme.css.
+   The old chrome (sidebar, tab row, page column) is hidden, not removed:
+   app.js still drives it, and orbit.js clicks its tab buttons. */
+
+html.orbit-on, html.orbit-on body { height: 100%; overflow: hidden; }
+html.orbit-on .app-shell,
+html.orbit-on .sidebar-toggle,
+html.orbit-on .sidebar-scrim,
+html.orbit-on .arch-fab { display: none !important; }
+
+.orbit-stage {
+  position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 10; overflow: hidden;
+  background:
+    radial-gradient(48rem 34rem at 50% 50%, rgba(47, 64, 232, 0.06), transparent 70%),
+    var(--paper);
+  touch-action: none;
+}
+.orbit-rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.orbit-rings ellipse { fill: none; stroke: var(--hair); stroke-width: 1; stroke-dasharray: 2 7; }
+
+/* --- the mark: fixed in the centre, its size following what the site does --- */
+.orbit-center { position: fixed; inset: 0; z-index: 950; pointer-events: none; }
+.orbit-core {
+  position: absolute; z-index: 2; pointer-events: auto; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  transition: width 0.6s cubic-bezier(.2, .7, .2, 1), height 0.6s cubic-bezier(.2, .7, .2, 1),
+              left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1);
+}
+.orbit-mark { width: 100%; height: 100%; display: block; overflow: visible; }
+.om-circle { fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.om-r { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.om-sweep { transform-origin: 200px 200px; animation: wi-turn 16s linear infinite; }
+html.orbit-busy .om-sweep { animation-duration: 2.2s; }
+html.orbit-busy .orbit-core { filter: drop-shadow(0 0 18px rgba(47, 64, 232, 0.35)); }
+@keyframes wi-turn { to { transform: rotate(-360deg); } }
+
+.orbit-caption { position: absolute; left: 0; right: 0; z-index: 2; text-align: center; pointer-events: none; transition: opacity 0.3s ease; }
+.orbit-caption > * { width: fit-content; margin-left: auto !important; margin-right: auto !important; }
+.orbit-caption h1 { font-size: clamp(1.6rem, 3.2vw, 2.5rem); font-weight: 500; letter-spacing: -0.04em; margin: 0; line-height: 1.1; }
+.orbit-caption p { color: var(--graphite); font-size: 13px; margin: 4px 0 0; }
+html.orbit-open .orbit-caption h1, html.orbit-open .orbit-caption p { display: none; }
+
+/* --- π, computed live, gaining digits while the site stays open --- */
+.orbit-pi {
+  margin: 10px auto 0; width: fit-content; padding: 3px 10px; border-radius: 999px; background: rgba(246, 246, 244, 0.86); max-width: min(560px, 86vw);
+  font-family: var(--font-mono); font-size: 12px; color: var(--graphite);
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+}
+.orbit-pi .op-digits { white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
+.orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
+.orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
+.orbit-pi .op-count { font-family: var(--font); font-size: 11.5px; color: var(--faint); }
+html.orbit-open .orbit-pi { margin-top: 4px; font-size: 10.5px; max-width: 260px; }
+
+/* --- orbiting cards --- */
+.orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.orbit-bubble {
+  position: absolute; left: 0; top: 0; pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 8px; max-width: 230px;
+  padding: 7px 15px 7px 11px; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--hair); color: var(--ink);
+  font: inherit; font-size: 13px; line-height: 1.2; white-space: nowrap; cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none; will-change: transform;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+.orbit-bubble[hidden] { display: none; }
+.orbit-bubble:hover { border-color: var(--cobalt); }
+.orbit-bubble.dragging { cursor: grabbing; border-color: var(--cobalt); z-index: 5; }
+.orbit-bubble.is-open { background: var(--ink); color: #fff; border-color: var(--ink); }
+.ob-label { overflow: hidden; text-overflow: ellipsis; }
+.ob-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1.5px solid var(--cobalt); }
+/* sections are told apart by the dot alone, so the orbit stays monochrome */
+.orbit-bubble[data-section="assess"] .ob-dot { background: var(--cobalt); }
+.orbit-bubble[data-section="journal"] .ob-dot { border-color: var(--ink); background: var(--ink); }
+.orbit-bubble[data-section="analytics"] .ob-dot { border-color: var(--cobalt); }
+.orbit-bubble[data-section="lab"] .ob-dot { border-color: var(--ink); }
+.orbit-bubble[data-section="diagram"] .ob-dot { border-color: var(--hair-strong); background: var(--hair-strong); }
+.orbit-bubble[data-section="account"] .ob-dot { border-radius: 2px; border-color: var(--graphite); }
+.orbit-bubble.is-open .ob-dot { border-color: #fff; }
+
+/* --- expanded cards: floating windows --- */
+.orbit-panel {
+  position: fixed; display: flex; flex-direction: column; min-width: 300px; min-height: 180px; max-width: 100vw;
+  background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 16px; overflow: hidden; resize: both;
+  filter: drop-shadow(0 22px 36px rgba(25, 25, 25, 0.16));
+}
+.orbit-panel.max { left: 16px !important; top: calc(var(--orbit-top, 0px) + 16px) !important; width: calc(100vw - 32px) !important; height: calc(100vh - var(--orbit-top, 0px) - 32px) !important; resize: none; }
+.op-head {
+  display: flex; align-items: center; gap: 10px; padding: 9px 10px 9px 18px; flex: none;
+  background: var(--surface); border-bottom: 1px solid var(--hair); cursor: move; touch-action: none; user-select: none;
+}
+.op-section { font-size: 12px; color: var(--graphite); flex: none; }
+.op-title { font-size: 15px; font-weight: 500; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.01em; }
+.op-head button {
+  flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--hair); background: transparent;
+  cursor: pointer; font-size: 17px; line-height: 1; color: var(--ink);
+}
+.op-head button:hover { border-color: var(--ink); }
+.op-body { flex: 1; overflow: auto; padding: 18px; }
+/* the window is the frame now; a single card inside drops its own */
+.op-body .orbit-content > .card:only-child { border: 0; background: transparent; padding: 0; margin: 0; }
+.op-body .orbit-content > * + * { margin-top: 14px; }
+.op-body details.sidebar-expander { border: 0; padding: 0; }
+.op-body .stats-bar { margin: 0; }
+
+@media (max-width: 700px) {
+  .orbit-bubble { font-size: 11px; padding: 4px 9px 4px 7px; max-width: 104px; gap: 5px; }
+  .ob-dot { width: 7px; height: 7px; }
+  .orbit-panel, .orbit-panel.max {
+    left: 8px !important; top: calc(var(--orbit-top, 0px) + 8px) !important;
+    width: calc(100vw - 16px) !important; height: calc(100vh - var(--orbit-top, 0px) - 16px) !important; resize: none;
+  }
+  .op-head { cursor: default; }
+  .op-body { padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .om-sweep { animation: none; }
+  .orbit-core { transition: none; }
+}
+
+/* While cards are open the mark stays centred but steps back: smaller,
+   see-through and click-through, so it never covers a button. */
+html.orbit-open .orbit-core { pointer-events: none; opacity: 0.55; }
+@media (max-width: 700px) { html.orbit-open .orbit-core { opacity: 0.35; } html.orbit-open .orbit-pi { opacity: 0.5; } }
+html.orbit-open .orbit-pi { opacity: 0.7; background: transparent; }
+@media (max-width: 700px) {
+  .orbit-caption > * { width: fit-content; margin-left: auto !important; margin-right: auto !important; }
+.orbit-caption h1 { font-size: 1.5rem; }
+  .orbit-caption p { display: none; }
+  .orbit-pi { font-size: 10.5px; margin-top: 4px; }
+}
