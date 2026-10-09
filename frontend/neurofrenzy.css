@@ -31,3 +31,16 @@
 /* inline blanks: the site's own input rule makes every input a full-width block */
 .nf .nf-blank { display: inline-block; width: 8.5em; max-width: 60%; height: auto; min-height: 0; margin: 0 3px; padding: 2px 8px; box-shadow: none; }
 @media (max-width: 700px) { .nf .nf-blank { width: 7em; } .nf-text { font-size: 15px; } }
+
+/* music toggle */
+.nf-box { position: relative; }
+.nf-mute {
+  position: absolute; top: 0; right: 0; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12px; padding: 4px 10px 4px 8px; border-radius: 999px; cursor: pointer; margin: 0; height: auto;
+  border: 1px solid var(--hair-strong); background: transparent; color: var(--ink);
+}
+.nf-mute:hover { border-color: var(--cobalt); color: var(--cobalt); }
+.nf-mute svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.nf-mute svg path:first-child { fill: currentColor; stroke: none; }
+.nf-mute[aria-pressed="true"] { color: var(--graphite); }
+.nf h2, .nf-top { padding-right: 104px; }

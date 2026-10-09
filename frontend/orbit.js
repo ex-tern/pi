@@ -668,18 +668,13 @@
     core.addEventListener("pointercancel", end);
     // Windows never close. A click on the mark sets them all aside to show the
     // pills; another click (or opening any pill) brings them back.
-    core.addEventListener("click", e => {
+    core.addEventListener("click", () => {
       if (core.dataset.justDragged) return;
-      if (e.detail >= 3) clearTimeout(core.resetT);    // a triple click (logosound.js) is not a double click
-      if (e.detail > 1) return;                        // only the first click of a burst sets windows aside
       if (items.some(it => it.panel)) setAside(!document.documentElement.classList.contains("orbit-aside"));
       pulse();
     });
-    // double-click: back to the middle, at the usual size (unless a third click follows)
-    core.addEventListener("dblclick", () => {
-      clearTimeout(core.resetT);
-      core.resetT = setTimeout(() => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); }, 380);
-    });
+    // double-click: back to the middle, at the usual size
+    core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     // Scrolling anywhere on the page itself (not inside a window, a pill or
@@ -1038,11 +1033,8 @@
       const w = new Worker("pi-worker.js?v=2");
       w.onmessage = e => {
         digits += e.data.digit; piDigits = digits;
-        document.dispatchEvent(new CustomEvent("pi:digit", { detail: e.data.digit }));   // logosound.js
         if (!pending) { pending = true; requestAnimationFrame(show); }
       };
-      // logosound.js asks for the digits to fall on the song's beat
-      document.addEventListener("pi:beat", e => w.postMessage({ sync: true, delay: (e.detail && e.detail.delay) || 0 }));
     } catch (_) {
       out.textContent = "π = 3.14159 26535 89793 23846";
     }

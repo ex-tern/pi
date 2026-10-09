@@ -6,13 +6,11 @@
 // each digit costs a little more than the last. Paced so the number visibly
 // grows instead of racing ahead.
 //
-// The pace is exact: one digit every 60 ms, ten digits a beat at 100 BPM,
-// the tempo of the logo song (logosound.js), so a 19.2 s loop of the song is
-// exactly 320 digits. The schedule corrects its own drift, and a {sync: true}
-// message restarts it so the next digit lands on the song's beat.
+// The pace is exact: one digit every 60 ms (1000 a minute). The schedule
+// corrects its own drift, and a {sync: true, delay} message restarts it.
 let q = 1n, r = 0n, t = 1n, k = 1n, n = 3n, l = 3n;
 let count = 0;
-const PACE_MS = 60;     // 1000 digits a minute: 10 a beat at 100 BPM
+const PACE_MS = 60;     // 1000 digits a minute
 let due = 0, timer = 0;
 
 function next() {

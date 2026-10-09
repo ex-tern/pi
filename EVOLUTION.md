@@ -515,3 +515,20 @@ It lasts exactly one beat (0.6 s), so the song drops in on the beat. Stopping pl
 - A double click still re-centres the logo, and a triple click leaves it in place.
 - Loop, π-volume and tempo checks pass at 1440 and 390 px with no page errors.
 - pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: the song moves to NeuroFrenzy
+
+**What:** the owner moved the song from the π logo into the NeuroFrenzy game.
+- **Music:** it plays by default on a seamless 8-bar loop (19.2 s) while the game's window is open and in view. It fades out when the window closes, is set aside or the tab is hidden.
+- **Mute:** a "Music on / Music off" toggle sits top-right in the game and is remembered (`orbit:nf:mute`, synced when signed in).
+- **Autoplay:** browsers need a gesture before sound, so after a reload that reopens the window, the music starts with the first click or key press.
+- **Removed:** the logo is back to its earlier behaviour, and `logosound.js` (the triple click and the whoosh) is gone along with the `pi:digit` / `pi:beat` hooks. The drift-free π pacing stays.
+- **File:** `sound/dd.mp3` was renamed to `sound/neurofrenzy.mp3`.
+
+**Verified:**
+- A triple click on the logo plays nothing.
+- Opening NeuroFrenzy starts the loop at 0–19.2 s. Mute stops it and is stored; unmute restarts it.
+- Aside stops it and bringing the windows back restarts it.
+- After a reload the context waits suspended, then runs after the first click.
+- The game plays as before, and the toggle doesn't overlap the header.
+- 1440 and 390 px with no page errors and no horizontal scroll; pytest at baseline; `build_hal.py` builds.
