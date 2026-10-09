@@ -882,7 +882,9 @@
     }
     if (!openCount) document.documentElement.classList.remove("orbit-open");
     placeMark();
-    it.bubble.focus({ preventScroll: true });
+    rememberOpen();
+    const b = it.groupOf ? it.groupOf.bubble : it.bubble;
+    if (b && !b.hidden) b.focus({ preventScroll: true });
   }
 
   // Windows stack between 300 and 900, always under the site's dialogs (1000).
@@ -936,12 +938,25 @@
       drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
       head.setPointerCapture(e.pointerId);
     });
+    // Pushed against an edge of the screen, a window closes: while it is far
+    // enough out it fades, and letting go there closes it.
+    const atEdge = e => {
+      const r = p.getBoundingClientRect(), W0 = window.innerWidth, H0 = window.innerHeight;
+      const shownW = Math.max(0, Math.min(r.right, W0) - Math.max(r.left, 0));
+      return e.clientX <= 8 || e.clientX >= W0 - 8 || e.clientY >= H0 - 8 || shownW < r.width * 0.5;
+    };
     head.addEventListener("pointermove", e => {
       if (!drag) return;
-      p.style.left = Math.min(window.innerWidth - 80, Math.max(-p.offsetWidth + 120, px + e.clientX - sx)) + "px";
-      p.style.top = Math.min(window.innerHeight - 48, Math.max(top, py + e.clientY - sy)) + "px";
+      p.style.left = Math.min(window.innerWidth - 60, Math.max(-p.offsetWidth + 60, px + e.clientX - sx)) + "px";
+      p.style.top = Math.min(window.innerHeight - 40, Math.max(top, py + e.clientY - sy)) + "px";
+      p.classList.toggle("leaving", atEdge(e));
     });
-    head.addEventListener("pointerup", () => { if (drag) { p.userMoved = true; saveWin(it, p); } drag = false; });
+    head.addEventListener("pointerup", e => {
+      if (drag && atEdge(e)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
+      if (drag) { p.userMoved = true; saveWin(it, p); }
+      drag = false;
+    });
+    head.addEventListener("pointercancel", () => { drag = false; p.classList.remove("leaving"); });
   }
 
   // ------------------------------------------------------------ busy: the mark spins faster
