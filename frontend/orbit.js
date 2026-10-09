@@ -688,6 +688,7 @@
         if (Math.abs(p.offsetWidth - p.fitW) > 2 || Math.abs(p.offsetHeight - p.fitH) > 2) { p.userSized = true; saveWinSoon(it, p); return; }
         const cx = p.offsetLeft + p.offsetWidth / 2, cy = p.offsetTop + p.offsetHeight / 2;
         fit(it, p);
+        if (p.userMoved) return;           // a window you have placed stays where you put it
         p.style.left = Math.max(8, Math.min(window.innerWidth - p.offsetWidth - 8, cx - p.offsetWidth / 2)) + "px";
         p.style.top = Math.max(top + 8, Math.min(window.innerHeight - p.offsetHeight - 8, cy - p.offsetHeight / 2)) + "px";
       });
@@ -712,7 +713,7 @@
   function fit(it, p) {
     const sm = window.innerWidth < 700;
     const H0 = window.innerHeight - top;
-    const wide = it.content.querySelector("iframe, canvas, #arcadeStage, table, .leaderboard");
+    const wide = it.content.matches(".nb") || it.content.querySelector("iframe, canvas, #arcadeStage, table, .leaderboard");
     const q = it.q != null ? it.q : 0.5;
     const maxW = sm ? window.innerWidth - 20 : Math.min(window.innerWidth - 32, wide ? 960 : 440 + q * 380);
     const maxH = sm ? H0 * 0.86 : H0 - 48;
@@ -789,6 +790,7 @@
   function restoreWin(it, p) {
     const ws = load("orbit:win:" + it.key);
     if (!ws) return;
+    p.userMoved = true;
     if (ws.w && ws.h) {
       p.style.width = Math.min(ws.w, window.innerWidth - 16) + "px";
       p.style.height = Math.min(ws.h, window.innerHeight - top - 16) + "px";
@@ -821,7 +823,7 @@
       p.style.left = Math.min(window.innerWidth - 80, Math.max(-p.offsetWidth + 120, px + e.clientX - sx)) + "px";
       p.style.top = Math.min(window.innerHeight - 48, Math.max(top, py + e.clientY - sy)) + "px";
     });
-    head.addEventListener("pointerup", () => { if (drag) saveWin(it, p); drag = false; });
+    head.addEventListener("pointerup", () => { if (drag) { p.userMoved = true; saveWin(it, p); } drag = false; });
   }
 
   // ------------------------------------------------------------ busy: the mark spins faster
