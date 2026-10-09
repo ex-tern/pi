@@ -130,6 +130,7 @@ import assistant as scilem
 import abuse_guard
 import bugreport
 import rib_engine
+import rib_suggest
 import rib_engine as rib_learning
 import auth
 import authorship_challenge
@@ -1739,6 +1740,39 @@ def research_buddy(wallet: str = Query(default=""), orcid: str = Query(default="
         logging.warning("riB tutoring could not be scheduled: %s", e)
 
     return report
+
+
+@app.get("/api/buddy/suggest")
+def research_buddy_suggest(wallet: str = Query(default=""), orcid: str = Query(default="")):
+    """RiBD's two suggestions for this profile: a paper from the ledger
+    explorer and a scanned manuscript (see rib_suggest). Only public ledger
+    data is returned (title, author, fields, piX, date), the same the explorer
+    already shows; the researcher's own papers are left out."""
+    key = _profile_key(wallet, orcid)
+    if not key:
+        return {"available": False, "reason": "Sign in to get suggestions."}
+    profile = get_researcher_profile(key)
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT p.eval_hash, p.title, p.author_name, p.fields, p.final_score, p.timestamp,
+                      p.user_id, b.block_height
+               FROM papers_assessment p
+               LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
+               WHERE p.final_score IS NOT NULL AND COALESCE(p.title, '') <> ''
+               ORDER BY p.timestamp DESC LIMIT 500""").fetchall()
+    except sqlite3.Error as e:
+        logging.warning("RiBD suggest read failed: %s", e)
+        return {"available": False, "reason": "Suggestions are unavailable right now."}
+    finally:
+        conn.close()
+    mine = set(_identity_values(wallet, orcid))
+    own = {r[0] for r in rows if r[6] and r[6] in mine}
+    data = [{"eval_hash": r[0], "title": r[1], "author": clean_author_name(r[2]), "fields": r[3],
+             "score": r[4], "timestamp": r[5], "on_ledger": r[7] is not None} for r in rows]
+    out = rib_suggest.suggest(profile, data, own)
+    out["available"] = True
+    return out
 
 
 @app.get("/api/profile")

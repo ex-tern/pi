@@ -1578,6 +1578,7 @@ function renderResearchBuddy(profile) {
   let html = `<p class="buddy-lede">Based on your profile${fields.length
     ? ` in <strong>${fields.map(escapeHtml).join(", ")}</strong>` : ""}${keywords.length
     ? `, focused on <em>${keywords.map(escapeHtml).join(", ")}</em>` : ""}.</p>`;
+  html += `<div id="buddySuggest"></div>`;   // ribsuggest.js: a ledger paper and a scanned manuscript for you
   html += `<div id="buddyCorpus"></div>`;
 
   const actions = [];
@@ -1610,6 +1611,7 @@ function renderResearchBuddy(profile) {
   html += `<p class="buddy-note">These are heuristics from your stated profile, not an analysis
     of your publications. Assess a manuscript for findings grounded in an actual paper.</p>`;
   body.innerHTML = html;
+  if (window.RibSuggest) window.RibSuggest.load(document.getElementById("buddySuggest"));
   loadBuddyCorpus();
 }
 
