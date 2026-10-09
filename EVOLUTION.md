@@ -321,3 +321,9 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 **What:** an "Intern" pill inside the Tools bubble, beside Assess a Manuscript. Intern ([in-tern/Intern](https://github.com/in-tern/Intern)) is a separate project: an iOS app, an AI electronic health record for doctors, built on Firebase, Azure Communication Services and MessageKit. It runs on iPhone and iPad, not in a browser, so its window says what it is and links to its source. Modules can now place a pill inside a group's bubble (`addPill({..., inGroup: "Tools"})`).
 
 **Files:** `frontend/intern.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: Push a window to the edge to close it
+
+**What:** dragging a window by its header against the left, right or bottom edge of the screen (or so that more than half of it is off-screen) closes it. While it is far enough out it fades slightly, to show that letting go will close it. A closed window is forgotten (it does not come back on the next visit) and reopens centred from its pill. This is the only way a window closes: there are still no close buttons, Esc or mark clicks.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
