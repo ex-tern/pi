@@ -239,3 +239,11 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 - pytest: 378 pass; the 12 known failures are unchanged.
 
 **Files:** `frontend/orbit.js`, `frontend/app.js`, `frontend/index.html`.
+
+## 2026-10-09: π and friends stays put and shows all seven
+
+**What:**
+- **A window you have placed stays where you put it.** Windows refit as their content grows, and the numbers grow all the time, so every refit was re-centring the window. Now, once a window has been moved (or restored to a saved place), refits change only its size, never its position.
+- **All seven constants are visible at once.** The window opens at full width, with a compact grid (three columns on desktop, one on phones). Each constant shows its two newest lines of digits; scroll back for the rest. Notes are hidden on phones.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
