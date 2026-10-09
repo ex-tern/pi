@@ -678,33 +678,37 @@
     core.addEventListener("dblclick", () => setStill(!still));
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
-    // Scrolling down anywhere on the page itself (not inside a window, a pill
-    // or the π box) opens the journal and the ledger explorer; scrolling up
-    // still grows the mark. On touch screens, a swipe up does the same as
-    // scrolling down.
-    wireScrollOpen(setLogo);
+    // Scrolling down on the page itself opens the journal and the ledger
+    // explorer (see wireScrollOpen); the page wheel no longer resizes the mark.
+    wireScrollOpen();
   }
 
+  // Scrolling down on the page itself (not inside a window, a pill, the π box
+  // or the logo) opens the journal and the ledger explorer, once per scroll
+  // gesture: a trackpad's momentum keeps sending wheel events for a second or
+  // more, so a new gesture only counts after 600 ms of quiet. Nothing happens
+  // if both are already open, or while windows are set aside (the logo brings
+  // them back), so a scroll never reopens anything else. Scrolling up does
+  // nothing. On touch screens a swipe up counts as scrolling down.
   const SCROLL_OPENS = ["Proof-of-Research Ledger Explorer", "The journal"];   // the last ends in front
   function openOnScroll() {
-    setAside(false);
-    SCROLL_OPENS.forEach(t => openTitle(t));
+    if (document.documentElement.classList.contains("orbit-aside")) return;
+    const shut = SCROLL_OPENS.filter(t => { const it = items.find(i => i.title === t); return it && !it.panel; });
+    if (!shut.length) return;
+    shut.forEach(t => openTitle(t));
   }
-  function wireScrollOpen(setLogo) {
+  function wireScrollOpen() {
     const off = t => t.closest && t.closest(".orbit-panel, .orbit-bubble, .orbit-pi, .orbit-core, input, textarea, select");
-    let acc = 0, cool = 0, t;
+    let acc = 0, last = 0, fired = false;
     stage.addEventListener("wheel", e => {
       if (e.defaultPrevented || off(e.target)) return;
       e.preventDefault();
-      if (e.deltaY > 0) {
-        acc += e.deltaY;
-        if (acc > 40 && performance.now() > cool) { acc = 0; cool = performance.now() + 900; openOnScroll(); }
-        return;
-      }
-      acc = 0;
-      setLogo(Math.min(LOGO_MAX, Math.max(LOGO_MIN, logoScale * Math.exp(-e.deltaY * 0.0015))));
-      layoutSoon();
-      clearTimeout(t); t = setTimeout(() => store("orbit:logo:scale", +logoScale.toFixed(3)), 300);
+      const now = performance.now();
+      if (now - last > 600) { acc = 0; fired = false; }      // a new gesture
+      last = now;
+      if (fired || e.deltaY <= 0) return;
+      acc += e.deltaY;
+      if (acc > 40) { fired = true; openOnScroll(); }
     }, { passive: false });
     let ty = null, tx = 0;
     stage.addEventListener("touchstart", e => {
@@ -715,7 +719,7 @@
       if (ty === null || !e.changedTouches.length) return;
       const dy = e.changedTouches[0].clientY - ty, dx = e.changedTouches[0].clientX - tx;
       ty = null;
-      if (dy < -60 && Math.abs(dy) > 1.5 * Math.abs(dx) && performance.now() > cool) { cool = performance.now() + 900; openOnScroll(); }
+      if (dy < -60 && Math.abs(dy) > 1.5 * Math.abs(dx)) openOnScroll();
     }, { passive: true });
   }
 
