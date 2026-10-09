@@ -1554,7 +1554,10 @@ function renderResearchBuddy(profile) {
         </div>
 
         <button class="btn btn-primary" id="buddyGoProfile">Fill in your profile</button>
-      </div>`;
+      </div>
+      <div id="buddySuggest"></div>`;
+    // hot topics need no profile (ribsuggest.js)
+    if (window.RibSuggest) window.RibSuggest.load(document.getElementById("buddySuggest"));
 
     const btn = document.getElementById("buddyGoProfile");
     if (btn) {

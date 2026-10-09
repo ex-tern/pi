@@ -1781,11 +1781,11 @@ def research_buddy_suggest(wallet: str = Query(default=""), orcid: str = Query(d
     try:
         rows = conn.execute(
             """SELECT p.eval_hash, p.title, p.author_name, p.fields, p.final_score, p.timestamp,
-                      p.user_id, b.block_height
+                      p.user_id, b.block_height, p.piq_minted
                FROM papers_assessment p
                LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
                WHERE p.final_score IS NOT NULL AND COALESCE(p.title, '') <> ''
-               ORDER BY p.timestamp DESC LIMIT 500""").fetchall()
+               ORDER BY p.timestamp DESC LIMIT 2000""").fetchall()
     except sqlite3.Error as e:
         logging.warning("RiBD suggest read failed: %s", e)
         return {"available": False, "reason": "Suggestions are unavailable right now."}
@@ -1794,7 +1794,8 @@ def research_buddy_suggest(wallet: str = Query(default=""), orcid: str = Query(d
     mine = set(_identity_values(wallet, orcid))
     own = {r[0] for r in rows if r[6] and r[6] in mine}
     data = [{"eval_hash": r[0], "title": r[1], "author": clean_author_name(r[2]), "fields": r[3],
-             "score": r[4], "timestamp": r[5], "on_ledger": r[7] is not None} for r in rows]
+             "score": r[4], "timestamp": r[5], "on_ledger": r[7] is not None, "piq": r[8] or 0.0}
+            for r in rows]
     out = rib_suggest.suggest(profile, data, own)
     out["available"] = True
     return out
