@@ -117,3 +117,17 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Pills re-place themselves when the experimental banner fills in late, so nothing ends up under the π line.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: Varied pills; π in its own box; resizable logo; GitHub and ResBD as pills
+
+**What (owner's requests):**
+- Every pill has its own size, typeface and style. Sizes run from 0.86× to 1.3×. Typefaces are Geist, Geist light, Geist Mono, a serif or a serif italic. Styles are outline, ink, soft, dashed, cobalt, square or underline. The look is picked from the pill's name, so it is the same on every visit. This is a deliberate widening of the design language for the orbit, at the owner's request.
+- Use still grows a pill, on top of its own size. The growth shows on your next visit, so nothing shifts while you work.
+- The π counter is its own box. You can drag it anywhere and resize it from its corner or with the scroll wheel. Double-click resets it.
+- The logo resizes with its small blue knob or the scroll wheel. Double-click resets its size and place.
+- GitHub is a pill (it opens in a new tab), and the floating GitHub button is hidden. ResBD is a pill whose window opens like any other card.
+- "Pi Tech Lab" in the corner is bigger: 28–44 px on desktop, 26 px on phones.
+
+**Checks:** at 1440, 1280 and 390 px there are no overlaps after moving or resizing the π box and the logo. Pills stay still when a card opens. There is no horizontal scroll and no page errors.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
