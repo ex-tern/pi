@@ -555,3 +555,20 @@ The Capabilities pill lists them under a new Lib section; Neuro Frenzy was liste
 **What:** a double-click on the PiEN mark now freezes it: the sweep stops turning (`html.orbit-still`, animation paused) and π stops growing (`pi-worker.js` takes `{pause}` / `{resume}`), with the π box reading "N decimals, paused". Another double-click carries on from the same digit. This lasts for the visit only, because π restarts from 3. on every load. Double-click used to re-centre the logo; that is gone (drag it back instead).
 
 **Verified:** the digits stop (0 new in 2 s) and the sweep's animation is paused; a second double-click resumes both; windows aren't left aside; 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: Neuro Frenzy: music with the clock, difficulty and reset
+
+**What:**
+- **Music:** it plays only while a question's clock runs. It fades out when you answer or time runs out, and picks up where it left off at the next question; the audio clock is suspended, so the song keeps its place. It is silent on the start and score screens.
+- **Difficulty:** easy, normal and hard on the start screen.
+  - Easy gives 1.5× the time and shows the hint.
+  - Normal is the original.
+  - Hard gives 0.6× the time and no hint.
+  - The choice is remembered (`orbit:nf:level`), and each difficulty keeps its own best (`orbit:nf:best` stays normal's).
+- **Reset:** a Reset button in the question header returns to the start screen. The score screen adds "Change difficulty".
+
+**Verified:**
+- Audio: none on the start screen, running during a question, suspended after answering, running at the next question, suspended after Reset.
+- Timing: hard starts at 15 s and easy at 38 s for a 25 s question; the hint is hidden on hard and open on easy.
+- Layout: the mute toggle doesn't overlap the header; 1440 and 390 px with no page errors or horizontal scroll.
+- Checks: pytest at baseline; `build_hal.py` builds.
