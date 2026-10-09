@@ -113,7 +113,7 @@
   function intro() {
     stop();
     root.innerHTML =
-      '<h2>NeuroFrenzy</h2>' +
+      '<h2>Neuro Frenzy</h2>' +
       '<p class="nf-lede">Neuroscience against the clock: fill in the blanks before time runs out. ' +
       QUESTIONS.length + ' questions, from easy to hard, ' + MAX + ' points to win.</p>' +
       (best() ? '<p class="nf-best">Your best: <b>' + best() + '</b> of ' + MAX + '</p>' : '') +
@@ -201,7 +201,7 @@
   function start() {
     intro();
     paintMute();
-    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "NeuroFrenzy", content: box, inGroup: "Lib" });
+    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "Neuro Frenzy", content: box, inGroup: "Lib" });
     // music follows the window: on while it is open and in view, off otherwise
     setInterval(syncMusic, 400);
     document.addEventListener("visibilitychange", syncMusic);

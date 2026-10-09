@@ -19,7 +19,7 @@
   }
 
   function start() {
-    window.PiOrbit.addPill({ key: "lib:Medicine", section: { key: "lib", name: "Lib" }, title: "Medicine", content: root, inGroup: "Lib" });
+    window.PiOrbit.addPill({ key: "lib:Medicine", section: { key: "lib", name: "Lib" }, title: "MD", content: root, inGroup: "Lib" });
     load();
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
