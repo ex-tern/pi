@@ -2313,3 +2313,9 @@ button.seal { font-family: inherit; cursor: pointer; }
 .rs-meta { font-size: 12px; color: var(--graphite); overflow-wrap: anywhere; }
 .rs-why { font-size: 12px; color: var(--faint, #8a8a90); line-height: 1.4; }
 .rs-none { font-size: 13px; color: var(--graphite); margin: 0; }
+
+/* Contact us as a window (orbit.js contactWindow): the form lives in the card */
+.bug-card.is-window { margin-top: 0; }
+.bug-card.is-window > #bugReportBtn, .bug-card.is-window > .bug-hint:empty { display: none; }
+.bug-host h2 { font-size: 18px; font-weight: 500; margin: 0 0 6px; }
+.bug-host .bug-form { margin-top: 8px; }
