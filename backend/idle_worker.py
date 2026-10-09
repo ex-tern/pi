@@ -136,6 +136,17 @@ def idle_seconds() -> float:
     return max(0.0, time.time() - last)
 
 
+def activity() -> dict:
+    """What the server is processing right now, for the π mark and counter:
+    provider-using requests in flight (people's assessments, chats, reviews)
+    and whether the idle worker is assessing a paper."""
+    n = _INFLIGHT["n"]
+    working = bool(_STATE["running"])
+    total = n + (1 if working else 0)
+    return {"in_flight": n, "idle_working": working,
+            "level": "busy" if total >= 2 else "working" if total == 1 else "quiet"}
+
+
 def public_status() -> dict:
     """What anyone may see: whether the site works while idle, and what it did
     today. No errors, timings or thresholds, which are the owner's business."""

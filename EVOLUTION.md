@@ -797,3 +797,31 @@ The backend is `rib_suggest.hot_topics` and the `more` and `hot` fields of `/api
 - Capabilities lists the four under "Library".
 
 **Verified:** signed in, the bubble lists RiBD, The Global Map of Science, Neuro Frenzy and MD, and none of them is left as a loose pill. Each opens with the "Library" label. A position saved under the old key is carried over. No pills overlap, the 15-size layout audit passes, and there are no page errors or horizontal scroll at 1440 and 390 px. pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: the π mark and counter show what the site is processing
+
+**What:** the sweep of the π mark and the live π counter now represent the site's work. Each level sets the sweep speed, the digit rate and the counter's wording:
+
+| Level | Sweep | π digits | Counter reads |
+|---|---|---|---|
+| quiet | 18°/s, a turn in 20 s | 2.5/s | "N decimals, the site is quiet" |
+| working (one paper being assessed, by a person or by the site itself while idle) | 60°/s | 11/s | "assessing a paper" |
+| busy (several at once) | 165°/s | 25/s | "assessing several papers" |
+
+The mark also gets a soft cobalt glow while working.
+
+**How:**
+- **Server activity:** `GET /api/activity` (backend/live.py, from `idle_worker.activity()`, no database) reports provider requests in flight and whether the idle worker is assessing. `orbit.js` polls it every 5 s while the tab is visible.
+- **This page's own requests:** a request the page is waiting on (`orbit-busy`) raises the level by one.
+- **Smooth sweep:** the sweep is now turned by `orbit.js` (requestAnimationFrame) at a speed that eases to the new level, so a change of pace never jumps the line.
+- **Digit pace:** the π worker takes `{pace}`.
+- **Unchanged:** double-click still stops both, and reduced motion keeps the mark still.
+
+**Verified:**
+- With `/api/activity` mocked to each level at 1440 and 390 px:
+  - quiet ran at 2.5 digits/s and 18°/s, working at 11 and 60, busy at 25 and 166
+  - the counter wording changed with each level
+  - after a double-click, π stopped and the sweep eased to a halt
+  - no page errors or horizontal scroll
+- `tests/test_live.py` checks the activity levels.
+- pytest at baseline (12 pre-existing failures); `build_hal.py` builds.

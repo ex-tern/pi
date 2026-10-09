@@ -6,12 +6,14 @@
 // each digit costs a little more than the last. Paced so the number visibly
 // grows instead of racing ahead.
 //
-// The pace is exact: one digit every 60 ms (1000 a minute). The schedule
-// corrects its own drift, and a {sync: true, delay} message restarts it.
+// The pace follows what the site is processing ({pace: ms}, sent by orbit.js
+// from /api/activity): slow while it is quiet, fast while papers are being
+// assessed. The schedule corrects its own drift, and a {sync: true, delay}
+// message restarts it.
 // {pause: true} stops it where it is; {resume: true} carries on.
 let q = 1n, r = 0n, t = 1n, k = 1n, n = 3n, l = 3n;
 let count = 0;
-const PACE_MS = 60;     // 1000 digits a minute
+let PACE_MS = 60;       // set by the page from what the site is processing ({pace})
 let due = 0, timer = 0;
 
 function next() {
@@ -41,6 +43,12 @@ function tick() {
 }
 
 onmessage = e => {
+  if (e.data && e.data.pace) {          // the site got busier or quieter: change speed, keep going
+    const was = PACE_MS;
+    PACE_MS = Math.max(20, Math.min(2000, +e.data.pace || 60));
+    if (timer && PACE_MS < was) { clearTimeout(timer); due = performance.now(); timer = setTimeout(tick, 0); }
+    return;
+  }
   if (e.data && e.data.pause) { clearTimeout(timer); timer = 0; return; }
   if (e.data && e.data.resume) {
     clearTimeout(timer);

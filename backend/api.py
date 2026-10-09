@@ -7177,7 +7177,7 @@ app.include_router(_pien.build_router(BASE_DIR))
 import recent as _recent  # noqa: E402
 app.include_router(_recent.build_router(get_db_connection))
 import live as _live
-app.include_router(_live.build_router(get_db_connection, idle_worker.public_status))
+app.include_router(_live.build_router(get_db_connection, idle_worker.public_status, idle_worker.activity))
 
 
 # ---------------------------------------------------------------------------

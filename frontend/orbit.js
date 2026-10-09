@@ -1100,6 +1100,53 @@
     if (showPi) showPi();
     document.dispatchEvent(new CustomEvent("orbit:still", { detail: on }));   // numbers.js: e, φ and γ stop too
   }
+  // ------------------------------------------------------------ what the site is doing
+  // The mark's sweep and the π counter show what the site is processing: slow
+  // and calm while it is quiet, faster while a paper is being assessed (by a
+  // person, or by the site itself while idle), fastest with several at once.
+  // The server's own count comes from /api/activity every few seconds; a
+  // request this page is waiting on counts too (orbit-busy).
+  const ACT = { quiet: { pace: 400, spin: 18 }, working: { pace: 90, spin: 60 }, busy: { pace: 40, spin: 165 } };
+  const ACT_WORDS = { quiet: ", the site is quiet", working: ", assessing a paper", busy: ", assessing several papers" };
+  let serverAct = { level: "quiet" }, actLevel = "quiet";
+  function applyActivity() {
+    const mine = document.documentElement.classList.contains("orbit-busy");
+    let lv = serverAct.level || "quiet";
+    if (mine) lv = lv === "quiet" ? "working" : "busy";
+    if (lv !== actLevel || !document.documentElement.dataset.activity) {
+      actLevel = lv;
+      document.documentElement.dataset.activity = lv;
+      if (piWorker) piWorker.postMessage({ pace: ACT[lv].pace });
+      if (showPi) showPi();
+    }
+  }
+  function watchActivity() {
+    const poll = async () => {
+      if (document.visibilityState !== "visible") return;
+      try { const r = await fetch("/api/activity"); if (r.ok) serverAct = await r.json(); } catch (_) { /* keep the last */ }
+      applyActivity();
+    };
+    poll();
+    setInterval(poll, 5000);
+    document.addEventListener("visibilitychange", poll);
+    new MutationObserver(applyActivity).observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
+    // the sweep turns at a speed that eases towards the current level, so a
+    // change of pace never jumps the line to a new angle
+    const sweep = $(".om-sweep");
+    if (!sweep || window.matchMedia("(prefers-reduced-motion: reduce)").matches) return;
+    document.documentElement.classList.add("orbit-js-spin");
+    let angle = 0, speed = ACT.quiet.spin, last = performance.now();
+    const frame = now => {
+      const dt = Math.min(0.1, (now - last) / 1000); last = now;
+      const target = still ? 0 : ACT[actLevel].spin;
+      speed += (target - speed) * Math.min(1, dt * 2.5);
+      angle = (angle - speed * dt) % 360;
+      sweep.style.transform = "rotate(" + angle.toFixed(2) + "deg)";
+      requestAnimationFrame(frame);
+    };
+    requestAnimationFrame(frame);
+  }
+
   function startPi() {
     const out = $(".op-digits"), cnt = $(".op-count");
     let pending = false;
@@ -1111,12 +1158,13 @@
       out.innerHTML = "";
       out.append("π = 3." + lead + tail.slice(0, -1));
       const b = document.createElement("b"); b.textContent = tail.slice(-1); out.append(b);
-      cnt.textContent = (digits.length - 1).toLocaleString() + (still ? " decimals, paused" : " decimals and counting");
+      cnt.textContent = (digits.length - 1).toLocaleString() + " decimals" + (still ? ", paused" : ACT_WORDS[actLevel]);
     };
     showPi = show;
     try {
-      const w = new Worker("pi-worker.js?v=3");
+      const w = new Worker("pi-worker.js?v=4");
       piWorker = w;
+      watchActivity();
       w.onmessage = e => {
         digits += e.data.digit; piDigits = digits;
         if (!pending) { pending = true; requestAnimationFrame(show); }
