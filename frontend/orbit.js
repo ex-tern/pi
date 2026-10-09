@@ -835,7 +835,7 @@
   function fit(it, p) {
     const sm = window.innerWidth < 700;
     const H0 = window.innerHeight - top;
-    const wide = it.content.matches(".nb") || it.content.querySelector(".arch, iframe, canvas, #arcadeStage, table, .leaderboard");
+    const wide = it.content.matches(".nb, .unigyro") || it.content.querySelector(".arch, iframe, canvas, #arcadeStage, table, .leaderboard");
     const q = it.q != null ? it.q : 0.5;
     const maxW = sm ? window.innerWidth - 20 : Math.min(window.innerWidth - 32, wide ? 960 : 440 + q * 380);
     const maxH = sm ? H0 * 0.86 : H0 - 48;

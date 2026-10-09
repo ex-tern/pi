@@ -378,3 +378,11 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - Only visible names changed. The engines' data keys (`siM`, `riB`) and element ids stay, so the server and app.js are unaffected. Remembered places, use and PiEN's learning carry over from the old names.
 
 **Files:** `frontend/index.html`, `frontend/app.js`, `frontend/orbit.js`, `frontend/pien.js`, `frontend/capabilities.js`, `frontend/performance.js`, `frontend/architecture.js`.
+
+## 2026-10-09: Unigyro, in the Lab, credited to Murtaza Vefadar
+
+**What:** a "Unigyro" pill in the Lab bubble. Its window plays [Unigyro II: Single-Seater Robot Vehicle](https://www.youtube.com/watch?v=QHxpu1xufFc), Murtaza Vefadar's robot vehicle, with credit and links to the video and his channel ([@MortezaVafadar](https://www.youtube.com/@MortezaVafadar)). The player uses YouTube's privacy-enhanced domain and loads only when the window opens. The README now has a section crediting his two projects in the Lab (Unigyro and QuVI).
+
+The [neurophilic/Unigyro](https://github.com/neurophilic/Unigyro) repository is empty, and this session cannot push to it (the Claude GitHub App is not installed for `neurophilic`). A README for it, citing him with the video and channel, was prepared for the owner to add.
+
+**Files:** `frontend/unigyro.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `README.md`, `CLAUDE.md`.

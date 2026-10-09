@@ -11,6 +11,21 @@ A local-first (and production-deployable) research-assessment webapp:
   model), a SQLite-backed Proof-of-Research ledger, and optional
   Ethereum/IPFS state backup.
 
+### In the Lab: work by Murtaza Vefadar
+
+Two projects in the Pi Tech Lab are the work of **Murtaza Vefadar** (Department of
+Physics, Gebze Technical University), shown here with credit:
+
+- **Unigyro II**, his single-seater robot vehicle.
+  Video: [Unigyro II: Single-Seater Robot Vehicle](https://www.youtube.com/watch?v=QHxpu1xufFc)
+  (played in the Lab's Unigyro window). Channel: [youtube.com/@MortezaVafadar](https://www.youtube.com/@MortezaVafadar).
+- **QuVI**, his LabVIEW quantum circuit toolkit, described in
+  [From Block Diagrams to Bloch Spheres: Graphical Quantum Circuit Simulation in LabVIEW](https://arxiv.org/abs/2602.00643)
+  ([source](https://github.com/MurVefa/QuVI---Quantum-Circuit-Toolkit), MIT licence).
+  `frontend/quvi/` is an independent browser implementation of the same model, credited to him under the MIT licence.
+
+The video and both projects remain his.
+
 ---
 
 ## 1. Local development
