@@ -430,3 +430,9 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **Why:** the owner asked for the Graduation Plan (now the Medicine folder) to get a repository and a Lib button, public but without personal files. The public plan carries no grades, no dates of passed exams, no average or base score, no course codes and no names; the libretto and correspondence stay private.
 
 **Verified:** pytest at baseline; `build_hal.py` builds; the pill opens at 1440 and 390 px with no page errors, no horizontal scroll and no grade data in the rendered text.
+
+## 2026-10-09: the π logo plays a song
+
+**What:** pressing the PiEN mark plays a 19-second song (`frontend/sound/dd.mp3`, supplied by the owner); pressing again stops it. `logosound.js` loads the audio on the first press only, and drags never count as presses. The mark keeps its other click behaviour (setting windows aside).
+
+**Verified:** pytest at baseline; `build_hal.py` builds; at 1440 and 390 px the first press plays (audio fetched), the second stops, with no page errors and no horizontal scroll.
