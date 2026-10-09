@@ -81,7 +81,7 @@ html.orbit-moving .orbit-pi { transition: none; }
 .orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .orbit-bubble {
   position: absolute; left: 0; top: 0; pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 0.6em; max-width: 18em;
+  display: inline-flex; align-items: center; gap: 0.6em; max-width: min(30em, calc(100vw - 24px));
   padding: 0.55em 1.15em 0.55em 0.85em; border-radius: 999px;
   background: var(--surface); border: 1px solid var(--hair); color: var(--ink);
   font: inherit; font-size: calc(var(--pill-base, 13px) * var(--pz, 1) * var(--use, 1) * var(--pill-fit, 1)); line-height: 1.2; white-space: nowrap; cursor: grab;
@@ -113,7 +113,8 @@ html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-col
 .orbit-bubble.dragging { cursor: grabbing; border-color: var(--cobalt); z-index: 5; }
 .orbit-bubble.is-open { background: var(--ink); color: #fff; border-color: var(--ink); box-shadow: none; }
 .orbit-bubble[data-look="ink"].is-open { background: var(--cobalt); border-color: var(--cobalt); }
-.ob-label { overflow: hidden; text-overflow: ellipsis; }
+/* titles are always shown in full: a long one wraps rather than being cut */
+.ob-label { white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
 .ob-dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; border: 1.5px solid var(--cobalt); }
 /* sections are told apart by the dot alone, so the orbit stays monochrome */
 .orbit-bubble[data-section="assess"] .ob-dot { background: var(--cobalt); }
@@ -154,7 +155,7 @@ html.orbit-aside .orbit-panel { opacity: 0; transform: scale(0.96); pointer-even
 .op-body .stats-bar { margin: 0; }
 
 @media (max-width: 700px) {
-  .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: 10.5em; gap: 0.45em; }
+  .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: min(15em, 62vw); gap: 0.45em; border-radius: 1.1em; }
   .orbit-title { top: calc(var(--orbit-top, 0px) + 12px); font-size: 20px; }
   .orbit-panel { min-width: 0; }
   .op-head { cursor: default; }
@@ -200,3 +201,16 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 }
 @keyframes pien-halo { 50% { inset: -10px; opacity: 0.25; } }
 @media (prefers-reduced-motion: reduce) { .orbit-bubble.pien-pick::after { animation: none; } }
+
+/* the numbers window (numbers.js) */
+.nb-intro { color: var(--graphite); font-size: 13px; margin: 0 0 6px; }
+.nb-row { padding: 14px 0; border-top: 1px solid var(--hair); }
+.nb-row header { display: flex; align-items: baseline; gap: 10px; margin-bottom: 6px; }
+.nb-sym { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-style: italic; font-size: 22px; min-width: 2.2em; color: var(--ink); }
+.nb-name { font-weight: 500; font-size: 14px; flex: 1; }
+.nb-count { font-size: 12px; color: var(--faint); font-variant-numeric: tabular-nums; }
+.nb-digits {
+  margin: 0; font-family: var(--font-mono); font-size: 12.5px; line-height: 1.55; color: var(--graphite);
+  word-break: break-all; overflow-wrap: anywhere; max-height: 9.5em; overflow-y: auto;
+}
+.nb-note { margin: 6px 0 0; font-size: 12.5px; color: var(--faint); }
