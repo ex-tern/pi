@@ -6,7 +6,8 @@ html.orbit-on, html.orbit-on body { height: 100%; overflow: hidden; }
 html.orbit-on .app-shell,
 html.orbit-on .sidebar-toggle,
 html.orbit-on .sidebar-scrim,
-html.orbit-on .arch-fab { display: none !important; }
+html.orbit-on .arch-fab,
+html.orbit-on .gh-fab { display: none !important; }
 
 .orbit-stage {
   position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 10; overflow: hidden;
@@ -41,50 +42,79 @@ html.orbit-moving .orbit-pi { transition: none; }
 .orbit-core.pulse { animation: om-pulse 0.6s cubic-bezier(.2, .7, .2, 1); }
 @keyframes om-pulse { 40% { transform: scale(1.18); } }
 
-/* the name, quietly in the top-left corner */
+/* the name, in the top-left corner */
 .orbit-title {
   position: absolute; left: 20px; top: calc(var(--orbit-top, 0px) + 16px); margin: 0; pointer-events: none;
-  font-size: 20px; font-weight: 500; letter-spacing: -0.03em; line-height: 1.1; color: var(--ink);
+  font-size: clamp(28px, 3.4vw, 44px); font-weight: 500; letter-spacing: -0.045em; line-height: 1; color: var(--ink);
 }
 
-/* --- π, computed live under the mark, gaining digits while the site stays open --- */
+/* --- π, computed live in its own box: move it, resize it --- */
 .orbit-pi {
-  position: absolute; transform: translateX(-50%); pointer-events: none;
-  width: 47ch; max-width: 92vw; box-sizing: border-box; padding: 3px 10px; border-radius: 999px; background: rgba(246, 246, 244, 0.86);
-  font-family: var(--font-mono); font-size: 12px; color: var(--graphite);
-  display: flex; flex-direction: column; align-items: center; gap: 2px;
-  transition: left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.3s ease;
+  position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; user-select: none;
+  width: 45ch; max-width: calc(94vw - 2.4em); box-sizing: content-box; padding: 0.7em 1.2em 0.6em; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--hair);
+  font-family: var(--font-mono); font-size: calc(var(--pi-base, 12px) * var(--pi-scale, 1)); color: var(--graphite);
+  display: flex; flex-direction: column; align-items: center; gap: 0.2em;
+  transition: left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.3s ease, border-color 0.15s ease;
 }
+.orbit-pi:hover { border-color: var(--hair-strong); }
+.orbit-pi.dragging { cursor: grabbing; border-color: var(--cobalt); }
+.op-grip {
+  position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; opacity: 0.45;
+  background: linear-gradient(135deg, transparent 0 55%, var(--graphite) 55% 62%, transparent 62% 75%, var(--graphite) 75% 82%, transparent 82%);
+}
+.orbit-pi:hover .op-grip { opacity: 1; }
+.orbit-knob {
+  position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
+  background: var(--surface); border: 1.5px solid var(--cobalt); cursor: nwse-resize; pointer-events: auto; touch-action: none;
+  opacity: 0.5; transition: opacity 0.2s ease, left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1);
+}
+.orbit-knob:hover, .orbit-core:hover + .orbit-knob { opacity: 1; }
+html.orbit-moving .orbit-knob { transition: none; }
+html.orbit-open .orbit-knob { display: none; }
 .orbit-pi .op-digits { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
 .orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
 .orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
-.orbit-pi .op-count { font-family: var(--font); font-size: 11.5px; color: var(--faint); min-height: 1.3em; }
+.orbit-pi .op-count { font-family: var(--font); font-size: 0.95em; color: var(--faint); min-height: 1.3em; }
 
 /* --- orbiting cards --- */
 .orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
 .orbit-bubble {
   position: absolute; left: 0; top: 0; pointer-events: auto;
-  display: inline-flex; align-items: center; gap: 8px; max-width: 230px;
-  padding: 7px 15px 7px 11px; border-radius: 999px;
+  display: inline-flex; align-items: center; gap: 0.6em; max-width: 18em;
+  padding: 0.55em 1.15em 0.55em 0.85em; border-radius: 999px;
   background: var(--surface); border: 1px solid var(--hair); color: var(--ink);
-  font: inherit; font-size: 13px; line-height: 1.2; white-space: nowrap; cursor: grab;
+  font: inherit; font-size: calc(var(--pill-base, 13px) * var(--pz, 1) * var(--use, 1)); line-height: 1.2; white-space: nowrap; cursor: grab;
   touch-action: none; user-select: none; -webkit-user-select: none; will-change: transform;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
 /* pills glide to a new place only when something moved them */
 html.orbit-ready .orbit-bubble { transition: border-color 0.15s ease, background 0.15s ease, transform 0.45s cubic-bezier(.2, .7, .2, 1); }
 html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-color 0.15s ease, background 0.15s ease !important; }
-/* what you use grows */
-.orbit-bubble[data-tier="1"] { font-size: 14px; padding: 8px 16px 8px 12px; }
-.orbit-bubble[data-tier="2"] { font-size: 15.5px; padding: 9px 18px 9px 13px; font-weight: 500; border-color: var(--hair-strong); max-width: 260px; }
-.orbit-bubble[data-tier="3"] { font-size: 17px; padding: 10px 20px 10px 14px; font-weight: 500; border-color: var(--ink); max-width: 290px; }
-.orbit-bubble[data-tier="3"] .ob-dot { width: 10px; height: 10px; }
+/* what you use grows (--use, set from the use score) */
+.orbit-bubble[data-tier="2"], .orbit-bubble[data-tier="3"] { font-weight: 500; }
+
+/* each pill its own look: typeface ... */
+.orbit-bubble[data-font="mono"] { font-family: var(--font-mono); letter-spacing: -0.02em; }
+.orbit-bubble[data-font="serif"] { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; }
+.orbit-bubble[data-font="serif-italic"] { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-style: italic; }
+.orbit-bubble[data-font="sans-light"] { font-weight: 300; letter-spacing: 0.01em; }
+/* ... and style */
+.orbit-bubble[data-look="ink"] { background: var(--ink); color: #fff; border-color: var(--ink); }
+.orbit-bubble[data-look="ink"] .ob-dot { border-color: #fff; }
+.orbit-bubble[data-look="soft"] { background: #ececea; border-color: transparent; }
+.orbit-bubble[data-look="dashed"] { background: transparent; border-style: dashed; border-color: var(--hair-strong); }
+.orbit-bubble[data-look="cobalt"] { border-color: var(--cobalt); color: var(--cobalt); }
+.orbit-bubble[data-look="square"] { border-radius: 4px; border-color: var(--ink); }
+.orbit-bubble[data-look="underline"] { background: rgba(246, 246, 244, 0.9); border-color: transparent; border-radius: 2px; box-shadow: inset 0 -2px 0 var(--ink); }
+.orbit-bubble.is-link .ob-label::after { content: " ↗"; }
 .orbit-bubble[hidden] { display: none; }
 .orbit-bubble:hover { border-color: var(--cobalt); }
 .orbit-bubble.dragging { cursor: grabbing; border-color: var(--cobalt); z-index: 5; }
-.orbit-bubble.is-open { background: var(--ink); color: #fff; border-color: var(--ink); }
+.orbit-bubble.is-open { background: var(--ink); color: #fff; border-color: var(--ink); box-shadow: none; }
+.orbit-bubble[data-look="ink"].is-open { background: var(--cobalt); border-color: var(--cobalt); }
 .ob-label { overflow: hidden; text-overflow: ellipsis; }
-.ob-dot { width: 8px; height: 8px; border-radius: 50%; flex: none; border: 1.5px solid var(--cobalt); }
+.ob-dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; border: 1.5px solid var(--cobalt); }
 /* sections are told apart by the dot alone, so the orbit stays monochrome */
 .orbit-bubble[data-section="assess"] .ob-dot { background: var(--cobalt); }
 .orbit-bubble[data-section="journal"] .ob-dot { border-color: var(--ink); background: var(--ink); }
@@ -120,12 +150,8 @@ html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-col
 .op-body .stats-bar { margin: 0; }
 
 @media (max-width: 700px) {
-  .orbit-bubble { font-size: 11px; padding: 4px 9px 4px 7px; max-width: 104px; gap: 5px; }
-  .orbit-bubble[data-tier="1"] { font-size: 12px; padding: 5px 10px 5px 8px; max-width: 120px; }
-  .orbit-bubble[data-tier="2"] { font-size: 13px; padding: 6px 11px 6px 8px; max-width: 140px; }
-  .orbit-bubble[data-tier="3"] { font-size: 14px; padding: 7px 12px 7px 9px; max-width: 160px; }
-  .orbit-title { left: 14px; top: calc(var(--orbit-top, 0px) + 12px); font-size: 17px; }
-  .ob-dot { width: 7px; height: 7px; }
+  .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: 10.5em; gap: 0.45em; }
+  .orbit-title { left: 14px; top: calc(var(--orbit-top, 0px) + 12px); font-size: 26px; }
   .orbit-panel, .orbit-panel.max {
     left: 8px !important; top: calc(var(--orbit-top, 0px) + 8px) !important;
     width: calc(100vw - 16px) !important; height: calc(100vh - var(--orbit-top, 0px) - 16px) !important; resize: none;
@@ -142,13 +168,22 @@ html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-col
    (still there to drag, or to click to close everything). */
 html.orbit-open .orbit-core { opacity: 0.6; }
 html.orbit-open .orbit-core:hover { opacity: 1; }
-html.orbit-open .orbit-pi { opacity: 0.7; background: transparent; font-size: 10.5px; width: 40ch; }
+html.orbit-open .orbit-pi { opacity: 0.7; }
 @media (max-width: 700px) {
   html.orbit-open .orbit-core { opacity: 0.4; }
   html.orbit-open .orbit-pi { opacity: 0.5; }
-  .orbit-pi { font-size: 10.5px; }
+  .orbit-pi { --pi-base: 10.5px; }
 }
 @media (prefers-reduced-motion: reduce) {
   html.orbit-ready .orbit-bubble, .orbit-pi { transition: none; }
   .orbit-core.pulse { animation: none; }
 }
+
+/* ResBD lives in a pill's window now: drop its own floating-window frame */
+.op-body .buddy-float {
+  position: static !important; inset: auto !important; width: auto !important; height: auto !important; max-width: none; max-height: none;
+  box-shadow: none; border: 0; border-radius: 0; overflow: visible; display: flex;
+}
+.op-body .buddy-float .buddy-bar { cursor: default; }
+.op-body .buddy-float .buddy-bar button, .op-body .buddy-float .buddy-resize { display: none !important; }
+.op-body .buddy-float.is-min .buddy-scroll { display: block !important; }

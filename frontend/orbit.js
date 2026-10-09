@@ -73,7 +73,7 @@
     const flush = () => { if (group) { addItem(section, group.nodes, group.title); group = null; } };
     for (const el of [...panel.children]) {
       if (el.classList.contains("page-header") || el.classList.contains("lab-intro")) continue;
-      if (el.classList.contains("buddy-float")) { document.body.appendChild(el); continue; }
+      if (el.classList.contains("buddy-float")) { addItem(section, [el], "ResBD"); continue; }
       if (el.classList.contains("section-heading")) { flush(); group = { title: cleanTitle(el), nodes: [el] }; continue; }
       if (group) {
         group.nodes.push(el);
@@ -102,6 +102,9 @@
       signIn.push(el);
     }
     addItem(section, signIn, "Your account");
+    // the source link, as a pill like everything else
+    const gh = $(".gh-fab");
+    if (gh) items.push({ section: { key: "links", name: "Source" }, nodes: [], content: null, title: "GitHub", href: gh.href, key: "links:GitHub" });
   }
 
   // ------------------------------------------------------------ the stage
@@ -121,7 +124,9 @@
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g></svg></button>' +
-    '<div class="orbit-pi" aria-live="off"><span class="op-digits"></span><span class="op-count"></span></div></div>' +
+    '<span class="orbit-knob" role="slider" tabindex="0" aria-label="Logo size" title="Drag to resize the logo"></span>' +
+    '<div class="orbit-pi" aria-live="off" title="Drag to move; drag the corner to resize">' +
+    '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
 
   // ------------------------------------------------------------ use: what you use grows
@@ -132,11 +137,31 @@
   function bumpUse(it, by) {
     it.use = Math.min(999, useOf(it) + by);
     store("orbit:use:" + it.key, Math.round(it.use * 100) / 100);
-    setTier(it);
+    // the pill grows on your next visit, so nothing shifts under your hand now
   }
   function setTier(it) {
     const u = it.use || 0;
     it.bubble.dataset.tier = u >= 8 ? 3 : u >= 3 ? 2 : u >= 1 ? 1 : 0;
+    it.bubble.style.setProperty("--use", [1, 1.1, 1.22, 1.36][it.bubble.dataset.tier]);
+  }
+
+  // Every pill has its own look: a size, a typeface and a style, picked from
+  // its name so it is the same on every visit (a pill that changed shape on
+  // each reload would also change place).
+  function hash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  const SIZES = [0.86, 0.94, 1, 1.08, 1.18, 1.3];
+  const FONTS = ["sans", "sans", "mono", "serif", "sans-light", "serif-italic"];
+  const STYLES = ["outline", "ink", "soft", "dashed", "cobalt", "square", "underline", "outline"];
+  function setLook(it) {
+    const h = hash(it.key);
+    const b = it.bubble;
+    b.style.setProperty("--pz", SIZES[h % SIZES.length]);
+    b.dataset.font = FONTS[(h >>> 4) % FONTS.length];
+    b.dataset.look = STYLES[(h >>> 9) % STYLES.length];
   }
 
   // ------------------------------------------------------------ bubbles
@@ -155,7 +180,10 @@
       it.bubble = b;
       it.order = i;
       it.use = useOf(it);
+      it.rank = it.use;                              // fixed for this visit
       setTier(it);
+      setLook(it);
+      if (it.href) { b.classList.add("is-link"); b.setAttribute("aria-label", it.title + " (opens in a new tab)"); }
       it.custom = load("orbit:at:" + it.key);       // {dx, dy} from the mark's centre
       store("orbit:pos:" + it.key);                  // the old moving-orbit format
       wireDrag(it);
@@ -164,6 +192,7 @@
   }
 
   function visible(it) {
+    if (it.href) return true;
     return it.nodes.some(n => !(n.classList.contains("section-heading")) && !n.classList.contains("hidden") && !n.hidden);
   }
 
@@ -175,39 +204,58 @@
   let W = 0, H = 0, top = 0, R = 0, small = false;
   let lx = 0, ly = 0;                    // the mark's centre, in stage coordinates
   let logoAt = load("orbit:logo");       // {fx, fy}: where it was left, as a share of the screen
-  let piBox = { w: 320, h: 40 };
+  let piBox = { w: 320, h: 48 };
+  // sizes you choose: the logo and the π box each have their own
+  let logoScale = load("orbit:logo:scale") || 1;
+  let piScale = load("orbit:pi:scale") || 1;
+  let piAt = load("orbit:pi:at");        // {fx, fy}: the π box's centre, once you have moved it
+  const LOGO_MIN = 0.45, LOGO_MAX = 2.2, PI_MIN = 0.6, PI_MAX = 2.6;
   let draggingLogo = false;
   const GAP = () => (small ? 6 : 10);
 
   function idleR() {
     const base = Math.min(W, H);
-    return Math.min(118, base * (small ? 0.15 : 0.16), H * 0.12);
+    const r = Math.min(118, base * (small ? 0.15 : 0.16), H * 0.12) * logoScale;
+    return Math.max(18, Math.min(r, base * 0.42));
   }
   function shownR() {
     const open = document.documentElement.classList.contains("orbit-open");
     if (!open) return R;
     // the more windows are open, the further the mark steps back
     const n = items.filter(i => i.panel).length;
-    return Math.max(20, Math.min(32, R * 0.3) - (n - 1) * 3);
+    return Math.max(16, Math.min(32, R * 0.3) - (n - 1) * 3);
   }
 
   function clampLogo() {
     const m = R + 8;
     lx = Math.min(W - m, Math.max(m, lx));
-    ly = Math.min(H - R - piBox.h - 18, Math.max(m + (small ? 36 : 44), ly));
+    ly = Math.min(H - m, Math.max(m + (small ? 36 : 44), ly));
   }
 
-  // the π line hangs under the mark but never leaves the screen
-  const piX = () => Math.min(W - piBox.w / 2 - 4, Math.max(piBox.w / 2 + 4, lx));
+  // The π box is its own thing: under the mark until you move it, then
+  // wherever you left it. It never leaves the screen.
+  function piCentre() {
+    let x, y;
+    if (piAt) { x = piAt.fx * W; y = piAt.fy * H; }
+    else { x = lx; y = ly + R + 14 + piBox.h / 2; }
+    x = Math.min(W - piBox.w / 2 - 4, Math.max(piBox.w / 2 + 4, x));
+    y = Math.min(H - piBox.h / 2 - 4, Math.max(piBox.h / 2 + 4, y));
+    return [x, y];
+  }
   function placeMark() {
     const r = shownR();
     const core = $(".orbit-core");
     core.style.width = core.style.height = r * 2 + "px";
     core.style.left = lx - r + "px";
     core.style.top = top + ly - r + "px";
+    const k = $(".orbit-knob");
+    k.style.left = lx + r * 0.7071 + "px";
+    k.style.top = top + ly + r * 0.7071 + "px";
     const pi = $(".orbit-pi");
-    pi.style.left = piX() + "px";
-    pi.style.top = top + ly + r + 10 + "px";
+    pi.style.setProperty("--pi-scale", piScale);
+    const [px, py] = piCentre();
+    pi.style.left = px + "px";
+    pi.style.top = top + py + "px";
   }
 
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
@@ -218,11 +266,11 @@
     const g = GAP();
     const out = [
       grow({ x: lx - R, y: ly - R, w: 2 * R, h: 2 * R }, g),
-      grow({ x: piX() - piBox.w / 2, y: ly + R + 8, w: piBox.w, h: piBox.h + 4 }, g),
+      grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     const t = $(".orbit-title");
     if (t) { const b = t.getBoundingClientRect(); out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g)); }
-    document.querySelectorAll(".gh-fab, .buddy-float").forEach(el => {
+    document.querySelectorAll(".buddy-float").forEach(el => {
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
     });
@@ -259,7 +307,8 @@
     small = W < 700;
     R = idleR();
     const pi = $(".orbit-pi");
-    if (!document.documentElement.classList.contains("orbit-open") && pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
+    pi.style.setProperty("--pi-scale", piScale);
+    if (pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
     if (!draggingLogo) {
       if (logoAt) { lx = logoAt.fx * W; ly = logoAt.fy * H; }
       else { lx = W / 2; ly = H / 2 - (small ? 20 : 10); }
@@ -280,7 +329,7 @@
     });
     // 2. the rest go round the mark on widening rings, most used first
     const auto = vis.filter(it => !it.custom && it !== dragging)
-      .sort((a, b) => (b.use || 0) - (a.use || 0) || a.order - b.order);
+      .sort((a, b) => (b.rank || 0) - (a.rank || 0) || a.order - b.order);
     const ax = small ? 1.2 : 1.75;                 // pills are wide: rings are wider than tall
     const step = (small ? 26 : 36);
     const r0 = R + g + (small ? 14 : 20);
@@ -401,8 +450,87 @@
       if (core.dataset.justDragged) return;
       items.filter(it => it.panel).forEach(closeItem);
     });
-    // double-click: back to the middle
-    core.addEventListener("dblclick", () => { logoAt = null; store("orbit:logo"); layout(); });
+    // double-click: back to the middle, at the usual size
+    core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
+    const setLogo = v => { logoScale = v; };
+    resizer($(".orbit-knob"), () => [lx, ly], () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
+    wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
+  }
+
+  // Resize by dragging a handle away from (or towards) the thing's centre,
+  // or with the scroll wheel over it.
+  function resizer(handle, centre, get, set, min, max, key) {
+    let d0 = 0, s0 = 1;
+    handle.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      e.stopPropagation(); e.preventDefault();
+      const [x, y] = centre();
+      d0 = Math.max(10, Math.hypot(e.clientX - x, e.clientY - top - y)); s0 = get();
+      handle.setPointerCapture(e.pointerId);
+      document.documentElement.classList.add("orbit-moving");
+    });
+    handle.addEventListener("pointermove", e => {
+      if (!handle.hasPointerCapture(e.pointerId)) return;
+      const [x, y] = centre();
+      set(Math.min(max, Math.max(min, s0 * Math.hypot(e.clientX - x, e.clientY - top - y) / d0)));
+      layoutSoon();
+    });
+    const end = e => {
+      if (!handle.hasPointerCapture(e.pointerId)) return;
+      handle.releasePointerCapture(e.pointerId);
+      document.documentElement.classList.remove("orbit-moving");
+      store(key, +get().toFixed(3)); layout();
+    };
+    handle.addEventListener("pointerup", end);
+    handle.addEventListener("pointercancel", end);
+    handle.addEventListener("keydown", e => {
+      const k = { ArrowUp: 1.08, ArrowRight: 1.08, ArrowDown: 1 / 1.08, ArrowLeft: 1 / 1.08 }[e.key];
+      if (!k) return;
+      e.preventDefault(); set(Math.min(max, Math.max(min, get() * k))); store(key, +get().toFixed(3)); layout();
+    });
+  }
+  function wheelResize(el, get, set, min, max, key) {
+    let t;
+    el.addEventListener("wheel", e => {
+      e.preventDefault();
+      set(Math.min(max, Math.max(min, get() * Math.exp(-e.deltaY * 0.0015))));
+      layoutSoon();
+      clearTimeout(t); t = setTimeout(() => store(key, +get().toFixed(3)), 300);
+    }, { passive: false });
+  }
+
+  function wirePi() {
+    const pi = $(".orbit-pi");
+    let sx = 0, sy = 0, ox = 0, oy = 0, moved = false;
+    pi.addEventListener("pointerdown", e => {
+      if (e.button !== 0 || e.target.closest(".op-grip")) return;
+      const [x, y] = piCentre();
+      sx = e.clientX; sy = e.clientY; ox = e.clientX - x; oy = e.clientY - top - y; moved = false;
+      pi.setPointerCapture(e.pointerId);
+    });
+    pi.addEventListener("pointermove", e => {
+      if (!pi.hasPointerCapture(e.pointerId)) return;
+      if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
+      if (!moved) { moved = true; pi.classList.add("dragging"); document.documentElement.classList.add("orbit-moving"); }
+      piAt = { fx: (e.clientX - ox) / W, fy: (e.clientY - top - oy) / H };
+      placeMark(); layoutSoon();
+    });
+    const end = e => {
+      if (!pi.hasPointerCapture(e.pointerId)) return;
+      pi.releasePointerCapture(e.pointerId);
+      pi.classList.remove("dragging");
+      document.documentElement.classList.remove("orbit-moving");
+      if (!moved) return;
+      const [x, y] = piCentre();
+      piAt = { fx: +(x / W).toFixed(4), fy: +(y / H).toFixed(4) };
+      store("orbit:pi:at", piAt); layout();
+    };
+    pi.addEventListener("pointerup", end);
+    pi.addEventListener("pointercancel", end);
+    // double-click: back under the mark, at the usual size
+    pi.addEventListener("dblclick", () => { piAt = null; piScale = 1; store("orbit:pi:at"); store("orbit:pi:scale"); layout(); });
+    resizer(pi.querySelector(".op-grip"), piCentre, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
+    wheelResize(pi, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
   }
 
   function pulse() {
@@ -431,6 +559,7 @@
   }
 
   function openItem(it) {
+    if (it.href) { window.open(it.href, "_blank", "noopener"); bumpUse(it, 1); pulse(); return; }
     if (it.panel) { front(it.panel); it.panel.querySelector(".op-close").focus(); return; }
     activateSection(it.section.key);
     const p = document.createElement("section");
@@ -558,6 +687,7 @@
     document.documentElement.classList.add("orbit-on");
     makeBubbles();
     wireLogo();
+    wirePi();
     // Esc closes the window on top, wherever the keyboard focus happens to be
     // (the map and HAL-OS take focus for their own keys).
     document.addEventListener("keydown", e => {
