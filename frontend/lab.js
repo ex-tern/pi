@@ -217,3 +217,94 @@
     if (document.getElementById("tab-lab").classList.contains("active") && loadedFor !== (localStorage.getItem("sp_token") || "")) loadPrivate(true);
   }, 2000);
 })();
+
+// ------------------------------------------------------------ permission requests (owner)
+// Separate block on purpose: it shares nothing with the private-projects code
+// above except the owner check.
+(function () {
+  "use strict";
+  const $ = id => document.getElementById(id);
+  const card = $("labConsent"), list = $("consentList"), form = $("consentForm");
+  const tabBtn = document.querySelector('.tab-btn[data-tab="lab"]');
+  if (!card || !tabBtn) return;
+  const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const fmt = iso => { try { return new Date(iso).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" }); } catch (_) { return iso; } };
+  const linkFor = path => location.origin + path;
+  let loadedFor = null;
+
+  async function isOwner() {
+    try { const r = await fetch("/api/auth/session", { cache: "no-store" }); return r.ok && (await r.json()).is_owner === true; }
+    catch (_) { return false; }
+  }
+
+  async function load(force) {
+    const token = localStorage.getItem("sp_token") || "";
+    if (!force && loadedFor === token) return;
+    loadedFor = token;
+    if (!token || !(await isOwner())) { card.classList.add("hidden"); return; }
+    card.classList.remove("hidden");
+    let data;
+    try {
+      const r = await fetch("/api/consent", { cache: "no-store" });
+      if (!r.ok) throw new Error("HTTP " + r.status);
+      data = await r.json();
+    } catch (e) { list.innerHTML = '<p class="hint">Could not load requests: ' + esc(e.message) + "</p>"; return; }
+    if (!data.requests.length) { list.innerHTML = '<p class="hint">No requests yet. Create one below.</p>'; return; }
+    list.innerHTML = data.requests.map(r => {
+      const last = r.answers[r.answers.length - 1];
+      const status = r.status === "granted" ? "Permission given" : r.status === "declined" ? "Declined" : "Waiting for an answer";
+      const history = r.answers.map(a =>
+        "<li>" + esc(a.decision === "granted" ? "Given" : "Declined") + " by " + esc(a.name) + " · " + esc(fmt(a.answered_at)) +
+        (a.note ? "<br><span class=\"hint\">“" + esc(a.note) + "”</span>" : "") + "</li>").join("");
+      return '<div class="consent-item" data-status="' + esc(r.status) + '">' +
+        '<div class="consent-top"><strong>' + esc(r.title) + "</strong>" +
+        '<span class="pill consent-status">' + esc(status) + (r.closed ? " · closed" : "") + "</span></div>" +
+        '<p class="hint">To ' + esc(r.recipient) + " · created " + esc(fmt(r.created_at)) +
+        (last ? " · last answer " + esc(fmt(last.answered_at)) : "") + "</p>" +
+        '<div class="consent-link"><input type="text" readonly value="' + esc(linkFor(r.path)) + '" aria-label="Confirmation link">' +
+        '<button class="btn btn-outline" data-copy="' + esc(linkFor(r.path)) + '">Copy link</button>' +
+        (r.closed ? "" : '<button class="btn btn-ghost" data-close="' + r.id + '">Close</button>') + "</div>" +
+        (history ? '<ul class="consent-history">' + history + "</ul>" : "") + "</div>";
+    }).join("");
+  }
+
+  list.addEventListener("click", async e => {
+    const copy = e.target.closest("[data-copy]");
+    if (copy) {
+      try { await navigator.clipboard.writeText(copy.dataset.copy); copy.textContent = "Copied"; }
+      catch (_) { copy.previousElementSibling.select(); copy.textContent = "Press ⌘C"; }
+      setTimeout(() => { copy.textContent = "Copy link"; }, 2000);
+    }
+    const close = e.target.closest("[data-close]");
+    if (close) {
+      if (!close.dataset.armed) { close.dataset.armed = "1"; close.textContent = "Really close?"; setTimeout(() => { delete close.dataset.armed; close.textContent = "Close"; }, 3000); return; }
+      await fetch("/api/consent/" + close.dataset.close + "/close", { method: "POST" });
+      load(true);
+    }
+  });
+
+  form.addEventListener("submit", async e => {
+    e.preventDefault();
+    const f = new FormData(form);
+    const body = {
+      title: f.get("title"), recipient: f.get("recipient"), requester: f.get("requester"),
+      work: f.get("work"), message: f.get("message"),
+      terms: String(f.get("terms") || "").split("\n").map(s => s.trim()).filter(Boolean),
+    };
+    const msg = $("consentMsg");
+    try {
+      const r = await fetch("/api/consent", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });
+      const out = await r.json().catch(() => ({}));
+      if (!r.ok) throw new Error(typeof out.detail === "string" ? out.detail : "Check the fields and try again.");
+      msg.textContent = "Created. Copy its link from the list above and paste it into your email.";
+      $("consentNew").open = false;
+      load(true);
+    } catch (ex) { msg.textContent = ex.message; }
+  });
+
+  tabBtn.addEventListener("click", () => load());
+  if (location.hash === "#lab") setTimeout(() => load(), 0);
+  setInterval(() => {
+    if (document.getElementById("tab-lab").classList.contains("active") && loadedFor !== (localStorage.getItem("sp_token") || "")) load(true);
+  }, 2000);
+})();

@@ -6997,6 +6997,10 @@ def explorer_tx_url(tx: str):
 import lab as _lab  # noqa: E402
 app.include_router(_lab.build_router(BASE_DIR, require_owner))
 
+# Permission requests with a confirm link (/confirm/?t=...). See consent.py.
+import consent as _consent  # noqa: E402
+app.include_router(_consent.build_router(BASE_DIR, require_owner))
+
 
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)

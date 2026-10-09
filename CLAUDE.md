@@ -28,10 +28,11 @@ ScholarPi runs as two copies of this repository:
 ## Layout
 
 ```
-backend/        FastAPI app (api.py), Lab private projects (lab.py), tests/
+backend/        FastAPI app (api.py), Lab private projects (lab.py),
+                permission requests (consent.py), tests/
 frontend/       index.html, app.js (the app), style.css + theme.css (look),
                 welcome.js (arrival screen), lab.js (Lab tab), channel.js (experimental banner),
-                hal/ (HAL-OS web portal + v86 emulator)
+                hal/ (HAL-OS web portal + v86 emulator), confirm/ (permission-request page)
 scripts/        build_hal.py (builds HAL-OS's boot image from its own repo)
 ```
 
