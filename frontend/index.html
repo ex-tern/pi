@@ -987,6 +987,38 @@
           <p class="hint" id="labUploadMsg">HTML, Markdown, text, CSV, JSON, PDF and images, up to 10 MB each.</p>
         </details>
       </div>
+
+      <!-- Owner only: permission requests sent to authors, and their answers.
+           See backend/consent.py and /confirm/. -->
+      <div class="card lab-card hidden" id="labConsent">
+        <div class="lab-head">
+          <div>
+            <h2>Permission requests <span class="pill pill-muted">owner only</span></h2>
+            <p class="hint">Create a request, paste its link into your email, and the answer appears here with the date
+            and the exact terms that were agreed to.</p>
+          </div>
+        </div>
+        <div id="consentList"><p class="hint">Loading…</p></div>
+        <details class="lab-upload" id="consentNew">
+          <summary>New request</summary>
+          <form id="consentForm" class="consent-form">
+            <label>Title <input type="text" name="title" required maxlength="200"
+              value="Permission to feature QuVI as an online experiment on PiTechLab"></label>
+            <label>Recipient <input type="text" name="recipient" required maxlength="120" value="Dr. Murtaza Vefadar"></label>
+            <label>From <input type="text" name="requester" maxlength="200"
+              value="Ali Vafadar Yengejeh, Founder &amp; CEO, PiTechLab Research Lab"></label>
+            <label>Work <input type="text" name="work" maxlength="300"
+              value="QuVI – Quantum Circuit Toolkit for LabVIEW (MIT licence)"></label>
+            <label>Message <textarea name="message" rows="4" maxlength="4000">PiTechLab would like to feature your QuVI toolkit in its Lab as an online experiment, so that visitors can build and simulate quantum circuits from their browser. QuVI is released under the MIT licence, but we would not present your work without your agreement.</textarea></label>
+            <label>Terms, one per line <textarea name="terms" rows="5" maxlength="4000">You are credited prominently as the author, with links to your paper and the QuVI package.
+The MIT licence and your copyright notice are kept and shown in full.
+Nothing goes live without your review and approval.
+You can ask for it to be withdrawn at any time, and it will be removed.</textarea></label>
+            <button class="btn btn-primary" type="submit">Create request and link</button>
+            <p class="hint" id="consentMsg"></p>
+          </form>
+        </details>
+      </div>
     </section>
   </main>
 </div>

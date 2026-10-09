@@ -1,0 +1,70 @@
+/* The permission page: one sheet of paper, the same language as the site. */
+@font-face {
+  font-family: "Geist"; src: url("../fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-display: swap;
+}
+:root {
+  --paper: #f6f6f4; --surface: #ffffff; --ink: #191919; --graphite: #6e6e6a;
+  --hair: #dcdcd8; --hair-strong: #c9c9c4; --cobalt: #2f40e8;
+  --ok: #2f6b3a; --ok-bg: #eef3ec; --no: #8c1d17; --no-bg: #f8eeec;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--paper); color: var(--ink); }
+body {
+  font: 15px/1.6 "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  padding: 48px 16px 64px;
+}
+[hidden] { display: none !important; }
+.sheet {
+  max-width: 640px; margin: 0 auto; background: var(--surface);
+  border: 1px solid var(--hair); border-radius: 14px; padding: 40px 44px 36px;
+}
+.brand { display: inline-flex; align-items: center; gap: 10px; color: var(--ink); text-decoration: none; font-weight: 500; letter-spacing: -0.02em; margin-bottom: 36px; }
+.brand svg { width: 26px; height: 26px; }
+.kicker { color: var(--graphite); margin: 0 0 6px; font-size: 14px; }
+h1 { font-size: 30px; line-height: 1.15; letter-spacing: -0.035em; font-weight: 500; margin: 0 0 14px; }
+h2 { font-size: 15px; font-weight: 500; margin: 30px 0 10px; }
+.parties { color: var(--graphite); font-size: 14px; margin: 0 0 22px; display: flex; flex-wrap: wrap; gap: 4px 18px; }
+.message p { margin: 0 0 12px; max-width: 62ch; }
+.terms { list-style: none; padding: 0; margin: 0; border-top: 1px solid var(--hair); }
+.terms li { position: relative; padding: 11px 0 11px 22px; border-bottom: 1px solid var(--hair); }
+.terms li::before {
+  content: ""; position: absolute; left: 2px; top: 19px; width: 8px; height: 8px;
+  border-radius: 50%; border: 1.4px solid var(--ink);
+}
+form { margin-top: 30px; }
+label { display: block; font-size: 14px; font-weight: 500; margin: 14px 0 6px; }
+input, textarea {
+  width: 100%; font: inherit; color: var(--ink); background: var(--surface);
+  border: 1px solid var(--hair-strong); border-radius: 8px; padding: 10px 12px;
+}
+input:focus-visible, textarea:focus-visible, button:focus-visible, a:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+.actions { display: flex; gap: 10px; flex-wrap: wrap; margin-top: 22px; }
+button {
+  font: inherit; font-weight: 500; border-radius: 999px; padding: 12px 22px; cursor: pointer;
+  border: 1px solid var(--ink);
+}
+button:disabled { opacity: 0.5; cursor: progress; }
+.yes { background: var(--ink); color: #fff; }
+.yes::before { content: ""; display: inline-block; width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); margin-right: 10px; vertical-align: 1px; }
+.yes:hover:not(:disabled) { background: #000; }
+.no { background: transparent; color: var(--ink); border-color: var(--hair-strong); }
+.no:hover:not(:disabled) { border-color: var(--ink); }
+.small, .quiet { color: var(--graphite); font-size: 13px; }
+.small { margin-top: 18px; }
+.error { color: var(--no); font-size: 14px; margin-top: 12px; }
+.current, .result {
+  border-radius: 10px; padding: 14px 16px; margin-top: 24px; font-size: 14.5px;
+}
+.granted { background: var(--ok-bg); color: var(--ok); }
+.declined { background: var(--no-bg); color: var(--no); }
+.result h1 { font-size: 26px; color: inherit; margin-bottom: 8px; }
+.result p { margin: 6px 0 0; color: var(--ink); }
+.receipt { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 13px; }
+.linklike { background: none; border: 0; padding: 0; color: var(--cobalt); text-decoration: underline; border-radius: 0; font-weight: 400; }
+@media (max-width: 560px) {
+  body { padding: 16px 12px 40px; }
+  .sheet { padding: 28px 20px 26px; }
+  h1 { font-size: 25px; }
+  .actions button { width: 100%; }
+}

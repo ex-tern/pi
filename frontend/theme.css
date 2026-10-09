@@ -352,3 +352,19 @@ html.welcome-open { overflow: hidden; }
 .channel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.4); flex: none; }
 .channel-link { color: #fff; text-decoration: underline; white-space: nowrap; }
 html.is-experimental .sidebar-toggle { top: 4px; color: #fff; opacity: 0.85; }
+
+/* ---------- Permission requests (owner, Lab) ---------- */
+.consent-form { display: grid; gap: 10px; margin-top: 12px; max-width: 720px; }
+.consent-form label { display: grid; gap: 4px; font-size: 13px; color: var(--graphite); }
+.consent-form input, .consent-form textarea { font: inherit; font-size: 13.5px; color: var(--ink); padding: 8px 10px; border: 1px solid var(--hair-strong); }
+.consent-form button { justify-self: start; }
+.consent-item { border-top: 1px solid var(--hair); padding: 14px 0; }
+.consent-item:first-child { border-top: 0; padding-top: 4px; }
+.consent-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.consent-status { border: 1px solid var(--hair); color: var(--graphite); background: transparent; }
+.consent-item[data-status="granted"] .consent-status { color: var(--success); border-color: #cddbc9; background: var(--success-bg); }
+.consent-item[data-status="declined"] .consent-status { color: var(--danger); border-color: #e6cdc8; background: #f8eeec; }
+.consent-link { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.consent-link input { flex: 1 1 320px; min-width: 0; font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: 1px solid var(--hair-strong); background: #fbfbfa; color: var(--ink); }
+.consent-history { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
+.consent-history li { margin: 4px 0; }
