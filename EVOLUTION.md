@@ -405,3 +405,20 @@ The Unigyro repository's contents (README crediting Murtaza Vefadar, a standalon
 The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for the owner: this session cannot write to `neurophilic`. A ready folder is in Tech/NeuroFrenzy.
 
 **Files:** `frontend/neurofrenzy.js`, `frontend/neurofrenzy.css`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: FaceMace; a Lib bubble; Tools renamed
+
+**FaceMace** (Tools bubble) sorts photos by face, a browser port of neurophilic/FaceID ("Auto Face Discovery & Sorter", Streamlit):
+- **How it works.** The same method, step for step, in a Web Worker (`facemace/worker.js`):
+  - photos shrunk to 600 px and turned to greyscale;
+  - OpenCV's Haar cascade (converted to `facemace/cascade.json`, with its licence) evaluated in plain JS, scale step 1.1, 5 neighbours;
+  - LBPH face descriptors (radius 1, 8 neighbours, 8×8 grid) and chi-square nearest neighbour against the 40–120 strictness, learning as it goes.
+- **Checked against the Python version with real OpenCV 5.0.** Same groups at strictness 75 and 45, face boxes within a few pixels, distances within a few points. About 1 s per photo; changing the strictness re-groups instantly, since faces are found once.
+- **Input and output.** Choose a folder or photos, or drop them. Download a ZIP of `Auto_Sorted_Faces/Person_N/…` and `No_Faces_Detected/`, as the original writes, or save straight into a folder (File System Access API).
+- **Private by design.** Photos never leave the device.
+
+**Lib**, a new bubble, now holds NeuroFrenzy (moved from Lab). Groups can be declared empty and filled by modules.
+
+**Tools renamed** (owner's request): "Assess Manuscripts [Pi]" (was Assess a Manuscript) and "Assist a Diagnosis [Intern]" (was Intern). Remembered state and PiEN's learning carry over.
+
+**Files:** `frontend/facemace.js`, `frontend/facemace.css`, `frontend/facemace/`, `frontend/neurofrenzy.js`, `frontend/orbit.js`, `frontend/intern.js`, `frontend/capabilities.js`, `frontend/recent.js`, `frontend/pien.js`, `frontend/index.html`, `CLAUDE.md`.

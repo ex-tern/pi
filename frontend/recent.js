@@ -23,7 +23,7 @@
     content.innerHTML = '<p class="recent-lede">Every assessment made on Pi Tech Lab, newest first, signed in or not. ' +
       'Only the field, the score and the day are shown: never the title, the file or who.</p>';
     if (!list.length) {
-      content.insertAdjacentHTML("beforeend", '<p class="recent-empty">No assessments yet. Be the first: open Tools, then Assess a Manuscript.</p>');
+      content.insertAdjacentHTML("beforeend", '<p class="recent-empty">No assessments yet. Be the first: open Tools, then Assess Manuscripts [Pi].</p>');
     } else {
       const ol = document.createElement("ol");
       ol.className = "recent-list";

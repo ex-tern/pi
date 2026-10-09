@@ -139,12 +139,14 @@
   // Renamed pills keep what was remembered about them (place, size, use, window).
   const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
                     "account:SciLM (siM) Assistant": "account:SciM Assistant", "account:siM Assistant": "account:SciM Assistant",
-                    "assess:ResBD": "assess:RiBD" };
-  const RETITLE = { "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
+                    "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]" };
+  const RETITLE = { "assess:Assess a Manuscript": "Assess Manuscripts [Pi]", "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
   // Pills that hold other pills: the group's bubble shows its members inside it.
   const GROUPS = [
     { section: "lab", title: "Lab" },
-    { title: "Tools", members: ["Assess a Manuscript"] },
+    { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
+    // filled by modules (NeuroFrenzy); exists even before they arrive
+    { title: "Lib", members: [], section: { key: "lib", name: "Lib" } },
   ];
   function migrateRenamed() {
     try {
@@ -325,13 +327,14 @@
   function makeGroups() {
     GROUPS.forEach(G => {
       const members = items.filter(it => (G.members ? G.members.includes(it.title) : it.section.key === G.section) && !it.groupOf);
-      if (!members.length) return;
-      const g = { section: members[0].section, title: G.title, key: members[0].section.key + ":" + G.title + " group",
+      if (!members.length && !(G.section && typeof G.section === "object")) return;
+      const sec = members.length ? members[0].section : G.section;
+      const g = { section: sec, title: G.title, key: sec.key + ":" + G.title + " group",
                   nodes: [], content: document.createElement("div"), group: true, always: true,
                   action: () => { const first = items.find(m => m.groupOf === g && visible(m) && !isHal(m)); if (first) openItem(first); } };
       members.forEach(m => { m.groupOf = g; });
       shelf.appendChild(g.content);
-      items.splice(items.indexOf(members[0]), 0, g);
+      if (members.length) items.splice(items.indexOf(members[0]), 0, g); else items.push(g);
     });
   }
 

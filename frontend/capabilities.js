@@ -6,8 +6,9 @@
   // [title of the pill it opens, what it does]
   const GROUPS = [
     ["Assess research", [
-      ["Assess a Manuscript", "Upload a paper or give a DOI: a staged, AI-assisted assessment with a score you can trace step by step."],
-      ["Intern", "An AI electronic health record for doctors (iOS app), in the Tools bubble."],
+      ["Assess Manuscripts [Pi]", "Upload a paper or give a DOI: a staged, AI-assisted assessment with a score you can trace step by step."],
+      ["FaceMace", "Sort photos by face, on your own device: groups photos by person and saves them as folders."],
+      ["Assist a Diagnosis [Intern]", "Intern, an AI electronic health record for doctors (iOS app), in the Tools bubble."],
       ["Assessment results", "Your latest assessment, stage by stage."],
       ["RiBD", "Your research mentor: what to read next and what to fix first, from your profile and the corpus."],
       ["Research profile", "Your fields and interests, which shape suggestions."],

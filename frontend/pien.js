@@ -29,6 +29,7 @@
     "account:SciLM (siM) Assistant": "account:SciM Assistant",
     "account:siM Assistant": "account:SciM Assistant",
     "assess:ResBD": "assess:RiBD",
+    "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]",
   };
   const A = k => ALIAS[k] || k;
   function normOpens(o) { const out = {}; Object.entries(o || {}).forEach(([k, n]) => { out[A(k)] = (out[A(k)] || 0) + n; }); return out; }

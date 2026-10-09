@@ -121,7 +121,7 @@
 
   function start() {
     intro();
-    window.PiOrbit.addPill({ key: "lab:NeuroFrenzy", section: { key: "lab", name: "Lab" }, title: "NeuroFrenzy", content: root, inGroup: "Lab" });
+    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "NeuroFrenzy", content: root, inGroup: "Lib" });
     // a game paused out of sight is no game: if its window closes mid-question, start over next time
     new MutationObserver(() => { if (!root.closest(".orbit-panel") && timer) intro(); })
       .observe(document.body, { childList: true });
