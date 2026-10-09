@@ -384,6 +384,9 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .pc-meter { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
 .pc-meter i { display: block; height: 100%; background: var(--cobalt); border-radius: 3px; }
 .pc-status { font-size: 13px; margin: 8px 0 0; line-height: 1.45; }
+.perf-idle { margin: 14px 0 0; font-size: 13px; line-height: 1.5; color: var(--graphite); }
+.perf-idle:empty { display: none; }
+.perf-idle b { color: var(--ink); font-weight: 500; }
 .perf-next { margin-top: 16px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--hair); }
 .perf-next h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 4px; }
 .perf-next-body { margin: 0; font-size: 13.5px; line-height: 1.5; }

@@ -683,3 +683,28 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 **What:** the Contact us button now opens the Contact us window (`PiOrbit.openTitle`) wherever it is reached from, so the old dialog with its × can't appear. The dialog remains only as a fallback if the orbit layout isn't running.
 
 **Verified:** from the pill and from the button, no dialog appears and the form is in a window whose only visible buttons are Send and Clear, at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: papers assessed automatically while the site is idle
+
+**What:** the existing idle worker (`backend/idle_worker.py`) is now on, and it can actually run.
+- **On by default on the hosted deployments.** Railway sets `RAILWAY_ENVIRONMENT*`. It stays off by default elsewhere, so a clone of this public repo never spends provider quota. `ENABLE_IDLE_ASSESSMENTS=0` switches it off anywhere.
+- **What it does:** while the site is quiet it picks a live research topic, finds an open-access paper on OpenAlex and runs it through the normal pipeline.
+  - Up to 10 a day (`IDLE_MAX_PER_DAY`), after 5 minutes of quiet.
+  - No account is charged, and duplicates don't count.
+  - Each assessment is something SciM and PiDN learn from.
+- **Fixed: it could never run.** Every request reset the idle clock, including the background polling of any open tab (layout sync every 2.5 s, PiEN, status panels). One tab left open anywhere kept the site "busy" forever.
+  - Now only a page load or a request that uses the model providers counts as busy: `/api/assess/…`, SciM chat, reviews, rebuttals, defence strategies, rescoring.
+  - Provider requests count as in flight until they finish, and a streamed assessment counts until its last chunk. The worker never starts while one is running.
+- **Visible:** `/api/engines/status` includes `idle` (enabled, assessed today, daily cap, latest title and time, working now; no errors or thresholds). The Performance window shows "Working while idle … N of 10 today. Latest: …".
+
+**Verified:**
+- `tests/test_idle_busy.py` (6 tests):
+  - polling isn't busy, while people and provider calls are
+  - polling doesn't reset the idle clock
+  - an in-flight assessment blocks the worker
+  - on by default only when hosted, and `=0` turns it off
+  - the public status has no operator detail
+- Local run with an open tab polling:
+  - the worker went idle and tried to fetch topics from OpenAlex (blocked from this sandbox, reachable from Railway)
+  - the Performance window showed the line at 1440 and 390 px with no page errors
+- pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
