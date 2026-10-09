@@ -604,3 +604,19 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 **What:** in the Architecture window, "Ali Vafadar Yengejeh" (the framework credit) now links to https://alivafadar.carrd.co/ in a new tab. The same goes for the older "Framework Author" note in the Architecture tab markup. The link is in the cobalt interactive colour.
 
 **Verified:** the link opens the page in a new tab at 1440 and 390 px; no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: fix: scrolling opened windows at random and resized the logo
+
+**Bug:**
+- Every 0.9 s of a scroll, including a trackpad's momentum, re-opened the journal and the ledger. Each call also brought back every window that had been set aside, so windows seemed to open at random.
+- Scrolling up on the page resized the logo.
+
+**Fix:**
+- One scroll gesture opens the two at most once; a new gesture needs 600 ms of quiet.
+- Nothing happens if both are already open, or while windows are set aside (a logo click brings those back).
+- Scrolling up on the page does nothing. The wheel over the logo itself still resizes it.
+
+**Verified:**
+- A 2-second momentum scroll opened exactly 2 windows, once.
+- A second scroll with both open, a scroll up, and a scroll while aside changed nothing; the logo scale stayed untouched.
+- 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
