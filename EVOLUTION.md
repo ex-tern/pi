@@ -306,3 +306,12 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tests in `backend/tests/test_recent.py` that check nothing identifying leaks.
 
 **Files:** `backend/recent.py`, `backend/api.py`, `backend/tests/test_recent.py`, `frontend/recent.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: Leaderboard dates no longer clipped
+
+**What:**
+- The Date column was a fixed 58 px, the width of a number, so dates were cut off ("09/10/2…"). It is now 76 px and never wraps, with a compact date: "9 Oct", plus the year only for other years.
+- The "piQ (share)" header was clipped too. It now reads "piQ", and its hover text still explains the share.
+- On phones the leaderboard table was wider than the screen and silently cut. It now scrolls sideways.
+
+**Files:** `frontend/style.css`, `frontend/app.js`, `frontend/index.html`.

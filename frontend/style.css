@@ -553,6 +553,10 @@ input::placeholder { color: var(--faint); }
 /* Numeric columns take only what they need, leaving the rest to the title. */
 .leaderboard-card .col-rank { width: 34px; }
 .leaderboard-card th.num, .leaderboard-card td.num { width: 58px; }
+/* on narrow screens the table may be wider than the window: scroll it rather than cut it */
+@media (max-width: 700px) { .leaderboard-card .table-scroll { overflow-x: auto; } .leaderboard-card .data-table { min-width: 460px; } }
+/* the date needs more than a number's width, and must never be clipped */
+.leaderboard-card th[data-sort="date"], .leaderboard-card td.col-date { width: 76px; white-space: nowrap; }
 
 /* Leaderboard cards.
    The card fills its grid cell, and the scrolling row area is the flexible
