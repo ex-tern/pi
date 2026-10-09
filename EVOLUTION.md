@@ -460,3 +460,9 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** re-rendered from the owner's original upload with noise removal: the clipped peaks repaired (`adeclip`), broadband hiss reduced with an FFT denoiser (`afftdn`, 14 dB), the flanger and phaser (which added a hissy wash) dropped, no treble boost, and a gentle low-pass at 15.5 kHz. Clarity kept with a light low-mid cut and presence lift, plus a short echo and wider stereo. Still -14 LUFS, 256 kbps, seamless 1.5 s crossfaded loop.
 
 **Verified:** the 12–20 kHz hiss band is about 7 dB lower than the previous version; loop, stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: the logo song runs at the tempo of π
+
+**What:** the song and the live π digits now share one tempo. The song measured 99.94 BPM, so it was nudged to exactly 100 BPM (a 0.06% change); π comes at one digit every 60 ms, which is exactly ten digits a beat. The loop is now exactly 8 bars (19.2 s, 320 digits) with a short beat-aligned crossfade. `pi-worker.js` keeps its 60 ms pace without drift and accepts a `sync` message; while the song plays, `logosound.js` re-syncs the digits to the song's beat once per loop (`pi:beat` event, handled in `orbit.js`).
+
+**Verified:** the tiled loop measures 99.99 BPM with the beat at 0.516 s; π runs at 16.6 digits/s idle and while playing; loop, stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
