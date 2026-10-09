@@ -5,7 +5,7 @@
 // The audio loads only on the first press; a drag never counts as a press.
 (function () {
   "use strict";
-  const SRC = "sound/dd.mp3?v=3";
+  const SRC = "sound/dd.mp3?v=4";
   let ctx = null, buf = null, loopStart = 0, loopEnd = 0, node = null, gain = null, loading = null;
   let fallback = null, want = false;
 
