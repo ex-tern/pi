@@ -327,13 +327,16 @@
       if (!members.length) return;
       const g = { section: members[0].section, title: G.title, key: members[0].section.key + ":" + G.title + " group",
                   nodes: [], content: document.createElement("div"), group: true, always: true,
-                  action: () => { const first = items.find(m => m.groupOf === g && visible(m)); if (first) openItem(first); } };
+                  action: () => { const first = items.find(m => m.groupOf === g && visible(m) && !isHal(m)); if (first) openItem(first); } };
       members.forEach(m => { m.groupOf = g; });
       shelf.appendChild(g.content);
       items.splice(items.indexOf(members[0]), 0, g);
     });
   }
 
+  // HAL-OS is an x86 emulator: its window opens only when its own pill is
+  // pressed, never by itself (not from a link, not restored from last visit).
+  const isHal = it => it.nodes.some(n => n.id === "labHal");
   function visible(it) {
     if (it.href || it.always) return true;
     return it.nodes.some(n => !(n.classList.contains("section-heading")) && !n.classList.contains("hidden") && !n.hidden);
@@ -1170,7 +1173,7 @@
     setSizes();
     layout();
     // windows: open what the account has open, in its order, at its places
-    const want = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(Boolean);
+    const want = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(it => it && !isHal(it));
     restoring = true;
     want.forEach(it => {
       if (!it.panel) openItem(it);
@@ -1191,7 +1194,7 @@
   }
   function reveal(el) {
     const it = itemFor(el);
-    if (!it) return false;
+    if (!it || isHal(it)) return false;      // HAL-OS opens only from its own pill
     setAside(false);
     if (it.panel) raise(it.panel, true); else openItem(it);
     return true;
@@ -1312,7 +1315,7 @@
     // Deep links (/#lab, /#journal …) open that section's first card.
     const fromHash = () => {
       const key = (location.hash || "").slice(1);
-      const it = items.find(x => x.section.key === key && visible(x));
+      const it = items.find(x => x.section.key === key && visible(x) && !isHal(x));
       if (it) openItem(it);
     };
     window.addEventListener("hashchange", fromHash);
@@ -1322,7 +1325,7 @@
     // windows open last time open again, in the same order (looked up once
     // pien.js and numbers.js have added their windows)
     setTimeout(() => {
-      const reopen = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(Boolean);
+      const reopen = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(it => it && !isHal(it));
       restoring = true;
       reopen.forEach(it => { if (!it.panel) openItem(it); });
       restoring = false;

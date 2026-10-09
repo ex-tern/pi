@@ -337,3 +337,14 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 ## 2026-10-09: QuVI is public on production
 
 The owner set `QUVI_PUBLIC=1` in Railway's production environment. QuVI now appears in the Lab bubble for every visitor at pitechlab.com, without the "owner preview" badge. Verified signed out: the simulator loads in its window. The experimental environment is unchanged (owner-only) unless the same variable is set there. No code change was needed: the switch has existed since QuVI was added.
+
+## 2026-10-09: HAL-OS opens only from its own pill
+
+**What:** the HAL-OS window no longer appears by itself. Three routes used to open it:
+- the Lab bubble's default action (its first member);
+- the `/#lab` link, which lab.js also wrote into the address whenever a Lab window opened;
+- restoring windows from the last visit.
+
+Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine still boots only when Start is pressed. The Lab bubble's own default opens QuVI where QuVI is visible, otherwise nothing. lab.js no longer writes `#lab`.
+
+**Files:** `frontend/orbit.js`, `frontend/lab.js`, `frontend/index.html`.
