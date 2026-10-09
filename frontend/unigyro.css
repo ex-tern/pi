@@ -1,0 +1,9 @@
+/* Unigyro (unigyro.js) */
+.unigyro { container-type: inline-size; }
+.unigyro h2 { font-size: 17px; font-weight: 500; margin: 0 0 4px; }
+.ug-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 12px; }
+.ug-video { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #111; }
+.ug-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.ug-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #bbb; font-size: 12.5px; }
+.ug-credit { font-size: 12.5px; color: var(--graphite); margin: 10px 0 0; line-height: 1.6; }
+.ug-quvi { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hair-strong); text-underline-offset: 3px; cursor: pointer; }
