@@ -25,14 +25,21 @@
     { tab: "lab", icon: "lab", title: "Experiment and test in the Lab",
       text: "Run live experiments in your browser, from a self-teaching neural machine to quantum circuits." },
   ];
-  // The instrument: a ruled ring, the circle, and its diameter, which turns
-  // with the cobalt point riding its end. Drawn once, then it keeps turning.
+  // The instrument: a ruled ring and the black circle; its blue diameter
+  // sweeps round with a fading trail behind each half.
+  const TRAIL = Array.from({ length: 30 }, (_, i) => {
+    const k = i + 1;                        // the sweep turns anticlockwise, so the
+    return '<g transform="rotate(' + (k * 1.25) + ' 200 200)" opacity="' +   // trail lies at larger angles
+      (0.30 * Math.pow(1 - k / 31, 1.8)).toFixed(3) + '">' +
+      '<line class="wi-r1" x1="200" y1="200" x2="350" y2="200"/><line class="wi-r2" x1="200" y1="200" x2="50" y2="200"/></g>';
+  }).join("");
   const MARK =
     '<g class="wi-ticks"></g>' +
     '<circle class="wi-ring" cx="200" cy="200" r="186"/>' +
     '<circle class="wi-circle" cx="200" cy="200" r="150" pathLength="1000"/>' +
-    '<g class="wi-orbit"><line class="wi-diameter" x1="50" y1="200" x2="350" y2="200" pathLength="1000"/>' +
-    '<circle class="wi-halo" cx="350" cy="200" r="16"/><circle class="wi-point" cx="350" cy="200" r="8"/></g>';
+    '<g class="wi-orbit"><g class="wi-trail">' + TRAIL + '</g>' +
+    '<line class="wi-r1 wi-radius" x1="200" y1="200" x2="350" y2="200" pathLength="1000"/>' +
+    '<line class="wi-r2 wi-radius" x1="200" y1="200" x2="50" y2="200" pathLength="1000"/></g>';
 
   function seen() { try { return sessionStorage.getItem(KEY) === "1"; } catch (_) { return false; } }
   function remember() { try { sessionStorage.setItem(KEY, "1"); } catch (_) { /* private mode: shows again, harmless */ } }
@@ -49,7 +56,7 @@
       <div class="welcome-inner">
         <div class="welcome-hero">
           <svg class="welcome-mark" viewBox="0 0 400 400" aria-hidden="true">${MARK}</svg>
-          <h1 id="welcomeTitle" class="welcome-title">Welcome to PiTechLab</h1>
+          <h1 id="welcomeTitle" class="welcome-title">Welcome to Pi Tech Lab</h1>
           <p class="welcome-sub">A research lab you can use from your browser. Assess papers fairly, research what has been reviewed,
           run experiments, and help ideas get better.</p>
           <button class="welcome-begin" type="button" data-tab="assess">Let's begin</button>
@@ -61,11 +68,10 @@
         </ul>
         <p class="welcome-new"><span class="wn-dot" aria-hidden="true"></span>This site improves a little every night, and every change is tested first.
           <a class="wn-link" href="https://github.com/ex-tern/pi/blob/main/EVOLUTION.md" target="_blank" rel="noopener">See what's new</a></p>
-        <button class="welcome-skip" type="button" data-skip="1">Skip to the site</button>
       </div>`;
     root.addEventListener("click", e => {
-      const b = e.target.closest("button[data-tab], button[data-skip]");
-      if (b) go(b.dataset.tab || null);
+      const b = e.target.closest("button[data-tab]");
+      if (b) go(b.dataset.tab);
     });
     root.addEventListener("keydown", e => {
       if (e.key === "Escape") { e.preventDefault(); go(null); }
