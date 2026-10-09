@@ -11,6 +11,7 @@
   root.innerHTML =
     '<p class="perf-lede">Four engines learn from how Pi Tech Lab is used. Here is how each one is doing.</p>' +
     '<div class="perf-cards"></div>' +
+    '<p class="perf-idle"></p>' +
     '<section class="perf-next"><h3>What happens next</h3><p class="perf-next-body">…</p></section>' +
     '<details class="perf-more"><summary>Show the detailed forecast</summary><div class="perf-more-body"></div></details>';
   const cards = root.querySelector(".perf-cards");
@@ -79,6 +80,18 @@
       learnedLine(b && (b.observations || b.logged_observations) || 0, bB, "when you mark its suggestions as useful or not"),
       bB === null ? 0 : Math.max(0, bB), b && b.learning ? "improving" : ""));
     cards.innerHTML = html.join("");
+
+    // While nobody is using the site, it assesses open-access papers on its
+    // own, and every one of them is something the engines learn from.
+    const idle = e.idle, ip = root.querySelector(".perf-idle");
+    if (!idle || !idle.enabled) ip.textContent = "";
+    else {
+      const ago = idle.last_run_at ? Math.max(1, Math.round((Date.now() / 1000 - idle.last_run_at) / 60)) : null;
+      ip.innerHTML = "<b>Working while idle.</b> When the site is quiet it assesses open-access papers by itself, " +
+        "and the engines learn from each one: " + idle.assessed_today + " of " + idle.daily_cap + " today" +
+        (idle.working_now ? ", one in progress now" : "") +
+        (idle.last_title ? ". Latest: <i>" + esc(idle.last_title) + "</i>" + (ago ? " (" + (ago < 60 ? ago + " min" : Math.round(ago / 60) + " h") + " ago)" : "") : "") + ".";
+    }
 
     // what happens next
     const nx = root.querySelector(".perf-next-body");

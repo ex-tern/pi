@@ -304,12 +304,37 @@ async def _track_activity(request: Request, call_next):
     """Every served request marks the site as busy.
 
     This is what makes idle_worker's notion of "idle" real rather than a timer.
-    It is deliberately the cheapest possible middleware — one clock read and an
-    assignment — because it runs on the hot path of every request including
+    Only requests that mean somebody is using the site count (see
+    idle_worker.is_busy_request); provider-using ones also count as in flight
+    until they finish. Cheap on purpose: it runs on every request, including
     static assets.
     """
-    idle_worker.note_request()
-    return await call_next(request)
+    path, method = request.url.path, request.method
+    idle_worker.note_request(path, method)
+    counted = idle_worker.begin(path, method)
+    try:
+        response = await call_next(request)
+    except Exception:
+        if counted:
+            idle_worker.end()
+        raise
+    if not counted:
+        return response
+    # A streamed assessment is still running after call_next returns: it only
+    # counts as finished when its last chunk has gone out.
+    body = getattr(response, "body_iterator", None)
+    if body is None:
+        idle_worker.end()
+        return response
+
+    async def _tracked():
+        try:
+            async for chunk in body:
+                yield chunk
+        finally:
+            idle_worker.end()
+    response.body_iterator = _tracked()
+    return response
 
 
 @app.on_event("startup")
@@ -1584,7 +1609,7 @@ def engines_status():
     own frozen defaults. An engine that is not beating its defaults says so.
     """
     criteria_keys = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]
-    out = {"budget_note": ("All three learners are NumPy linear models with a few dozen "
+    out = {"idle": idle_worker.public_status(), "budget_note": ("All three learners are NumPy linear models with a few dozen "
                            "parameters each. No PyTorch is imported on this path, which is "
                            "what keeps the process inside a 500 MB envelope.")}
 

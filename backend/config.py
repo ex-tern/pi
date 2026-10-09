@@ -586,7 +586,15 @@ SIM_TUTOR_WEIGHT = float(os.getenv("SIM_TUTOR_WEIGHT", "0.35"))
 # user requested; nobody requested this one, so nobody's piQ balance moves.
 # Author emission is unaffected — a paper earns on its merits regardless of
 # who put it through the pipeline.
-ENABLE_IDLE_ASSESSMENTS = _env_bool("ENABLE_IDLE_ASSESSMENTS", False)
+#
+# On by default on the hosted deployments (Railway sets RAILWAY_ENVIRONMENT*),
+# where the owner asked for papers to be assessed automatically while the site
+# is quiet; off by default anywhere else, so a clone of this public repository
+# never starts spending provider quota just because it was left running.
+# ENABLE_IDLE_ASSESSMENTS=0 switches it off on a hosted deployment too.
+_HOSTED = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+               or os.getenv("RAILWAY_PROJECT_ID"))
+ENABLE_IDLE_ASSESSMENTS = _env_bool("ENABLE_IDLE_ASSESSMENTS", _HOSTED)
 
 # Papers per UTC day. Providers rate-limit well before this on a free tier, so
 # treat it as a ceiling rather than a target.

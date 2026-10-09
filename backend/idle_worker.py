@@ -28,8 +28,16 @@ obvious implementation gets it wrong:
      costs one skipped paper and a log line, never a request served to a
      person.
 
-Off unless ENABLE_IDLE_ASSESSMENTS is set. A deployment that has not opted in
-must not start spending on provider calls because it was left running.
+On by default on the hosted deployments (see config.ENABLE_IDLE_ASSESSMENTS),
+off elsewhere unless ENABLE_IDLE_ASSESSMENTS is set, so a clone of the public
+repository never starts spending on provider calls because it was left running.
+
+What counts as "busy" (note_request): somebody arriving on the site, or any
+request that uses the model providers (assessing, SciM chat, reviews, defence
+strategies, rescoring), for as long as it is in flight. Background polling an
+open tab does every few seconds (layout sync, PiEN, status panels) does not
+count: it competes for nothing, and counting it meant a single tab left open
+anywhere kept the site "busy" forever, so nothing was ever assessed.
 """
 
 import time
@@ -72,14 +80,49 @@ def _roll_day():
         _STATE["seen"] = set()
 
 
-def note_request():
+# Requests that mean a person is here and may need the model providers.
+_BUSY_PREFIXES = ("/api/assess/", "/api/scilem/chat", "/api/defense-strategy",
+                  "/api/reviews/rebut", "/api/admin/rescore")
+_INFLIGHT = {"n": 0}
+
+
+def is_busy_request(path: str = "", method: str = "GET") -> bool:
+    """Does this request mean the site is in use (see the module docstring)?"""
+    path = path or ""
+    if path in ("/", "/index.html"):
+        return True
+    if path.startswith(_BUSY_PREFIXES):
+        return True
+    if method.upper() == "POST" and path.startswith("/api/assessments/") and path.endswith("/review/llm"):
+        return True
+    return False
+
+
+def note_request(path: str = None, method: str = "GET"):
     """Record that a real request was served. Called from the HTTP middleware.
 
-    This is the only definition of "the site is busy" that means anything. A
-    timer alone would happily run a batch of provider calls while somebody is
-    waiting on an assessment, competing for the same rate-limited quota as the
-    person who actually asked for something.
+    With no path (older callers), every request counts. With a path, only the
+    ones that mean somebody is using the site (is_busy_request) do. A timer
+    alone would happily run a batch of provider calls while somebody is waiting
+    on an assessment, competing for the same rate-limited quota as the person
+    who actually asked for something.
     """
+    if path is None or is_busy_request(path, method):
+        _STATE["last_request_at"] = time.time()
+
+
+def begin(path: str, method: str = "GET") -> bool:
+    """Mark a provider-using request as in flight; returns whether it counted."""
+    if path.startswith(_BUSY_PREFIXES) or (method.upper() == "POST" and path.endswith("/review/llm")):
+        with _LOCK:
+            _INFLIGHT["n"] += 1
+        return True
+    return False
+
+
+def end():
+    with _LOCK:
+        _INFLIGHT["n"] = max(0, _INFLIGHT["n"] - 1)
     _STATE["last_request_at"] = time.time()
 
 
@@ -91,6 +134,21 @@ def idle_seconds() -> float:
         # deployment does not immediately fire a batch during boot.
         return 0.0
     return max(0.0, time.time() - last)
+
+
+def public_status() -> dict:
+    """What anyone may see: whether the site works while idle, and what it did
+    today. No errors, timings or thresholds, which are the owner's business."""
+    with _LOCK:
+        _roll_day()
+        return {
+            "enabled": bool(config.ENABLE_IDLE_ASSESSMENTS),
+            "assessed_today": _STATE["assessed_today"],
+            "daily_cap": config.IDLE_MAX_PER_DAY,
+            "last_title": _STATE["last_title"],
+            "last_run_at": _STATE["last_run_at"],
+            "working_now": _STATE["running"],
+        }
 
 
 def status() -> dict:
@@ -105,6 +163,7 @@ def status() -> dict:
             "daily_cap": config.IDLE_MAX_PER_DAY,
             "remaining_today": max(0, config.IDLE_MAX_PER_DAY - _STATE["assessed_today"]),
             "idle_seconds": round(idle_seconds()),
+            "in_flight": _INFLIGHT["n"],
             "idle_threshold": config.IDLE_AFTER_SECONDS,
             "site_is_idle": idle_seconds() >= config.IDLE_AFTER_SECONDS,
             "last_title": _STATE["last_title"],
@@ -133,6 +192,8 @@ def _may_run() -> bool:
         if _STATE["attempted_today"] >= config.IDLE_MAX_PER_DAY * 4:
             return False
         if idle_seconds() < config.IDLE_AFTER_SECONDS:
+            return False
+        if _INFLIGHT["n"] > 0:          # somebody's assessment is still running
             return False
         _STATE["running"] = True
         return True
