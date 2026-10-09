@@ -327,3 +327,9 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 **What:** dragging a window by its header against the left, right or bottom edge of the screen (or so that more than half of it is off-screen) closes it. While it is far enough out it fades slightly, to show that letting go will close it. A closed window is forgotten (it does not come back on the next visit) and reopens centred from its pill. This is the only way a window closes: there are still no close buttons, Esc or mark clicks.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: HAL-OS starts when you press Start
+
+**What:** opening HAL-OS no longer boots the machine. Its screen shows a "Start HAL-OS" button with the image size, and a note when there are weights from last time to pick up. The x86 emulator downloads and boots only when the button is pressed. Pause and Reboot do nothing until then, and pause/resume messages from the page are ignored until the machine is up.
+
+**Files:** `frontend/hal/hal.js`, `frontend/hal/hal.css`, `frontend/hal/index.html`.
