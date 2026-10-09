@@ -637,3 +637,28 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 - Mark: it has 2 lines (no trail).
 - Pause: with π and friends open, a double-click froze all four counts for 2.5 s, and another resumed them.
 - 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: RiBD suggests a ledger paper and a scanned manuscript
+
+**What:** RiBD (the research mentor) now opens with "RiBD suggests", two cards chosen for the researcher's profile:
+- **From the ledger explorer:** a paper recorded on the Proof-of-Research ledger, the best match, ties broken by piX.
+- **A scanned manuscript:** any assessed manuscript, the best match, ties broken by how recently it was scanned. It is never the same paper as the first.
+
+**How matching works:**
+- Relevance uses only the profile:
+  - a shared field: +3
+  - a profile keyword in the title: +2
+  - a word from the core claim in the title: +1
+- Nothing with zero relevance is suggested, and the researcher's own papers never are.
+- Each card says why it was picked and opens the paper's dossier.
+
+**Where it lives:** `backend/rib_suggest.py` (pure functions), `GET /api/buddy/suggest` (only public ledger fields: title, author, fields, piX, date) and `frontend/ribsuggest.js`. `app.js` only adds the slot.
+
+**Verified:**
+- `tests/test_rib_suggest.py` (5 tests) checks:
+  - two different relevant picks, the first on the ledger
+  - own and irrelevant papers never suggested
+  - an empty profile asks to be filled in
+  - only public fields returned
+- Against a local database with a test profile and papers, the endpoint picked the ledger paper on glioblastoma and the stroke manuscript, and left out the researcher's own paper. The cards rendered, and a click opened the dossier, at 1440 and 390 px with no page errors.
+- pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
