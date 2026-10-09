@@ -28,6 +28,7 @@
       ["HAL-OS", "A bare-metal ternary network booting in your browser: feed it images and watch it learn."],
       ["QuVI", "Build quantum circuits and inspect probabilities, Bloch spheres and entanglement."],
       ["Unigyro", "Unigyro II, Murtaza Vefadar's single-seater robot vehicle: his video."],
+      ["NeuroFrenzy", "A game: fill in neuroscience blanks before the clock runs out."],
       ["Private projects", "Owner-only work in progress."],
       ["Permission requests", "Ask authors for permission, with a link they answer."],
     ]],

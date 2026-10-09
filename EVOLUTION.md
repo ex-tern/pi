@@ -394,3 +394,14 @@ The [neurophilic/Unigyro](https://github.com/neurophilic/Unigyro) repository is 
 The Unigyro repository's contents (README crediting Murtaza Vefadar, a standalone playable page, `pitechlab/`, `CITATION.cff`) are ready but not yet published. This session cannot push to `neurophilic` until the Claude GitHub App is installed there, so the owner adds them; a copy is in Tech/Unigyro.
 
 **Files:** `frontend/unigyro.css`, `frontend/orbit.css`, `frontend/index.html`, `scripts/sync_unigyro.py`, `CLAUDE.md`.
+
+## 2026-10-09: NeuroFrenzy, a game in the Lab
+
+**What:** a "NeuroFrenzy" pill in the Lab bubble: a browser port of neurophilic/NeuroGame ("Neuro Speed Typer", a Streamlit app), at the owner's request to rename it NeuroFrenzy.
+- Gameplay: fill in the blanks in six neuroscience statements before the clock runs out. Easy (1 blank, 25 s), medium (2, 30 s) and hard (3, 40 s), with the same questions, hints and scoring as the original (10 points per blank, nothing if late or wrong; 120 to win).
+- Additions: a visible countdown that turns red in the last seconds, inline blanks, Enter to submit and go on, and a remembered best score (`orbit:nf:best`, so it follows a signed-in account). A game left mid-question starts over when its window closes.
+- Answers are checked case-insensitively, ignoring apostrophes, as in the original.
+
+The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for the owner: this session cannot write to `neurophilic`. A ready folder is in Tech/NeuroFrenzy.
+
+**Files:** `frontend/neurofrenzy.js`, `frontend/neurofrenzy.css`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
