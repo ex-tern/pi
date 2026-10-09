@@ -16,6 +16,7 @@ let info = null;           // build.json
 let emu = null;            // the V86 instance
 let weights = null;        // ArrayBuffer: the weight disk, shared live with v86
 let running = false;
+let ready = false;          // set once v86 has finished starting; it cannot be paused or resumed before
 let armed = false;
 let source = "none";
 const canvas = new Uint8Array(W.SLOTS);   // one byte per neuron, as in portal.py
@@ -99,6 +100,7 @@ async function persistWeights(force) {
 async function boot(diskBuffer) {
   if (emu) { try { await emu.destroy(); } catch (_) { /* already gone */ } emu = null; }
   running = false;
+  ready = false;
   prev = null;
   setState("booting…");
   const { V86 } = await import("./" + V86_DIR + "libv86.mjs");
@@ -122,6 +124,7 @@ async function boot(diskBuffer) {
     autostart: true,
   });
   emu.add_listener("emulator-ready", () => {
+    ready = true;
     running = true;
     setState("running", "on");
     $("pause").textContent = "Pause";
@@ -473,7 +476,9 @@ function bindUI() {
   // The Lab tab pauses the machine when it is hidden, so a background tab is
   // not running an x86 emulator for nobody.
   window.addEventListener("message", async e => {
-    if (e.origin !== location.origin || !e.data || !emu) return;
+    // the page sends pause/resume as windows come and go; before the machine
+    // is up there is nothing to pause, and it starts by itself anyway
+    if (e.origin !== location.origin || !e.data || !emu || !ready) return;
     if (e.data.hal === "pause" && running) { await emu.stop(); running = false; setState("paused"); $("pause").textContent = "Resume"; persistWeights(true); }
     if (e.data.hal === "resume" && !running) { await emu.run(); running = true; setState(armed ? "injecting" : "running", armed ? "live" : "on"); $("pause").textContent = "Pause"; }
   });

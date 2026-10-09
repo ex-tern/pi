@@ -123,11 +123,12 @@
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="Pi Tech Lab. Drag to move; click to close all open cards">' +
+    '<button type="button" class="orbit-core" aria-label="PiEn, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
-    '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g></svg></button>' +
+    '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
+    '<text class="om-name" x="200" y="300" text-anchor="middle">PiEn</text></svg></button>' +
     '<div class="orbit-pi" aria-live="off" title="Drag to move; drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
@@ -204,6 +205,7 @@
       b.type = "button";
       b.className = "orbit-bubble";
       b.dataset.section = it.section.key;
+      b.dataset.key = it.key;
       b.setAttribute("role", "listitem");
       b.innerHTML = '<span class="ob-dot" aria-hidden="true"></span><span class="ob-label"></span>';
       b.querySelector(".ob-label").textContent = it.title;
@@ -260,10 +262,20 @@
     return (small ? 16 + q * 26 : 20 + q * 50) * Math.min(1.4, logoScale);
   }
 
+  // the title's band at the top, in stage coordinates
+  function titleRect() {
+    const t = $(".orbit-title");
+    if (!t) return { x: 0, y: 0, w: 0, h: 0 };
+    const b = t.getBoundingClientRect();
+    const w = Math.max(b.width, titleBox.w), h = Math.max(b.height, titleBox.h);
+    return { x: W / 2 - w / 2, y: b.top - top, w, h };
+  }
   function clampLogo() {
-    const m = R + 8;
+    const m = R + 8, tr = titleRect();
     lx = Math.min(W - m, Math.max(m, lx));
-    ly = Math.min(H - m, Math.max(m + (small ? 36 : 44), ly));
+    // below the title wherever the title is above it
+    const clearTitle = lx + R > tr.x - 8 && lx - R < tr.x + tr.w + 8 ? tr.y + tr.h + 10 + R : m;
+    ly = Math.min(H - m, Math.max(clearTitle, m, ly));
   }
 
   // The π box is its own thing: under the mark until you move it, then
@@ -274,6 +286,14 @@
     else { x = lx; y = ly + R + 14 + piBox.h / 2; }
     x = Math.min(W - piBox.w / 2 - 4, Math.max(piBox.w / 2 + 4, x));
     y = Math.min(H - piBox.h / 2 - 4, Math.max(piBox.h / 2 + 4, y));
+    // never on the mark or the title: the nearest spot clear of both
+    const g = GAP();
+    const fixed = [grow({ x: lx - R, y: ly - R, w: 2 * R, h: 2 * R }, g), grow(titleRect(), g)];
+    const r0 = { x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h };
+    if (!freeAt(r0, fixed)) {
+      const r = nearestFree(x, y, piBox.w, piBox.h, fixed);
+      if (r) { x = r.x + r.w / 2; y = r.y + r.h / 2; }
+    }
     return [x, y];
   }
   function placeMark() {
@@ -299,12 +319,7 @@
       grow({ x: lx - R, y: ly - R, w: 2 * R, h: 2 * R }, g),
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
-    const t = $(".orbit-title");
-    if (t) {
-      const b = t.getBoundingClientRect();
-      const w = Math.max(b.width, titleBox.w), h = Math.max(b.height, titleBox.h);
-      out.push(grow({ x: W / 2 - w / 2, y: b.top - top, w, h }, g));
-    }
+    out.push(grow(titleRect(), g));
     document.querySelectorAll(".buddy-float").forEach(el => {
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
@@ -339,31 +354,11 @@
   const ro = window.ResizeObserver ? new ResizeObserver(() => layoutSoon()) : null;
   function watch(el) { if (ro && el && !watched.has(el)) { watched.add(el); ro.observe(el); } }
 
-  function layout() {
-    const bar = $(".channel-bar");
-    watch(bar); watch($(".orbit-pi")); watch($(".orbit-title"));
-    top = bar ? bar.offsetHeight : 0;
-    stage.style.top = top + "px";
-    document.documentElement.style.setProperty("--orbit-top", top + "px");
-    W = window.innerWidth; H = window.innerHeight - top;
-    small = W < 700;
-    R = idleR();
-    const pi = $(".orbit-pi");
-    pi.style.setProperty("--pi-scale", piScale);
-    if (pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
-    if (!draggingLogo) {
-      if (logoAt) { lx = logoAt.fx * W; ly = logoAt.fy * H; }
-      else { lx = W / 2; ly = H / 2 - (small ? 20 : 10); }
-    }
-    clampLogo();
-    placeMark();
-
-    items.forEach(it => { it.bubble.hidden = !visible(it); });
-    const vis = items.filter(it => !it.bubble.hidden);
-    vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
-
+  // Place every visible pill without overlap. Returns how many found no room.
+  function placePills(vis, toKeep) {
     const g = GAP();
     const placed = obstacles();
+    vis.forEach(it => { it.at = null; });
     // 1. Every pill that has a place keeps it. Only a pill whose place is taken
     //    (by one you just dropped, the mark, the π box, the screen edge) is
     //    pushed, to the nearest free spot. The last one you moved wins.
@@ -376,7 +371,7 @@
     if (settlePushes && settled.length && settled[0].key === prio[0]) {
       const it = settled.shift();
       const r = nearestFree(lx + it.custom.fx * W, ly + it.custom.fy * H, it.w, it.h, placed);
-      it.at = r; if (r) { placed.push(grow(r, g / 2)); keep(it); }
+      it.at = r; if (r) { placed.push(grow(r, g / 2)); toKeep.add(it); }
     }
     settled.forEach(it => {
       const r = { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2, w: it.w, h: it.h };
@@ -408,11 +403,49 @@
         if (it.at) { usedRings.ring = { r0, step, ax }; }
       }
       if (!it.at) it.at = nearestFree(lx, ly, it.w, it.h, placed);  // a very small screen: anywhere free
-      if (it.at) { placed.push(grow(it.at, g / 2)); keep(it); }       // from now on this is its place
+      if (it.at) { placed.push(grow(it.at, g / 2)); toKeep.add(it); }  // from now on this is its place
     }
     // a push from a pill you dropped is for keeps; one from the screen edge or a
     // passing mark is not, so the pill returns when there is room again
-    if (settlePushes) vis.forEach(it => { if (it.pushed && it.at) keep(it); });
+    if (settlePushes) vis.forEach(it => { if (it.pushed && it.at) toKeep.add(it); });
+    return vis.filter(it => it !== dragging && !it.at).length;
+  }
+
+  function layout() {
+    const bar = $(".channel-bar");
+    watch(bar); watch($(".orbit-pi")); watch($(".orbit-title"));
+    top = bar ? bar.offsetHeight : 0;
+    stage.style.top = top + "px";
+    document.documentElement.style.setProperty("--orbit-top", top + "px");
+    W = window.innerWidth; H = window.innerHeight - top;
+    small = W < 700;
+    R = idleR();
+    const pi = $(".orbit-pi");
+    pi.style.setProperty("--pi-scale", piScale);
+    if (pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
+    if (!draggingLogo) {
+      if (logoAt) { lx = logoAt.fx * W; ly = logoAt.fy * H; }
+      else { lx = W / 2; ly = H / 2 - (small ? 20 : 10); }
+    }
+    clampLogo();
+    placeMark();
+
+    items.forEach(it => { it.bubble.hidden = !visible(it); });
+    const vis = items.filter(it => !it.bubble.hidden);
+    vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
+
+    // Nothing may overlap, on any screen. If there is no room for every pill,
+    // all pills shrink together a step at a time until they fit.
+    let fitK = 1, missing = 0, toKeep;
+    for (let tries = 0; tries < 9; tries++) {
+      stage.style.setProperty("--pill-fit", fitK.toFixed(3));
+      vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
+      toKeep = new Set();
+      missing = placePills(vis, toKeep);
+      if (!missing) break;
+      fitK *= 0.88;
+    }
+    toKeep.forEach(it => keep(it));
     settlePushes = false;
     vis.forEach(it => {
       if (it === dragging) return;
@@ -627,6 +660,7 @@
   }
 
   function openItem(it) {
+    if (!restoring) document.dispatchEvent(new CustomEvent("orbit:open", { detail: { key: it.key } }));
     if (it.href) { window.open(it.href, "_blank", "noopener"); bumpUse(it, 1); pulse(); return; }
     setAside(false);
     if (it.panel) { raise(it.panel, true); bumpUse(it, 1); pulse(); return; }
@@ -1020,6 +1054,7 @@
     else if (location.hash) setTimeout(fromHash, 300);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
+    document.dispatchEvent(new CustomEvent("orbit:ready"));
     measureTitles(); showTitle(0, false); nextTitleLater();
     window.addEventListener("resize", () => { measureTitles(); showTitle(titleIdx, false); layoutSoon(); });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureTitles(); layoutSoon(); });
@@ -1027,7 +1062,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);

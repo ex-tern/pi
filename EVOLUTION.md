@@ -191,3 +191,17 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 **Checks:** all 32 names at 1440 and 390 px fit with no overlap and no horizontal scroll. No pill moves when the name changes.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: PiEn; nothing overlaps on any screen; smaller title; HAL-OS start-up race
+
+**What:**
+- **PiEn.** The mark is PiEn, an engine that learns how the site is used. Its name is inside the circle.
+  - It learns which cards are opened and which follow which.
+  - Your own pattern is kept with your layout (`orbit:pien`, synced to your account when you are signed in).
+  - Everyone's pattern is pooled anonymously on the server (`backend/pien.py`, `/api/pien`): card names and counts only, never who. Requests are capped at 40 entries of at most 10, and each address may send 60 an hour.
+  - After each step, PiEn puts a soft blue halo on the card you are most likely to want next. Your habits weigh three times as much as everyone's, and it stays quiet with too little to go on. Hovering the mark shows how much it has learned.
+- **No overlaps on any screen.** Pills, the mark, the π box and the title never overlap: the π box avoids the mark and the title, and the mark stays below the title. When a screen has no room for every pill, all pills shrink together in steps until they fit. Tested at 13 sizes from 320×568 to 2560×1440, including phones in landscape: fresh, with the mark in a corner, and with the π box dropped on the mark.
+- **Title** is smaller: 20–28 px.
+- **HAL-OS** ignores pause/resume until the emulator has finished starting. This fixes occasional emulator errors when windows were opened in quick succession.
+
+**Files:** `backend/pien.py`, `backend/api.py`, `backend/tests/test_pien.py`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/hal/hal.js`, `frontend/index.html`, `CLAUDE.md`.
