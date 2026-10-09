@@ -12,6 +12,11 @@
 // (it has a 24-beat pattern) with a one-bar crossfade, so the cycle can't be
 // heard. And the volume follows π: each new digit sets the level for its
 // 60 ms (0 quietest, 9 loudest), so no two passes of the loop sound alike.
+//
+// A press starts with a futuristic whoosh, synthesised on the spot (filtered
+// noise sweeping up and across the stereo field, with a gliding pair of
+// tones), exactly one beat long so the song drops in on the beat. Stopping
+// plays a shorter whoosh going down.
 (function () {
   "use strict";
   const SRC = "sound/dd.mp3?v=8";
@@ -37,19 +42,67 @@
     return loading;
   }
 
+  // ------------------------------------------------------------ the whoosh
+  let noise = null;
+  function whoosh(ac, dest, t, up) {
+    const D = up ? BEAT : 0.45;
+    if (!noise || noise.sampleRate !== ac.sampleRate) {
+      noise = ac.createBuffer(1, ac.sampleRate, ac.sampleRate);
+      const d = noise.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+    }
+    const lo = 260, hi = 7200, f0 = up ? lo : hi, f1 = up ? hi : lo;
+    const out = ac.createGain();
+    out.gain.value = 3.2;
+    const pan = ac.createStereoPanner ? ac.createStereoPanner() : null;
+    if (pan) {
+      pan.pan.setValueAtTime(up ? -0.75 : 0.75, t);
+      pan.pan.linearRampToValueAtTime(up ? 0.75 : -0.75, t + D);
+      out.connect(pan).connect(dest);
+    } else out.connect(dest);
+
+    // air: band-passed noise sweeping
+    const src = ac.createBufferSource(); src.buffer = noise;
+    const bp = ac.createBiquadFilter(); bp.type = "bandpass"; bp.Q.value = 3.5;
+    bp.frequency.setValueAtTime(f0, t);
+    bp.frequency.exponentialRampToValueAtTime(f1, t + D);
+    const ng = ac.createGain();
+    ng.gain.setValueAtTime(0.0001, t);
+    ng.gain.exponentialRampToValueAtTime(0.55, t + D * (up ? 0.8 : 0.25));
+    ng.gain.exponentialRampToValueAtTime(0.0001, t + D);
+    src.connect(bp).connect(ng).connect(out);
+    src.start(t); src.stop(t + D + 0.02);
+
+    // shine: two gliding tones a fifth apart, slightly detuned
+    [1, 1.5].forEach((m, i) => {
+      const o = ac.createOscillator(); o.type = i ? "triangle" : "sine";
+      o.detune.value = i ? 7 : -7;
+      o.frequency.setValueAtTime((up ? 180 : 1500) * m, t);
+      o.frequency.exponentialRampToValueAtTime((up ? 1500 : 160) * m, t + D);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0.0001, t);
+      g.gain.exponentialRampToValueAtTime(i ? 0.035 : 0.06, t + D * (up ? 0.85 : 0.2));
+      g.gain.exponentialRampToValueAtTime(0.0001, t + D);
+      o.connect(g).connect(out);
+      o.start(t); o.stop(t + D + 0.02);
+    });
+    return D;
+  }
+  window.PiWhoosh = whoosh;   // for previews
+
   function play(core) {
     node = ctx.createBufferSource();
     node.buffer = buf;
     node.loop = true;
     node.loopStart = loopStart;
     node.loopEnd = loopEnd;
+    const t0 = ctx.currentTime + 0.03 + whoosh(ctx, ctx.destination, ctx.currentTime + 0.03, true);
     gain = ctx.createGain();
-    gain.gain.setValueAtTime(0, ctx.currentTime);
-    gain.gain.linearRampToValueAtTime(1, ctx.currentTime + 0.05);
+    gain.gain.setValueAtTime(0, t0);
+    gain.gain.linearRampToValueAtTime(1, t0 + 0.05);
     piGain = ctx.createGain();
     piGain.gain.value = 0.7;
     node.connect(gain).connect(piGain).connect(ctx.destination);
-    const t0 = ctx.currentTime + 0.03;
     node.start(t0, loopStart);
     core.classList.add("is-playing");
     beats(t0);
@@ -74,9 +127,11 @@
     clearTimeout(syncT);
     if (node) {
       const n = node, g = gain, t = ctx.currentTime;
+      g.gain.cancelScheduledValues(t);
       g.gain.setValueAtTime(g.gain.value, t);
-      g.gain.linearRampToValueAtTime(0, t + 0.12);
-      n.stop(t + 0.13);
+      g.gain.linearRampToValueAtTime(0, t + 0.3);
+      n.stop(t + 0.32);
+      whoosh(ctx, ctx.destination, t, false);
       node = gain = piGain = null;
     }
     core.classList.remove("is-playing");

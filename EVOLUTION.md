@@ -488,3 +488,16 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** the owner asked for the bass and low rumble to go. Both stems now pass through steep high-pass filters at 170 Hz (18 dB/oct on the music, 12 dB/oct on the voice), and the 300 Hz cut was eased to -2 dB. Energy below 170 Hz fell from 57% of the mix to 1.4%. Everything else is unchanged: the voice +2 semitones, denoising, the 6-bar seamless loop at 100 BPM and the π-driven volume.
 
 **Verified:** the tiled loop measures 99.99 BPM with its beat at the start; loop, stop, π-volume and tempo checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: a futuristic whoosh on the logo
+
+**What:** pressing the logo now starts with a whoosh synthesised in Web Audio (no file):
+- band-passed noise sweeping 260 Hz → 7.2 kHz and panning left → right
+- two gliding tones a fifth apart, slightly detuned
+
+It lasts exactly one beat (0.6 s), so the song drops in on the beat. Stopping plays a shorter whoosh going down (0.45 s) while the song fades out over 0.3 s. Its level is matched to the song's peaks.
+
+**Verified:**
+- An offline render: the whoosh peaks at -4.4 dB against the song's -4.1 dB, with no page errors.
+- Loop, stop, double-press, π-volume and tempo checks pass at 1440 and 390 px.
+- pytest at baseline; `build_hal.py` builds.
