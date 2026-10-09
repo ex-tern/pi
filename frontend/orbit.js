@@ -79,7 +79,7 @@
     const flush = () => { if (group) { addItem(section, group.nodes, group.title); group = null; } };
     for (const el of [...panel.children]) {
       if (el.classList.contains("page-header") || el.classList.contains("lab-intro")) continue;
-      if (el.classList.contains("buddy-float")) { addItem(section, [el], "ResBD"); continue; }
+      if (el.classList.contains("buddy-float")) { addItem(section, [el], "RiBD"); continue; }
       if (el.classList.contains("section-heading")) { flush(); group = { title: cleanTitle(el), nodes: [el] }; continue; }
       if (group) {
         group.nodes.push(el);
@@ -138,8 +138,9 @@
   }
   // Renamed pills keep what was remembered about them (place, size, use, window).
   const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
-                    "account:SciLM (siM) Assistant": "account:siM Assistant" };
-  const RETITLE = { "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "siM Assistant" };
+                    "account:SciLM (siM) Assistant": "account:SciM Assistant", "account:siM Assistant": "account:SciM Assistant",
+                    "assess:ResBD": "assess:RiBD" };
+  const RETITLE = { "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
   // Pills that hold other pills: the group's bubble shows its members inside it.
   const GROUPS = [
     { section: "lab", title: "Lab" },
@@ -258,7 +259,7 @@
     {
       // A pill with things inside it (a chat box, or other pills) cannot be a
       // <button>: buttons may not contain interactive content.
-      const rich = it.key === "account:siM Assistant" || it.group;
+      const rich = it.key === "account:SciM Assistant" || it.group;
       const b = document.createElement(rich ? "div" : "button");
       if (rich) { b.tabIndex = 0; b.setAttribute("role", "group"); } else b.type = "button";
       b.className = "orbit-bubble";
@@ -267,11 +268,11 @@
       b.setAttribute("role", "listitem");
       b.innerHTML = '<span class="ob-dot" aria-hidden="true"></span><span class="ob-label"></span>';
       b.querySelector(".ob-label").textContent = it.title;
-      if (it.key === "account:siM Assistant") {
+      if (it.key === "account:SciM Assistant") {
         b.classList.add("is-chat");
         const f = document.createElement("form");
         f.className = "ob-chat";
-        f.innerHTML = '<input type="text" placeholder="Ask siM…" aria-label="Ask siM a question" autocomplete="off"><button type="submit" aria-label="Ask">↵</button>';
+        f.innerHTML = '<input type="text" placeholder="Ask SciM…" aria-label="Ask SciM a question" autocomplete="off"><button type="submit" aria-label="Ask">↵</button>';
         f.addEventListener("submit", e => {
           e.preventDefault();
           const q = f.querySelector("input").value.trim();

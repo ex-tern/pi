@@ -16,7 +16,7 @@
           "These scores are deterministic: the same paper always gets the same numbers."] },
     { k: "Panel", s: "Independent models assess it",
       d: ["Llama, Mistral, Qwen and Gemini each assess the paper separately.",
-          "siM, the local model, reads its structure alongside them.",
+          "SciM, the local model, reads its structure alongside them.",
           "No model sees another's verdict."] },
     { k: "Judge", s: "PiDN weighs the verdicts",
       d: ["Agreement between the models is measured; weak or contradictory reasoning is caught.",

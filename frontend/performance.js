@@ -70,12 +70,12 @@
       bD === null ? 0 : Math.max(0, bD), d && d.learning ? "improving" : ""));
     // siM
     const m = e.siM, bM = better(m);
-    html.push(card("siM", "Reads a paper's structure in seconds and checks itself against the full model panel.",
+    html.push(card("SciM", "Reads a paper's structure in seconds and checks itself against the full model panel.",
       learnedLine(m && (m.consensus_observations || m.observations) || 0, bM, "when the panel first finishes an assessment"),
       bM === null ? 0 : Math.max(0, bM), m && m.learning ? "improving" : ""));
     // ResBD
     const b = e.riB, bB = better(b);
-    html.push(card("ResBD", "Suggests which papers are worth your time, from your profile.",
+    html.push(card("RiBD", "Your research mentor. It suggests which papers are worth your time and what to fix first.",
       learnedLine(b && (b.observations || b.logged_observations) || 0, bB, "when you mark its suggestions as useful or not"),
       bB === null ? 0 : Math.max(0, bB), b && b.learning ? "improving" : ""));
     cards.innerHTML = html.join("");

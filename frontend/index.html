@@ -105,7 +105,7 @@
     </details>
 
     <details class="sidebar-expander">
-      <summary>siM Assistant<span class="pill pill-muted" id="scilemBadge">Checking…</span></summary>
+      <summary>SciM Assistant<span class="pill pill-muted" id="scilemBadge">Checking…</span></summary>
       <div id="scilemChatBox" class="scilem-chat-box"></div>
       <div class="scilem-suggestions" id="scilemSuggestions"></div>
       <form id="scilemForm" class="scilem-form">
@@ -254,7 +254,7 @@
         <div class="signin-notice-body">
           <strong>Sign in to unlock the full tool.</strong>
           <p>Connect a wallet or link ORCID in “Your account” to save a research profile, get a
-          tailored ResBD, keep your piQ balance, and have diagnostics framed against
+          tailored RiBD, keep your piQ balance, and have diagnostics framed against
           your own goals. You can still assess manuscripts on the free trial without signing in.</p>
         </div>
       </div>
@@ -283,7 +283,7 @@
           <div class="profile-slot-field">
             <label for="profileSlotSelect">Profile</label>
             <select id="profileSlotSelect"
-                    title="Which profile frames your diagnostics and ResBD"></select>
+                    title="Which profile frames your diagnostics and RiBD"></select>
           </div>
           <div class="profile-slot-field">
             <label for="profileSlotName">Profile name</label>
@@ -328,7 +328,7 @@
           <textarea id="profileAbstract" rows="5" maxlength="4000"
                     placeholder="Paste a draft abstract here. The buddy uses it to compare your framing against the assessed corpus — it is never scored, and never leaves this deployment."></textarea>
           <div class="profile-meta">
-            <span class="profile-hint">Optional. Helps the research buddy give sharper suggestions.</span>
+            <span class="profile-hint">Optional. Helps RiBD, your research mentor, give sharper advice.</span>
             <span class="profile-count"><span id="profileAbstractCount">0</span> / 4000</span>
           </div>
         </label>
@@ -341,7 +341,7 @@
         </div>
       </details>
 
-      <!-- ResBD: derived from the saved profile plus the live
+      <!-- RiBD: derived from the saved profile plus the live
            corpus. A floating window rather than a card in the column — it is
            advice ABOUT the work being done on this tab, so it should stay in
            view while the page scrolls instead of being scrolled past.
@@ -351,46 +351,9 @@
            "only on the Assessment tab" needs no JavaScript to enforce. -->
       <div class="buddy-float hidden" id="buddyCard">
         <div class="buddy-bar" id="buddyBar">
-          <!-- riB, drawn rather than named. Inline SVG, not an image file: it
-               is 1KB, it cannot 404, it inherits the page's colours, and it
-               scales to any DPI. aria-hidden because the heading beside it
-               already carries the name — a screen reader announcing "monkey"
-               here would add nothing. -->
-          <svg class="rib-face" id="ribFace" viewBox="0 0 48 48" aria-hidden="true">
-            <!-- ears -->
-            <circle cx="6.5" cy="24" r="7" fill="#8d5a3b"/>
-            <circle cx="41.5" cy="24" r="7" fill="#8d5a3b"/>
-            <circle cx="6.5" cy="24" r="3.6" fill="#c98b63"/>
-            <circle cx="41.5" cy="24" r="3.6" fill="#c98b63"/>
-            <!-- head -->
-            <ellipse cx="24" cy="23.5" rx="16" ry="15" fill="#8d5a3b"/>
-            <!-- face plate: the pale muzzle-and-brow mask a chimp actually has -->
-            <path d="M24 9.5c8.4 0 13 6.2 13 13.2 0 8.2-5.6 13.8-13 13.8S11 30.9 11 22.7C11 15.7 15.6 9.5 24 9.5z"
-                  fill="#e8bb92"/>
-            <!-- brow ridge -->
-            <path d="M13.6 18.6c3-2.6 6.4-3.9 10.4-3.9s7.4 1.3 10.4 3.9"
-                  fill="none" stroke="#a76a45" stroke-width="2.1" stroke-linecap="round"/>
-            <!-- eyes: the pupils are their own group so JS can blink them -->
-            <g class="rib-eyes">
-              <circle cx="18.4" cy="22.4" r="2.5" fill="#3b2417"/>
-              <circle cx="29.6" cy="22.4" r="2.5" fill="#3b2417"/>
-              <circle cx="19.2" cy="21.6" r="0.85" fill="#fff"/>
-              <circle cx="30.4" cy="21.6" r="0.85" fill="#fff"/>
-            </g>
-            <!-- muzzle -->
-            <ellipse cx="24" cy="30.5" rx="8.2" ry="5.6" fill="#f2cfae"/>
-            <ellipse cx="21.4" cy="28.6" rx="0.95" ry="1.25" fill="#7a4a2e"/>
-            <ellipse cx="26.6" cy="28.6" rx="0.95" ry="1.25" fill="#7a4a2e"/>
-            <path d="M20 31.8c1.5 1.9 6.5 1.9 8 0" fill="none"
-                  stroke="#7a4a2e" stroke-width="1.7" stroke-linecap="round"/>
-            <!-- tuft, so the silhouette is not a plain circle at 26px -->
-            <path d="M20.5 9.2c1-2.2 3-3.2 3.5-1.4.6-1.9 2.6-1 3.4 1.2"
-                  fill="none" stroke="#6f452c" stroke-width="1.8" stroke-linecap="round"/>
-          </svg>
-          <span class="buddy-title"><strong>ResBD</strong></span>
-          <span class="buddy-sub" title="Research Buddy: suggests what to read next and what to
-            fix first, from your profile and the papers you tick">Research Buddy · what to read
-            next</span>
+          <span class="buddy-title"><strong>RiBD</strong></span>
+          <span class="buddy-sub" title="Your research mentor: suggests what to read next and what to
+            fix first, from your profile and the papers you tick">Your research mentor</span>
           <!-- Icons are inline SVG, not characters. &minus; and &#9633; both
                depend on the system font having those glyphs, and where it does
                not the browser draws the missing-glyph box — which is exactly
@@ -398,14 +361,14 @@
                was invisible until both controls rendered as empty squares. -->
           <span class="buddy-win-actions">
             <button type="button" class="buddy-win-btn" id="buddyMin"
-                    aria-label="Minimise the ResBD" title="Minimise">
+                    aria-label="Minimise the RiBD" title="Minimise">
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
                    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round">
                 <path d="M2.5 6.5h7"/>
               </svg>
             </button>
             <button type="button" class="buddy-win-btn" id="buddyMax"
-                    aria-label="Maximise the ResBD" title="Maximise">
+                    aria-label="Maximise the RiBD" title="Maximise">
               <svg viewBox="0 0 12 12" width="12" height="12" aria-hidden="true"
                    fill="none" stroke="currentColor" stroke-width="1.6" stroke-linejoin="round">
                 <rect x="2.2" y="2.2" width="7.6" height="7.6" rx="1.2"/>
@@ -918,7 +881,7 @@
           <tbody>
             <tr><td><span class="stage-tag st-intake">1</span></td><td>Unified Intake &amp; ZK-Identity Registry</td><td>ORCID iD / W3C DID verification, local PDF, Unpaywall DOI resolution and OpenAlex discovery, ZK double-blind assignment.</td></tr>
             <tr><td><span class="stage-tag st-extract">2</span></td><td>Extraction &amp; Deterministic Scoring</td><td>PyMuPDF layout-aware text extraction, MDAR adherence, RRID validation, reproducibility markers, empirical density.</td></tr>
-            <tr><td><span class="stage-tag st-panel">3</span></td><td>Independent Model Panel</td><td>Llama, Mistral, Qwen and Gemini each assess the manuscript separately, alongside the local SciLM (siM) structural analyser.</td></tr>
+            <tr><td><span class="stage-tag st-panel">3</span></td><td>Independent Model Panel</td><td>Llama, Mistral, Qwen and Gemini each assess the manuscript separately, alongside the local SciM structural analyser.</td></tr>
             <tr><td><span class="stage-tag st-judge">4</span></td><td>PiDN Adjudication</td><td>Weighs the panel's independent verdicts into one
               judgement, and records the criteria weighting this paper implies — the input the
               PiDN forecast is built from. Cross-model evidence synthesis, inter-model agreement measurement, judgement-quality grading, adversarial logic integrity matrix.</td></tr>
@@ -1086,18 +1049,18 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
   </div>
 </div>
 
-<script src="app.js?v=92"></script>
+<script src="app.js?v=93"></script>
 <script src="lab.js?v=90"></script>
 <script src="channel.js?v=1"></script>
-<script src="orbit.js?v=31"></script>
-<script src="pien.js?v=6"></script>
+<script src="orbit.js?v=33"></script>
+<script src="pien.js?v=8"></script>
 <script src="numbers.js?v=2"></script>
-<script src="capabilities.js?v=6"></script>
-<script src="architecture.js?v=2"></script>
+<script src="capabilities.js?v=7"></script>
+<script src="architecture.js?v=3"></script>
 <script src="peeks.js?v=1"></script>
 <script src="recent.js?v=1"></script>
 <script src="intern.js?v=1"></script>
-<script src="performance.js?v=1"></script>
+<script src="performance.js?v=2"></script>
 <script src="arcade.js?v=93"></script>
 </body>
 </html>
