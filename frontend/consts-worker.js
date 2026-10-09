@@ -66,10 +66,15 @@ const JOBS = [
 const STEPS = [100, 300, 1000, 3000, 10000, 30000];
 
 if (typeof self !== "undefined" && typeof postMessage === "function" && typeof window === "undefined" && !globalThis.__constsTest) {
+  // {pause: true} from the page (a double-click on the logo) holds the work
+  // between steps; {pause: false} carries on.
+  let paused = false;
+  self.onmessage = e => { if (e.data && "pause" in e.data) paused = !!e.data.pause; };
   (async () => {
     for (const D of STEPS) {
       for (const [key, f, cap] of JOBS) {
         if (cap && D > cap) continue;
+        while (paused) await new Promise(r => setTimeout(r, 200));
         postMessage({ key, digits: f(D) });
         await new Promise(r => setTimeout(r, 0));    // stay responsive to the page
       }

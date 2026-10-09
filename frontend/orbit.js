@@ -166,11 +166,7 @@
   }
 
   // ------------------------------------------------------------ the stage
-  const MARK_TRAIL = Array.from({ length: 30 }, (_, i) => {
-    const k = i + 1;
-    return '<g transform="rotate(' + (k * 1.25) + ' 200 200)" opacity="' + (0.30 * Math.pow(1 - k / 31, 1.8)).toFixed(3) + '">' +
-      '<line class="om-r" x1="200" y1="200" x2="350" y2="200"/><line class="om-r" x1="200" y1="200" x2="50" y2="200"/></g>';
-  }).join("");
+  // (the faded trail behind the sweep was removed: the mark is a single line)
   const stage = document.createElement("div");
   stage.className = "orbit-stage";
   stage.innerHTML =
@@ -180,7 +176,7 @@
     '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
-    '<g class="om-sweep">' + MARK_TRAIL +
+    '<g class="om-sweep">' +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text></svg></button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
@@ -678,37 +674,44 @@
     core.addEventListener("dblclick", () => setStill(!still));
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
-    // Scrolling down on the page itself opens the journal and the ledger
-    // explorer (see wireScrollOpen); the page wheel no longer resizes the mark.
-    wireScrollOpen();
+    // Scrolling on the page itself resizes the mark and opens a random window
+    // (see wireScrollOpen).
+    wireScrollOpen(setLogo);
   }
 
-  // Scrolling down on the page itself (not inside a window, a pill, the π box
-  // or the logo) opens the journal and the ledger explorer, once per scroll
-  // gesture: a trackpad's momentum keeps sending wheel events for a second or
-  // more, so a new gesture only counts after 600 ms of quiet. Nothing happens
-  // if both are already open, or while windows are set aside (the logo brings
-  // them back), so a scroll never reopens anything else. Scrolling up does
-  // nothing. On touch screens a swipe up counts as scrolling down.
-  const SCROLL_OPENS = ["Proof-of-Research Ledger Explorer", "The journal"];   // the last ends in front
-  function openOnScroll() {
-    if (document.documentElement.classList.contains("orbit-aside")) return;
-    const shut = SCROLL_OPENS.filter(t => { const it = items.find(i => i.title === t); return it && !it.panel; });
-    if (!shut.length) return;
-    shut.forEach(t => openTitle(t));
+  // Scrolling on the page itself (not inside a window, a pill, the π box or
+  // the logo), up or down, is a random window opener: each scroll gesture
+  // opens one window chosen at random from those not open yet (or brings a
+  // random open one to the front when everything is open). Meanwhile the wheel
+  // resizes the mark, up bigger and down smaller. A trackpad's momentum keeps
+  // sending wheel events for a second or more, so a new gesture only counts
+  // after 600 ms of quiet. HAL-OS is never picked (it opens only from its own
+  // pill), nor are links or bubbles. On touch screens a vertical swipe opens a
+  // random window.
+  function scrollPick() {
+    const can = items.filter(i => !i.group && !i.href && !isHal(i) && (i.virtual || visible(i)) && i.title);
+    const shut = can.filter(i => !i.panel);
+    const pool = shut.length ? shut : can;
+    if (!pool.length) return;
+    const it = pool[Math.floor(Math.random() * pool.length)];
+    setAside(false);
+    if (it.panel) raise(it.panel, true); else openItem(it);
   }
-  function wireScrollOpen() {
+  function wireScrollOpen(setLogo) {
     const off = t => t.closest && t.closest(".orbit-panel, .orbit-bubble, .orbit-pi, .orbit-core, input, textarea, select");
-    let acc = 0, last = 0, fired = false;
+    let acc = 0, last = 0, fired = false, t;
     stage.addEventListener("wheel", e => {
       if (e.defaultPrevented || off(e.target)) return;
       e.preventDefault();
-      const now = performance.now();
+      setLogo(Math.min(LOGO_MAX, Math.max(LOGO_MIN, logoScale * Math.exp(-e.deltaY * 0.0015))));
+      layoutSoon();
+      clearTimeout(t); t = setTimeout(() => store("orbit:logo:scale", +logoScale.toFixed(3)), 300);
+      const now = e.timeStamp || performance.now();          // when the input happened, even if the page was busy
       if (now - last > 600) { acc = 0; fired = false; }      // a new gesture
       last = now;
-      if (fired || e.deltaY <= 0) return;
-      acc += e.deltaY;
-      if (acc > 40) { fired = true; openOnScroll(); }
+      if (fired) return;
+      acc += Math.abs(e.deltaY);
+      if (acc > 40) { fired = true; scrollPick(); }
     }, { passive: false });
     let ty = null, tx = 0;
     stage.addEventListener("touchstart", e => {
@@ -719,7 +722,7 @@
       if (ty === null || !e.changedTouches.length) return;
       const dy = e.changedTouches[0].clientY - ty, dx = e.changedTouches[0].clientX - tx;
       ty = null;
-      if (dy < -60 && Math.abs(dy) > 1.5 * Math.abs(dx)) openOnScroll();
+      if (Math.abs(dy) > 60 && Math.abs(dy) > 1.5 * Math.abs(dx)) scrollPick();
     }, { passive: true });
   }
 
@@ -1066,6 +1069,7 @@
     document.documentElement.classList.toggle("orbit-still", on);
     if (piWorker) piWorker.postMessage(on ? { pause: true } : { resume: true });
     if (showPi) showPi();
+    document.dispatchEvent(new CustomEvent("orbit:still", { detail: on }));   // numbers.js: e, φ and γ stop too
   }
   function startPi() {
     const out = $(".op-digits"), cnt = $(".op-count");
@@ -1399,7 +1403,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
