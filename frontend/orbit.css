@@ -46,7 +46,7 @@ html.orbit-moving .orbit-pi { transition: none; }
 .orbit-title {
   position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--orbit-top, 0px) + 16px); margin: 0;
   pointer-events: auto; cursor: default; white-space: nowrap; text-align: center;
-  font-size: clamp(28px, 3.4vw, 44px); font-weight: 500; letter-spacing: -0.045em; line-height: 1.15; color: var(--ink);
+  font-size: clamp(20px, 2vw, 28px); font-weight: 500; letter-spacing: -0.035em; line-height: 1.15; color: var(--ink);
 }
 .ot-text { display: inline-block; transition: opacity 0.45s ease, filter 0.45s ease; }
 .ot-text.ot-out { opacity: 0; filter: blur(4px); }
@@ -84,7 +84,7 @@ html.orbit-moving .orbit-pi { transition: none; }
   display: inline-flex; align-items: center; gap: 0.6em; max-width: 18em;
   padding: 0.55em 1.15em 0.55em 0.85em; border-radius: 999px;
   background: var(--surface); border: 1px solid var(--hair); color: var(--ink);
-  font: inherit; font-size: calc(var(--pill-base, 13px) * var(--pz, 1) * var(--use, 1)); line-height: 1.2; white-space: nowrap; cursor: grab;
+  font: inherit; font-size: calc(var(--pill-base, 13px) * var(--pz, 1) * var(--use, 1) * var(--pill-fit, 1)); line-height: 1.2; white-space: nowrap; cursor: grab;
   touch-action: none; user-select: none; -webkit-user-select: none; will-change: transform;
   transition: border-color 0.15s ease, background 0.15s ease;
 }
@@ -155,7 +155,7 @@ html.orbit-aside .orbit-panel { opacity: 0; transform: scale(0.96); pointer-even
 
 @media (max-width: 700px) {
   .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: 10.5em; gap: 0.45em; }
-  .orbit-title { top: calc(var(--orbit-top, 0px) + 12px); font-size: 26px; }
+  .orbit-title { top: calc(var(--orbit-top, 0px) + 12px); font-size: 20px; }
   .orbit-panel { min-width: 0; }
   .op-head { cursor: default; }
   .op-body { padding: 14px; }
@@ -190,3 +190,13 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .op-body .buddy-float.is-min .buddy-scroll { display: block !important; }
 
 .orbit-stage > .orbit-pi { z-index: 4; }
+
+/* PiEn: its name inside the mark, and the halo on the card it suggests next */
+.om-name { font-family: var(--font); font-size: 30px; font-weight: 500; letter-spacing: -0.02em; fill: var(--ink); }
+.orbit-bubble.pien-pick { box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.16), 0 0 18px rgba(47, 64, 232, 0.28); }
+.orbit-bubble.pien-pick::after {
+  content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 1px solid rgba(47, 64, 232, 0.45);
+  animation: pien-halo 2.8s ease-in-out infinite; pointer-events: none;
+}
+@keyframes pien-halo { 50% { inset: -10px; opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .orbit-bubble.pien-pick::after { animation: none; } }

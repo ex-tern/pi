@@ -7034,6 +7034,10 @@ app.include_router(_consent.build_router(BASE_DIR, require_owner))
 import layout as _layout  # noqa: E402
 app.include_router(_layout.build_router(BASE_DIR, require_identity))
 
+# PiEn: what everyone's use of the site teaches the mark, pooled anonymously. See pien.py.
+import pien as _pien  # noqa: E402
+app.include_router(_pien.build_router(BASE_DIR))
+
 
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
