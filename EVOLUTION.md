@@ -386,3 +386,11 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 The [neurophilic/Unigyro](https://github.com/neurophilic/Unigyro) repository is empty, and this session cannot push to it (the Claude GitHub App is not installed for `neurophilic`). A README for it, citing him with the video and channel, was prepared for the owner to add.
 
 **Files:** `frontend/unigyro.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `README.md`, `CLAUDE.md`.
+
+## 2026-10-09: neurophilic/Unigyro is the source of the Unigyro window
+
+**What:** the Unigyro window's code and styles are two plain files, `frontend/unigyro.js` and `frontend/unigyro.css` (the styles moved out of orbit.css). Their source is the Unigyro repository's `pitechlab/` folder. `python scripts/sync_unigyro.py --src ../Unigyro` copies them in, and `--check` fails if the site's copies differ, the same pattern as HAL-OS (`build_hal.py`).
+
+The Unigyro repository's contents (README crediting Murtaza Vefadar, a standalone playable page, `pitechlab/`, `CITATION.cff`) are ready but not yet published. This session cannot push to `neurophilic` until the Claude GitHub App is installed there, so the owner adds them; a copy is in Tech/Unigyro.
+
+**Files:** `frontend/unigyro.css`, `frontend/orbit.css`, `frontend/index.html`, `scripts/sync_unigyro.py`, `CLAUDE.md`.
