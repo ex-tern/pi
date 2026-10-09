@@ -454,3 +454,9 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** the song was re-rendered from the owner's original upload for clarity: low-mid mud cut (-4 dB at 300 Hz), presence and air lifted (+3 dB at 3.5 kHz, +4 dB shelf above 9 kHz), the flanger, phaser and echo made lighter and shorter, gentler compression, -14 LUFS, and encoded at 256 kbps. It still loops seamlessly (1.5 s equal-power crossfade).
 
 **Verified:** highs up about 3 dB and low-mids down relative to the previous version; loop, stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: logo song with the noise removed
+
+**What:** re-rendered from the owner's original upload with noise removal: the clipped peaks repaired (`adeclip`), broadband hiss reduced with an FFT denoiser (`afftdn`, 14 dB), the flanger and phaser (which added a hissy wash) dropped, no treble boost, and a gentle low-pass at 15.5 kHz. Clarity kept with a light low-mid cut and presence lift, plus a short echo and wider stereo. Still -14 LUFS, 256 kbps, seamless 1.5 s crossfaded loop.
+
+**Verified:** the 12–20 kHz hiss band is about 7 dB lower than the previous version; loop, stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
