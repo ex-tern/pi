@@ -44,13 +44,36 @@ def login_state(client, host, wallet=None):
                    headers={"x-forwarded-host": host, "x-forwarded-proto": "https"})
     assert r.status_code == 200
     q = urllib.parse.parse_qs(urllib.parse.urlparse(r.json()["url"]).query)
-    assert q["redirect_uri"] == [f"https://{OLD}/api/auth/orcid/callback"]   # still the registered one
+    want = (f"https://{host}/api/auth/orcid/callback" if host in ("pitechlab.com", "exp.pitechlab.com")
+            else f"https://{OLD}/api/auth/orcid/callback")
+    assert q["redirect_uri"] == [want]
     return q["state"][0]
 
 
-def callback(client, state):
+def callback(client, state, host=OLD):
     return client.get("/api/auth/orcid/callback", params={"code": "abc", "state": state},
-                      headers={"x-forwarded-host": OLD, "x-forwarded-proto": "https"})
+                      headers={"x-forwarded-host": host, "x-forwarded-proto": "https"})
+
+
+def test_own_site_uses_its_own_callback_not_the_stale_setting(client, monkeypatch):
+    seen = {}
+
+    class Ok:
+        status_code = 200
+        content = b"{}"
+
+        @staticmethod
+        def json():
+            return {"orcid": "0000-0002-1825-0097", "name": "T"}
+
+    def post(url, data=None, **k):
+        seen["redirect_uri"] = data["redirect_uri"]
+        return Ok()
+
+    monkeypatch.setattr(api.requests, "post", post)
+    r = callback(client, login_state(client, "pitechlab.com"), host="pitechlab.com")
+    assert seen["redirect_uri"] == "https://pitechlab.com/api/auth/orcid/callback"   # the token exchange matches
+    assert r.headers["location"].startswith("https://pitechlab.com/?orcid=")
 
 
 def test_returns_to_pitechlab_not_the_old_address(client):

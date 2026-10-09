@@ -593,8 +593,22 @@ def verify_wallet(req: WalletVerifyRequest, request: Request):
     }
 
 
+# The site's own addresses. Signing in from one of them, ORCID is asked to
+# send the visitor back to that same address's callback, whatever
+# ORCID_REDIRECT_URI says: a stale value (it pointed at the old Railway
+# address, scholarpi.up.railway.app) breaks sign-in outright as soon as the
+# ORCID app's registered redirect URIs are updated to pitechlab.com. Each of
+# these callbacks must be registered with the ORCID app:
+#   https://pitechlab.com/api/auth/orcid/callback
+#   https://exp.pitechlab.com/api/auth/orcid/callback
+_OWN_ORIGINS = ("https://pitechlab.com", "https://www.pitechlab.com", "https://exp.pitechlab.com")
+
+
 def resolve_orcid_redirect_uri(request: Request) -> str:
     """The callback URL registered with ORCID, defaulting to this deployment."""
+    here = _request_origin(request)
+    if here in _OWN_ORIGINS:
+        return f"{here}/api/auth/orcid/callback"
     configured = (ORCID_REDIRECT_URI or "").strip()
     if configured and "localhost" not in configured and "127.0.0.1" not in configured:
         return configured
