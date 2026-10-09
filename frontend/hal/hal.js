@@ -412,11 +412,12 @@ function bindUI() {
   $("fpsIn").addEventListener("input", restartTimer);
   $("score").addEventListener("click", score);
   $("pause").addEventListener("click", async () => {
+    if (!emu || !ready) return;            // not started yet: the Start button does that
     if (!emu) return;
     if (running) { await emu.stop(); running = false; setState("paused"); $("pause").textContent = "Resume"; persistWeights(true); }
     else { await emu.run(); running = true; setState(armed ? "injecting" : "running", armed ? "live" : "on"); $("pause").textContent = "Pause"; }
   });
-  $("reboot").addEventListener("click", async () => { await persistWeights(true); boot(weights); });
+  $("reboot").addEventListener("click", async () => { if (!emu) return; await persistWeights(true); boot(weights); });
   $("save").addEventListener("click", () => { if (sendProgram("SAVE")) setTimeout(() => persistWeights(true), 1500); });
   $("reset").addEventListener("click", () => {
     if (confirmInline($("reset"), "Really reset?")) sendProgram("RESET");
@@ -536,8 +537,17 @@ async function main() {
 
   let disk = await idbGet(weightKey());
   if (!(disk instanceof ArrayBuffer) || disk.byteLength !== info.weight_disk_bytes) disk = new ArrayBuffer(info.weight_disk_bytes);
-  overlay("Booting HAL-OS…");
-  await boot(disk);
-  restartTimer();
+  // The machine starts when asked, not when the page opens: an x86 emulator
+  // is a lot to run for someone who only came to look.
+  setState("ready to start");
+  overlay('<div class="start-box"><button type="button" id="startHal" class="start-btn">Start HAL-OS</button>' +
+          '<p>Boots a ' + fmtBytes(info.image_bytes) + ' image on an x86 emulator, here in your browser.' +
+          (disk.byteLength && (await idbGet(weightKey())) ? ' It picks up the weights it learned last time.' : '') + '</p></div>');
+  $("startHal").addEventListener("click", async () => {
+    overlay("Booting HAL-OS…");
+    try { await boot(disk); restartTimer(); }
+    catch (e) { setState("error", "err"); overlay("Could not start the machine: " + (e.message || e)); console.error(e); }
+  }, { once: true });
+  $("startHal").focus({ preventScroll: true });
 }
 main().catch(e => { setState("error", "err"); overlay("Could not start the machine: " + (e.message || e)); console.error(e); });
