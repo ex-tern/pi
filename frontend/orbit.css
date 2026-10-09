@@ -313,6 +313,8 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .arch-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); }
 .arch-note h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
 .arch-cite { font-size: 11.5px; color: var(--faint); margin: 10px 0 0; }
+.arch-cite a { color: var(--cobalt); text-decoration: none; }
+.arch-cite a:hover { text-decoration: underline; }
 /* narrow windows: three by two, then one column with arrows downwards */
 @container (max-width: 760px) {
   .arch-flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
