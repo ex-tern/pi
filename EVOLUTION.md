@@ -333,3 +333,7 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 **What:** opening HAL-OS no longer boots the machine. Its screen shows a "Start HAL-OS" button with the image size, and a note when there are weights from last time to pick up. The x86 emulator downloads and boots only when the button is pressed. Pause and Reboot do nothing until then, and pause/resume messages from the page are ignored until the machine is up.
 
 **Files:** `frontend/hal/hal.js`, `frontend/hal/hal.css`, `frontend/hal/index.html`.
+
+## 2026-10-09: QuVI is public on production
+
+The owner set `QUVI_PUBLIC=1` in Railway's production environment. QuVI now appears in the Lab bubble for every visitor at pitechlab.com, without the "owner preview" badge. Verified signed out: the simulator loads in its window. The experimental environment is unchanged (owner-only) unless the same variable is set there. No code change was needed: the switch has existed since QuVI was added.
