@@ -165,7 +165,7 @@
   function complexity(it) {
     if (it.href) return 0;
     let c = 0;
-    for (const n of it.nodes) {
+    for (const n of (it.nodes.length ? it.nodes : it.content ? [it.content] : [])) {
       if (!n.querySelectorAll) continue;
       c += n.querySelectorAll("iframe").length * 14;
       c += n.querySelectorAll("canvas, svg.arcade, #arcadeStage").length * 9;
@@ -200,8 +200,11 @@
 
   // ------------------------------------------------------------ bubbles
   function makeBubbles() {
+    items.forEach((it, i) => makeBubble(it, i));
+  }
+  function makeBubble(it, i) {
     const wrap = $(".orbit-bubbles", stage);
-    items.forEach((it, i) => {
+    {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "orbit-bubble";
@@ -223,11 +226,11 @@
       store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
       wireDrag(it);
       wrap.appendChild(b);
-    });
+    }
   }
 
   function visible(it) {
-    if (it.href) return true;
+    if (it.href || it.always) return true;
     return it.nodes.some(n => !(n.classList.contains("section-heading")) && !n.classList.contains("hidden") && !n.hidden);
   }
 
@@ -850,6 +853,26 @@
     items.push(it);
     return it;
   }
+  // A pill added by a module (capabilities.js): a card of its own, always shown.
+  function addPill(v) {
+    const it = Object.assign({ nodes: [], always: true }, v);
+    shelf.appendChild(it.content);
+    items.push(it);
+    makeBubble(it, items.length - 1);
+    setSizes();
+    layout();
+    return it;
+  }
+  // Open a window by its pill's title (or the numbers window), as a pill click would.
+  function openTitle(t) {
+    if (t === "π and friends") return openNumbers();
+    const it = items.find(i => i.title === t && (i.virtual || visible(i)));
+    if (!it) return false;
+    setAside(false);
+    if (it.panel) raise(it.panel, true); else openItem(it);
+    return true;
+  }
+  const titles = () => items.filter(i => !i.virtual && visible(i)).map(i => i.title);
   function openNumbers() {
     const it = items.find(i => i.key === "numbers:Numbers");
     if (it) openItem(it);
@@ -1133,7 +1156,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
