@@ -20,7 +20,7 @@
     ["See the field", [
       ["The Global Map of Science", "Research laid out as a map you can fly through and play."],
       ["Forecast", "Where the corpus is heading."],
-      ["Key numbers", "Papers, piQ minted, average score, authors and visitors."],
+      ["Analytics", "Papers, piQ minted, average score, authors and visitors."],
       ["Minting Difficulty", "How hard piQ is to earn right now, and why."],
     ]],
     ["Lab", [
@@ -31,11 +31,8 @@
     ]],
     ["Ask and understand", [
       ["SciLM (siM) Assistant", "Ask questions about the corpus and the method."],
-      ["Overview", "The architecture at a glance."],
+      ["Architecture", "How it works: the overview, the scoring pipeline stage by stage, and CoARA compliance."],
       ["Whitepaper", "The full method."],
-      ["Scoring Pipeline in Detail", "Each stage of scoring, explained."],
-      ["Stage Reference", "What every stage checks."],
-      ["CoARA Compliance & Core Pillars", "How the assessment meets responsible-metrics principles."],
     ]],
     ["The site itself", [
       ["π and friends", "π computed live for as long as you stay, with e, φ and γ."],

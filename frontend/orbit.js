@@ -88,7 +88,7 @@
         [...el.children].forEach(ch => addItem(section, [ch]));
         continue;
       }
-      if (el.classList.contains("stats-bar")) { addItem(section, [el], "Key numbers"); continue; }
+      if (el.classList.contains("stats-bar")) { addItem(section, [el], "Analytics"); continue; }
       addItem(section, [el], el.matches(".card:not(:has(h1,h2,h3))") && section.key === "diagram" ? "Overview" : undefined);
     }
     flush();
@@ -110,6 +110,44 @@
     // the source link, as a pill like everything else
     const gh = $(".gh-fab");
     if (gh) items.push({ section: { key: "links", name: "Source" }, nodes: [], content: null, title: "GitHub", href: gh.href, key: "links:GitHub" });
+  }
+
+  // Cards that read better as one window, at the owner's request.
+  const MERGES = [
+    { section: "diagram", title: "Architecture",
+      parts: ["Overview", "Scoring Pipeline in Detail", "Stage Reference", "CoARA Compliance & Core Pillars"] },
+  ];
+  function mergeItems() {
+    MERGES.forEach(m => {
+      const parts = m.parts.map(t => items.find(it => it.section.key === m.section && it.title === t)).filter(Boolean);
+      if (parts.length < 2) return;
+      const content = document.createElement("div");
+      content.className = "orbit-content orbit-merged";
+      parts.forEach(p => { while (p.content.firstChild) content.appendChild(p.content.firstChild); p.content.remove(); });
+      const at = items.indexOf(parts[0]);
+      const merged = { section: parts[0].section, title: m.title, nodes: parts.flatMap(p => p.nodes), content };
+      merged.key = m.section + ":" + m.title;
+      shelf.appendChild(content);
+      parts.forEach(p => items.splice(items.indexOf(p), 1));
+      items.splice(at, 0, merged);
+    });
+  }
+  // Renamed pills keep what was remembered about them (place, size, use, window).
+  const RENAMED = { "analytics:Key numbers": "analytics:Analytics" };
+  function migrateRenamed() {
+    try {
+      Object.entries(RENAMED).forEach(([from, to]) => {
+        ["orbit:at2:", "orbit:use:", "orbit:cx:", "orbit:win:"].forEach(p => {
+          const v = localStorage.getItem(p + from);
+          if (v !== null && localStorage.getItem(p + to) === null) localStorage.setItem(p + to, v);
+          localStorage.removeItem(p + from);
+        });
+        ["orbit:open", "orbit:prio"].forEach(k => {
+          const list = load(k);
+          if (Array.isArray(list) && list.includes(from)) localStorage.setItem(k, JSON.stringify(list.map(x => (x === from ? to : x))));
+        });
+      });
+    } catch (_) { /* private mode */ }
   }
 
   // ------------------------------------------------------------ the stage
@@ -677,7 +715,8 @@
     const hid = "op-" + Math.random().toString(36).slice(2);
     p.setAttribute("aria-labelledby", hid);
     p.innerHTML = '<header class="op-head"><span class="op-section"></span><h2 class="op-title"></h2></header><div class="op-body"></div>';
-    p.querySelector(".op-section").textContent = it.section.name;
+    // the section's name, unless the title already says it
+    p.querySelector(".op-section").textContent = it.section.name === it.title ? "" : it.section.name;
     const title = p.querySelector(".op-title"); title.id = hid; title.textContent = it.title;
     p.querySelector(".op-body").appendChild(it.content);
     document.body.appendChild(p);
@@ -1106,6 +1145,8 @@
   // ------------------------------------------------------------ start
   function start() {
     SECTIONS.forEach(s => (s.panel ? collectSection(s) : collectAccount(s)));
+    mergeItems();
+    migrateRenamed();
     document.body.appendChild(shelf);
     document.body.appendChild(stage);
     // The mark stays above every open window: always in view, always the way home.

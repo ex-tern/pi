@@ -256,3 +256,12 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by title (`PiOrbit.openTitle`).
 
 **Files:** `frontend/capabilities.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: "Analytics"; one "Architecture" window
+
+**What:**
+- "Key numbers" is now "Analytics". Its remembered place, use, size and open window carry over.
+- Overview, Scoring Pipeline in Detail, Stage Reference and CoARA Compliance & Core Pillars are merged into one pill and window, "Architecture", in that order. The Whitepaper stays its own pill. Capabilities lists Architecture and Analytics.
+- A window's header no longer repeats its section name when the title already says it.
+
+**Files:** `frontend/orbit.js`, `frontend/capabilities.js`, `frontend/index.html`.
