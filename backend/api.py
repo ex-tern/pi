@@ -7030,6 +7030,10 @@ app.include_router(_lab.build_features_router())
 import consent as _consent  # noqa: E402
 app.include_router(_consent.build_router(BASE_DIR, require_owner))
 
+# A signed-in visitor's orbit layout (positions, sizes, open windows). See layout.py.
+import layout as _layout  # noqa: E402
+app.include_router(_layout.build_router(BASE_DIR, require_identity))
+
 
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
