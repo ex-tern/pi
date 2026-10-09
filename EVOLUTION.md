@@ -422,3 +422,11 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **Tools renamed** (owner's request): "Assess Manuscripts [Pi]" (was Assess a Manuscript) and "Assist a Diagnosis [Intern]" (was Intern). Remembered state and PiEN's learning carry over.
 
 **Files:** `frontend/facemace.js`, `frontend/facemace.css`, `frontend/facemace/`, `frontend/neurofrenzy.js`, `frontend/orbit.js`, `frontend/intern.js`, `frontend/capabilities.js`, `frontend/recent.js`, `frontend/pien.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: Medicine in the Lib bubble
+
+**What:** a Medicine pill in the Lib bubble showing a public road-to-graduation plan: CFU progress (219 of 360, by year), the remaining courses grouped by session, and the to-do list. Data is `frontend/medicine/plan.json`, rendered by `medicine/view.js`; the same three files form the standalone Medicine repository.
+
+**Why:** the owner asked for the Graduation Plan (now the Medicine folder) to get a repository and a Lib button, public but without personal files. The public plan carries no grades, no dates of passed exams, no average or base score, no course codes and no names; the libretto and correspondence stay private.
+
+**Verified:** pytest at baseline; `build_hal.py` builds; the pill opens at 1440 and 390 px with no page errors, no horizontal scroll and no grade data in the rendered text.

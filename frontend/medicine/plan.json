@@ -1,0 +1,48 @@
+{
+  "title": "Road to graduation",
+  "degree": "Medicine and Surgery, six-year single-cycle degree (360 CFU)",
+  "updated": "2026-10-09",
+  "target": "July 2027",
+  "backup": "October 2027",
+  "total": 360,
+  "byYear": [
+    { "year": 1, "earned": 59 },
+    { "year": 2, "earned": 54 },
+    { "year": 3, "earned": 46 },
+    { "year": 4, "earned": 22 },
+    { "year": 5, "earned": 26 },
+    { "year": 6, "earned": 12 }
+  ],
+  "phases": [
+    { "when": "Oct – Nov 2026", "label": "Paperwork and clerkships", "items": [
+      { "name": "Clerkship 6", "cfu": 12, "graded": false, "note": "Attendance done, needs recording" },
+      { "name": "Clerkship 7", "cfu": 8, "graded": false, "done": true } ] },
+    { "when": "Jan – Feb 2027", "label": "Winter session", "items": [
+      { "name": "Cardiovascular Diseases and Respiratory Sciences", "cfu": 17, "graded": true },
+      { "name": "Neuroscience 1", "cfu": 7, "graded": true },
+      { "name": "Head and Neck Diseases", "cfu": 8, "graded": true } ] },
+    { "when": "Mar – Apr 2027", "label": "Spring exam dates", "items": [
+      { "name": "Neuroscience 2", "cfu": 19, "graded": true, "note": "Straight after Neuroscience 1 while it is fresh" },
+      { "name": "Digestive Health", "cfu": 9, "graded": true, "note": "If there is no spring date, move to June" } ] },
+    { "when": "Feb – May 2027", "label": "Licensing internships (TPVES), one month each", "items": [
+      { "name": "TPVES – Internal Medicine", "cfu": 5, "graded": false },
+      { "name": "TPVES – Surgery", "cfu": 5, "graded": false },
+      { "name": "TPVES – General Practitioner", "cfu": 5, "graded": false } ] },
+    { "when": "May – Jun 2027", "label": "Summer session", "items": [
+      { "name": "Woman and Child", "cfu": 21, "graded": true, "note": "Largest exam: start studying in April" } ] },
+    { "when": "Oct 2026 – Jun 2027", "label": "Thesis, running alongside", "items": [
+      { "name": "Thesis Clerkship", "cfu": 17, "graded": false } ] },
+    { "when": "July 2027", "label": "Graduation", "items": [
+      { "name": "Final Examination", "cfu": 12, "graded": false } ] }
+  ],
+  "tasks": [
+    { "text": "Get Clerkship 6 recorded (Clerkship 7 is done)", "when": "Oct 2026" },
+    { "text": "Agree the thesis title and register the Thesis Clerkship", "when": "Oct 2026" },
+    { "text": "Ask the student office about the 4 CFU not yet counted (356 of 360 planned; likely electives)", "when": "Oct 2026" },
+    { "text": "Check TPVES prerequisites and booking windows for Internal Medicine, Surgery and GP", "when": "Oct 2026" },
+    { "text": "Put the official 2026/27 exam dates for the six remaining exams in the calendar", "when": "Nov 2026" },
+    { "text": "Find the graduation application deadline for the July 2027 session", "when": "Feb 2027" },
+    { "text": "Submit the graduation application", "when": "Spring 2027" },
+    { "text": "Upload the final thesis by the session deadline", "when": "Jun 2027" }
+  ]
+}
