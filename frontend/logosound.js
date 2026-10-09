@@ -7,7 +7,7 @@
 
   function toggle(core) {
     if (!audio) {
-      audio = new Audio("sound/dd.mp3?v=1");
+      audio = new Audio("sound/dd.mp3?v=2");
       audio.addEventListener("ended", () => core.classList.remove("is-playing"));
       audio.addEventListener("pause", () => core.classList.remove("is-playing"));
       audio.addEventListener("play", () => core.classList.add("is-playing"));

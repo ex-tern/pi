@@ -436,3 +436,9 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** pressing the PiEN mark plays a 19-second song (`frontend/sound/dd.mp3`, supplied by the owner); pressing again stops it. `logosound.js` loads the audio on the first press only, and drags never count as presses. The mark keeps its other click behaviour (setting windows aside).
 
 **Verified:** pytest at baseline; `build_hal.py` builds; at 1440 and 390 px the first press plays (audio fetched), the second stops, with no page errors and no horizontal scroll.
+
+## 2026-10-09: a more futuristic logo song
+
+**What:** the logo song was reprocessed with ffmpeg to sound more futuristic: a slow flanger and phaser sweep, chorus, a short space echo, brighter highs, a wider stereo field and loudness normalised to -14 LUFS (the original clipped). Same length.
+
+**Verified:** pytest at baseline; `build_hal.py` builds; the press-to-play / press-to-stop check passes at 1440 and 390 px.
