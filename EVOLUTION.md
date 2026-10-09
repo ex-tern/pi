@@ -219,3 +219,23 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Fixed: `orbit:ready` fired before `window.PiOrbit` existed.
 
 **Files:** `frontend/numbers.js`, `frontend/consts-worker.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: Seamlessness pass
+
+An audit of every window, as a visitor and as the owner, at 1440 and 390 px: page errors, failed requests, empty or zero-sized content, sideways scrolling, keyboard use and speed. Fixes:
+
+- **The app's own jumps land in windows.** app.js and lab.js were written for tabs:
+  - Every `scrollIntoView` now opens (or brings forward) the window holding its target and scrolls inside that window. This covers "Fill in your profile" from ResBD.
+  - "Go to" links open their section's card, or the map.
+  - Assessment results and "piQ held for you" open their windows by themselves when they appear.
+- **Contact us** is a pill that opens the contact form directly, instead of a window holding a single button.
+- **No needless refusals:** the operational log is only polled when signed in. Every visitor's page used to log a 403 for `/api/logs`.
+- **Keyboard and screen readers:** the π box is a button (Tab, then Enter, opens π and friends). Windows are labelled regions rather than dialogs, since they never close. Pills, PiEn and the π box are all reachable with Tab.
+- **Speed:** layout takes about 1 ms (13 ms on a landscape phone), with no long tasks while dragging.
+
+**Checks:**
+- No page errors and no failed requests (the only external failures are chart/diagram CDNs blocked inside the test sandbox).
+- Nothing overlaps at 13 screen sizes, the account layout syncs, all 32 titles fit, and the constants are exact.
+- pytest: 378 pass; the 12 known failures are unchanged.
+
+**Files:** `frontend/orbit.js`, `frontend/app.js`, `frontend/index.html`.

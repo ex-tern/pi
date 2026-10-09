@@ -101,7 +101,8 @@
     for (const el of [...side.children]) {
       if (el.classList.contains("brand") || el.tagName === "HR") continue;
       if (el.matches("details.sidebar-expander")) { el.open = true; addItem(section, [el]); continue; }
-      if (el.matches(".bug-card")) { addItem(section, [el], "Contact us"); continue; }
+      // a card that is only a button: its pill presses the button instead of opening a window
+      if (el.matches(".bug-card")) { const it = addItem(section, [el], "Contact us"); if (it) it.action = () => { const b = $("#bugReportBtn"); if (b) b.click(); }; continue; }
       if (el.matches(".referral-card, .donate-card, .owner-danger")) { addItem(section, [el]); continue; }
       signIn.push(el);
     }
@@ -129,7 +130,7 @@
     '<g class="om-sweep">' + MARK_TRAIL +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEn</text></svg></button>' +
-    '<div class="orbit-pi" aria-live="off" title="Drag to move; drag the corner to resize">' +
+    '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
 
@@ -628,6 +629,7 @@
     };
     pi.addEventListener("pointerup", end);
     pi.addEventListener("pointercancel", end);
+    pi.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); openNumbers(); } });
     // double-click: back under the mark, at the usual size
     pi.addEventListener("dblclick", () => { piAt = null; piScale = 1; store("orbit:pi:at"); store("orbit:pi:scale"); layout(); });
     resizer(pi.querySelector(".op-grip"), piCentre, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
@@ -662,12 +664,13 @@
   function openItem(it) {
     if (!restoring) document.dispatchEvent(new CustomEvent("orbit:open", { detail: { key: it.key } }));
     if (it.href) { window.open(it.href, "_blank", "noopener"); bumpUse(it, 1); pulse(); return; }
+    if (it.action) { it.action(); bumpUse(it, 1); pulse(); return; }
     setAside(false);
     if (it.panel) { raise(it.panel, true); bumpUse(it, 1); pulse(); return; }
     activateSection(it.section.key);
     const p = document.createElement("section");
     p.className = "orbit-panel";
-    p.setAttribute("role", "dialog");
+    p.setAttribute("role", "region");          // windows stay open: a region, not a dialog
     const hid = "op-" + Math.random().toString(36).slice(2);
     p.setAttribute("aria-labelledby", hid);
     p.innerHTML = '<header class="op-head"><span class="op-section"></span><h2 class="op-title"></h2></header><div class="op-body"></div>';
@@ -1022,6 +1025,59 @@
   }
   onStore = saveSoon;
 
+  // ------------------------------------------------------------ the app's own jumps
+  // app.js and lab.js were written for tabs: they scroll to a card, follow a
+  // "go to" link, or reveal results. Here every card lives in a window, so each
+  // of those opens (or brings forward) the window that holds the target first.
+  function itemFor(el) {
+    return items.find(it => it.content && it.content.contains(el));
+  }
+  function reveal(el) {
+    const it = itemFor(el);
+    if (!it) return false;
+    setAside(false);
+    if (it.panel) raise(it.panel, true); else openItem(it);
+    return true;
+  }
+  const nativeScroll = Element.prototype.scrollIntoView;
+  Element.prototype.scrollIntoView = function (opts) {
+    reveal(this);
+    // scroll inside its window, not the page
+    const body = this.closest && this.closest(".op-body");
+    if (body) {
+      const top0 = this.getBoundingClientRect().top - body.getBoundingClientRect().top + body.scrollTop - 8;
+      body.scrollTo({ top: Math.max(0, top0), behavior: reduceMotion.matches ? "auto" : "smooth" });
+      return;
+    }
+    return nativeScroll.call(this, opts);
+  };
+  // "go to" links name a section; open its first card (after app.js has switched)
+  document.addEventListener("click", e => {
+    const link = e.target.closest && e.target.closest("[data-goto-tab]");
+    if (!link) return;
+    const MERGED = { arcade: "analytics", explorer: "journal" };
+    const key = MERGED[link.dataset.gotoTab] || link.dataset.gotoTab;
+    setTimeout(() => {
+      if (link.dataset.gotoTab === "arcade") { const a = $("#arcadeStage"); if (a && reveal(a)) return; }
+      const it = items.find(x => x.section.key === key && visible(x));
+      if (it) reveal(it.nodes[0]);
+    }, 0);
+  });
+  // Results that appear after an action open their window by themselves.
+  const AUTO_OPEN = ["resultsSection", "claimableCard"];
+  function watchAutoOpen() {
+    AUTO_OPEN.forEach(id => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      let was = !el.classList.contains("hidden") && !el.hidden;
+      new MutationObserver(() => {
+        const now = !el.classList.contains("hidden") && !el.hidden;
+        if (now && !was) setTimeout(() => reveal(el), 50);
+        was = now;
+      }).observe(el, { attributes: true, attributeFilter: ["class", "hidden"] });
+    });
+  }
+
   // ------------------------------------------------------------ start
   function start() {
     SECTIONS.forEach(s => (s.panel ? collectSection(s) : collectAccount(s)));
@@ -1037,6 +1093,7 @@
     setSizes();
     wireLogo();
     wirePi();
+    watchAutoOpen();
     // Cards appear and disappear as app.js decides (sign-in, owner panels,
     // results): keep the orbit in step.
     const mo = new MutationObserver(() => { clearTimeout(start.t); start.t = setTimeout(layout, 120); });
