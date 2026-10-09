@@ -63,7 +63,9 @@
     const content = document.createElement("div");
     content.className = "orbit-content";
     nodes.forEach(n => content.appendChild(n));
-    const it = { section, nodes, content, title: title || titleOf(nodes, section.name) };
+    let t0 = title || titleOf(nodes, section.name);
+    t0 = RETITLE[section.key + ":" + t0] || t0;            // the owner's names for some cards
+    const it = { section, nodes, content, title: t0 };
     it.key = section.key + ":" + it.title;   // stable across visits, for remembered positions
     shelf.appendChild(content);
     items.push(it);
@@ -133,7 +135,8 @@
     });
   }
   // Renamed pills keep what was remembered about them (place, size, use, window).
-  const RENAMED = { "analytics:Key numbers": "analytics:Analytics" };
+  const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance" };
+  const RETITLE = { "analytics:Forecast": "Performance" };
   function migrateRenamed() {
     try {
       Object.entries(RENAMED).forEach(([from, to]) => {
@@ -162,12 +165,12 @@
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEn, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
-    '<text class="om-name" x="200" y="300" text-anchor="middle">PiEn</text></svg></button>' +
+    '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text></svg></button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
@@ -1197,7 +1200,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

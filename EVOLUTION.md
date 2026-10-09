@@ -265,3 +265,22 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 - A window's header no longer repeats its section name when the title already says it.
 
 **Files:** `frontend/orbit.js`, `frontend/capabilities.js`, `frontend/index.html`.
+
+## 2026-10-09: A cleaner map of science; Performance and PiEN
+
+**The Global Map of Science:**
+- **Laid out as regions.** Each discipline gets a region sized to its fields, on a grid shaped like the window. Its fields gather there without overlapping, and the map comes to rest. Before, near-frictionless "billiard" physics piled every bubble against the walls, with links running across the whole map.
+- **Cleaner graphics.** Flat, muted fills with thin outlines on paper, Geist labels, and a faint name over each region. The soap film, glows, stars and dark theme are gone, and a field's own label is skipped when it repeats its region's name. Links are short and quiet, and the selection is a cobalt ring. Toolbar, hint and minimap are paper with hairlines.
+- **Fills its window.** The view fits the map itself (not the whole world) and keeps the toolbar strip clear. The canvas follows its window as it opens and resizes, and the layout is re-planned for the window's shape until you touch it.
+- **Rewards are unaffected.** Positions are presentation only; runs are verified on masses and timing.
+
+**Performance and PiEN:**
+- "Forecast" is now "Performance", and its saved place carries over.
+- PiEN (now spelled PiEN everywhere) has a section at the top of Performance:
+  - how often its suggestions are followed (it now keeps score);
+  - how many of your steps and everyone's it has learned;
+  - what it suggests next;
+  - the most common next steps.
+- What was learned about renamed or merged cards counts toward their new names.
+
+**Files:** `frontend/arcade.js`, `frontend/style.css`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`.

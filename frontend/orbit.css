@@ -192,7 +192,7 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 
 .orbit-stage > .orbit-pi { z-index: 4; }
 
-/* PiEn: its name inside the mark, and the halo on the card it suggests next */
+/* PiEN: its name inside the mark, and the halo on the card it suggests next */
 .om-name { font-family: var(--font); font-size: 30px; font-weight: 500; letter-spacing: -0.02em; fill: var(--ink); }
 .orbit-bubble.pien-pick { box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.16), 0 0 18px rgba(47, 64, 232, 0.28); }
 .orbit-bubble.pien-pick::after {
@@ -233,3 +233,18 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .cap-open:hover { color: var(--cobalt); text-decoration-color: var(--cobalt); }
 .cap-what { color: var(--graphite); }
 .orbit-bubble[data-section="about"] .ob-dot { border-color: var(--cobalt); background: var(--cobalt); border-radius: 2px; }
+
+/* PiEN in the Performance window (pien.js) */
+.pien-perf { padding-bottom: 16px; margin-bottom: 4px; border-bottom: 1px solid var(--hair); }
+.pien-perf h2 { font-size: 17px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+.pien-perf h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 14px 0 6px; }
+.pp-lede { color: var(--graphite); font-size: 13px; margin: 0 0 12px; }
+.pp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.pp-stats > div { border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.pp-stats b { display: block; font-size: 22px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pp-stats span { font-size: 12px; color: var(--graphite); }
+.pp-next { font-size: 13px; margin: 12px 0 0; color: var(--graphite); }
+.pp-pairs { margin: 0; padding-left: 18px; font-size: 13px; }
+.pp-pairs li { padding: 3px 0; }
+.pp-pairs li span { color: var(--faint); margin-left: 8px; font-variant-numeric: tabular-nums; }
+.pp-empty { font-size: 12.5px; color: var(--faint); margin: 12px 0 0; }
