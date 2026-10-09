@@ -442,3 +442,9 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 **What:** the logo song was reprocessed with ffmpeg to sound more futuristic: a slow flanger and phaser sweep, chorus, a short space echo, brighter highs, a wider stereo field and loudness normalised to -14 LUFS (the original clipped). Same length.
 
 **Verified:** pytest at baseline; `build_hal.py` builds; the press-to-play / press-to-stop check passes at 1440 and 390 px.
+
+## 2026-10-09: the logo song loops seamlessly
+
+**What:** the song now plays end to end continuously until the logo is pressed again. The file was cut so its last 1.5 s crossfade (equal power) into its start, and `logosound.js` plays it through Web Audio with `loop`, `loopStart` and `loopEnd` set past the encoder's silent padding, so there is no gap or click at the loop point. Starts and stops fade over ~0.1 s; a quick double press ends silent.
+
+**Verified:** decoded file has no edge silence and the seam step matches a normal sample step; still playing after a full loop; stop and double-press checks pass at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
