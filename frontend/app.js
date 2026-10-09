@@ -2728,6 +2728,8 @@ function handleStreamLine(obj, statusBox) {
     renderResults();
   } else if (obj.type === "done") {
     statusBox.innerHTML += `<div class="status-line status-done">${escapeHtml(obj.message || "Complete.")}</div>`;
+    // The orbit layout opens the results window when a run finishes (orbit.js).
+    document.dispatchEvent(new CustomEvent("scholarpi:assessment-done"));
     // The rows are committed by the time "done" arrives. Refreshing here as
     // well as in the finally block covers the case where the stream ends
     // without the request settling — an aborted run still wrote its papers.

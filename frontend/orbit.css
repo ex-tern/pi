@@ -248,3 +248,80 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .pp-pairs li { padding: 3px 0; }
 .pp-pairs li span { color: var(--faint); margin-left: 8px; font-variant-numeric: tabular-nums; }
 .pp-empty { font-size: 12.5px; color: var(--faint); margin: 12px 0 0; }
+
+/* --- the account pill: red when signed out, a green check when signed in --- */
+.orbit-bubble.is-account .ob-dot { width: 1em; height: 1em; border: 0; border-radius: 50%; background: #c0645c; position: relative; }
+.orbit-bubble.is-account[data-signed="true"] .ob-dot { background: #4f8f5a; }
+.orbit-bubble.is-account[data-signed="true"] .ob-dot::after {
+  content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 0.72em; font-weight: 700; line-height: 1;
+}
+
+/* --- a pill with a chat box in it (siM Assistant) --- */
+.orbit-bubble.is-chat { gap: 0.55em; padding-right: 0.35em; }
+.ob-chat { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
+.ob-chat input {
+  width: 11em; font: inherit; font-size: 0.92em; padding: 0.3em 0.7em; border-radius: 999px;
+  border: 1px solid var(--hair); background: var(--paper); color: var(--ink); cursor: text;
+}
+.ob-chat input:focus { outline: none; border-color: var(--cobalt); }
+.ob-chat button { width: 1.9em; height: 1.9em; border-radius: 50%; border: 0; background: var(--ink); color: #fff; cursor: pointer; font: inherit; font-size: 0.85em; }
+.orbit-bubble[data-look="ink"] .ob-chat input { background: #fff; }
+@media (max-width: 700px) { .ob-chat input { width: 7.5em; } }
+
+/* --- a bubble holding pills (Lab, Tools) --- */
+.orbit-bubble.is-group { padding: 0.45em 0.5em 0.45em 0.9em; gap: 0.6em; border-radius: 1.4em; }
+.ob-members { display: inline-flex; flex-wrap: wrap; gap: 0.3em; max-width: 22em; }
+.ob-member {
+  font: inherit; font-size: 0.86em; padding: 0.3em 0.8em; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--hair-strong); background: var(--paper); color: var(--ink); white-space: nowrap;
+}
+.ob-member:hover { border-color: var(--cobalt); color: var(--cobalt); }
+.orbit-bubble[data-look="ink"] .ob-member { background: #fff; border-color: #fff; }
+@media (max-width: 700px) { .ob-members { max-width: 11em; } }
+
+/* --- a glimpse of what is inside (peeks.js) --- */
+.ob-text { display: inline-flex; flex-direction: column; min-width: 0; text-align: left; }
+.ob-peek { font-size: 0.78em; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 18em; font-weight: 400; font-style: normal; }
+@media (max-width: 700px) { .ob-peek { max-width: 11em; } }
+
+/* --- Architecture as a flowchart (architecture.js) --- */
+.arch { container-type: inline-size; }
+.arch-lede { color: var(--graphite); font-size: 13px; margin: 0 0 14px; }
+.arch-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px; }
+.arch-flow li { position: relative; display: flex; }
+.arch-flow li + li::before {
+  content: ""; position: absolute; left: -19px; top: 50%; width: 16px; border-top: 1px solid var(--hair-strong);
+}
+.arch-flow li + li::after {
+  content: ""; position: absolute; left: -7px; top: calc(50% - 3.5px); border-left: 5px solid var(--hair-strong);
+  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+}
+.arch-step {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; cursor: pointer;
+  padding: 12px 12px 14px; border-radius: 14px; border: 1px solid var(--hair); background: var(--surface); font: inherit; color: var(--ink);
+}
+.arch-step:hover { border-color: var(--hair-strong); }
+.arch-step[aria-pressed="true"] { border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.10); }
+.arch-n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--cobalt); color: var(--cobalt); display: grid; place-items: center; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.arch-step[aria-pressed="true"] .arch-n { background: var(--cobalt); color: #fff; }
+.arch-k { font-weight: 500; font-size: 14px; }
+.arch-s { font-size: 12px; color: var(--graphite); line-height: 1.35; }
+.arch-detail { margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--hair); }
+.arch-detail h3 { font-size: 14px; font-weight: 500; margin: 0 0 6px; }
+.arch-detail ul, .arch-note ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.arch-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.arch-note h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
+.arch-cite { font-size: 11.5px; color: var(--faint); margin: 10px 0 0; }
+/* narrow windows: three by two, then one column with arrows downwards */
+@container (max-width: 760px) {
+  .arch-flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .arch-flow li:nth-child(4)::before, .arch-flow li:nth-child(4)::after { display: none; }
+}
+@container (max-width: 460px) {
+  .arch-flow { grid-template-columns: 1fr; gap: 16px; }
+  .arch-flow li + li::before { left: 22px; top: -14px; width: 0; height: 12px; border-top: 0; border-left: 1px solid var(--hair-strong); display: block; }
+  .arch-flow li + li::after { left: 18.5px; top: -5px; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid var(--hair-strong); border-bottom: 0; display: block; }
+  .arch-step { flex-direction: row; align-items: center; flex-wrap: wrap; column-gap: 10px; }
+  .arch-s { flex-basis: 100%; padding-left: 32px; }
+}
+.arch-sub { margin: -2px 0 8px; font-size: 12.5px; color: var(--graphite); }

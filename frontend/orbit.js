@@ -116,6 +116,8 @@
 
   // Cards that read better as one window, at the owner's request.
   const MERGES = [
+    { section: "journal", title: "Leaderboards",
+      parts: ["pi-Index (piX) Leaderboard [Top Papers]", "pi-Quotient (piQ) Leaderboard [Top Authors]"] },
     { section: "diagram", title: "Architecture",
       parts: ["Overview", "Scoring Pipeline in Detail", "Stage Reference", "CoARA Compliance & Core Pillars"] },
   ];
@@ -135,8 +137,14 @@
     });
   }
   // Renamed pills keep what was remembered about them (place, size, use, window).
-  const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance" };
-  const RETITLE = { "analytics:Forecast": "Performance" };
+  const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
+                    "account:SciLM (siM) Assistant": "account:siM Assistant" };
+  const RETITLE = { "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "siM Assistant" };
+  // Pills that hold other pills: the group's bubble shows its members inside it.
+  const GROUPS = [
+    { section: "lab", title: "Lab" },
+    { title: "Tools", members: ["Assess a Manuscript"] },
+  ];
   function migrateRenamed() {
     try {
       Object.entries(RENAMED).forEach(([from, to]) => {
@@ -205,6 +213,8 @@
   // content loads later does not shrink back next time.
   function complexity(it) {
     if (it.href) return 0;
+    // a group is as weighty as everything in it
+    if (it.group) return items.filter(m => m.groupOf === it).reduce((sum, m) => sum + complexity(m), 0);
     let c = 0;
     for (const n of (it.nodes.length ? it.nodes : it.content ? [it.content] : [])) {
       if (!n.querySelectorAll) continue;
@@ -246,14 +256,34 @@
   function makeBubble(it, i) {
     const wrap = $(".orbit-bubbles", stage);
     {
-      const b = document.createElement("button");
-      b.type = "button";
+      // A pill with things inside it (a chat box, or other pills) cannot be a
+      // <button>: buttons may not contain interactive content.
+      const rich = it.key === "account:siM Assistant" || it.group;
+      const b = document.createElement(rich ? "div" : "button");
+      if (rich) { b.tabIndex = 0; b.setAttribute("role", "group"); } else b.type = "button";
       b.className = "orbit-bubble";
       b.dataset.section = it.section.key;
       b.dataset.key = it.key;
       b.setAttribute("role", "listitem");
       b.innerHTML = '<span class="ob-dot" aria-hidden="true"></span><span class="ob-label"></span>';
       b.querySelector(".ob-label").textContent = it.title;
+      if (it.key === "account:siM Assistant") {
+        b.classList.add("is-chat");
+        const f = document.createElement("form");
+        f.className = "ob-chat";
+        f.innerHTML = '<input type="text" placeholder="Ask siM…" aria-label="Ask siM a question" autocomplete="off"><button type="submit" aria-label="Ask">↵</button>';
+        f.addEventListener("submit", e => {
+          e.preventDefault();
+          const q = f.querySelector("input").value.trim();
+          openItem(it);
+          const inp = $("#scilemInput"), form = $("#scilemForm");
+          if (q && inp && form) { inp.value = q; (form.requestSubmit ? form.requestSubmit() : form.dispatchEvent(new Event("submit", { cancelable: true }))); }
+          f.querySelector("input").value = "";
+        });
+        b.appendChild(f);
+      }
+      if (it.group) { b.classList.add("is-group"); const m = document.createElement("span"); m.className = "ob-members"; b.appendChild(m); }
+      if (it.key === "account:Your account") b.classList.add("is-account");
       b.title = it.section.name + ": " + it.title;
       b.setAttribute("aria-label", it.section.name + ": " + it.title + ". Open");
       it.bubble = b;
@@ -266,8 +296,42 @@
       it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
       store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
       wireDrag(it);
+      if (rich) b.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); openItem(it); } });
       wrap.appendChild(b);
     }
+  }
+
+  // A group's bubble lists its members as small pills, kept in step with who
+  // can see what (owner-only members appear for the owner).
+  function renderGroups() {
+    items.filter(g => g.group).forEach(g => {
+      const box = g.bubble && g.bubble.querySelector(".ob-members");
+      if (!box) return;
+      const members = items.filter(m => m.groupOf === g && visible(m));
+      const sig = members.map(m => m.key).join("|");
+      if (box.dataset.sig === sig) return;
+      box.dataset.sig = sig;
+      box.innerHTML = "";
+      members.forEach(m => {
+        const mb = document.createElement("button");
+        mb.type = "button"; mb.className = "ob-member"; mb.textContent = m.title;
+        mb.dataset.key = m.key;
+        mb.addEventListener("click", e => { e.stopPropagation(); openItem(m); });
+        box.appendChild(mb);
+      });
+    });
+  }
+  function makeGroups() {
+    GROUPS.forEach(G => {
+      const members = items.filter(it => (G.members ? G.members.includes(it.title) : it.section.key === G.section) && !it.groupOf);
+      if (!members.length) return;
+      const g = { section: members[0].section, title: G.title, key: members[0].section.key + ":" + G.title + " group",
+                  nodes: [], content: document.createElement("div"), group: true, always: true,
+                  action: () => { const first = items.find(m => m.groupOf === g && visible(m)); if (first) openItem(first); } };
+      members.forEach(m => { m.groupOf = g; });
+      shelf.appendChild(g.content);
+      items.splice(items.indexOf(members[0]), 0, g);
+    });
   }
 
   function visible(it) {
@@ -475,7 +539,8 @@
     clampLogo();
     placeMark();
 
-    items.forEach(it => { it.bubble.hidden = !visible(it); });
+    renderGroups();
+    items.forEach(it => { it.bubble.hidden = !visible(it) || !!it.groupOf; });
     const vis = items.filter(it => !it.bubble.hidden);
     vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
 
@@ -524,6 +589,7 @@
     let sx = 0, sy = 0, moved = false, ox = 0, oy = 0;
     b.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
+      if (e.target.closest(".ob-chat, .ob-member")) return;   // typing or a member pill, not a drag
       sx = e.clientX; sy = e.clientY; moved = false;
       const r = b.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top;
       b.setPointerCapture(e.pointerId);
@@ -555,7 +621,10 @@
     };
     b.addEventListener("pointerup", end);
     b.addEventListener("pointercancel", end);
-    b.addEventListener("click", () => { if (!b.dataset.justDragged) openItem(it); });
+    b.addEventListener("click", e => {
+      if (b.dataset.justDragged || e.target.closest(".ob-chat, .ob-member")) return;
+      openItem(it);
+    });
   }
 
   // The mark moves too; everything around it comes along.
@@ -601,6 +670,9 @@
     core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
+    // Scrolling anywhere on the page itself (not inside a window, a pill or
+    // the π box) resizes the mark too.
+    wheelResize(stage, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
   }
 
   // Resize by dragging a handle away from (or towards) the thing's centre,
@@ -638,6 +710,7 @@
   function wheelResize(el, get, set, min, max, key) {
     let t;
     el.addEventListener("wheel", e => {
+      if (e.defaultPrevented) return;      // already handled by something inside (the π box)
       e.preventDefault();
       set(Math.min(max, Math.max(min, get() * Math.exp(-e.deltaY * 0.0015))));
       layoutSoon();
@@ -758,7 +831,7 @@
   function fit(it, p) {
     const sm = window.innerWidth < 700;
     const H0 = window.innerHeight - top;
-    const wide = it.content.matches(".nb") || it.content.querySelector("iframe, canvas, #arcadeStage, table, .leaderboard");
+    const wide = it.content.matches(".nb") || it.content.querySelector(".arch, iframe, canvas, #arcadeStage, table, .leaderboard");
     const q = it.q != null ? it.q : 0.5;
     const maxW = sm ? window.innerWidth - 20 : Math.min(window.innerWidth - 32, wide ? 960 : 440 + q * 380);
     const maxH = sm ? H0 * 0.86 : H0 - 48;
@@ -1130,6 +1203,10 @@
       if (it) reveal(it.nodes[0]);
     }, 0);
   });
+  // A finished assessment opens its results, every time (app.js announces it).
+  document.addEventListener("scholarpi:assessment-done", () => {
+    setTimeout(() => { const el = document.getElementById("resultsSection"); if (el) reveal(el); }, 120);
+  });
   // Results that appear after an action open their window by themselves.
   const AUTO_OPEN = ["resultsSection", "claimableCard"];
   function watchAutoOpen() {
@@ -1145,10 +1222,52 @@
     });
   }
 
+  // ------------------------------------------------------------ signed in?
+  // The account pill shows it: a red dot when signed out, a green check when in.
+  function markSignedIn() {
+    let token = "", who = "";
+    try { token = localStorage.getItem("sp_token") || ""; who = localStorage.getItem("sp_wallet") || localStorage.getItem("sp_orcid") || ""; } catch (_) { /* private mode */ }
+    const on = !!(token && who);
+    items.filter(i => i.key === "account:Your account").forEach(it => {
+      if (it.bubble.dataset.signed === String(on)) return;
+      it.bubble.dataset.signed = String(on);
+      it.bubble.setAttribute("aria-label", "Your account: " + (on ? "signed in" : "not signed in") + ". Open");
+      it.bubble.title = on ? "Signed in" : "Not signed in";
+    });
+  }
+
+  // A short line of what is inside, shown in the pill itself (peeks.js).
+  function setPeek(title, text) {
+    const it = items.find(i => i.title === title);
+    if (!it || !it.bubble) return;
+    let p = it.bubble.querySelector(".ob-peek");
+    if (!text) { if (p) { p.remove(); layoutSoon(); } return; }
+    if (!p) {
+      p = document.createElement("span"); p.className = "ob-peek";
+      const wrap = document.createElement("span"); wrap.className = "ob-text";
+      const label = it.bubble.querySelector(".ob-label");
+      label.replaceWith(wrap); wrap.append(label, p);
+    }
+    if (p.textContent !== text) { p.textContent = text; layoutSoon(); }
+  }
+
+  // Replace a window's content (architecture.js draws a new Architecture).
+  function setContent(title, node) {
+    const it = items.find(i => i.title === title);
+    if (!it) return false;
+    const keep = document.createElement("div");
+    keep.hidden = true;                    // the old cards stay in the page for app.js, out of sight
+    while (it.content.firstChild) keep.appendChild(it.content.firstChild);
+    shelf.appendChild(keep);
+    it.content.appendChild(node);
+    return true;
+  }
+
   // ------------------------------------------------------------ start
   function start() {
     SECTIONS.forEach(s => (s.panel ? collectSection(s) : collectAccount(s)));
     mergeItems();
+    makeGroups();
     migrateRenamed();
     document.body.appendChild(shelf);
     document.body.appendChild(stage);
@@ -1163,6 +1282,8 @@
     wireLogo();
     wirePi();
     watchAutoOpen();
+    markSignedIn();
+    setInterval(markSignedIn, 1500);
     // Cards appear and disappear as app.js decides (sign-in, owner panels,
     // results): keep the orbit in step.
     const mo = new MutationObserver(() => { clearTimeout(start.t); start.t = setTimeout(layout, 120); });
@@ -1200,7 +1321,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

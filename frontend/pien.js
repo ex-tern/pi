@@ -24,6 +24,8 @@
     "diagram:Stage Reference": "diagram:Architecture",
     "diagram:Scoring Pipeline in Detail": "diagram:Architecture",
     "diagram:CoARA Compliance & Core Pillars": "diagram:Architecture",
+    "journal:pi-Index (piX) Leaderboard [Top Papers]": "journal:Leaderboards",
+    "journal:pi-Quotient (piQ) Leaderboard [Top Authors]": "journal:Leaderboards",
   };
   const A = k => ALIAS[k] || k;
   function normOpens(o) { const out = {}; Object.entries(o || {}).forEach(([k, n]) => { out[A(k)] = (out[A(k)] || 0) + n; }); return out; }
