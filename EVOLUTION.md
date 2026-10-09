@@ -708,3 +708,9 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
   - the worker went idle and tried to fetch topics from OpenAlex (blocked from this sandbox, reachable from Railway)
   - the Performance window showed the line at 1440 and 390 px with no page errors
 - pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
+
+## 2026-10-09: idle worker never spins
+
+**What:** the idle loop now waits at least 10 s between checks and before its first one, whatever `IDLE_POLL_SECONDS` / `IDLE_AFTER_SECONDS` are set to. With either at 0, the loop would otherwise run flat out and take a CPU core from the site. Assessments already in flight still block the worker, so a short quiet period never competes with a visitor's running assessment.
+
+**Verified:** a new test with both set to 0 shows every wait ≥ 7.5 s (10 s with jitter); pytest at baseline; `build_hal.py` builds; the site loads at 1440 and 390 px with no page errors.

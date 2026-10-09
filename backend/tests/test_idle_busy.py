@@ -63,3 +63,26 @@ def test_on_by_default_only_when_hosted(monkeypatch):
 def test_public_status_has_no_operator_detail():
     s = iw.public_status()
     assert set(s) == {"enabled", "assessed_today", "daily_cap", "last_title", "last_run_at", "working_now"}
+
+
+def test_loop_never_spins(monkeypatch):
+    """IDLE_POLL_SECONDS=0 must not turn the loop into a busy spin."""
+    sleeps = []
+
+    class Stop(Exception):
+        pass
+
+    def fake_sleep(s):
+        sleeps.append(s)
+        if len(sleeps) >= 3:
+            raise Stop()
+
+    monkeypatch.setattr(config, "IDLE_POLL_SECONDS", 0)
+    monkeypatch.setattr(config, "IDLE_AFTER_SECONDS", 0)
+    monkeypatch.setattr(iw, "run_once", lambda: {"ran": False})
+    monkeypatch.setattr(iw.time, "sleep", fake_sleep)
+    try:
+        iw._loop()
+    except Stop:
+        pass
+    assert all(s >= 7.5 for s in sleeps), sleeps

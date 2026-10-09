@@ -324,7 +324,7 @@ def run_once() -> dict:
 def _loop():
     # A first wait before anything happens, so a restart during a busy period
     # does not immediately treat "no requests yet this process" as quiet.
-    time.sleep(config.IDLE_AFTER_SECONDS)
+    time.sleep(max(10, config.IDLE_AFTER_SECONDS))
     while True:
         try:
             run_once()
@@ -332,7 +332,9 @@ def _loop():
             logging.exception("Idle worker loop error")
         # Jittered, so several instances behind one load balancer do not all
         # wake at the same second and hit the same provider together.
-        time.sleep(config.IDLE_POLL_SECONDS * (0.75 + random.random() * 0.5))
+        # Never less than 10 s: IDLE_POLL_SECONDS=0 would otherwise spin the
+        # loop flat out and take a whole CPU core from the site.
+        time.sleep(max(10, config.IDLE_POLL_SECONDS) * (0.75 + random.random() * 0.5))
 
 
 def start():
