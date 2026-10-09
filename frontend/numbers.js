@@ -36,13 +36,25 @@
   function startWorker() {
     if (worker) return;
     try {
-      worker = new Worker("consts-worker.js");
+      worker = new Worker("consts-worker.js?v=2");
       worker.onmessage = e => { if ((e.data.digits || "").length > (have[e.data.key] || "").length) have[e.data.key] = e.data.digits; };
+      if (window.PiOrbit.still && window.PiOrbit.still()) worker.postMessage({ pause: true });
     } catch (_) { /* no workers: π alone still grows */ }
   }
 
   // Append only the new digits: the strings get long, re-rendering them would not scale.
+  // A double-click on the logo stops π; its friends stop with it.
+  const still = () => !!(window.PiOrbit.still && window.PiOrbit.still());
+  document.addEventListener("orbit:still", e => {
+    if (worker) worker.postMessage({ pause: !!e.detail });
+    for (const n of NUMBERS) {
+      const row = rows[n.key];
+      if (row && shown[n.key]) row.count.textContent = shown[n.key].toLocaleString() + (e.detail ? " decimals, paused" : " decimals");
+    }
+  });
+
   function tick() {
+    if (still()) return;
     const pi = window.PiOrbit.piDigits();
     if (pi) have.pi = pi[0] + "." + pi.slice(1);
     for (const n of NUMBERS) {

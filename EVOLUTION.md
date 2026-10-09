@@ -620,3 +620,20 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 - A 2-second momentum scroll opened exactly 2 windows, once.
 - A second scroll with both open, a scroll up, and a scroll while aside changed nothing; the logo scale stayed untouched.
 - 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: scrolling opens a random window; the logo loses its trail; friends of π stop too
+
+**What:**
+- **Scrolling as a feature:**
+  - Scrolling up or down on the page itself (not over a window, pill, the π box or the logo) resizes the logo, up bigger and down smaller.
+  - Each scroll gesture also opens one random window that isn't open yet. When everything is open, it brings a random open one to the front.
+  - A new gesture starts after 600 ms of quiet, measured on the input's own timestamps so a busy page doesn't split one gesture into many.
+  - HAL-OS, links and bubbles are never picked. On touch screens a vertical swipe opens a random window.
+- **Logo:** the faded blue trail behind the sweep is removed; the mark is the circle and one line.
+- **Double-click pause:** it now stops e, φ and γ as well as π. `orbit.js` dispatches `orbit:still`, `numbers.js` stops showing new digits ("N decimals, paused"), and `consts-worker.js` holds its work between steps until resumed.
+
+**Verified:**
+- Scrolling: each gesture opened one distinct window and never HAL-OS; the logo scale went down on down-scrolls and up on up-scrolls.
+- Mark: it has 2 lines (no trail).
+- Pause: with π and friends open, a double-click froze all four counts for 2.5 s, and another resumed them.
+- 1440 and 390 px with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
