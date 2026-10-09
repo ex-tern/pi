@@ -5694,7 +5694,7 @@ async function loadTopPapers() {
             <td class="num strong">${(p.score || 0).toFixed(1)}</td>
             <td class="num">${piqCell(p)}</td>
             <td class="num">${(p.logic_score || 0).toFixed(1)}</td>
-            <td class="num cell-muted">${p.date ? new Date(p.date).toLocaleDateString() : "—"}</td>
+            <td class="num cell-muted col-date">${p.date ? shortDate(p.date) : "—"}</td>
           </tr>`;
         }).join("")
       : `<tr><td colspan="7" class="empty-cell">No papers assessed yet.</td></tr>`;
@@ -5868,6 +5868,15 @@ async function initAnalyticsTab() {
   loadTopPapers();
 }
 
+
+/** "9 Oct", or "9 Oct 2025" for another year: fits a narrow table column. */
+function shortDate(v) {
+  const d = new Date(v);
+  if (isNaN(d)) return "—";
+  const opts = { day: "numeric", month: "short" };
+  if (d.getFullYear() !== new Date().getFullYear()) opts.year = "numeric";
+  return d.toLocaleDateString(undefined, opts);
+}
 
 // ---------------------------------------------------------------------------
 // JOURNAL TAB
