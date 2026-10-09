@@ -248,3 +248,11 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
 - π and friends is now π with three friends, at the owner's choice: Euler's number e, the golden ratio φ and the Euler–Mascheroni constant γ. √2, √3 and ln 2 are removed. Two columns on wider screens, one on phones; notes are hidden only on short phones. All four are visible at every tested size, from 320×568 to 1920×1080.
+
+## 2026-10-09: Capabilities
+
+**What:** a "Capabilities" pill whose window lists everything Pi Tech Lab can do, in six groups: assess research, explore the record, see the field, Lab, ask and understand, and the site itself. Each entry has one line on what it does, and clicking it opens that window (or π and friends, or the contact form). Only what this visitor can use right now is listed: 21 entries for a visitor and 24 for the owner (QuVI, private projects, permission requests). The list updates when you sign in or out.
+
+Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by title (`PiOrbit.openTitle`).
+
+**Files:** `frontend/capabilities.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
