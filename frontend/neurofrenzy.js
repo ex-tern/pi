@@ -5,6 +5,12 @@
 // neurophilic/NeuroGame, to be renamed NeuroFrenzy): same questions, levels,
 // time limits, hints and scoring (10 points per blank, nothing if late or
 // wrong). It adds a visible countdown and remembers your best score.
+//
+// Music: a 100 BPM song plays on a seamless 8-bar loop (19.2 s) while the
+// game's window is open and in view, unless muted. Browsers only let sound
+// start after a click or key press, so if the window was reopened on page
+// load the music begins with your first interaction. The mute choice is
+// remembered (orbit:nf:mute, synced when signed in).
 (function () {
   "use strict";
   const QUESTIONS = [
@@ -29,6 +35,79 @@
 
   const root = document.createElement("div");
   root.className = "nf";
+
+  // ------------------------------------------------------------ music
+  const SONG = "sound/neurofrenzy.mp3?v=1", LOOP = 19.2;
+  const muted = () => { try { return JSON.parse(localStorage.getItem("orbit:nf:mute") || "false") === true; } catch (_) { return false; } };
+  let actx = null, song = null, src = null, vol = null, loading = null;
+  function shown() {
+    return !!root.closest(".orbit-panel") && !document.documentElement.classList.contains("orbit-aside") &&
+      document.visibilityState === "visible";
+  }
+  function loadSong() {
+    if (!loading) loading = fetch(SONG).then(r => r.arrayBuffer())
+      .then(a => new Promise((ok, no) => actx.decodeAudioData(a, ok, no)))
+      .then(b => { song = b; })
+      .catch(() => { loading = null; });
+    return loading;
+  }
+  function lead(b) {                       // skip the encoder's silent padding
+    const d = b.getChannelData(0); let i = 0;
+    while (i < d.length && Math.abs(d[i]) < 1e-4) i++;
+    return i / b.sampleRate;
+  }
+  function musicOn() {
+    const AC = window.AudioContext || window.webkitAudioContext;
+    if (!AC) return;
+    if (!actx) actx = new AC();
+    if (actx.state === "suspended") actx.resume().catch(() => {});
+    if (src) return;
+    loadSong().then(() => {
+      if (src || !song || muted() || !shown()) return;
+      const at = lead(song);
+      src = actx.createBufferSource();
+      src.buffer = song; src.loop = true;
+      src.loopStart = at; src.loopEnd = Math.min(song.duration, at + LOOP);
+      vol = actx.createGain();
+      vol.gain.setValueAtTime(0, actx.currentTime);
+      vol.gain.linearRampToValueAtTime(0.8, actx.currentTime + 0.6);
+      src.connect(vol).connect(actx.destination);
+      src.start(actx.currentTime + 0.02, at);
+    });
+  }
+  function musicOff() {
+    if (!src) return;
+    const s = src, t = actx.currentTime;
+    vol.gain.cancelScheduledValues(t);
+    vol.gain.setValueAtTime(vol.gain.value, t);
+    vol.gain.linearRampToValueAtTime(0, t + 0.3);
+    s.stop(t + 0.32);
+    src = vol = null;
+  }
+  function syncMusic() {
+    if (shown() && !muted()) musicOn(); else musicOff();
+    paintMute();
+  }
+  const box = document.createElement("div");
+  box.className = "nf-box";
+  const muteBtn = document.createElement("button");
+  muteBtn.type = "button";
+  muteBtn.className = "nf-mute";
+  function paintMute() {
+    const m = muted();
+    muteBtn.setAttribute("aria-pressed", String(m));
+    muteBtn.title = m ? "Turn the music on" : "Mute the music";
+    muteBtn.innerHTML =
+      '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M3 8h3l4-3.5v11L6 12H3z"/>' +
+      (m ? '<path d="M13 7.5l5 5M18 7.5l-5 5"/>' : '<path d="M13 7a4 4 0 0 1 0 6M15.2 5a7 7 0 0 1 0 10"/>') +
+      '</svg><span>' + (m ? "Music off" : "Music on") + '</span>';
+  }
+  muteBtn.addEventListener("click", () => {
+    const m = !muted();
+    if (window.PiOrbit) window.PiOrbit.store("orbit:nf:mute", m); else try { localStorage.setItem("orbit:nf:mute", JSON.stringify(m)); } catch (_) {}
+    syncMusic();
+  });
+  box.append(muteBtn, root);
   let qi = 0, score = 0, started = 0, timer = 0, answered = false;
 
   function intro() {
@@ -121,7 +200,15 @@
 
   function start() {
     intro();
-    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "NeuroFrenzy", content: root, inGroup: "Lib" });
+    paintMute();
+    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "NeuroFrenzy", content: box, inGroup: "Lib" });
+    // music follows the window: on while it is open and in view, off otherwise
+    setInterval(syncMusic, 400);
+    document.addEventListener("visibilitychange", syncMusic);
+    // sound may only start after a gesture: the first click or key press anywhere unlocks it
+    const unlock = () => { if (shown() && !muted()) musicOn(); };
+    document.addEventListener("pointerdown", unlock, true);
+    document.addEventListener("keydown", unlock, true);
     // a game paused out of sight is no game: if its window closes mid-question, start over next time
     new MutationObserver(() => { if (!root.closest(".orbit-panel") && timer) intro(); })
       .observe(document.body, { childList: true });
