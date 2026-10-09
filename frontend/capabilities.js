@@ -13,8 +13,7 @@
     ]],
     ["Explore the record", [
       ["The journal", "Every assessed manuscript, searchable."],
-      ["pi-Index (piX) Leaderboard [Top Papers]", "Papers ranked by their assessed piX."],
-      ["pi-Quotient (piQ) Leaderboard [Top Authors]", "Authors ranked by piQ."],
+      ["Leaderboards", "Top papers by piX, and top authors by piQ."],
       ["Proof-of-Research Ledger Explorer", "The public ledger of assessments and rewards."],
     ]],
     ["See the field", [
@@ -30,8 +29,8 @@
       ["Permission requests", "Ask authors for permission, with a link they answer."],
     ]],
     ["Ask and understand", [
-      ["SciLM (siM) Assistant", "Ask questions about the corpus and the method."],
-      ["Architecture", "How it works: the overview, the scoring pipeline stage by stage, and CoARA compliance."],
+      ["siM Assistant", "Ask questions about the corpus and the method, right from its pill."],
+      ["Architecture", "How a paper is assessed, as a six-step flowchart, and how judging stays fair."],
       ["Whitepaper", "The full method."],
     ]],
     ["The site itself", [

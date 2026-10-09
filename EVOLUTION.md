@@ -284,3 +284,17 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 - What was learned about renamed or merged cards counts toward their new names.
 
 **Files:** `frontend/arcade.js`, `frontend/style.css`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`.
+
+## 2026-10-09: Bubbles that hold pills, a chat pill, a signed-in check, a flowchart
+
+**What (owner's requests):**
+- **Lab** is a bubble with its pills inside: HAL-OS, plus QuVI, Private projects and Permission requests for the owner. **Tools** holds Assess a Manuscript. Each inner pill opens its window, and grouped pills no longer orbit on their own. A group is sized by everything in it.
+- **siM Assistant** (renamed from "SciLM (siM) Assistant") has a chat box in its pill: type, press Enter, and the assistant window opens with the question asked.
+- **Your account** shows a red dot when signed out and a green check when signed in.
+- **The journal** pill shows a glimpse of what is inside: the number of entries and the latest one (`peeks.js`).
+- **Architecture** is rebuilt as a six-step flowchart (paper in, read, panel, judge, record, outputs). Click or use the arrow keys to see each step; a "How judging stays fair" note sums up CoARA. Plain HTML and CSS, with no diagram library. It shows six across, three by two, or one column, depending on the window's width. The old cards stay in the page, hidden, for app.js.
+- **Leaderboards:** the piX and piQ leaderboards are one pill.
+- **Assessment results open by themselves** whenever a run finishes (app.js announces `scholarpi:assessment-done`), not only the first time.
+- **Scrolling anywhere on the page** (outside windows) resizes PiEN. Scrolling on the π box resizes only the π box.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/architecture.js`, `frontend/peeks.js`, `frontend/capabilities.js`, `frontend/pien.js`, `frontend/app.js`, `frontend/index.html`, `CLAUDE.md`.
