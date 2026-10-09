@@ -7038,6 +7038,10 @@ app.include_router(_layout.build_router(BASE_DIR, require_identity))
 import pien as _pien  # noqa: E402
 app.include_router(_pien.build_router(BASE_DIR))
 
+# Recent assessments, for everyone: field, score and day only. See recent.py.
+import recent as _recent  # noqa: E402
+app.include_router(_recent.build_router(get_db_connection))
+
 
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)

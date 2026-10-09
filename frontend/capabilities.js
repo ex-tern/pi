@@ -13,6 +13,7 @@
     ]],
     ["Explore the record", [
       ["The journal", "Every assessed manuscript, searchable."],
+      ["Recent assessments", "Every assessment on the site, signed in or not: field, score and day only."],
       ["Leaderboards", "Top papers by piX, and top authors by piQ."],
       ["Proof-of-Research Ledger Explorer", "The public ledger of assessments and rewards."],
     ]],
