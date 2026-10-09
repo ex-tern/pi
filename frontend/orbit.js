@@ -179,6 +179,7 @@
     const ranked = items.map(it => [it, complexity(it)]).sort((a, b) => a[1] - b[1]);
     ranked.forEach(([it], i) => {
       const q = ranked.length > 1 ? i / (ranked.length - 1) : 0.5;
+      it.q = q;
       it.bubble.style.setProperty("--pz", (0.84 + q * 0.5).toFixed(3));
     });
   }
@@ -211,8 +212,8 @@
       setTier(it);
       setLook(it);
       if (it.href) { b.classList.add("is-link"); b.setAttribute("aria-label", it.title + " (opens in a new tab)"); }
-      it.custom = load("orbit:at:" + it.key);       // {dx, dy} from the mark's centre
-      store("orbit:pos:" + it.key);                  // the old moving-orbit format
+      it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
+      store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
       wireDrag(it);
       wrap.appendChild(b);
     });
@@ -248,9 +249,11 @@
   function shownR() {
     const open = document.documentElement.classList.contains("orbit-open");
     if (!open) return R;
-    // the more windows are open, the further the mark steps back
-    const n = items.filter(i => i.panel).length;
-    return Math.max(16, Math.min(32, R * 0.3) - (n - 1) * 3);
+    // with a window open, the mark sizes to what is in front: small beside a
+    // simple card, larger beside the emulator, the map or an assessment
+    const front = items.filter(i => i.panel).sort((a, b) => b.panel.style.zIndex - a.panel.style.zIndex)[0];
+    const q = front && front.q != null ? front.q : 0.5;
+    return (small ? 16 + q * 26 : 20 + q * 50) * Math.min(1.4, logoScale);
   }
 
   function clampLogo() {
@@ -315,6 +318,13 @@
   }
 
   let usedRings = [];
+  let prio = load("orbit:prio") || [];   // most recently moved first
+  let settlePushes = false;
+  function keep(it) {
+    it.custom = { fx: +((it.at.x + it.w / 2 - lx) / W).toFixed(4), fy: +((it.at.y + it.h / 2 - ly) / H).toFixed(4) };
+    it.pushed = false;
+    store("orbit:at2:" + it.key, it.custom);
+  }
   // Re-place pills when something they avoid changes size: the experimental
   // banner fills in late (and may wrap), fonts arrive, the π line grows.
   const watched = new WeakSet();
@@ -346,10 +356,28 @@
 
     const g = GAP();
     const placed = obstacles();
-    // 1. pills you have put somewhere keep that spot (relative to the mark), or the nearest free one
-    vis.filter(it => it.custom && it !== dragging).forEach(it => {
-      const r = nearestFree(lx + it.custom.dx, ly + it.custom.dy, it.w, it.h, placed);
-      it.at = r; if (r) placed.push(grow(r, g / 2));
+    // 1. Every pill that has a place keeps it. Only a pill whose place is taken
+    //    (by one you just dropped, the mark, the π box, the screen edge) is
+    //    pushed, to the nearest free spot. The last one you moved wins.
+    const pri = it => { const i = prio.indexOf(it.key); return i < 0 ? 1e6 + it.order : i; };
+    //    First every pill whose own spot is free settles there; then the ones
+    //    that were sat on look for the nearest spot nobody is using.
+    const settled = vis.filter(it => it.custom && it !== dragging).sort((a, b) => pri(a) - pri(b));
+    const bumped = [];
+    // the pill you just dropped gives way only to fixed things (mark, π box, title)
+    if (settlePushes && settled.length && settled[0].key === prio[0]) {
+      const it = settled.shift();
+      const r = nearestFree(lx + it.custom.fx * W, ly + it.custom.fy * H, it.w, it.h, placed);
+      it.at = r; if (r) { placed.push(grow(r, g / 2)); keep(it); }
+    }
+    settled.forEach(it => {
+      const r = { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2, w: it.w, h: it.h };
+      if (freeAt(r, placed)) { it.at = r; it.pushed = false; placed.push(grow(r, g / 2)); }
+      else bumped.push(it);
+    });
+    bumped.forEach(it => {
+      const r = nearestFree(lx + it.custom.fx * W, ly + it.custom.fy * H, it.w, it.h, placed);
+      it.at = r; it.pushed = !!r; if (r) placed.push(grow(r, g / 2));
     });
     // 2. the rest go round the mark on widening rings, most used first
     const auto = vis.filter(it => !it.custom && it !== dragging)
@@ -372,8 +400,12 @@
         if (it.at) { usedRings.ring = { r0, step, ax }; }
       }
       if (!it.at) it.at = nearestFree(lx, ly, it.w, it.h, placed);  // a very small screen: anywhere free
-      if (it.at) placed.push(grow(it.at, g / 2));
+      if (it.at) { placed.push(grow(it.at, g / 2)); keep(it); }       // from now on this is its place
     }
+    // a push from a pill you dropped is for keeps; one from the screen edge or a
+    // passing mark is not, so the pill returns when there is room again
+    if (settlePushes) vis.forEach(it => { if (it.pushed && it.at) keep(it); });
+    settlePushes = false;
     vis.forEach(it => {
       if (it === dragging) return;
       const r = it.at || { x: Math.min(W - it.w - 6, Math.max(6, lx - it.w / 2)), y: Math.min(H - it.h - 6, ly + R + piBox.h + 20), w: it.w, h: it.h };
@@ -385,11 +417,10 @@
   function drawRings() {
     const svg = $(".orbit-rings", stage);
     svg.setAttribute("viewBox", "0 0 " + W + " " + H);
-    const p = usedRings.ring;
-    if (!p) { svg.innerHTML = ""; return; }
-    svg.innerHTML = usedRings.slice().sort((a, b) => a - b).filter((k, i) => i < 4).map(k => {
-      const ry = p.r0 + k * p.step;
-      return '<ellipse cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" rx="' + (ry * p.ax).toFixed(1) + '" ry="' + ry.toFixed(1) + '"/>';
+    const ax = small ? 1.2 : 1.75, step = small ? 52 : 72, r0 = R + (small ? 26 : 34);
+    svg.innerHTML = [0, 1, 2].map(k => {
+      const ry = r0 + k * step;
+      return '<ellipse cx="' + lx.toFixed(1) + '" cy="' + ly.toFixed(1) + '" rx="' + (ry * ax).toFixed(1) + '" ry="' + ry.toFixed(1) + '"/>';
     }).join("");
   }
 
@@ -425,11 +456,14 @@
       if (!moved) return;                 // a click: handled by the click event
       const x = Math.min(W - it.w, Math.max(0, e.clientX - ox)) + it.w / 2;
       const y = Math.min(H - it.h, Math.max(0, e.clientY - top - oy)) + it.h / 2;
-      it.custom = { dx: Math.round(x - lx), dy: Math.round(y - ly) };
-      store("orbit:at:" + it.key, it.custom);
+      it.custom = { fx: +((x - lx) / W).toFixed(4), fy: +((y - ly) / H).toFixed(4) };
+      store("orbit:at2:" + it.key, it.custom);
+      prio = [it.key, ...prio.filter(k => k !== it.key)];
+      store("orbit:prio", prio);
+      settlePushes = true;
       dragging = null;
       bumpUse(it, 1 / 3);
-      layout();                            // it lands on the nearest free spot; the others make room
+      layout();                            // it lands where dropped; only pills it lands on move aside
       b.dataset.justDragged = "1";
       setTimeout(() => delete b.dataset.justDragged, 0);
     };
@@ -635,6 +669,7 @@
       zTop = 300; open.forEach(i => { i.panel.style.zIndex = ++zTop; });
     }
     p.style.zIndex = ++zTop;
+    placeMark();
   }
 
   function wirePanel(it, p) {

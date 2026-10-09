@@ -139,3 +139,16 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - The small resize circle on the logo is removed. The logo still resizes with the scroll wheel; double-click resets it.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: Pills move only when pushed; the mark sizes to the open card
+
+**What:**
+- Every pill keeps its own place, stored relative to the mark as a share of the screen. Moving one pill no longer reflows the rest.
+  - A dropped pill gives way only to fixed things (the mark, the π box, the title). It takes the nearest spot clear of them.
+  - Only the pills it lands on are pushed, each to the nearest unused spot. Pushes don't cascade, and pushed pills stay where they were pushed.
+  - When the screen edge or a moving mark pushes a pill, the move is temporary: the pill returns once there is room.
+- With a window open, the mark sizes to the complexity of the card in front. Key numbers ≈ 60 px and HAL-OS or the map ≈ 135–140 px on desktop; on phones, about 42–84 px.
+
+**Checks:** dropping a pill on empty space moves only that pill. Dropping onto another moves just the pill it lands on. Positions survive a reload. Opening cards moves no pills.
+
+**Files:** `frontend/orbit.js`, `frontend/index.html`.
