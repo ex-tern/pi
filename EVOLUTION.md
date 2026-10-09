@@ -572,3 +572,23 @@ The Capabilities pill lists them under a new Lib section; Neuro Frenzy was liste
 - Timing: hard starts at 15 s and easy at 38 s for a 25 s question; the hint is hidden on hard and open on easy.
 - Layout: the mute toggle doesn't overlap the header; 1440 and 390 px with no page errors or horizontal scroll.
 - Checks: pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: ORCID sign-in returns to pitechlab.com
+
+**Bug:** connecting ORCID on pitechlab.com ended on another website. Production's `ORCID_REDIRECT_URI` still points at the old Railway address (`https://scholarpi.up.railway.app/api/auth/orcid/callback`, the URI registered with ORCID). That address is the same backend, so the sign-in worked, but the callback then sent the browser on to its own host. The visitor landed on scholarpi.up.railway.app, signed in there, not on pitechlab.com.
+
+**Fix:**
+- **Remembering where you started:** `/api/auth/orcid/login-url` records the origin the visitor started on in ORCID's `state` (`<wallet|none>~<base64url origin>`).
+- **Going back there:** `/api/auth/orcid/callback` returns there, on success and on error.
+- **Safety:** only known origins are followed, so this is no open redirect. They are pitechlab.com and www, `FRONTEND_ORIGIN`, the callback's own host, and anything in `ORCID_RETURN_ORIGINS` (comma-separated).
+- **Compatibility:** old-style states (`none` or a wallet) still work. The registered redirect URI is unchanged, so nothing needs changing at ORCID.
+
+**Verified:** new `tests/test_orcid_return.py` (6 tests):
+- lands on `https://pitechlab.com/?orcid=…&token=…` from the old callback host
+- the wallet is still carried
+- an unknown origin is ignored
+- old states still work
+- errors go home
+- extra origins come from the env
+
+pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site loads at 1440 and 390 px with no page errors.

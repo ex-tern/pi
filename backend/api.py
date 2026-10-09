@@ -26,6 +26,7 @@ import logging.handlers
 import colorsys
 import threading
 import traceback
+import base64
 import urllib.parse
 from datetime import datetime
 from collections import deque, defaultdict
@@ -598,6 +599,61 @@ def auth_session(request: Request):
     }
 
 
+# --- Coming back to the site you started from ------------------------------
+#
+# ORCID only redirects to a callback URL registered with it, and the one
+# configured in production was the old Railway address
+# (scholarpi.up.railway.app). The callback is served by the same backend, so
+# the sign-in itself worked, but it then sent the browser on to whatever
+# FRONTEND_ORIGIN or that request's host said: the old address, not
+# pitechlab.com. The session landed in another origin's storage and the
+# visitor found themselves on "another website", not signed in.
+#
+# Now the login URL records the origin the visitor started on inside ORCID's
+# `state` parameter, and the callback returns there. Only known origins are
+# honoured (no open redirect): this site's own addresses, FRONTEND_ORIGIN, the
+# callback's own host, and any listed in ORCID_RETURN_ORIGINS.
+_ORCID_RETURN_DEFAULTS = ("https://pitechlab.com", "https://www.pitechlab.com")
+
+
+def _request_origin(request: Request) -> str:
+    host = request.headers.get("x-forwarded-host") or request.headers.get("host") or ""
+    if not host:
+        return ""
+    proto = request.headers.get("x-forwarded-proto") or (
+        "http" if host.startswith(("localhost", "127.0.0.1")) else "https")
+    return f"{proto}://{host}".rstrip("/")
+
+
+def _orcid_return_allowed(origin: str, request: Request) -> bool:
+    if not origin or not origin.startswith(("https://", "http://localhost", "http://127.0.0.1")):
+        return False
+    extra = [o.strip().rstrip("/") for o in os.environ.get("ORCID_RETURN_ORIGINS", "").split(",") if o.strip()]
+    allowed = set(_ORCID_RETURN_DEFAULTS) | set(extra) | {resolve_frontend_origin(request), _request_origin(request)}
+    return origin in allowed
+
+
+def _orcid_state(wallet_part: str, origin: str) -> str:
+    if not origin:
+        return wallet_part
+    enc = base64.urlsafe_b64encode(origin.encode()).decode().rstrip("=")
+    return f"{wallet_part}~{enc}"
+
+
+def _orcid_unstate(state: Optional[str]):
+    """(wallet part, return origin or "") from a `state` parameter."""
+    if not state:
+        return "", ""
+    wallet_part, _, enc = state.partition("~")
+    origin = ""
+    if enc:
+        try:
+            origin = base64.urlsafe_b64decode(enc + "=" * (-len(enc) % 4)).decode()
+        except Exception:
+            origin = ""
+    return wallet_part, origin
+
+
 @app.get("/api/auth/orcid/login-url")
 def orcid_login_url(request: Request, wallet: Optional[str] = None):
     if not ORCID_CLIENT_ID or not ORCID_CLIENT_SECRET:
@@ -606,13 +662,15 @@ def orcid_login_url(request: Request, wallet: Optional[str] = None):
             detail="ORCID sign-in is not configured on this deployment "
                    "(ORCID_CLIENT_ID / ORCID_CLIENT_SECRET are unset).",
         )
-    state_payload = wallet if wallet and w3.is_address(wallet) else "none"
+    start = _request_origin(request)
+    state_payload = _orcid_state(wallet if wallet and w3.is_address(wallet) else "none",
+                                 start if _orcid_return_allowed(start, request) else "")
     redirect_uri = resolve_orcid_redirect_uri(request)
     url = (
         f"https://orcid.org/oauth/authorize?client_id={ORCID_CLIENT_ID}"
         f"&response_type=code&scope=/authenticate"
         f"&redirect_uri={urllib.parse.quote(redirect_uri, safe='')}"
-        f"&state={state_payload}"
+        f"&state={urllib.parse.quote(state_payload, safe='')}"
     )
     return {"url": url, "redirect_uri": redirect_uri}
 
@@ -645,10 +703,11 @@ def resolve_frontend_origin(request: Request) -> str:
 
 @app.get("/api/auth/orcid/callback")
 def orcid_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None):
-    frontend = resolve_frontend_origin(request)
+    wallet_part, back = _orcid_unstate(state)
+    frontend = back if _orcid_return_allowed(back, request) else resolve_frontend_origin(request)
     wallet_qs = ""
-    if state and state != "none" and w3.is_address(state):
-        wallet_qs = f"&wallet={w3.to_checksum_address(state)}"
+    if wallet_part and wallet_part != "none" and w3.is_address(wallet_part):
+        wallet_qs = f"&wallet={w3.to_checksum_address(wallet_part)}"
 
     if not code:
         return RedirectResponse(f"{frontend}/?orcid_error=missing_code")
