@@ -19,3 +19,20 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Browser checks for anonymous (hidden, plus a "Coming to the Lab" notice at /quvi/), owner (card and simulator) and public (card, no badge). Every tab at 1440 and 390 px, with no page errors and no horizontal scroll.
 
 **Files:** `frontend/quvi/*`, `frontend/lab.js`, `frontend/index.html`, `frontend/theme.css`, `backend/lab.py`, `backend/api.py`, `backend/tests/test_lab.py`, `CLAUDE.md`.
+
+## 2026-10-09: New PiTechLab mark and a friendlier welcome
+
+**What:**
+- The circle-and-diameter logo is replaced by a friendly mark: a hand-drawn π on a cobalt tile, its right leg curling up, with a small spark. It's used for the sidebar brand, favicon, permission page and welcome screen.
+- The site is now named PiTechLab, with ScholarPi as its assessment tool.
+- The welcome screen has a warm greeting and the mark drawing itself, then four doors with icons: assess and improve a paper, research the corpus, explore the map of science, and experiment and test in the Lab. Below them, a line saying the site improves nightly, linking to this log for the running branch, and a "Skip to the site" link.
+
+**Why:** the owner didn't like the old logo and wanted the welcome to feel friendlier and to name what the site is for: research, lab, testing, assessment, improvement and innovation.
+
+**Verified:**
+- pytest at baseline, `build_hal.py` and the QuVI engine tests.
+- Browser at 1440 and 390 px on every tab, with no page errors and no horizontal scroll.
+- Welcome: focus lands on "Let's begin", a door opens its tab, the brand reopens the screen, and Skip and Esc close it.
+- With reduced motion, the π strokes show fully without animating.
+
+**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
