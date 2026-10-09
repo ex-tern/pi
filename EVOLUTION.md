@@ -348,3 +348,12 @@ The owner set `QUVI_PUBLIC=1` in Railway's production environment. QuVI now appe
 Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine still boots only when Start is pressed. The Lab bubble's own default opens QuVI where QuVI is visible, otherwise nothing. lab.js no longer writes `#lab`.
 
 **Files:** `frontend/orbit.js`, `frontend/lab.js`, `frontend/index.html`.
+
+## 2026-10-09: The name behind, PiEN on hover, a tidy chat box
+
+**What:**
+- "Pi Tech Lab" (and its translations) sits behind pills and windows, like the π box, instead of floating over window headers.
+- PiEN's name inside the mark shows only when you point at the mark, or reach it with Tab.
+- siM's chat box: the send button sits inside the right end of the field, centred. A site-wide margin under inputs had pushed it down and against the pill's edge.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
