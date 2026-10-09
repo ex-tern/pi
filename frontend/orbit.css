@@ -44,9 +44,17 @@ html.orbit-moving .orbit-pi { transition: none; }
 
 /* the name, in the top-left corner */
 .orbit-title {
-  position: absolute; left: 20px; top: calc(var(--orbit-top, 0px) + 16px); margin: 0; pointer-events: none;
-  font-size: clamp(28px, 3.4vw, 44px); font-weight: 500; letter-spacing: -0.045em; line-height: 1; color: var(--ink);
+  position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--orbit-top, 0px) + 16px); margin: 0;
+  pointer-events: auto; cursor: default; white-space: nowrap; text-align: center;
+  font-size: clamp(28px, 3.4vw, 44px); font-weight: 500; letter-spacing: -0.045em; line-height: 1.15; color: var(--ink);
 }
+.ot-text { display: inline-block; transition: opacity 0.45s ease, filter 0.45s ease; }
+.ot-text.ot-out { opacity: 0; filter: blur(4px); }
+.ot-text:not(:lang(en)) { letter-spacing: -0.02em; }
+/* joined and syllabic scripts break apart under negative tracking */
+.ot-text:lang(fa), .ot-text:lang(ar), .ot-text:lang(he), .ot-text:lang(hi), .ot-text:lang(bn), .ot-text:lang(th),
+.ot-text:lang(zh), .ot-text:lang(ja), .ot-text:lang(ko) { letter-spacing: normal; }
+.ot-probe { position: absolute; visibility: hidden; white-space: nowrap; left: -9999px; top: 0; }
 
 /* --- π, computed live in its own box: move it, resize it --- */
 .orbit-pi {
@@ -147,7 +155,7 @@ html.orbit-aside .orbit-panel { opacity: 0; transform: scale(0.96); pointer-even
 
 @media (max-width: 700px) {
   .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: 10.5em; gap: 0.45em; }
-  .orbit-title { left: 14px; top: calc(var(--orbit-top, 0px) + 12px); font-size: 26px; }
+  .orbit-title { top: calc(var(--orbit-top, 0px) + 12px); font-size: 26px; }
   .orbit-panel { min-width: 0; }
   .op-head { cursor: default; }
   .op-body { padding: 14px; }

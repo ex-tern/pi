@@ -122,7 +122,7 @@
   stage.innerHTML =
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
-    '<h1 class="orbit-title">Pi Tech Lab</h1>' +
+    '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
     '<button type="button" class="orbit-core" aria-label="Pi Tech Lab. Drag to move; click to close all open cards">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
@@ -300,7 +300,11 @@
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     const t = $(".orbit-title");
-    if (t) { const b = t.getBoundingClientRect(); out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g)); }
+    if (t) {
+      const b = t.getBoundingClientRect();
+      const w = Math.max(b.width, titleBox.w), h = Math.max(b.height, titleBox.h);
+      out.push(grow({ x: W / 2 - w / 2, y: b.top - top, w, h }, g));
+    }
     document.querySelectorAll(".buddy-float").forEach(el => {
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
@@ -822,6 +826,86 @@
     }
   }
 
+  // ------------------------------------------------------------ the name, in many languages
+  // "Pi Tech Lab" sits at the top in the middle and, every half minute to three
+  // minutes, quietly turns into another language. The pills keep clear of the
+  // widest of them, so a change of language never moves anything.
+  const TITLES = [
+    ["en", "Pi Tech Lab", "English"],
+    ["it", "Laboratorio Tecnologico Pi", "Italiano"],
+    ["es", "Laboratorio Tecnológico Pi", "Español"],
+    ["fr", "Laboratoire technologique Pi", "Français"],
+    ["de", "Pi Technologielabor", "Deutsch"],
+    ["pt", "Laboratório de Tecnologia Pi", "Português"],
+    ["nl", "Pi Technologielab", "Nederlands"],
+    ["sv", "Pi Teknologilabb", "Svenska"],
+    ["fi", "Pi-teknologialaboratorio", "Suomi"],
+    ["pl", "Laboratorium Technologiczne Pi", "Polski"],
+    ["cs", "Technologická laboratoř Pí", "Čeština"],
+    ["hu", "Pi Technológiai Labor", "Magyar"],
+    ["ro", "Laboratorul Tehnologic Pi", "Română"],
+    ["el", "Τεχνολογικό Εργαστήριο Πι", "Ελληνικά"],
+    ["ru", "Технологическая лаборатория Пи", "Русский"],
+    ["uk", "Технологічна лабораторія Пі", "Українська"],
+    ["tr", "Pi Teknoloji Laboratuvarı", "Türkçe"],
+    ["az", "Pi Texnologiya Laboratoriyası", "Azərbaycanca"],
+    ["fa", "آزمایشگاه فناوری پای", "فارسی", "rtl"],
+    ["ar", "مختبر باي للتقنية", "العربية", "rtl"],
+    ["he", "מעבדת הטכנולוגיה פאי", "עברית", "rtl"],
+    ["hi", "पाई टेक लैब", "हिन्दी"],
+    ["bn", "পাই প্রযুক্তি গবেষণাগার", "বাংলা"],
+    ["th", "ห้องปฏิบัติการเทคโนโลยีพาย", "ไทย"],
+    ["vi", "Phòng thí nghiệm Công nghệ Pi", "Tiếng Việt"],
+    ["id", "Laboratorium Teknologi Pi", "Bahasa Indonesia"],
+    ["sw", "Maabara ya Teknolojia ya Pi", "Kiswahili"],
+    ["zh", "派科技实验室", "中文"],
+    ["ja", "パイ・テック・ラボ", "日本語"],
+    ["ko", "파이 테크 랩", "한국어"],
+    ["eo", "Pi-Teknologia Laboratorio", "Esperanto"],
+    ["la", "Officina Technologica Pi", "Latina"],
+  ];
+  let titleBox = { w: 0, h: 0 }, titleIdx = 0;
+  // Each name gets the largest size up to the title's own that fits the screen.
+  function fitTitleSize(text, lang) {
+    const t = $(".orbit-title");
+    const probe = document.createElement("span");
+    probe.className = "ot-probe"; probe.lang = lang; probe.textContent = text;
+    t.appendChild(probe);
+    const w = probe.offsetWidth, h = probe.offsetHeight;
+    probe.remove();
+    const avail = Math.max(120, window.innerWidth - 32);
+    return { scale: Math.min(1, avail / Math.max(1, w)), w: Math.min(w, avail), h };
+  }
+  function measureTitles() {
+    let w = 0, h = 0;
+    TITLES.forEach(([lang, text]) => { const m = fitTitleSize(text, lang); w = Math.max(w, m.w); h = Math.max(h, m.h * m.scale); });
+    titleBox = { w, h };
+  }
+  function showTitle(i, animate) {
+    titleIdx = i;
+    const [lang, text, name, dir] = TITLES[i];
+    const span = $(".ot-text");
+    const apply = () => {
+      const m = fitTitleSize(text, lang);
+      span.lang = lang; span.dir = dir || "ltr"; span.textContent = text;
+      span.style.fontSize = m.scale < 1 ? "calc(1em * " + m.scale.toFixed(3) + ")" : "";
+      $(".orbit-title").title = name;
+      span.classList.remove("ot-out");
+    };
+    if (!animate || reduceMotion.matches) { apply(); return; }
+    span.classList.add("ot-out");
+    setTimeout(apply, 450);
+  }
+  function nextTitleLater() {
+    const ms = 30000 + Math.random() * 150000;          // half a minute to three minutes
+    setTimeout(() => {
+      let i;
+      do { i = Math.floor(Math.random() * TITLES.length); } while (i === titleIdx);
+      showTitle(i, true);
+      nextTitleLater();
+    }, ms);
+  }
+
   // ------------------------------------------------------------ your account keeps your layout
   // Signed in, the whole layout (every "orbit:" key: pills, the mark, the π box,
   // open windows and their places and sizes, use) is saved to your account a
@@ -936,11 +1020,14 @@
     else if (location.hash) setTimeout(fromHash, 300);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
+    measureTitles(); showTitle(0, false); nextTitleLater();
+    window.addEventListener("resize", () => { measureTitles(); showTitle(titleIdx, false); layoutSoon(); });
+    if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureTitles(); layoutSoon(); });
     // sign-in happens in app.js; notice it (and sign-out) without coupling to it
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);

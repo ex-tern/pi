@@ -181,3 +181,13 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 **Checks:** a second browser signed in as the same user shows the same layout and windows. A signed-out browser keeps its own. pytest: 374 pass; the 12 known failures are unchanged.
 
 **Files:** `backend/layout.py`, `backend/api.py`, `backend/tests/test_layout.py`, `frontend/orbit.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: The name, top centre, in many languages
+
+**What:**
+- "Pi Tech Lab" moves to the top centre. Every 30 seconds to 3 minutes, at random, it fades into the name in another of 32 languages, each in its own script. Right-to-left scripts run right to left. Joined and syllabic scripts keep normal letter spacing. Hovering shows the language's name, and screen readers always hear "Pi Tech Lab".
+- Each name is shrunk if needed to fit the screen. The pills keep clear of the widest name, so a change of language never moves a pill.
+
+**Checks:** all 32 names at 1440 and 390 px fit with no overlap and no horizontal scroll. No pill moves when the name changes.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
