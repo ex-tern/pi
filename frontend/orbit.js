@@ -54,7 +54,7 @@
       if (n.id && FALLBACK_TITLES[n.id]) return FALLBACK_TITLES[n.id];
       const h = n.matches("h1,h2,h3,summary") ? n : n.querySelector("summary, h2, h3, .donate-title, .referral-title, .bug-title, h1");
       const t = cleanTitle(h);
-      if (t) return t.length > 48 ? t.slice(0, 46) + "…" : t;
+      if (t) return t;
     }
     return fallbackKey;
   }
@@ -181,7 +181,7 @@
   function setSizes() {
     // rank the cards by complexity; the size follows the rank, so the spread
     // is always the same however the numbers fall
-    const ranked = items.map(it => [it, complexity(it)]).sort((a, b) => a[1] - b[1]);
+    const ranked = items.filter(it => !it.virtual).map(it => [it, complexity(it)]).sort((a, b) => a[1] - b[1]);
     ranked.forEach(([it], i) => {
       const q = ranked.length > 1 ? i / (ranked.length - 1) : 0.5;
       it.q = q;
@@ -621,7 +621,7 @@
       pi.releasePointerCapture(e.pointerId);
       pi.classList.remove("dragging");
       document.documentElement.classList.remove("orbit-moving");
-      if (!moved) return;
+      if (!moved) { openNumbers(); return; }     // a click opens the numbers window
       const [x, y] = piCentre();
       piAt = { fx: +(x / W).toFixed(4), fy: +(y / H).toFixed(4) };
       store("orbit:pi:at", piAt); layout();
@@ -836,9 +836,22 @@
 
   // ------------------------------------------------------------ π, live
   // Digits arrive from a worker (pi-worker.js) for as long as the page is open.
+  let digits = "", piDigits = "";
+  // Windows with no pill of their own (the numbers window, opened from the π box)
+  function addVirtual(v) {
+    const it = Object.assign({ nodes: [], virtual: true, order: items.length, use: 0, rank: 0, q: 0.7 }, v);
+    it.bubble = document.createElement("span");   // stands in for a pill; never shown
+    shelf.appendChild(it.content);
+    items.push(it);
+    return it;
+  }
+  function openNumbers() {
+    const it = items.find(i => i.key === "numbers:Numbers");
+    if (it) openItem(it);
+  }
   function startPi() {
     const out = $(".op-digits"), cnt = $(".op-count");
-    let digits = "", pending = false;
+    let pending = false;
     const show = () => {
       pending = false;
       const after = digits.slice(1);
@@ -852,7 +865,7 @@
     try {
       const w = new Worker("pi-worker.js");
       w.onmessage = e => {
-        digits += e.data.digit;
+        digits += e.data.digit; piDigits = digits;
         if (!pending) { pending = true; requestAnimationFrame(show); }
       };
     } catch (_) {
@@ -997,7 +1010,7 @@
     setSizes();
     layout();
     // windows: open what the account has open, in its order, at its places
-    const want = (load("orbit:open") || []).map(k => items.find(x => x.key === k && visible(x))).filter(Boolean);
+    const want = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(Boolean);
     restoring = true;
     want.forEach(it => {
       if (!it.panel) openItem(it);
@@ -1042,19 +1055,18 @@
     layout();
     setTimeout(layout, 600);              // after fonts and app.js's first render
     setTimeout(layout, 2000);
-    // windows open last time open again, in the same order
-    const reopen = (load("orbit:open") || []).map(k => items.find(x => x.key === k && visible(x))).filter(Boolean);
-    if (reopen.length) setTimeout(() => {
+    // windows open last time open again, in the same order (looked up once
+    // pien.js and numbers.js have added their windows)
+    setTimeout(() => {
+      const reopen = (load("orbit:open") || []).map(k => items.find(x => x.key === k && (x.virtual || visible(x)))).filter(Boolean);
       restoring = true;
       reopen.forEach(it => { if (!it.panel) openItem(it); });
       restoring = false;
-      rememberOpen();
+      if (reopen.length) rememberOpen();
       if (location.hash) fromHash();
     }, 350);
-    else if (location.hash) setTimeout(fromHash, 300);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
-    document.dispatchEvent(new CustomEvent("orbit:ready"));
     measureTitles(); showTitle(0, false); nextTitleLater();
     window.addEventListener("resize", () => { measureTitles(); showTitle(titleIdx, false); layoutSoon(); });
     if (document.fonts && document.fonts.ready) document.fonts.ready.then(() => { measureTitles(); layoutSoon(); });
@@ -1062,7 +1074,8 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start);

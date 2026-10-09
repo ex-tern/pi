@@ -205,3 +205,17 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - **HAL-OS** ignores pause/resume until the emulator has finished starting. This fixes occasional emulator errors when windows were opened in quick succession.
 
 **Files:** `backend/pien.py`, `backend/api.py`, `backend/tests/test_pien.py`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/hal/hal.js`, `frontend/index.html`, `CLAUDE.md`.
+
+## 2026-10-09: The numbers window; full pill titles
+
+**What:**
+- Clicking the π box opens "π and friends", a window with seven constants computed live in your browser with exact integer arithmetic:
+  - π (digit by digit, for as long as the page is open);
+  - e, φ, √2, √3 and ln 2, each to 30 000 digits;
+  - γ (Euler–Mascheroni), to 10 000 digits.
+
+  Each shows its digits growing at about 16 a second, how many decimals are shown, and a one-line note. The first 100 digits of each were checked against published values. The window behaves like the others: it stays open and comes back after a reload. Dragging the π box still moves it; only a click opens the window.
+- Pill titles are shown in full. Long ones wrap onto a second line on narrow screens instead of being cut with "…".
+- Fixed: `orbit:ready` fired before `window.PiOrbit` existed.
+
+**Files:** `frontend/numbers.js`, `frontend/consts-worker.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
