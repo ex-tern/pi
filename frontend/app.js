@@ -7168,8 +7168,12 @@ async function removeAssessment(hash) {
   }
 }
 
-/** Bug report dialog. */
-async function openBugReport() {
+/** Contact form. With a `host` element it renders there (the Contact us
+ *  window, which like every window has no close button); without one it
+ *  opens as a dialog. */
+let bugHost = null;
+async function openBugReport(host) {
+  bugHost = (host && host.nodeType === 1) ? host : null;
   let status = { email_enabled: false, recipient: "", note: "" };
   try {
     status = await (await fetch(`${API}/api/bug-report/status`)).json();
@@ -7180,7 +7184,8 @@ async function openBugReport() {
     { id: "suggestion", label: "An idea or suggestion" },
   ];
 
-  openModal(`
+  const show = html => { if (bugHost) bugHost.innerHTML = html; else openModal(html); };
+  show(`
     <h2>Contact us</h2>
     <p class="hint">${escapeHtml(status.note || "")}</p>
     <form class="bug-form" id="bugForm" novalidate>
@@ -7204,7 +7209,7 @@ async function openBugReport() {
 
       <div class="modal-actions">
         <button type="submit" class="btn btn-primary" id="bugSendBtn" disabled>Send</button>
-        <button type="button" class="btn btn-outline" id="bugCancelBtn">Cancel</button>
+        <button type="button" class="btn btn-outline" id="bugCancelBtn">${bugHost ? "Clear" : "Cancel"}</button>
         <span class="profile-msg" id="bugMsg"></span>
       </div>
     </form>`);
@@ -7244,14 +7249,16 @@ async function openBugReport() {
   };
   message.addEventListener("input", sync);
   sync();
-  message.focus();
+  if (!bugHost) message.focus();
 
   // A <form> submit handler, not a bare click listener: this also catches
   // Enter from the email field, which previously reloaded the page and threw
   // the report away.
   form.addEventListener("submit", e => { e.preventDefault(); submitBugReport(); });
-  document.getElementById("bugCancelBtn").addEventListener("click", () =>
-    document.getElementById("modalOverlay").classList.add("hidden"));
+  document.getElementById("bugCancelBtn").addEventListener("click", () => {
+    if (bugHost) { form.reset(); syncPrompt(); sync(); return; }   // a window is never closed, only cleared
+    document.getElementById("modalOverlay").classList.add("hidden");
+  });
 }
 
 async function submitBugReport() {
@@ -7263,6 +7270,9 @@ async function submitBugReport() {
 
   const message = messageEl.value.trim();
   const contact = contactEl.value.trim();
+  // Read here: it was referenced from openBugReport's scope, where it is not
+  // visible, so every send failed with "kindEl is not defined".
+  const kindEl = document.getElementById("bugKind") || { value: "bug" };
 
   msg.textContent = "";
   msg.className = "profile-msg";
@@ -7296,11 +7306,18 @@ async function submitBugReport() {
     });
     const data = await res.json().catch(() => ({}));
     if (!res.ok) throw new Error(data.detail || `HTTP ${res.status}`);
-    document.getElementById("modalBody").innerHTML = `
+    const sent = `
       <h2>Message sent</h2>
       <p>${escapeHtml(data.message || "Thank you.")}</p>
       <p class="hint">Reference <code>#${escapeHtml(String(data.id))}</code> — quote this if you
       follow up.</p>`;
+    if (bugHost) {
+      const host = bugHost;
+      host.innerHTML = sent + `<button type="button" class="btn btn-outline" id="bugAnotherBtn">Send another message</button>`;
+      document.getElementById("bugAnotherBtn").addEventListener("click", () => openBugReport(host));
+    } else {
+      document.getElementById("modalBody").innerHTML = sent;
+    }
     // If the owner is the one reporting (or testing), their panel should show
     // the new report immediately rather than on the next sign-in.
     loadOwnerBugReports();
@@ -8101,7 +8118,7 @@ document.getElementById("profileSaveBtn").addEventListener("click", saveProfile)
   ta.addEventListener("input", sync);
   sync();
 })();
-document.getElementById("bugReportBtn").addEventListener("click", openBugReport);
+document.getElementById("bugReportBtn").addEventListener("click", () => openBugReport());
 initSidebar();
 loadAssessmentHistory();
 

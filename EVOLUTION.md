@@ -662,3 +662,18 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
   - only public fields returned
 - Against a local database with a test profile and papers, the endpoint picked the ledger paper on glioblastoma and the stroke manuscript, and left out the researcher's own paper. The cards rendered, and a click opened the dossier, at 1440 and 390 px with no page errors.
 - pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
+
+## 2026-10-09: Contact us is a window; a bigger logo; a logo click closes all windows
+
+**What:**
+- **Contact us:** it is now a window like the others (drag to an edge to close it) instead of a dialog with a close button. The form is drawn in the window, "Cancel" became "Clear", and after sending, "Send another message" brings the form back.
+- **Fixed:** the contact form could never send. `submitBugReport` read `kindEl`, a variable that only existed inside `openBugReport`, so every send failed with "kindEl is not defined". The bug dates back to V2.2.
+- **Logo size:** the smallest it can go is now 0.8 (was 0.45), and a smaller saved size is raised to it. It is also larger idle (up to 140 px radius, 18% of the screen) and with windows open (48–100 px desktop, 30–58 px phone, was 20–70 / 16–42).
+- **Logo click:** a click now closes every open window, for good and not remembered for the next load. It used to set windows aside until the next click. The close waits 280 ms so a double-click (pause π) doesn't also close everything.
+
+**Verified:**
+- Contact: it opens as a window with no modal and no close button; Clear empties it; a send (mocked) shows the reference in the window, and the form comes back.
+- Logo: with an old saved scale of 0.45 it is 202 px idle and 114 px with windows at 1440, 106 / 68 px at 390.
+- Clicks: a double-click paused π and kept 3 windows open; a click then closed all 3, and none reopened after a reload.
+- Layout: the 15-size layout audit has no overlaps; 1440 and 390 px with no page errors or horizontal scroll.
+- Checks: pytest at baseline; `build_hal.py` builds.

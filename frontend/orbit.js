@@ -104,7 +104,9 @@
       if (el.classList.contains("brand") || el.tagName === "HR") continue;
       if (el.matches("details.sidebar-expander")) { el.open = true; addItem(section, [el]); continue; }
       // a card that is only a button: its pill presses the button instead of opening a window
-      if (el.matches(".bug-card")) { const it = addItem(section, [el], "Contact us"); if (it) it.action = () => { const b = $("#bugReportBtn"); if (b) b.click(); }; continue; }
+      // Contact us is a window like any other (no dialog, no close button): the
+      // form is drawn into the card itself (contactWindow below).
+      if (el.matches(".bug-card")) { addItem(section, [el], "Contact us"); contactWindow(el); continue; }
       if (el.matches(".referral-card, .donate-card, .owner-danger")) { addItem(section, [el]); continue; }
       signIn.push(el);
     }
@@ -173,7 +175,7 @@
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to set windows aside, double-click to stop or restart π">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to close all windows, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' +
@@ -353,16 +355,17 @@
   let logoAt = load("orbit:logo");       // {fx, fy}: where it was left, as a share of the screen
   let piBox = { w: 320, h: 48 };
   // sizes you choose: the logo and the π box each have their own
-  let logoScale = load("orbit:logo:scale") || 1;
+  // never below the minimum, even if an older, smaller size was saved
+  let logoScale = Math.max(0.8, load("orbit:logo:scale") || 1);
   let piScale = load("orbit:pi:scale") || 1;
   let piAt = load("orbit:pi:at");        // {fx, fy}: the π box's centre, once you have moved it
-  const LOGO_MIN = 0.45, LOGO_MAX = 2.2, PI_MIN = 0.6, PI_MAX = 2.6;
+  const LOGO_MIN = 0.8, LOGO_MAX = 2.2, PI_MIN = 0.6, PI_MAX = 2.6;
   let draggingLogo = false;
   const GAP = () => (small ? 6 : 10);
 
   function idleR() {
     const base = Math.min(W, H);
-    const r = Math.min(118, base * (small ? 0.15 : 0.16), H * 0.12) * logoScale;
+    const r = Math.min(140, base * (small ? 0.17 : 0.18), H * 0.14) * logoScale;
     return Math.max(18, Math.min(r, base * 0.42));
   }
   function shownR() {
@@ -372,7 +375,7 @@
     // simple card, larger beside the emulator, the map or an assessment
     const front = items.filter(i => i.panel).sort((a, b) => b.panel.style.zIndex - a.panel.style.zIndex)[0];
     const q = front && front.q != null ? front.q : 0.5;
-    return (small ? 16 + q * 26 : 20 + q * 50) * Math.min(1.4, logoScale);
+    return (small ? 30 + q * 28 : 48 + q * 52) * Math.min(1.4, logoScale);
   }
 
   // the title's band at the top, in stage coordinates
@@ -665,13 +668,21 @@
     core.addEventListener("pointercancel", end);
     // Windows never close. A click on the mark sets them all aside to show the
     // pills; another click (or opening any pill) brings them back.
-    core.addEventListener("click", () => {
+    // A click on the mark closes every open window. It waits a moment so a
+    // double-click (which pauses π) does not also close everything.
+    let closeT = 0;
+    core.addEventListener("click", e => {
       if (core.dataset.justDragged) return;
-      if (items.some(it => it.panel)) setAside(!document.documentElement.classList.contains("orbit-aside"));
-      pulse();
+      clearTimeout(closeT);
+      if (e.detail > 1) return;
+      closeT = setTimeout(() => {
+        setAside(false);
+        items.filter(it => it.panel).forEach(closeItem);
+        pulse();
+      }, 280);
     });
     // double-click: the mark stops turning and π stops growing; again to carry on
-    core.addEventListener("dblclick", () => setStill(!still));
+    core.addEventListener("dblclick", () => { clearTimeout(closeT); setStill(!still); });
     const setLogo = v => { logoScale = v; };
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     // Scrolling on the page itself resizes the mark and opens a random window
@@ -767,6 +778,16 @@
       layoutSoon();
       clearTimeout(t); t = setTimeout(() => store(key, +get().toFixed(3)), 300);
     }, { passive: false });
+  }
+
+  function contactWindow(card) {
+    if (card.querySelector(".bug-host")) return;
+    const host = document.createElement("div");
+    host.className = "bug-host";
+    card.appendChild(host);
+    card.classList.add("is-window");
+    const draw = () => { if (typeof openBugReport === "function") openBugReport(host); };
+    if (document.readyState === "complete") draw(); else window.addEventListener("load", draw, { once: true });
   }
 
   function wirePi() {
@@ -1226,7 +1247,7 @@
       Object.entries(lay).forEach(([k, v]) => localStorage.setItem(k, v));
     } catch (_) { /* private mode */ }
     logoAt = load("orbit:logo");
-    logoScale = load("orbit:logo:scale") || 1;
+    logoScale = Math.max(LOGO_MIN, load("orbit:logo:scale") || 1);
     piAt = load("orbit:pi:at");
     piScale = load("orbit:pi:scale") || 1;
     prio = load("orbit:prio") || [];
