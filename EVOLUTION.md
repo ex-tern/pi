@@ -677,3 +677,9 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 - Clicks: a double-click paused π and kept 3 windows open; a click then closed all 3, and none reopened after a reload.
 - Layout: the 15-size layout audit has no overlaps; 1440 and 390 px with no page errors or horizontal scroll.
 - Checks: pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-09: Contact us never opens as a dialog
+
+**What:** the Contact us button now opens the Contact us window (`PiOrbit.openTitle`) wherever it is reached from, so the old dialog with its × can't appear. The dialog remains only as a fallback if the orbit layout isn't running.
+
+**Verified:** from the pill and from the button, no dialog appears and the form is in a window whose only visible buttons are Send and Clear, at 1440 and 390 px with no page errors; pytest at baseline; `build_hal.py` builds.
