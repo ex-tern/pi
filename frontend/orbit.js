@@ -18,7 +18,11 @@
   "use strict";
   const $ = (s, r = document) => r.querySelector(s);
   const reduceMotion = window.matchMedia("(prefers-reduced-motion: reduce)");
-  const store = (k, v) => { try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* private mode */ } };
+  let onStore = () => {};                // set by the account sync below
+  const store = (k, v) => {
+    try { v === undefined ? localStorage.removeItem(k) : localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* private mode */ }
+    onStore();
+  };
   const load = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (_) { return null; } };
 
   const SECTIONS = [
@@ -635,17 +639,20 @@
     document.body.appendChild(p);
     fit(it, p);
     centre(p);
+    restoreWin(it, p);
     // content that loads later (lists, results) refits the window, until you resize it yourself
     if (window.ResizeObserver) {
       const ro2 = new ResizeObserver(() => {
         if (p.userSized || !p.isConnected) return;
-        if (Math.abs(p.offsetWidth - p.fitW) > 2 || Math.abs(p.offsetHeight - p.fitH) > 2) { p.userSized = true; return; }
+        if (Math.abs(p.offsetWidth - p.fitW) > 2 || Math.abs(p.offsetHeight - p.fitH) > 2) { p.userSized = true; saveWinSoon(it, p); return; }
         const cx = p.offsetLeft + p.offsetWidth / 2, cy = p.offsetTop + p.offsetHeight / 2;
         fit(it, p);
         p.style.left = Math.max(8, Math.min(window.innerWidth - p.offsetWidth - 8, cx - p.offsetWidth / 2)) + "px";
         p.style.top = Math.max(top + 8, Math.min(window.innerHeight - p.offsetHeight - 8, cy - p.offsetHeight / 2)) + "px";
       });
       ro2.observe(it.content);
+      // a window you resize keeps that size
+      new ResizeObserver(() => { if (p.userSized) saveWinSoon(it, p); }).observe(p);
     }
     it.panel = p; openCount++;
     document.documentElement.classList.add("orbit-open");
@@ -690,7 +697,7 @@
     if (toCentre) {
       p.classList.add("gliding");
       centre(p);
-      clearTimeout(p.glide); p.glide = setTimeout(() => p.classList.remove("gliding"), 420);
+      clearTimeout(p.glide); p.glide = setTimeout(() => { p.classList.remove("gliding"); if (p.item) saveWin(p.item, p); }, 420);
     }
     rememberOpen();
   }
@@ -728,7 +735,30 @@
     placeMark();
   }
 
+  // Each window's place and (once you have resized it) size are remembered.
+  function saveWin(it, p) {
+    if (!p.isConnected) return;
+    store("orbit:win:" + it.key, {
+      fx: +(p.offsetLeft / window.innerWidth).toFixed(4),
+      fy: +((p.offsetTop - top) / Math.max(1, window.innerHeight - top)).toFixed(4),
+      w: p.userSized ? p.offsetWidth : 0, h: p.userSized ? p.offsetHeight : 0,
+    });
+  }
+  function saveWinSoon(it, p) { clearTimeout(p.saveT); p.saveT = setTimeout(() => saveWin(it, p), 500); }
+  function restoreWin(it, p) {
+    const ws = load("orbit:win:" + it.key);
+    if (!ws) return;
+    if (ws.w && ws.h) {
+      p.style.width = Math.min(ws.w, window.innerWidth - 16) + "px";
+      p.style.height = Math.min(ws.h, window.innerHeight - top - 16) + "px";
+      p.userSized = true;
+    }
+    p.style.left = Math.max(8 - p.offsetWidth + 120, Math.min(window.innerWidth - 80, ws.fx * window.innerWidth)) + "px";
+    p.style.top = Math.max(top, Math.min(window.innerHeight - 48, top + ws.fy * (window.innerHeight - top))) + "px";
+  }
+
   function wirePanel(it, p) {
+    p.item = it;
     const head = p.querySelector(".op-head");
     let sx, sy, px, py, drag = false;
     // a click on a window behind brings it to the front and the centre
@@ -750,7 +780,7 @@
       p.style.left = Math.min(window.innerWidth - 80, Math.max(-p.offsetWidth + 120, px + e.clientX - sx)) + "px";
       p.style.top = Math.min(window.innerHeight - 48, Math.max(top, py + e.clientY - sy)) + "px";
     });
-    head.addEventListener("pointerup", () => { drag = false; });
+    head.addEventListener("pointerup", () => { if (drag) saveWin(it, p); drag = false; });
   }
 
   // ------------------------------------------------------------ busy: the mark spins faster
@@ -791,6 +821,75 @@
       out.textContent = "π = 3.14159 26535 89793 23846";
     }
   }
+
+  // ------------------------------------------------------------ your account keeps your layout
+  // Signed in, the whole layout (every "orbit:" key: pills, the mark, the π box,
+  // open windows and their places and sizes, use) is saved to your account a
+  // moment after each change, and loaded when you sign in on any device.
+  // Signed out, it stays in this browser only.
+  const token = () => { try { return localStorage.getItem("sp_token") || ""; } catch (_) { return ""; } };
+  function snapshot() {
+    const o = {};
+    try {
+      for (let i = 0; i < localStorage.length; i++) {
+        const k = localStorage.key(i);
+        if (k && k.startsWith("orbit:")) o[k] = localStorage.getItem(k);
+      }
+    } catch (_) { /* private mode */ }
+    return o;
+  }
+  let syncedFor = "", applying = false, pulling = false, saveT = 0;
+  function saveSoon() {
+    if (applying || !token() || syncedFor !== token()) return;
+    if (pulling) return;                  // never write before the account's layout has been read
+    clearTimeout(saveT); saveT = setTimeout(saveNow, 1200);
+  }
+  function saveNow() {
+    if (!token() || syncedFor !== token() || pulling) return;
+    fetch("/api/me/layout", { method: "PUT", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ layout: snapshot() }) })
+      .catch(() => { /* offline: the next change tries again */ });
+  }
+  async function pull() {
+    const t = token();
+    if (!t) { syncedFor = ""; return; }
+    if (syncedFor === t) return;
+    syncedFor = t;
+    pulling = true;
+    try {
+      const r = await fetch("/api/me/layout");
+      if (!r.ok) { if (r.status !== 401) syncedFor = ""; return; }
+      const d = await r.json();
+      if (d.layout && Object.keys(d.layout).length) applyLayout(d.layout);
+      else { pulling = false; saveNow(); }  // first time signed in: this browser's layout becomes the account's
+    } catch (_) { syncedFor = ""; }
+    finally { pulling = false; }
+  }
+  function applyLayout(lay) {
+    applying = true;
+    try {
+      Object.keys(snapshot()).forEach(k => localStorage.removeItem(k));
+      Object.entries(lay).forEach(([k, v]) => localStorage.setItem(k, v));
+    } catch (_) { /* private mode */ }
+    logoAt = load("orbit:logo");
+    logoScale = load("orbit:logo:scale") || 1;
+    piAt = load("orbit:pi:at");
+    piScale = load("orbit:pi:scale") || 1;
+    prio = load("orbit:prio") || [];
+    items.forEach(it => { it.custom = load("orbit:at2:" + it.key); it.use = useOf(it); it.rank = it.use; setTier(it); });
+    setSizes();
+    layout();
+    // windows: open what the account has open, in its order, at its places
+    const want = (load("orbit:open") || []).map(k => items.find(x => x.key === k && visible(x))).filter(Boolean);
+    restoring = true;
+    want.forEach(it => {
+      if (!it.panel) openItem(it);
+      else { fit(it, it.panel); centre(it.panel); it.panel.userSized = false; restoreWin(it, it.panel); front(it.panel); }
+    });
+    restoring = false;
+    applying = false;
+    rememberOpen();
+  }
+  onStore = saveSoon;
 
   // ------------------------------------------------------------ start
   function start() {
@@ -837,6 +936,10 @@
     else if (location.hash) setTimeout(fromHash, 300);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
     startPi();
+    // sign-in happens in app.js; notice it (and sign-out) without coupling to it
+    setTimeout(pull, 500);
+    setInterval(pull, 2500);
+    window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
     window.PiOrbit = { aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
   }
 

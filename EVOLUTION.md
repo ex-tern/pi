@@ -163,3 +163,21 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - The π box sits beneath windows; the mark stays above them. The focus ring on a clicked window is gone.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: Your layout follows your account
+
+**What:**
+- When you are signed in, the whole page state is saved to your account about a second after each change, and loaded when you sign in on any browser or device:
+  - every pill's place, size and use;
+  - the mark's place and size;
+  - the π box's place and size;
+  - which windows are open, in their stacking order;
+  - each window's place, and its size once you have resized it.
+
+  The first time you sign in, this browser's layout becomes the account's. Signed out, everything stays in the browser only.
+- Windows now remember their place, and their size once resized, even when you are signed out.
+- Server: `backend/layout.py`, with `GET`/`PUT /api/me/layout`, available only to a signed session and only for its own identity (ORCID or wallet). Its own `layout.db`. The data is opaque, shape-checked and capped at 64 KB and 600 keys under "orbit:". Tests are in `backend/tests/test_layout.py`.
+
+**Checks:** a second browser signed in as the same user shows the same layout and windows. A signed-out browser keeps its own. pytest: 374 pass; the 12 known failures are unchanged.
+
+**Files:** `backend/layout.py`, `backend/api.py`, `backend/tests/test_layout.py`, `frontend/orbit.js`, `frontend/index.html`, `CLAUDE.md`.
