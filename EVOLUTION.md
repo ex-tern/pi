@@ -90,3 +90,16 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - The line "This site improves a little every night…" and its link are removed from the welcome screen, at the owner's request.
 
 **Files:** `frontend/welcome.js`, `frontend/theme.css`.
+
+## 2026-10-09: Orbit layout; live π under the mark
+
+**What:**
+- The Pi Tech Lab mark stays fixed in the centre on every page. Every card (Evaluate, Explore, Envision, Lab, Architecture, account) is a bubble orbiting it.
+- You can drag a bubble; its position is remembered. Click a bubble to open it as a floating window that can be moved, resized and maximised. Esc or a click on the mark closes it.
+- The mark's size follows what the site is doing. It is large when idle and shrinks while windows are open. Its diameter spins faster while a request is running.
+- Under the mark, π is computed live in a background worker (Gibbons spigot, exact integers). It gains digits for as long as the page stays open.
+- The welcome screen is removed. The old sidebar and tabs remain hidden underneath and still drive the sections.
+
+**Checks:** 21 bubbles for visitors, 31 for the owner. HAL-OS runs inside a window. The first 150 digits of π were checked. There are no page errors at 1440 or 390 px. On phones, a few bubbles may touch as they pass.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/pi-worker.js`, `frontend/index.html`, `frontend/lab.js`, `frontend/theme.css`; `frontend/welcome.js` removed.

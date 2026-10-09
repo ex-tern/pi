@@ -86,6 +86,9 @@
     });
   }
 
+  // In the orbit layout the Lab tab is rarely "opened", so check on load too.
+  if (localStorage.getItem("sp_token")) setTimeout(() => loadPrivate(), 0);
+
   body.addEventListener("click", e => {
     const b = e.target.closest(".lab-file");
     if (b) showFile(b.dataset.p, b.dataset.n);
@@ -303,7 +306,7 @@
   });
 
   tabBtn.addEventListener("click", () => load());
-  if (location.hash === "#lab") setTimeout(() => load(), 0);
+  if (location.hash === "#lab" || localStorage.getItem("sp_token")) setTimeout(() => load(), 0);
   setInterval(() => {
     if (document.getElementById("tab-lab").classList.contains("active") && loadedFor !== (localStorage.getItem("sp_token") || "")) load(true);
   }, 2000);
@@ -329,9 +332,10 @@
     const show = isPublic || isOwner;
     card.classList.toggle("hidden", !show);
     document.getElementById("quviBadge").classList.toggle("hidden", isPublic);
-    if (show && !frame.src) frame.src = frame.dataset.src;
+    // Load the simulator only once the Lab is actually open.
+    if (show && !frame.src && document.getElementById("tab-lab").classList.contains("active")) frame.src = frame.dataset.src;
   }
-  tabBtn.addEventListener("click", update);
-  if (location.hash === "#lab") setTimeout(update, 0);
+  tabBtn.addEventListener("click", () => { checkedFor = null; update(); });
+  setTimeout(update, 0);
   setInterval(() => { if (document.getElementById("tab-lab").classList.contains("active")) update(); }, 2000);
 })();
