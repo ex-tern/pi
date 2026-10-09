@@ -1,4 +1,4 @@
-// medicine.js — the Medicine pill in the Lib bubble.
+// medicine.js — the MD pill in the Library bubble.
 //
 // Shows the public, grade-free graduation plan (medicine/plan.json, rendered
 // by medicine/view.js). The source lives in its own repository, Medicine;
@@ -19,7 +19,7 @@
   }
 
   function start() {
-    window.PiOrbit.addPill({ key: "lib:Medicine", section: { key: "lib", name: "Lib" }, title: "MD", content: root, inGroup: "Lib" });
+    window.PiOrbit.addPill({ key: "lib:Medicine", section: { key: "lib", name: "Library" }, title: "MD", content: root, inGroup: "Library" });
     load();
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });

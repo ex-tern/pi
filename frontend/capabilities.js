@@ -10,7 +10,6 @@
       ["FaceMace", "Sort photos by face, on your own device: groups photos by person and saves them as folders."],
       ["Assist Diagnosis [Intern]", "Intern, an AI electronic health record for doctors (iOS app), in the Tools bubble."],
       ["Assessment results", "Your latest assessment, stage by stage."],
-      ["RiBD", "Your research mentor: what to read next and what to fix first, from your profile and the corpus."],
       ["Research profile", "Your fields and interests, which shape suggestions."],
     ]],
     ["Explore the record", [
@@ -20,7 +19,6 @@
       ["Proof-of-Research Ledger Explorer", "The public ledger of assessments and rewards."],
     ]],
     ["See the field", [
-      ["The Global Map of Science", "Research laid out as a map you can fly through and play."],
       ["Performance", "Where the corpus is heading, and how well PiEN is learning: how often its suggestions are followed."],
       ["Analytics", "Papers, piQ minted, average score, authors and visitors."],
       ["Minting Difficulty", "How hard piQ is to earn right now, and why."],
@@ -32,7 +30,9 @@
       ["Private projects", "Owner-only work in progress."],
       ["Permission requests", "Ask authors for permission, with a link they answer."],
     ]],
-    ["Lib", [
+    ["Library", [
+      ["RiBD", "Your research mentor: papers to read and hot topics to research, from your profile and the corpus."],
+      ["The Global Map of Science", "Research laid out as a map you can fly through and play."],
       ["Neuro Frenzy", "A game: fill in neuroscience blanks before the clock runs out."],
       ["MD", "A public road to graduation in medicine: CFU progress, remaining courses and to-dos, no grades."],
     ]],

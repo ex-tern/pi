@@ -242,7 +242,7 @@
   function start() {
     intro();
     paintMute();
-    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Lib" }, title: "Neuro Frenzy", content: box, inGroup: "Lib" });
+    window.PiOrbit.addPill({ key: "lib:NeuroFrenzy", section: { key: "lib", name: "Library" }, title: "Neuro Frenzy", content: box, inGroup: "Library" });
     // music follows the window: on while it is open and in view, off otherwise
     setInterval(syncMusic, 400);
     document.addEventListener("visibilitychange", syncMusic);
