@@ -1171,6 +1171,9 @@ document.getElementById("connectOrcidBtn").addEventListener("click", async () =>
 document.getElementById("unlinkBtn").addEventListener("click", signOut);
 
 async function pollLogs() {
+  // Only the owner can read the log, and only when signed in: a visitor need
+  // not even ask (the refusal was the one error every page load logged).
+  if (!localStorage.getItem("sp_token")) return;
   try {
     const res = await fetch(`${API}/api/logs`);
     if (res.status === 401 || res.status === 403 || res.status === 503) {
