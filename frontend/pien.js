@@ -166,10 +166,16 @@
       ol.appendChild(li);
     });
   }
-  function attachPanel() {
-    const host = window.PiOrbit.contentOf && window.PiOrbit.contentOf("Performance");
-    if (host && !panel.isConnected) host.insertBefore(panel, host.firstChild);
-  }
+  function attachPanel() { /* Performance now shows PiEN as one of its engine cards (performance.js) */ }
+  // What the Performance window reads about PiEN.
+  window.PiEN = {
+    stats: () => ({
+      followed: mine.h || 0, offered: mine.s || 0,
+      mine: Object.values(mine.o).reduce((a, b) => a + b, 0),
+      everyone: all.interactions || 0,
+      next: pick ? labelOf(pick) : null,
+    }),
+  };
 
   function start() {
     read();

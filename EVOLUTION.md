@@ -357,3 +357,15 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - siM's chat box: the send button sits inside the right end of the field, centred. A site-wide margin under inputs had pushed it down and against the pill's edge.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: Performance, made simple
+
+**What:** the Performance window now reads in plain words:
+- Four cards, one per engine that learns from the site: PiEN, PiDN, siM and ResBD. Each says in one sentence what the engine does and how it is doing, with one small meter.
+  - PiEN: how often its suggestion was the one opened, and what it suggests now.
+  - The others: how much better they are than their starting point, or what has to happen before they start learning.
+- "What happens next": which scoring criteria are expected to count more or less, or why nothing is predicted yet.
+- The old detailed forecast (chart, lookback, chart type, sensitivity, modifiers) is folded away under "Show the detailed forecast", still driven by app.js.
+- PiEN's separate panel is replaced by its card; pien.js exposes `window.PiEN.stats()` for it.
+
+**Files:** `frontend/performance.js`, `frontend/pien.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
