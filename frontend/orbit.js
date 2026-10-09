@@ -973,6 +973,8 @@
     const it = Object.assign({ nodes: [], always: true }, v);
     shelf.appendChild(it.content);
     items.push(it);
+    // a pill that lives inside a group's bubble (e.g. Tools)
+    if (v.inGroup) { const g = items.find(x => x.group && x.title === v.inGroup); if (g) it.groupOf = g; }
     makeBubble(it, items.length - 1);
     setSizes();
     layout();
