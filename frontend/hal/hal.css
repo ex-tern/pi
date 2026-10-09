@@ -1,0 +1,107 @@
+/* HAL-OS keeps its own look inside the Lab: the colours are the desktop
+   Portal's (BG #101014, ACCENT #38d0c0 — the boot screen's cyan), so the web
+   version reads as the same machine, not as another ScholarPi panel. */
+:root {
+  --bg: #101014;
+  --panel: #17171d;
+  --line: #2a2a34;
+  --fg: #d8d8e0;
+  --dim: #8a8a98;
+  --accent: #38d0c0;
+  --accent-ink: #062a26;
+  --danger: #ff6b6b;
+  --mono: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+* { box-sizing: border-box; }
+html, body { margin: 0; background: var(--bg); color: var(--fg); }
+body { font: 13px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; }
+.hidden { display: none !important; }
+a { color: var(--accent); }
+code { font-family: var(--mono); font-size: 0.92em; color: var(--fg); }
+
+.hal { min-height: 100vh; display: flex; flex-direction: column; }
+
+.hal-status {
+  display: flex; align-items: center; gap: 14px; flex-wrap: wrap;
+  padding: 8px 16px; border-bottom: 1px solid var(--line);
+  font-family: var(--mono); font-size: 12px; background: var(--panel);
+}
+.hal-status .dot { width: 9px; height: 9px; border-radius: 50%; background: var(--dim); flex: none; }
+.hal-status .dot.on { background: var(--accent); box-shadow: 0 0 8px var(--accent); }
+.hal-status .dot.live { background: #ffcf4a; box-shadow: 0 0 8px #ffcf4a; }
+.hal-status .dot.err { background: var(--danger); }
+.hal-status .stat { color: var(--dim); }
+.hal-status .spacer { flex: 1; }
+.hal-status .link { color: var(--dim); }
+
+.hal-body { display: flex; flex: 1; min-height: 0; }
+.hal-panel {
+  width: 250px; flex: none; padding: 12px 14px 20px; border-right: 1px solid var(--line);
+  background: var(--panel); overflow-y: auto;
+}
+.hal-panel h2 {
+  font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; color: var(--dim);
+  margin: 16px 0 6px; font-weight: 600;
+}
+.hal-panel section:first-child h2 { margin-top: 2px; }
+.hal-panel .note { text-transform: none; letter-spacing: 0; font-weight: 400; color: #5e5e6c; }
+.hal-panel label { display: flex; align-items: center; gap: 7px; padding: 2px 0; cursor: pointer; }
+.hal-panel label.row { justify-content: space-between; gap: 8px; }
+.hal-panel input[type=range] { flex: 1; accent-color: var(--accent); }
+.hal-panel input[type=radio], .hal-panel input[type=checkbox] { accent-color: var(--accent); margin: 0; }
+.hal-panel output { font-family: var(--mono); min-width: 2ch; text-align: right; }
+.hal-panel select, .hal-panel textarea {
+  background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+  font: 12px var(--mono); padding: 4px 6px;
+}
+.hal-panel select { max-width: 150px; }
+.hal-panel textarea { width: 100%; margin-top: 6px; resize: vertical; }
+.hint { color: var(--dim); font-size: 11.5px; margin: 6px 0; }
+
+button, .btn-like {
+  background: #22222b; color: var(--fg); border: 1px solid var(--line); border-radius: 6px;
+  padding: 5px 9px; font: inherit; font-size: 12px; cursor: pointer; display: inline-flex;
+  align-items: center; justify-content: center;
+}
+button:hover:not(:disabled), .btn-like:hover { border-color: #3c3c48; background: #282832; }
+button:disabled { opacity: 0.4; cursor: not-allowed; }
+button.danger { color: var(--danger); }
+button:focus-visible, .btn-like:focus-within, #screen:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.btns { display: flex; flex-wrap: wrap; gap: 6px; margin: 6px 0; }
+.hal-panel details { margin-top: 16px; }
+.hal-panel summary { cursor: pointer; color: var(--dim); font-size: 11px; letter-spacing: 0.09em; text-transform: uppercase; font-weight: 600; }
+
+.inject {
+  width: 100%; margin-top: 16px; padding: 11px; font-weight: 700; letter-spacing: 0.18em;
+  font-family: var(--mono); font-size: 14px; border-width: 1.5px;
+}
+.inject[aria-pressed=true], .inject[aria-pressed=true]:hover:not(:disabled) { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+
+.hal-main { flex: 1; min-width: 0; padding: 16px; display: flex; flex-direction: column; align-items: center; }
+.drop { position: relative; width: 100%; max-width: 960px; }
+#screen {
+  width: 100%; aspect-ratio: 4 / 3; background: #000; border: 1px solid var(--line);
+  border-radius: 4px; overflow: hidden; display: flex; align-items: center; justify-content: center;
+}
+#screen canvas { width: 100% !important; height: 100% !important; image-rendering: pixelated; display: block; }
+#screen .txt { display: none; }
+.drop.dragging #screen { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent) inset; }
+.overlay {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  text-align: center; padding: 24px; background: rgba(16, 16, 20, 0.88); color: var(--fg);
+  border-radius: 4px; font-size: 14px;
+}
+.caption { color: var(--dim); font-size: 12px; margin: 8px 0 14px; text-align: center; max-width: 720px; }
+.pair { display: flex; gap: 16px; flex-wrap: wrap; justify-content: center; }
+.pair figure { margin: 0; text-align: center; }
+.pair canvas { width: 320px; max-width: 100%; height: auto; image-rendering: pixelated; background: #000; border: 1px solid var(--line); border-radius: 3px; display: block; }
+.pair figcaption { color: var(--dim); font-size: 11.5px; margin-top: 4px; font-family: var(--mono); }
+.about { max-width: 720px; margin-top: 18px; color: var(--dim); }
+.about summary { cursor: pointer; color: var(--fg); }
+.about p { line-height: 1.6; }
+
+@media (max-width: 760px) {
+  .hal-body { flex-direction: column-reverse; }
+  .hal-panel { width: 100%; border-right: none; border-top: 1px solid var(--line); }
+  .hal-main { padding: 12px 16px; }
+}

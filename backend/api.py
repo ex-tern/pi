@@ -6978,6 +6978,13 @@ def explorer_tx_url(tx: str):
 
 
 # ---------------------------------------------------------------------------
+# 8b. Lab: private projects (owner only). Public Lab projects are static files.
+# ---------------------------------------------------------------------------
+import lab as _lab  # noqa: E402
+app.include_router(_lab.build_router(BASE_DIR, require_owner))
+
+
+# ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
@@ -7035,6 +7042,15 @@ if os.path.isdir(_FRONTEND_DIR):
                                 headers={"Cache-Control": "no-store, must-revalidate"})
         except OSError:
             raise HTTPException(status_code=404, detail="Frontend is not available.")
+
+    # The Lab boots HAL-OS in the browser with v86, which is an ES module
+    # (.mjs) plus WebAssembly. Browsers refuse a module script served with a
+    # non-JavaScript MIME type, and python:3.11-slim has no /etc/mime.types to
+    # fall back on, so the two types are registered explicitly rather than
+    # left to whatever the container happens to know.
+    import mimetypes
+    mimetypes.add_type("text/javascript", ".mjs")
+    mimetypes.add_type("application/wasm", ".wasm")
 
     # Mounted after the routes above so "/" resolves to the stamped index
     # rather than to the raw file on disk.

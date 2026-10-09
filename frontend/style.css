@@ -2268,3 +2268,28 @@ button.seal { font-family: inherit; cursor: pointer; }
 .legend-pagination .btn { font-size: 12px; padding: 2px 8px; line-height: 1.4; min-height: 0; }
 .legend-pagination .page-indicator { font-size: 10.5px; white-space: nowrap; }
 .legend-pagination:empty { display: none; }
+
+
+/* ---------- Lab ---------- */
+.lab-intro { margin: -8px 0 18px; }
+.lab-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; flex-wrap: wrap; }
+.lab-head h2 { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+.lab-head .hint { max-width: 680px; }
+.lab-actions { display: flex; gap: 8px; flex-wrap: wrap; }
+.lab-actions .btn { text-decoration: none; }
+.lab-frame { margin-top: 14px; border: 1px solid var(--border); border-radius: 10px; overflow: hidden; background: #101014; }
+.lab-frame iframe { display: block; width: 100%; height: min(860px, 82vh); border: 0; }
+.lab-project + .lab-project { border-top: 1px solid var(--border); margin-top: 18px; padding-top: 4px; }
+.lab-files { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+.lab-file { font-size: 12px; padding: 5px 10px; }
+.lab-file.active { border-color: var(--accent); color: var(--accent); background: var(--accent-soft); }
+.lab-view-actions { display: flex; justify-content: flex-end; margin-bottom: 6px; }
+.lab-doc { display: block; width: 100%; height: min(900px, 80vh); border: 1px solid var(--border); border-radius: 8px; background: #fff; }
+.lab-text { white-space: pre-wrap; word-break: break-word; background: #fbfcfe; border: 1px solid var(--border); border-radius: 8px; padding: 14px; font-size: 13px; line-height: 1.6; max-height: 70vh; overflow: auto; margin: 0; }
+.lab-img { max-width: 100%; border-radius: 8px; border: 1px solid var(--border); }
+.lab-upload { margin-top: 16px; }
+.lab-upload summary { cursor: pointer; font-weight: 600; font-size: 0.86rem; }
+.lab-upload-row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; margin-top: 10px; }
+.lab-upload-row label { display: flex; gap: 6px; align-items: center; font-size: 13px; }
+.lab-upload-row input[type=text] { border: 1px solid var(--border-strong); border-radius: 7px; padding: 6px 8px; font: inherit; font-size: 13px; width: 170px; }
+@media (max-width: 760px) { .lab-frame iframe { height: 1100px; } }

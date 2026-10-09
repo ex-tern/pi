@@ -1,0 +1,126 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>HAL-OS · ScholarPi Lab</title>
+<meta name="description" content="A bare-metal ternary network that boots into the framebuffer, running in your browser.">
+<link rel="icon" type="image/svg+xml" href="../icon.svg">
+<link rel="stylesheet" href="hal.css">
+</head>
+<body>
+<div class="hal">
+
+  <header class="hal-status" aria-live="polite">
+    <span class="dot" id="dot"></span>
+    <span id="state">loading…</span>
+    <span class="stat" id="fps" title="Guest frames per second">— fps</span>
+    <span class="stat" id="rate" title="Bytes per second on the wire">0 B/s</span>
+    <span class="stat" id="ratio" title="Neurons trained per byte sent">—</span>
+    <span class="stat" id="wstate" title="Where the weights came from">weights —</span>
+    <span class="spacer"></span>
+    <a class="stat link" href="https://github.com/neurophilic/HAL-OS" target="_blank" rel="noopener" id="srcLink">source</a>
+  </header>
+
+  <div class="hal-body">
+    <aside class="hal-panel">
+      <section>
+        <h2>Source <span class="note">owns the canvas</span></h2>
+        <label><input type="radio" name="src" value="none" checked> nothing</label>
+        <label><input type="radio" name="src" value="images"> image / folder <span class="note" id="imgCount"></span></label>
+        <label><input type="radio" name="src" value="file"> raw file <span class="note" id="fileName"></span></label>
+        <label><input type="radio" name="src" value="text"> text</label>
+        <label><input type="radio" name="src" value="camera"> camera</label>
+        <label><input type="radio" name="src" value="screen"> screen share</label>
+        <label><input type="radio" name="src" value="sine"> sine wave</label>
+        <label><input type="radio" name="src" value="noise"> noise</label>
+        <textarea id="textIn" class="hidden" rows="2" spellcheck="false">hello world</textarea>
+      </section>
+
+      <section>
+        <h2>Channels <span class="note">overlays</span></h2>
+        <label title="Your pointer over the screen, as a marker the network learns. It does not move anything inside the guest — there is no pointer in there."><input type="checkbox" id="chMouse"> mouse</label>
+        <label title="Keys typed while the screen is focused land in the band the kernel reserves along the bottom."><input type="checkbox" id="chKbd"> keyboard</label>
+      </section>
+
+      <button id="inject" class="inject" aria-pressed="false">INJECT</button>
+      <p class="hint" id="injectHint">Pick a source, then press INJECT. Nothing goes on the wire until you do.</p>
+
+      <section>
+        <h2>Rate</h2>
+        <label class="row">fps <input type="range" id="fpsIn" min="1" max="30" value="8"><output id="fpsOut">8</output></label>
+        <label class="row">keyframe
+          <select id="keyIn">
+            <option value="1" selected>every frame (learns fast)</option>
+            <option value="8">every 8 frames</option>
+            <option value="120">every 120 (desktop Portal)</option>
+          </select>
+        </label>
+        <label class="row"><input type="checkbox" id="invertIn"> invert colours</label>
+      </section>
+
+      <section>
+        <h2>Machine</h2>
+        <div class="btns">
+          <button id="score" title="Ask the guest for its whole output buffer and compare it with what was sent">Score</button>
+          <button id="pause">Pause</button>
+          <button id="reboot" title="Cold boot. Weights saved on the weight disk are restored.">Reboot</button>
+        </div>
+        <div class="btns">
+          <button id="save" title="SAVE: write the weights to the weight disk now">Save</button>
+          <button id="dl" title="Download the weight disk (the only irreplaceable file)">Download weights</button>
+          <label class="btn-like" title="Boot from a weight disk you downloaded earlier">Load weights<input type="file" id="ul" hidden></label>
+        </div>
+        <div class="btns">
+          <button id="reset" class="danger" title="RESET: re-seed every weight. What the network learned is gone.">Reset network</button>
+          <button id="forget" class="danger" title="Delete the weights this browser keeps and reboot blank">Forget</button>
+        </div>
+      </section>
+
+      <details>
+        <summary>Control plane</summary>
+        <p class="hint">Bytecode the guest executes each frame: <code>FILL8 x/8 y/8 colour</code>, <code>ROW y colour</code>, <code>SEEK lo hi</code>, <code>SAVE</code>, <code>LOAD</code>, <code>RESET</code>.</p>
+        <textarea id="prog" rows="4" spellcheck="false"># a taskbar the machine draws, not learns
+ROW 188 31</textarea>
+        <button id="run">Send program</button>
+      </details>
+    </aside>
+
+    <main class="hal-main">
+      <div class="drop" id="drop">
+        <div id="screen" tabindex="0" aria-label="HAL-OS screen">
+          <div class="txt"></div>
+          <canvas></canvas>
+        </div>
+        <div class="overlay hidden" id="overlay"></div>
+      </div>
+      <p class="caption">The VM's screen. Drop images, a folder, or any file onto it. Trained regions hold still; untrained ones drift.</p>
+
+      <div class="pair">
+        <figure>
+          <canvas id="preview" width="320" height="200"></canvas>
+          <figcaption>what is being sent</figcaption>
+        </figure>
+        <figure>
+          <canvas id="readback" width="320" height="200"></canvas>
+          <figcaption id="rbCap">readback — press Score</figcaption>
+        </figure>
+      </div>
+
+      <details class="about">
+        <summary>What is this?</summary>
+        <p>HAL-OS is a bootable x86 image with no operating system, compiler, assembler, display driver or font. Python
+        emits the machine code; the CPU runs it from sector 0, and a two-layer ternary network of 32,000 neurons paints
+        VGA mode 13h directly. Every byte sent down the serial port becomes training data.</p>
+        <p>Here the real boot image — built from the HAL-OS repository when this site was deployed — runs on
+        <a href="https://github.com/copy/v86" target="_blank" rel="noopener">v86</a>, an x86 emulator in WebAssembly,
+        entirely inside your browser. Nothing you inject leaves your machine. The weight disk is kept in this browser
+        so the network remembers what it learned between visits; download it to keep it anywhere else.</p>
+        <p class="hint" id="buildInfo"></p>
+      </details>
+    </main>
+  </div>
+</div>
+<script type="module" src="hal.js"></script>
+</body>
+</html>
