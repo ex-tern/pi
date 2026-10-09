@@ -8118,7 +8118,12 @@ document.getElementById("profileSaveBtn").addEventListener("click", saveProfile)
   ta.addEventListener("input", sync);
   sync();
 })();
-document.getElementById("bugReportBtn").addEventListener("click", () => openBugReport());
+// Contact us is a window (orbit.js), never a dialog with a close button: the
+// button, wherever it is reached from, opens that window.
+document.getElementById("bugReportBtn").addEventListener("click", () => {
+  if (window.PiOrbit && window.PiOrbit.openTitle("Contact us")) return;
+  openBugReport();
+});
 initSidebar();
 loadAssessmentHistory();
 
