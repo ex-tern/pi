@@ -425,6 +425,9 @@
     pi.style.top = py + "px";            // the π box lives in the stage, under any windows
   }
 
+  // the docked Live panel (live.js) and the room left beside it for windows
+  function dockWidth() { const d = document.querySelector(".live-dock.docked .live-body"); return d ? d.offsetWidth : 0; }
+  const vw = () => window.innerWidth - dockWidth();
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
   const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => hit(r, p));
   function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
@@ -436,7 +439,7 @@
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     out.push(grow(titleRect(), g));
-    document.querySelectorAll(".buddy-float").forEach(el => {
+    document.querySelectorAll(".buddy-float, .live-dock:not(.docked) .live-tab").forEach(el => {
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
     });
@@ -533,7 +536,10 @@
     top = bar ? bar.offsetHeight : 0;
     stage.style.top = top + "px";
     document.documentElement.style.setProperty("--orbit-top", top + "px");
-    W = window.innerWidth; H = window.innerHeight - top;
+    // the Live panel (live.js), when docked to the right, takes its width off the stage
+    const dockW = dockWidth();
+    stage.style.right = dockW + "px";
+    W = window.innerWidth - dockW; H = window.innerHeight - top;
     small = W < 700;
     R = idleR();
     const pi = $(".orbit-pi");
@@ -879,7 +885,7 @@
         const cx = p.offsetLeft + p.offsetWidth / 2, cy = p.offsetTop + p.offsetHeight / 2;
         fit(it, p);
         if (p.userMoved) return;           // a window you have placed stays where you put it
-        p.style.left = Math.max(8, Math.min(window.innerWidth - p.offsetWidth - 8, cx - p.offsetWidth / 2)) + "px";
+        p.style.left = Math.max(8, Math.min(vw() - p.offsetWidth - 8, cx - p.offsetWidth / 2)) + "px";
         p.style.top = Math.max(top + 8, Math.min(window.innerHeight - p.offsetHeight - 8, cy - p.offsetHeight / 2)) + "px";
       });
       ro2.observe(it.content);
@@ -905,7 +911,7 @@
     const H0 = window.innerHeight - top;
     const wide = it.content.matches(".nb, .unigyro") || it.content.querySelector(".arch, iframe, canvas, #arcadeStage, table, .leaderboard");
     const q = it.q != null ? it.q : 0.5;
-    const maxW = sm ? window.innerWidth - 20 : Math.min(window.innerWidth - 32, wide ? 960 : 440 + q * 380);
+    const maxW = sm ? vw() - 20 : Math.min(vw() - 32, wide ? 960 : 440 + q * 380);
     const maxH = sm ? H0 * 0.86 : H0 - 48;
     p.style.height = "auto";
     p.style.width = "max-content";
@@ -921,7 +927,7 @@
   // Bring a window to the front and, when asked, glide it to the centre.
   function centre(p) {
     const w = p.offsetWidth, h = p.offsetHeight;
-    p.style.left = Math.max(8, (window.innerWidth - w) / 2) + "px";
+    p.style.left = Math.max(8, (vw() - w) / 2) + "px";
     p.style.top = Math.max(top + 8, top + (window.innerHeight - top - h) / 2) + "px";
   }
   function raise(p, toCentre) {
@@ -984,11 +990,11 @@
     if (!ws) return;
     p.userMoved = true;
     if (ws.w && ws.h) {
-      p.style.width = Math.min(ws.w, window.innerWidth - 16) + "px";
+      p.style.width = Math.min(ws.w, vw() - 16) + "px";
       p.style.height = Math.min(ws.h, window.innerHeight - top - 16) + "px";
       p.userSized = true;
     }
-    p.style.left = Math.max(8 - p.offsetWidth + 120, Math.min(window.innerWidth - 80, ws.fx * window.innerWidth)) + "px";
+    p.style.left = Math.max(8 - p.offsetWidth + 120, Math.min(vw() - 80, ws.fx * window.innerWidth)) + "px";
     p.style.top = Math.max(top, Math.min(window.innerHeight - 48, top + ws.fy * (window.innerHeight - top))) + "px";
   }
 
@@ -1165,7 +1171,7 @@
     t.appendChild(probe);
     const w = probe.offsetWidth, h = probe.offsetHeight;
     probe.remove();
-    const avail = Math.max(120, window.innerWidth - 32);
+    const avail = Math.max(120, vw() - 32);
     return { scale: Math.min(1, avail / Math.max(1, w)), w: Math.min(w, avail), h };
   }
   function measureTitles() {

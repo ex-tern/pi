@@ -714,3 +714,28 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 **What:** the idle loop now waits at least 10 s between checks and before its first one, whatever `IDLE_POLL_SECONDS` / `IDLE_AFTER_SECONDS` are set to. With either at 0, the loop would otherwise run flat out and take a CPU core from the site. Assessments already in flight still block the worker, so a short quiet period never competes with a visitor's running assessment.
 
 **Verified:** a new test with both set to 0 shows every wait ≥ 7.5 s (10 s with jitter); pytest at baseline; `build_hal.py` builds; the site loads at 1440 and 390 px with no page errors.
+
+## 2026-10-09: the Live panel
+
+**What:** a panel fixed to the right-hand side showing what the site is doing now:
+- whether it is assessing papers by itself while idle, with a pulsing cobalt dot while one is in progress
+- how many papers were assessed today (and how many by itself), and the total
+- the 12 latest assessments:
+  - papers the site found and assessed itself (open access) are named, and the title opens the dossier
+  - other people's uploads show only field, piX, day and whether they were signed in, as in Recent assessments
+
+It refreshes every 30 s (only while the tab is visible) and after your own assessment.
+
+**Layout:**
+- **Wide screens (≥ 1100 px):** it starts docked. The orbit layout gives up its 300 px (stage, pills, logo, rings), and windows centre and size in the space beside it.
+- **Folding:** the "Live" tab folds it to a slim tab and back, and the choice is remembered (`orbit:live:open`).
+- **Narrow screens:** it starts folded, opens over the page, and the pills keep clear of the tab.
+
+**Backend:** `backend/live.py`, `GET /api/live`. Idle papers are recognised by their submitter, "ScholarPi (idle)". Recent assessments no longer counts that submitter as "signed in".
+
+**Verified:**
+- `tests/test_live.py` checks that idle papers are named and people's uploads never show their title or hash; the `test_recent.py` tests still pass.
+- Docked at 1440 and 1100 px, no orbit element crosses into the panel, and an opened window stays left of it.
+- Folded at 1024, 390 and 360 px, the tab overlaps no pill and opens the panel.
+- The 15-size layout audit passes; no page errors or horizontal scroll.
+- pytest at baseline (12 pre-existing failures); `build_hal.py` builds.

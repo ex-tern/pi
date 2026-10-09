@@ -59,7 +59,7 @@ def build_router(get_conn: Callable) -> APIRouter:
                 "field": _first_field(fields),
                 "score": s,
                 "date": str(ts or "")[:10],
-                "signed_in": bool(uid) and str(uid) != "Anonymous",
+                "signed_in": bool(uid) and str(uid) not in ("Anonymous", "ScholarPi (idle)"),
             })
         return {"entries": entries, "total": int(total or 0)}
 
