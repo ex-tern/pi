@@ -1033,6 +1033,7 @@
       const w = new Worker("pi-worker.js?v=2");
       w.onmessage = e => {
         digits += e.data.digit; piDigits = digits;
+        document.dispatchEvent(new CustomEvent("pi:digit", { detail: e.data.digit }));   // logosound.js
         if (!pending) { pending = true; requestAnimationFrame(show); }
       };
       // logosound.js asks for the digits to fall on the song's beat
