@@ -19,7 +19,7 @@
     ]],
     ["See the field", [
       ["The Global Map of Science", "Research laid out as a map you can fly through and play."],
-      ["Forecast", "Where the corpus is heading."],
+      ["Performance", "Where the corpus is heading, and how well PiEN is learning: how often its suggestions are followed."],
       ["Analytics", "Papers, piQ minted, average score, authors and visitors."],
       ["Minting Difficulty", "How hard piQ is to earn right now, and why."],
     ]],
@@ -36,7 +36,7 @@
     ]],
     ["The site itself", [
       ["π and friends", "π computed live for as long as you stay, with e, φ and γ."],
-      [null, "PiEn, the mark in the middle, learns which card tends to come next and suggests it with a soft halo."],
+      [null, "PiEN, the mark in the middle, learns which card tends to come next and suggests it with a soft halo. See how it is doing under Performance."],
       [null, "Drag anything; pills move only when pushed. Sign in and your layout follows you to any device."],
       ["Your account", "Sign in with a wallet or ORCID, and manage your account."],
       ["Invite a researcher", "Bring a colleague in."],

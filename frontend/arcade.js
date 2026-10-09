@@ -80,11 +80,13 @@
   // now comes from the assessed corpus, so there is no fixed set to enumerate.
   // Hashing gives each real field a stable colour across loads without the
   // palette implying which fields are supposed to exist.
+  // Muted on purpose (the site is ink on paper): colour tells disciplines
+  // apart without competing with the one cobalt accent.
   const FIELD_COLORS = [
-    "#6366f1", "#14b8a6", "#22c55e", "#ef4444", "#a855f7", "#3b82f6",
-    "#f59e0b", "#0ea5e9", "#ec4899", "#84cc16", "#f97316", "#06b6d4",
+    "#5b67c7", "#3f978e", "#5f9a5c", "#c0645c", "#8a6cb6", "#4f7fbf",
+    "#bf8c3e", "#4993b2", "#b5688f", "#829a4a", "#c17a4c", "#3f9aa6",
   ];
-  const UNASSIGNED_COLOR = "#94a3b8";   // deliberately grey: it names nothing
+  const UNASSIGNED_COLOR = "#9a9a94";   // deliberately grey: it names nothing
 
   function colorFor(domain) {
     if (!domain || domain === "Unassigned") return UNASSIGNED_COLOR;
@@ -111,16 +113,16 @@
   // permanently night. A hard-coded near-black canvas sitting inside an
   // otherwise light page is not a style choice, it is a hole in the page.
   const THEMES = {
-    dark:  { top: "#070b1c", bottom: "#0d1430", stars: true,
-             mesh: "rgba(148,163,184,0.10)", label: "rgba(255,255,255,0.95)",
-             labelDim: "rgba(255,255,255,0.60)", sub: "rgba(255,255,255,0.75)",
-             hud: "rgba(8,12,28,0.72)", hudText: "#e2e8f0", hudDim: "#94a3b8",
-             playerText: "#083344", track: "rgba(255,255,255,0.14)" },
-    light: { top: "#eef3fb", bottom: "#dbe6f6", stars: false,
-             mesh: "rgba(51,65,85,0.14)", label: "rgba(15,23,42,0.92)",
-             labelDim: "rgba(15,23,42,0.55)", sub: "rgba(15,23,42,0.70)",
-             hud: "rgba(255,255,255,0.86)", hudText: "#0f172a", hudDim: "#475569",
-             playerText: "#f8fafc", track: "rgba(15,23,42,0.12)" },
+    dark:  { top: "#161615", bottom: "#121211", stars: false,
+             mesh: "rgba(255,255,255,0.08)", label: "rgba(246,246,244,0.94)",
+             labelDim: "rgba(246,246,244,0.50)", sub: "rgba(246,246,244,0.62)",
+             hud: "rgba(25,25,25,0.86)", hudText: "#f6f6f4", hudDim: "#a3a39d",
+             playerText: "#ffffff", track: "rgba(255,255,255,0.12)", region: "rgba(246,246,244,0.42)", hair: "rgba(255,255,255,0.14)" },
+    light: { top: "#fbfbf9", bottom: "#f6f6f4", stars: false,
+             mesh: "rgba(25,25,25,0.09)", label: "#191919",
+             labelDim: "rgba(25,25,25,0.48)", sub: "rgba(25,25,25,0.60)",
+             hud: "rgba(255,255,255,0.94)", hudText: "#191919", hudDim: "#6e6e6a",
+             playerText: "#ffffff", track: "rgba(25,25,25,0.10)", region: "rgba(25,25,25,0.42)", hair: "rgba(25,25,25,0.12)" },
   };
   let themeQuery = null;
   let themeName = "dark";
@@ -134,7 +136,9 @@
                   || localStorage.getItem("sp_theme");
       if (forced === "light" || forced === "dark") return forced;
     } catch (_) { /* private mode */ }
-    return (themeQuery && themeQuery.matches) ? "dark" : "light";
+    // The site itself is ink on paper in every setting, so the map is too:
+    // a dark rectangle inside a light page reads as a hole in it.
+    return "light";
   }
 
   function theme() { return THEMES[themeName] || THEMES.dark; }
@@ -432,7 +436,15 @@
     // only while the user has not chosen a zoom of their own. Overriding a
     // deliberate zoom on every resize would fight the person using the map.
     if (state.mode === "explore" && !state.userZoomed) {
+      // The regions were planned for a box of another shape (or none: the map
+      // may have loaded while its window was closed). Re-plan for this one.
+      const aspect = rect.width / Math.max(1, rect.height);
+      if (rect.width > 50 && rect.height > 50 && !state.touched &&
+          Math.abs(Math.log(aspect / (state.arrangedAspect || aspect))) > 0.2) {
+        arrangeByDiscipline(); buildEdges();
+      }
       state.camera.zoom = fitZoom();
+      centreOnMap();
     }
   }
   function viewW() { return state.canvas.width / state.dpr; }
@@ -459,8 +471,14 @@
     // panning immediately recovers. Filling the space is the better default
     // because the margins were the actual complaint, and nothing is lost —
     // only moved slightly out of frame, on a surface built for panning.
-    const z = Math.max(w / WORLD_W, h / WORLD_H);
-    return Math.max(0.18, Math.min(2.2, z));   // same bounds the wheel enforces
+    // Now CONTAIN again, with a small margin: with fields gathered into
+    // discipline regions there are no empty bands to hide, and cropping cut
+    // whole regions off the edges.
+    const B = state.mode !== "play" && state.bounds;
+    const bw = B ? B.x1 - B.x0 : WORLD_W, bh = B ? B.y1 - B.y0 : WORLD_H;
+    // leave the strip under the toolbar (hint, Reload, Play) clear
+    const z = Math.min(w / bw, (h - TOOLBAR_PX) / bh) * 0.96;
+    return Math.max(0.12, Math.min(2.2, z));
   }
 
   function worldToScreen(wx, wy) {
@@ -508,6 +526,7 @@
     state.particles = [];
     state.pops = [];
     state.selected = null;
+    state.touched = false;
     state.over = false;
     state.submitting = false;
     state.bubbles = data.field.map(b => ({
@@ -524,6 +543,7 @@
       // bubble must never count as absorbed.
       baseMass: b.mass, fused: false, fusedFrom: [],
     }));
+    arrangeByDiscipline();
     // Drives the player's size ceiling — see playerRadiusCap().
     state.maxBubbleMass = state.bubbles.reduce((m, b) => Math.max(m, b.mass), 0);
     state.legend = data.legend || [];
@@ -540,6 +560,122 @@
     setMessage("", "");
     state.loading = false;
     return true;
+  }
+
+  // Lay the map out as regions, one per discipline.
+  //
+  // The server's positions are uniform noise, and with almost no damping the
+  // fields bounced like billiard balls until they piled up against the walls,
+  // joined by long links across the whole map. Positions are presentation only
+  // (a run is verified on masses and timing, never on where anything was), so
+  // the map can arrange them for reading: each discipline gets a region on a
+  // grid, its fields gather there without overlapping, and the map is still.
+  function arrangeByDiscipline() {
+    const list = state.bubbles;
+    if (!list.length) return;
+    const groups = new Map();
+    for (const b of list) {
+      const k = b.parent || b.domain || "";
+      if (!groups.has(k)) groups.set(k, []);
+      groups.get(k).push(b);
+    }
+    const keys = [...groups.keys()].sort((a, b) =>
+      groups.get(b).reduce((m, x) => m + x.mass * x.mass, 0) - groups.get(a).reduce((m, x) => m + x.mass * x.mass, 0));
+    const n = keys.length;
+    // Regions are as big as what is in them (not a share of the whole world),
+    // and the grid takes the shape of the box the map is shown in.
+    const need = keys.map(k => Math.sqrt(groups.get(k).reduce((m, b) => m + Math.pow(b.mass * 1.25 + 8, 2), 0)) * 1.2 + 24);
+    const box = state.canvas && state.canvas.parentElement ? state.canvas.parentElement.getBoundingClientRect() : null;
+    const aspect = box && box.width > 50 && box.height > 50 ? box.width / box.height : WORLD_W / WORLD_H;
+    const cols = Math.max(1, Math.min(n, Math.round(Math.sqrt(n * aspect))));
+    const rows = Math.ceil(n / cols);
+    let cell = Math.max(...need) * 2 + 80;                   // + room for the name
+    cell = Math.min(cell, (WORLD_W - 40) / cols, (WORLD_H - 40) / rows);
+    const ox = (WORLD_W - cols * cell) / 2, oy = (WORLD_H - rows * cell) / 2;
+    state.cell = cell;
+    state.arrangedAspect = aspect;
+    state.regions = [];
+    keys.forEach((k, i) => {
+      const r = Math.floor(i / cols);
+      const inRow = Math.min(cols, n - r * cols);           // centre a short last row
+      const c = (i % cols) + (cols - inRow) / 2;
+      const cx = ox + (c + 0.5) * cell, cy = oy + (r + 0.5) * cell + 18;
+      state.regions.push({ name: k, cx, cy, members: groups.get(k) });
+      // biggest in the middle, smaller ones around it on a golden-angle spiral
+      groups.get(k).sort((a, b) => b.mass - a.mass).forEach((b, j) => {
+        const ang = j * 2.39996, rad = Math.sqrt(j) * 70;
+        b.x = cx + Math.cos(ang) * rad; b.y = cy + Math.sin(ang) * rad;
+        b.vx = 0; b.vy = 0;
+      });
+    });
+    // relax: no overlaps, a gentle pull back to the region's centre
+    for (let it = 0; it < 220; it++) {
+      for (let i = 0; i < list.length; i++) {
+        const a = list[i];
+        for (let j = i + 1; j < list.length; j++) {
+          const b = list[j];
+          const dx = b.x - a.x, dy = b.y - a.y;
+          const d = Math.hypot(dx, dy) || 0.01;
+          const min = (a.mass + b.mass) * 1.18 + 6;
+          if (d >= min) continue;
+          const push = (min - d) / 2 / d;
+          a.x -= dx * push; a.y -= dy * push; b.x += dx * push; b.y += dy * push;
+        }
+      }
+      for (const rg of state.regions) for (const b of rg.members) {
+        b.x += (rg.cx - b.x) * 0.012; b.y += (rg.cy - b.y) * 0.012;
+        b.x = Math.max(b.mass + 10, Math.min(WORLD_W - b.mass - 10, b.x));
+        b.y = Math.max(b.mass + 10, Math.min(WORLD_H - b.mass - 10, b.y));
+      }
+    }
+    // what the map occupies, names included: the view fits this, not the world
+    let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const b of list) {
+      x0 = Math.min(x0, b.x - b.mass); x1 = Math.max(x1, b.x + b.mass);
+      y0 = Math.min(y0, b.y - b.mass - 80); y1 = Math.max(y1, b.y + b.mass);
+    }
+    state.bounds = { x0: x0 - 30, y0: y0 - 10, x1: x1 + 30, y1: y1 + 30 };
+  }
+  const TOOLBAR_PX = 52;
+  function centreOnMap() {
+    const B = state.bounds;
+    if (!B) { state.camera.x = WORLD_W / 2; state.camera.y = WORLD_H / 2; return; }
+    state.camera.x = (B.x0 + B.x1) / 2;
+    state.camera.y = (B.y0 + B.y1) / 2 - (TOOLBAR_PX / 2) / Math.max(0.05, state.camera.zoom);
+  }
+
+  // Each discipline's name, faintly, above its region (explore only).
+  function drawRegions(ctx) {
+    if (!state.regions || state.mode === "play" || !state.look.labels) return;
+    ctx.textAlign = "center"; ctx.textBaseline = "alphabetic";
+    ctx.fillStyle = theme().region;
+    const size = Math.max(10, Math.min(14, 13 * state.camera.zoom / 0.3));
+    ctx.font = `500 ${size}px Geist, system-ui, sans-serif`;
+    for (const rg of state.regions) {
+      const alive = rg.members.filter(b => !isGone(b));
+      if (!alive.length || !rg.name) continue;
+      let top = Infinity, sx = 0;
+      for (const b of alive) { top = Math.min(top, b.y - b.mass); sx += b.x; }
+      const p = worldToScreen(sx / alive.length, top - 26);
+      const maxW = Math.max(40, (state.cell || 400) * state.camera.zoom - 10);
+      let lines = [rg.name];
+      if (ctx.measureText(rg.name).width > maxW && rg.name.includes(" ")) {
+        // two lines, split at the space nearest the middle
+        const words = rg.name.split(" ");
+        let best = 1, bestDiff = Infinity;
+        for (let i = 1; i < words.length; i++) {
+          const d = Math.abs(words.slice(0, i).join(" ").length - words.slice(i).join(" ").length);
+          if (d < bestDiff) { bestDiff = d; best = i; }
+        }
+        lines = [words.slice(0, best).join(" "), words.slice(best).join(" ")];
+      }
+      const widest = Math.max(...lines.map(l => ctx.measureText(l).width));
+      const k = Math.min(1, maxW / widest);
+      if (k < 1) ctx.font = `500 ${Math.max(8, size * k)}px Geist, system-ui, sans-serif`;
+      const lh = Math.max(8, size * k) * 1.2;
+      lines.forEach((l, i) => ctx.fillText(l, p.x, p.y - (lines.length - 1 - i) * lh));
+      if (k < 1) ctx.font = `500 ${size}px Geist, system-ui, sans-serif`;
+    }
   }
 
   function renderCorpusSummary(corpus) {
@@ -586,13 +722,13 @@
     state.mode = "explore";
     state.player = null;
     state.userZoomed = false;
-    state.camera.x = WORLD_W / 2;
-    state.camera.y = WORLD_H / 2;
+    centreOnMap();
     syncModeUi();
     // resize() first: fitZoom() reads the canvas, so it has to be measured
     // before it is asked how much of the world will fit inside it.
     resize();
     state.camera.zoom = fitZoom();
+    centreOnMap();                       // after the zoom: the toolbar offset depends on it
     startLoop();
   }
 
@@ -977,7 +1113,9 @@
     // across the table; the spring still needs the heavier value, because an
     // undamped spring oscillates forever.
     const springOnPre = !!state.look.gravity;
-    const DAMP = springOnPre ? 0.94 : 0.995;
+    // Fields come to rest: the map is for reading, not a billiard table.
+    // (A dragged field still nudges its neighbours, and settles.)
+    const DAMP = springOnPre ? 0.94 : 0.9;
     const MAX_SPEED_EXPLORE = 11;
 
     // The SPRING is optional; COLLISION is not.
@@ -1610,6 +1748,7 @@
     // Stars are a night-sky metaphor. In daylight they read as dust on the
     // screen, so they are simply absent rather than recoloured.
     if (T.stars) drawStars(ctx, w, h);
+    drawRegions(ctx);
     if (effectsQuality > 0 && state.look.mesh) drawMesh(ctx);
     for (const b of state.bubbles) if (!isGone(b)) drawBubble(ctx, b);
     drawPops(ctx);
@@ -1734,9 +1873,9 @@
       const sb = worldToScreen(e.b.x, e.b.y);
       if ((sa.x < -100 && sb.x < -100) || (sa.x > w + 100 && sb.x > w + 100)) continue;
       if ((sa.y < -100 && sb.y < -100) || (sa.y > h + 100 && sb.y > h + 100)) continue;
-      ctx.strokeStyle = faded
-        ? "rgba(148,163,184,0.07)"
-        : rgba(colorFor(e.a.domain), 0.3);
+      // Only links within reach: a line across the whole map says nothing.
+      if (Math.hypot(e.a.x - e.b.x, e.a.y - e.b.y) > 520) continue;
+      ctx.strokeStyle = faded ? "rgba(25,25,25,0.04)" : rgba(bubbleColor(e.a), 0.28);
       ctx.beginPath(); ctx.moveTo(sa.x, sa.y); ctx.lineTo(sb.x, sb.y); ctx.stroke();
     }
   }
@@ -1756,44 +1895,34 @@
     const pulse = 1 + Math.sin(b.pulse) * 0.02;
     const isSelected = state.selected === b;
 
-    // Corpus fields read solid; unexplored taxonomy stays faint. This is the
-    // difference between "science" and "your science" at a glance.
-    const baseAlpha = b.live ? 0.8 : 0.3;
-
-    if (effectsQuality > 0 && (b.live || edible)) {
-      const glow = ctx.createRadialGradient(s.x, s.y, r * 0.2, s.x, s.y, r * 1.7 * pulse);
-      glow.addColorStop(0, rgba(color, b.live ? 0.5 : 0.35));
-      glow.addColorStop(1, rgba(color, 0));
-      ctx.fillStyle = glow;
-      ctx.beginPath(); ctx.arc(s.x, s.y, r * 1.7 * pulse, 0, Math.PI * 2); ctx.fill();
-    }
-
-    // Never hand a non-finite value to a canvas gradient: it throws, and the
-    // throw takes every bubble after this one out of the frame with it.
+    // Flat and quiet: a tinted disc with a thin outline. Fields with papers
+    // in this corpus are tinted and outlined; the rest of the taxonomy is a
+    // faint outline, so "your science" still reads at a glance.
     if (!Number.isFinite(s.x) || !Number.isFinite(s.y) || !Number.isFinite(r)) return;
-    drawSoapFilm(ctx, s.x, s.y, r * pulse, color, {
-      alpha: playing && !edible ? 0.42 : baseAlpha,
-      live: b.live,
-      // Each bubble's iridescence starts at its own point in the cycle and
-      // turns slowly, so a cluster shimmers instead of reading as one decal
-      // stamped repeatedly.
-      phase: b.pulse,
-    });
-
-    if (playing && !edible) { ctx.lineWidth = 2.6; ctx.strokeStyle = "#fca5a5"; }
-    else if (isSelected)    { ctx.lineWidth = 3;   ctx.strokeStyle = "#ffffff"; }
-    else                    { ctx.lineWidth = b.live ? 1.6 : 1; ctx.strokeStyle = rgba(color, 0.9); }
-    ctx.beginPath(); ctx.arc(s.x, s.y, r * pulse, 0, Math.PI * 2);
+    const fade = playing && !edible ? 0.55 : 1;
+    ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2);
+    ctx.fillStyle = rgba(color, (b.live ? 0.16 : 0.05) * fade);
+    ctx.fill();
+    ctx.setLineDash(playing && !edible ? [4, 3] : []);
+    ctx.lineWidth = b.live ? 1.4 : 1;
+    ctx.strokeStyle = playing && !edible ? "rgba(192,100,92,0.85)" : rgba(color, (b.live ? 0.9 : 0.4) * fade);
     ctx.stroke();
+    ctx.setLineDash([]);
+    if (isSelected) {
+      ctx.beginPath(); ctx.arc(s.x, s.y, r + 4, 0, Math.PI * 2);
+      ctx.lineWidth = 2; ctx.strokeStyle = "#2f40e8"; ctx.stroke();
+    }
+    void pulse; void look;
 
-    if (r > 20 && state.look.labels) {
+    const sameAsRegion = state.mode !== "play" && !b.live && (!b.parent || b.parent === b.domain);
+    if (r > 20 && state.look.labels && !sameAsRegion) {
       ctx.textAlign = "center"; ctx.textBaseline = "middle";
       ctx.fillStyle = b.live ? theme().label : theme().labelDim;
-      ctx.font = `600 ${Math.min(15, r / 2.8)}px -apple-system, system-ui, sans-serif`;
+      ctx.font = `500 ${Math.min(15, r / 2.8)}px Geist, system-ui, sans-serif`;
       ctx.fillText(b.domain, s.x, s.y - (b.live && r > 34 ? 7 : 0));
       if (b.live && r > 34) {
         ctx.fillStyle = theme().sub;
-        ctx.font = `500 ${Math.min(12, r / 4)}px -apple-system, system-ui, sans-serif`;
+        ctx.font = `400 ${Math.min(12, r / 4)}px Geist, system-ui, sans-serif`;
         ctx.fillText(`${b.papers} paper${b.papers === 1 ? "" : "s"}`, s.x, s.y + 9);
       }
     }
@@ -1990,7 +2119,7 @@
     if (s.x + r < 0 || s.x - r > viewW() || s.y + r < 0 || s.y - r > viewH()) return;
     ctx.fillStyle = theme().mesh;
     ctx.beginPath(); ctx.arc(s.x, s.y, r, 0, Math.PI * 2); ctx.fill();
-    ctx.lineWidth = 1; ctx.strokeStyle = "rgba(148,163,184,0.22)"; ctx.stroke();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme().hair; ctx.stroke();
   }
 
   // ---------------------------------------------------------------------
@@ -2196,7 +2325,7 @@
     roundRect(ctx, x, y, boxW, boxH, 8); ctx.fill();
 
     ctx.fillStyle = theme().hudText || "#e2e8f0";
-    ctx.font = "600 12px -apple-system, system-ui, sans-serif";
+    ctx.font = "500 12px Geist, system-ui, sans-serif";
     ctx.textAlign = "left"; ctx.textBaseline = "middle";
     ctx.fillText(`${spec.glyph} ${spec.label}`, x + padX, y + padY + 6);
 
@@ -2388,21 +2517,22 @@
       const pct = total ? (total - left) / total : 0;
       ctx.fillStyle = theme().hud; roundRect(ctx, 12, 12, 208, 62, 10); ctx.fill();
       ctx.fillStyle = theme().hudText; ctx.textAlign = "left"; ctx.textBaseline = "alphabetic";
-      ctx.font = "600 12px -apple-system, system-ui, sans-serif";
+      ctx.font = "500 12px Geist, system-ui, sans-serif";
       ctx.fillText(`${total - left} / ${total} fields absorbed`, 24, 34);
-      ctx.fillStyle = theme().hudDim; ctx.font = "500 11px -apple-system, system-ui, sans-serif";
+      ctx.fillStyle = theme().hudDim; ctx.font = "400 11px Geist, system-ui, sans-serif";
       ctx.fillText(`Mass ${Math.round(p.mass)} · ${left} left`, 24, 66);
       ctx.fillStyle = theme().track; roundRect(ctx, 24, 42, 184, 8, 4); ctx.fill();
-      ctx.fillStyle = pct > 0.75 ? "#22c55e" : "#38bdf8";
+      ctx.fillStyle = "#2f40e8";
       roundRect(ctx, 24, 42, Math.max(4, 184 * pct), 8, 4); ctx.fill();
     }
 
     const mw = 132, mh = mw * (WORLD_H / WORLD_W);
     const mx = w - mw - 12, my = h - mh - 12;
     ctx.fillStyle = theme().hud; roundRect(ctx, mx, my, mw, mh, 8); ctx.fill();
+    ctx.lineWidth = 1; ctx.strokeStyle = theme().hair; ctx.stroke();
     for (const b of state.bubbles) {
       if (isGone(b)) continue;
-      ctx.fillStyle = rgba(bubbleColor(b), b.live ? 0.85 : 0.4);
+      ctx.fillStyle = rgba(bubbleColor(b), b.live ? 0.7 : 0.25);
       ctx.beginPath();
       ctx.arc(mx + (b.x / WORLD_W) * mw, my + (b.y / WORLD_H) * mh,
               Math.max(0.8, b.mass / 26), 0, Math.PI * 2);
@@ -2463,7 +2593,7 @@
       const p = canvasPos(e.clientX, e.clientY);
       const hit = bubbleAt(p.x, p.y);
       if (hit) {
-        state.grabbed = { bubble: hit, moved: false };
+        state.grabbed = { bubble: hit, moved: false }; state.touched = true;
         c.style.cursor = "grabbing";
         return;
       }
@@ -2549,7 +2679,7 @@
         const t = e.touches[0];
         const p = canvasPos(t.clientX, t.clientY);
         const hit = bubbleAt(p.x, p.y);
-        if (hit) { state.grabbed = { bubble: hit, moved: false }; return; }
+        if (hit) { state.grabbed = { bubble: hit, moved: false }; state.touched = true; return; }
         state.drag = { sx: t.clientX, sy: t.clientY, cx: state.camera.x, cy: state.camera.y, moved: false };
       }
     };
@@ -2687,6 +2817,9 @@
     state.canvas = document.getElementById("arcadeCanvas");
     if (!state.canvas) return;
     state.ctx = state.canvas.getContext("2d");
+    // The map lives in a window that can open, move and resize: follow the
+    // size of the box it is in, not only the browser window.
+    if (window.ResizeObserver) new ResizeObserver(() => { if (state.mode !== "idle") resize(); }).observe(state.canvas.parentElement);
     bindInput();
     selectBubble(null);
 
