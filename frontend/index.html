@@ -7,9 +7,11 @@
 <link rel="icon" type="image/svg+xml" href="icon.svg">
 <link rel="apple-touch-icon" href="icon.svg">
 <link rel="manifest" href="manifest.webmanifest">
-<meta name="theme-color" content="#2563eb">
+<meta name="theme-color" content="#f6f6f4">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
+<link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=89">
+<link rel="stylesheet" href="theme.css?v=1">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 </head>
@@ -31,6 +33,15 @@
 
   <!-- ===================== SIDEBAR ===================== -->
   <aside class="sidebar" id="appSidebar">
+    <!-- The mark: π is a circle measured against its diameter. -->
+    <a class="brand" href="/" aria-label="ScholarPi home">
+      <svg class="brand-mark" viewBox="0 0 32 32" aria-hidden="true">
+        <circle cx="16" cy="16" r="13" fill="none" stroke="currentColor" stroke-width="1.6"/>
+        <line x1="3" y1="16" x2="29" y2="16" stroke="currentColor" stroke-width="1.6"/>
+        <circle cx="29" cy="16" r="2.6" fill="#2f40e8"/>
+      </svg>
+      <span class="brand-name">ScholarPi<small>Research, measured fairly</small></span>
+    </a>
     <h2 class="sidebar-title">System Access &amp; Sync
       <span class="pill pill-muted" id="authBadge">Not signed in</span></h2>
     <!-- Who is signed in, and how to stop being signed in. A session that

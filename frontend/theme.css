@@ -1,0 +1,234 @@
+/* theme.css — ScholarPi, light monochrome.
+ *
+ * Loaded after style.css and changes only how things look: no selector here
+ * hides, moves or renames anything app.js depends on.
+ *
+ * One idea carries the identity: π is the ratio of a circle to its diameter.
+ * The brand mark is that circle and that line, and the same circle marks the
+ * active tab. Everything else is ink on paper, hairlines and space. Colour is
+ * reserved for meaning: cobalt for "you are here / this is interactive", and
+ * muted red, ochre and green for status, which still has to read.
+ */
+
+/* Geist, self-hosted (SIL Open Font License, fonts/LICENSE-Geist-OFL.txt):
+   no third-party font request on every visit. */
+@font-face {
+  font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+
+:root {
+  --paper: #f6f6f4;
+  --surface: #ffffff;
+  --ink: #191919;
+  --graphite: #6e6e6a;
+  --hair: #dcdcd8;
+  --hair-strong: #c9c9c4;
+  --cobalt: #2f40e8;
+
+  /* style.css tokens, remapped */
+  --bg: var(--paper);
+  --card-bg: var(--surface);
+  --border: var(--hair);
+  --border-strong: var(--hair-strong);
+  --text: var(--ink);
+  --muted: var(--graphite);
+  --faint: #94948e;
+  --accent: var(--ink);
+  --accent-soft: #efeff3;
+  --accent-hover: #000000;
+  --danger: #b3261e;
+  --warn: #8a6a12;
+  --warn-bg: #f7f3e8;
+  --success: #2f6b3a;
+  --success-bg: #eef3ec;
+  --radius: 10px;
+  --shadow: none;
+
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- Type ---------- */
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "ss01", "tnum";
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font-family: inherit; }
+code, pre, .mono, kbd, samp { font-family: var(--font-mono); }
+code { background: #efefec; }
+h1, h2, h3, h4, h5 { font-weight: 500; color: var(--ink); }
+h1 { font-size: 2.1rem; letter-spacing: -0.035em; line-height: 1.1; }
+h2 { font-size: 1.12rem; letter-spacing: -0.015em; }
+h3 { font-size: 0.98rem; letter-spacing: -0.01em; }
+a { color: var(--cobalt); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.hint { color: var(--graphite); }
+.lede { color: #2e2e2b; font-size: 14.5px; max-width: 68ch; }
+
+/* No ornamental elevation anywhere: hierarchy comes from space and lines.
+   Focus rings and the modal keep theirs because they carry meaning. */
+*:not(:focus-visible):not(.modal):not(.toast) { box-shadow: none !important; }
+:focus-visible { outline: 2px solid var(--cobalt) !important; outline-offset: 2px; }
+
+/* ---------- Brand ---------- */
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  margin: 2px 0 26px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { width: 30px; height: 30px; flex: none; }
+.brand-name { font-size: 19px; font-weight: 500; letter-spacing: -0.03em; }
+.brand-name small { display: block; font-size: 11.5px; letter-spacing: 0; color: var(--graphite); font-weight: 400; margin-top: 1px; }
+
+/* ---------- Layout ---------- */
+.main { padding: 34px 48px 80px; max-width: 1180px; }
+.sidebar {
+  background: var(--paper);
+  border-right: 1px solid var(--hair);
+  padding: 58px 20px 28px;
+}
+.sidebar-title {
+  text-transform: none; letter-spacing: -0.01em; font-size: 13px; font-weight: 500;
+  color: var(--graphite); margin-bottom: 14px;
+}
+.sidebar-expander {
+  background: transparent; border: 0; border-top: 1px solid var(--hair);
+  border-radius: 0; padding: 12px 2px; margin: 0;
+}
+.sidebar-expander summary { font-weight: 500; font-size: 13.5px; }
+.researcher-info, .donate-card { background: var(--surface); border-radius: 10px; }
+
+/* ---------- Navigation: the circle marks where you are ----------
+   Scoped to .nav-tabs: the floating architecture button is also a .tab-btn
+   and must keep its own fixed position and shape. */
+.nav-tabs {
+  gap: 4px 26px; border-bottom: 1px solid var(--hair);
+  padding-bottom: 0; margin-bottom: 38px;
+}
+.nav-tabs .tab-btn {
+  position: relative;
+  background: transparent; border: 0; border-radius: 0;
+  padding: 10px 0 14px 18px; font-size: 15px; font-weight: 450;
+  color: var(--graphite); letter-spacing: -0.01em;
+}
+.nav-tabs .tab-btn::before {
+  content: ""; position: absolute; left: 0; top: 50%; margin-top: -7px;
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1.4px solid var(--hair-strong); background: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.nav-tabs .tab-btn:hover { color: var(--ink); }
+.nav-tabs .tab-btn:hover::before { border-color: var(--ink); }
+.nav-tabs .tab-btn.active { background: transparent; color: var(--ink); }
+.nav-tabs .tab-btn.active::before { background: var(--cobalt); border-color: var(--cobalt); }
+.tab-btn.arch-fab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+.page-header { margin-bottom: 22px; align-items: flex-end; }
+.page-header h1 { margin-bottom: 0; }
+
+/* ---------- Surfaces ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 26px 28px;
+  margin-bottom: 22px;
+}
+.card h2 { margin-bottom: 14px; }
+
+/* ---------- Controls: round, like the mark ---------- */
+.btn, .tab-btn.arch-fab, .gh-fab {
+  border-radius: 999px;
+}
+.btn {
+  font-weight: 500; font-size: 13px; padding: 9px 16px;
+  background: transparent; border: 1px solid var(--hair-strong); color: var(--ink);
+}
+.btn:hover:not(:disabled) { background: #efefec; border-color: var(--ink); }
+.btn-primary, .btn-donate, .mm-btn, .orcid-btn, .amount-btn.selected {
+  background: var(--ink); border-color: var(--ink); color: #ffffff;
+}
+.btn-primary:hover:not(:disabled), .btn-donate:hover, .mm-btn:hover, .orcid-btn:hover {
+  background: #000000; border-color: #000000;
+}
+.btn-secondary { background: transparent; color: var(--danger); border-color: #e6cdc8; }
+.btn-ghost { border-color: transparent; }
+.btn-ghost:hover:not(:disabled) { border-color: transparent; }
+
+input[type=text], input[type=email], input[type=number], input[type=search], input[type=url],
+input[type=password], select, textarea {
+  border-radius: 8px !important;
+  border-color: var(--hair-strong) !important;
+  background: var(--surface);
+}
+
+.pill { border-radius: 999px; font-weight: 500; letter-spacing: 0; }
+.pill-muted { background: transparent; color: var(--graphite); border: 1px solid var(--hair); }
+
+.help-btn { border-color: var(--hair-strong); color: var(--graphite); font-weight: 500; }
+.help-btn:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* Status stays legible but quiet: a hairline frame and a dot, not a slab. */
+.chain-badge { background: transparent !important; border: 1px solid var(--hair) !important; font-weight: 500; }
+
+/* ---------- Tables ---------- */
+.data-table th {
+  background: transparent; color: var(--graphite); font-weight: 500;
+  text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--ink);
+}
+.data-table td { border-bottom: 1px solid var(--hair); }
+.data-table tr:hover td { background: #fafaf8; }
+
+/* ---------- Floating corner buttons ---------- */
+.gh-fab, .tab-btn.arch-fab {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--hair);
+}
+.gh-fab:hover, .tab-btn.arch-fab:hover { border-color: var(--ink); }
+
+/* ---------- Modal ---------- */
+.modal-overlay { background: rgba(246, 246, 244, 0.82); backdrop-filter: blur(3px); }
+.modal { border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 30px 60px -30px rgba(25, 25, 25, 0.25); }
+
+/* ---------- Lab ---------- */
+.lab-frame { border-radius: 10px; }
+
+
+/* Labels: style.css's tracked capitals were switched to sentence case at
+   the source (text-transform: none), so nothing is needed here. */
+
+/* ---------- Quieter sidebar: one solid action, the rest outlined ---------- */
+.orcid-btn, .btn-donate, #sidebar .btn-primary {
+  background: transparent; color: var(--ink); border-color: var(--hair-strong);
+}
+.orcid-btn:hover, .btn-donate:hover { background: #efefec; border-color: var(--ink); }
+.sidebar .card, .sidebar [class*="card"] { background: transparent; border-color: var(--hair); }
+
+/* ---------- Segmented choices (sub-tabs) as pills ---------- */
+.subtab-btn {
+  border-radius: 999px; background: transparent; border-color: var(--hair-strong);
+  font-weight: 500; color: var(--graphite); padding: 6px 14px;
+}
+.subtab-btn:hover { color: var(--ink); border-color: var(--ink); }
+.subtab-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* KPI tiles: numbers carry the weight, the label sits under it quietly */
+.stat-card, .kpi, [class*="stat-box"] { border-radius: var(--radius); }
+
+/* ---------- Small screens ---------- */
+@media (max-width: 760px) {
+  .main { padding: 64px 16px 60px; }
+  h1 { font-size: 1.7rem; }
+  .nav-tabs { gap: 2px 20px; }
+  .card { padding: 20px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}

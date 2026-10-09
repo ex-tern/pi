@@ -7051,6 +7051,7 @@ if os.path.isdir(_FRONTEND_DIR):
     import mimetypes
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("application/wasm", ".wasm")
+    mimetypes.add_type("font/woff2", ".woff2")   # the self-hosted Geist typeface
 
     # Mounted after the routes above so "/" resolves to the stamped index
     # rather than to the raw file on disk.
