@@ -32,6 +32,8 @@ html.orbit-on .gh-fab { display: none !important; }
 .om-sweep { transform-origin: 200px 200px; animation: wi-turn 16s linear infinite; }
 html.orbit-busy .om-sweep { animation-duration: 2.2s; }
 html.orbit-still .om-sweep { animation-play-state: paused; }   /* double-click on the mark */
+html.orbit-js-spin .om-sweep { animation: none; }               /* turned by orbit.js at the site's pace */
+html[data-activity="working"] .orbit-core, html[data-activity="busy"] .orbit-core { filter: drop-shadow(0 0 14px rgba(47, 64, 232, 0.28)); }
 html.orbit-busy .orbit-core { filter: drop-shadow(0 0 18px rgba(47, 64, 232, 0.35)); }
 @keyframes wi-turn { to { transform: rotate(-360deg); } }
 

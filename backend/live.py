@@ -1,5 +1,7 @@
 """live.py -- the Live side panel: what the site is doing right now.
 
+    anyone  GET /api/activity  -> {level: quiet|working|busy, in_flight, idle_working}
+            (drives the π mark's speed and the π counter, orbit.js)
     anyone  GET /api/live
             {idle, today, total, latest: [...]}
 
@@ -27,8 +29,16 @@ from recent import _first_field
 IDLE_USER = "ScholarPi (idle)"
 
 
-def build_router(get_conn: Callable, idle_status: Callable) -> APIRouter:
+def build_router(get_conn: Callable, idle_status: Callable, activity: Callable = None) -> APIRouter:
     router = APIRouter(prefix="/api", tags=["live"])
+
+    @router.get("/activity")
+    def current_activity():
+        """Cheap: no database. What the server is processing right now."""
+        try:
+            return activity() if activity else {"level": "quiet", "in_flight": 0, "idle_working": False}
+        except Exception:                                   # noqa: BLE001
+            return {"level": "quiet", "in_flight": 0, "idle_working": False}
 
     @router.get("/live")
     def live():

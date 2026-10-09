@@ -38,3 +38,19 @@ def test_feed(client):
     assert user == {"auto": False, "field": "Medicine", "score": 40.0, "date": user["date"], "signed_in": True}
     assert "title" not in user and "eval_hash" not in user
     assert anon["signed_in"] is False
+
+
+def test_activity_levels():
+    import idle_worker as iw
+    from fastapi import FastAPI
+    from fastapi.testclient import TestClient
+    app = FastAPI()
+    app.include_router(live.build_router(lambda: None, lambda: {}, iw.activity))
+    c = TestClient(app)
+    iw._INFLIGHT["n"] = 0; iw._STATE["running"] = False
+    assert c.get("/api/activity").json()["level"] == "quiet"
+    iw._STATE["running"] = True
+    assert c.get("/api/activity").json() == {"in_flight": 0, "idle_working": True, "level": "working"}
+    iw._INFLIGHT["n"] = 2
+    assert c.get("/api/activity").json()["level"] == "busy"
+    iw._INFLIGHT["n"] = 0; iw._STATE["running"] = False
