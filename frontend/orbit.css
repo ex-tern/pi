@@ -64,14 +64,6 @@ html.orbit-moving .orbit-pi { transition: none; }
   background: linear-gradient(135deg, transparent 0 55%, var(--graphite) 55% 62%, transparent 62% 75%, var(--graphite) 75% 82%, transparent 82%);
 }
 .orbit-pi:hover .op-grip { opacity: 1; }
-.orbit-knob {
-  position: absolute; z-index: 3; width: 14px; height: 14px; margin: -7px 0 0 -7px; border-radius: 50%;
-  background: var(--surface); border: 1.5px solid var(--cobalt); cursor: nwse-resize; pointer-events: auto; touch-action: none;
-  opacity: 0.5; transition: opacity 0.2s ease, left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1);
-}
-.orbit-knob:hover, .orbit-core:hover + .orbit-knob { opacity: 1; }
-html.orbit-moving .orbit-knob { transition: none; }
-html.orbit-open .orbit-knob { display: none; }
 .orbit-pi .op-digits { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
 .orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
 .orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
@@ -91,7 +83,7 @@ html.orbit-open .orbit-knob { display: none; }
 /* pills glide to a new place only when something moved them */
 html.orbit-ready .orbit-bubble { transition: border-color 0.15s ease, background 0.15s ease, transform 0.45s cubic-bezier(.2, .7, .2, 1); }
 html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-color 0.15s ease, background 0.15s ease !important; }
-/* what you use grows (--use, set from the use score) */
+/* size: --pz from how complex the card is, times --use from how much you use it */
 .orbit-bubble[data-tier="2"], .orbit-bubble[data-tier="3"] { font-weight: 500; }
 
 /* each pill its own look: typeface ... */

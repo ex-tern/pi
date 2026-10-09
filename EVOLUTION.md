@@ -131,3 +131,11 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 **Checks:** at 1440, 1280 and 390 px there are no overlaps after moving or resizing the π box and the logo. Pills stay still when a card opens. There is no horizontal scroll and no page errors.
 
 **Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+
+## 2026-10-09: Size follows complexity and use; no resize knob on the logo
+
+**What:**
+- A pill's size now follows how much is behind it, not chance. It is measured from the card: embedded tools (HAL-OS, QuVI), the map and other drawings, inputs, buttons, tables and the amount of text. Cards are ranked and sized 0.84× to 1.34× by rank, and the most complex value seen is remembered. Use multiplies on top, so the most complex, most used cards are the biggest. Typeface and style stay varied per pill.
+- The small resize circle on the logo is removed. The logo still resizes with the scroll wheel; double-click resets it.
+
+**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.

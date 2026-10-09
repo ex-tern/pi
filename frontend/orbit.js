@@ -124,7 +124,6 @@
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<g class="om-sweep">' + MARK_TRAIL +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g></svg></button>' +
-    '<span class="orbit-knob" role="slider" tabindex="0" aria-label="Logo size" title="Drag to resize the logo"></span>' +
     '<div class="orbit-pi" aria-live="off" title="Drag to move; drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
@@ -153,13 +152,41 @@
     for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
     return h >>> 0;
   }
-  const SIZES = [0.86, 0.94, 1, 1.08, 1.18, 1.3];
+  // Size says how much is behind a pill: the more complex the card (tools,
+  // forms, the emulator, the map, tables, sheer content) the larger it is.
+  // Measured from the card itself, remembered at its highest so a card whose
+  // content loads later does not shrink back next time.
+  function complexity(it) {
+    if (it.href) return 0;
+    let c = 0;
+    for (const n of it.nodes) {
+      if (!n.querySelectorAll) continue;
+      c += n.querySelectorAll("iframe").length * 14;
+      c += n.querySelectorAll("canvas, svg.arcade, #arcadeStage").length * 9;
+      c += n.querySelectorAll("input:not([type=hidden]), select, textarea").length * 2;
+      c += n.querySelectorAll("button").length * 0.8;
+      c += n.querySelectorAll("table, .leaderboard, ul, ol").length * 1.5;
+      c += (n.textContent || "").replace(/\s+/g, " ").length / 600;
+    }
+    if (it.nodes.some(n => n.id === "labHal" || n.id === "labQuvi")) c += 12;
+    const best = Math.max(c, load("orbit:cx:" + it.key) || 0);
+    store("orbit:cx:" + it.key, Math.round(best * 10) / 10);
+    return best;
+  }
+  function setSizes() {
+    // rank the cards by complexity; the size follows the rank, so the spread
+    // is always the same however the numbers fall
+    const ranked = items.map(it => [it, complexity(it)]).sort((a, b) => a[1] - b[1]);
+    ranked.forEach(([it], i) => {
+      const q = ranked.length > 1 ? i / (ranked.length - 1) : 0.5;
+      it.bubble.style.setProperty("--pz", (0.84 + q * 0.5).toFixed(3));
+    });
+  }
   const FONTS = ["sans", "sans", "mono", "serif", "sans-light", "serif-italic"];
   const STYLES = ["outline", "ink", "soft", "dashed", "cobalt", "square", "underline", "outline"];
   function setLook(it) {
     const h = hash(it.key);
     const b = it.bubble;
-    b.style.setProperty("--pz", SIZES[h % SIZES.length]);
     b.dataset.font = FONTS[(h >>> 4) % FONTS.length];
     b.dataset.look = STYLES[(h >>> 9) % STYLES.length];
   }
@@ -248,9 +275,6 @@
     core.style.width = core.style.height = r * 2 + "px";
     core.style.left = lx - r + "px";
     core.style.top = top + ly - r + "px";
-    const k = $(".orbit-knob");
-    k.style.left = lx + r * 0.7071 + "px";
-    k.style.top = top + ly + r * 0.7071 + "px";
     const pi = $(".orbit-pi");
     pi.style.setProperty("--pi-scale", piScale);
     const [px, py] = piCentre();
@@ -453,7 +477,6 @@
     // double-click: back to the middle, at the usual size
     core.addEventListener("dblclick", () => { logoAt = null; logoScale = 1; store("orbit:logo"); store("orbit:logo:scale"); layout(); });
     const setLogo = v => { logoScale = v; };
-    resizer($(".orbit-knob"), () => [lx, ly], () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
   }
 
@@ -686,6 +709,7 @@
     stage.center = center;
     document.documentElement.classList.add("orbit-on");
     makeBubbles();
+    setSizes();
     wireLogo();
     wirePi();
     // Esc closes the window on top, wherever the keyboard focus happens to be
