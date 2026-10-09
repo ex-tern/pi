@@ -7709,6 +7709,10 @@ async function loadStoragePanel() {
     ${pct != null ? row("Volume used", `${pct}%`) : ""}
     ${row("Database", d.database.human)}
     ${row("Manuscripts", `${d.manuscripts.human} · ${d.manuscripts.files} files`)}
+    ${d.manuscript_cap && d.manuscript_cap.percent_used != null
+      ? row("Manuscript cap", `${d.manuscript_cap.percent_used}% of ${d.manuscript_cap.human}`) : ""}
+    ${d.manuscript_cap && d.manuscript_cap.warning
+      ? `<p class="hint ri-note-warn" style="margin:6px 0">${escapeHtml(d.manuscript_cap.warning)}</p>` : ""}
     ${row("Logs", d.logs.human)}
     ${row("Orphaned files", `${d.orphans.count} · ${d.orphans.human}`)}
     <p class="hint" style="margin:6px 0">${escapeHtml(d.note || "")}</p>

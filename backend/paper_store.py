@@ -26,7 +26,7 @@ that right; the platform cannot verify it and does not claim to.
 import os
 import hashlib
 import logging
-from typing import Optional
+from typing import Callable, Iterable, Optional
 
 from config import BASE_DIR
 
@@ -37,6 +37,86 @@ os.makedirs(PAPER_STORE_DIR, exist_ok=True)
 # is refused above this size upstream, so anything larger here is a bug or an
 # abuse attempt rather than a large paper.
 MAX_STORED_BYTES = 40 * 1024 * 1024
+
+
+def _env_bytes(name: str, default: int) -> int:
+    try:
+        return max(0, int(os.environ.get(name, default)))
+    except (TypeError, ValueError):
+        return default
+
+
+# Total budget for the whole store. Without one, retained manuscripts grew until
+# they filled the production volume — and a full volume stops the database too.
+# Override with PAPER_STORE_MAX_TOTAL_BYTES; 0 disables the cap.
+MAX_TOTAL_BYTES = _env_bytes("PAPER_STORE_MAX_TOTAL_BYTES", 2 * 1024 * 1024 * 1024)
+
+# The API registers a callable returning the hashes that still have an
+# assessment. Eviction removes orphans first, and only then the oldest files.
+_known_hashes: Optional[Callable[[], Iterable[str]]] = None
+
+
+def set_known_hashes_provider(fn: Optional[Callable[[], Iterable[str]]]) -> None:
+    global _known_hashes
+    _known_hashes = fn
+
+
+def _stored_files():
+    """(name, size, mtime) for every stored PDF."""
+    out = []
+    try:
+        names = os.listdir(PAPER_STORE_DIR)
+    except OSError:
+        return out
+    for name in names:
+        if not name.endswith(".pdf"):
+            continue
+        try:
+            st = os.stat(os.path.join(PAPER_STORE_DIR, name))
+        except OSError:
+            continue
+        out.append((name, st.st_size, st.st_mtime))
+    return out
+
+
+def total_bytes() -> int:
+    return sum(size for _, size, _ in _stored_files())
+
+
+def _make_room(incoming: int) -> int:
+    """Evict until `incoming` more bytes fit under MAX_TOTAL_BYTES.
+
+    Orphans (no assessment) go first, then the oldest files. Returns the number
+    of files removed.
+    """
+    if not MAX_TOTAL_BYTES:
+        return 0
+    files = _stored_files()
+    used = sum(size for _, size, _ in files)
+    if used + incoming <= MAX_TOTAL_BYTES:
+        return 0
+    known = set()
+    if _known_hashes:
+        try:
+            known = set(_known_hashes())
+        except Exception as e:                                   # noqa: BLE001
+            logging.warning("Could not list known assessments for eviction: %s", e)
+    files.sort(key=lambda f: (f[0][:-4] in known, f[2], f[0]))
+    removed = 0
+    for name, size, _ in files:
+        if used + incoming <= MAX_TOTAL_BYTES:
+            break
+        try:
+            os.remove(os.path.join(PAPER_STORE_DIR, name))
+        except OSError as e:
+            logging.warning("Could not evict stored manuscript %s: %s", name, e)
+            continue
+        used -= size
+        removed += 1
+        logging.warning("Paper store over its %d-byte cap: evicted %s (%s)",
+                        MAX_TOTAL_BYTES, name[:12],
+                        "assessed" if name[:-4] in known else "orphan")
+    return removed
 
 
 def _path_for(eval_hash: str) -> Optional[str]:
@@ -67,6 +147,9 @@ def store_paper(raw: bytes) -> str:
         return ""
     if os.path.exists(path):
         return digest              # identical upload; one copy is enough
+    if MAX_TOTAL_BYTES and len(raw) > MAX_TOTAL_BYTES:
+        return ""
+    _make_room(len(raw))
     try:
         # Written to a temporary name and moved into place, so a crash midway
         # cannot leave a truncated PDF that looks like a complete one.

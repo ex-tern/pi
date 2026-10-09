@@ -36,3 +36,18 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - With reduced motion, the π strokes show fully without animating.
 
 **Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+
+## 2026-10-09: Total cap on stored manuscripts
+
+**What:** `backend/paper_store.py` now has a total budget for retained manuscripts, `PAPER_STORE_MAX_TOTAL_BYTES` (default 2 GB, `0` turns it off). When a new upload would go over it, the store evicts orphaned files first (those with no assessment left), then the oldest stored manuscripts. A single file larger than the whole cap is not stored. The owner Storage panel shows how much of the cap is used and a warning from 80%. That warning says eviction removes the file link from published papers.
+
+**Why:** the store had no total limit and filled the production disk. A full volume stops the database as well, not only uploads.
+
+**Verified:**
+- New `tests/test_paper_store.py` (6 tests) covers under the cap, oldest first, orphans first, an oversized file, a failing provider and a disabled cap.
+- pytest is at baseline (12 pre-existing failures, 370 passed).
+- `build_hal.py` builds.
+- `/api/admin/storage` returns `manuscript_cap`.
+- Headless Chromium, every tab at 1440 and 390 px, signed out and as a mocked owner: no page errors and no horizontal scroll. The Storage panel was screenshotted with the warning showing.
+
+**Files:** `backend/paper_store.py`, `backend/api.py`, `backend/tests/test_paper_store.py`, `frontend/app.js`, `EVOLUTION.md`.
