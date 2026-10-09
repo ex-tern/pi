@@ -6,8 +6,6 @@
 //
 //   e    Σ 1/k!
 //   φ    (1 + √5) / 2           √ by Newton's method on integers
-//   √2, √3
-//   ln 2 2·atanh(1/3)
 //   γ    Brent–McMillan: γ ≈ Σaₖ/Σbₖ, b₀ = 1, a₀ = −ln n,
 //        bₖ = bₖ₋₁·n²/k², aₖ = (aₖ₋₁·n²/k + bₖ)/k, with n ≈ D·ln10/4
 const GUARD = 24;
@@ -63,9 +61,6 @@ function show(v, P, D) {
 const JOBS = [
   ["e", D => { const P = D + GUARD, S = 10n ** BigInt(P); return show(e(S), P, D); }],
   ["phi", D => { const P = D + GUARD, S = 10n ** BigInt(P); return show((S + isqrt(5n * S * S)) / 2n, P, D); }],
-  ["sqrt2", D => { const P = D + GUARD, S = 10n ** BigInt(P); return show(isqrt(2n * S * S), P, D); }],
-  ["sqrt3", D => { const P = D + GUARD, S = 10n ** BigInt(P); return show(isqrt(3n * S * S), P, D); }],
-  ["ln2", D => { const P = D + GUARD, S = 10n ** BigInt(P); return show(ln2(S), P, D); }],
   ["gamma", D => { const P = D + GUARD + 10, S = 10n ** BigInt(P); return show(gamma(S, D + 10), P, D); }, 10000],
 ];
 const STEPS = [100, 300, 1000, 3000, 10000, 30000];
