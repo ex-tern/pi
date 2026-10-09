@@ -1106,7 +1106,7 @@
   // person, or by the site itself while idle), fastest with several at once.
   // The server's own count comes from /api/activity every few seconds; a
   // request this page is waiting on counts too (orbit-busy).
-  const ACT = { quiet: { pace: 400, spin: 18 }, working: { pace: 90, spin: 60 }, busy: { pace: 40, spin: 165 } };
+  const ACT = { quiet: { pace: 1000, spin: 18 }, working: { pace: 400, spin: 60 }, busy: { pace: 200, spin: 165 } };
   const ACT_WORDS = { quiet: ", the site is quiet", working: ", assessing a paper", busy: ", assessing several papers" };
   let serverAct = { level: "quiet" }, actLevel = "quiet";
   function applyActivity() {

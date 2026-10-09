@@ -825,3 +825,9 @@ The mark also gets a soft cobalt glow while working.
   - no page errors or horizontal scroll
 - `tests/test_live.py` checks the activity levels.
 - pytest at baseline (12 pre-existing failures); `build_hal.py` builds.
+
+## 2026-10-09: slower π
+
+**What:** the owner found π grew too fast. Digits now come at 1 a second while quiet (was 2.5), 2.5 a second while a paper is assessed (was 11) and 5 a second with several (was 25). The sweep speeds are unchanged.
+
+**Verified:** the measured rates over 4 s at each level were 1.0, 2.5 and 5.0 digits/s at 1440 and 390 px, with no page errors or horizontal scroll; pytest at baseline; `build_hal.py` builds.
