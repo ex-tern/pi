@@ -1,0 +1,44 @@
+/* The Live panel (live.js), fixed to the right-hand side */
+.live-dock {
+  position: fixed; right: 0; top: var(--orbit-top, 0px); bottom: 0; z-index: 960;   /* above the mark (950), under dialogs (1000) */
+  display: flex; align-items: flex-start; pointer-events: none;
+}
+.live-tab {
+  pointer-events: auto; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0; height: auto;
+  padding: 12px 7px; border-radius: 12px 0 0 12px; border: 1px solid var(--hair-strong); border-right: 0;
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer;
+  filter: drop-shadow(0 6px 14px rgba(25, 25, 25, 0.10));
+}
+.live-tab:hover { color: var(--cobalt); }
+.live-tab-text { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.04em; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); flex: none; }
+.live-dock.working .live-dot { background: var(--cobalt); animation: live-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
+
+.live-body {
+  display: none; pointer-events: auto; width: 300px; max-width: 88vw; height: 100%; overflow-y: auto; box-sizing: border-box;
+  padding: 16px 16px 24px; background: var(--paper); border-left: 1px solid var(--hair-strong);
+}
+.live-dock.open .live-body { display: block; }
+.live-dock.open .live-tab { right: 300px; }
+.live-dock:not(.docked).open .live-body { filter: drop-shadow(-12px 0 24px rgba(25, 25, 25, 0.12)); }
+@media (max-width: 380px) { .live-dock.open .live-tab { right: 88vw; } }
+.live-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.live-head b { font-weight: 500; }
+.live-updated { margin-left: auto; font-size: 11px; color: var(--faint); }
+.live-status { font-size: 13px; line-height: 1.45; color: var(--graphite); margin: 10px 0 4px; }
+.live-status b { color: var(--ink); font-weight: 500; }
+.live-counts { font-size: 12px; color: var(--graphite); margin: 0 0 14px; font-variant-numeric: tabular-nums; }
+.live-dock h4 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
+.live-list { list-style: none; margin: 0; padding: 0; }
+.live-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+.live-list li b { font-weight: 500; }
+.live-list li span { font-size: 11.5px; color: var(--graphite); }
+.live-list li em { font-style: normal; color: var(--cobalt); }
+.live-list li button {
+  all: unset; cursor: pointer; font-size: 13px; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere;
+}
+.live-list li button:hover { color: var(--cobalt); }
+.live-list li.none { color: var(--graphite); }
+.live-dock.ping .live-head .live-dot { animation: live-pulse 0.5s ease-in-out 3; }
