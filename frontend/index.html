@@ -217,6 +217,9 @@
       <button class="tab-btn active" data-tab="assess">Evaluate</button>
       <button class="tab-btn" data-tab="journal">Explore</button>
       <button class="tab-btn" data-tab="analytics">Envision</button>
+      <!-- The Lab: other projects hosted inside ScholarPi. Public ones (HAL-OS)
+           for everyone; private ones only for the signed-in owner. -->
+      <button class="tab-btn" data-tab="lab">Lab</button>
       <!-- Architecture is NOT here. It moved out of the row and down to the
            floating buttons beside the GitHub link: it is reference material
            read once, and it was taking a quarter of the primary navigation
@@ -921,6 +924,59 @@
         <p class="footer-note">Framework Author: Ali Vafadar Yengejeh · Università degli Studi di Milano-Bicocca</p>
       </div>
     </section>
+
+    <!-- TAB: LAB -->
+    <section id="tab-lab" class="tab-panel">
+      <div class="page-header">
+        <h1>Lab</h1>
+      </div>
+      <p class="hint lab-intro">Other projects, running inside ScholarPi. Each one keeps its own repository; the site
+      builds and hosts it.</p>
+
+      <div class="card lab-card" id="labHal">
+        <div class="lab-head">
+          <div>
+            <h2>HAL-OS <span class="pill pill-muted">live in your browser</span></h2>
+            <p class="hint">A bare-metal ternary network that boots into the framebuffer: 32,000 neurons, no OS, no
+            compiler, no font. The real boot image runs on an x86 emulator in this page — feed it images, a camera,
+            your screen or any file, and watch it learn to reproduce them. Nothing you inject leaves your browser.</p>
+          </div>
+          <div class="lab-actions">
+            <a class="btn btn-outline" href="hal/" target="_blank" rel="noopener">Open full screen</a>
+            <a class="btn btn-ghost" href="https://github.com/neurophilic/HAL-OS" target="_blank" rel="noopener">Source</a>
+          </div>
+        </div>
+        <div class="lab-frame">
+          <!-- src is set when the tab is first opened, so visitors who never
+               open the Lab never download or boot an emulator. -->
+          <iframe id="halFrame" title="HAL-OS" data-src="hal/" loading="lazy"
+                  allow="camera; display-capture"></iframe>
+        </div>
+      </div>
+
+      <!-- Owner only. The list and every file come from owner-authorised
+           endpoints (backend/lab.py); for anyone else this card stays hidden
+           and the server refuses the requests anyway. -->
+      <div class="card lab-card hidden" id="labPrivate">
+        <div class="lab-head">
+          <div>
+            <h2>Private projects <span class="pill pill-muted">owner only</span></h2>
+            <p class="hint">Visible only to the signed-in owner wallet. Stored on the server's data volume, never in the
+            public repository.</p>
+          </div>
+        </div>
+        <div id="labPrivateBody"><p class="hint">Loading…</p></div>
+        <details class="lab-upload">
+          <summary>Add or replace files</summary>
+          <div class="lab-upload-row">
+            <label>Project <input type="text" id="labProject" value="graduation-plan" pattern="[a-z0-9][a-z0-9-]*" spellcheck="false"></label>
+            <input type="file" id="labFiles" multiple accept=".html,.htm,.md,.txt,.csv,.json,.pdf,.png,.jpg,.jpeg">
+            <button class="btn btn-primary" id="labUpload">Upload</button>
+          </div>
+          <p class="hint" id="labUploadMsg">HTML, Markdown, text, CSV, JSON, PDF and images, up to 10 MB each.</p>
+        </details>
+      </div>
+    </section>
   </main>
 </div>
 
@@ -966,6 +1022,7 @@
 </div>
 
 <script src="app.js?v=89"></script>
+<script src="lab.js?v=1"></script>
 <script src="arcade.js?v=89"></script>
 </body>
 </html>

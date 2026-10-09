@@ -18,6 +18,24 @@ RUN pip install --no-cache-dir -r backend/requirements.txt
 
 COPY backend/ ./backend/
 COPY frontend/ ./frontend/
+COPY scripts/ ./scripts/
+
+# The Lab: HAL-OS stays its own repository. Its boot image is built here from
+# a pinned commit of that repository, exactly as `python bitllm_kernel.py`
+# builds it on a desktop, and served to the browser, which boots it with v86.
+# build_hal.py also refuses to build if frontend/hal/wire.js and HAL-OS's
+# inject.py/bitllm_kernel.py disagree on the wire protocol.
+#
+# To ship a newer HAL-OS, change HAL_OS_REF (or pass --build-arg). A failed
+# fetch fails the build loudly rather than deploying a Lab with no machine.
+ARG HAL_OS_OWNER_REPO=neurophilic/HAL-OS
+ARG HAL_OS_REF=7f2e094df20a3bf523a085445a2bc53ee76a703a
+RUN mkdir -p /tmp/hal-os \
+    && curl -fsSL "https://codeload.github.com/${HAL_OS_OWNER_REPO}/tar.gz/${HAL_OS_REF}" \
+       | tar xz -C /tmp/hal-os --strip-components=1 \
+    && python scripts/build_hal.py --src /tmp/hal-os --ref "${HAL_OS_REF}" \
+         --repo "https://github.com/${HAL_OS_OWNER_REPO}" \
+    && rm -rf /tmp/hal-os
 
 # Persistent data (SQLite DB + PyTorch weights + logs) lives here, outside
 # the image layer — mount a volume at /data in production.

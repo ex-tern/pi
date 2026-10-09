@@ -22,3 +22,7 @@ logs/
 .DS_Store
 .vscode/
 .idea/
+
+# Lab: built at deploy time from the HAL-OS repo by scripts/build_hal.py
+frontend/hal/bitllm.img
+frontend/hal/build.json
