@@ -36,6 +36,8 @@ from typing import Callable, List
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from api_helpers import client_ip
+
 MAX_ANSWERS_PER_REQUEST = 50
 
 
@@ -94,9 +96,8 @@ def build_router(base_dir: str, require_owner: Callable) -> APIRouter:
                       "ORDER BY id DESC LIMIT 1", (request_id,)).fetchone()
         return dict(a) if a else None
 
-    def client_ip(request: Request) -> str:
-        fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
-        return fwd or (request.client.host if request.client else "")
+    def ip_of(request: Request) -> str:
+        return client_ip(request, "")
 
     # ---------------------------------------------------------------- owner
     @router.post("")
@@ -169,7 +170,7 @@ def build_router(base_dir: str, require_owner: Callable) -> APIRouter:
                 "INSERT INTO answers (request_id, decision, name, note, answered_at, seen_title, "
                 "seen_terms, ip, user_agent) VALUES (?,?,?,?,?,?,?,?,?)",
                 (row["id"], body.decision, body.name.strip(), body.note.strip(), when,
-                 row["title"], row["terms"], client_ip(request)[:64],
+                 row["title"], row["terms"], ip_of(request)[:64],
                  (request.headers.get("user-agent") or "")[:300]))
         # A short receipt the recipient can keep: hash of what they agreed to.
         receipt = hashlib.sha256(

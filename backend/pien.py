@@ -28,6 +28,7 @@ from typing import List, Tuple
 
 from fastapi import APIRouter, HTTPException, Request
 from pydantic import BaseModel, Field
+from api_helpers import client_ip
 
 CARD = re.compile(r"^[a-z]{2,12}:[^\n\r\t]{1,100}$")
 MAX_ENTRIES = 40
@@ -42,10 +43,7 @@ class Learn(BaseModel):
 
 
 def _client_ip(request: Request) -> str:
-    fwd = request.headers.get("x-forwarded-for", "")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "?"
+    return client_ip(request, "?")
 
 
 def build_router(base_dir: str) -> APIRouter:

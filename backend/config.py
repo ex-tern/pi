@@ -84,7 +84,6 @@ GROQ_SMALL_MODEL = os.getenv("GROQ_SMALL_MODEL", "openai/gpt-oss-20b")
 GEMINI_PRIMARY_MODEL = os.getenv("GEMINI_PRIMARY_MODEL", "gemini-2.5-flash")
 FALLBACK_MODEL = os.getenv("FALLBACK_MODEL", "llama-3.1-8b-instant")
 MAX_TEXT_TOKENS = 15000
-EPOCH_BLOCK_SIZE = 5
 
 def _clean_address(raw: str, label: str) -> str:
     """Accept a single well-formed address, or nothing.

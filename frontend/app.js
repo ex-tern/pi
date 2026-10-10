@@ -3270,18 +3270,6 @@ function markLocalLlmReviewed(hash) {
   persistResults();
 }
 
-/** Offer a direct way into the review that was just written. */
-function showReviewButton(hash, msg) {
-  if (!msg) return;
-  const b = document.createElement("button");
-  b.className = "btn btn-quiet";
-  b.style.marginTop = "10px";
-  b.textContent = "Read the review";
-  b.addEventListener("click", () => showLlmReviewModal(hash));
-  msg.appendChild(document.createElement("br"));
-  msg.appendChild(b);
-}
-
 /** Every machine review written for a paper, newest first.
  *
  *  This is what the LLM-reviewed badge opens. A badge that asserts something
@@ -4530,29 +4518,6 @@ function renderIntegrityPanel(item) {
     </div>`;
   }
   return html;
-}
-
-/** A dossier section. Reference material is collapsed; findings are not.
- *
- *  The dossier was nine full-width sections stacked vertically — warnings,
- *  diagnostics, criteria, evidence, provenance, classification, signals,
- *  ledger, export — every one expanded, so reading it meant scrolling past
- *  several screens of reference tables to reach the next finding. The
- *  distinction that matters is between what the assessment CONCLUDED and the
- *  material it concluded it from: the first belongs on screen, the second
- *  belongs one click away.
- *
- *  It also collapses the repeated `<h3>…</h3><table class="data-table">`
- *  markup that every section was rebuilding by hand.
- */
-function dossierSection(title, body, { open = true, help = "" } = {}) {
-  const h = help
-    ? `<button class="help-btn" data-help="${escapeHtml(help)}" aria-label="About ${escapeHtml(title)}">?</button>`
-    : "";
-  return `<details class="dossier-sec"${open ? " open" : ""}>
-    <summary>${escapeHtml(title)}${h}</summary>
-    <div class="dossier-sec-body">${body}</div>
-  </details>`;
 }
 
 function renderDossierModal(item, idx) {

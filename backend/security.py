@@ -41,7 +41,7 @@ import hmac
 import hashlib
 import logging
 import secrets
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, Optional
 
 try:
     import fitz

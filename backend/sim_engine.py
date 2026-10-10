@@ -57,7 +57,7 @@ cannot be explained or rolled back has no business scoring research.
 import json
 import logging
 import threading
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 # The four measured signals, in a fixed order. Order matters because it is the
 # serialisation order of the stored weight vector.

@@ -29,7 +29,7 @@ import time
 import logging
 import threading
 import concurrent.futures
-from typing import Any, Callable, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import requests
 from requests.adapters import HTTPAdapter

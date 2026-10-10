@@ -36,7 +36,7 @@ happens next. A difficulty curve nobody can inspect is indistinguishable from
 an arbitrary one.
 """
 import math
-from typing import Dict, Optional
+from typing import Dict
 
 # --- Halving ---------------------------------------------------------------
 # Corpus size at which emission halves.
@@ -547,27 +547,6 @@ def compute_curation_reward(pix_score: float, logic_integrity: float,
         ),
     }
 
-
-def curation_manifest() -> Dict:
-    """Published policy, so a curator can compute their own reward."""
-    return {
-        "share_of_author_emission": CURATION_SHARE,
-        "halflife_submissions": CURATION_HALFLIFE,
-        "lifetime_cap": None,
-        "lifetime_total_multiple": round(1 / (1 - 0.5 ** (1 / CURATION_HALFLIFE)), 3),
-        "requires_identity": True,
-        "on_chain": False,
-        "schedule": [
-            {"submissions": n, "multiplier": curation_decay(n)}
-            for n in (0, 1, 2, 5, 10, 20, 50)
-        ],
-        "note": (
-            "Curation piQ is credited to your spendable balance and is not minted on-chain. "
-            "On-chain piQ records authored work only, which is what makes it meaningful as a "
-            "contribution record. Curation rewards let you keep using the service; they do not "
-            "claim you wrote the paper."
-        ),
-    }
 
 
 # ---------------------------------------------------------------------------

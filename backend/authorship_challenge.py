@@ -31,7 +31,7 @@ import logging
 import re
 import secrets
 from datetime import datetime, timedelta, timezone
-from typing import Dict, List, Optional
+from typing import Dict, List
 
 # Codes are short because they are typed by hand, and short is safe here only
 # because attempts are capped and the window is narrow.

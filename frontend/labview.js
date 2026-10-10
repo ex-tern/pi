@@ -1,57 +1,35 @@
 // labview.js — a Functions palette and block diagram, like LabVIEW's.
 //
-// The palette (bottom-left) holds + − × ÷, Play, Stop, Show and Scissors. Press one to
-// run it once on the two newest digits of π. Drag one out and it becomes a
-// node on the page; drop it onto any number on the page, a button, bubble,
-// window, the π mark, the π counter or another node and it is wired to it:
-// that thing becomes one of its inputs, and the node computes live.
+// Press a palette button to run it once on the two newest digits of π. Drag
+// one out and it becomes a node; drop it on something and that thing becomes
+// one of its inputs, and the node computes live. Inputs can be:
 //
-//   a number anywhere on the page   its value ("3"; "1,549" is read as 1549)
-//   a pill, bubble or window   number: how often you have opened it
-//   the π mark (the main loop) number: the newest digit of π
-//                              (in the superellipse look, drop on the loop's edge)
-//   the π counter              number: decimals computed so far
-//   another node               its output
+//   a number anywhere on the page   its value ("1,549" reads as 1549)
+//   a pill, bubble or window        its name (and how often it was opened)
+//   the π mark (main loop)          the newest digit of π (drop on the loop's edge)
+//   the π counter                   decimals computed so far
+//   another node                    its output
+//   a Connect-mode wire (superlink.js) ending on the node
 //
-// Wires drawn in Connect mode (superlink.js) count too: wire a number, word or
-// node to a node and it becomes one of that node's inputs.
+// The nodes:
+//   + − × ÷   over all inputs; + joins words ("Connect" + "Contact us")
+//   Run ▶     runs what is wired in: engines and "?" ask again, Show refreshes,
+//             a button opens its window, the π mark starts π; unwired, starts π
+//   Stop ■    stops π; holds what is wired in while the wire is there: engines
+//             stop thinking (the request is aborted), Show freezes, π stops
+//   Show      an empty box that shows the value wired into it
+//   Super Neural Engine ◆   a superellipse diamond (n = 1.3); what is wired in
+//             becomes its prompt, every engine answers (/api/super/ask: siM,
+//             riB, piD, PiEn); opens a window its words name; grows toward
+//             n = π while it thinks; asks again when its wiring changes
+//   ?         asks the panel of AI jurors that judges manuscripts, with a wired
+//             engine's question and answer, and the judge weighs them
+//             (/api/super/panel); follows the engine's new answers
+//   Trash     drop a node on it or it on a node; press twice to clear all
+//   Scissors  captures pixels from the screen into a Clip node (click saves PNG)
 //
-// + adds every input (and joins words: "Connect" + "Contact" shows
-// "Connect Contact"; a button, bubble or window counts as its name), × multiplies them, − and ÷ take the first and subtract
-// or divide by the rest. Show is an empty box: wire anything into it and it
-// shows that value inside itself. Run (▶) runs what is wired into it: engines
-// and "?" ask again, a Show refreshes, a button opens its window, the π mark
-// starts π; unwired, it starts
-// π. Stop stops it (the same as
-// double-clicking the π mark); everything wired to π follows. Stop also holds
-// whatever is wired into it, for as long as the wire is there: a Super Neural
-// Engine or "?" stops thinking (a question on its way is cancelled), a Show
-// freezes, and the π mark, counter or loop stops π. Unwire it to let go.
-// The Super Neural Engine is a solid diamond (a superellipse at n = 1.3). It is
-// prompted by wiring: whatever reaches it (words, numbers, buttons, windows,
-// other nodes) is joined into a prompt and sent to /api/super/ask, where every
-// engine in the project answers (siM, riB, piD, PiEn; see backend/super_engine.py).
-// If the prompt's words name a window ("assess manuscripts"), it opens it too.
-// "?" asks the panel: wire the Super Neural Engine into it and the same AIs that
-// judge manuscripts (Llama, Mistral, Qwen, Gemini, DeepSeek) answer its question
-// independently, with the engines' answer as context; the judge weighs them and
-// says how far they agree (/api/super/panel). It asks again when its wiring
-// changes or the engine gives a new answer, or when pressed.
-// Wire a Show to it to read the answer. It asks again whenever its wiring
-// changes, or when you press it; while it thinks the diamond grows toward a
-// full superellipse (n climbing from 1.3 to π), fully grown once answered.
-// Trash deletes: drop a node on it, drop it on a node, or press it twice to
-// clear the whole diagram.
-// Scissors captures pixels from the screen: press it, choose the screen, window
-// or tab to share, drag a box over what you want, and the cut-out lands on the
-// page as a Clip node (its value is its size, "120×80"). Click a clip to save
-// it as a PNG, drag it onto the palette to remove it.
-//   (3 on the page) ─┐
-//                    [+] ── [Show 8]
-//   (5 on the page) ─┘
-//
-// Click a wire to disconnect it. Drag a node onto the palette to remove it,
-// double-click it to unwire it. The diagram is remembered in this browser.
+// Click a wire to disconnect it, double-click a node to unwire it. The diagram
+// is remembered in this browser (localStorage "lv:nodes").
 (function () {
   "use strict";
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
@@ -105,7 +83,7 @@
   }
 
   // ---- the diagram -----------------------------------------------------
-  let nodes = [];           // { id, fn, fx, fy, inputs: [ref], st: {i, paused}, out, changed, el }
+  let nodes = [];           // { id, fn, fx, fy, inputs: [ref], st: {go, t, sn, timer, ctrl}, text, changed, el }
   let canvas, wires, out, pal, dragging = null, fold = () => {};
   const ZERO = { num: 0, bool: false, str: "" };
 
@@ -344,7 +322,7 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
     if (f.k === "panel") n.answer = spec.answer || "";
     if (f.k === "super") {
       g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
@@ -516,7 +494,7 @@
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
-    n.el.addEventListener("dblclick", () => { n.inputs = []; n.st.i = 0; if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id); persist(); tick(); say(BY[n.fn].name + " unwired"); });
+    n.el.addEventListener("dblclick", () => { n.inputs = []; if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id); persist(); tick(); say(BY[n.fn].name + " unwired"); });
     n.el.addEventListener("keydown", e => {
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(n); say(BY[n.fn].name + " node removed"); }
       else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); n.el.click(); }

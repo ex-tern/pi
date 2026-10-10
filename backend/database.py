@@ -709,11 +709,6 @@ def get_piq_rewards_total(wallet: str = "", orcid: str = "") -> float:
     return round(float(row[0] or 0.0), 4)
 
 
-def get_piq_fees_paid(wallet: str = "", orcid: str = "") -> float:
-    """Net piQ this identity has actually spent on fees, after refunds."""
-    net = get_piq_ledger_net(wallet, orcid)
-    return round(max(0.0, -net), 4)
-
 
 def get_piq_balance(wallet: str = "", orcid: str = "") -> dict:
     """Spendable balance = lifetime minted piQ plus the net ledger position.
@@ -1344,45 +1339,6 @@ def get_bonus_award_state(ip_address: str) -> dict:
     finally:
         conn.close()
 
-
-def grant_bonus_evals(ip_address: str, amount: int, cap: int) -> dict:
-    """Adds arcade winnings to this IP's allowance, never exceeding ``cap``.
-
-    Returns the granted amount (which may be less than requested, or zero) and
-    the resulting balance. The cap is applied inside the same transaction that
-    performs the update so two concurrent requests cannot both read a
-    below-cap value and each add to it.
-    """
-    if not ip_address or amount <= 0:
-        return {"granted": 0, "bonus": get_bonus_evals(ip_address)}
-    conn = get_db_connection()
-    try:
-        conn.execute("BEGIN IMMEDIATE")
-        conn.execute(
-            """INSERT INTO auto_ip_tracking (ip_address, first_seen, bonus_evals)
-               VALUES (?, CURRENT_TIMESTAMP, 0)
-               ON CONFLICT(ip_address) DO NOTHING""",
-            (ip_address,),
-        )
-        row = conn.execute(
-            "SELECT bonus_evals FROM auto_ip_tracking WHERE ip_address = ?", (ip_address,)
-        ).fetchone()
-        current = int(row[0] or 0) if row else 0
-        granted = max(0, min(amount, cap - current))
-        if granted:
-            conn.execute(
-                """UPDATE auto_ip_tracking
-                   SET bonus_evals = ?, bonus_last_award = CURRENT_TIMESTAMP
-                   WHERE ip_address = ?""",
-                (current + granted, ip_address),
-            )
-        conn.commit()
-        return {"granted": granted, "bonus": current + granted}
-    except Exception:
-        conn.rollback()
-        raise
-    finally:
-        conn.close()
 
 
 def increment_free_evals_used(ip_address: str) -> int:
@@ -2137,19 +2093,6 @@ def list_escrowed_for_identity(identities, limit: int = 100) -> list:
              "doi": r[5] or "", "timestamp": r[6]} for r in rows]
 
 
-def total_escrowed() -> float:
-    """Corpus-wide piQ earned but unclaimed. Reported in analytics."""
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            "SELECT COALESCE(SUM(piq_escrowed), 0) FROM papers_assessment "
-            "WHERE piq_claimed_at IS NULL").fetchone()
-        return round(float(row[0] or 0.0), 4)
-    except sqlite3.Error:
-        return 0.0
-    finally:
-        conn.close()
-
 
 def release_escrow(eval_hash: str, identities, wallet: str = "", orcid: str = "",
                    authorship_proven: bool = False) -> dict:
@@ -2353,11 +2296,6 @@ def set_published(eval_hash: str, identities, account_key: str, published: bool,
     finally:
         conn.close()
 
-
-def is_published(eval_hash: str) -> bool:
-    row = query_one("SELECT published_at FROM papers_assessment WHERE eval_hash = ?",
-                    (eval_hash,))
-    return bool(row and row[0])
 
 
 def publication_fee_paid(eval_hash: str, identities) -> bool:
@@ -3234,21 +3172,6 @@ def engine_observation_count(engine: str, source: str = "") -> int:
     finally:
         conn.close()
 
-
-def recent_engine_observations(engine: str, limit: int = 30) -> list:
-    conn = get_db_connection()
-    try:
-        _ensure_engine_tables(conn)
-        rows = conn.execute(
-            """SELECT target, predicted, error, baseline_error, source, created_at
-               FROM engine_observations WHERE engine = ? ORDER BY id DESC LIMIT ?""",
-            (engine, int(limit))).fetchall()
-    except sqlite3.Error:
-        return []
-    finally:
-        conn.close()
-    return [{"target": r[0], "predicted": r[1], "error": r[2],
-             "baseline_error": r[3], "source": r[4], "created_at": r[5]} for r in rows]
 
 
 # --- riB guidance feedback -------------------------------------------------

@@ -7,6 +7,13 @@ import logging
 import sqlite3
 
 
+def client_ip(request, fallback: str = "unknown") -> str:
+    """The caller's address: the first X-Forwarded-For hop behind a proxy
+    (nginx, Railway), else the direct connection, else `fallback`."""
+    fwd = (request.headers.get("x-forwarded-for") or "").split(",")[0].strip()
+    return fwd or (request.client.host if request.client else fallback)
+
+
 def corpus_size_safe() -> int:
     """Assessed-paper count, or 0 if the table is unavailable."""
     try:

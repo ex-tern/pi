@@ -35,7 +35,6 @@ starting point is not learning, it is drifting — so every model carries a
 circuit breaker that suspends it when it does worse than its defaults.
 """
 import json
-import math
 import logging
 import threading
 from typing import Dict, List, Optional, Sequence
