@@ -96,3 +96,9 @@ html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: no
 .lv-node.lv-show.is-long, html.shape-se .lv-node.lv-show.is-long { width: max-content; max-width: min(340px, calc(100vw - 24px)); height: auto; min-height: 32px; padding: 8px 12px; }
 .lv-node.lv-show.is-long .lv-glyph { display: block; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; line-height: 1.45; font-size: 11.5px; max-height: 240px; overflow: auto; text-overflow: clip; }
 .lv-node.lv-super.is-thinking .lv-star { stroke: var(--cobalt); }
+
+/* "?": ask the panel */
+.lv-fn.lv-panel { font-size: 17px; font-weight: 600; }
+.lv-node.lv-panel.is-thinking { border-color: var(--cobalt); color: var(--cobalt); animation: lv-panel-think 1.2s ease-in-out infinite; }
+@keyframes lv-panel-think { 50% { box-shadow: 0 0 0 4px rgba(47, 64, 232, 0.15); } }
+@media (prefers-reduced-motion: reduce) { .lv-node.lv-panel.is-thinking { animation: none; } }

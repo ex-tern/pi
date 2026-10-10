@@ -74,3 +74,48 @@ def test_engines_with_nothing_learned_say_so(tmp_path):
     texts = {p["engine"]: p["text"] for p in body["parts"]}
     assert "no assessed papers" in texts["riB"]
     assert "no observations yet" in texts["piD"]
+
+
+JURORS = [{"key": "llama", "label": "Llama"}, {"key": "mistral", "label": "Mistral"}, {"key": "qwen", "label": "Qwen"}]
+
+
+def test_panel_asks_every_juror_then_the_judge():
+    asked = []
+
+    def ask(j, q):
+        asked.append(j)
+        assert "QUESTION" in q
+        return {"answer": f"{j} thinks yes", "confidence": 70, "model": j + "-m"}
+
+    def judge(q):
+        assert "Llama" in q and "Qwen" in q
+        return {"verdict": "They agree: yes.", "agreement": "high", "model": "judge-m"}
+    res = super_engine.run_panel("is it so?", "", JURORS, ask, judge)
+    assert sorted(asked) == ["llama", "mistral", "qwen"]
+    assert res["answered"] == 3 and res["judge"]["agreement"] == "high"
+    text = super_engine.panel_text(res)
+    assert text.startswith("Panel: 3 of 3 answered, agreement high") and "Judge: They agree: yes." in text
+
+
+def test_panel_survives_failing_and_slow_jurors():
+    import time
+
+    def ask(j, q):
+        if j == "llama":
+            raise RuntimeError("boom")
+        if j == "mistral":
+            time.sleep(3)
+        return {"answer": "fine", "confidence": 50}
+    res = super_engine.run_panel("q", "", JURORS, ask, lambda q: {"verdict": "v", "agreement": "low"}, budget=1.0)
+    ok = {j["key"]: j["ok"] for j in res["jurors"]}
+    assert ok == {"llama": False, "mistral": False, "qwen": True}
+    assert res["answered"] == 1 and "Only one panel member" in res["judge"]["verdict"]
+
+
+def test_panel_with_nobody_reachable_says_so():
+    res = super_engine.run_panel("q", "", JURORS, lambda j, q: {"failed": "down"}, lambda q: {})
+    assert super_engine.panel_text(res) == "Panel: no model in the panel could be reached right now."
+
+
+def test_panel_endpoint_unconfigured_is_503(tmp_path):
+    assert make(tmp_path).post("/api/super/panel", json={"prompt": "hi"}).status_code == 503

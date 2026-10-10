@@ -7212,11 +7212,60 @@ def _super_answer(prompt):
     return scilem.answer(prompt)
 
 
+def _super_route_call(juror, prompt, routes):
+    """One answer from the first route of this juror's chain that responds,
+    with the same cooldowns and failure handling as manuscript assessment."""
+    from providers import (is_route_cooling, is_provider_unreachable, record_success, record_rate_limit,
+                           record_provider_unreachable, parse_retry_after, classify_provider_error)
+    from brain import request_model_assessment
+    if not routes:
+        return {"failed": "not configured on this deployment"}
+    last = "no route was reachable"
+    for route in routes:
+        if is_provider_unreachable(route["provider"])[0] or is_route_cooling(route["model"], route["provider"])[0]:
+            last = "temporarily rate-limited"
+            continue
+        _, data = request_model_assessment(juror, route["model"], route["key"], route["base"], prompt)
+        if not data.get("api_failed"):
+            record_success(route["model"], route["provider"])
+            return {**data, "model": route["model"]}
+        raw = data.get("_raw_error") or data.get("opinion", "")
+        c = classify_provider_error(raw)
+        if c["category"] == "rate_limit":
+            record_rate_limit(route["model"], route["provider"], parse_retry_after(raw))
+        elif c["category"] in ("credit", "auth"):
+            record_rate_limit(route["model"], route["provider"], 600)
+        elif c["category"] == "network":
+            record_provider_unreachable(route["provider"])
+        last = c["public"]
+        if not c["retryable"]:
+            break
+    return {"failed": last}
+
+
+def _super_ask_juror(juror, prompt):
+    from providers import build_routes
+    return _super_route_call(juror, prompt, build_routes(juror))
+
+
+def _super_judge(prompt):
+    from providers import build_routes, is_scilm_route
+    return _super_route_call("judge", prompt, [r for r in build_routes("judge") if not is_scilm_route(r)])
+
+
+def _super_jurors():
+    from brain import MODEL_REGISTRY
+    return [{"key": k, "label": v["label"].split(" (")[0]} for k, v in MODEL_REGISTRY.items() if v.get("kind") == "external"]
+
+
 app.include_router(_super.build_router(
     answer=_super_answer, rows=_super_rows, suggest=rib_suggest.suggest, hot=rib_suggest.hot_topics,
     pid_status=lambda: forecast_engine.engine_status(["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]),
     pien_db=os.path.join(BASE_DIR, "pien.db"),
-    rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="scilem")))
+    rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="scilem"),
+    jurors=_super_jurors(), ask_juror=_super_ask_juror, judge=_super_judge,
+    # each panel question calls up to six models: its own, stricter bucket
+    panel_rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="assess")))
 
 
 # ---------------------------------------------------------------------------

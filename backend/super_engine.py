@@ -5,7 +5,8 @@ whatever reaches it (words, numbers, buttons, windows, other nodes) is joined
 into a prompt and sent here. Each of the project's engines answers in its own
 terms, and the combined answer goes to a Show node.
 
-    anyone  POST /api/super/ask   {prompt}  ->  {answer, parts: [{engine, text}]}
+    anyone  POST /api/super/ask     {prompt}  ->  {answer, parts: [{engine, text}]}
+    anyone  POST /api/super/panel   {prompt, context?}  ->  {answer, jurors, judge}
 
     siM   the SciM assistant (assistant.answer): live state, the knowledge
           base, then optional cloud phrasing. Its answer leads.
@@ -15,6 +16,12 @@ terms, and the combined answer goes to a Show node.
           whether it is beating its own defaults.
     PiEn  the mark's shared model (pien.db): the card people open most for
           these words.
+
+The "?" node asks the panel: the same external jurors that judge manuscripts
+(Llama, Mistral, Qwen, Gemini, DeepSeek, each with its chain of fallback
+routes), independently and in parallel under a wall-clock budget, and then the
+judge, which reads their answers and gives a verdict with how far they agree.
+SciLM (siM) sits out, as it does in adjudication: the panel is the outside view.
 
 DESIGN NOTES
 
@@ -42,6 +49,94 @@ STOP = {"the", "and", "for", "with", "that", "this", "from", "what", "which", "a
 
 class Ask(BaseModel):
     prompt: str
+
+
+class PanelAsk(BaseModel):
+    prompt: str
+    context: str = ""
+
+
+PANEL_BUDGET = 40.0
+AGREEMENT = ("high", "moderate", "low")
+
+
+def panel_prompt(prompt: str, context: str) -> str:
+    return ("You are one member of an independent panel. Answer the question below in your own "
+            "words, plainly and specifically, in at most 120 words. If it cannot be answered from "
+            "what is given, say so.\n\n"
+            + (f"WHAT THE SITE'S OWN ENGINES SAID (for context, not to be trusted blindly):\n{context}\n\n" if context else "")
+            + f"QUESTION:\n{prompt}\n\n"
+            'Return JSON with exactly these keys: "answer": string, "confidence": integer 0-100.')
+
+
+def judge_prompt(prompt: str, answers: List[Dict]) -> str:
+    lines = "\n".join(f"- {a['label']} (confidence {a.get('confidence', '?')}): {a['answer']}" for a in answers)
+    return ("You are the judge of an independent panel. Read each member's answer to the question, "
+            "weigh them, and give the panel's verdict: what they agree on, where they differ, and "
+            "the best answer. Do not invent facts none of them gave.\n\n"
+            f"QUESTION:\n{prompt}\n\nANSWERS:\n{lines}\n\n"
+            'Return JSON with exactly these keys: "verdict": string (at most 80 words), '
+            '"agreement": one of "high", "moderate", "low".')
+
+
+def run_panel(prompt: str, context: str, jurors: List[Dict], ask_juror: Callable, judge: Callable,
+              budget: float = PANEL_BUDGET) -> Dict:
+    """Ask every juror in parallel under a wall-clock budget, then the judge.
+
+    ask_juror(juror, prompt) -> {"answer", "confidence", "model"} or {"failed": reason}
+    judge(prompt) -> {"verdict", "agreement", "model"} or {"failed": reason}
+    """
+    import concurrent.futures
+    import time
+    q = panel_prompt(prompt, context)
+    results = {j["key"]: {"key": j["key"], "label": j["label"], "ok": False, "answer": "did not answer in time"} for j in jurors}
+    ex = concurrent.futures.ThreadPoolExecutor(max_workers=max(1, min(5, len(jurors))))
+    try:
+        futs = {ex.submit(ask_juror, j["key"], q): j for j in jurors}
+        deadline = time.time() + budget
+        try:
+            for f in concurrent.futures.as_completed(futs, timeout=max(1.0, deadline - time.time())):
+                j = futs[f]
+                try:
+                    r = f.result() or {}
+                except Exception as e:                   # noqa: BLE001
+                    r = {"failed": str(e)[:80]}
+                if r.get("failed") or not str(r.get("answer") or "").strip():
+                    results[j["key"]].update(answer=str(r.get("failed") or "no answer"))
+                else:
+                    conf = r.get("confidence")
+                    results[j["key"]].update(ok=True, answer=_clip(r["answer"], 600), model=r.get("model", ""),
+                                             confidence=int(conf) if isinstance(conf, (int, float)) else None)
+        except concurrent.futures.TimeoutError:
+            pass
+    finally:
+        ex.shutdown(wait=False)   # stragglers past the budget are not waited for
+    answered = [r for r in results.values() if r["ok"]]
+    verdict = {"verdict": "", "agreement": None}
+    if len(answered) >= 2:
+        try:
+            v = judge(judge_prompt(prompt, answered)) or {}
+            if not v.get("failed"):
+                ag = str(v.get("agreement") or "").lower()
+                verdict = {"verdict": _clip(v.get("verdict") or "", 600), "agreement": ag if ag in AGREEMENT else None, "model": v.get("model", "")}
+        except Exception as e:                           # noqa: BLE001
+            logging.warning("Super panel: judge failed: %s", e)
+    elif len(answered) == 1:
+        verdict = {"verdict": "Only one panel member answered, so there is nothing to weigh: " + answered[0]["answer"], "agreement": None}
+    return {"jurors": list(results.values()), "judge": verdict, "answered": len(answered), "asked": len(jurors)}
+
+
+def panel_text(res: Dict) -> str:
+    if not res["answered"]:
+        return "Panel: no model in the panel could be reached right now."
+    head = f"Panel: {res['answered']} of {res['asked']} answered" + (f", agreement {res['judge']['agreement']}" if res["judge"].get("agreement") else "")
+    lines = [head]
+    if res["judge"].get("verdict"):
+        lines.append("Judge: " + res["judge"]["verdict"])
+    for j in res["jurors"]:
+        if j["ok"]:
+            lines.append(f"· {j['label']}: " + _clip(j["answer"], 220))
+    return "\n".join(lines)
 
 
 def words_of(prompt: str) -> List[str]:
@@ -121,7 +216,9 @@ def combine(parts: List[Dict]) -> str:
 
 
 def build_router(answer: Callable[[str], Dict], rows: Callable[[], List[Dict]], suggest: Callable, hot: Callable,
-                 pid_status: Callable[[], Dict], pien_db: str, rate_limit: Callable[[Request], None]) -> APIRouter:
+                 pid_status: Callable[[], Dict], pien_db: str, rate_limit: Callable[[Request], None],
+                 jurors: Optional[List[Dict]] = None, ask_juror: Optional[Callable] = None,
+                 judge: Optional[Callable] = None, panel_rate_limit: Optional[Callable[[Request], None]] = None) -> APIRouter:
     router = APIRouter(prefix="/api/super", tags=["super"])
 
     @router.post("/ask")
@@ -145,5 +242,18 @@ def build_router(answer: Callable[[str], Dict], rows: Callable[[], List[Dict]], 
             if text:
                 parts.append({"engine": engine, "text": text})
         return {"answer": combine(parts), "parts": parts, "prompt": _clip(prompt, 200)}
+
+    @router.post("/panel")
+    def panel(req: PanelAsk, request: Request):
+        (panel_rate_limit or rate_limit)(request)
+        prompt = (req.prompt or "").strip()
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Wire something into the panel first.")
+        if len(prompt) > MAX_PROMPT or len(req.context or "") > MAX_PROMPT:
+            raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
+        if not (jurors and ask_juror and judge):
+            raise HTTPException(status_code=503, detail="The panel is not configured on this deployment.")
+        res = run_panel(prompt, (req.context or "").strip(), jurors, ask_juror, judge)
+        return {"answer": panel_text(res), **res, "prompt": _clip(prompt, 200)}
 
     return router

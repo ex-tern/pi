@@ -26,6 +26,11 @@
 // other nodes) is joined into a prompt and sent to /api/super/ask, where every
 // engine in the project answers (siM, riB, piD, PiEn; see backend/super_engine.py).
 // If the prompt's words name a window ("assess manuscripts"), it opens it too.
+// "?" asks the panel: wire the Super Neural Engine into it and the same AIs that
+// judge manuscripts (Llama, Mistral, Qwen, Gemini, DeepSeek) answer its question
+// independently, with the engines' answer as context; the judge weighs them and
+// says how far they agree (/api/super/panel). It asks again when its wiring
+// changes or the engine gives a new answer, or when pressed.
 // Wire a Show to it to read the answer. It asks again whenever its wiring
 // changes, or when you press it; while it thinks the star grows toward a
 // superellipse (n climbing from γ to π), and it is fully grown once answered.
@@ -52,6 +57,7 @@
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
     { k: "show", g: "", name: "Show", n: 1 },
     { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super Neural Engine", n: 9 },   // the pill star, n = γ
+    { k: "panel", g: "?", name: "Ask the panel", n: 9 },
     { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
     { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
@@ -84,6 +90,7 @@
       case "show": return "drag it out and drop it on anything to show its value";
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
       case "flip": return "drag it onto a node to swap the order of its inputs";
+      case "panel": return "drag it out and wire the Super Neural Engine (or any text) into it: the panel of AIs that judges manuscripts answers, and the judge weighs them";
       case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
     }
@@ -176,6 +183,18 @@
         r = { num: t.length, bool: !!t, str: t, text: t || (n.st.go ? "thinking…" : n.prompt ? "press to ask" : "wire a prompt into it") };
         break;
       }
+      case "panel": {
+        // a Super Neural Engine wired in gives its question, and its engines' answer as context
+        const srcs = n.inputs.map(ref => ref.node && nodes.find(x => x.id === ref.node)).filter(Boolean);
+        const sup = srcs.find(x => x.fn === "super");
+        const rest = ins.filter(v => !(sup && v === memo[sup.id]));   // everything else wired in joins the question
+        n.prompt = ((sup ? sup.prompt || "" : "") + " " + rest.map(strOf).filter(Boolean).join(" ")).trim();
+        n.context = sup && sup.answer ? sup.answer : "";
+        n.supAnswer = sup ? sup.answer || "" : "";
+        const t = n.answer || "";
+        r = { num: t.length, bool: !!t, str: t, text: t || (n.st.go ? "the panel is thinking…" : n.prompt ? "press to ask the panel" : "wire the Super Neural Engine into it") };
+        break;
+      }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
@@ -195,13 +214,13 @@
       if (n.text !== r.text) {
         n.text = r.text; n.changed = now;
         if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
-        else if (n.fn === "super") n.val.textContent = n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
+        else if (n.fn === "super" || n.fn === "panel") n.val.textContent = n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
         else n.val.textContent = r.text;
       }
       if (n.fn === "show") n.el.classList.toggle("is-long", r.text.length > 28 || /\n/.test(r.text));
-      if (n.fn === "super") {
-        const w = wiringOf(n);
-        if (n.wiring !== undefined && w !== n.wiring && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => askEngine(n), 900); }
+      if (n.fn === "super" || n.fn === "panel") {
+        const w = wiringOf(n) + (n.fn === "panel" ? "|" + (n.supAnswer || "") : "");   // the panel also follows the engine's answers
+        if (n.wiring !== undefined && w !== n.wiring && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "panel" ? askPanel(n) : askEngine(n)), n.fn === "panel" ? 1500 : 900); }
         n.wiring = w;
       }
       n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
@@ -246,7 +265,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined, answer: n.fn === "super" && n.answer ? n.answer.slice(0, 2000) : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined, answer: (n.fn === "super" || n.fn === "panel") && n.answer ? n.answer.slice(0, 3000) : undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -264,6 +283,7 @@
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
     const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h, flip: !!spec.flip };
+    if (f.k === "panel") n.answer = spec.answer || "";
     el.classList.toggle("is-flipped", n.flip);
     if (f.k === "super") {
       g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
@@ -410,6 +430,7 @@
       if (n.fn === "clip") { const a = document.createElement("a"); a.href = n.img; a.download = "clip-" + n.w + "x" + n.h + ".png"; document.body.appendChild(a); a.click(); a.remove(); say("Clip saved as a PNG"); }
       else if (n.fn === "cut") cut();
       else if (n.fn === "super") askEngine(n, true);
+      else if (n.fn === "panel") askPanel(n, true);
       else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
@@ -479,6 +500,22 @@
       n.answer = opened + "Super Neural Engine: could not reach the engines";
     }
     n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
+    persist(); tick();
+  }
+  async function askPanel(n, pressed) {
+    const prompt = n.prompt || "";
+    if (!prompt) { if (pressed) say("Ask the panel: wire the Super Neural Engine (or some text) into it first"); return; }
+    if (n.st.go) return;
+    n.st.go = true; n.el.classList.add("is-thinking"); tick();
+    say("Ask the panel: every juror is answering “" + clip(prompt) + "”");
+    try {
+      const res = await fetch("/api/super/panel", { method: "POST", headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt: prompt.slice(0, 4000), context: (n.context || "").slice(0, 4000) }) });
+      const data = await res.json().catch(() => ({}));
+      n.answer = res.ok ? (data.answer || "The panel had no answer.") : "Ask the panel: " + (data.detail || "unavailable right now");
+      if (res.ok) say("Ask the panel: " + (data.answered || 0) + " of " + (data.asked || 0) + " answered" + (data.judge && data.judge.agreement ? ", agreement " + data.judge.agreement : ""));
+    } catch (_) { n.answer = "Ask the panel: could not reach the panel"; }
+    n.st.go = false; n.el.classList.remove("is-thinking");
     persist(); tick();
   }
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
