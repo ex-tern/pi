@@ -449,3 +449,7 @@ html.orbit-mark-tiny .orbit-center > .orbit-pi { display: none; }
 html.orbit-linking, html.orbit-linking * { cursor: crosshair !important; }
 .orbit-bubble.wire-target { outline: 2px dashed var(--cobalt); outline-offset: 4px; }
 @media (hover: none) { .wire-handle { opacity: 0.8; } }
+
+/* the main loop as a wire end: its edge is a handle, and it lights up when a wire is dropped on it */
+.loop-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: crosshair; }
+html.wire-target .om-page-loop, html.wire-target .om-loop, html.wire-target .om-circle { stroke: var(--cobalt); }

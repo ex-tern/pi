@@ -528,7 +528,30 @@
     }
     const svg = $(".om-page"), path = $(".om-page-loop");
     if (svg) svg.setAttribute("viewBox", "0 0 " + Wv + " " + Hv);
-    if (path) path.setAttribute("d", "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z");
+    loopD = "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z";
+    if (path) path.setAttribute("d", loopD);
+  }
+  let loopD = "";
+  // The loop can be wired like a bubble. loopPoint gives the point on it facing (x, y), in
+  // screen coordinates; nearLoop says whether (x, y) is on its edge (or on the mark, when small).
+  function loopPoint(x, y) {
+    if (pageLoop()) {
+      const cx = loopG.cx, cy = top + loopG.cy, th = Math.atan2(y - cy, x - cx), c = Math.cos(th), sn = Math.sin(th);
+      const r = 1 / seNorm(Math.abs(c) / loopG.a, Math.abs(sn) / loopG.b, loopG.n);
+      return [Math.max(6, Math.min(window.innerWidth - 6, cx + r * c)), Math.max(top + 6, Math.min(window.innerHeight - 6, cy + r * sn))];
+    }
+    const k = $(".orbit-core").getBoundingClientRect(), cx = k.left + k.width / 2, cy = k.top + k.height / 2, R = k.width / 2 * 0.94;
+    const th = Math.atan2(y - cy, x - cx);
+    return [cx + R * Math.cos(th), cy + R * Math.sin(th)];
+  }
+  function nearLoop(x, y) {
+    if (pageLoop()) {
+      const cx = loopG.cx, cy = top + loopG.cy, th = Math.atan2(y - cy, x - cx);
+      const r = 1 / seNorm(Math.abs(Math.cos(th)) / loopG.a, Math.abs(Math.sin(th)) / loopG.b, loopG.n);
+      return Math.abs(Math.hypot(x - cx, y - cy) - r) < 18;
+    }
+    const k = $(".orbit-core").getBoundingClientRect();
+    return Math.hypot(x - (k.left + k.width / 2), y - (k.top + k.height / 2)) < k.width / 2 + 10;
   }
   // the diameter, reaching the loop at every angle
   function sweepPx(deg) {
@@ -1305,6 +1328,8 @@
   // them. Kept in this browser; these are the wires it starts with.
   const WIRES_DEFAULT = [["Your account", "Tools"], ["Tools", "Explore"], ["Explore", "Library"], ["Explore", "About"],
                  ["Explore", "SciM Assistant"], ["Connect", "Your account"], ["Lab", "Library"]];
+  const LOOP = "π";                                    // the main loop (the mark), wired like a bubble
+  const LOOP_ITEM = { title: LOOP, loop: true, bubble: document.documentElement };
   let WIRES = (load("orbit:wires") || WIRES_DEFAULT).filter(w => Array.isArray(w) && w.length === 2).map(w => w.slice());
   const saveWires = () => store("orbit:wires", WIRES);
   function wireEnd(title) {
@@ -1345,7 +1370,21 @@
     if (!svg) return;
     if (!svg.querySelector(".wires-base")) { svg.innerHTML = '<g class="wires-base"></g><path class="wire-temp" d=""/>'; wireEditing(svg); }
     let html = "";
+    const sr0 = stage.getBoundingClientRect();
     WIRES.forEach(([a, b], i) => {
+      if (a === LOOP || b === LOOP) {                    // a wire to the main loop: it meets the loop where the loop faces the bubble
+        const O = wireEnd(a === LOOP ? b : a);
+        if (!O) return;
+        const q = wireBox(O), oc = [q.x + q.w / 2, q.y + q.h / 2];
+        const lp = loopPoint(oc[0] + sr0.left, oc[1] + sr0.top), P = [lp[0] - sr0.left, lp[1] - sr0.top];
+        const dx = P[0] - oc[0], dy = P[1] - oc[1], hz = Math.abs(dx) > q.w / 2;
+        const o = hz ? [dx > 0 ? q.x + q.w : q.x, oc[1]] : [oc[0], dy > 0 ? q.y + q.h : q.y];
+        const d = curve(o[0], o[1], P[0], P[1], hz);
+        html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+                wireTerm(o, "wire-term") + wireTerm(P, "wire-term") +
+                '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(O.title) + ' – the loop: click to disconnect</title></path></g>';
+        return;
+      }
       const A = wireEnd(a), B = wireEnd(b);
       if (!A || !B) return;
       const p = wireBox(A), q = wireBox(B);
@@ -1367,6 +1406,8 @@
               wireTerm(t1, "wire-term") + wireTerm(t2, "wire-term") +
               '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(a) + " – " + esc(b) + ': click to disconnect</title></path></g>';
     });
+    // the loop's own edge: drag from it to wire the loop to a bubble
+    if (pageLoop() && loopD) html += '<path class="loop-hit" transform="translate(0,' + (top - sr0.top) + ')" d="' + loopD + '"><title>Drag from the loop onto a bubble to connect them</title></path>';
     // a handle on every bubble to draw a new wire from
     items.forEach(it => {
       if (!it.bubble || it.bubble.hidden || it.groupOf || !it.bubble.offsetParent) return;
@@ -1386,20 +1427,23 @@
       saveWires(); drawWires();
     });
     svg.addEventListener("pointerdown", e => {
-      const h = e.target.closest && e.target.closest(".wire-handle");
+      const h = e.target.closest && e.target.closest(".wire-handle, .loop-hit");
       if (!h || e.button !== 0) return;
       e.preventDefault(); e.stopPropagation();
-      const from = items.find(i => i.title === h.dataset.t && i.bubble && !i.groupOf);
+      const from = h.classList.contains("loop-hit") ? LOOP_ITEM : items.find(i => i.title === h.dataset.t && i.bubble && !i.groupOf);
       if (!from) return;
       const temp = svg.querySelector(".wire-temp");
       let over = null;
+      const start = from.loop ? loopPoint(e.clientX, e.clientY) : null;   // where on the loop you took hold
       const targetAt = (x, y) => {
-        const el = document.elementFromPoint(x, y), b = el && el.closest(".orbit-bubble");
+        const el = document.elementFromPoint(x, y);
+        if (!from.loop && (nearLoop(x, y) || (el && el.closest(".orbit-pi, .orbit-core, .loop-hit")))) return LOOP_ITEM;
+        const b = el && el.closest(".orbit-bubble");
         const it = b && items.find(i => i.bubble === b && !i.groupOf);
         return it && it !== from ? it : null;
       };
       const move = ev => {
-        const sr = stage.getBoundingClientRect(), [x1, y1] = handleAt(from);
+        const sr = stage.getBoundingClientRect(), [x1, y1] = from.loop ? [start[0] - sr.left, start[1] - sr.top] : handleAt(from);
         temp.setAttribute("d", curve(x1, y1, ev.clientX - sr.left, ev.clientY - sr.top, true));
         const t = targetAt(ev.clientX, ev.clientY);
         if (over && over !== t) over.bubble.classList.remove("wire-target");
@@ -1829,7 +1873,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { loop: () => Object.assign({}, loopG), still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
