@@ -177,3 +177,6 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .sl-edge-on { outline: 1.5px dashed var(--cobalt); outline-offset: 2px; }
 .lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: 0 0 0 2px rgba(47, 64, 232, 0.35); }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { text-align: center; }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) - 16px); min-width: calc(var(--lv-s, 56px) - 16px); max-width: 220px; field-sizing: content; padding: 0; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in) { padding: 0 6px; }

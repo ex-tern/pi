@@ -119,8 +119,9 @@
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
     const out = [];
     // a blank ■ shows: between it and another node the value flows into the ■, whichever end the wire began at
-    const sink = h => { const x = h && h.startsWith("node:") && nodes.find(m => "node:" + m.id === h); return !!(x && x.fn === "box" && !x.role); };
-    const meSink = n.fn === "box" && !n.role;
+    const isSink = x => !!x && ((x.fn === "box" && !x.role) || (x.role === "text" && !!opOf(x.str)));
+    const sink = h => isSink(h && h.startsWith("node:") && nodes.find(m => "node:" + m.id === h));
+    const meSink = isSink(n);
     L.forEach(l => {
       const ah = l.a && l.a.h, bh = l.b && l.b.h;
       const other = ah === me ? bh : bh === me ? ah : null;
@@ -133,6 +134,26 @@
   const clip = t => t.length > 28 ? t.slice(0, 27) + "…" : t;
   const strOf = v => v.str != null && v.str !== "" ? v.str : v.text || (v === ZERO ? "" : String(v.num));
   const N = v => ({ num: v, isNum: true, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
+  // a word typed into a ■ or ● that names an operation
+  const OPS = { x: "*", "×": "*", "*": "*", "·": "*", "+": "+", "-": "-", "−": "-", "–": "-", "/": "/", "÷": "/", ":": "/", "^": "^", "%": "%" };
+  const opOf = t => { const k = String(t || "").trim().toLowerCase(); return OPS[k] || null; };
+  function applyOp(op, xs) {
+    if (!xs.length) return 0;
+    return xs.slice(1).reduce((a, b) => op === "*" ? a * b : op === "+" ? a + b : op === "-" ? a - b : op === "/" ? a / b : op === "^" ? Math.pow(a, b) : a % b, xs[0]);
+  }
+  // what sits inside a loop's ring, and which of it is the result: the node nothing else inside takes from
+  function inside(loop) {
+    const r = loop.el.getBoundingClientRect(), R = r.width / 2, cx = r.left + R, cy = r.top + r.height / 2;
+    return nodes.filter(m => m !== loop && (() => { const b = m.el.getBoundingClientRect(); return Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) + Math.max(b.width, b.height) / 2 <= R + 4; })());
+  }
+  function bodyOut(loop) {
+    const ins = inside(loop);
+    if (!ins.length) return null;
+    const feeds = new Set();
+    ins.forEach(m => { m.inputs.forEach(ref => ref.node && feeds.add(ref.node)); linkIns(m).forEach(an => an.h && an.h.startsWith("node:") && feeds.add(an.h.slice(5))); });
+    const outs = ins.filter(m => !feeds.has(m.id));
+    return outs.find(m => m.role === "text" && opOf(m.str)) || outs.find(m => m.fn === "add" || m.fn === "box") || outs[outs.length - 1] || null;
+  }
   function evalNode(n) {
     if (!n) return ZERO;
     if (memo[n.id]) return memo[n.id];
@@ -157,8 +178,11 @@
       case "box":                                      // ■ and ●: what their first use made them
       case "dot": {
         const v = ins[ins.length - 1];
-        if (n.role === "loop") r = { num: n.i || 0, isNum: true, bool: !n.paused, str: String(n.i || 0), text: String(n.i || 0) };
+        const body = n.role === "loop" ? bodyOut(n) : null;                // a loop gives what is inside it: its body's result
+        if (body) { const v = evalNode(body); r = Object.assign({}, v, { bool: !n.paused }); }
+        else if (n.role === "loop") r = { num: n.i || 0, isNum: true, bool: !n.paused, str: String(n.i || 0), text: String(n.i || 0) };
         else if (n.role === "int") { const x = parseInt(n.str, 10); r = Number.isNaN(x) ? { num: 0, isNum: true, bool: false, str: "", text: "" } : { num: x, isNum: true, bool: x !== 0, str: String(x), text: String(x) }; }
+        else if (n.role === "text" && opOf(n.str) && ins.length) r = N(applyOp(opOf(n.str), ins.map(v => v.num)));   // "x", "+", "-", "/" typed in: it is that operation
         else if (n.role === "text") { const t = n.str || ""; r = { num: t.length, bool: !!t, str: t, text: t }; }
         else if (n.role === "stop") { const i = n.target && O().info ? O().info(n.target) : null; r = { num: i && i.open ? 1 : 0, bool: !!(i && i.open), str: i ? i.title : "", text: "" }; }
         else r = v ? { num: v.num, isNum: v.isNum, bool: v.bool, str: strOf(v), text: v.text != null && v.text !== "" ? v.text : clip(strOf(v)) } : { num: 0, bool: false, text: "" };
@@ -316,7 +340,7 @@
       if (n.fn === "box" || n.fn === "dot") {
         const lab = n.role === "stop" ? "stop · " + (n.targetTitle || "window")
           : n.role === "loop" ? ""                                            // a loop is just its ring: no counter on the page
-          : n.role === "text" ? "text" : n.role === "int" ? "integer"
+          : n.role === "text" || n.role === "int" ? ""                        // no "text" / "integer" under it
           : n.stopped ? "stopped" : n.paused ? "paused" : "";
         if (n.val.textContent !== lab) n.val.textContent = lab;
         n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
@@ -483,9 +507,10 @@
   }
   // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
   function clear(n) {
+    if (n.role === "loop") return;                                       // a loop holds things: nothing steps out of it
     for (let k = 0; k < 8; k++) {
       const a = n.el.getBoundingClientRect();
-      const hit = nodes.find(o => o !== n && (() => { const b = o.el.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })());
+      const hit = nodes.find(o => o !== n && o.role !== "loop" && (() => { const b = o.el.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })());
       if (!hit) return;
       const b = hit.el.getBoundingClientRect();
       n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 18) / window.innerHeight; place(n);
