@@ -1,7 +1,7 @@
 // labview.js — a Functions palette and block diagram, like LabVIEW's.
 //
-// The palette (bottom-left) holds arithmetic, Boolean, comparison and
-// structure nodes. Press one to run it once on the two newest digits of π.
+// The palette (bottom-left) holds arithmetic, AND, Play, Stop, Show and
+// Ask SciM. Press one to run it once on the two newest digits of π.
 // Drag one out and it becomes a node on the page; drop it onto any button,
 // bubble, window, the π mark, the π counter or another node and it is wired
 // to it: that thing becomes one of its inputs, and the node computes live.
@@ -13,16 +13,13 @@
 //   the π counter              number: decimals computed so far
 //   another node               its output
 //
-// It is a small graphical language: the program is the wiring. Prompts are
-// made the same way: a Text node is a string you type, a button wired in
-// gives its name, Join puts two strings together, and Ask SciM sends what
-// reaches it to the SciM Assistant when you press it, e.g.
-//   [Text "Explain"] ─┐
-//                     [Join] ── [Ask SciM]
-//   (Whitepaper) ─────┘
+// Play starts π (and everything that follows it), Stop stops it: the same as
+// double-clicking the π mark. Show is an empty box: wire anything into it and
+// it shows that thing's value inside itself. Ask SciM sends the name or text
+// that reaches it to the SciM Assistant when you press it.
 //
-// Click a wire to disconnect it. Drag a node onto the palette to remove it, double-click it to unwire it,
-// press it to pause a loop. The diagram is remembered in this browser.
+// Click a wire to disconnect it. Drag a node onto the palette to remove it,
+// double-click it to unwire it. The diagram is remembered in this browser.
 (function () {
   "use strict";
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
@@ -32,16 +29,9 @@
     { k: "mul", g: "×", name: "Multiply", n: 2 },
     { k: "div", g: "÷", name: "Divide", n: 2 },
     { k: "and", g: "AND", name: "And", n: 2 },
-    { k: "or", g: "OR", name: "Or", n: 2 },
-    { k: "xor", g: "XOR", name: "Exclusive Or", n: 2 },
-    { k: "not", g: "NOT", name: "Not", n: 1 },
-    { k: "gt", g: ">", name: "Greater?", n: 2 },
-    { k: "eq", g: "=", name: "Equal?", n: 2 },
-    { k: "for", svg: sq + '<rect x="2.5" y="2.5" width="15" height="15" rx="1"/><text x="4.5" y="9">N</text><text x="4.5" y="16">i</text></svg>', name: "For Loop", n: 1 },
-    { k: "while", svg: sq + '<rect x="2.5" y="2.5" width="15" height="15" rx="1"/><path d="M13.5 13.5a4 4 0 1 1 0-5.5" fill="none"/><path d="M13.6 5.6v3h-3" fill="none"/></svg>', name: "While Loop", n: 1 },
-    { k: "case", svg: sq + '<rect x="2.5" y="2.5" width="15" height="15" rx="1"/><path d="M5 6.5h10" /><text x="7.2" y="14.5">?</text></svg>', name: "Case Structure", n: 1 },
-    { k: "text", g: "Abc", name: "Text", n: 0 },
-    { k: "join", g: "a‿b", name: "Join", n: 2 },
+    { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
+    { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
+    { k: "show", g: "", name: "Show", n: 1 },
     { k: "ask", svg: sq + '<path d="M3 4.5h14v8.5H9l-4 3v-3H3z" fill="none"/><text x="7.4" y="11.4">?</text></svg>', name: "Ask SciM", n: 1 },
   ];
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
@@ -65,15 +55,10 @@
       case "mul": return a + " × " + b + " = " + a * b;
       case "div": return b ? a + " ÷ " + b + " = " + +(a / b).toFixed(4) : a + " ÷ 0 = NaN";
       case "and": return bits(a) + " AND " + bits(b) + " = " + bits(a & b);
-      case "or": return bits(a) + " OR " + bits(b) + " = " + bits(a | b);
-      case "xor": return bits(a) + " XOR " + bits(b) + " = " + bits(a ^ b);
-      case "not": return "NOT " + bits(b) + " = " + bits(~b & 15);
-      case "gt": return a + " > " + b + " → " + (a > b ? "T" : "F");
-      case "eq": return a + " = " + b + " → " + (a === b ? "T" : "F");
-      case "case": return "case " + (b % 2 ? "odd" : "even") + " (" + b + ")";
-      case "text": return "drag it out and type a string; wire it into Join or Ask SciM";
-      case "join": return "drag it out and wire two strings (Text nodes or buttons) into it";
-      case "ask": return "drag it out, wire text into it, press it to send the prompt to SciM";
+      case "play": run(true); return "π running";
+      case "stop": run(false); return "π stopped";
+      case "show": return "drag it out and drop it on anything to show its value";
+      case "ask": return "drag it out, wire a button into it, press it to ask SciM about that";
       default: return "drag it onto a button to give it an input";
     }
   }
@@ -134,23 +119,10 @@
       case "mul": r = N(a.num * b.num); break;
       case "div": r = N(b.num ? a.num / b.num : NaN); break;
       case "and": r = B(a.bool && b.bool); break;
-      case "or": r = B(a.bool || b.bool); break;
-      case "xor": r = B(a.bool !== b.bool); break;
-      case "not": r = B(!a.bool); break;
-      case "gt": r = B(a.num > b.num); break;
-      case "eq": r = B(a.num === b.num); break;
-      case "text": { const t = n.str || ""; r = { num: parseFloat(t) || 0, bool: !!t.trim(), str: t, text: "" }; break; }
-      case "join": { const t = [strOf(a), strOf(b)].filter(Boolean).join(" "); r = { num: t.length, bool: !!t, str: t, text: t ? "“" + clip(t) + "”" : "–" }; break; }
+      case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
+      case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
+      case "show": r = n.inputs[0] ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
       case "ask": { const t = strOf(a); r = { num: t.length, bool: !!t, str: t, text: n.sent ? "sent ✓" : t ? "press to ask" : "wire text in" }; break; }
-      case "case": { const t = a.bool || (a.num !== 0 && !Number.isNaN(a.num)); r = { num: t ? 1 : 0, bool: t, text: t ? "True ▸" : "False ▸" }; break; }
-      case "for": {
-        const cnt = n.inputs[0] ? Math.max(0, Math.min(99, Math.round(a.num) || 0)) : 10;
-        r = { num: n.st.i, bool: cnt > 0, text: cnt ? "i " + n.st.i + " / N " + cnt : "N 0" }; n.st.N = cnt; break;
-      }
-      case "while": {
-        const go = n.inputs[0] ? a.bool : false;
-        r = { num: n.st.i, bool: go && !n.st.paused, text: (go && !n.st.paused ? "↻ i " : "■ i ") + n.st.i }; n.st.go = go; break;
-      }
       default: r = ZERO;
     }
     visiting[n.id] = false;
@@ -159,19 +131,17 @@
   }
 
   function tick() {
-    // the loops step first, then everything is computed once
-    nodes.forEach(n => {
-      if (n.st.paused) return;
-      if (n.fn === "for" && n.st.N) n.st.i = (n.st.i + 1) % n.st.N;
-      if (n.fn === "while" && n.st.go) n.st.i++;
-    });
     memo = {}; visiting = {};
     const now = performance.now();
     nodes.forEach(n => {
       const r = evalNode(n);
-      if (n.text !== r.text) { n.text = r.text; n.changed = now; n.val.textContent = r.text; }
-      n.el.classList.toggle("is-true", r.bool === true && /^(and|or|xor|not|gt|eq|case)$/.test(n.fn));
-      n.el.classList.toggle("is-running", (n.fn === "for" && !!n.st.N || n.fn === "while" && !!n.st.go) && !n.st.paused);
+      if (n.text !== r.text) {
+        n.text = r.text; n.changed = now;
+        if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
+        else n.val.textContent = r.text;
+      }
+      n.el.classList.toggle("is-true", r.bool === true && n.fn === "and");
+      n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". Output " + r.text + ".");
       n.el.title = BY[n.fn].name + (n.inputs.length ? " ← " + n.inputs.map(nameOf).join(", ") : "") + "\nDrop it on a button to wire it, on the palette to remove it; double-click to unwire";
     });
@@ -213,7 +183,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, str: n.fn === "text" ? n.str : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -230,15 +200,7 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", str: spec.str != null ? spec.str : "Explain" };
-    if (f.k === "text") {
-      const inp = document.createElement("input");
-      inp.type = "text"; inp.className = "lv-text"; inp.value = n.str; inp.setAttribute("aria-label", "Text"); inp.spellcheck = false;
-      inp.addEventListener("pointerdown", e => e.stopPropagation());
-      inp.addEventListener("keydown", e => e.stopPropagation());
-      inp.addEventListener("input", () => { n.str = inp.value; persist(); tick(); });
-      g.replaceWith(inp);
-    }
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "" };
     canvas.appendChild(el);
     nodes.push(n);
     place(n);
@@ -340,9 +302,8 @@
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
-      if (n.fn === "for" || n.fn === "while") { n.st.paused = !n.st.paused; say(BY[n.fn].name + (n.st.paused ? " paused" : " running")); }
+      if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else if (n.fn === "ask") ask(n);
-      else if (n.fn === "text") { const i = n.el.querySelector("input"); if (i) i.focus(); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
@@ -353,11 +314,13 @@
     });
   }
   function say(t) { if (out) out.textContent = t; }
+  // Play and Stop: π, and everything that follows it, runs or stands still
+  function run(on) { if (O().setStill) O().setStill(!on); }
   // Ask SciM: the prompt that reaches the node goes to the SciM Assistant, only when pressed
   function ask(n) {
     memo = {}; visiting = {};
     const q = strOf(valueOf(n.inputs[0])).trim();
-    if (!q) { say("Ask SciM: wire some text into it first"); return; }
+    if (!q) { say("Ask SciM: wire a button into it first"); return; }
     if (!(O().openTitle && O().openTitle("SciM Assistant"))) { say("SciM Assistant is not available here"); return; }
     setTimeout(() => {
       const inp = document.getElementById("scilemInput"), form = document.getElementById("scilemForm");
@@ -444,5 +407,5 @@
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
-  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text, str: n.fn === "text" ? n.str : undefined })) };
+  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text })) };
 })();
