@@ -42,7 +42,7 @@
   const G = {
     P: x => glyph(x, 62, [rect(x, 0, S, CAP), ring(x, 0, 62, 60)]),
     i: x => ({ w: S, svg: '<path class="sel-ink" d="' + rect(x, BASE - X, S, X) + '"/>' +
-                          '<path class="sel-dot" d="' + se(x + S / 2, BASE - X - 18, S / 2 + 1.5, S / 2 + 1.5, N) + '"/>' }),
+                          '<path class="sel-dot" d="' + se(x + S / 2, BASE - X - 18, S / 2 + 5, S / 2 + 5, 0.5772156649) + '"/>' }),
     T: x => glyph(x, 64, [rect(x, 0, 64, S), rect(x + 32 - S / 2, 0, S, CAP)]),
     e: x => glyph(x, 60, [ring(x, BASE - X, 60, X), rect(x + S / 2, BASE - X / 2 - S / 2, 60 - S, S)],
                   [[x + 34, BASE - X / 2 + S / 2, 32, 17]]),
