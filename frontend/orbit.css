@@ -413,3 +413,16 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
   .ob-members { max-width: min(11em, 46vw); }
   .ob-member { white-space: normal; text-align: left; line-height: 1.25; }
 }
+
+/* --- wires between the bubbles, LabVIEW style (orbit.js drawWires) --- */
+.orbit-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: visible; }
+.wire-bed { fill: none; stroke: var(--hair-strong); stroke-width: 2; stroke-linejoin: miter; }
+.wire-flow { fill: none; stroke: transparent; stroke-width: 2; }
+.wire-term { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+.wire.live .wire-bed { stroke: rgba(47, 64, 232, 0.25); stroke-width: 3; }
+.wire.live .wire-flow { stroke: var(--cobalt); stroke-dasharray: 6 8; animation: wire-flow 1.6s linear infinite; }
+.wire.live .wire-term { fill: var(--cobalt); stroke: var(--cobalt); }
+html[data-activity="working"] .wire.live .wire-flow { animation-duration: 0.8s; }
+html[data-activity="busy"] .wire.live .wire-flow { animation-duration: 0.4s; }
+@keyframes wire-flow { to { stroke-dashoffset: -28; } }
+@media (prefers-reduced-motion: reduce) { .wire.live .wire-flow { animation: none; stroke-dasharray: none; } }

@@ -181,6 +181,7 @@
   stage.className = "orbit-stage";
   stage.innerHTML =
     '<svg class="orbit-rings" aria-hidden="true"></svg>' +
+    '<svg class="orbit-wires" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
     '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to close all windows, double-click to stop or restart π">' +
@@ -1104,6 +1105,58 @@
     const it = items.find(i => i.key === "numbers:Numbers");
     if (it) openItem(it);
   }
+  // ------------------------------------------------------------ wires
+  // The bubbles are wired together like a LabVIEW block diagram: square
+  // terminals and right-angled wires along the way data actually flows here.
+  // Your account feeds Tools; an assessment flows from Tools into Explore
+  // (journal, ledger); Explore feeds Library (RiBD, the map), About
+  // (analytics, performance) and SciM; Connect feeds Your account; Lab feeds
+  // Library. A wire is live (cobalt, data flowing along it) while a window at
+  // either end is open, and the Tools to Explore wire also while the site is
+  // assessing a paper; the flow runs faster the busier the site is
+  // (data-activity, from /api/activity).
+  const WIRES = [["Your account", "Tools"], ["Tools", "Explore"], ["Explore", "Library"], ["Explore", "About"],
+                 ["Explore", "SciM Assistant"], ["Connect", "Your account"], ["Lab", "Library"]];
+  function wireEnd(title) {
+    const it = items.find(i => i.title === title && i.bubble && !i.groupOf);
+    if (!it || it.bubble.hidden || !it.bubble.offsetParent) return null;
+    return it;
+  }
+  const isLive = it => !!it.panel || items.some(m => m.groupOf === it && m.panel);
+  function drawWires() {
+    const svg = $(".orbit-wires", stage);
+    if (!svg) return;
+    const sr = stage.getBoundingClientRect();
+    const box = it => { const r = it.bubble.getBoundingClientRect(); return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height }; };
+    let html = "";
+    WIRES.forEach(([a, b]) => {
+      const A = wireEnd(a), B = wireEnd(b);
+      if (!A || !B) return;
+      const p = box(A), q = box(B);
+      const pc = [p.x + p.w / 2, p.y + p.h / 2], qc = [q.x + q.w / 2, q.y + q.h / 2];
+      let d, t1, t2;
+      const gapX = qc[0] > pc[0] ? q.x - (p.x + p.w) : p.x - (q.x + q.w);
+      if (gapX > 16) {                         // side by side: out of one side, into the other
+        const x1 = qc[0] > pc[0] ? p.x + p.w : p.x, x2 = qc[0] > pc[0] ? q.x : q.x + q.w;
+        const xm = Math.round((x1 + x2) / 2);
+        d = "M" + x1 + "," + pc[1] + "H" + xm + "V" + qc[1] + "H" + x2;
+        t1 = [x1, pc[1]]; t2 = [x2, qc[1]];
+      } else {                                 // stacked: out of the bottom, into the top
+        const down = qc[1] > pc[1];
+        const y1 = down ? p.y + p.h : p.y, y2 = down ? q.y : q.y + q.h;
+        const ym = Math.round((y1 + y2) / 2);
+        d = "M" + pc[0] + "," + y1 + "V" + ym + "H" + qc[0] + "V" + y2;
+        t1 = [pc[0], y1]; t2 = [qc[0], y2];
+      }
+      const live = isLive(A) || isLive(B) || (a === "Tools" && b === "Explore" && actLevel !== "quiet");
+      const term = ([x, y]) => '<rect class="wire-term" x="' + (x - 3.5) + '" y="' + (y - 3.5) + '" width="7" height="7"/>';
+      html += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+              term(t1) + term(t2) + '</g>';
+    });
+    svg.innerHTML = html;
+  }
+  setInterval(() => { if (document.visibilityState === "visible") drawWires(); }, 250);
+
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered
   // pause would only show an empty π).
