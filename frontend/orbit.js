@@ -184,7 +184,7 @@
     '<svg class="orbit-wires" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize (in the superellipse look: to change its n), click to close all windows, double-click to stop or restart π">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize from a dot to the whole page (in the superellipse look, Shift and scroll changes its n), click to close all windows, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<path class="om-loop" d=""/>' +
@@ -372,17 +372,22 @@
   let piBox = { w: 320, h: 48 };
   // sizes you choose: the logo and the π box each have their own
   // never below the minimum, even if an older, smaller size was saved
-  let logoScale = Math.max(0.8, load("orbit:logo:scale") || 1);
+  let logoScale = load("orbit:logo:scale") || 1;
   let piScale = load("orbit:pi:scale") || 1;
   let piAt = load("orbit:pi:at");        // {fx, fy}: the π box's centre, once you have moved it
-  const LOGO_MIN = 0.8, LOGO_MAX = 2.2, PI_MIN = 0.6, PI_MAX = 2.6;
+  const PI_MIN = 0.6, PI_MAX = 2.6;
   let draggingLogo = false;
   const GAP = () => (small ? 6 : 10);
 
+  // Scrolling sizes the mark from a dot (4 px) to one that covers the whole page.
+  // Past capR() there is no room around it, so it centres and becomes the backdrop.
+  const baseR = () => Math.min(140, Math.min(W, H) * (small ? 0.17 : 0.18), H * 0.14) || 100;
+  const halfDiag = () => Math.hypot(W, H) / 2 + 4;
+  const capR = () => Math.min(W, H) * 0.42;
+  const logoMin = () => 4 / baseR();
+  const logoMax = () => halfDiag() / baseR();
   function idleR() {
-    const base = Math.min(W, H);
-    const r = Math.min(140, base * (small ? 0.17 : 0.18), H * 0.14) * logoScale;
-    return Math.max(18, Math.min(r, base * 0.42));
+    return Math.max(4, Math.min(baseR() * logoScale, halfDiag()));
   }
   function shownR() {
     const open = document.documentElement.classList.contains("orbit-open");
@@ -403,6 +408,7 @@
     return { x: W / 2 - w / 2, y: b.top - top, w, h };
   }
   function clampLogo() {
+    if (R > capR()) { lx = W / 2; ly = H / 2; return; }     // the backdrop: centred, covering the page
     const m = R + 8, tr = titleRect();
     lx = Math.min(W - m, Math.max(m, lx));
     // below the title wherever the title is above it
@@ -430,8 +436,8 @@
     return [x, y];
   }
   // In the superellipse look the mark is the diagram's central loop: a
-  // superellipse at n = π (the windows' n, computed live by semorph.js; scroll
-  // on it to change n) with the π counter inside it, and the diameter reaching
+  // superellipse at n = π (the windows' n, computed live by semorph.js; Shift +
+  // scroll on it changes n) with the π counter inside it, and the diameter reaching
   // the curve at every angle.
   const merged = () => document.documentElement.classList.contains("shape-se");
   // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
@@ -439,9 +445,10 @@
   const loopN = () => markN || (window.SeMorph && window.SeMorph.pi) || Math.PI;
   let nShowT = 0;
   function scrollN(e) {
-    if (!merged()) return;
+    if (!merged() || !e.shiftKey) return;            // Shift + scroll: n; scroll alone: size
     e.preventDefault(); e.stopImmediatePropagation();
-    markN = Math.min(12, Math.max(0.3, loopN() * Math.exp(-e.deltaY * 0.0015)));
+    const dy = e.deltaY || e.deltaX;                   // some systems turn Shift + wheel into a sideways scroll
+    markN = Math.min(12, Math.max(0.3, loopN() * Math.exp(-dy * 0.0015)));
     drawLoop();
     const t = $(".om-n");
     if (t) { t.textContent = "n = " + markN.toFixed(3); t.classList.add("show"); }
@@ -465,6 +472,8 @@
   function placeMark() {
     const r = shownR();
     if (merged()) drawLoop();
+    document.documentElement.classList.toggle("orbit-mark-big", r > capR());      // behind the pills
+    document.documentElement.classList.toggle("orbit-mark-tiny", r < 40);         // too small to hold the counter
     const core = $(".orbit-core");
     core.style.width = core.style.height = r * 2 + "px";
     core.style.left = lx - r + "px";
@@ -492,7 +501,7 @@
   function obstacles() {
     const g = GAP();
     const out = [
-      grow({ x: lx - R, y: ly - R, w: 2 * R, h: 2 * R }, g),
+      grow((rr => ({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr }))(Math.min(R, capR())), g),   // a backdrop mark is not in the way
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     out.push(grow(titleRect(), g));
@@ -747,8 +756,8 @@
     // double-click: the mark stops turning and π stops growing; again to carry on
     core.addEventListener("dblclick", () => { clearTimeout(closeT); setStill(!still); });
     const setLogo = v => { logoScale = v; };
-    core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: scrolling changes the loop's n
-    wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
+    core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: Shift + scroll changes the loop's n
+    wheelResize(core, () => logoScale, setLogo, logoMin, logoMax, "orbit:logo:scale");
     // Scrolling on the page itself resizes the mark and opens a random window
     // (see wireScrollOpen).
     wireScrollOpen(setLogo);
@@ -777,10 +786,13 @@
     let acc = 0, last = 0, fired = false, t;
     stage.addEventListener("wheel", e => {
       if (e.defaultPrevented || off(e.target)) return;
+      const backdrop = document.documentElement.classList.contains("orbit-mark-big");
+      if (backdrop && e.shiftKey) { scrollN(e); return; }      // the page is the mark: Shift + scroll is its n
       e.preventDefault();
-      setLogo(Math.min(LOGO_MAX, Math.max(LOGO_MIN, logoScale * Math.exp(-e.deltaY * 0.0015))));
+      setLogo(Math.min(logoMax(), Math.max(logoMin(), logoScale * Math.exp(-e.deltaY * 0.0015))));
       layoutSoon();
       clearTimeout(t); t = setTimeout(() => store("orbit:logo:scale", +logoScale.toFixed(3)), 300);
+      if (backdrop) return;                                     // scrolling the backdrop only sizes it, it opens nothing
       const now = e.timeStamp || performance.now();          // when the input happened, even if the page was busy
       if (now - last > 600) { acc = 0; fired = false; }      // a new gesture
       last = now;
@@ -838,7 +850,8 @@
     el.addEventListener("wheel", e => {
       if (e.defaultPrevented) return;      // already handled by something inside (the π box)
       e.preventDefault();
-      set(Math.min(max, Math.max(min, get() * Math.exp(-e.deltaY * 0.0015))));
+      const lo = typeof min === "function" ? min() : min, hi = typeof max === "function" ? max() : max;
+      set(Math.min(hi, Math.max(lo, get() * Math.exp(-e.deltaY * 0.0015))));
       layoutSoon();
       clearTimeout(t); t = setTimeout(() => store(key, +get().toFixed(3)), 300);
     }, { passive: false });
@@ -886,7 +899,7 @@
     // double-click: back under the mark, at the usual size
     pi.addEventListener("dblclick", () => { piAt = null; piScale = 1; store("orbit:pi:at"); store("orbit:pi:scale"); layout(); });
     resizer(pi.querySelector(".op-grip"), piCentre, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
-    pi.addEventListener("wheel", scrollN, { passive: false });       // inside the loop, the counter scrolls n too
+    pi.addEventListener("wheel", scrollN, { passive: false });       // inside the loop, Shift + scroll on the counter changes n too
     wheelResize(pi, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
   }
 
@@ -1169,48 +1182,129 @@
   // either end is open, and the Tools to Explore wire also while the site is
   // assessing a paper; the flow runs faster the busier the site is
   // (data-activity, from /api/activity).
-  const WIRES = [["Your account", "Tools"], ["Tools", "Explore"], ["Explore", "Library"], ["Explore", "About"],
+  // The wiring is yours: click a wire to disconnect it, drag from a bubble's
+  // handle (the small terminal on its edge) onto another bubble to connect
+  // them. Kept in this browser; these are the wires it starts with.
+  const WIRES_DEFAULT = [["Your account", "Tools"], ["Tools", "Explore"], ["Explore", "Library"], ["Explore", "About"],
                  ["Explore", "SciM Assistant"], ["Connect", "Your account"], ["Lab", "Library"]];
+  let WIRES = (load("orbit:wires") || WIRES_DEFAULT).filter(w => Array.isArray(w) && w.length === 2).map(w => w.slice());
+  const saveWires = () => store("orbit:wires", WIRES);
   function wireEnd(title) {
     const it = items.find(i => i.title === title && i.bubble && !i.groupOf);
     if (!it || it.bubble.hidden || !it.bubble.offsetParent) return null;
     return it;
   }
   const isLive = it => !!it.panel || items.some(m => m.groupOf === it && m.panel);
+  // curves: out of one side and into the other, or out of the bottom and into the top
+  function curve(x1, y1, x2, y2, horizontal) {
+    if (horizontal) {
+      const c = Math.max(28, Math.abs(x2 - x1) * 0.5), sg = x2 >= x1 ? 1 : -1;
+      return "M" + x1 + "," + y1 + "C" + (x1 + sg * c) + "," + y1 + " " + (x2 - sg * c) + "," + y2 + " " + x2 + "," + y2;
+    }
+    const c = Math.max(28, Math.abs(y2 - y1) * 0.5), sg = y2 >= y1 ? 1 : -1;
+    return "M" + x1 + "," + y1 + "C" + x1 + "," + (y1 + sg * c) + " " + x2 + "," + (y2 - sg * c) + " " + x2 + "," + y2;
+  }
+  const wireTerm = ([x, y], cls) => (window.SeMorph && document.documentElement.classList.contains("shape-se"))
+    ? '<path class="' + cls + '" d="' + window.SeMorph.star(x, y, 5.5, 5.5) + '"/>'
+    : '<rect class="' + cls + '" x="' + (x - 3.5) + '" y="' + (y - 3.5) + '" width="7" height="7"/>';
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let wiresHtml = "", linking = null;
+  function wireBox(it) {
+    const sr = stage.getBoundingClientRect(), r = it.bubble.getBoundingClientRect();
+    return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height };
+  }
+  // where a bubble's handle sits: just outside the edge facing away from the mark (so the mark never
+  // covers it), or the other edge when that one is off the screen
+  function handleAt(it) {
+    const b = wireBox(it);
+    let right = b.x + b.w / 2 >= lx;
+    if (right && b.x + b.w + 14 > W - 4) right = false;
+    if (!right && b.x - 14 < 4) right = true;
+    return [Math.round(right ? b.x + b.w + 11 : b.x - 11), Math.round(b.y + b.h / 2)];
+  }
   function drawWires() {
     const svg = $(".orbit-wires", stage);
     if (!svg) return;
-    const sr = stage.getBoundingClientRect();
-    const box = it => { const r = it.bubble.getBoundingClientRect(); return { x: r.left - sr.left, y: r.top - sr.top, w: r.width, h: r.height }; };
+    if (!svg.querySelector(".wires-base")) { svg.innerHTML = '<g class="wires-base"></g><path class="wire-temp" d=""/>'; wireEditing(svg); }
     let html = "";
-    WIRES.forEach(([a, b]) => {
+    WIRES.forEach(([a, b], i) => {
       const A = wireEnd(a), B = wireEnd(b);
       if (!A || !B) return;
-      const p = box(A), q = box(B);
+      const p = wireBox(A), q = wireBox(B);
       const pc = [p.x + p.w / 2, p.y + p.h / 2], qc = [q.x + q.w / 2, q.y + q.h / 2];
       let d, t1, t2;
       const gapX = qc[0] > pc[0] ? q.x - (p.x + p.w) : p.x - (q.x + q.w);
       if (gapX > 16) {                         // side by side: out of one side, into the other
         const x1 = qc[0] > pc[0] ? p.x + p.w : p.x, x2 = qc[0] > pc[0] ? q.x : q.x + q.w;
-        const xm = Math.round((x1 + x2) / 2);
-        d = "M" + x1 + "," + pc[1] + "H" + xm + "V" + qc[1] + "H" + x2;
+        d = curve(x1, pc[1], x2, qc[1], true);
         t1 = [x1, pc[1]]; t2 = [x2, qc[1]];
       } else {                                 // stacked: out of the bottom, into the top
         const down = qc[1] > pc[1];
         const y1 = down ? p.y + p.h : p.y, y2 = down ? q.y : q.y + q.h;
-        const ym = Math.round((y1 + y2) / 2);
-        d = "M" + pc[0] + "," + y1 + "V" + ym + "H" + qc[0] + "V" + y2;
+        d = curve(pc[0], y1, qc[0], y2, false);
         t1 = [pc[0], y1]; t2 = [qc[0], y2];
       }
       const live = isLive(A) || isLive(B) || (a === "Tools" && b === "Explore" && actLevel !== "quiet");
-      // in the superellipse look the terminals are sparkles (n = γ, semorph.js)
-      const term = ([x, y]) => (window.SeMorph && document.documentElement.classList.contains("shape-se"))
-        ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 5.5, 5.5) + '"/>'
-        : '<rect class="wire-term" x="' + (x - 3.5) + '" y="' + (y - 3.5) + '" width="7" height="7"/>';
       html += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
-              term(t1) + term(t2) + '</g>';
+              wireTerm(t1, "wire-term") + wireTerm(t2, "wire-term") +
+              '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(a) + " – " + esc(b) + ': click to disconnect</title></path></g>';
     });
-    svg.innerHTML = html;
+    // a handle on every bubble to draw a new wire from
+    items.forEach(it => {
+      if (!it.bubble || it.bubble.hidden || it.groupOf || !it.bubble.offsetParent) return;
+      const [x, y] = handleAt(it);
+      html += '<g class="wire-handle" data-t="' + esc(it.title) + '"><circle class="wh-hit" cx="' + x + '" cy="' + y + '" r="11"/>' +
+              wireTerm([x, y], "wh-dot") + '<title>Drag onto another bubble to connect ' + esc(it.title) + '</title></g>';
+    });
+    if (html !== wiresHtml) { wiresHtml = html; svg.querySelector(".wires-base").innerHTML = html; }
+  }
+  // click a wire: gone; drag from a handle: a new wire to wherever you drop it
+  function wireEditing(svg) {
+    svg.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      if (!w) return;
+      e.stopPropagation();
+      WIRES.splice(+w.dataset.i, 1);
+      saveWires(); drawWires();
+    });
+    svg.addEventListener("pointerdown", e => {
+      const h = e.target.closest && e.target.closest(".wire-handle");
+      if (!h || e.button !== 0) return;
+      e.preventDefault(); e.stopPropagation();
+      const from = items.find(i => i.title === h.dataset.t && i.bubble && !i.groupOf);
+      if (!from) return;
+      const temp = svg.querySelector(".wire-temp");
+      let over = null;
+      const targetAt = (x, y) => {
+        const el = document.elementFromPoint(x, y), b = el && el.closest(".orbit-bubble");
+        const it = b && items.find(i => i.bubble === b && !i.groupOf);
+        return it && it !== from ? it : null;
+      };
+      const move = ev => {
+        const sr = stage.getBoundingClientRect(), [x1, y1] = handleAt(from);
+        temp.setAttribute("d", curve(x1, y1, ev.clientX - sr.left, ev.clientY - sr.top, true));
+        const t = targetAt(ev.clientX, ev.clientY);
+        if (over && over !== t) over.bubble.classList.remove("wire-target");
+        over = t; if (over) over.bubble.classList.add("wire-target");
+      };
+      const end = ev => {
+        window.removeEventListener("pointermove", move); window.removeEventListener("pointerup", end);
+        window.removeEventListener("pointercancel", end); window.removeEventListener("keydown", esc2);
+        temp.setAttribute("d", ""); document.documentElement.classList.remove("orbit-linking");
+        if (over) over.bubble.classList.remove("wire-target");
+        const to = ev && ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY) : null;
+        if (to && !WIRES.some(([a, b]) => (a === from.title && b === to.title) || (a === to.title && b === from.title))) {
+          WIRES.push([from.title, to.title]); saveWires();
+        }
+        linking = null; drawWires();
+      };
+      const esc2 = ev => { if (ev.key === "Escape") end(null); };
+      linking = from;
+      document.documentElement.classList.add("orbit-linking");
+      window.addEventListener("pointermove", move); window.addEventListener("pointerup", end);
+      window.addEventListener("pointercancel", end); window.addEventListener("keydown", esc2);
+      move(e);
+    });
   }
   setInterval(() => { if (document.visibilityState === "visible") drawWires(); }, 250);
 
@@ -1436,7 +1530,7 @@
       Object.entries(lay).forEach(([k, v]) => localStorage.setItem(k, v));
     } catch (_) { /* private mode */ }
     logoAt = load("orbit:logo");
-    logoScale = Math.max(LOGO_MIN, load("orbit:logo:scale") || 1);
+    logoScale = load("orbit:logo:scale") || 1;
     piAt = load("orbit:pi:at");
     piScale = load("orbit:pi:scale") || 1;
     prio = load("orbit:prio") || [];

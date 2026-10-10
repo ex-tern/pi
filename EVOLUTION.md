@@ -999,3 +999,13 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 **Why:** owner: "central logo is superellipse and scrolling changes its n", "objects should be symmetrical superellipse", "button should transition from star … into the other shape value" (chose: star until used), "delete these" (the loop terminals).
 
 **Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px: unused pills are stars, Performance after 6 uses t = 0.43 / n = 1.68, hover grows to t = 1, the loop's n scrolls 1.83 → 6.45 and survives a reload; the diagram, Ask SciM and the open/close morph tests still pass; no horizontal scroll, no page errors.
+
+## 2026-10-10: The mark from a dot to the whole page; curved wires you can rewire
+
+**What:**
+- Scrolling on the mark (or empty space) sizes it from a 4 px dot to a radius covering the whole page (`logoMin`/`logoMax` from the screen, replacing the 0.8 to 2.2 range). Past the room around it (`capR`, 42% of the short side) it centres and becomes a backdrop behind the pills and windows (`orbit-mark-big`); the layout stops treating it as an obstacle, and scrolling the backdrop only sizes it (it no longer opens a random window). Below 40 px the counter inside the loop hides (`orbit-mark-tiny`). In the superellipse look the loop's n moved to Shift + scroll.
+- Wires between bubbles are curves (cubic Béziers out of a side or the bottom). Click a wire to disconnect it; drag from a bubble's handle (a terminal just outside the edge facing away from the mark) onto another bubble to connect them; Escape cancels. The wiring is kept as `orbit:wires`. The Functions nodes' wires are curves too and disconnect on click. Wires are only rebuilt when they change, so clicks land.
+
+**Why:** owner: "the logo can get bigger by scrolling max to encompass the whole page, minimum to be dot"; "lines are curved and can be connected or disconnected".
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look) and 1280×720 plain: the mark scrolls to 8 px and up to cover the stage, pills stay on top and clickable, the size survives a reload; Shift + scroll changes n; all wires curved; a click removes one, a handle drag adds Lab–Tools, both kept after reload; a node's wire disconnects on click; no horizontal scroll, no page errors.
