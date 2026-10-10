@@ -119,3 +119,8 @@ def test_panel_with_nobody_reachable_says_so():
 
 def test_panel_endpoint_unconfigured_is_503(tmp_path):
     assert make(tmp_path).post("/api/super/panel", json={"prompt": "hi"}).status_code == 503
+
+
+def test_panel_says_when_the_judge_is_missing():
+    res = super_engine.run_panel("q", "", JURORS, lambda j, q: {"answer": "a", "confidence": 1}, lambda q: {"failed": "down"})
+    assert "Judge: could not be reached" in super_engine.panel_text(res)

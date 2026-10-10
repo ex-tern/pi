@@ -133,6 +133,8 @@ def panel_text(res: Dict) -> str:
     lines = [head]
     if res["judge"].get("verdict"):
         lines.append("Judge: " + res["judge"]["verdict"])
+    else:
+        lines.append("Judge: could not be reached, so the answers are not weighed")
     for j in res["jurors"]:
         if j["ok"]:
             lines.append(f"· {j['label']}: " + _clip(j["answer"], 220))
