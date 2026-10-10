@@ -1,6 +1,11 @@
 // labview.js — a Functions palette and block diagram, like LabVIEW's.
 //
-// Five shapes, and each means what its inputs suggest:
+// Five shapes, and each becomes what its first use makes it, then stays that:
+//   ■ dropped on an open window becomes that window's stop button; on empty page
+//     it is nothing yet; the first thing typed into a blank ■ or ● makes it a
+//     text field (a letter) or an integer field (a digit); ● made bigger becomes
+//     a loop that counts; dropped on something, it shows or passes that along.
+// What each shape can mean:
 //   +   add, join, up, open, more: numbers add, words join; alone on a button
 //       it opens it (yes, ok), on an open window it brings it up
 //   ■   stop, a blank box: it shows whatever is wired into it (text or a
@@ -26,12 +31,13 @@
 (function () {
   "use strict";
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
+  // five line icons of one size and one stroke: the shape is the meaning, nothing filled
   const FNS = [
-    { k: "add", g: "+", name: "Plus", n: 9 },
-    { k: "box", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Square", n: 9 },
-    { k: "super", svg: sq + '<path class="lv-star" d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z"/></svg>', name: "Diamond: smart AI", n: 9 },   // a superellipse diamond, n = 1.3, that grows to n = π while it thinks
-    { k: "dot", svg: sq + '<circle cx="10" cy="10" r="5.2" fill="currentColor" stroke="none"/></svg>', name: "Circle", n: 9 },
-    { k: "ask", g: "?", name: "Help: ask the AIs", n: 9 },
+    { k: "add", svg: sq + '<path d="M10 3.5V16.5M3.5 10H16.5"/></svg>', name: "Plus", n: 9 },
+    { k: "box", svg: sq + '<rect x="4" y="4" width="12" height="12" rx="1.5"/></svg>', name: "Square", n: 9 },
+    { k: "super", svg: sq + '<path class="lv-star" d="M10 2.8L17.2 10L10 17.2L2.8 10Z" stroke-linejoin="round"/></svg>', name: "Diamond: smart AI", n: 9 },
+    { k: "dot", svg: sq + '<circle cx="10" cy="10" r="6.6"/></svg>', name: "Circle", n: 9 },
+    { k: "ask", svg: sq + '<path d="M7.2 7.4a2.8 2.8 0 1 1 4.2 2.4c-.9.5-1.4 1.1-1.4 2.1v.6"/><path d="M10 15.4v.1" stroke-width="2.2"/></svg>', name: "Help: ask the AIs", n: 9 },
   ];
   const RENAMED = { show: "box", stop: "box", panel: "ask" };   // diagrams saved before the five shapes
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
@@ -50,9 +56,9 @@
     const d = piStr() || "31", a = +d[d.length - 2] || 3, b = +d[d.length - 1] || 1;
     switch (f.k) {
       case "add": return a + " + " + b + " = " + (a + b) + "; drag it out: it adds, joins, or opens what it touches";
-      case "box": run(still()); return still() ? "π stopped; drag it out to show or stop anything" : "π running";
+      case "box": run(still()); return (still() ? "π stopped" : "π running") + "; drag it out: onto a window for its stop button, onto something to show it, or type into it";
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers";
-      case "dot": run(still()); return (still() ? "π paused" : "π going on") + "; drag it out to type a word or number";
+      case "dot": run(still()); return (still() ? "π paused" : "π going on") + "; drag it out: type into it, drop it on something, or drag it bigger for a loop";
       case "ask": return "+ adds or opens · ■ shows and stops · ◆ asks every engine · ● is an input or a pause · ? explains: drop it on anything, or type a question";
       default: return "drag it onto something to wire it";
     }
@@ -127,7 +133,7 @@
     if (visiting[n.id]) return { num: NaN, bool: false, text: "NaN" };
     visiting[n.id] = true;
     const ins = n.inputs.map(valueOf).concat(linkIns(n).map(valueOfAnchor)).slice(-BY[n.fn].n);
-    const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "–" };
+    const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "" };
     const allNum = ins.every(v => v.isNum);   // a word, a button or a window is its name: + joins names into text
     let r;
     switch (n.fn) {
@@ -142,20 +148,14 @@
         r = { num: t.length, bool: !!t, str: t, text: t || (n.st.go ? "thinking…" : n.prompt ? "press to ask" : "wire a prompt into it") };
         break;
       }
-      case "box": {                                    // ■ shows the newest thing wired in
+      case "box":                                      // ■ and ●: what their first use made them
+      case "dot": {
         const v = ins[ins.length - 1];
-        r = v ? { num: v.num, isNum: v.isNum, bool: v.bool, str: strOf(v), text: v.text != null && v.text !== "" ? v.text : clip(strOf(v)) } : { num: 0, bool: false, text: "" };
-        break;
-      }
-      case "dot": {                                    // ● passes a wired value through, or holds what you type
-        const v = ins[ins.length - 1];
-        if (v) r = { num: v.num, isNum: v.isNum, bool: v.bool, str: strOf(v), text: v.text != null && v.text !== "" ? v.text : clip(strOf(v)) };
-        else {
-          const t = (n.str || "").trim(), x = numOf(t);
-          r = !t ? { num: 0, bool: false, str: "", text: "" }
-            : /^[\s\d.,'’+-]+$/.test(t) && !Number.isNaN(x) ? { num: x, isNum: true, bool: x !== 0, str: t, text: t }
-            : { num: t.length, bool: true, str: t, text: t };
-        }
+        if (n.role === "loop") r = { num: n.i || 0, isNum: true, bool: !n.paused, str: String(n.i || 0), text: String(n.i || 0) };
+        else if (n.role === "int") { const x = parseInt(n.str, 10); r = Number.isNaN(x) ? { num: 0, isNum: true, bool: false, str: "", text: "" } : { num: x, isNum: true, bool: x !== 0, str: String(x), text: String(x) }; }
+        else if (n.role === "text") { const t = n.str || ""; r = { num: t.length, bool: !!t, str: t, text: t }; }
+        else if (n.role === "stop") { const i = n.target && O().info ? O().info(n.target) : null; r = { num: i && i.open ? 1 : 0, bool: !!(i && i.open), str: i ? i.title : "", text: "" }; }
+        else r = v ? { num: v.num, isNum: v.isNum, bool: v.bool, str: strOf(v), text: v.text != null && v.text !== "" ? v.text : clip(strOf(v)) } : { num: 0, bool: false, text: "" };
         break;
       }
       case "ask": {                                    // ? : what you typed, a wired ◆'s question, and whatever else is wired in
@@ -202,9 +202,15 @@
     }
     if (under(n, x, y).some(e => e.closest && e.closest(".lv-node"))) return false;     // a node: show it
     const panel = under(n, x, y).map(e => e.closest && e.closest(".orbit-panel")).find(Boolean);
-    if (panel && O().keyOf && O().close) {
+    if (panel && O().keyOf && !n.role) {                                    // on an open window: it is that window's stop button
       const k = O().keyOf(panel), title = (panel.querySelector(".op-title") || {}).textContent || "the window";
-      if (k && O().close(k)) return done("closed " + title);
+      if (k) {
+        n.role = "stop"; n.target = k; n.targetTitle = title;
+        const r = panel.getBoundingClientRect();
+        n.fx = Math.max(4, Math.min(window.innerWidth - 60, r.right - 56)) / window.innerWidth; n.fy = Math.max(4, r.top - 44) / window.innerHeight; place(n); clear(n);
+        say("■ is now the stop button for " + title + ": press it to close it");
+        return true;
+      }
     }
     return false;
   }
@@ -213,9 +219,9 @@
   // a button, window or word (asks the engines what it is); on a ◆ it is wired to ask the panel
   const HELP = {
     add: "+ means add, join, up, open, more. Numbers wired in add up, words join; alone on a button it opens it, on an open window it brings it up.",
-    box: "■ means stop or a blank box. It shows whatever is wired into it; press it to stop that (and the engines or π feeding it), press again to let go. Dropped on a wire it removes it, on a window it closes it.",
+    box: "■ becomes what you first do with it. Dropped on an open window it is that window's stop button; type a letter into a blank one for a text field, a digit for an integer field; dropped on something it shows it, and pressing it stops what it shows. On a wire it removes the wire.",
     super: "◆ is the smart AI. Whatever is wired into it becomes its prompt and every engine in the project answers: siM, riB, piD and PiEn. Wire a ■ to it to read the answer.",
-    dot: "● means pause, a dot or a blank input. Type a word or a number into it; wired, it passes the value through; press it to pause what it is wired to, press again to go on.",
+    dot: "● becomes what you first do with it. Type a letter for a text field, a digit for an integer field; drop it on something and it passes the value along, and pressing it pauses; drag it bigger and it becomes a loop that counts.",
     ask: "? means help or ask. Type a question and the panel of AI jurors answers; drop it on anything to hear what it is, or on a wire to hear what the wiring means.",
   };
   function describe(an) {
@@ -284,26 +290,34 @@
       const frozen = n.fn === "box" && (n.stopped || n.held);
       if (!frozen && n.text !== r.text) {
         n.text = r.text; n.changed = now;
-        if (n.fn === "box") n.el.querySelector(".lv-glyph").textContent = r.text;        // ■ holds its value inside
-        else if (n.fn === "dot") { const i = n.el.querySelector("input"); if (i && n.inputs.length + linkIns(n).length) i.value = r.text; }
+        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : r.text;   // holds its value inside
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
       }
-      if (n.fn === "dot") { const i = n.el.querySelector("input"); if (i) i.readOnly = !!(n.inputs.length + linkIns(n).length); }
       if (n.fn === "super" || n.fn === "ask") {                          // its status, always current
-        const st = n.held ? "stopped" : n.st.go ? "thinking…" : n.answer ? (n.fn === "ask" ? "" : "answered") : n.prompt ? "press to ask" : n.fn === "ask" ? "" : "wire a prompt";
+        const st = n.held ? "stopped" : n.st.go ? "thinking…" : n.answer ? (n.fn === "ask" ? "" : "answered") : n.prompt ? "press to ask" : "";
         if (n.val.textContent !== st) n.val.textContent = st;
         const w = wiringOf(n) + (n.fn === "ask" ? "|" + (n.supAnswer || "") : "");   // ? also follows the engine's answers
         if (n.wiring !== undefined && w !== n.wiring && n.prompt && !n.held) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "ask" ? askPanel(n) : askEngine(n)), n.fn === "ask" ? 1500 : 900); }
         n.wiring = w;
       }
+      if (n.fn === "ask") n.el.classList.toggle("is-asking", !!(n.str || n.answer || r.text || n.st.go || n.el.contains(document.activeElement) && document.activeElement.tagName === "INPUT"));
       if (n.fn === "box" || n.fn === "ask") {
         const long = String(n.text || "").length > 28 || /\n/.test(n.text || "");
         n.el.classList.toggle("is-long", long);
         if (n.changed === now) clear(n);                                 // its text changed size: step out of the way
       }
-      if (n.fn === "box") { n.val.textContent = n.stopped ? "stopped" : ""; n.el.classList.toggle("is-stopped", !!n.stopped); }
-      if (n.fn === "dot") { n.val.textContent = n.paused ? "paused" : ""; n.el.classList.toggle("is-stopped", !!n.paused); }
+      if (n.fn === "box" || n.fn === "dot") {
+        const lab = n.role === "stop" ? "stop · " + (n.targetTitle || "window")
+          : n.role === "loop" ? "↻ " + (n.i || 0) + (n.paused ? " · paused" : "")
+          : n.role === "text" ? "text" : n.role === "int" ? "integer"
+          : n.stopped ? "stopped" : n.paused ? "paused" : "";
+        if (n.val.textContent !== lab) n.val.textContent = lab;
+        n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
+        n.el.classList.toggle("is-loop", n.role === "loop");
+        n.el.classList.toggle("has-val", !!n.text && !n.field && n.role !== "stop" && n.role !== "loop");
+        n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
+      }
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". " + (r.text ? "Value " + clip(String(r.text)) + "." : ""));
       n.el.title = BY[n.fn].name + (n.inputs.length ? " ← " + n.inputs.map(nameOf).join(", ") : "") + "\n" + HELP[n.fn];
     });
@@ -345,7 +359,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: (n.fn === "dot" || n.fn === "ask") && n.str ? n.str : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -371,13 +385,25 @@
       inp.addEventListener("pointerdown", e => e.stopPropagation());
       inp.addEventListener("click", e => e.stopPropagation());
       inp.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter" && f.k === "ask") { n.st.local = false; askPanel(n, true); } });
-      inp.addEventListener("input", () => { if (inp.readOnly) return; n.str = inp.value; persist(); tick(); });
+      inp.addEventListener("input", () => {
+        if (n.role === "int") { const c = inp.value.replace(/(?!^-)[^\d]/g, ""); if (c !== inp.value) inp.value = c; }   // an integer field takes digits only
+        n.str = inp.value; persist(); tick();
+      });
       return inp;
     };
-    if (f.k === "dot") g.replaceWith(field("lv-in", "·", "Type a word or a number"));
+    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0;
+    if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
+    if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
+    if (f.k === "dot") {                                                  // a grip on its edge: drag it bigger for a loop
+      const grip = document.createElement("span"); grip.className = "lv-grip"; grip.setAttribute("aria-hidden", "true");
+      el.appendChild(grip);
+      grip.addEventListener("pointerdown", e => grow2(e, n, grip));
+      if (n.size) sizeDot(n, n.size);
+    }
     if (f.k === "ask") {
       n.answer = spec.answer || "";
-      const q = field("lv-q", "?", "Ask a question, then press Enter");
+      const q = field("lv-q", "", "Ask a question, then press Enter");
+      q.addEventListener("blur", () => setTimeout(() => tick(), 0));       // an empty question folds away again
       const ans = document.createElement("div"); ans.className = "lv-ans"; ans.textContent = n.answer;
       g.after(q); el.appendChild(ans);
     }
@@ -499,7 +525,7 @@
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
       if (n.fn === "box" && ev.type === "pointerup" && boxGuess(n, ev.clientX, ev.clientY)) { persist(); tick(); return; }
       if (n.fn === "ask" && ev.type === "pointerup" && askGuess(n, ev.clientX, ev.clientY, t)) { persist(); tick(); return; }
-      if (t && t.text && BY[n.fn].n && window.SuperLink && window.SuperLink.add) {
+      if (t && t.text && BY[n.fn].n && !((n.fn === "box" || n.fn === "dot") && n.role) && window.SuperLink && window.SuperLink.add) {
         window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
         const w = n.el.offsetWidth, h = n.el.offsetHeight;
         let x = t.rect.right + 28; if (x + w > window.innerWidth - 4) x = t.rect.left - w - 28;
@@ -508,12 +534,13 @@
       }
       if (t && t.el && BY[n.fn].n) {
         const ref = refOf(t.el);
+        if ((n.fn === "box" || n.fn === "dot") && n.role) { place(n); persist(); tick(); return; }   // it already is something: just moved
         attach(n, ref);
         if (n.fn === "add" && n.inputs.length === 1 && ref.key) setTimeout(() => signOn(n, ref, t.el), 0);
         if (n.inputs.some(r => same(r, ref))) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
       } else if (spawn) {
-        say(BY[n.fn].name + " placed" + (n.fn === "dot" ? ": type a word or a number" : n.fn === "ask" ? ": type a question and press Enter" : ": drop it on something to wire it"));
-        if (n.fn === "dot" || n.fn === "ask") setTimeout(() => { const i = n.el.querySelector("input"); if (i) i.focus(); }, 60);
+        say(BY[n.fn].name + " placed" + (n.fn === "box" || n.fn === "dot" ? ": it is nothing yet; type a letter for text or a digit for an integer" : n.fn === "ask" ? ": type a question and press Enter" : ": drop it on something to wire it"));
+        if (n.fn === "ask" || ((n.fn === "box" || n.fn === "dot") && !n.role)) setTimeout(() => n.el.focus({ preventScroll: true }), 60);
       }
       persist(); tick();
     };
@@ -528,25 +555,83 @@
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       const wired = n.inputs.length + linkIns(n).length > 0;
       if (n.fn === "super") askEngine(n, true);
-      else if (n.fn === "ask") { if (n.prompt && !n.st.local) askPanel(n, true); else { const i = n.el.querySelector("input"); if (i) i.focus(); } }
-      else if (n.fn === "box") {
-        if (wired) { n.stopped = !n.stopped; if (!n.stopped) n.text = null; say("■: " + (n.stopped ? "stopped what it shows" : "let go")); }
-        else { run(still()); say("■: π " + (still() ? "stopped" : "running")); }
-      }
-      else if (n.fn === "dot") {
-        if (wired) { n.paused = !n.paused; say("●: " + (n.paused ? "paused" : "going on")); }
-        else { const i = n.el.querySelector("input"); if (i) i.focus(); }
+      else if (n.fn === "ask") { if (n.prompt && !n.st.local) askPanel(n, true); else { n.el.classList.add("is-asking"); const i = n.el.querySelector("input"); if (i) i.focus(); } }
+      else if (n.fn === "box" || n.fn === "dot") {
+        const sym = n.fn === "box" ? "■" : "●";
+        if (n.role === "stop") { const i = O().info && O().info(n.target); if (i && i.open && O().close(n.target)) say("■: stopped " + i.title); else say("■: " + (n.targetTitle || "its window") + " is not open"); }
+        else if (n.field) n.field.focus();
+        else if (n.role === "loop") { n.paused = !n.paused; say("●: the loop " + (n.paused ? "is paused" : "goes on")); }
+        else if (wired && n.fn === "box") { n.stopped = !n.stopped; if (!n.stopped) n.text = null; say("■: " + (n.stopped ? "stopped what it shows" : "let go")); }
+        else if (wired) { n.paused = !n.paused; say("●: " + (n.paused ? "paused" : "going on")); }
+        else say(sym + ": nothing yet; type a letter for text or a digit for an integer" + (n.fn === "dot" ? ", or drag its edge bigger for a loop" : ""));
       }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
     n.el.addEventListener("dblclick", () => { n.inputs = []; if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id); persist(); tick(); say(BY[n.fn].name + " unwired"); });
     n.el.addEventListener("keydown", e => {
+      // the first thing typed into a blank ■ or ● decides: a letter makes a text field, a digit an integer field
+      if ((n.fn === "box" || n.fn === "dot") && !n.role && !n.field && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") {
+        e.preventDefault();
+        n.role = /[\d-]/.test(e.key) ? "int" : "text";
+        n.str = e.key; n.inputs = [];
+        const real = fieldFor(n);
+        n.el.querySelector(".lv-glyph").replaceWith(real); n.field = real;
+        real.focus(); real.setSelectionRange(real.value.length, real.value.length);
+        say((n.fn === "box" ? "■" : "●") + " is now " + (n.role === "int" ? "an integer field" : "a text field"));
+        persist(); tick(); return;
+      }
+      // typing at a blank ? opens its question field
+      if (n.fn === "ask" && e.key.length === 1 && e.key !== " " && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        const q = n.el.querySelector(".lv-q");
+        if (q) { e.preventDefault(); n.el.classList.add("is-asking"); q.focus(); q.value += e.key; q.dispatchEvent(new Event("input")); return; }
+      }
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(n); say(BY[n.fn].name + " node removed"); }
       else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); n.el.click(); }
     });
   }
   function say(t) { if (out) out.textContent = t; }
+  // a text or integer field inside a ■ or ●, made by its first key
+  function fieldFor(n) {
+    const inp = document.createElement("input");
+    inp.type = "text"; inp.className = "lv-in"; inp.value = n.str || ""; inp.spellcheck = false; inp.autocomplete = "off";
+    if (n.role === "int") inp.inputMode = "numeric";
+    inp.setAttribute("aria-label", n.role === "int" ? "Integer" : "Text");
+    inp.addEventListener("pointerdown", e => e.stopPropagation());
+    inp.addEventListener("click", e => e.stopPropagation());
+    inp.addEventListener("keydown", e => e.stopPropagation());
+    inp.addEventListener("input", () => {
+      if (n.role === "int") { const c = inp.value.replace(/(?!^-)[^\d]/g, ""); if (c !== inp.value) inp.value = c; }   // an integer field takes digits only
+      n.str = inp.value; persist(); tick();
+    });
+    return inp;
+  }
+  // ● dragged bigger by its grip: past twice its size it becomes a loop, a ring that counts
+  const DOT = 52, LOOP_AT = 104;
+  function sizeDot(n, d) { n.size = d; n.el.style.width = n.el.style.height = d + "px"; }
+  function grow2(e, n, grip) {
+    if (e.button !== 0) return;
+    e.stopPropagation(); e.preventDefault();
+    const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    try { grip.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
+    const move = ev => {
+      const d = Math.max(DOT, Math.min(Math.min(window.innerWidth, window.innerHeight) - 20, 2 * Math.hypot(ev.clientX - cx, ev.clientY - cy)));
+      sizeDot(n, Math.round(d));
+      n.el.style.left = (cx - d / 2) + "px"; n.el.style.top = (cy - d / 2) + "px";
+      n.el.classList.toggle("is-growing", d >= LOOP_AT && n.role !== "loop");
+    };
+    const up = () => {
+      grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
+      n.el.dataset.dragged = "1"; setTimeout(() => { delete n.el.dataset.dragged; }, 0);   // the release is not a press
+      n.el.classList.remove("is-growing");
+      const b = n.el.getBoundingClientRect();
+      n.fx = b.left / window.innerWidth; n.fy = b.top / window.innerHeight;
+      if (n.size >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts ↻ once a second; press its label to pause"); }
+      else if (n.role !== "loop" && n.size < LOOP_AT) sizeDot(n, n.size);
+      persist(); tick();
+    };
+    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
+  }
   // π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }
   // ---- Super: a star that grows into a superellipse ---------------------
@@ -565,8 +650,7 @@
     if (!path) return;
     const g = G(), k = Math.max(0, Math.min(1, ((n.st.sn || g) - g) / (P() - g)));
     path.setAttribute("d", superPath(n.st.sn || g, 46));
-    path.style.fillOpacity = (1 - k).toFixed(3);           // the solid diamond fades as it widens
-    path.style.strokeOpacity = (0.3 + 0.7 * k).toFixed(3);   // and its outline firms up
+    // an empty outline, like the other four; it widens toward π while the engines think
     n.el.classList.toggle("is-grown", k >= 1);
   }
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
@@ -699,6 +783,7 @@
     // the diagram you left last time
     (restore("lv:nodes") || []).forEach(make);
     setInterval(tick, 250);
+    setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
