@@ -1009,3 +1009,11 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 **Why:** owner: "the logo can get bigger by scrolling max to encompass the whole page, minimum to be dot"; "lines are curved and can be connected or disconnected".
 
 **Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look) and 1280×720 plain: the mark scrolls to 8 px and up to cover the stage, pills stay on top and clickable, the size survives a reload; Shift + scroll changes n; all wires curved; a click removes one, a handle drag adds Lab–Tools, both kept after reload; a node's wire disconnects on click; no horizontal scroll, no page errors.
+
+## 2026-10-10: The loop is the page; scrolling moves n from 0 to ∞
+
+**What:** in the superellipse look the mark is a superellipse the size of the stage (a, b = half its width and height; the SVG stretches with `preserveAspectRatio="none"`), behind the bubbles, so everything sits inside it, with the π counter at its centre. Scrolling anywhere on the page (no Shift) moves n from 0.01 to 1000, shown as "n → 0" and "n → ∞" at the ends: the loop pinches to a cross and then the centre, passes through a diamond (1) and an ellipse (2), and fills the page's rectangle. It is kept as `orbit:mark:n`. The layout keeps a clear area at the centre for the counter. Shift + scroll is gone. Also fixed: in backdrop mode the stage's opaque paper hid the mark, so the paper now sits on the mark's layer just under a see-through stage (this affected the plain look's page-sized mark from the previous change too).
+
+**Why:** owner: "remove shift scrolling. zooming makes it n from 0 to infinity and everything is inside this super[ellipse]".
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look): the loop spans the stage and every bubble is inside it; scrolling gives n = 0.128, n → 0 and n → ∞; it opens no windows; n survives a reload; the counter opens π and friends. Plain look at 1280 and 390: dot to page size scroll unchanged, and the page-sized mark is now visible. No horizontal scroll, no page errors.
