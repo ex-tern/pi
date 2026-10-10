@@ -1576,7 +1576,9 @@ def register_visit(request: Request):
     Returns the current totals so the caller can render them without a second
     request.
     """
-    record_visit(_visitor_key(get_client_ip(request)))
+    key = _visitor_key(get_client_ip(request))
+    record_visit(key)
+    _traffic.record(get_db_connection, key)      # the daily series (traffic.py)
     return visitor_stats()
 
 
@@ -7177,6 +7179,8 @@ app.include_router(_pien.build_router(BASE_DIR))
 import recent as _recent  # noqa: E402
 app.include_router(_recent.build_router(get_db_connection))
 import live as _live
+import traffic as _traffic
+app.include_router(_traffic.build_router(get_db_connection))
 app.include_router(_live.build_router(get_db_connection, idle_worker.public_status, idle_worker.activity))
 
 

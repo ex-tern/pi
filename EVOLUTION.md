@@ -851,3 +851,21 @@ The mark also gets a soft cobalt glow while working.
 **Verified:** all 14 forecast tests pass; the full suite is 12 failed (the same pre-existing baseline) and 418 passed, up from 404; `build_hal.py` builds; the site loaded at 1440 and 390 px on every tab with no page errors and no horizontal scroll (no frontend change).
 
 **Files:** `backend/tests/test_forecast.py`, `CLAUDE.md`, `EVOLUTION.md`.
+
+## 2026-10-10: website traffic in Analytics
+
+**What:** the Analytics window now has a "Website traffic" section:
+- **Tiles:** distinct visitors today, in the last 7 days, the last 30 days and all time.
+- **Chart:** a 30-day bar chart of distinct visitors per day, one cobalt series, hover tooltip per day with visitors and visits.
+- **Table view** of the same numbers.
+
+**Data:** `backend/traffic.py`, a new `site_traffic` table (day, the existing keyed IP hash, visit count), filled by the same once-per-session ping as the visitor total (`POST /api/visit`).
+- `GET /api/traffic?days=30` returns aggregates only.
+- Rows older than 120 days are dropped.
+- "All time" is the existing `site_visits` total (never less than what the daily table has seen).
+- The day series starts from this deploy, since no per-day history was kept before.
+
+**Verified:**
+- `tests/test_traffic.py` checks counting, gap filling, the 7- and 30-day windows, all time, the upsert and pruning, and that no visitor key leaves the API.
+- With 30 seeded days, the section rendered in the Analytics window at 1440 and 390 px: 4 tiles, bars for the days with visitors, a 30-row table, and a tooltip on hover. No page errors or horizontal scroll.
+- pytest at baseline (12 failures, now including test_forecast); `build_hal.py` builds.
