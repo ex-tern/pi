@@ -184,18 +184,14 @@
     '<svg class="orbit-wires" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to close all windows, double-click to stop or restart π">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize (in the superellipse look: to change its n), click to close all windows, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<path class="om-loop" d=""/>' +
     '<g class="om-sweep">' +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text>' +
-    // the While Loop's terminals (superellipse look): i, the iteration count, and the stop/continue condition
-    '<g class="om-term om-iter"><rect x="104" y="296" width="28" height="28" rx="2"/><text x="118" y="317" text-anchor="middle">i</text></g>' +
-    '<g class="om-term om-cond"><rect x="268" y="296" width="28" height="28" rx="2"/>' +
-    '<path class="om-go" d="M289 310a7 7 0 1 1-2.1-5" fill="none"/><path class="om-go" d="M287.6 299.6v5.6h-5.6" fill="none"/>' +
-    '<rect class="om-stop" x="275" y="303" width="14" height="14"/></g>' +
+    '<text class="om-n" x="200" y="128" text-anchor="middle"></text>' +
     '</svg></button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
@@ -417,7 +413,7 @@
   // The π box is its own thing: under the mark until you move it, then
   // wherever you left it. It never leaves the screen.
   function piCentre() {
-    if (merged()) return [lx, ly + shownR() * 0.3];       // inside the central loop, above its terminals
+    if (merged()) return [lx, ly + shownR() * 0.38];      // inside the central loop
     let x, y;
     if (piAt) { x = piAt.fx * W; y = piAt.fy * H; }
     else { x = lx; y = ly + R + 14 + piBox.h / 2; }
@@ -434,10 +430,24 @@
     return [x, y];
   }
   // In the superellipse look the mark is the diagram's central loop: a
-  // superellipse at n = π (the windows' n, computed live by semorph.js) with
-  // the π counter inside it, and the diameter reaching the curve at every angle.
+  // superellipse at n = π (the windows' n, computed live by semorph.js; scroll
+  // on it to change n) with the π counter inside it, and the diameter reaching
+  // the curve at every angle.
   const merged = () => document.documentElement.classList.contains("shape-se");
-  const loopN = () => (window.SeMorph && window.SeMorph.pi) || Math.PI;
+  // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
+  let markN = load("orbit:mark:n");
+  const loopN = () => markN || (window.SeMorph && window.SeMorph.pi) || Math.PI;
+  let nShowT = 0;
+  function scrollN(e) {
+    if (!merged()) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    markN = Math.min(12, Math.max(0.3, loopN() * Math.exp(-e.deltaY * 0.0015)));
+    drawLoop();
+    const t = $(".om-n");
+    if (t) { t.textContent = "n = " + markN.toFixed(3); t.classList.add("show"); }
+    clearTimeout(nShowT);
+    nShowT = setTimeout(() => { if (t) t.classList.remove("show"); store("orbit:mark:n", +markN.toFixed(4)); }, 900);
+  }
   const loopR = th => { const n = loopN(); return 150 / Math.pow(Math.pow(Math.abs(Math.cos(th)), n) + Math.pow(Math.abs(Math.sin(th)), n), 1 / n); };
   let loopDrawn = 0;
   function drawLoop() {
@@ -737,6 +747,7 @@
     // double-click: the mark stops turning and π stops growing; again to carry on
     core.addEventListener("dblclick", () => { clearTimeout(closeT); setStill(!still); });
     const setLogo = v => { logoScale = v; };
+    core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: scrolling changes the loop's n
     wheelResize(core, () => logoScale, setLogo, LOGO_MIN, LOGO_MAX, "orbit:logo:scale");
     // Scrolling on the page itself resizes the mark and opens a random window
     // (see wireScrollOpen).
@@ -875,6 +886,7 @@
     // double-click: back under the mark, at the usual size
     pi.addEventListener("dblclick", () => { piAt = null; piScale = 1; store("orbit:pi:at"); store("orbit:pi:scale"); layout(); });
     resizer(pi.querySelector(".op-grip"), piCentre, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
+    pi.addEventListener("wheel", scrollN, { passive: false });       // inside the loop, the counter scrolls n too
     wheelResize(pi, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
   }
 

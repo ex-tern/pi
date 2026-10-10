@@ -1,9 +1,12 @@
 // semorph.js — in the superellipse look (html.shape-se), the shape's exponent n
 // says what a thing is:
 //
-//   a button   n = γ, the Euler–Mascheroni constant (0.5772…): a stretched
-//              four-pointed diamond, concave sides meeting in points; n grows
-//              towards π the more the button is used
+//   a button   a full superellipse whose n grows with use: never used, it is
+//              a four-pointed star at n = γ (0.5772…, the Euler–Mascheroni
+//              constant) beside its name; used, it widens into the shape at
+//              n = π around the name. Hover shows it fully grown.
+//   an object  (bubbles, buttons in windows, nodes, the central loop): a full
+//              symmetric superellipse at n = π
 //   a window   n = π (3.1415…): full, nearly square corners
 //   a dot      the whole superellipse at n = γ: a sparkle (--se-sparkle)
 //
@@ -67,13 +70,15 @@
   const nOfUse = u => gamma + (pi - gamma) * u / (u + 8);
   function perButton() {
     if (!on() || !window.PiOrbit || !window.PiOrbit.info) return;
-    document.querySelectorAll(".orbit-bubble[data-key], .ob-member[data-key]").forEach(el => {
+    // the pills are the buttons; bubbles are objects and keep n = π
+    document.querySelectorAll(".ob-member[data-key]").forEach(el => {
       const i = window.PiOrbit.info(el.dataset.key);
       if (!i) return;
-      const n = nOfUse(i.use || 0), k = K(n).toFixed(5);
+      const u = i.use || 0, n = nOfUse(u), k = K(n).toFixed(5);
       if (el.dataset.seK !== k) {
         el.dataset.seK = k; el.dataset.seN = n.toFixed(5);
         el.style.setProperty("--se-k", k);
+        el.style.setProperty("--se-t", (u / (u + 8)).toFixed(4));   // 0: a star beside the name, 1: the shape around it
         el.title = el.title.replace(/ · n = [\d.]+$/, "") + " · n = " + n.toFixed(4);
       }
     });
