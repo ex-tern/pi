@@ -20,7 +20,7 @@
 //                     [Join] ── [Ask SciM]
 //   (Whitepaper) ─────┘
 //
-// Drag a node onto the palette to remove it, double-click it to unwire it,
+// Click a wire to disconnect it. Drag a node onto the palette to remove it, double-click it to unwire it,
 // press it to pause a loop. The diagram is remembered in this browser.
 (function () {
   "use strict";
@@ -195,15 +195,17 @@
         const cy = r.top + r.height / 2;
         const right = r.left + r.width / 2 <= tx;
         const sx = right ? r.right : r.left;
-        const mx = right ? (sx + tx) / 2 : Math.min(sx, tx) - 16;
-        const d = "M" + sx + "," + cy + "H" + mx + "V" + ty + "H" + tx;
+        // a curve out of the source's side and into the node's input from the left
+        const c = Math.max(30, Math.abs(tx - sx) * 0.5), sg = right ? 1 : -1;
+        const d = "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
         s += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
-             term(sx, cy, "wire-term") + term(tx, ty, "wire-term") + "</g>";
+             term(sx, cy, "wire-term") + term(tx, ty, "wire-term") +
+             '<path class="wire-hit" data-node="' + n.id + '" data-i="' + idx + '" d="' + d + '"><title>Click to disconnect</title></path></g>';
       });
     });
-    wires.innerHTML = s;
+    if (s !== wires.dataset.last) { wires.dataset.last = s; wires.innerHTML = s; }   // unchanged wires stay, so a click lands
   }
 
   // ---- making, moving and removing nodes -------------------------------
@@ -360,6 +362,15 @@
     canvas.className = "lv-canvas";
     canvas.innerHTML = '<svg class="lv-wires" aria-hidden="true"></svg>';
     wires = canvas.firstChild;
+    // click a wire to disconnect that input
+    wires.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      const n = w && nodes.find(x => x.id === w.dataset.node);
+      if (!n) return;
+      const ref = n.inputs.splice(+w.dataset.i, 1)[0];
+      persist(); tick();
+      say(BY[n.fn].name + " disconnected from " + (ref ? nameOf(ref) : "its input"));
+    });
     document.body.appendChild(canvas);
 
     pal = document.createElement("aside");

@@ -426,3 +426,22 @@ html[data-activity="working"] .wire.live .wire-flow { animation-duration: 0.8s; 
 html[data-activity="busy"] .wire.live .wire-flow { animation-duration: 0.4s; }
 @keyframes wire-flow { to { stroke-dashoffset: -28; } }
 @media (prefers-reduced-motion: reduce) { .wire.live .wire-flow { animation: none; stroke-dasharray: none; } }
+
+/* the mark scrolled past the room around it covers the page as a backdrop,
+   behind the pills and windows; scrolled down to a dot it drops the counter */
+html.orbit-mark-big .orbit-center { z-index: 5; }
+html.orbit-mark-tiny .orbit-center > .orbit-pi { display: none; }
+
+/* wires you can edit: click one to disconnect it, drag from a bubble's handle to connect */
+.wire-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.wire:hover .wire-bed { stroke: #b4574f; stroke-dasharray: 5 4; }
+.wire:hover .wire-term { stroke: #b4574f; }
+.wire-handle { pointer-events: all; cursor: crosshair; opacity: 0.55; transition: opacity 0.15s ease; }
+.wire-handle .wh-hit { fill: transparent; }
+.wire-handle .wh-dot { fill: var(--paper); stroke: var(--graphite); stroke-width: 1.5; }
+.wire-handle:hover { opacity: 1; }
+.wire-handle:hover .wh-dot { fill: var(--cobalt); stroke: var(--cobalt); }
+.wire-temp { fill: none; stroke: var(--cobalt); stroke-width: 2; stroke-dasharray: 6 6; pointer-events: none; }
+html.orbit-linking, html.orbit-linking * { cursor: crosshair !important; }
+.orbit-bubble.wire-target { outline: 2px dashed var(--cobalt); outline-offset: 4px; }
+@media (hover: none) { .wire-handle { opacity: 0.8; } }
