@@ -495,6 +495,7 @@
     if (n) { const r = n.el.getBoundingClientRect(); dx = x0 - r.left; dy = y0 - r.top; }
     try { startEl.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
     const move = ev => {
+      if (ev.pointerId !== e.pointerId || (n && n.st.pinch)) return;     // a second finger zooms, it does not drag
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
       if (!moved) {
         moved = true;
@@ -518,6 +519,7 @@
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       pal.classList.remove("lv-bin");
       html.classList.remove("lv-dragging");
+      if (n && n.st.pinched) { n.st.pinched = false; n.el.classList.remove("is-dragging"); dragging = null; startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0); persist(); return; }
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0);
       n.el.classList.remove("is-dragging"); dragging = null;
@@ -798,7 +800,8 @@
     (restore("lv:nodes") || []).forEach(make);
     setInterval(tick, 250);
     setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count
-    // scrolling on a node (or on a loop's ring or label) sizes it, instead of changing the page
+    // zooming on a node (a trackpad pinch, or ctrl + wheel; two fingers on a touch screen) sizes it;
+    // scrolling stays what it is everywhere: the page's n
     document.addEventListener("wheel", e => {
       const hit = document.elementFromPoint(e.clientX, e.clientY);
       let n = zoomed && performance.now() - zoomed.t < 450 && nodes.includes(zoomed.n) ? zoomed.n : null;   // one scroll gesture stays on its node
@@ -809,10 +812,33 @@
         return Math.abs(d - r.width / 2) < 14;
       });
       if (!n || (hit && hit.tagName === "INPUT" && n.el.contains(hit) && n.fn === "ask")) return;
+      if (!e.ctrlKey) { zoomed = null; if (O().scrollN) O().scrollN(e); return; }   // scrolling is the page's n, as anywhere else
       e.preventDefault(); e.stopImmediatePropagation();
       zoomed = { n, t: performance.now() };
-      zoomNode(n, e.deltaY || e.deltaX);
+      zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
+    // two fingers on a node: their spread sizes it
+    const touches = new Map();
+    canvas.addEventListener("pointerdown", e => {
+      if (e.pointerType !== "touch") return;
+      const n = nodes.find(x => x.el === (e.target.closest && e.target.closest(".lv-node")));
+      if (!n) return;
+      touches.set(e.pointerId, { n, x: e.clientX, y: e.clientY });
+      const same = [...touches.values()].filter(t => t.n === n);
+      if (same.length === 2) n.st.pinch = { d0: Math.hypot(same[0].x - same[1].x, same[0].y - same[1].y) || 1, s0: n.size || DOT_BASE };
+    }, true);
+    document.addEventListener("pointermove", e => {
+      const t = touches.get(e.pointerId); if (!t) return;
+      t.x = e.clientX; t.y = e.clientY;
+      const n = t.n; if (!n.st.pinch) return;
+      const same = [...touches.values()].filter(x => x.n === n); if (same.length < 2) return;
+      const d = Math.hypot(same[0].x - same[1].x, same[0].y - same[1].y);
+      const want = n.st.pinch.s0 * d / n.st.pinch.d0, cur = n.size || DOT_BASE;
+      if (Math.abs(want - cur) >= 1) zoomNode(n, -Math.log(want / cur) / 0.0015);
+      n.st.pinched = true;
+    }, true);
+    const lift = e => { const t = touches.get(e.pointerId); if (!t) return; touches.delete(e.pointerId); if (t.n.st.pinch) { t.n.st.pinch = null; persist(); } };
+    document.addEventListener("pointerup", lift, true); document.addEventListener("pointercancel", lift, true);
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
