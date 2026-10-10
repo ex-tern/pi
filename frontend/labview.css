@@ -102,3 +102,7 @@ html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: no
 .lv-node.lv-panel.is-thinking { border-color: var(--cobalt); color: var(--cobalt); animation: lv-panel-think 1.2s ease-in-out infinite; }
 @keyframes lv-panel-think { 50% { box-shadow: 0 0 0 4px rgba(47, 64, 232, 0.15); } }
 @media (prefers-reduced-motion: reduce) { .lv-node.lv-panel.is-thinking { animation: none; } }
+
+/* held by Stop: dashed and quiet until the wire is gone */
+.lv-node.is-held { border-style: dashed; color: var(--graphite); }
+.lv-node.lv-super.is-held .lv-star { stroke-dasharray: 6 5; }
