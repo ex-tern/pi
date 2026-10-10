@@ -843,3 +843,11 @@ The mark also gets a soft cobalt glow while working.
 **Fix:** the Dockerfile now pulls the same official image from AWS's public mirror, `public.ecr.aws/docker/library/python:3.11-slim`, which has no Docker Hub limit. CLAUDE.md rule 6 now records this instead of the wrong ASCII rule.
 
 **Verified:** pytest at baseline; `build_hal.py` builds. The sandbox cannot reach public.ecr.aws, so the experimental deploy of this commit is the first real build check.
+
+## 2026-10-10: the forecast tests run again
+
+**What:** `tests/test_forecast.py` imported a `forecast` module that no longer exists, so the whole file was skipped with `--ignore` and its 14 tests (forecast caching, bounded training, the Holt fallback) protected nothing. The module was renamed piD (`backend/pid_engine.py`) with the same functions, so the test now imports `pid_engine as forecast`. CLAUDE.md's pre-push command drops the `--ignore`.
+
+**Verified:** all 14 forecast tests pass; the full suite is 12 failed (the same pre-existing baseline) and 418 passed, up from 404; `build_hal.py` builds; the site loaded at 1440 and 390 px on every tab with no page errors and no horizontal scroll (no frontend change).
+
+**Files:** `backend/tests/test_forecast.py`, `CLAUDE.md`, `EVOLUTION.md`.
