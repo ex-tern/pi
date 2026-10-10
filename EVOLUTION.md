@@ -1039,3 +1039,24 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 **Why:** owner: "main super can connect to everything".
 
 **Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look) and 1280×720 plain: Lab handle → counter or mark saves ["Lab","π"] and draws it; loop edge → Tools saves ["π","Tools"]; a click removes a loop wire; Add dropped on the loop edge takes it as input, Subtract dropped on empty space stays unwired; no horizontal scroll, no page errors.
+
+## 2026-10-10: A connector on every word, character and number
+
+**What:** `frontend/superlink.js`.
+- **Connect mode:** a Connect node in the Functions palette turns it on (Escape turns it off). While it is on, the piece of text under the pointer lights up, found with `caretPositionFromPoint` / `caretRangeFromPoint` and checked against the character's own box:
+  - a word (letters together);
+  - a number (up to 12 digits together);
+  - a single character (a symbol, a digit of π or its friends, or a digit inside a longer run).
+- **Wiring:** drag from it to another word, number or character, to a bubble or window, or to the main loop's edge, and a curved wire joins them (sparkle terminals in the superellipse look). Click a wire to disconnect it. Mode swallows the page's own clicks and drags so nothing opens by accident; the palette still works.
+- **Saving:** each end is stored by its host (a bubble or pill's key, a window's title, the counter, Live, the palette, a node) plus the piece and which occurrence it is. So a wire returns after a reload and whenever its window is open again, and hides while its text is not on screen. Kept as `orbit:textwires`.
+- **Fix:** a node dropped on the page-sized loop's edge now settles just inside the loop near the drop, instead of at the screen's edge.
+
+**Why:** owner: "every word every character every number can have a super connector".
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look) and 1280×720 plain:
+- "engines" → "PiEN" in the Performance window is wired, redrawn after a reload, and removed by a click;
+- a single π digit → the loop, and the π symbol → "Analytics", are wired;
+- the count line's number is picked as a whole number;
+- Escape leaves the mode;
+- bubble wiring, node wiring and the diagram tests still pass;
+- no horizontal scroll, no page errors.

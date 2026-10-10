@@ -270,8 +270,16 @@
     return null;
   }
   // after a drop onto something, the node steps beside it rather than on top of it
-  function beside(n, el) {
+  function beside(n, el, px, py) {
     const r = el.getBoundingClientRect(), w = n.el.offsetWidth, h = n.el.offsetHeight;
+    // a page-sized loop: settle just inside it, near where it was dropped
+    if (el.matches(".orbit-core") && (r.width >= window.innerWidth * 0.8) && px != null) {
+      const cx = window.innerWidth / 2, cy = window.innerHeight / 2, d = Math.hypot(cx - px, cy - py) || 1;
+      const k = Math.min(1, 90 / d), x = px + (cx - px) * k, y = py + (cy - py) * k;
+      n.fx = Math.max(4, Math.min(window.innerWidth - w - 4, x - w / 2)) / window.innerWidth;
+      n.fy = Math.max(4, Math.min(window.innerHeight - h - 22, y - h / 2)) / window.innerHeight;
+      place(n); return;
+    }
     let x = r.right + 28;
     if (x + w > window.innerWidth - 4) x = r.left - w - 28;
     if (el.matches(".orbit-panel")) x = Math.min(window.innerWidth - w - 8, Math.max(8, r.right - w - 16)), n.fy = (r.top + 8) / window.innerHeight;
@@ -319,7 +327,7 @@
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
       if (t && t.el) {
         const ref = refOf(t.el);
-        if (attach(n, ref)) { beside(n, t.el); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
+        if (attach(n, ref)) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
       } else if (spawn) say(BY[n.fn].name + " placed: drop it on a button to wire it");
       persist(); tick();
     };
