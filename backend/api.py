@@ -7186,6 +7186,38 @@ import traffic as _traffic
 app.include_router(_traffic.build_router(get_db_connection))
 app.include_router(_live.build_router(get_db_connection, idle_worker.public_status, idle_worker.activity))
 
+# The Super Neural Engine: a prompt made by wiring, answered by every engine. See super_engine.py.
+import super_engine as _super  # noqa: E402
+
+
+def _super_rows():
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT p.eval_hash, p.title, p.author_name, p.fields, p.final_score, p.timestamp,
+                      b.block_height, p.piq_minted
+               FROM papers_assessment p
+               LEFT JOIN blockchain_por_weights b ON p.eval_hash = b.eval_hash
+               WHERE p.final_score IS NOT NULL AND COALESCE(p.title, '') <> ''
+               ORDER BY p.timestamp DESC LIMIT 2000""").fetchall()
+    finally:
+        conn.close()
+    return [{"eval_hash": r[0], "title": r[1], "author": clean_author_name(r[2]), "fields": r[3],
+             "score": r[4], "timestamp": r[5], "on_ledger": r[6] is not None, "piq": r[7] or 0.0} for r in rows]
+
+
+def _super_answer(prompt):
+    if not ENABLE_SCILEM_ASSISTANT:
+        return {}
+    return scilem.answer(prompt)
+
+
+app.include_router(_super.build_router(
+    answer=_super_answer, rows=_super_rows, suggest=rib_suggest.suggest, hot=rib_suggest.hot_topics,
+    pid_status=lambda: forecast_engine.engine_status(["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"]),
+    pien_db=os.path.join(BASE_DIR, "pien.db"),
+    rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="scilem")))
+
 
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
