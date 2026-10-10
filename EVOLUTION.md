@@ -902,3 +902,23 @@ Commands are case-insensitive, and the line editor supports backspace.
 - no page errors or horizontal scroll
 
 pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-10: the page, super-simplified
+
+**What:** the owner asked for a super-simple interface. The stage went from about 20 pills of mixed styles to six bubbles and two pills:
+- **Bubbles:**
+  - Tools, Library and Lab, as before.
+  - **Explore:** The journal, Leaderboards, Proof-of-Research Ledger Explorer, Recent assessments.
+  - **About:** Analytics, Performance, Architecture, Whitepaper, Minting Difficulty, GitHub, Capabilities.
+  - **Connect:** Why sign in, Invite a researcher, Support Pi, Contact us.
+- **Pills:** Your account (with its sign-in dot) and the SciM Assistant chat.
+- **One look:** every pill and bubble is the same calm outline in Geist, at one size. The varied typefaces, ink/dashed/square styles and usage-based sizes are switched off (`SIMPLE` in orbit.js keeps them for later), and so is the bold for much-used pills.
+- **Ornaments:** the dashed orbit rings are gone, leaving the π circle as the only ornament. Bubbles carry a single cobalt dot.
+- **Late pills:** pills that modules add later (Capabilities, Recent assessments) join the bubble that lists them.
+- **Phones:** long member names wrap so nothing runs off a narrow screen.
+
+**Verified:**
+- At 1440, 1024 and 390 px the stage shows exactly the eight items with no overlaps, and nothing off-screen at 390 or 360 px.
+- Members open their windows labelled with their bubble (Explore / The journal, About / Capabilities, Connect / Contact us).
+- The 15-size layout audit passes; no page errors or horizontal scroll.
+- pytest at baseline; `build_hal.py` builds.

@@ -150,6 +150,14 @@
     { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
     // RiBD and the Map of Science, plus what modules add (Neuro Frenzy, MD)
     { title: "Library", members: ["RiBD", "The Global Map of Science"], section: { key: "lib", name: "Library" } },
+    // The page, super-simplified: everything else lives in three more bubbles,
+    // so the stage holds six bubbles and two pills (Your account, SciM).
+    { title: "Explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments"],
+      section: { key: "explore", name: "Explore" } },
+    { title: "About", members: ["Architecture", "Whitepaper", "Capabilities", "Performance", "Analytics", "Minting Difficulty", "GitHub"],
+      section: { key: "about", name: "About" } },
+    { title: "Connect", members: ["Why sign in", "Invite a researcher", "Support Pi", "Contact us"],
+      section: { key: "connect", name: "Connect" } },
   ];
   function migrateRenamed() {
     try {
@@ -239,11 +247,15 @@
     ranked.forEach(([it], i) => {
       const q = ranked.length > 1 ? i / (ranked.length - 1) : 0.5;
       it.q = q;
-      it.bubble.style.setProperty("--pz", (0.84 + q * 0.5).toFixed(3));
+      // one size for every pill in the simple look; q still sizes the mark
+      it.bubble.style.setProperty("--pz", SIMPLE ? "1" : (0.84 + q * 0.5).toFixed(3));
     });
   }
-  const FONTS = ["sans", "sans", "mono", "serif", "sans-light", "serif-italic"];
-  const STYLES = ["outline", "ink", "soft", "dashed", "cobalt", "square", "underline", "outline"];
+  // One calm look for every pill (the page is deliberately simple): the
+  // varied typefaces and styles below are kept but no longer used.
+  const SIMPLE = true;
+  const FONTS = SIMPLE ? ["sans"] : ["sans", "sans", "mono", "serif", "sans-light", "serif-italic"];
+  const STYLES = SIMPLE ? ["outline"] : ["outline", "ink", "soft", "dashed", "cobalt", "square", "underline", "outline"];
   function setLook(it) {
     const h = hash(it.key);
     const b = it.bubble;
@@ -1069,7 +1081,10 @@
     shelf.appendChild(it.content);
     items.push(it);
     // a pill that lives inside a group's bubble (e.g. Tools)
-    if (v.inGroup) { const g = items.find(x => x.group && x.title === v.inGroup); if (g) it.groupOf = g; }
+    // a pill a module adds later still joins the bubble that lists it
+    const listed = GROUPS.find(G => G.members && G.members.includes(v.title));
+    const inGroup = v.inGroup || (listed && listed.title);
+    if (inGroup) { const g = items.find(x => x.group && x.title === inGroup); if (g) it.groupOf = g; }
     makeBubble(it, items.length - 1);
     setSizes();
     layout();

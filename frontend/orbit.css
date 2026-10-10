@@ -398,3 +398,18 @@ html.orbit-open .orbit-pi { opacity: 0.7; }
 .perf-more > summary { cursor: pointer; font-size: 13px; color: var(--graphite); }
 .perf-more[open] > summary { margin-bottom: 12px; }
 .orbit-bubble.is-group > .ob-label { white-space: nowrap; flex: none; }
+
+/* --- the simple look: one style for every pill and bubble, no rings --- */
+.orbit-rings { display: none; }
+.orbit-bubble { --use: 1 !important; font-weight: 400; }
+.orbit-bubble .ob-dot { border-color: var(--hair-strong); background: transparent; border-radius: 50%; }
+.orbit-bubble.is-group > .ob-dot { border-color: var(--cobalt); background: var(--cobalt); }
+.orbit-bubble.is-group { background: var(--surface); border-color: var(--hair-strong); }
+.orbit-bubble.is-group > .ob-label { font-weight: 500; }
+.ob-member { background: var(--paper); }
+.orbit-bubble[data-tier] { font-weight: 400; }
+@media (max-width: 700px) {
+  /* long member names wrap instead of running off a narrow screen */
+  .ob-members { max-width: min(11em, 46vw); }
+  .ob-member { white-space: normal; text-align: left; line-height: 1.25; }
+}
