@@ -106,3 +106,8 @@ html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: no
 /* held by Stop: dashed and quiet until the wire is gone */
 .lv-node.is-held { border-style: dashed; color: var(--graphite); }
 .lv-node.lv-super.is-held .lv-star { stroke-dasharray: 6 5; }
+
+/* Trash: lights up under a node about to be deleted; armed after one press */
+.lv-fn.lv-trash.is-over, .lv-fn.lv-trash.is-armed { border-color: #b4574f; color: #b4574f; background: rgba(180, 87, 79, 0.08); }
+.lv-palette.lv-bin .lv-fn.lv-trash { border-color: #b4574f; color: #b4574f; }
+.lv-fn.lv-trash.fired { animation: none; }
