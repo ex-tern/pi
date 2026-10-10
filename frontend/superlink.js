@@ -1,12 +1,14 @@
 // superlink.js — every word, every character, every number can have a connector.
 //
-// The Connect node in the Functions palette (or Escape, to leave) switches
-// connect mode on. In it, the piece of text under the pointer lights up:
+// Wiring is what the mouse does by default: drag from a piece of text and a
+// wire follows the pointer (a plain click still clicks). The piece is
 //   a word                 letters together ("Analytics")
 //   a number               digits together ("1,549" counts as "1" "549"; up to 12 digits)
 //   a character            a symbol (+, ✦, =) or one digit of π (or e, φ, γ), or inside a run over 12 digits
-// Drag from it to another word, number or character, to a bubble or window, or
-// to the main loop, and a wire joins them. Click a wire to disconnect it.
+// Drop it on another word, number or character, on a bubble, window or node,
+// or on the main loop, and a wire joins them. Click a wire to disconnect it.
+// Text inside things that move when dragged (bubbles, window title bars, the
+// π counter), in fields, nodes and the palette keeps its own behaviour.
 //
 // Wiring also says what you mean: when the words at the two ends of a new wire
 // together name a window ("Assess" wired to "Manuscripts"), that window opens.
@@ -22,7 +24,7 @@
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (_) { return []; } };
   const save = () => { try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (_) { /* private mode */ } };
   let links = load().filter(l => l && l.a && l.b);
-  let on = false, svg, hoverRect = null, drag = null, lastHtml = "";
+  let svg, drag = null, lastHtml = "";
   const LETTER = /[\p{L}\p{M}'’]/u, DIGIT = /\p{Nd}/u;
 
   // ---- where a piece of text lives ------------------------------------
@@ -68,7 +70,10 @@
   function rectOf(node, a, b) { const r = document.createRange(); r.setStart(node, a); r.setEnd(node, b); return r.getBoundingClientRect(); }
   const inside = (r, x, y, pad) => r.width && x >= r.left - pad && x <= r.right + pad && y >= r.top - pad && y <= r.bottom + pad;
   function unitAt(x, y) {
-    const c = caretAt(x, y);
+    const v = svg ? svg.style.visibility : "";                  // look through the wires to the text under them
+    if (svg) svg.style.visibility = "hidden";
+    let c;
+    try { c = caretAt(x, y); } finally { if (svg) svg.style.visibility = v; }
     if (!c || !c.node || c.node.nodeType !== 3) return null;
     const node = c.node, t = node.data;
     if (node.parentElement.closest(".sl-layer, script, style, input, textarea")) return null;
@@ -205,7 +210,6 @@
       s += '<g class="wire sl-wire"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + term(p2) + term(q) +
            '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': click to disconnect</title></path></g>';
     });
-    if (on && hoverRect && !drag) s += '<rect class="sl-hover" x="' + (hoverRect.left - 2) + '" y="' + (hoverRect.top - 1) + '" width="' + (hoverRect.width + 4) + '" height="' + (hoverRect.height + 2) + '" rx="3"/>';
     if (drag) {
       if (drag.overRect) s += '<rect class="sl-hover" x="' + (drag.overRect.left - 2) + '" y="' + (drag.overRect.top - 1) + '" width="' + (drag.overRect.width + 4) + '" height="' + (drag.overRect.height + 2) + '" rx="3"/>';
       s += '<path class="wire-temp" d="' + curve(drag.p, drag.q) + '"/>';
@@ -224,30 +228,6 @@
     return null;
   }
 
-  // ---- connect mode ----------------------------------------------------
-  function setOn(v) {
-    on = v; html.classList.toggle("sl-on", v); hoverRect = null;
-    if (toggle) { toggle.classList.toggle("is-running", v); toggle.setAttribute("aria-pressed", String(v)); }
-    const out = document.querySelector(".lv-out");
-    if (out) out.textContent = v ? "Connect: drag from any word, number or character to another, to a bubble or to the loop. Esc to stop" : "Connect mode off";
-    draw();
-  }
-  let toggle = null;
-  function addToggle() {
-    const grid = document.querySelector(".lv-palette .lv-grid");
-    if (!grid || grid.querySelector(".lv-link")) return !!grid;
-    toggle = document.createElement("button");
-    toggle.type = "button";
-    toggle.className = "lv-fn lv-link";
-    toggle.title = "Connect: wire any word, number or character";
-    toggle.setAttribute("aria-label", "Connect mode: wire any word, number or character");
-    toggle.setAttribute("aria-pressed", "false");
-    toggle.innerHTML = '<svg viewBox="0 0 20 20" aria-hidden="true"><path d="M4 14C8 14 12 6 16 6" fill="none"/><path d="M4 11.5 6.5 14 4 16.5 1.5 14Z" fill="currentColor" stroke="none"/><path d="M16 3.5 18.5 6 16 8.5 13.5 6Z" fill="currentColor" stroke="none"/></svg>';
-    toggle.addEventListener("click", e => { e.stopPropagation(); setOn(!on); });
-    grid.appendChild(toggle);
-    return true;
-  }
-
   function start() {
     svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "sl-layer");
@@ -259,22 +239,26 @@
       e.stopPropagation();
       links.splice(+w.dataset.i, 1); save(); lastHtml = ""; draw();
     });
-    // in connect mode the page's own clicks and drags wait; text, bubbles and the loop become wire ends
-    const mine = t => t.closest && (t.closest(".lv-palette") || t.closest(".sl-layer .wire-hit"));
-    document.addEventListener("pointermove", e => {
-      if (!on || drag) return;
-      const t = targetAt(e.clientX, e.clientY);
-      hoverRect = t && t.rect && !t.anchor.el ? t.rect : null;
-      draw();
-    }, true);
+    // a drag from a piece of text draws a wire; a click stays a click
+    const FIELDS = ".lv-palette, .lv-node, input, textarea, select, [contenteditable], canvas, video";
+    const MOVERS = ".orbit-pi, .op-head, .orbit-bubble";                         // dragging these moves them
+    const owned = t => !t.closest || !!t.closest(FIELDS) || (!t.closest(".ob-member") && !!t.closest(MOVERS));
+    let eatClick = false;
+    document.addEventListener("click", e => { if (eatClick) { eatClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
     document.addEventListener("pointerdown", e => {
-      if (!on || e.button !== 0 || mine(e.target)) return;
-      const t = targetAt(e.clientX, e.clientY);
-      e.preventDefault(); e.stopPropagation();
-      if (!t) return;
-      const p = endPoint(t.anchor, [e.clientX, e.clientY]) || [e.clientX, e.clientY];
-      drag = { from: t.anchor, p, q: [e.clientX, e.clientY], overRect: null };
+      if (e.button !== 0 || drag || owned(e.target)) return;
+      const u = unitAt(e.clientX, e.clientY);
+      if (!u) return;
+      const x0 = e.clientX, y0 = e.clientY, from = u.anchor;
       const move = ev => {
+        if (!drag) {
+          if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;      // not yet: it may be a click
+          const p = endPoint(from, [ev.clientX, ev.clientY]) || [x0, y0];
+          drag = { from, p, q: [ev.clientX, ev.clientY], overRect: null };
+          html.classList.add("sl-dragging");
+          try { window.getSelection().removeAllRanges(); } catch (_) { /* fine */ }
+        }
+        ev.preventDefault();
         drag.q = [ev.clientX, ev.clientY];
         const o = targetAt(ev.clientX, ev.clientY);
         drag.overRect = o && o.rect ? o.rect : null;
@@ -284,9 +268,11 @@
       const end = ev => {
         window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", end, true);
         window.removeEventListener("pointercancel", end, true);
-        html.classList.remove("wire-target");
+        if (!drag) return;                                                     // it was a click: leave it alone
+        eatClick = true; setTimeout(() => { eatClick = false; }, 0);           // the click that ends a wire opens nothing
+        html.classList.remove("wire-target", "sl-dragging");
         const o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY) : null;
-        const from = drag.from; drag = null;
+        drag = null;
         if (o && JSON.stringify(o.anchor) !== JSON.stringify(from) &&
             !links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([from, o.anchor]) || JSON.stringify([l.a, l.b]) === JSON.stringify([o.anchor, from]))) {
           links.push({ a: from, b: o.anchor }); save();
@@ -297,12 +283,6 @@
       window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", end, true);
       window.addEventListener("pointercancel", end, true);
     }, true);
-    // swallow the click that ends a connect gesture (and any other click) so nothing opens
-    document.addEventListener("click", e => { if (on && !mine(e.target)) { e.preventDefault(); e.stopPropagation(); } }, true);
-    document.addEventListener("dblclick", e => { if (on && !mine(e.target)) { e.preventDefault(); e.stopPropagation(); } }, true);
-    document.addEventListener("keydown", e => { if (on && e.key === "Escape") setOn(false); });
-    const tryToggle = () => { if (!addToggle()) setTimeout(tryToggle, 300); };
-    tryToggle();
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });
   }
@@ -318,5 +298,6 @@
     links = links.filter(l => !((l.b && l.b.h === h) || (!onlyIn && l.a && l.a.h === h)));
     if (links.length !== before) { save(); lastHtml = ""; draw(); }
   }
-  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), on: () => on, set: setOn, unitAt, add, forget, intent };
+  function removeAt(i) { if (i >= 0 && i < links.length) { links.splice(i, 1); save(); lastHtml = ""; draw(); return true; } return false; }
+  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), unitAt, add, forget, intent, removeAt, rectOf: an => (an && !an.loop ? endRect(an) : null) || null };
 })();

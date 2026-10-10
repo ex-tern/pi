@@ -9,10 +9,15 @@
 //   the π mark (main loop)          the newest digit of π (drop on the loop's edge)
 //   the π counter                   decimals computed so far
 //   another node                    its output
-//   a Connect-mode wire (superlink.js) ending on the node
+//   a wire dragged from any word or number (superlink.js) ending on the node
 //
 // The nodes:
-//   + − × ÷   over all inputs; + joins words ("Connect" + "Contact us")
+//   + ×       over all inputs; + joins words ("Connect" + "Contact us"); + alone
+//             on a button says yes (opens it), on a window brings it up
+//   −         does what its inputs suggest: numbers above and below divide
+//             (top ÷ bottom), side by side subtract, one number negates, words
+//             take the later out of the first, a word and a number trims letters;
+//             − alone on an open window puts it down (folds it away)
 //   Run ▶     runs what is wired in: engines and "?" ask again, Show refreshes,
 //             a button opens its window, the π mark starts π; unwired, starts π
 //   Stop ■    stops π; holds what is wired in while the wire is there: engines
@@ -25,10 +30,12 @@
 //   ?         asks the panel of AI jurors that judges manuscripts, with a wired
 //             engine's question and answer, and the judge weighs them
 //             (/api/super/panel); follows the engine's new answers
-//   Trash     drop a node on it or it on a node; press twice to clear all
-//   Scissors  captures pixels from the screen into a Clip node (click saves PNG)
 //
-// Click a wire to disconnect it, double-click a node to unwire it. The diagram
+// Stop guesses what you mean from where you drop it: on a wire it removes the
+// wire, on an open window it closes it, on something working (a thinking
+// engine, a live Show, π) it stops it, on anything else it deletes it.
+// Click a wire to disconnect it, double-click a node to unwire it, drop a node
+// on the palette to delete it. The diagram
 // is remembered in this browser (localStorage "lv:nodes").
 (function () {
   "use strict";
@@ -37,15 +44,11 @@
     { k: "add", g: "+", name: "Add", n: 9 },
     { k: "sub", g: "−", name: "Subtract", n: 9 },
     { k: "mul", g: "×", name: "Multiply", n: 9 },
-    { k: "div", g: "÷", name: "Divide", n: 9 },
     { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Run", n: 9 },   // was Play; the key stays "play" so saved diagrams keep it
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 9 },
     { k: "show", g: "", name: "Show", n: 1 },
     { k: "super", svg: sq + '<path class="lv-star" d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z"/></svg>', name: "Super Neural Engine", n: 9 },   // a superellipse diamond, n = 1.3, that grows to n = π while it thinks
     { k: "panel", g: "?", name: "Ask the panel", n: 9 },
-    { k: "trash", svg: sq + '<path d="M4 5.5h12M8 5.5V4h4v1.5M5.5 5.5l.8 11h7.4l.8-11M8.5 8.5v5.5M11.5 8.5v5.5"/></svg>', name: "Trash", n: 0, act: true },
-    { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
-    { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel";
@@ -55,12 +58,7 @@
   const piStr = () => (O().piDigits && O().piDigits()) || "";
   const still = () => !!(O().still && O().still());
   const glyph = (el, f) => { if (f.svg) el.innerHTML = f.svg; else el.textContent = f.g; };
-  const save = (k, v) => {
-    try { localStorage.setItem(k, JSON.stringify(v)); }
-    catch (_) {   // full: keep the diagram, drop the clips' pixels
-      try { localStorage.setItem(k, JSON.stringify(Array.isArray(v) ? v.filter(x => x.fn !== "clip") : v)); } catch (__) { /* fine */ }
-    }
-  };
+  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* fine */ } };
   const restore = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } };
 
   // ---- the quick run, from the palette ----------------------------------
@@ -68,16 +66,13 @@
     const d = piStr() || "31", a = +d[d.length - 2] || 3, b = +d[d.length - 1] || 1;
     switch (f.k) {
       case "add": return a + " + " + b + " = " + (a + b);
-      case "sub": return a + " − " + b + " = " + (a - b);
+      case "sub": return a + " − " + b + " = " + (a - b) + "; it guesses from its inputs: above and below divides, words take words out";
       case "mul": return a + " × " + b + " = " + a * b;
-      case "div": return b ? a + " ÷ " + b + " = " + +(a / b).toFixed(4) : a + " ÷ 0 = NaN";
       case "play": run(true); return "π running; drag it onto engines, a Show or π to run them";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
       case "panel": return "drag it out and wire the Super Neural Engine (or any text) into it: the panel of AIs that judges manuscripts answers, and the judge weighs them";
-      case "trash": return trashPress();
-      case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
     }
   }
@@ -121,7 +116,7 @@
     const i = O().info && O().info(ref.key);
     return i ? { num: i.use, bool: i.open, str: i.title } : ZERO;
   }
-  // a number or word on the page, as Connect mode (superlink.js) remembers it
+  // a number or word on the page, as a wire from it (superlink.js) remembers it
   const numOf = t => { const v = parseFloat(String(t).replace(/[,\s'’](?=\d{3}\b)/g, "").replace(",", ".")); return Number.isNaN(v) ? NaN : v; };
   function valueOfAnchor(an) {
     if (an.loop) return valueOf({ core: 1 });
@@ -131,7 +126,21 @@
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
     const t = an.h ? an.h.replace(/^[a-z#]+:?/, "") : ""; return { num: 0, bool: !!t, str: t };
   }
-  // Connect-mode wires that end on this node (and don't come from it), oldest first
+  // the inputs above and below a node, by where their sources sit on the page: {top, bottom} numbers, or null
+  function fraction(n) {
+    const nr = n.el.getBoundingClientRect(), SL = window.SuperLink;
+    const rectOfRef = ref => { const e = elOf(ref); return e && e.getClientRects().length ? e.getBoundingClientRect() : null; };
+    const srcs = n.inputs.map(ref => ({ v: valueOf(ref), r: rectOfRef(ref) }))
+      .concat(linkIns(n).map(an => ({ v: valueOfAnchor(an), r: an.h && an.h.startsWith("node:") ? rectOfRef({ node: an.h.slice(5) }) : SL && SL.rectOf ? SL.rectOf(an) : null })));
+    const top = [], bottom = [];
+    srcs.forEach(({ v, r }) => {
+      if (!r || !v.isNum) return;
+      const cy = r.top + r.height / 2;
+      if (cy < nr.top) top.push(v.num); else if (cy > nr.bottom) bottom.push(v.num);
+    });
+    return top.length && bottom.length ? { top, bottom } : null;
+  }
+  // wires (superlink.js) that end on this node (and don't come from it), oldest first
   function linkIns(n) {
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
     const out = [];
@@ -159,9 +168,32 @@
         else if (allNum) r = N(nums.reduce((x, y) => x + y, 0));
         else { const t = ins.map(strOf).filter(Boolean).join(" "); r = { num: t.length, bool: !!t, str: t, text: clip(t) }; }
         break;
-      case "sub": r = !allNum ? none : ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
+      case "sub": {
+        // − guesses from its inputs:
+        //   numbers above and below it, like a fraction   divide, top ÷ bottom
+        //   numbers side by side                          subtract, the first minus the rest
+        //   one number                                    negate it
+        //   words (or buttons, windows: their names)      take the later ones out of the first
+        //   a word and a number                           trim that many letters off its end
+        const fr = fraction(n);
+        n.mode = fr ? "div" : "sub";
+        if (!ins.length) r = none;
+        else if (fr) { const top = fr.top.reduce((x, y) => x + y, 0), bot = fr.bottom.reduce((x, y) => x + y, 0); r = N(bot ? top / bot : NaN); }
+        else if (allNum) r = N(ins.length === 1 ? -nums[0] : nums.slice(1).reduce((x, y) => x - y, nums[0]));
+        else {
+          const base = ins.findIndex(v => !v.isNum);
+          let t = strOf(ins[base]);
+          ins.forEach((v, i) => {
+            if (i === base) return;
+            if (v.isNum) t = t.slice(0, Math.max(0, t.length - Math.max(0, Math.round(v.num))));
+            else { const w = strOf(v).trim(); if (w) t = t.split(new RegExp(w.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"), "gi")).join(" "); }
+          });
+          t = t.replace(/\s+/g, " ").trim();
+          r = { num: t.length, bool: !!t, str: t, text: t ? clip(t) : "–" };
+        }
+        break;
+      }
       case "mul": r = !allNum ? none : ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
-      case "div": r = !allNum ? none : ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
       case "super": {
         n.prompt = ins.map(strOf).filter(Boolean).join(" ").trim();
         const t = n.answer || "";
@@ -180,7 +212,6 @@
         r = { num: t.length, bool: !!t, str: t, text: t || (n.st.go ? "the panel is thinking…" : n.prompt ? "press to ask the panel" : "wire the Super Neural Engine into it") };
         break;
       }
-      case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       // each says what it does or has done, not just π's state: lit when it is the one in effect
       case "play": { const k = n.inputs.length + linkIns(n).length; r = { num: k, bool: k ? !!n.ran : !still(), text: k ? (n.ran ? "ran " + n.ran + "×" : "press to run") : still() ? "press to run" : "π running" }; break; }
       case "stop": { const k = (n.holds || 0); r = { num: k, bool: k > 0 || still(), text: k ? "holding " + k : still() ? "π stopped" : "press to stop" }; break; }
@@ -215,6 +246,52 @@
     n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
     tick();
     say("Run: ran " + ran + (held ? ", " + held + " held by Stop" : ""));
+  }
+
+  // + and − on a single button or window read as signs, not sums:
+  //   + (up, yes, ok)      a closed button opens; an open window comes up to the front
+  //   − (down, lower)      an open window folds down into its button
+  // With a second input they go back to adding and subtracting.
+  function signOn(n, ref, dropped) {
+    const i = O().info && O().info(ref.key);
+    if (!i || (dropped && dropped.matches(".orbit-bubble") && !dropped.matches(".ob-member"))) return;   // a whole bubble is a group, not one button
+    if (n.fn === "add" && O().openTitle && O().openTitle(i.title)) say("+: " + (i.open ? "brought " + i.title + " up" : "yes, opened " + i.title));
+    else if (n.fn === "sub" && i.open && O().close && O().close(ref.key)) say("−: put " + i.title + " down");
+  }
+
+  // Stop guesses what you mean by what you drop it on:
+  //   a wire                          remove the wire
+  //   an open window                  close it
+  //   something working (a thinking engine or "?", a Show following a live
+  //   value, the π mark, counter or loop)            stop it: Stop holds it
+  //   anything else (an idle node, a node Stop already holds, another Stop)
+  //                                   delete it
+  // Removing and closing use the Stop up; stopping leaves it wired as the hold.
+  function stopGuess(n, x, y) {
+    const under = document.elementsFromPoint(x, y).filter(e => e !== n.el && !n.el.contains(e));
+    const done = msg => { remove(n); say("Stop: " + msg); return true; };
+    const wire = under.find(e => e.matches && e.matches(".wire-hit"));
+    if (wire) {
+      if (wire.closest(".sl-layer")) { if (window.SuperLink && window.SuperLink.removeAt(+wire.dataset.i)) return done("removed that wire"); }
+      const tn = nodes.find(m => m.id === wire.dataset.node);
+      if (tn) { tn.inputs.splice(+wire.dataset.i, 1); return done("removed that wire"); }
+    }
+    const nodeEl = under.map(e => e.closest && e.closest(".lv-node")).find(Boolean);
+    const tn = nodeEl && nodes.find(m => m.el === nodeEl);
+    if (tn) {
+      const working = (tn.fn === "super" || tn.fn === "panel") ? tn.st.go
+        : tn.fn === "show" ? tn.inputs.length + linkIns(tn).length > 0 : false;
+      if (working && !tn.held) return false;                              // wire it as usual: Stop holds it
+      const name = BY[tn.fn].name;
+      remove(tn);
+      return done("deleted the " + name + " node");
+    }
+    const panel = under.map(e => e.closest && e.closest(".orbit-panel")).find(Boolean);
+    if (panel && O().keyOf && O().close) {
+      const k = O().keyOf(panel), title = (panel.querySelector(".op-title") || {}).textContent || "the window";
+      if (k && O().close(k)) return done("closed " + title);
+    }
+    return false;                                                           // π, a button, empty space: as before
   }
 
   // Stop holds whatever is wired into it, for as long as the wire is there
@@ -257,6 +334,7 @@
         const st = n.held ? "stopped" : n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
         if (n.val.textContent !== st) n.val.textContent = st;
       }
+      if (n.fn === "sub") { const g = n.el.querySelector(".lv-glyph"), want = n.mode === "div" ? "÷" : "−"; if (g && g.textContent !== want) g.textContent = want; }
       if (n.fn === "show") n.el.classList.toggle("is-long", r.text.length > 28 || /\n/.test(r.text));
       if (n.fn === "super" || n.fn === "panel") {
         const w = wiringOf(n) + (n.fn === "panel" ? "|" + (n.supAnswer || "") : "");   // the panel also follows the engine's answers
@@ -305,7 +383,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, answer: (n.fn === "super" || n.fn === "panel") && n.answer ? n.answer.slice(0, 3000) : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "panel") && n.answer ? n.answer.slice(0, 3000) : undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -322,18 +400,13 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "" };
     if (f.k === "panel") n.answer = spec.answer || "";
     if (f.k === "super") {
       g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
       n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || "";
       if (n.answer) { n.st.t = 1; n.st.sn = P(); }
       requestAnimationFrame(() => drawSuper(n));
-    }
-    if (f.k === "clip") {
-      if (!n.img) return null;
-      const im = document.createElement("img"); im.src = n.img; im.alt = "Clip, " + n.w + " by " + n.h + " pixels"; im.draggable = false;
-      g.replaceWith(im);
     }
     canvas.appendChild(el);
     nodes.push(n);
@@ -431,8 +504,6 @@
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
       pal.classList.toggle("lv-bin", !!(t && t.palette) && !spawn);
-      const tb = pal.querySelector(".lv-grid .lv-trash");                  // the trash lights up under a node about to go
-      if (tb) { const r = tb.getBoundingClientRect(); tb.classList.toggle("is-over", !spawn && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom); }
       drawWires();
       ev.preventDefault();
     };
@@ -442,23 +513,13 @@
       startEl.removeEventListener("pointercancel", up);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       pal.classList.remove("lv-bin");
-      const tb0 = pal.querySelector(".lv-grid .lv-trash"); if (tb0) tb0.classList.remove("is-over");
       html.classList.remove("lv-dragging");
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0);
       n.el.classList.remove("is-dragging"); dragging = null;
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
-      if (BY[n.fn].act) {
-        const hit = document.elementsFromPoint(ev.clientX, ev.clientY).map(e => e.closest(".lv-node")).find(e => e && e !== n.el);
-        const tn = ev.type === "pointerup" && hit && nodes.find(x => x.el === hit);
-        remove(n);
-        if (n.fn === "trash") {
-          if (tn) { remove(tn); say(BY[tn.fn].name + " node deleted"); } else say("Trash: drop it on a node to delete it, or drop a node on it");
-          return;
-        }
-        return;
-      }
+      if (n.fn === "stop" && ev.type === "pointerup" && stopGuess(n, ev.clientX, ev.clientY)) { persist(); tick(); return; }
       if (t && t.text && BY[n.fn].n && window.SuperLink && window.SuperLink.add) {
         if (n.fn === "show") { window.SuperLink.forget("node:" + n.id, true); n.inputs = []; }   // Show shows one thing: the newest
         window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
@@ -471,6 +532,7 @@
         const ref = refOf(t.el);
         if (n.fn === "show" && window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id, true);
         if (attach(n, ref) && n.fn === "play") setTimeout(() => runWired(n), 0);   // dropped on something: run it now
+        if ((n.fn === "add" || n.fn === "sub") && n.inputs.length === 1 && ref.key) setTimeout(() => signOn(n, ref, t.el), 0);
         if (n.inputs.some(r => same(r, ref))) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
       } else if (spawn) say(BY[n.fn].name + (BY[n.fn].n ? " placed: drop it on a number or a button to wire it" : " placed"));
       persist(); tick();
@@ -484,9 +546,7 @@
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
-      if (n.fn === "clip") { const a = document.createElement("a"); a.href = n.img; a.download = "clip-" + n.w + "x" + n.h + ".png"; document.body.appendChild(a); a.click(); a.remove(); say("Clip saved as a PNG"); }
-      else if (n.fn === "cut") cut();
-      else if (n.fn === "super") askEngine(n, true);
+      if (n.fn === "super") askEngine(n, true);
       else if (n.fn === "panel") askPanel(n, true);
       else if (n.fn === "stop" && n.holds) say("Stop: holding " + n.holds + " (unwire it to let them go)");
       else if (n.fn === "play") runWired(n);
@@ -590,87 +650,6 @@
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
   function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n)]); }
 
-  // ---- Trash: press twice to clear the diagram --------------------------
-  let trashArmed = 0;
-  function trashPress() {
-    if (!nodes.length) return "nothing to delete; drag a node onto the trash to delete it";
-    const tb = pal && pal.querySelector(".lv-grid .lv-trash");
-    if (Date.now() - trashArmed > 3000) {
-      trashArmed = Date.now(); if (tb) tb.classList.add("is-armed");
-      setTimeout(() => { if (Date.now() - trashArmed >= 3000 && tb) tb.classList.remove("is-armed"); }, 3050);
-      return "press again within 3 s to delete " + (nodes.length === 1 ? "the 1 node" : "all " + nodes.length + " nodes");
-    }
-    trashArmed = 0; if (tb) tb.classList.remove("is-armed");
-    const k = nodes.length;
-    nodes.slice().forEach(remove);
-    return "deleted " + k + " node" + (k === 1 ? "" : "s");
-  }
-
-  // ---- Scissors: pixels from the screen --------------------------------
-  // One frame of the shared screen, window or tab; drag a box over it; the box becomes a Clip.
-  let cutting = false;
-  async function cut() {
-    if (cutting) return;
-    const md = navigator.mediaDevices;
-    if (!md || !md.getDisplayMedia) { say("Scissors: this browser can't capture the screen (try a desktop browser)"); return; }
-    cutting = true;
-    let stream;
-    try {
-      stream = await md.getDisplayMedia({ video: { cursor: "never" }, audio: false, preferCurrentTab: true, selfBrowserSurface: "include" });
-    } catch (_) { cutting = false; say("Scissors: nothing shared"); return; }
-    let frame;
-    try {
-      const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.srcObject = stream;
-      await v.play();
-      await new Promise(r => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : setTimeout(r, 200)));
-      frame = document.createElement("canvas"); frame.width = v.videoWidth; frame.height = v.videoHeight;
-      frame.getContext("2d").drawImage(v, 0, 0);
-    } finally { stream.getTracks().forEach(t => t.stop()); }
-    if (!frame || !frame.width) { cutting = false; say("Scissors: no picture came through"); return; }
-    select(frame);
-  }
-  function select(frame) {
-    const ov = document.createElement("div"); ov.className = "lv-cutter";
-    ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Drag a box over the pixels to cut out; Esc to cancel");
-    const shot = frame; shot.className = "lv-cutter-shot"; ov.appendChild(shot);
-    const box = document.createElement("div"); box.className = "lv-cutter-box"; ov.appendChild(box);
-    const hint = document.createElement("div"); hint.className = "lv-cutter-hint"; hint.textContent = "Drag a box over what you want · Esc to cancel"; ov.appendChild(hint);
-    document.body.appendChild(ov);
-    const done = () => { ov.remove(); document.removeEventListener("keydown", key, true); cutting = false; };
-    const key = e => { if (e.key === "Escape") { e.stopPropagation(); done(); say("Scissors: cancelled"); } };
-    document.addEventListener("keydown", key, true);
-    let p0 = null;
-    const rect = (a, b) => ({ x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(a[0] - b[0]), h: Math.abs(a[1] - b[1]) });
-    ov.addEventListener("pointerdown", e => { p0 = [e.clientX, e.clientY]; try { ov.setPointerCapture(e.pointerId); } catch (_) { /* fine */ } e.preventDefault(); });
-    ov.addEventListener("pointermove", e => {
-      if (!p0) return;
-      const r = rect(p0, [e.clientX, e.clientY]);
-      Object.assign(box.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px", display: "block" });
-    });
-    ov.addEventListener("pointerup", e => {
-      if (!p0) return;
-      const r = rect(p0, [e.clientX, e.clientY]); p0 = null;
-      if (r.w < 4 || r.h < 4) { box.style.display = "none"; return; }
-      // from the picture on screen back to the frame's own pixels
-      const sr = shot.getBoundingClientRect(), k = frame.width / sr.width;
-      const sx = Math.max(0, Math.round((r.x - sr.left) * k)), sy = Math.max(0, Math.round((r.y - sr.top) * k));
-      const w = Math.min(frame.width - sx, Math.round(r.w * k)), h = Math.min(frame.height - sy, Math.round(r.h * k));
-      done();
-      if (w < 1 || h < 1) { say("Scissors: that box was outside the picture"); return; }
-      const c = document.createElement("canvas"); c.width = w; c.height = h;
-      c.getContext("2d").drawImage(frame, sx, sy, w, h, 0, 0, w, h);
-      const img = c.toDataURL("image/png");
-      const n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: "clip", fx: 0, fy: 0, inputs: [], img, w, h });
-      if (!n) return;
-      n.fx = Math.max(4, Math.min(window.innerWidth - n.el.offsetWidth - 4, r.x)) / window.innerWidth;
-      n.fy = Math.max(4, Math.min(window.innerHeight - n.el.offsetHeight - 22, r.y)) / window.innerHeight;
-      place(n);
-      persist(); tick();
-      say("Clip " + w + "×" + h + " px: click it to save, drag it onto the palette to remove it");
-      if (navigator.clipboard && window.ClipboardItem) c.toBlob(b => { if (b) navigator.clipboard.write([new ClipboardItem({ "image/png": b })]).catch(() => { /* not allowed: fine */ }); });
-    });
-  }
-
   // ---- the palette -----------------------------------------------------
   function build() {
     if (document.querySelector(".lv-palette")) return;
@@ -706,15 +685,14 @@
     head.addEventListener("click", () => { chosen = true; setOpen(!open); try { localStorage.setItem("lv:open", open ? "1" : "0"); } catch (_) { /* fine */ } });
     pal.classList.toggle("is-open", open); head.setAttribute("aria-expanded", String(open));
 
-    FNS.filter(f => !f.hidden).forEach(f => {
+    FNS.forEach(f => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
-      b.title = f.k === "trash" ? "Trash: drag it onto a node, or a node onto it, to delete; press twice to clear the diagram"
-        : f.press ? f.name + ": press to capture pixels from the screen" : f.name + ": press to run on π, drag onto a button to wire it";
+      b.title = f.name + ": press to run on π, drag onto a button to wire it";
       b.setAttribute("aria-label", f.name);
       glyph(b, f);
-      if (!f.press) b.addEventListener("pointerdown", e => drag(e, b, f));
+      b.addEventListener("pointerdown", e => drag(e, b, f));
       b.addEventListener("click", () => {
         if (b.dataset.dragged) return;
         b.classList.remove("fired"); void b.offsetWidth; b.classList.add("fired");
