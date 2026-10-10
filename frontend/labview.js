@@ -19,7 +19,10 @@
 // + adds every input (and joins words: "Connect" + "Contact" shows
 // "Connect Contact"; a button, bubble or window counts as its name), × multiplies them, − and ÷ take the first and subtract
 // or divide by the rest. Show is an empty box: wire anything into it and it
-// shows that value inside itself. Play runs π, Stop stops it (the same as
+// shows that value inside itself. Run (▶) runs what is wired into it: engines
+// and "?" ask again, a Show refreshes, a button opens its window, the π mark
+// starts π; unwired, it starts
+// π. Stop stops it (the same as
 // double-clicking the π mark); everything wired to π follows. Stop also holds
 // whatever is wired into it, for as long as the wire is there: a Super Neural
 // Engine or "?" stops thinking (a question on its way is cancelled), a Show
@@ -55,7 +58,7 @@
     { k: "sub", g: "−", name: "Subtract", n: 9 },
     { k: "mul", g: "×", name: "Multiply", n: 9 },
     { k: "div", g: "÷", name: "Divide", n: 9 },
-    { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
+    { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Run", n: 9 },   // was Play; the key stays "play" so saved diagrams keep it
     { k: "flip", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Flip", n: 0, act: true },   // a superellipse diamond, n = 1.3: drop it on a node to swap its inputs
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 9 },
     { k: "show", g: "", name: "Show", n: 1 },
@@ -88,7 +91,7 @@
       case "sub": return a + " − " + b + " = " + (a - b);
       case "mul": return a + " × " + b + " = " + a * b;
       case "div": return b ? a + " ÷ " + b + " = " + +(a / b).toFixed(4) : a + " ÷ 0 = NaN";
-      case "play": run(true); return "π running";
+      case "play": run(true); return "π running; drag it onto engines, a Show or π to run them";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
@@ -199,7 +202,7 @@
         break;
       }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
-      case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
+      case "play": { const k = n.inputs.length + linkIns(n).length; r = { num: k, bool: !still(), text: k ? (n.ran ? "ran " + n.ran + "×" : "press to run") : still() ? "stopped" : "running" }; break; }
       case "stop": { const k = (n.holds || 0); r = { num: k, bool: k > 0 || still(), text: k ? "holding " + k : still() ? "stopped" : "running" }; break; }
       case "show": r = ins.length ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
       default: r = ZERO;
@@ -207,6 +210,31 @@
     visiting[n.id] = false;
     memo[n.id] = r;
     return r;
+  }
+
+  // Run runs whatever is wired into it: engines and "?" ask again, a Show refreshes,
+  // the π mark, counter or loop starts π. Unwired, it starts π. What Stop holds stays held.
+  function runWired(n) {
+    const refs = n.inputs.map(ref => ref.node ? { node: ref.node } : ref)
+      .concat(linkIns(n).map(an => an.loop || an.h === "pi" ? { pi: 1 } : an.h && an.h.startsWith("node:") ? { node: an.h.slice(5) } : null).filter(Boolean));
+    if (!refs.length) { run(true); say("Run: π running"); return; }
+    let ran = 0, held = 0;
+    refs.forEach(ref => {
+      if (ref.core || ref.pi) { run(true); ran++; return; }
+      if (ref.key) { const i = O().info && O().info(ref.key); if (i && O().openTitle && O().openTitle(i.title)) ran++; return; }   // a button or window: open it
+      const x = ref.node && nodes.find(y => y.id === ref.node);
+      if (!x) return;
+      if (x.held) { held++; return; }
+      if (x.fn === "super") { askEngine(x, true); ran++; }
+      else if (x.fn === "panel") { askPanel(x, true); ran++; }
+      else if (x.fn === "show") { x.text = null; ran++; }
+      else if (x.fn === "play" && x !== n) { runWired(x); ran++; }
+      else ran++;                                                           // arithmetic simply recomputes
+    });
+    n.ran = (n.ran || 0) + 1;
+    n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
+    tick();
+    say("Run: ran " + ran + (held ? ", " + held + " held by Stop" : ""));
   }
 
   // Stop holds whatever is wired into it, for as long as the wire is there
@@ -388,6 +416,18 @@
     else n.fy = (r.top + r.height / 2 - h / 2) / window.innerHeight;
     n.fx = Math.max(4, x) / window.innerWidth;
     place(n);
+    clear(n);
+  }
+  // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
+  function clear(n) {
+    for (let k = 0; k < 8; k++) {
+      const a = n.el.getBoundingClientRect();
+      const hit = nodes.find(o => o !== n && (() => { const b = o.el.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })());
+      if (!hit) return;
+      const b = hit.el.getBoundingClientRect();
+      n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 18) / window.innerHeight; place(n);
+      if (b.bottom + 18 + a.height > window.innerHeight - 22) return;
+    }
   }
 
   // one drag, from the palette or of a node on the page
@@ -440,13 +480,14 @@
         window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
         const w = n.el.offsetWidth, h = n.el.offsetHeight;
         let x = t.rect.right + 28; if (x + w > window.innerWidth - 4) x = t.rect.left - w - 28;
-        n.fx = Math.max(4, x) / window.innerWidth; n.fy = (t.rect.top + t.rect.height / 2 - h / 2) / window.innerHeight; place(n);
+        n.fx = Math.max(4, x) / window.innerWidth; n.fy = (t.rect.top + t.rect.height / 2 - h / 2) / window.innerHeight; place(n); clear(n);
         say(BY[n.fn].name + " wired to “" + t.text.t + "”"); persist(); tick(); return;
       }
       if (t && t.el && BY[n.fn].n) {                // Play and Stop take no input: they are just placed
         const ref = refOf(t.el);
         if (n.fn === "show" && window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id, true);
-        if (attach(n, ref)) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
+        if (attach(n, ref) && n.fn === "play") setTimeout(() => runWired(n), 0);   // dropped on something: run it now
+        if (n.inputs.some(r => same(r, ref))) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
       } else if (spawn) say(BY[n.fn].name + (BY[n.fn].n ? " placed: drop it on a number or a button to wire it" : " placed"));
       persist(); tick();
     };
@@ -464,7 +505,8 @@
       else if (n.fn === "super") askEngine(n, true);
       else if (n.fn === "panel") askPanel(n, true);
       else if (n.fn === "stop" && n.holds) say("Stop: holding " + n.holds + " (unwire it to let them go)");
-      else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
+      else if (n.fn === "play") runWired(n);
+      else if (n.fn === "stop") { run(false); say("Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
