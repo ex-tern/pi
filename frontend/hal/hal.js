@@ -16,6 +16,12 @@ let info = null;           // build.json
 let emu = null;            // the V86 instance
 let weights = null;        // ArrayBuffer: the weight disk, shared live with v86
 let running = false;
+// What is booted: "shell" (the HAL-OS command prompt, shell/shell.asm) or
+// "hal" (the ternary network). The machine starts in the shell; its `hal`
+// command writes HAL_MARKER to the serial port and the network boots.
+let mode = "shell";
+const HAL_MARKER = "\x1bHAL-OS:BOOT-NETWORK\n";
+let serialTail = "";
 let ready = false;          // set once v86 has finished starting; it cannot be paused or resumed before
 let armed = false;
 let source = "none";
@@ -97,14 +103,17 @@ async function persistWeights(force) {
 }
 
 // ------------------------------------------------------------------ machine
-async function boot(diskBuffer) {
+async function boot(diskBuffer, what) {
   if (emu) { try { await emu.destroy(); } catch (_) { /* already gone */ } emu = null; }
   running = false;
   ready = false;
   prev = null;
-  setState("booting…");
+  mode = what || "shell";
+  serialTail = "";
+  document.body.classList.toggle("in-shell", mode === "shell");
+  setState(mode === "shell" ? "booting the shell…" : "booting the network…");
   const { V86 } = await import("./" + V86_DIR + "libv86.mjs");
-  const img = await (await fetch("bitllm.img", { cache: "no-cache" })).arrayBuffer();
+  const img = await (await fetch(mode === "shell" ? "shell.img?v=2" : "bitllm.img", { cache: "no-cache" })).arrayBuffer();
   weights = diskBuffer;
   emu = new V86({
     wasm_path: V86_DIR + "v86.wasm",
@@ -115,10 +124,10 @@ async function boot(diskBuffer) {
     memory_size: 4 * 1024 * 1024,
     vga_memory_size: 2 * 1024 * 1024,
     screen_container: $("screen"),
-    // The guest has no keyboard or mouse of its own (GUEST_KEYBOARD = False);
-    // both are training channels, handled below. Left on, v86 would also
-    // swallow keystrokes meant for the text box.
-    disable_keyboard: true,
+    // The network has no keyboard or mouse of its own (GUEST_KEYBOARD = False);
+    // both are training channels, handled below. The shell does read the
+    // keyboard: that is how commands are typed.
+    disable_keyboard: mode !== "shell",
     disable_mouse: true,
     disable_speaker: true,
     autostart: true,
@@ -126,17 +135,24 @@ async function boot(diskBuffer) {
   emu.add_listener("emulator-ready", () => {
     ready = true;
     running = true;
-    setState("running", "on");
+    setState(mode === "shell" ? "shell" : "running", "on");
+    if (mode === "shell") { $("injectHint").textContent = "Type hal at the HAL-OS> prompt to start the network; then pick a source and press INJECT."; $("screen").focus({ preventScroll: true }); }
+    else $("injectHint").textContent = "Pick a source, then press INJECT. Nothing goes on the wire until you do.";
     $("pause").textContent = "Pause";
     overlay(null);
     // DBOK is set by the kernel once it has restored weights from disk.
     setTimeout(() => {
-      if (!emu) return;
+      if (!emu || mode !== "hal") return;
       const ok = emu.read_memory(info.weights_restored_flag, 1)[0];
       $("wstate").textContent = ok ? "weights restored" : "weights fresh";
     }, 1500);
   });
   emu.add_listener("serial0-output-byte", b => {
+    if (mode === "shell") {
+      serialTail = (serialTail + String.fromCharCode(b)).slice(-HAL_MARKER.length);
+      if (serialTail === HAL_MARKER) setTimeout(() => boot(weights, "hal").then(restartTimer), 300);
+      return;
+    }
     if (!dumping) return;
     dumping.buf.push(b);
     if (dumping.buf.length >= W.SLOTS) { const d = dumping; dumping = null; d.resolve(Uint8Array.from(d.buf.slice(0, W.SLOTS))); }
@@ -144,7 +160,7 @@ async function boot(diskBuffer) {
 }
 
 function send(bytes) {
-  if (!emu || !running || !bytes.length) return;
+  if (!emu || !running || mode !== "hal" || !bytes.length) return;
   emu.serial_send_bytes(0, bytes);
   sent += bytes.length;
 }
@@ -417,7 +433,7 @@ function bindUI() {
     if (running) { await emu.stop(); running = false; setState("paused"); $("pause").textContent = "Resume"; persistWeights(true); }
     else { await emu.run(); running = true; setState(armed ? "injecting" : "running", armed ? "live" : "on"); $("pause").textContent = "Pause"; }
   });
-  $("reboot").addEventListener("click", async () => { if (!emu) return; await persistWeights(true); boot(weights); });
+  $("reboot").addEventListener("click", async () => { if (!emu) return; await persistWeights(true); boot(weights, "shell"); });
   $("save").addEventListener("click", () => { if (sendProgram("SAVE")) setTimeout(() => persistWeights(true), 1500); });
   $("reset").addEventListener("click", () => {
     if (confirmInline($("reset"), "Really reset?")) sendProgram("RESET");
@@ -425,7 +441,7 @@ function bindUI() {
   $("forget").addEventListener("click", async () => {
     if (!confirmInline($("forget"), "Really forget?")) return;
     await idbDel(weightKey());
-    boot(new ArrayBuffer(info.weight_disk_bytes));
+    boot(new ArrayBuffer(info.weight_disk_bytes), "hal");
   });
   $("dl").addEventListener("click", () => {
     if (!weights) return;
@@ -441,7 +457,7 @@ function bindUI() {
     new Uint8Array(buf).set(new Uint8Array(await f.slice(0, info.weight_disk_bytes).arrayBuffer()));
     if (!hasMagic(buf)) { $("injectHint").textContent = "That file is not a HAL-OS weight disk (no signature at sector 0)."; return; }
     await idbPut(weightKey(), buf.slice(0));
-    boot(buf);
+    boot(buf, "hal");
   });
   $("run").addEventListener("click", () => { if (sendProgram($("prog").value)) $("injectHint").textContent = "Program sent."; });
 
@@ -470,7 +486,7 @@ function bindUI() {
   });
   $("screen").addEventListener("mouseleave", () => { mouseXY = null; });
   $("screen").addEventListener("keydown", e => {
-    if (!$("chKbd").checked || e.ctrlKey || e.metaKey) return;
+    if (mode !== "hal" || !$("chKbd").checked || e.ctrlKey || e.metaKey) return;
     if (e.key.length === 1) { keys.push(e.key.charCodeAt(0) & 0xFF); e.preventDefault(); }
   });
 
@@ -499,7 +515,7 @@ function confirmInline(btn, prompt) {
 let lastF = null, lastSent = 0, lastT = performance.now();
 setInterval(() => {
   const now = performance.now(), dt = (now - lastT) / 1000; lastT = now;
-  if (emu && running && info) {
+  if (emu && running && info && mode === "hal") {
     const m = emu.read_memory(info.frame_counter, 2), f = m[0] | (m[1] << 8);
     if (lastF !== null) $("fps").textContent = (((f - lastF) & 0xFFFF) / dt).toFixed(0) + " fps";
     lastF = f;
@@ -541,11 +557,11 @@ async function main() {
   // is a lot to run for someone who only came to look.
   setState("ready to start");
   overlay('<div class="start-box"><button type="button" id="startHal" class="start-btn">Start HAL-OS</button>' +
-          '<p>Boots a ' + fmtBytes(info.image_bytes) + ' image on an x86 emulator, here in your browser.' +
+          '<p>Boots HAL-OS on an x86 emulator, here in your browser, to a command prompt. Type <code>help</code> for the commands, or <code>hal</code> to start the ternary network.' +
           (disk.byteLength && (await idbGet(weightKey())) ? ' It picks up the weights it learned last time.' : '') + '</p></div>');
   $("startHal").addEventListener("click", async () => {
     overlay("Booting HAL-OS…");
-    try { await boot(disk); restartTimer(); }
+    try { await boot(disk, "shell"); restartTimer(); }
     catch (e) { setState("error", "err"); overlay("Could not start the machine: " + (e.message || e)); console.error(e); }
   }, { once: true });
   $("startHal").focus({ preventScroll: true });

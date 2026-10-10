@@ -877,3 +877,28 @@ The mark also gets a soft cobalt glow while working.
 **Verified:** screenshots of the chart with a hovered bar at 1440 and 390 px show labels at their normal shape and round bar tops; every tab at both widths had no page errors and no horizontal scroll; pytest at baseline (12 pre-existing failures, 420 passed); `build_hal.py` builds.
 
 **Files:** `frontend/traffic.js`, `frontend/traffic.css`, `frontend/index.html`, `EVOLUTION.md`.
+## 2026-10-10: HAL-OS boots to a command prompt
+
+**What:** HAL-OS is now a basic working OS. The Lab's machine boots a 16-bit real-mode shell (`frontend/hal/shell/shell.asm`, about 3 KB) to a `HAL-OS>` prompt. It uses only the BIOS (video, keyboard, clock, memory, disk), so it would run on QEMU, VirtualBox or real hardware too. Commands:
+- help, clear/cls, echo
+- time and date (the RTC, UTC), uptime, mem (conventional and extended memory)
+- color XY (text attribute), calc A op B (signed 16-bit + − * / %)
+- note TEXT / notes (kept in memory until reboot), pi (100 digits), ver/about
+- reboot, halt
+- hal: starts the ternary network
+
+Commands are case-insensitive, and the line editor supports backspace.
+
+**How it hands over:** `hal` writes a marker (`ESC HAL-OS:BOOT-NETWORK`) to COM1. `hal.js` watches the serial port in shell mode and boots `bitllm.img` with the same weight disk, so the network behaves exactly as before.
+- In shell mode the guest gets the keyboard, and nothing is sent down the wire.
+- Reboot returns to the prompt. Forget and Load weights boot the network directly.
+
+**Build:** `python scripts/build_hal_shell.py` (nasm) writes `frontend/hal/shell.img` (padded to 64 KB, committed, so deploys need no nasm). `--check` verifies it matches the source. The HAL-OS repository itself is untouched.
+
+**Verified:** in the browser, on the standalone portal and inside the Lab window, at 1280/1440 and 390 px:
+- every command produced the expected output, e.g. `calc 12 * 7` → 84, `calc -100 / 7` → -14, `mem` 639 KB + 3072 KB
+- notes round-tripped, an unknown command was reported, and Shift worked for capitals and `*`
+- `hal` booted the network (≈190 fps, weights restored path intact), and Reboot came back to the prompt
+- no page errors or horizontal scroll
+
+pytest at baseline; `build_hal.py` builds.
