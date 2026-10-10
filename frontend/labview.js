@@ -203,8 +203,9 @@
         break;
       }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
-      case "play": { const k = n.inputs.length + linkIns(n).length; r = { num: k, bool: !still(), text: k ? (n.ran ? "ran " + n.ran + "×" : "press to run") : still() ? "stopped" : "running" }; break; }
-      case "stop": { const k = (n.holds || 0); r = { num: k, bool: k > 0 || still(), text: k ? "holding " + k : still() ? "stopped" : "running" }; break; }
+      // each says what it does or has done, not just π's state: lit when it is the one in effect
+      case "play": { const k = n.inputs.length + linkIns(n).length; r = { num: k, bool: k ? !!n.ran : !still(), text: k ? (n.ran ? "ran " + n.ran + "×" : "press to run") : still() ? "press to run" : "π running" }; break; }
+      case "stop": { const k = (n.holds || 0); r = { num: k, bool: k > 0 || still(), text: k ? "holding " + k : still() ? "π stopped" : "press to stop" }; break; }
       case "show": r = ins.length ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
       default: r = ZERO;
     }
