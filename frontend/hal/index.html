@@ -64,7 +64,7 @@
         <div class="btns">
           <button id="score" title="Ask the guest for its whole output buffer and compare it with what was sent">Score</button>
           <button id="pause">Pause</button>
-          <button id="reboot" title="Cold boot. Weights saved on the weight disk are restored.">Reboot</button>
+          <button id="reboot" title="Cold boot to the HAL-OS> prompt. Weights saved on the weight disk are kept.">Reboot</button>
         </div>
         <div class="btns">
           <button id="save" title="SAVE: write the weights to the weight disk now">Save</button>
@@ -94,7 +94,7 @@ ROW 188 31</textarea>
         </div>
         <div class="overlay hidden" id="overlay"></div>
       </div>
-      <p class="caption">The VM's screen. Drop images, a folder, or any file onto it. Trained regions hold still; untrained ones drift.</p>
+      <p class="caption">The VM's screen. Click it and type at the HAL-OS&gt; prompt; once the network runs, drop images, a folder, or any file onto it. Trained regions hold still; untrained ones drift.</p>
 
       <div class="pair">
         <figure>
@@ -109,7 +109,8 @@ ROW 188 31</textarea>
 
       <details class="about">
         <summary>What is this?</summary>
-        <p>HAL-OS is a bootable x86 image with no operating system, compiler, assembler, display driver or font. Python
+        <p>HAL-OS boots to a small command prompt (a 16-bit shell on the BIOS: <code>help</code> lists its commands).
+        Its <code>hal</code> command starts the network, a bootable x86 image with no operating system, compiler, assembler, display driver or font. Python
         emits the machine code; the CPU runs it from sector 0, and a two-layer ternary network of 32,000 neurons paints
         VGA mode 13h directly. Every byte sent down the serial port becomes training data.</p>
         <p>Here the real boot image — built from the HAL-OS repository when this site was deployed — runs on
@@ -121,6 +122,6 @@ ROW 188 31</textarea>
     </main>
   </div>
 </div>
-<script type="module" src="hal.js?v=3"></script>
+<script type="module" src="hal.js?v=4"></script>
 </body>
 </html>
