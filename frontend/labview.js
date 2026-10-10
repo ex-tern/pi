@@ -25,6 +25,7 @@
 // prompted by wiring: whatever reaches it (words, numbers, buttons, windows,
 // other nodes) is joined into a prompt and sent to /api/super/ask, where every
 // engine in the project answers (siM, riB, piD, PiEn; see backend/super_engine.py).
+// If the prompt's words name a window ("assess manuscripts"), it opens it too.
 // Wire a Show to it to read the answer. It asks again whenever its wiring
 // changes, or when you press it; while it thinks the star grows toward a
 // superellipse (n climbing from γ to π), and it is fully grown once answered.
@@ -464,15 +465,18 @@
     const prompt = n.prompt || "";
     if (!prompt) { if (pressed) say("Super Neural Engine: wire something into it first"); return; }
     if (n.st.go) return;
+    // what the wiring means: if its words name a window, open it, then ask the engines too
+    const meant = window.SuperLink && window.SuperLink.intent ? window.SuperLink.intent([prompt]) : null;
+    const opened = meant && O().openTitle && O().openTitle(meant) ? "Opened " + meant + ".\n" : "";
     n.st.go = true; n.st.asked = prompt; n.el.classList.add("is-thinking"); grow(n); tick();
     say("Super Neural Engine: asking every engine about “" + clip(prompt) + "”");
     try {
       const res = await fetch("/api/super/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.slice(0, 4000) }) });
       const data = await res.json().catch(() => ({}));
-      n.answer = res.ok ? (data.answer || "No engine had an answer for that.") : "Super Neural Engine: " + (data.detail || "unavailable right now");
+      n.answer = opened + (res.ok ? (data.answer || "No engine had an answer for that.") : "Super Neural Engine: " + (data.detail || "unavailable right now"));
       if (res.ok) say("Super Neural Engine: " + (data.parts || []).map(x => x.engine).join(", ") + " answered");
     } catch (_) {
-      n.answer = "Super Neural Engine: could not reach the engines";
+      n.answer = opened + "Super Neural Engine: could not reach the engines";
     }
     n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
     persist(); tick();
