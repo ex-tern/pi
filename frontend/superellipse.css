@@ -4,11 +4,15 @@
  * name), wherever the server sets SCHOLARPI_SHAPE=superellipse, or with
  * ?shape=se in the address (channel.js decides).
  *
- * The corners are superellipses |x|^n + |y|^n = 1, and n says what a thing is:
- *   buttons, pills, bubbles   n = γ (0.5772…): stretched four-pointed diamonds,
- *                             growing towards π with use (semorph.js sets --se-k)
- *   dots, wire ends, nodes    the whole curve at n = γ: sparkles
- *   windows, cards            n = π (3.1415…)
+ * Shapes are superellipses |x/a|^n + |y/b|^n = 1, symmetric about both axes
+ * (border-radius: 50% with corner-shape: superellipse(K), n = 2^K):
+ *   pills (buttons)    a star at n = γ (0.5772…) beside the name until used;
+ *                      each use widens it towards n = π around the name
+ *                      (semorph.js sets --se-t and --se-k); hover shows it grown
+ *   objects            bubbles, buttons in windows, nodes: n = π
+ *   dots, wire ends    the whole curve at n = γ: sparkles
+ *   windows, cards     superellipse corners at n = π
+ *   the central loop   n = π until you scroll on it (orbit.js)
  * semorph.js computes γ and π in the page and sets --se-k-button and
  * --se-k-window (CSS writes superellipse(K) with n = 2^K); it also animates
  * the change of n when a window opens out of its button or closes into it.
@@ -22,26 +26,54 @@ html.shape-se {
   --se-k-button: -0.79286;   /* log2 γ, until semorph.js has computed it */
   --se-k-window: 1.65149;    /* log2 π */
 }
-/* buttons: stretched four-pointed diamonds, like a sparkle pulled sideways.
-   Each end is half a superellipse at n = γ (corner boxes 1.25em wide and half
-   the height tall), the text rides the straight middle. */
+/* n and the star's growth animate (registered, so they interpolate) */
+@property --se-k { syntax: "<number>"; inherits: true; initial-value: 1.651496; }
+@property --se-t { syntax: "<number>"; inherits: true; initial-value: 1; }
+
+/* objects: full symmetric superellipses at n = π, padded so what is inside
+   stays inside the curve (it holds a rectangle about 80% of its size) */
 html.shape-se .orbit-bubble,
-html.shape-se .ob-member,
 html.shape-se .btn,
 html.shape-se .nf-go, html.shape-se .nf-mute, html.shape-se .nf-reset, html.shape-se .nf-alt, html.shape-se .nf-diff button,
 html.shape-se .dl-btn,
 html.shape-se .ob-chat button {
-  border-radius: 1.25em / 50%;
-  corner-shape: superellipse(var(--se-k, var(--se-k-button)));   /* --se-k: this button's own n, by use */
+  border-radius: 50%;
+  corner-shape: superellipse(var(--se-k-window));
 }
-html.shape-se .ob-member { padding-inline: 1.3em; }
-html.shape-se .orbit-bubble { padding-inline: 1.5em 1.7em; }
+html.shape-se .orbit-bubble { padding: 0.75em 1.7em 0.75em 1.5em; }
+html.shape-se .orbit-bubble.is-group { padding: 1.1em 2.6em 1.1em 2.4em; }
 html.shape-se .btn, html.shape-se .dl-btn { padding-inline: 1.6em; }
-html.shape-se .orbit-bubble.is-group { border-radius: 2.1em / 50%; padding-inline: 2.3em 2.4em; }
-/* a button's own n does not pass to what is inside it */
-@property --se-k { syntax: "*"; inherits: false; }
-html.shape-se .ob-chat input { border-radius: 0.6em; corner-shape: superellipse(var(--se-k-button)); }
-html.shape-se .live-tab { border-radius: 14px 0 0 14px; corner-shape: superellipse(var(--se-k-button)); }
+@media (max-width: 700px) {
+  html.shape-se .orbit-bubble { padding-inline: 1.1em 1.2em; }
+  html.shape-se .orbit-bubble.is-group { padding-inline: 1.9em 2em; }
+}
+
+/* pills: a star beside the name that grows into the shape around it with use */
+html.shape-se .ob-member {
+  --star: 1.35em;
+  position: relative; isolation: isolate;
+  background: transparent !important; border-color: transparent !important; border-radius: 50%;
+  padding-left: calc((1 - var(--se-t)) * (var(--star) + 0.4em) + var(--se-t) * 1.05em);
+  padding-right: calc((1 - var(--se-t)) * 0.25em + var(--se-t) * 1.05em);
+  transition: --se-t 0.45s cubic-bezier(.2, .7, .2, 1), --se-k 0.45s cubic-bezier(.2, .7, .2, 1), color 0.15s ease;
+}
+html.shape-se .ob-member::before {
+  content: ""; position: absolute; z-index: -1; left: 0; top: 50%; transform: translateY(-50%);
+  width: calc((1 - var(--se-t)) * var(--star) + var(--se-t) * 100%);
+  height: calc((1 - var(--se-t)) * var(--star) + var(--se-t) * 100%);
+  border-radius: 50%; corner-shape: superellipse(var(--se-k));
+  background: color-mix(in srgb, var(--paper) calc(min(1, var(--se-t) * 2.5) * 100%), var(--graphite));   /* paper by the time it reaches the name */
+  border: 1px solid var(--hair-strong);
+}
+html.shape-se .ob-member:hover, html.shape-se .ob-member:focus-visible {
+  --se-t: 1 !important; --se-k: var(--se-k-window) !important;
+}
+html.shape-se .ob-member:hover::before { border-color: var(--cobalt); }
+html.shape-se .ob-member:focus-visible { outline: none; }
+html.shape-se .ob-member:focus-visible::before { border: 2px solid var(--cobalt); }
+@media (prefers-reduced-motion: reduce) { html.shape-se .ob-member { transition: none; } }
+html.shape-se .ob-chat input { border-radius: 0.6em; corner-shape: superellipse(var(--se-k-window)); }
+html.shape-se .live-tab { border-radius: 14px 0 0 14px; corner-shape: superellipse(var(--se-k-window)); }
 /* dots are whole sparkles: the superellipse at n = γ */
 html.shape-se .ob-dot {
   border: 0 !important; border-radius: 0 !important; width: 0.85em; height: 0.85em;
@@ -82,21 +114,13 @@ html.shape-se .orbit-title .se-logo { display: block; height: clamp(40px, 4.4vw,
 .se-logo .sel-badge { fill: var(--paper); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
 @media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 36px; } }
 
-/* the mark is the central loop: a superellipse at n = π, the π counter inside
-   it, and a While Loop's terminals (orbit.js draws the curve) */
-.om-loop, .om-term { display: none; }
+/* the mark is the central loop: a superellipse at n = π (scroll on it to
+   change n), the π counter inside it (orbit.js draws the curve) */
+.om-loop { display: none; }
 html.shape-se .om-circle { display: none; }
 html.shape-se .om-loop { display: inline; fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
 html.shape-se .orbit-core { border-radius: 30%; }
 html.shape-se .om-name { display: none; }
-html.shape-se .om-term { display: inline; }
-.om-term rect { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
-.om-iter text { font-family: var(--font); font-size: 19px; font-weight: 600; fill: var(--cobalt); }
-.om-iter rect { stroke: var(--cobalt); }
-.om-cond .om-go { stroke: var(--cobalt); stroke-width: 2.2; stroke-linecap: round; vector-effect: non-scaling-stroke; }
-.om-cond .om-stop { display: none; fill: #b4574f; stroke: none; }
-html.orbit-still .om-cond .om-go { display: none; }
-html.orbit-still .om-cond .om-stop { display: inline; }
 html.shape-se .orbit-center > .orbit-pi {
   position: absolute; z-index: 3; width: var(--in-loop-w, 18em); max-width: none; padding: 0;
   background: transparent; border: 0; border-radius: 0; cursor: pointer; font-size: var(--in-loop-font, 11px);
@@ -104,3 +128,7 @@ html.shape-se .orbit-center > .orbit-pi {
 html.shape-se .orbit-center > .orbit-pi .op-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.shape-se .orbit-pi .op-grip { display: none; }
 html.shape-se.orbit-open .orbit-pi { opacity: 1; }
+
+/* the loop's n, shown while you scroll it */
+.om-n { font-family: var(--font-mono, monospace); font-size: 20px; fill: var(--cobalt); opacity: 0; transition: opacity 0.3s ease; }
+.om-n.show { opacity: 1; }

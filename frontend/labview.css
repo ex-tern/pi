@@ -71,9 +71,9 @@ html.lv-dragging, html.lv-dragging * { cursor: grabbing !important; user-select:
 .lv-palette.lv-bin { border-color: #b4574f; box-shadow: 0 0 0 2px rgba(180, 87, 79, 0.25); }
 .lv-palette.lv-bin .lv-out::before { content: "Drop to remove · "; color: #b4574f; }
 
-/* in the superellipse look: nodes are diamonds (n = γ), the palette a window (n = π),
+/* in the superellipse look: nodes are symmetric superellipses (n = π), the palette a window,
    the output terminal a sparkle */
-html.shape-se .lv-fn { border-radius: 0.95em / 50%; corner-shape: superellipse(var(--se-k-button)); }
+html.shape-se .lv-fn { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); }
 html.shape-se .lv-node { width: 54px; }
 html.shape-se .lv-node.lv-text { width: 140px; }
 html.shape-se .lv-node::after { width: 10px; height: 10px; margin-top: -5px; right: -6px; clip-path: var(--se-sparkle); }
