@@ -456,7 +456,9 @@
     if (!merged()) return;
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = e.deltaY || e.deltaX;
-    markN = Math.min(N_MAX, Math.max(N_MIN, loopN() * Math.exp(-dy * 0.002)));
+    const nn = Math.min(N_MAX, Math.max(N_MIN, loopN() * Math.exp(-dy * 0.002)));
+    // n goes down only while the page, shrunk toward the centre, can still be read inside it
+    if (!(nn < loopN() && fitAt(nn) < FIT_MIN)) markN = nn;
     drawLoop();
     const t = $(".orbit-nread");
     if (t) { t.textContent = nLabel(markN); t.classList.add("show"); }
@@ -497,21 +499,58 @@
   let loopG = { cx: 0, cy: 0, a: 1, b: 1, n: Math.PI }, loopKey = "";
   // r ↦ (u^n + v^n)^(1/n), safely for any n
   const seNorm = (u, v, n) => { const m = Math.max(u, v); return m ? m * Math.pow(Math.pow(u / m, n) + Math.pow(v / m, n), 1 / n) : 0; };
-  function drawLoop() {
-    if (!pageLoop()) { if (merged()) drawMini(); return; }
-    const Wv = window.innerWidth, Hv = H, n = loopN();
-    const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = top + Hv / 2;
-    let sc = 1;
+  // Everything stays inside the mark. When the mark, grown to the display, still cannot hold
+  // the page (a small n, a star), the page shrinks toward the centre until it does.
+  const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock, .lv-node";   // wire layers are drawn from what is on screen, so they are not scaled
+  let pageFit = 1;
+  function setFit(f, px, py) {
+    f = Math.round(f * 200) / 200;
+    if (f === pageFit && f === 1) return;
+    pageFit = f;
+    document.documentElement.classList.toggle("orbit-fit", f < 1);
+    document.querySelectorAll(FIT).forEach(el => {
+      if (f >= 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
+      // its layout box, where it sits before any transform: scaled about (px, py) from there
+      let lx = 0, ly = 0;
+      for (let e = el; e; e = e.offsetParent) { lx += e.offsetLeft; ly += e.offsetTop; }
+      el.style.transformOrigin = (px - lx).toFixed(1) + "px " + (py - ly).toFixed(1) + "px";
+      el.style.scale = String(f);
+    });
+  }
+  const FIT_MIN = 0.35;
+  // how big the loop must be (in units of its usual a, b) to hold the page at full size
+  function needAt(n) {
+    const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = top + H / 2;
+    let need = 0;
     document.querySelectorAll(CONTAIN).forEach(el => {
       if (el.hidden || !el.getClientRects().length) return;
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) return;
       for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
-        sc = Math.max(sc, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
+        need = Math.max(need, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
     });
+    return need / pageFit;
+  }
+  function fitAt(n) {
+    const cap = (1 - 4 / Math.min(window.innerWidth, H)) / LOOP_M, need = needAt(n);
+    return need > cap ? cap / need * 0.985 : 1;
+  }
+  function drawLoop() {
+    if (!pageLoop()) { setFit(1); if (merged()) drawMini(); return; }
+    const Wv = window.innerWidth, Hv = H, n = loopN();
+    const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = top + Hv / 2;
+    const need = needAt(n);
+    let sc = Math.max(1, need);
     sc = Math.ceil(sc * 200) / 200;                      // steps of 0.5%, so it does not shimmer
     // it fits the display completely: a superellipse never leaves its a×b box, so the box stays on screen
-    sc = Math.min(sc, (1 - 4 / Math.min(Wv, Hv)) / LOOP_M);
+    const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
+    sc = Math.min(sc, cap);
+    setFit(need > cap ? Math.max(0.05, cap / need * 0.985) : 1, cx, cy);
+    if (pageFit < FIT_MIN - 0.01 && markN && !scrollN.fixing) {               // a saved n too small for this page: back up
+      scrollN.fixing = true; let k = 0;
+      while (markN < Math.PI && fitAt(markN) < FIT_MIN && k++ < 200) markN *= 1.05;
+      loopKey = ""; drawLoop(); scrollN.fixing = false; return;
+    }
     const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
     loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
     if (key === loopKey) return;
