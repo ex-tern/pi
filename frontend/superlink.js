@@ -228,6 +228,44 @@
     return null;
   }
 
+  // ---- the edge of a thing: there the pointer wires --------------------
+  // Bubbles, windows, nodes, the counter, Live and the title: on their edge (a few pixels either side of
+  // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
+  // their own use (moving, pressing, typing).
+  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .orbit-title";
+  const IN = 6, OUT = 5;
+  function edgeAt(x, y) {
+    if (!x && !y) return null;
+    const v = svg ? svg.style.visibility : "";
+    if (svg) svg.style.visibility = "hidden";
+    let top;
+    try { top = document.elementFromPoint(x, y); } finally { if (svg) svg.style.visibility = v; }
+    if (top && top.closest && top.closest(".lv-palette, input, textarea, select, .wire-handle, .op-close, button.orbit-core")) return null;
+    const owner = top && top.closest && top.closest(THINGS);
+    let best = null;
+    const near = el => {
+      if (!el.getClientRects().length || el.hidden) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      let d;
+      if (el.classList.contains("lv-dot")) {                              // round: its ring
+        const R = r.width / 2, c = Math.hypot(x - (r.left + R), y - (r.top + r.height / 2));
+        d = c - R; if (d > OUT || d < -IN) return;
+      } else {
+        const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+        if (ins) { d = -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y); if (d < -IN) return; }
+        else { d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom)); if (d > OUT) return; }
+        if (!ins && owner && owner !== el) return;                        // just outside it, but over something else
+        if (ins && owner && owner !== el && !owner.contains(el) && !el.contains(owner)) return;   // covered
+      }
+      if (!best || Math.abs(d) < Math.abs(best.d)) best = { el, d };
+    };
+    document.querySelectorAll(THINGS).forEach(near);
+    if (!best) return null;
+    const h = hostOf(best.el);
+    return h ? { anchor: { h: h.key, el: 1 }, rect: best.el.getBoundingClientRect(), el: best.el } : null;
+  }
+
   function start() {
     svg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     svg.setAttribute("class", "sl-layer");
@@ -245,11 +283,24 @@
     const owned = t => !t.closest || !!t.closest(FIELDS) || (!t.closest(".ob-member") && !!t.closest(MOVERS));
     let eatClick = false;
     document.addEventListener("click", e => { if (eatClick) { eatClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
+    // the pointer shows when it is on an edge
+    let edgeEl = null;
+    document.addEventListener("pointermove", e => {
+      if (drag || e.buttons || html.classList.contains("lv-dragging")) return;
+      const g = edgeAt(e.clientX, e.clientY), el = g ? g.el : null;
+      if (el === edgeEl) return;
+      if (edgeEl) edgeEl.classList.remove("sl-edge-on");
+      edgeEl = el; html.classList.toggle("sl-edge", !!el);
+      if (el) el.classList.add("sl-edge-on");
+    }, true);
     document.addEventListener("pointerdown", e => {
-      if (e.button !== 0 || drag || owned(e.target)) return;
-      const u = unitAt(e.clientX, e.clientY);
-      if (!u) return;
-      const x0 = e.clientX, y0 = e.clientY, from = u.anchor;
+      if (e.button !== 0 || drag) return;
+      const g = edgeAt(e.clientX, e.clientY);
+      if (g) { e.preventDefault(); e.stopImmediatePropagation(); }       // on an edge it wires: the thing does not move
+      else if (owned(e.target)) return;
+      const u = g ? null : unitAt(e.clientX, e.clientY);
+      if (!g && !u) return;
+      const x0 = e.clientX, y0 = e.clientY, from = g ? g.anchor : u.anchor;
       const move = ev => {
         if (!drag) {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;      // not yet: it may be a click
