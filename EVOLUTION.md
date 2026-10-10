@@ -922,3 +922,20 @@ pytest at baseline; `build_hal.py` builds.
 - Members open their windows labelled with their bubble (Explore / The journal, About / Capabilities, Connect / Contact us).
 - The 15-size layout audit passes; no page errors or horizontal scroll.
 - pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-10: bubbles wired together like LabVIEW
+
+**What:** the six bubbles and two pills are joined by wires in the style of a LabVIEW block diagram: square terminals at each end and right-angled wires (side to side, or bottom to top when stacked), drawn under the bubbles. The wires follow how data actually moves through the site:
+- Your account → Tools
+- Tools → Explore (an assessment lands in the journal and the ledger)
+- Explore → Library (RiBD, the map), Explore → About (analytics, performance), Explore → SciM Assistant
+- Connect → Your account
+- Lab → Library
+
+**Activity:** a wire comes alive while a window at either end is open: cobalt, with data flowing along it and filled terminals. The Tools → Explore wire is also live while the site is assessing a paper. The flow speeds up with the site's activity level from `/api/activity`: 1.6 s quiet, 0.8 s working, 0.4 s busy. Reduced motion shows a solid live wire instead. Wires redraw every 250 ms, so they follow pills as they move.
+
+**Verified:**
+- At 1440 and 390 px there are 7 wires, none live at rest.
+- Opening The journal made the 4 wires touching Explore live, and closing all windows made them quiet again.
+- No pill overlaps, page errors or horizontal scroll.
+- pytest at baseline; `build_hal.py` builds.
