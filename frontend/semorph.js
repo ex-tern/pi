@@ -1,8 +1,11 @@
 // semorph.js — in the superellipse look (html.shape-se), the shape's exponent n
 // says what a thing is:
 //
-//   a button   n = γ, the Euler–Mascheroni constant (0.5772…): concave corners
+//   a button   n = γ, the Euler–Mascheroni constant (0.5772…): a stretched
+//              four-pointed diamond, concave sides meeting in points; n grows
+//              towards π the more the button is used
 //   a window   n = π (3.1415…): full, nearly square corners
+//   a dot      the whole superellipse at n = γ: a sparkle (--se-sparkle)
 //
 // Both are computed here, in the page, and keep improving while it is open:
 //   γ = H_m − ln m − 1/(2m) + 1/(12m²) − 1/(120m⁴), with m growing each tick
@@ -56,12 +59,31 @@
   function publish() {
     put("--se-k-button", K(gamma).toFixed(6)); put("--se-n-button", gamma.toFixed(10));
     put("--se-k-window", K(pi).toFixed(6)); put("--se-n-window", pi.toFixed(10));
+    put("--se-sparkle", "polygon(" + starPts(gamma, 48).map(p => (50 + 50 * p[0]).toFixed(2) + "% " + (50 + 50 * p[1]).toFixed(2) + "%").join(", ") + ")");
+  }
+  // n grows with use: a button you never opened is γ; the more you open it,
+  // the closer it comes to π, the shape of the window it opens.
+  //   n(u) = γ + (π − γ) · u / (u + 8),  u = times opened
+  const nOfUse = u => gamma + (pi - gamma) * u / (u + 8);
+  function perButton() {
+    if (!on() || !window.PiOrbit || !window.PiOrbit.info) return;
+    document.querySelectorAll(".orbit-bubble[data-key], .ob-member[data-key]").forEach(el => {
+      const i = window.PiOrbit.info(el.dataset.key);
+      if (!i) return;
+      const n = nOfUse(i.use || 0), k = K(n).toFixed(5);
+      if (el.dataset.seK !== k) {
+        el.dataset.seK = k; el.dataset.seN = n.toFixed(5);
+        el.style.setProperty("--se-k", k);
+        el.title = el.title.replace(/ · n = [\d.]+$/, "") + " · n = " + n.toFixed(4);
+      }
+    });
   }
   let gammaFixed = false;
   function tick() {
     if (!gammaFixed) { gammaFixed = fromNumbers(); if (!gammaFixed && m < 2e7) stepGamma(m < 1000 ? 50 : 5000); }
     stepPi();
     publish();
+    perButton();
   }
   tick();
   setInterval(tick, 250);
@@ -70,24 +92,42 @@
   // Each corner is a quarter of |x/r|^n + |y/r|^n = 1 about the point r in
   // from the corner, the same geometry CSS uses for corner-shape.
   function boxPath(x, y, w, h, r, n, steps) {
-    r = Math.max(0, Math.min(r, w / 2, h / 2));
+    let rx = Array.isArray(r) ? r[0] : r, ry = Array.isArray(r) ? r[1] : r;
+    rx = Math.max(0, Math.min(rx, w / 2)); ry = Math.max(0, Math.min(ry, h / 2));
     steps = steps || 18;
     const e = 2 / n, pts = [];
-    // walking clockwise from the top edge: top-right, bottom-right, bottom-left, top-left
-    const tr = (cx, cy) => { for (let i = 0; i <= steps; i++) { const t = (1 - i / steps) * Math.PI / 2; pts.push([cx + r * Math.pow(Math.abs(Math.cos(t)), e), cy - r * Math.pow(Math.abs(Math.sin(t)), e)]); } };
-    const br = (cx, cy) => { for (let i = 0; i <= steps; i++) { const t = (i / steps) * Math.PI / 2; pts.push([cx + r * Math.pow(Math.abs(Math.cos(t)), e), cy + r * Math.pow(Math.abs(Math.sin(t)), e)]); } };
-    const bl = (cx, cy) => { for (let i = 0; i <= steps; i++) { const t = (1 - i / steps) * Math.PI / 2; pts.push([cx - r * Math.pow(Math.abs(Math.cos(t)), e), cy + r * Math.pow(Math.abs(Math.sin(t)), e)]); } };
-    const tl = (cx, cy) => { for (let i = 0; i <= steps; i++) { const t = (i / steps) * Math.PI / 2; pts.push([cx - r * Math.pow(Math.abs(Math.cos(t)), e), cy - r * Math.pow(Math.abs(Math.sin(t)), e)]); } };
-    tr(x + w - r, y + r); br(x + w - r, y + h - r); bl(x + r, y + h - r); tl(x + r, y + r);
+    const q = (cx, cy, sx, sy, up) => {
+      for (let i = 0; i <= steps; i++) {
+        const t = (up ? 1 - i / steps : i / steps) * Math.PI / 2;
+        pts.push([cx + sx * rx * Math.pow(Math.abs(Math.cos(t)), e), cy + sy * ry * Math.pow(Math.abs(Math.sin(t)), e)]);
+      }
+    };
+    // clockwise from the top edge: top-right, bottom-right, bottom-left, top-left
+    q(x + w - rx, y + ry, 1, -1, true); q(x + w - rx, y + h - ry, 1, 1, false);
+    q(x + rx, y + h - ry, -1, 1, true); q(x + rx, y + ry, -1, -1, false);
     return "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z";
+  }
+  // a whole superellipse at n = γ: the four-pointed sparkle (dots, wire ends)
+  function starPts(n, steps) {
+    const e = 2 / n, pts = [];
+    for (let i = 0; i < steps; i++) {
+      const t = i / steps * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+      pts.push([Math.sign(c) * Math.pow(Math.abs(c), e), Math.sign(s) * Math.pow(Math.abs(s), e)]);
+    }
+    return pts;
+  }
+  function star(cx, cy, a, b, n) {
+    return "M" + starPts(n || gamma, 48).map(p => (cx + a * p[0]).toFixed(2) + "," + (cy + b * p[1]).toFixed(2)).join("L") + "Z";
   }
 
   // ---- the morph ---------------------------------------------------------
   const DUR = 460;
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  // the corner radii [rx, ry] in px ("1.2em / 50%" computes to "14px 50%")
   const radiusOf = el => {
-    const cs = getComputedStyle(el);
-    return parseFloat(cs.borderTopLeftRadius) || 0;
+    const v = getComputedStyle(el).borderTopLeftRadius.split(" "), r = el.getBoundingClientRect();
+    const px = (t, size) => t && t.endsWith("%") ? parseFloat(t) / 100 * size : parseFloat(t) || 0;
+    return [px(v[0], r.width), px(v[1] || v[0], r.height)];
   };
   const rectOf = el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
   const usable = el => el && el.isConnected && el.getClientRects().length && rectOf(el).w > 0;
@@ -112,7 +152,7 @@
       const t = Math.max(0, Math.min(1, (now - t0) / DUR)), k = ease(t);
       const x = lerp(a.rect.x, b.rect.x, k), y = lerp(a.rect.y, b.rect.y, k);
       const w = lerp(a.rect.w, b.rect.w, k), h = lerp(a.rect.h, b.rect.h, k);
-      const r = lerp(a.r, b.r, k), n = lerp(a.n, b.n, k);
+      const r = [lerp(a.r[0], b.r[0], k), lerp(a.r[1], b.r[1], k)], n = lerp(a.n, b.n, k);
       g.path.setAttribute("d", boxPath(x, y, w, h, r, n));
       g.svg.dataset.n = n.toFixed(4);
       if (t < 1) requestAnimationFrame(frame);
@@ -125,7 +165,7 @@
   // a window opens: it grows out of the button that opened it
   function open(panel, from) {
     if (!on() || reduce.matches || !panel || !usable(from)) return;
-    const a = { rect: rectOf(from), r: radiusOf(from), n: gamma };
+    const a = { rect: rectOf(from), r: radiusOf(from), n: +from.dataset.seN || gamma };
     const b = { rect: rectOf(panel), r: radiusOf(panel), n: pi };
     panel.classList.add("se-arriving");
     run(a, b, () => {
@@ -139,9 +179,9 @@
     if (!on() || reduce.matches || !panel || !panel.isConnected) return;
     const a = { rect: rectOf(panel), r: radiusOf(panel), n: pi };
     if (!usable(to)) return;
-    const b = { rect: rectOf(to), r: radiusOf(to), n: gamma };
+    const b = { rect: rectOf(to), r: radiusOf(to), n: +to.dataset.seN || gamma };
     run(a, b);
   }
 
-  window.SeMorph = { open, close, path: boxPath, get gamma() { return gamma; }, get pi() { return pi; } };
+  window.SeMorph = { open, close, path: boxPath, star, nOfUse, get gamma() { return gamma; }, get pi() { return pi; } };
 })();

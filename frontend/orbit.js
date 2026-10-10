@@ -187,9 +187,16 @@
     '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize, click to close all windows, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
+    '<path class="om-loop" d=""/>' +
     '<g class="om-sweep">' +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
-    '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text></svg></button>' +
+    '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text>' +
+    // the While Loop's terminals (superellipse look): i, the iteration count, and the stop/continue condition
+    '<g class="om-term om-iter"><rect x="104" y="296" width="28" height="28" rx="2"/><text x="118" y="317" text-anchor="middle">i</text></g>' +
+    '<g class="om-term om-cond"><rect x="268" y="296" width="28" height="28" rx="2"/>' +
+    '<path class="om-go" d="M289 310a7 7 0 1 1-2.1-5" fill="none"/><path class="om-go" d="M287.6 299.6v5.6h-5.6" fill="none"/>' +
+    '<rect class="om-stop" x="275" y="303" width="14" height="14"/></g>' +
+    '</svg></button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
@@ -410,6 +417,7 @@
   // The π box is its own thing: under the mark until you move it, then
   // wherever you left it. It never leaves the screen.
   function piCentre() {
+    if (merged()) return [lx, ly + shownR() * 0.3];       // inside the central loop, above its terminals
     let x, y;
     if (piAt) { x = piAt.fx * W; y = piAt.fy * H; }
     else { x = lx; y = ly + R + 14 + piBox.h / 2; }
@@ -425,17 +433,43 @@
     }
     return [x, y];
   }
+  // In the superellipse look the mark is the diagram's central loop: a
+  // superellipse at n = π (the windows' n, computed live by semorph.js) with
+  // the π counter inside it, and the diameter reaching the curve at every angle.
+  const merged = () => document.documentElement.classList.contains("shape-se");
+  const loopN = () => (window.SeMorph && window.SeMorph.pi) || Math.PI;
+  const loopR = th => { const n = loopN(); return 150 / Math.pow(Math.pow(Math.abs(Math.cos(th)), n) + Math.pow(Math.abs(Math.sin(th)), n), 1 / n); };
+  let loopDrawn = 0;
+  function drawLoop() {
+    const n = loopN();
+    if (Math.abs(n - loopDrawn) < 1e-6) return;
+    loopDrawn = n;
+    const e = 2 / n, pts = [];
+    for (let i = 0; i < 160; i++) {
+      const t = i / 160 * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
+      pts.push((200 + 150 * Math.sign(c) * Math.pow(Math.abs(c), e)).toFixed(2) + "," + (200 + 150 * Math.sign(sn) * Math.pow(Math.abs(sn), e)).toFixed(2));
+    }
+    const path = $(".om-loop");
+    if (path) path.setAttribute("d", "M" + pts.join("L") + "Z");
+  }
   function placeMark() {
     const r = shownR();
+    if (merged()) drawLoop();
     const core = $(".orbit-core");
     core.style.width = core.style.height = r * 2 + "px";
     core.style.left = lx - r + "px";
     core.style.top = top + ly - r + "px";
     const pi = $(".orbit-pi");
     pi.style.setProperty("--pi-scale", piScale);
+    // merged into the loop: as wide as the loop allows at that height
+    pi.style.setProperty("--in-loop-w", Math.round(r * 1.5) + "px");
+    pi.style.setProperty("--in-loop-font", Math.max(8.5, Math.min(14, r * 0.09)).toFixed(1) + "px");
     const [px, py] = piCentre();
+    // inside the loop it lives in the mark's layer (above windows, like the mark), elsewhere in the stage
+    const home = merged() && stage.center ? stage.center : stage;
+    if (stage.center && pi.parentElement !== home) home.appendChild(pi);
     pi.style.left = px + "px";
-    pi.style.top = py + "px";            // the π box lives in the stage, under any windows
+    pi.style.top = (home === stage ? py : top + py) + "px";            // the π box lives in the stage, under any windows
   }
 
   // the docked Live panel (live.js) and the room left beside it for windows
@@ -819,7 +853,7 @@
       pi.setPointerCapture(e.pointerId);
     });
     pi.addEventListener("pointermove", e => {
-      if (!pi.hasPointerCapture(e.pointerId)) return;
+      if (!pi.hasPointerCapture(e.pointerId) || merged()) return;   // inside the loop it stays put; a click still opens it
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 5) return;
       if (!moved) { moved = true; pi.classList.add("dragging"); document.documentElement.classList.add("orbit-moving"); }
       piAt = { fx: (e.clientX - ox) / W, fy: (e.clientY - top - oy) / H };
@@ -1157,7 +1191,10 @@
         t1 = [pc[0], y1]; t2 = [qc[0], y2];
       }
       const live = isLive(A) || isLive(B) || (a === "Tools" && b === "Explore" && actLevel !== "quiet");
-      const term = ([x, y]) => '<rect class="wire-term" x="' + (x - 3.5) + '" y="' + (y - 3.5) + '" width="7" height="7"/>';
+      // in the superellipse look the terminals are sparkles (n = γ, semorph.js)
+      const term = ([x, y]) => (window.SeMorph && document.documentElement.classList.contains("shape-se"))
+        ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 5.5, 5.5) + '"/>'
+        : '<rect class="wire-term" x="' + (x - 3.5) + '" y="' + (y - 3.5) + '" width="7" height="7"/>';
       html += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
               term(t1) + term(t2) + '</g>';
     });
@@ -1218,6 +1255,14 @@
       speed += (target - speed) * Math.min(1, dt * 2.5);
       angle = (angle - speed * dt) % 360;
       sweep.style.transform = "rotate(" + angle.toFixed(2) + "deg)";
+      if (merged()) {
+        const len = loopR(angle * Math.PI / 180).toFixed(2);
+        if (len !== sweep.dataset.len) {
+          sweep.dataset.len = len;
+          const [l1, l2] = sweep.querySelectorAll("line");
+          l1.setAttribute("x2", 200 + +len); l2.setAttribute("x2", 200 - +len);
+        }
+      }
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -1567,7 +1612,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
