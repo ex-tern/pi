@@ -78,3 +78,10 @@ html.shape-se .lv-node { width: 54px; }
 html.shape-se .lv-node.lv-text { width: 140px; }
 html.shape-se .lv-node::after { width: 10px; height: 10px; margin-top: -5px; right: -6px; clip-path: var(--se-sparkle); }
 html.shape-se .lv-palette { border-radius: 18px; corner-shape: superellipse(var(--se-k-window)); }
+
+/* --- superlink.js: a connector on any word, number or character --- */
+.sl-layer { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
+.sl-layer .sl-hover { fill: rgba(47, 64, 232, 0.08); stroke: var(--cobalt); stroke-width: 1.5; }
+html.sl-on, html.sl-on * { cursor: crosshair !important; }
+html.sl-on .lv-palette, html.sl-on .lv-palette * { cursor: pointer !important; }
+html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: none; }
