@@ -18,9 +18,9 @@ terms, and the combined answer goes to a Show node.
 
 DESIGN NOTES
 
-  * Every engine is optional. One that fails or has nothing to say is left
-    out of the answer instead of failing the request; the parts list says
-    which engines answered.
+  * Every engine is optional. One that fails is left out of the answer
+    instead of failing the request; one with nothing learned yet says so
+    rather than staying silent. The parts list says which engines answered.
   * Nothing is written: this endpoint only reads, so asking cannot skew what
     the engines learn.
   * The prompt is bounded (4,000 characters, like /api/scilem/chat) and the
@@ -68,7 +68,7 @@ def sim_part(prompt: str, answer: Callable[[str], Dict]) -> Optional[str]:
 
 def rib_part(prompt: str, rows: List[Dict], suggest: Callable, hot: Callable) -> Optional[str]:
     if not rows:
-        return None
+        return "no assessed papers here yet, so nothing to rank"
     words = words_of(prompt)
     # The prompt stands in for a profile: its words as keywords and as the idea.
     profile = {"field": ", ".join(words[:6]), "goal": ", ".join(words[:6]), "idea": prompt}
@@ -84,7 +84,7 @@ def rib_part(prompt: str, rows: List[Dict], suggest: Callable, hot: Callable) ->
         name = t.get("field") or t.get("name")
         if name:
             bits.append("hot field: " + str(name))
-    return "; ".join(bits) or None
+    return "; ".join(bits) or "nothing assessed here matches these words yet"
 
 
 def pid_part(status: Callable[[], Dict]) -> Optional[str]:
@@ -96,7 +96,7 @@ def pid_part(status: Callable[[], Dict]) -> Optional[str]:
     if isinstance(mine, (int, float)) and isinstance(base, (int, float)):
         verdict = "beating its defaults" if mine < base else "not yet beating its defaults"
         return f"{int(obs):,} observations, error {mine:.3f} vs {base:.3f} ({verdict})"
-    return f"{int(obs):,} observations" if obs else None
+    return f"{int(obs):,} observations, no error to score yet" if obs else "no observations yet, nothing learned to report"
 
 
 def pien_part(prompt: str, db_path: str) -> Optional[str]:

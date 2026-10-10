@@ -66,3 +66,11 @@ def test_rate_limit_applies(tmp_path):
     def limited(_):
         raise HTTPException(status_code=429, detail="slow down")
     assert make(tmp_path, limited=limited).post("/api/super/ask", json={"prompt": "hi"}).status_code == 429
+
+
+def test_engines_with_nothing_learned_say_so(tmp_path):
+    body = make(tmp_path, rows=lambda: [], pid=lambda: {"total_observations": 0}).post(
+        "/api/super/ask", json={"prompt": "anything"}).json()
+    texts = {p["engine"]: p["text"] for p in body["parts"]}
+    assert "no assessed papers" in texts["riB"]
+    assert "no observations yet" in texts["piD"]
