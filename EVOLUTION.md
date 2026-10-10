@@ -969,3 +969,14 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 - pytest at baseline (12 failed, 420 passed); `build_hal.py` builds.
 - Browser at 1440 and 390 px with `?shape=se`: logo shown, text title hidden, no overlap with pills, no horizontal scroll, no errors.
 - Without the superellipse look the plain text title is unchanged.
+
+## 2026-10-10: n means something: buttons n = γ, windows n = π; a Functions palette
+
+**What:**
+- `frontend/semorph.js`: in the superellipse look, buttons, pills and bubbles have corners with exponent n = γ (Euler–Mascheroni, 0.5772…, concave), and windows and cards n = π. Both values are computed in the page and keep improving: γ from H_m − ln m with its asymptotic correction (or the Numbers window's exact digits once present), π from the mark's live digits (Machin's formula until they arrive). They reach CSS as `corner-shape: superellipse(K)`, n = 2^K.
+- Opening a window grows it out of its button while n climbs from γ to π; closing folds it back while n falls to γ. The moving outline is drawn from the superellipse formula, so browsers without `corner-shape` see the morph too. Reduced motion skips it.
+- `frontend/labview.js` + `labview.css`: a LabVIEW-style Functions palette, bottom-left: Add, Subtract, Multiply, Divide, And, Or, Exclusive Or, Not, Greater?, Equal?, For Loop, While Loop, Case Structure. They are dummies that fire on the two newest π digits; the loops run until pressed again. It starts open only where it does not cover the diagram (folded on phones) and remembers your choice.
+
+**Why:** the owner asked for minimise/maximise to be a change in n, buttons at n = γ, windows at n = π, computed by the app and animated; then for dummy LabVIEW function buttons.
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440, 1280×720 and 390 px, with and without `?shape=se`: CSS gets K = log2 γ and log2 π, the morph runs γ → π on open and π → γ on close and leaves nothing behind, every palette node gives a result, the palette covers no bubble when it starts, no horizontal scroll, no page errors.

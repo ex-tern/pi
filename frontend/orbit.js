@@ -913,6 +913,7 @@
     front(p);
     wirePanel(it, p);
     if (it.nodes.some(n => n.id === "labHal")) setTimeout(keepAlive, 300);
+    if (!restoring && window.SeMorph) window.SeMorph.open(p, buttonOf(it));   // superellipse look: grows out of its button
     if (!restoring) bumpUse(it, 1);
     pulse();
     placeMark();
@@ -964,8 +965,15 @@
     store("orbit:open", items.filter(i => i.panel).sort((a, b) => a.panel.style.zIndex - b.panel.style.zIndex).map(i => i.key));
   }
 
+  // the button a window belongs to: its own pill, or its bubble when the pill is folded away
+  function buttonOf(it) {
+    const own = it.bubble;
+    if (own && !own.hidden && own.getClientRects().length && own.getBoundingClientRect().width > 0) return own;
+    return it.groupOf ? it.groupOf.bubble : own;
+  }
   function closeItem(it) {
     if (!it.panel) return;
+    if (window.SeMorph) window.SeMorph.close(it.panel, buttonOf(it));         // superellipse look: folds back into it
     shelf.appendChild(it.content);
     it.panel.remove(); it.panel = null; openCount--;
     it.bubble.classList.remove("is-open");
