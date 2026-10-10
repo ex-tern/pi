@@ -148,3 +148,27 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-palette .lv-fn.lv-super svg .lv-star { fill: none; stroke: currentColor; }
 .lv-node.lv-dot.has-val { width: auto; padding: 0 14px; border-radius: 999px; }
 .lv-node.lv-box.has-val .lv-glyph, .lv-node.lv-dot.has-val .lv-glyph { font: 500 12px/1 ui-monospace, "Geist Mono", monospace; }
+
+/* transparent: the shapes are outlines, so what is under them shows through */
+.lv-node, html.shape-se .lv-node,
+.lv-node.lv-box, html.shape-se .lv-node.lv-box,
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask,
+.lv-node.lv-super, html.shape-se .lv-node.lv-super { background: transparent; }
+.lv-node.lv-super .lv-star { fill: none; }
+.lv-node .lv-val { background: transparent; }
+/* one size per node, set by scrolling on it (or the ● grip) */
+.lv-node, html.shape-se .lv-node,
+.lv-node.lv-box, html.shape-se .lv-node.lv-box,
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
+.lv-node.lv-super, html.shape-se .lv-node.lv-super,
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: var(--lv-s, 56px); min-width: var(--lv-s, 56px); height: var(--lv-s, 56px); min-height: var(--lv-s, 56px); }
+.lv-node .lv-glyph svg { width: calc(var(--lv-s, 56px) * 0.5); height: calc(var(--lv-s, 56px) * 0.5); }
+.lv-node.lv-super .lv-glyph svg { width: 100%; height: 100%; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), .lv-node.lv-box.has-val, .lv-node.lv-dot.has-val { width: auto; }
+.lv-node.lv-box.is-long, html.shape-se .lv-node.lv-box.is-long { width: max-content; height: auto; }
+.lv-node.lv-ask.is-asking, html.shape-se .lv-node.lv-ask.is-asking { width: auto; height: auto; }
+.lv-node.lv-ask.is-asking .lv-glyph svg { width: 20px; height: 20px; }
+.lv-node.lv-box .lv-glyph, .lv-node.lv-dot .lv-glyph, .lv-node.lv-box.has-val .lv-glyph, .lv-node.lv-dot.has-val .lv-glyph { font-size: max(12px, calc(var(--lv-s, 56px) * 0.3)); }
+.lv-node.lv-box.is-long .lv-glyph { font-size: 11.5px; }
+.lv-node .lv-in { font-size: max(13px, calc(var(--lv-s, 56px) * 0.26)); }

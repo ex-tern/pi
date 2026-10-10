@@ -398,7 +398,6 @@
       const grip = document.createElement("span"); grip.className = "lv-grip"; grip.setAttribute("aria-hidden", "true");
       el.appendChild(grip);
       grip.addEventListener("pointerdown", e => grow2(e, n, grip));
-      if (n.size) sizeDot(n, n.size);
     }
     if (f.k === "ask") {
       n.answer = spec.answer || "";
@@ -413,6 +412,7 @@
       if (n.answer) { n.st.t = 1; n.st.sn = P(); }
       requestAnimationFrame(() => drawSuper(n));
     }
+    if (n.size) sizeDot(n, n.size);
     canvas.appendChild(el);
     nodes.push(n);
     place(n);
@@ -607,8 +607,22 @@
     return inp;
   }
   // ● dragged bigger by its grip: past twice its size it becomes a loop, a ring that counts
-  const DOT = 52, LOOP_AT = 104;
-  function sizeDot(n, d) { n.size = d; n.el.style.width = n.el.style.height = d + "px"; }
+  const DOT = 52, DOT_BASE = 56, LOOP_AT = 104;
+  // every node's size is one number (--lv-s); a value, a field or an answer still makes it grow around them
+  function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
+  // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
+  let zoomed = null;
+  function zoomNode(n, dy) {
+    const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const cur = n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
+    const d = Math.round(Math.max(36, Math.min(n.fn === "dot" ? max : 240, cur * Math.exp(-dy * 0.0015))));
+    if (d === cur) return;
+    sizeDot(n, d);
+    const b = n.el.getBoundingClientRect();
+    n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n);
+    if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts ↻ once a second; press its label to pause"); }
+    clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
+  }
   function grow2(e, n, grip) {
     if (e.button !== 0) return;
     e.stopPropagation(); e.preventDefault();
@@ -784,6 +798,21 @@
     (restore("lv:nodes") || []).forEach(make);
     setInterval(tick, 250);
     setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count
+    // scrolling on a node (or on a loop's ring or label) sizes it, instead of changing the page
+    document.addEventListener("wheel", e => {
+      const hit = document.elementFromPoint(e.clientX, e.clientY);
+      let n = zoomed && performance.now() - zoomed.t < 450 && nodes.includes(zoomed.n) ? zoomed.n : null;   // one scroll gesture stays on its node
+      if (!n) n = hit && hit.closest && nodes.find(x => x.el === hit.closest(".lv-node"));
+      if (!n) n = nodes.find(x => {
+        if (x.role !== "loop") return false;
+        const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+        return Math.abs(d - r.width / 2) < 14;
+      });
+      if (!n || (hit && hit.tagName === "INPUT" && n.el.contains(hit) && n.fn === "ask")) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      zoomed = { n, t: performance.now() };
+      zoomNode(n, e.deltaY || e.deltaX);
+    }, { capture: true, passive: false });
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
