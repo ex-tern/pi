@@ -1,0 +1,43 @@
+/* superellipse.css — the superellipse ("squircle") look.
+ *
+ * On when <html> has the class shape-se: on se.pitechlab.com (by its host
+ * name), wherever the server sets SCHOLARPI_SHAPE=superellipse, or with
+ * ?shape=se in the address (channel.js decides). Buttons, pills, bubbles,
+ * cards and windows get superellipse corners: the continuous curve of a
+ * squircle instead of a circle arc. Browsers that support CSS corner-shape
+ * (Chrome/Edge 139+) draw true superellipses; the others keep the same
+ * radii as ordinary rounded corners.
+ */
+html.shape-se {
+  --se-pill: 1.15em;     /* pills, chips and buttons, relative to their text */
+  --se-card: 18px;       /* tiles and cards */
+  --se-window: 26px;     /* windows */
+}
+html.shape-se .orbit-bubble,
+html.shape-se .ob-member,
+html.shape-se .btn,
+html.shape-se .nf-go, html.shape-se .nf-mute, html.shape-se .nf-reset, html.shape-se .nf-alt, html.shape-se .nf-diff button,
+html.shape-se .dl-btn,
+html.shape-se .live-tab,
+html.shape-se .ob-chat input, html.shape-se .ob-chat button {
+  border-radius: var(--se-pill);
+  corner-shape: superellipse(2);
+}
+html.shape-se .orbit-bubble.is-group { border-radius: 1.5em; corner-shape: superellipse(2); }
+html.shape-se .live-tab { border-radius: 14px 0 0 14px; }
+html.shape-se .orbit-pi,
+html.shape-se .stat-card,
+html.shape-se .tr-tile,
+html.shape-se .rs-card,
+html.shape-se .perf-card,
+html.shape-se .perf-next,
+html.shape-se .buddy-corpus {
+  border-radius: var(--se-card);
+  corner-shape: superellipse(2);
+}
+html.shape-se .orbit-panel {
+  border-radius: var(--se-window);
+  corner-shape: superellipse(2);
+}
+/* the wire terminals become small superellipses too */
+html.shape-se .wire-term { rx: 2.5px; }

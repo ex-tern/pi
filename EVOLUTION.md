@@ -939,3 +939,22 @@ pytest at baseline; `build_hal.py` builds.
 - Opening The journal made the 4 wires touching Explore live, and closing all windows made them quiet again.
 - No pill overlaps, page errors or horizontal scroll.
 - pytest at baseline; `build_hal.py` builds.
+
+## 2026-10-10: the superellipse look, for se.pitechlab.com
+
+**What:** `frontend/superellipse.css` gives superellipse ("squircle") corners to pills, bubbles, member chips, buttons, cards, tiles, the π box and windows. It uses CSS `corner-shape: superellipse(2)` with radii that suit each element. Browsers without corner-shape (at the time of writing, those outside Chrome/Edge 139+) keep ordinary rounded corners at the same radii.
+
+**When it is on:** when `<html>` has `shape-se`, which `channel.js` sets:
+- on any host starting with `se.`, so se.pitechlab.com needs no configuration beyond the domain
+- with `?shape=se` in the address
+- when `/api/build` reports `"shape": "superellipse"` (the new `SCHOLARPI_SHAPE` variable)
+
+The experimental banner then reads "Superellipse preview". Every other site is unchanged.
+
+**Verified:**
+- With `?shape=se` at 1440 and 390 px, bubbles, chips and windows compute `corner-shape: squircle` (radii 19.5 / 12.9 / 26 px).
+- Without it, pills stay round and the class is absent.
+- No page errors or horizontal scroll.
+- pytest at baseline; `build_hal.py` builds.
+
+**Setting up the subdomain (owner, in Railway and DNS):** add `se.pitechlab.com` as a custom domain, either on the experimental service (the same site and data in the new look) or on a new environment deploying `experimental`. Then add the CNAME record Railway shows at the DNS provider.

@@ -454,6 +454,9 @@ BUILD_INFO = {
     # The frontend shows a banner on anything that is not stable.
     "channel": (os.getenv("SCHOLARPI_CHANNEL", "stable").strip().lower() or "stable"),
     "stable_url": os.getenv("SCHOLARPI_STABLE_URL", "").strip() or None,
+    # "superellipse" turns on the squircle look (frontend/superellipse.css);
+    # se.<domain> gets it from its host name anyway.
+    "shape": (os.getenv("SCHOLARPI_SHAPE", "").strip().lower() or None),
 }
 IS_EXPERIMENTAL = BUILD_INFO["channel"] != "stable"
 

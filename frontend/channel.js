@@ -5,9 +5,14 @@
 // know at a glance, and be one click from the stable site.
 (function () {
   "use strict";
+  // The superellipse look (superellipse.css): on se.<domain>, with
+  // ?shape=se, or when the server says so (SCHOLARPI_SHAPE=superellipse).
+  const se = () => document.documentElement.classList.add("shape-se");
+  if (location.hostname.startsWith("se.") || /[?&]shape=se\b/.test(location.search)) se();
   fetch("/api/build", { cache: "no-store" })
     .then(r => (r.ok ? r.json() : null))
     .then(b => {
+      if (b && b.shape === "superellipse") se();
       if (!b || !b.channel || b.channel === "stable") return;
       document.documentElement.classList.add("is-experimental");
       const stable = b.stable_url || (location.hostname.startsWith("exp.")
@@ -17,7 +22,8 @@
       bar.setAttribute("role", "note");
       const commit = b.commit && b.commit !== "unknown" ? " " + b.commit.slice(0, 7) : "";
       bar.innerHTML = '<span class="channel-dot" aria-hidden="true"></span><span class="channel-text"></span>';
-      bar.querySelector(".channel-text").textContent = "Experimental build" + commit + ". It changes often and may break.";
+      const isSe = document.documentElement.classList.contains("shape-se");
+      bar.querySelector(".channel-text").textContent = (isSe ? "Superellipse preview" : "Experimental build") + commit + ". It changes often and may break.";
       if (stable) {
         const a = document.createElement("a");
         a.className = "channel-link"; a.href = stable; a.textContent = "Go to the stable site";
