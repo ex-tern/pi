@@ -382,7 +382,10 @@
       '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite">Drag a node onto any button to wire it, or press it to run it on π</output>';
     const grid = pal.querySelector(".lv-grid"), head = pal.querySelector(".lv-head");
     out = pal.querySelector(".lv-out");
-    const setOpen = v => { open = v; pal.classList.toggle("is-open", v); head.setAttribute("aria-expanded", String(v)); };
+    const setOpen = v => {
+      open = v; pal.classList.toggle("is-open", v); head.setAttribute("aria-expanded", String(v));
+      setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
+    };
     fold = () => setOpen(false);
     head.addEventListener("click", () => { chosen = true; setOpen(!open); try { localStorage.setItem("lv:open", open ? "1" : "0"); } catch (_) { /* fine */ } });
     pal.classList.toggle("is-open", open); head.setAttribute("aria-expanded", String(open));
