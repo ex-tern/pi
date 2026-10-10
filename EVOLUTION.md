@@ -958,3 +958,14 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 - pytest at baseline; `build_hal.py` builds.
 
 **Setting up the subdomain (owner, in Railway and DNS):** add `se.pitechlab.com` as a custom domain, either on the experimental service (the same site and data in the new look) or on a new environment deploying `experimental`. Then add the CNAME record Railway shows at the DNS provider.
+
+## 2026-10-10: Superellipse title for the superellipse look
+
+**What:** `frontend/selogo.js` draws the "Pi Tech Lab" title from superellipse geometry (|x/a|^n + |y/b|^n = 1, n = 4): letters built from superellipse rings and bars, with a cobalt superellipse dot on the i, inside a superellipse badge. It replaces the text title only when `html.shape-se` is set (se.pitechlab.com, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). The accessible name stays "Pi Tech Lab".
+
+**Why:** the owner asked for the title to be built on superellipses, with letters and badge both superellipse-based.
+
+**Verified:**
+- pytest at baseline (12 failed, 420 passed); `build_hal.py` builds.
+- Browser at 1440 and 390 px with `?shape=se`: logo shown, text title hidden, no overlap with pills, no horizontal scroll, no errors.
+- Without the superellipse look the plain text title is unchanged.
