@@ -12,7 +12,8 @@
  *   objects            bubbles, buttons in windows, nodes: n = π
  *   dots, wire ends    the whole curve at n = γ: sparkles
  *   windows, cards     superellipse corners at n = π
- *   the central loop   n = π until you scroll on it (orbit.js)
+ *   the loop           the whole page, everything inside it; scrolling moves
+ *                      its n from 0 to ∞ (orbit.js)
  * semorph.js computes γ and π in the page and sets --se-k-button and
  * --se-k-window (CSS writes superellipse(K) with n = 2^K); it also animates
  * the change of n when a window opens out of its button or closes into it.
@@ -114,21 +115,26 @@ html.shape-se .orbit-title .se-logo { display: block; height: clamp(40px, 4.4vw,
 .se-logo .sel-badge { fill: var(--paper); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
 @media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 36px; } }
 
-/* the mark is the central loop: a superellipse at n = π (scroll on it to
-   change n), the π counter inside it (orbit.js draws the curve) */
+/* the mark is the loop around everything: a superellipse the size of the page
+   (a, b = half the stage), n = π until you scroll, which moves n from 0 to ∞;
+   the π counter at its centre (orbit.js draws the curve) */
 .om-loop { display: none; }
 html.shape-se .om-circle { display: none; }
 html.shape-se .om-loop { display: inline; fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
 html.shape-se .orbit-core { border-radius: 30%; }
 html.shape-se .om-name { display: none; }
-html.shape-se .orbit-center > .orbit-pi {
-  position: absolute; z-index: 3; width: var(--in-loop-w, 18em); max-width: none; padding: 0;
+html.shape-se .orbit-stage > .orbit-pi {
+  z-index: 4; width: var(--in-loop-w, 18em); max-width: none; padding: 0;
   background: transparent; border: 0; border-radius: 0; cursor: pointer; font-size: var(--in-loop-font, 11px);
 }
-html.shape-se .orbit-center > .orbit-pi .op-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+html.shape-se .orbit-stage > .orbit-pi .op-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
 html.shape-se .orbit-pi .op-grip { display: none; }
 html.shape-se.orbit-open .orbit-pi { opacity: 1; }
 
-/* the loop's n, shown while you scroll it */
-.om-n { font-family: var(--font-mono, monospace); font-size: 20px; fill: var(--cobalt); opacity: 0; transition: opacity 0.3s ease; }
-.om-n.show { opacity: 1; }
+/* the loop's n, shown at its centre while you scroll */
+.orbit-nread {
+  position: absolute; transform: translate(-50%, -50%); z-index: 5; pointer-events: none;
+  font-family: var(--font-mono, monospace); font-size: 18px; color: var(--cobalt); white-space: nowrap;
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.orbit-nread.show { opacity: 1; }

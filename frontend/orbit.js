@@ -184,18 +184,18 @@
     '<svg class="orbit-wires" aria-hidden="true"></svg>' +
     '<div class="orbit-center">' +
     '<h1 class="orbit-title" aria-label="Pi Tech Lab"><span class="ot-text" aria-hidden="true">Pi Tech Lab</span></h1>' +
-    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize from a dot to the whole page (in the superellipse look, Shift and scroll changes its n), click to close all windows, double-click to stop or restart π">' +
+    '<button type="button" class="orbit-core" aria-label="PiEN, the engine that learns how the site is used. Drag to move, scroll to resize from a dot to the whole page (in the superellipse look the mark is the whole page and scrolling changes its n, from 0 to infinity), click to close all windows, double-click to stop or restart π">' +
     '<svg class="orbit-mark" viewBox="40 40 320 320" aria-hidden="true">' +
     '<circle class="om-circle" cx="200" cy="200" r="150"/>' +
     '<path class="om-loop" d=""/>' +
     '<g class="om-sweep">' +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text>' +
-    '<text class="om-n" x="200" y="128" text-anchor="middle"></text>' +
     '</svg></button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
-    '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>';
+    '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>' +
+    '<div class="orbit-nread" aria-live="polite"></div>';
 
   // ------------------------------------------------------------ use: what you use grows
   // Each card keeps a score in this browser: opening it counts 1, moving it a
@@ -387,6 +387,7 @@
   const logoMin = () => 4 / baseR();
   const logoMax = () => halfDiag() / baseR();
   function idleR() {
+    if (merged()) return baseR();      // the loop is the page; this is only the room kept clear at its centre
     return Math.max(4, Math.min(baseR() * logoScale, halfDiag()));
   }
   function shownR() {
@@ -408,7 +409,7 @@
     return { x: W / 2 - w / 2, y: b.top - top, w, h };
   }
   function clampLogo() {
-    if (R > capR()) { lx = W / 2; ly = H / 2; return; }     // the backdrop: centred, covering the page
+    if (merged() || R > capR()) { lx = W / 2; ly = H / 2; return; }     // the backdrop: centred, covering the page
     const m = R + 8, tr = titleRect();
     lx = Math.min(W - m, Math.max(m, lx));
     // below the title wherever the title is above it
@@ -419,7 +420,7 @@
   // The π box is its own thing: under the mark until you move it, then
   // wherever you left it. It never leaves the screen.
   function piCentre() {
-    if (merged()) return [lx, ly + shownR() * 0.38];      // inside the central loop
+    if (merged()) return [lx, ly];                        // at the centre of the loop
     let x, y;
     if (piAt) { x = piAt.fx * W; y = piAt.fy * H; }
     else { x = lx; y = ly + R + 14 + piBox.h / 2; }
@@ -436,24 +437,29 @@
     return [x, y];
   }
   // In the superellipse look the mark is the diagram's central loop: a
-  // superellipse at n = π (the windows' n, computed live by semorph.js; Shift +
-  // scroll on it changes n) with the π counter inside it, and the diameter reaching
+  // superellipse the size of the page at n = π (the windows' n, computed live by
+  // semorph.js) until you scroll it with the π counter inside it, and the diameter reaching
   // the curve at every angle.
   const merged = () => document.documentElement.classList.contains("shape-se");
   // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
   let markN = load("orbit:mark:n");
   const loopN = () => markN || (window.SeMorph && window.SeMorph.pi) || Math.PI;
   let nShowT = 0;
+  // In the superellipse look the loop is the page: |x/a|^n + |y/b|^n = 1 with a, b half the
+  // stage, everything inside it. Scrolling ("zooming") moves n from 0 (it pinches to a
+  // cross, then the centre) through 1 (a diamond) and 2 (an ellipse) to ∞ (the page's rectangle).
+  const N_MIN = 0.01, N_MAX = 1000;
+  const nLabel = n => n >= N_MAX * 0.999 ? "n → ∞" : n <= N_MIN * 1.001 ? "n → 0" : "n = " + (n < 10 ? n.toFixed(3) : n.toFixed(1));
   function scrollN(e) {
-    if (!merged() || !e.shiftKey) return;            // Shift + scroll: n; scroll alone: size
+    if (!merged()) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    const dy = e.deltaY || e.deltaX;                   // some systems turn Shift + wheel into a sideways scroll
-    markN = Math.min(12, Math.max(0.3, loopN() * Math.exp(-dy * 0.0015)));
+    const dy = e.deltaY || e.deltaX;
+    markN = Math.min(N_MAX, Math.max(N_MIN, loopN() * Math.exp(-dy * 0.002)));
     drawLoop();
-    const t = $(".om-n");
-    if (t) { t.textContent = "n = " + markN.toFixed(3); t.classList.add("show"); }
+    const t = $(".orbit-nread");
+    if (t) { t.textContent = nLabel(markN); t.classList.add("show"); }
     clearTimeout(nShowT);
-    nShowT = setTimeout(() => { if (t) t.classList.remove("show"); store("orbit:mark:n", +markN.toFixed(4)); }, 900);
+    nShowT = setTimeout(() => { if (t) t.classList.remove("show"); store("orbit:mark:n", +markN.toPrecision(5)); }, 900);
   }
   const loopR = th => { const n = loopN(); return 150 / Math.pow(Math.pow(Math.abs(Math.cos(th)), n) + Math.pow(Math.abs(Math.sin(th)), n), 1 / n); };
   let loopDrawn = 0;
@@ -461,34 +467,41 @@
     const n = loopN();
     if (Math.abs(n - loopDrawn) < 1e-6) return;
     loopDrawn = n;
-    const e = 2 / n, pts = [];
-    for (let i = 0; i < 160; i++) {
-      const t = i / 160 * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
+    const e = 2 / n, pts = [], K = 360;
+    for (let i = 0; i < K; i++) {
+      const t = i / K * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
       pts.push((200 + 150 * Math.sign(c) * Math.pow(Math.abs(c), e)).toFixed(2) + "," + (200 + 150 * Math.sign(sn) * Math.pow(Math.abs(sn), e)).toFixed(2));
     }
     const path = $(".om-loop");
     if (path) path.setAttribute("d", "M" + pts.join("L") + "Z");
   }
   function placeMark() {
-    const r = shownR();
-    if (merged()) drawLoop();
-    document.documentElement.classList.toggle("orbit-mark-big", r > capR());      // behind the pills
-    document.documentElement.classList.toggle("orbit-mark-tiny", r < 40);         // too small to hold the counter
-    const core = $(".orbit-core");
-    core.style.width = core.style.height = r * 2 + "px";
-    core.style.left = lx - r + "px";
-    core.style.top = top + ly - r + "px";
+    const r = shownR(), se = merged();
+    if (se) drawLoop();
+    document.documentElement.classList.toggle("orbit-mark-big", se || r > capR());   // behind the pills
+    document.documentElement.classList.toggle("orbit-mark-tiny", !se && r < 40);    // too small to hold the counter
+    const core = $(".orbit-core"), svg = core.querySelector(".orbit-mark");
+    if (se) {
+      // the loop is the page: stretched over the whole stage, everything inside it
+      core.style.width = W + "px"; core.style.height = H + "px";
+      core.style.left = "0px"; core.style.top = top + "px";
+      svg.setAttribute("preserveAspectRatio", "none");
+    } else {
+      core.style.width = core.style.height = r * 2 + "px";
+      core.style.left = lx - r + "px";
+      core.style.top = top + ly - r + "px";
+      svg.removeAttribute("preserveAspectRatio");
+    }
+    const nr = $(".orbit-nread");
+    if (nr) { nr.style.left = lx + "px"; nr.style.top = ly - 34 + "px"; }
     const pi = $(".orbit-pi");
     pi.style.setProperty("--pi-scale", piScale);
     // merged into the loop: as wide as the loop allows at that height
     pi.style.setProperty("--in-loop-w", Math.round(r * 1.5) + "px");
     pi.style.setProperty("--in-loop-font", Math.max(8.5, Math.min(14, r * 0.09)).toFixed(1) + "px");
     const [px, py] = piCentre();
-    // inside the loop it lives in the mark's layer (above windows, like the mark), elsewhere in the stage
-    const home = merged() && stage.center ? stage.center : stage;
-    if (stage.center && pi.parentElement !== home) home.appendChild(pi);
     pi.style.left = px + "px";
-    pi.style.top = (home === stage ? py : top + py) + "px";            // the π box lives in the stage, under any windows
+    pi.style.top = py + "px";            // the π box lives in the stage, under any windows
   }
 
   // the docked Live panel (live.js) and the room left beside it for windows
@@ -756,7 +769,7 @@
     // double-click: the mark stops turning and π stops growing; again to carry on
     core.addEventListener("dblclick", () => { clearTimeout(closeT); setStill(!still); });
     const setLogo = v => { logoScale = v; };
-    core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: Shift + scroll changes the loop's n
+    core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: scrolling changes the loop's n
     wheelResize(core, () => logoScale, setLogo, logoMin, logoMax, "orbit:logo:scale");
     // Scrolling on the page itself resizes the mark and opens a random window
     // (see wireScrollOpen).
@@ -786,8 +799,8 @@
     let acc = 0, last = 0, fired = false, t;
     stage.addEventListener("wheel", e => {
       if (e.defaultPrevented || off(e.target)) return;
+      if (merged()) { scrollN(e); return; }                     // superellipse look: scrolling the page is the loop's n
       const backdrop = document.documentElement.classList.contains("orbit-mark-big");
-      if (backdrop && e.shiftKey) { scrollN(e); return; }      // the page is the mark: Shift + scroll is its n
       e.preventDefault();
       setLogo(Math.min(logoMax(), Math.max(logoMin(), logoScale * Math.exp(-e.deltaY * 0.0015))));
       layoutSoon();
@@ -899,7 +912,7 @@
     // double-click: back under the mark, at the usual size
     pi.addEventListener("dblclick", () => { piAt = null; piScale = 1; store("orbit:pi:at"); store("orbit:pi:scale"); layout(); });
     resizer(pi.querySelector(".op-grip"), piCentre, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
-    pi.addEventListener("wheel", scrollN, { passive: false });       // inside the loop, Shift + scroll on the counter changes n too
+    pi.addEventListener("wheel", scrollN, { passive: false });       // and so does scrolling on the counter at its centre
     wheelResize(pi, () => piScale, v => { piScale = v; }, PI_MIN, PI_MAX, "orbit:pi:scale");
   }
 

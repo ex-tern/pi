@@ -429,7 +429,11 @@ html[data-activity="busy"] .wire.live .wire-flow { animation-duration: 0.4s; }
 
 /* the mark scrolled past the room around it covers the page as a backdrop,
    behind the pills and windows; scrolled down to a dot it drops the counter */
-html.orbit-mark-big .orbit-center { z-index: 5; }
+html.orbit-mark-big .orbit-center {
+  z-index: 9;                     /* just under the stage, which turns see-through */
+  background: radial-gradient(48rem 34rem at 50% 50%, rgba(47, 64, 232, 0.06), transparent 70%), var(--paper);
+}
+html.orbit-mark-big .orbit-stage { background: transparent; }
 html.orbit-mark-tiny .orbit-center > .orbit-pi { display: none; }
 
 /* wires you can edit: click one to disconnect it, drag from a bubble's handle to connect */
