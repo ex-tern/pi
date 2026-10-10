@@ -869,3 +869,11 @@ The mark also gets a soft cobalt glow while working.
 - `tests/test_traffic.py` checks counting, gap filling, the 7- and 30-day windows, all time, the upsert and pruning, and that no visitor key leaves the API.
 - With 30 seeded days, the section rendered in the Analytics window at 1440 and 390 px: 4 tiles, bars for the days with visitors, a 30-row table, and a tooltip on hover. No page errors or horizontal scroll.
 - pytest at baseline (12 failures, now including test_forecast); `build_hal.py` builds.
+
+## 2026-10-10: the traffic chart keeps its proportions
+
+**What:** the new Website traffic chart in Analytics drew a fixed 600×150 drawing and stretched it to the window with `preserveAspectRatio="none"`. On a phone the day and count labels came out squashed and the bar corners warped, and on a wide screen they were drawn wider than they should be. The chart is now drawn at the box's real width (one unit per pixel) and redrawn when the window or panel is resized.
+
+**Verified:** screenshots of the chart with a hovered bar at 1440 and 390 px show labels at their normal shape and round bar tops; every tab at both widths had no page errors and no horizontal scroll; pytest at baseline (12 pre-existing failures, 420 passed); `build_hal.py` builds.
+
+**Files:** `frontend/traffic.js`, `frontend/traffic.css`, `frontend/index.html`, `EVOLUTION.md`.

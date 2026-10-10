@@ -25,13 +25,19 @@
     ].map(([l, v]) => '<div class="tr-tile"><b>' + n(v) + '</b><span>' + l + '</span></div>').join("");
   }
 
+  let lastDays = null;
   function chart(days) {
-    const W = 600, H = 150, padL = 26, padB = 20, padT = 10;
+    lastDays = days;
+    const box = root.querySelector(".tr-chart");
+    // Drawn at the box's real width, one SVG unit per CSS pixel: a fixed
+    // viewBox stretched with preserveAspectRatio="none" squashed the labels
+    // and bar corners on narrow screens and widened them on wide ones.
+    const W = Math.max(240, Math.round(box.clientWidth || 600)), H = 150, padL = 26, padB = 20, padT = 10;
     const max = Math.max(1, ...days.map(d => d.visitors));
     const step = Math.pow(10, Math.floor(Math.log10(max)));
     const top = Math.ceil(max / step) * step;
     const bw = (W - padL) / days.length, inner = H - padB - padT;
-    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" preserveAspectRatio="none">';
+    let svg = '<svg viewBox="0 0 ' + W + ' ' + H + '" width="' + W + '" height="' + H + '">';
     // recessive grid: baseline and the top value
     svg += '<line class="tr-grid" x1="' + padL + '" x2="' + W + '" y1="' + padT + '" y2="' + padT + '"/>' +
            '<line class="tr-axis" x1="' + padL + '" x2="' + W + '" y1="' + (H - padB) + '" y2="' + (H - padB) + '"/>' +
@@ -50,7 +56,6 @@
              (i === 0 ? "start" : i === days.length - 1 ? "end" : "middle") + '">' + esc(fmtDay(days[i].day)) + '</text>';
     });
     svg += '</svg>';
-    const box = root.querySelector(".tr-chart");
     box.innerHTML = svg;
     const tip = root.querySelector(".tr-tip");
     box.querySelectorAll(".tr-hit").forEach(h => {
@@ -89,6 +94,13 @@
     if (!host) return;
     host.appendChild(root);
     refresh();
+    // redraw at the new width when the window or the panel is resized
+    let rt = 0, lastW = 0;
+    new ResizeObserver(() => {
+      const w = Math.round(root.querySelector(".tr-chart").clientWidth);
+      if (!lastDays || !w || w === lastW) return;
+      lastW = w; clearTimeout(rt); rt = setTimeout(() => chart(lastDays), 80);
+    }).observe(root.querySelector(".tr-chart"));
     setInterval(() => { if (document.visibilityState === "visible" && root.isConnected && root.closest(".orbit-panel")) refresh(); }, 60000);
     document.addEventListener("orbit:open", () => setTimeout(() => { if (root.closest(".orbit-panel")) refresh(); }, 100));
   }
