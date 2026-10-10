@@ -21,10 +21,13 @@
 // or divide by the rest. Show is an empty box: wire anything into it and it
 // shows that value inside itself. Play runs π, Stop stops it (the same as
 // double-clicking the π mark); everything wired to π follows.
-// Super is the pill star (a superellipse at n = γ). Press it on the page and it
-// starts: n climbs from γ to π and the star grows into a full superellipse; its
-// value is n, so Show or + can read it. Stop pauses it, Play goes on; press the
-// grown shape to make it a star again.
+// The Super Neural Engine is the pill star (a superellipse at n = γ). It is
+// prompted by wiring: whatever reaches it (words, numbers, buttons, windows,
+// other nodes) is joined into a prompt and sent to /api/super/ask, where every
+// engine in the project answers (siM, riB, piD, PiEn; see backend/super_engine.py).
+// Wire a Show to it to read the answer. It asks again whenever its wiring
+// changes, or when you press it; while it thinks the star grows toward a
+// superellipse (n climbing from γ to π), and it is fully grown once answered.
 // Scissors captures pixels from the screen: press it, choose the screen, window
 // or tab to share, drag a box over what you want, and the cut-out lands on the
 // page as a Clip node (its value is its size, "120×80"). Click a clip to save
@@ -47,7 +50,7 @@
     { k: "flip", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Flip", n: 0, act: true },   // a superellipse diamond, n = 1.3: drop it on a node to swap its inputs
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
     { k: "show", g: "", name: "Show", n: 1 },
-    { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super", n: 0 },   // the pill star, n = γ
+    { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super Neural Engine", n: 9 },   // the pill star, n = γ
     { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
     { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
@@ -78,7 +81,7 @@
       case "play": run(true); return "π running";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
-      case "super": return "drag it out, then press it: the star grows into a superellipse as n climbs from γ to π";
+      case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
       case "flip": return "drag it onto a node to swap the order of its inputs";
       case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
@@ -166,7 +169,12 @@
       case "sub": r = !allNum ? none : ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
       case "mul": r = !allNum ? none : ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
       case "div": r = !allNum ? none : ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
-      case "super": { const v = n.st.sn || G(); r = { num: v, isNum: true, bool: !!n.st.go, text: "n " + v.toFixed(3) }; break; }
+      case "super": {
+        n.prompt = ins.map(strOf).filter(Boolean).join(" ").trim();
+        const t = n.answer || "";
+        r = { num: t.length, bool: !!t, str: t, text: t || (n.st.go ? "thinking…" : n.prompt ? "press to ask" : "wire a prompt into it") };
+        break;
+      }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
@@ -186,7 +194,14 @@
       if (n.text !== r.text) {
         n.text = r.text; n.changed = now;
         if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
+        else if (n.fn === "super") n.val.textContent = n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
         else n.val.textContent = r.text;
+      }
+      if (n.fn === "show") n.el.classList.toggle("is-long", r.text.length > 28 || /\n/.test(r.text));
+      if (n.fn === "super") {
+        const w = wiringOf(n);
+        if (n.wiring !== undefined && w !== n.wiring && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => askEngine(n), 900); }
+        n.wiring = w;
       }
       n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". Output " + r.text + ".");
@@ -230,7 +245,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined, answer: n.fn === "super" && n.answer ? n.answer.slice(0, 2000) : undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -251,7 +266,8 @@
     el.classList.toggle("is-flipped", n.flip);
     if (f.k === "super") {
       g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
-      n.st.sn = G(); n.st.t = 0;
+      n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || "";
+      if (n.answer) { n.st.t = 1; n.st.sn = P(); }
       requestAnimationFrame(() => drawSuper(n));
     }
     if (f.k === "clip") {
@@ -392,7 +408,7 @@
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       if (n.fn === "clip") { const a = document.createElement("a"); a.href = n.img; a.download = "clip-" + n.w + "x" + n.h + ".png"; document.body.appendChild(a); a.click(); a.remove(); say("Clip saved as a PNG"); }
       else if (n.fn === "cut") cut();
-      else if (n.fn === "super") startSuper(n);
+      else if (n.fn === "super") askEngine(n, true);
       else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
@@ -427,23 +443,42 @@
     n.el.classList.toggle("is-grown", k >= 1);
   }
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  function startSuper(n) {
-    if (n.st.go) return;
-    if ((n.st.sn || 0) >= P() - 1e-6) { n.st.sn = G(); n.st.t = 0; drawSuper(n); tick(); say("Super: a star again"); return; }
-    n.st.go = true; n.st.t = n.st.t || 0;
+  // the star grows while the engines think: toward 90% of the way to π, then all the way once answered
+  function grow(n) {
+    if (n.st.anim) return;
+    n.st.anim = true;
     let last = performance.now();
     const step = now => {
-      if (!n.el.isConnected) { n.st.go = false; return; }
+      if (!n.el.isConnected) { n.st.anim = false; return; }
       const dt = now - last; last = now;
-      if (!still()) n.st.t = Math.min(1, n.st.t + dt / 2400);   // Stop pauses it, Play goes on
-      const g = G(); n.st.sn = g + (P() - g) * ease(n.st.t);
+      const goal = n.st.go ? 0.9 : (n.answer ? 1 : 0);
+      n.st.t += (goal - n.st.t) * Math.min(1, dt / (n.st.go ? 1800 : 260));
+      if (Math.abs(goal - n.st.t) < 0.002) n.st.t = goal;
+      const g = G(); n.st.sn = g + (P() - g) * ease(Math.max(0, Math.min(1, n.st.t)));
       drawSuper(n);
-      if (n.st.t < 1) requestAnimationFrame(step);
-      else { n.st.go = false; say("Super: n = π, a full superellipse"); tick(); }
+      if (n.st.go || n.st.t !== goal) requestAnimationFrame(step); else n.st.anim = false;
     };
     requestAnimationFrame(step);
-    say("Super started: n climbs from γ to π");
   }
+  async function askEngine(n, pressed) {
+    const prompt = n.prompt || "";
+    if (!prompt) { if (pressed) say("Super Neural Engine: wire something into it first"); return; }
+    if (n.st.go) return;
+    n.st.go = true; n.st.asked = prompt; n.el.classList.add("is-thinking"); grow(n); tick();
+    say("Super Neural Engine: asking every engine about “" + clip(prompt) + "”");
+    try {
+      const res = await fetch("/api/super/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.slice(0, 4000) }) });
+      const data = await res.json().catch(() => ({}));
+      n.answer = res.ok ? (data.answer || "No engine had an answer for that.") : "Super Neural Engine: " + (data.detail || "unavailable right now");
+      if (res.ok) say("Super Neural Engine: " + (data.parts || []).map(x => x.engine).join(", ") + " answered");
+    } catch (_) {
+      n.answer = "Super Neural Engine: could not reach the engines";
+    }
+    n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
+    persist(); tick();
+  }
+  // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
+  function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n), !!n.flip]); }
 
   // ---- Scissors: pixels from the screen --------------------------------
   // One frame of the shared screen, window or tab; drag a box over it; the box becomes a Clip.

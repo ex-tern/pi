@@ -91,3 +91,8 @@ html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: no
 .lv-node.lv-super .lv-glyph, .lv-node.lv-super svg { width: 100%; height: 100%; display: block; }
 .lv-node.lv-super .lv-star { fill: #7d7d7a; stroke: var(--ink); stroke-width: 3; }
 .lv-node.lv-super.is-grown .lv-star { stroke: var(--cobalt); }
+
+/* Show grows to hold a long answer (the Super Neural Engine's) */
+.lv-node.lv-show.is-long, html.shape-se .lv-node.lv-show.is-long { width: max-content; max-width: min(340px, calc(100vw - 24px)); height: auto; min-height: 32px; padding: 8px 12px; }
+.lv-node.lv-show.is-long .lv-glyph { display: block; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; line-height: 1.45; font-size: 11.5px; max-height: 240px; overflow: auto; text-overflow: clip; }
+.lv-node.lv-super.is-thinking .lv-star { stroke: var(--cobalt); }
