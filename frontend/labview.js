@@ -27,7 +27,7 @@
 // whatever is wired into it, for as long as the wire is there: a Super Neural
 // Engine or "?" stops thinking (a question on its way is cancelled), a Show
 // freezes, and the π mark, counter or loop stops π. Unwire it to let go.
-// The Super Neural Engine is the pill star (a superellipse at n = γ). It is
+// The Super Neural Engine is a solid diamond (a superellipse at n = 1.3). It is
 // prompted by wiring: whatever reaches it (words, numbers, buttons, windows,
 // other nodes) is joined into a prompt and sent to /api/super/ask, where every
 // engine in the project answers (siM, riB, piD, PiEn; see backend/super_engine.py).
@@ -38,8 +38,8 @@
 // says how far they agree (/api/super/panel). It asks again when its wiring
 // changes or the engine gives a new answer, or when pressed.
 // Wire a Show to it to read the answer. It asks again whenever its wiring
-// changes, or when you press it; while it thinks the star grows toward a
-// superellipse (n climbing from γ to π), and it is fully grown once answered.
+// changes, or when you press it; while it thinks the diamond grows toward a
+// full superellipse (n climbing from 1.3 to π), fully grown once answered.
 // Trash deletes: drop a node on it, drop it on a node, or press it twice to
 // clear the whole diagram.
 // Scissors captures pixels from the screen: press it, choose the screen, window
@@ -61,10 +61,9 @@
     { k: "mul", g: "×", name: "Multiply", n: 9 },
     { k: "div", g: "÷", name: "Divide", n: 9 },
     { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Run", n: 9 },   // was Play; the key stays "play" so saved diagrams keep it
-    { k: "flip", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Flip", n: 0, act: true },   // a superellipse diamond, n = 1.3: drop it on a node to swap its inputs
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 9 },
     { k: "show", g: "", name: "Show", n: 1 },
-    { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super Neural Engine", n: 9 },   // the pill star, n = γ
+    { k: "super", svg: sq + '<path class="lv-star" d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z"/></svg>', name: "Super Neural Engine", n: 9 },   // a superellipse diamond, n = 1.3, that grows to n = π while it thinks
     { k: "panel", g: "?", name: "Ask the panel", n: 9 },
     { k: "trash", svg: sq + '<path d="M4 5.5h12M8 5.5V4h4v1.5M5.5 5.5l.8 11h7.4l.8-11M8.5 8.5v5.5M11.5 8.5v5.5"/></svg>', name: "Trash", n: 0, act: true },
     { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
@@ -98,7 +97,6 @@
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
-      case "flip": return "drag it onto a node to swap the order of its inputs";
       case "panel": return "drag it out and wire the Super Neural Engine (or any text) into it: the panel of AIs that judges manuscripts answers, and the judge weighs them";
       case "trash": return trashPress();
       case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
@@ -174,7 +172,6 @@
     if (visiting[n.id]) return { num: NaN, bool: false, text: "NaN" };
     visiting[n.id] = true;
     const ins = n.inputs.map(valueOf).concat(linkIns(n).map(valueOfAnchor)).slice(-BY[n.fn].n);
-    if (n.flip) ins.reverse();                    // Flip (◆) swapped the order
     const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "–" };
     const allNum = ins.every(v => v.isNum);   // a word, a button or a window is its name: + joins names into text
     let r;
@@ -329,7 +326,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined, answer: (n.fn === "super" || n.fn === "panel") && n.answer ? n.answer.slice(0, 3000) : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, answer: (n.fn === "super" || n.fn === "panel") && n.answer ? n.answer.slice(0, 3000) : undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -346,9 +343,8 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h, flip: !!spec.flip };
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
     if (f.k === "panel") n.answer = spec.answer || "";
-    el.classList.toggle("is-flipped", n.flip);
     if (f.k === "super") {
       g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
       n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || "";
@@ -482,8 +478,6 @@
           if (tn) { remove(tn); say(BY[tn.fn].name + " node deleted"); } else say("Trash: drop it on a node to delete it, or drop a node on it");
           return;
         }
-        if (tn) { tn.flip = !tn.flip; tn.el.classList.toggle("is-flipped", tn.flip); persist(); tick(); say(BY[tn.fn].name + ": inputs " + (tn.flip ? "flipped" : "back in order") + " → " + (tn.text || "")); }
-        else say("Flip: drop it on a node to swap its inputs");
         return;
       }
       if (t && t.text && BY[n.fn].n && window.SuperLink && window.SuperLink.add) {
@@ -531,7 +525,7 @@
   // Play and Stop: π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }
   // ---- Super: a star that grows into a superellipse ---------------------
-  const G = () => (window.SeMorph && window.SeMorph.gamma) || 0.5772156649;
+  const G = () => 1.3;   // the Super Neural Engine starts as a superellipse diamond, n = 1.3
   const P = () => (window.SeMorph && window.SeMorph.pi) || Math.PI;
   function superPath(nn, r) {
     const e = 2 / nn, pts = [];
@@ -546,7 +540,7 @@
     if (!path) return;
     const g = G(), k = Math.max(0, Math.min(1, ((n.st.sn || g) - g) / (P() - g)));
     path.setAttribute("d", superPath(n.st.sn || g, 46));
-    path.style.fillOpacity = (1 - k).toFixed(3);           // the grey star fades as it widens
+    path.style.fillOpacity = (1 - k).toFixed(3);           // the solid diamond fades as it widens
     path.style.strokeOpacity = (0.3 + 0.7 * k).toFixed(3);   // and its outline firms up
     n.el.classList.toggle("is-grown", k >= 1);
   }
@@ -615,7 +609,7 @@
     persist(); tick();
   }
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
-  function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n), !!n.flip]); }
+  function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n)]); }
 
   // ---- Trash: press twice to clear the diagram --------------------------
   let trashArmed = 0;
@@ -738,7 +732,6 @@
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
       b.title = f.k === "trash" ? "Trash: drag it onto a node, or a node onto it, to delete; press twice to clear the diagram"
-        : f.k === "flip" ? "Flip: drag it onto a node to swap the order of its inputs"
         : f.press ? f.name + ": press to capture pixels from the screen" : f.name + ": press to run on π, drag onto a button to wire it";
       b.setAttribute("aria-label", f.name);
       glyph(b, f);

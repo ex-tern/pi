@@ -82,14 +82,12 @@ html.sl-on, html.sl-on * { cursor: crosshair !important; }
 html.sl-on .lv-palette, html.sl-on .lv-palette * { cursor: pointer !important; }
 html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: none; }
 
-/* a node whose inputs Flip (◆) swapped: a small diamond above it */
-.lv-node.is-flipped::before { content: "◆"; position: absolute; left: 50%; top: -9px; transform: translateX(-50%); font-size: 9px; line-height: 1; color: var(--cobalt); }
 
-/* Super: the pill star (n = γ) that grows into a superellipse (n = π) */
-.lv-fn.lv-super svg .lv-star { fill: #7d7d7a; stroke: #d6d6d2; stroke-width: 1.4; }
+/* Super Neural Engine: a solid diamond (n = 1.3) that grows into a superellipse (n = π) */
+.lv-palette .lv-fn.lv-super svg .lv-star { fill: currentColor; stroke: none; }
 .lv-node.lv-super, html.shape-se .lv-node.lv-super { width: 58px; height: 58px; border-color: transparent; background: transparent; box-shadow: none; }
 .lv-node.lv-super .lv-glyph, .lv-node.lv-super svg { width: 100%; height: 100%; display: block; }
-.lv-node.lv-super .lv-star { fill: #7d7d7a; stroke: var(--ink); stroke-width: 3; }
+.lv-node.lv-super .lv-star { fill: var(--ink); stroke: var(--ink); stroke-width: 3; }
 .lv-node.lv-super.is-grown .lv-star { stroke: var(--cobalt); }
 
 /* Show grows to hold a long answer (the Super Neural Engine's) */
