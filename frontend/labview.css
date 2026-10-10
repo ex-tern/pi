@@ -25,7 +25,6 @@
   background: var(--paper); color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
   display: grid; place-items: center;
 }
-.lv-fn.lv-num { font-size: 10px; letter-spacing: 0.02em; }
 .lv-fn svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.3; fill: none; }
 .lv-fn svg text { fill: currentColor; stroke: none; font-size: 6.5px; font-weight: 600; }
 .lv-fn svg [fill="currentColor"] { fill: currentColor; }   /* Play and Stop are solid */
@@ -53,18 +52,10 @@
   font: 500 10.5px/1.2 ui-monospace, "Geist Mono", monospace; color: var(--graphite); white-space: nowrap;
   background: var(--paper); padding: 1px 4px; border-radius: 3px;
 }
-/* Number: a field you type into */
-.lv-node.lv-num { width: 64px; }
-.lv-node .lv-num {
-  width: calc(100% - 14px); border: 0; background: transparent; color: inherit; text-align: center;
-  font: 500 13px/1 ui-monospace, "Geist Mono", monospace; padding: 0; outline: none; cursor: text;
-}
-.lv-node.lv-num .lv-val { display: none; }
 /* Show: an empty box that holds the value wired into it */
 .lv-node.lv-show { width: auto; min-width: 46px; max-width: 240px; padding: 0 10px; }
 .lv-node.lv-show .lv-glyph { font: 500 12px/1 ui-monospace, "Geist Mono", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lv-node.lv-show .lv-val { display: none; }
-.lv-node.lv-show.is-frozen { color: var(--graphite); border-style: dashed; }   /* stopped: the last value stays */
 /* the output terminal, on the right like LabVIEW's */
 .lv-node::after { content: ""; position: absolute; right: -4px; top: 50%; width: 6px; height: 6px; margin-top: -3px; background: var(--ink); }
 .lv-node.is-true { border-color: var(--cobalt); color: var(--cobalt); }
@@ -81,7 +72,6 @@ html.lv-dragging, html.lv-dragging * { cursor: grabbing !important; user-select:
 html.shape-se .lv-fn { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); }
 html.shape-se .lv-node { width: 54px; }
 html.shape-se .lv-node.lv-show { width: auto; min-width: 54px; }
-html.shape-se .lv-node.lv-num { width: 70px; }
 html.shape-se .lv-node::after { width: 10px; height: 10px; margin-top: -5px; right: -6px; clip-path: var(--se-sparkle); }
 html.shape-se .lv-palette { border-radius: 18px; corner-shape: superellipse(var(--se-k-window)); }
 
@@ -91,3 +81,27 @@ html.shape-se .lv-palette { border-radius: 18px; corner-shape: superellipse(var(
 html.sl-on, html.sl-on * { cursor: crosshair !important; }
 html.sl-on .lv-palette, html.sl-on .lv-palette * { cursor: pointer !important; }
 html.sl-on body { user-select: none; -webkit-user-select: none; touch-action: none; }
+
+/* Play: a superellipse diamond (n = 1.3) in place of the box, in the palette and on the page */
+.lv-fn.lv-play, html.shape-se .lv-fn.lv-play { border-color: transparent; background: transparent; box-shadow: none; }
+.lv-fn.lv-play svg { width: 34px; height: 34px; stroke-width: 1; }
+.lv-fn.lv-play .lv-sd { fill: var(--paper); stroke: var(--hair-strong); stroke-width: 1; }
+.lv-fn.lv-play:hover .lv-sd { stroke: var(--ink); }
+.lv-fn.lv-play.is-running .lv-sd { stroke: var(--cobalt); }
+.lv-fn.lv-play.fired { animation: none; }
+.lv-fn.lv-play.fired .lv-sd { animation: lv-fire-sd 0.5s ease; }
+@keyframes lv-fire-sd { 0% { fill: var(--cobalt); } 100% { fill: var(--paper); } }
+.lv-node.lv-play { width: 40px; height: 40px; }
+html.shape-se .lv-node.lv-play { width: 44px; height: 44px; }
+.lv-node.lv-play svg { width: 100%; height: 100%; }
+
+/* Clip: pixels cut from the screen with Scissors */
+.lv-node.lv-clip { width: auto; height: auto; padding: 4px; max-width: 220px; }
+.lv-node.lv-clip img { display: block; max-width: 210px; max-height: 160px; border-radius: 4px; }
+html.shape-se .lv-node.lv-clip { width: auto; }
+/* the selection over the captured frame */
+.lv-cutter { position: fixed; inset: 0; z-index: 4000; background: #191919; cursor: crosshair; touch-action: none; user-select: none; }
+.lv-cutter-shot { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; opacity: 0.92; }
+.lv-cutter-box { display: none; position: absolute; border: 1.5px solid var(--cobalt); background: rgba(47, 64, 232, 0.12); box-shadow: 0 0 0 9999px rgba(0, 0, 0, 0.35); }
+.lv-cutter-hint { position: absolute; left: 50%; top: 16px; transform: translateX(-50%); padding: 6px 12px; border-radius: 999px;
+  background: var(--paper); color: var(--ink); font-size: 12px; pointer-events: none; white-space: nowrap; }

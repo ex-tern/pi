@@ -1,24 +1,32 @@
 // labview.js — a Functions palette and block diagram, like LabVIEW's.
 //
-// The palette (bottom-left) holds Number, arithmetic, Play, Stop and Show. Press one to run it once on the two newest digits of π.
-// Drag one out and it becomes a node on the page; drop it onto any button,
-// bubble, window, the π mark, the π counter or another node and it is wired
-// to it: that thing becomes one of its inputs, and the node computes live.
+// The palette (bottom-left) holds + − × ÷, Play, Stop, Show and Scissors. Press one to
+// run it once on the two newest digits of π. Drag one out and it becomes a
+// node on the page; drop it onto any number on the page, a button, bubble,
+// window, the π mark, the π counter or another node and it is wired to it:
+// that thing becomes one of its inputs, and the node computes live.
 //
+//   a number anywhere on the page   its value ("3"; "1,549" is read as 1549)
 //   a pill, bubble or window   number: how often you have opened it
-//                              Boolean: whether its window is open
-//   the π mark (the main loop) number: the newest digit of π; Boolean: π running
+//   the π mark (the main loop) number: the newest digit of π
 //                              (in the superellipse look, drop on the loop's edge)
 //   the π counter              number: decimals computed so far
 //   another node               its output
 //
-// A Number node holds a number you type. Play runs the diagram and π, Stop
-// freezes both (the same as double-clicking the π mark). Show is an empty box:
-// wire anything into it and it shows that thing's value inside itself. So
-//   [Number 2] ─┐
-//               [+] ── [Show 5]        drag + onto each Number, then Show onto +
-//   [Number 3] ─┘
-// and any node can take the main loop as an input by dropping it on its edge.
+// Wires drawn in Connect mode (superlink.js) count too: wire a number, word or
+// node to a node and it becomes one of that node's inputs.
+//
+// + adds every input, × multiplies them, − and ÷ take the first and subtract
+// or divide by the rest. Show is an empty box: wire anything into it and it
+// shows that value inside itself. Play runs π, Stop stops it (the same as
+// double-clicking the π mark); everything wired to π follows.
+// Scissors captures pixels from the screen: press it, choose the screen, window
+// or tab to share, drag a box over what you want, and the cut-out lands on the
+// page as a Clip node (its value is its size, "120×80"). Click a clip to save
+// it as a PNG, drag it onto the palette to remove it.
+//   (3 on the page) ─┐
+//                    [+] ── [Show 8]
+//   (5 on the page) ─┘
 //
 // Click a wire to disconnect it. Drag a node onto the palette to remove it,
 // double-click it to unwire it. The diagram is remembered in this browser.
@@ -26,14 +34,15 @@
   "use strict";
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
   const FNS = [
-    { k: "num", g: "123", name: "Number", n: 0 },
-    { k: "add", g: "+", name: "Add", n: 2 },
-    { k: "sub", g: "−", name: "Subtract", n: 2 },
-    { k: "mul", g: "×", name: "Multiply", n: 2 },
-    { k: "div", g: "÷", name: "Divide", n: 2 },
-    { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
+    { k: "add", g: "+", name: "Add", n: 9 },
+    { k: "sub", g: "−", name: "Subtract", n: 9 },
+    { k: "mul", g: "×", name: "Multiply", n: 9 },
+    { k: "div", g: "÷", name: "Divide", n: 9 },
+    { k: "play", svg: '<svg viewBox="0 0 24 24" aria-hidden="true"><path class="lv-sd" d="M23.30 12.00L23.22 12.32L22.97 12.91L22.56 13.69L22.00 14.58L21.31 15.55L20.51 16.57L19.60 17.61L18.63 18.63L17.61 19.60L16.57 20.51L15.55 21.31L14.58 22.00L13.69 22.56L12.91 22.97L12.32 23.22L12.00 23.30L11.68 23.22L11.09 22.97L10.31 22.56L9.42 22.00L8.45 21.31L7.43 20.51L6.39 19.60L5.37 18.63L4.40 17.61L3.49 16.57L2.69 15.55L2.00 14.58L1.44 13.69L1.03 12.91L0.78 12.32L0.70 12.00L0.78 11.68L1.03 11.09L1.44 10.31L2.00 9.42L2.69 8.45L3.49 7.43L4.40 6.39L5.37 5.37L6.39 4.40L7.43 3.49L8.45 2.69L9.42 2.00L10.31 1.44L11.09 1.03L11.68 0.78L12.00 0.70L12.32 0.78L12.91 1.03L13.69 1.44L14.58 2.00L15.55 2.69L16.57 3.49L17.61 4.40L18.63 5.37L19.60 6.39L20.51 7.43L21.31 8.45L22.00 9.42L22.56 10.31L22.97 11.09L23.22 11.68Z"/><path d="M9.6 7.6v8.8l7-4.4z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
     { k: "show", g: "", name: "Show", n: 1 },
+    { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
+    { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel";
@@ -43,7 +52,12 @@
   const piStr = () => (O().piDigits && O().piDigits()) || "";
   const still = () => !!(O().still && O().still());
   const glyph = (el, f) => { if (f.svg) el.innerHTML = f.svg; else el.textContent = f.g; };
-  const save = (k, v) => { try { localStorage.setItem(k, JSON.stringify(v)); } catch (_) { /* fine */ } };
+  const save = (k, v) => {
+    try { localStorage.setItem(k, JSON.stringify(v)); }
+    catch (_) {   // full: keep the diagram, drop the clips' pixels
+      try { localStorage.setItem(k, JSON.stringify(Array.isArray(v) ? v.filter(x => x.fn !== "clip") : v)); } catch (__) { /* fine */ }
+    }
+  };
   const restore = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } };
 
   // ---- the quick run, from the palette ----------------------------------
@@ -54,10 +68,10 @@
       case "sub": return a + " − " + b + " = " + (a - b);
       case "mul": return a + " × " + b + " = " + a * b;
       case "div": return b ? a + " ÷ " + b + " = " + +(a / b).toFixed(4) : a + " ÷ 0 = NaN";
-      case "num": return "drag it out and type a number; drag + onto two of them, then Show onto +";
       case "play": run(true); return "π running";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
+      case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
     }
   }
@@ -101,6 +115,26 @@
     const i = O().info && O().info(ref.key);
     return i ? { num: i.use, bool: i.open, str: i.title } : ZERO;
   }
+  // a number or word on the page, as Connect mode (superlink.js) remembers it
+  const numOf = t => { const v = parseFloat(String(t).replace(/[,\s'’](?=\d{3}\b)/g, "").replace(",", ".")); return Number.isNaN(v) ? NaN : v; };
+  function valueOfAnchor(an) {
+    if (an.loop) return valueOf({ core: 1 });
+    if (an.h && an.h.startsWith("node:")) return valueOf({ node: an.h.slice(5) });
+    if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, bool: !!an.t, str: an.t, text: an.t }; }
+    if (an.h === "pi") return valueOf({ pi: 1 });
+    if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
+    const t = an.h ? an.h.replace(/^[a-z#]+:?/, "") : ""; return { num: 0, bool: !!t, str: t };
+  }
+  // Connect-mode wires that end on this node (and don't come from it), oldest first
+  function linkIns(n) {
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
+    const out = [];
+    L.forEach(l => {
+      if (l.b && l.b.h === me && !(l.a && l.a.h === me)) out.push(l.a);
+      else if (l.a && l.a.h === me && l.b && !(l.b.h && l.b.h.startsWith("node:"))) out.push(l.b);   // node → a number: the number still feeds it
+    });
+    return out;
+  }
   const clip = t => t.length > 28 ? t.slice(0, 27) + "…" : t;
   const strOf = v => v.str != null && v.str !== "" ? v.str : v.text || (v === ZERO ? "" : String(v.num));
   const N = v => ({ num: v, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
@@ -109,17 +143,18 @@
     if (memo[n.id]) return memo[n.id];
     if (visiting[n.id]) return { num: NaN, bool: false, text: "NaN" };
     visiting[n.id] = true;
-    const a = valueOf(n.inputs[0]), b = valueOf(n.inputs[1]);
+    const ins = n.inputs.map(valueOf).concat(linkIns(n).map(valueOfAnchor)).slice(-BY[n.fn].n);
+    const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "–" };
     let r;
     switch (n.fn) {
-      case "add": r = N(a.num + b.num); break;
-      case "sub": r = N(a.num - b.num); break;
-      case "mul": r = N(a.num * b.num); break;
-      case "div": r = N(b.num ? a.num / b.num : NaN); break;
-      case "num": { const v = parseFloat(String(n.str).replace(",", ".")); r = Number.isNaN(v) ? { num: 0, bool: false, text: "" } : { num: v, bool: v !== 0, text: "" }; break; }
+      case "add": r = ins.length ? N(nums.reduce((x, y) => x + y, 0)) : none; break;
+      case "sub": r = ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
+      case "mul": r = ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
+      case "div": r = ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
+      case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
-      case "show": r = n.inputs[0] ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
+      case "show": r = ins.length ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
       default: r = ZERO;
     }
     visiting[n.id] = false;
@@ -134,11 +169,9 @@
       const r = evalNode(n);
       if (n.text !== r.text) {
         n.text = r.text; n.changed = now;
-        if (n.fn === "show") { if (!still()) n.el.querySelector(".lv-glyph").textContent = r.text; }   // Show holds its value inside; Stop freezes it
+        if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
         else n.val.textContent = r.text;
       }
-      if (n.fn === "show" && still() && n.text !== n.el.querySelector(".lv-glyph").textContent) n.text = null;   // shown again once Play runs
-      n.el.classList.toggle("is-frozen", n.fn === "show" && still());
       n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". Output " + r.text + ".");
       n.el.title = BY[n.fn].name + (n.inputs.length ? " ← " + n.inputs.map(nameOf).join(", ") : "") + "\nDrop it on a button to wire it, on the palette to remove it; double-click to unwire";
@@ -154,7 +187,7 @@
       : '<rect class="' + cls + '" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
     let s = "";
     nodes.forEach(n => {
-      const nr = n.el.getBoundingClientRect(), arity = BY[n.fn].n;
+      const nr = n.el.getBoundingClientRect(), arity = Math.max(1, n.inputs.length);
       n.inputs.forEach((ref, idx) => {
         const src = elOf(ref);
         if (!src || !src.getClientRects().length) return;
@@ -181,7 +214,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, str: n.fn === "num" ? n.str : undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -198,15 +231,11 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", str: spec.str != null ? spec.str : "" };
-    if (f.k === "num") {
-      const inp = document.createElement("input");
-      inp.type = "text"; inp.inputMode = "decimal"; inp.className = "lv-num"; inp.value = n.str; inp.placeholder = "0";
-      inp.setAttribute("aria-label", "Number"); inp.spellcheck = false; inp.autocomplete = "off";
-      inp.addEventListener("pointerdown", e => e.stopPropagation());
-      inp.addEventListener("keydown", e => e.stopPropagation());
-      inp.addEventListener("input", () => { n.str = inp.value; persist(); tick(); });
-      g.replaceWith(inp);
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
+    if (f.k === "clip") {
+      if (!n.img) return null;
+      const im = document.createElement("img"); im.src = n.img; im.alt = "Clip, " + n.w + " by " + n.h + " pixels"; im.draggable = false;
+      g.replaceWith(im);
     }
     canvas.appendChild(el);
     nodes.push(n);
@@ -218,6 +247,7 @@
     nodes = nodes.filter(x => x !== n);
     nodes.forEach(x => { x.inputs = x.inputs.filter(r => r.node !== n.id); });
     n.el.remove();
+    if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id);
     persist(); tick();
   }
   function attach(n, ref) {
@@ -228,6 +258,18 @@
     return true;
   }
   function targetAt(x, y, self) {
+    // a number anywhere on the page (not inside the node being dragged, nor the palette)
+    const SL = window.SuperLink;
+    let u = null;
+    if (SL && SL.unitAt) {                          // look past the node being dragged
+      const v = self ? self.style.visibility : ""; if (self) self.style.visibility = "hidden";
+      try { u = SL.unitAt(x, y); } finally { if (self) self.style.visibility = v; }
+    }
+    const pe = u && u.node.parentElement;
+    if (u && /\d/.test(u.anchor.t) && !Number.isNaN(numOf(u.anchor.t)) && !(self && pe && self.contains(pe)) && !(pe && pe.closest(".lv-palette"))) {
+      const r = document.createRange(); r.setStart(u.node, u.a); r.setEnd(u.node, u.b);
+      return { text: u.anchor, rect: r.getBoundingClientRect() };
+    }
     for (const el of document.elementsFromPoint(x, y)) {
       if (self && (el === self || self.contains(el))) continue;
       if (el.closest(".lv-palette")) return { palette: true };
@@ -294,11 +336,19 @@
       n.el.classList.remove("is-dragging"); dragging = null;
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
-      if (t && t.el && BY[n.fn].n) {                // Number, Play and Stop take no input: they are just placed
+      if (t && t.text && BY[n.fn].n && window.SuperLink && window.SuperLink.add) {
+        if (n.fn === "show") { window.SuperLink.forget("node:" + n.id, true); n.inputs = []; }   // Show shows one thing: the newest
+        window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
+        const w = n.el.offsetWidth, h = n.el.offsetHeight;
+        let x = t.rect.right + 28; if (x + w > window.innerWidth - 4) x = t.rect.left - w - 28;
+        n.fx = Math.max(4, x) / window.innerWidth; n.fy = (t.rect.top + t.rect.height / 2 - h / 2) / window.innerHeight; place(n);
+        say(BY[n.fn].name + " wired to “" + t.text.t + "”"); persist(); tick(); return;
+      }
+      if (t && t.el && BY[n.fn].n) {                // Play and Stop take no input: they are just placed
         const ref = refOf(t.el);
+        if (n.fn === "show" && window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id, true);
         if (attach(n, ref)) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
-      } else if (spawn) say(BY[n.fn].name + (n.fn === "num" ? " placed: type a number" : BY[n.fn].n ? " placed: drop it on a button to wire it" : " placed"));
-      if (spawn && n.fn === "num") setTimeout(() => { const i = n.el.querySelector("input"); if (i) i.focus(); }, 60);   // after the palette button's own focus
+      } else if (spawn) say(BY[n.fn].name + (BY[n.fn].n ? " placed: drop it on a number or a button to wire it" : " placed"));
       persist(); tick();
     };
     startEl.addEventListener("pointermove", move);
@@ -310,12 +360,13 @@
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
-      if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
-      else if (n.fn === "num") { const i = n.el.querySelector("input"); if (i) i.focus(); }
+      if (n.fn === "clip") { const a = document.createElement("a"); a.href = n.img; a.download = "clip-" + n.w + "x" + n.h + ".png"; document.body.appendChild(a); a.click(); a.remove(); say("Clip saved as a PNG"); }
+      else if (n.fn === "cut") cut();
+      else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
-    n.el.addEventListener("dblclick", () => { n.inputs = []; n.st.i = 0; persist(); tick(); say(BY[n.fn].name + " unwired"); });
+    n.el.addEventListener("dblclick", () => { n.inputs = []; n.st.i = 0; if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id); persist(); tick(); say(BY[n.fn].name + " unwired"); });
     n.el.addEventListener("keydown", e => {
       if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); remove(n); say(BY[n.fn].name + " node removed"); }
       else if (e.key === "Enter" || e.key === " ") { e.preventDefault(); n.el.click(); }
@@ -324,6 +375,71 @@
   function say(t) { if (out) out.textContent = t; }
   // Play and Stop: π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }
+  // ---- Scissors: pixels from the screen --------------------------------
+  // One frame of the shared screen, window or tab; drag a box over it; the box becomes a Clip.
+  let cutting = false;
+  async function cut() {
+    if (cutting) return;
+    const md = navigator.mediaDevices;
+    if (!md || !md.getDisplayMedia) { say("Scissors: this browser can't capture the screen (try a desktop browser)"); return; }
+    cutting = true;
+    let stream;
+    try {
+      stream = await md.getDisplayMedia({ video: { cursor: "never" }, audio: false, preferCurrentTab: true, selfBrowserSurface: "include" });
+    } catch (_) { cutting = false; say("Scissors: nothing shared"); return; }
+    let frame;
+    try {
+      const v = document.createElement("video"); v.muted = true; v.playsInline = true; v.srcObject = stream;
+      await v.play();
+      await new Promise(r => (v.requestVideoFrameCallback ? v.requestVideoFrameCallback(() => r()) : setTimeout(r, 200)));
+      frame = document.createElement("canvas"); frame.width = v.videoWidth; frame.height = v.videoHeight;
+      frame.getContext("2d").drawImage(v, 0, 0);
+    } finally { stream.getTracks().forEach(t => t.stop()); }
+    if (!frame || !frame.width) { cutting = false; say("Scissors: no picture came through"); return; }
+    select(frame);
+  }
+  function select(frame) {
+    const ov = document.createElement("div"); ov.className = "lv-cutter";
+    ov.setAttribute("role", "dialog"); ov.setAttribute("aria-label", "Drag a box over the pixels to cut out; Esc to cancel");
+    const shot = frame; shot.className = "lv-cutter-shot"; ov.appendChild(shot);
+    const box = document.createElement("div"); box.className = "lv-cutter-box"; ov.appendChild(box);
+    const hint = document.createElement("div"); hint.className = "lv-cutter-hint"; hint.textContent = "Drag a box over what you want · Esc to cancel"; ov.appendChild(hint);
+    document.body.appendChild(ov);
+    const done = () => { ov.remove(); document.removeEventListener("keydown", key, true); cutting = false; };
+    const key = e => { if (e.key === "Escape") { e.stopPropagation(); done(); say("Scissors: cancelled"); } };
+    document.addEventListener("keydown", key, true);
+    let p0 = null;
+    const rect = (a, b) => ({ x: Math.min(a[0], b[0]), y: Math.min(a[1], b[1]), w: Math.abs(a[0] - b[0]), h: Math.abs(a[1] - b[1]) });
+    ov.addEventListener("pointerdown", e => { p0 = [e.clientX, e.clientY]; try { ov.setPointerCapture(e.pointerId); } catch (_) { /* fine */ } e.preventDefault(); });
+    ov.addEventListener("pointermove", e => {
+      if (!p0) return;
+      const r = rect(p0, [e.clientX, e.clientY]);
+      Object.assign(box.style, { left: r.x + "px", top: r.y + "px", width: r.w + "px", height: r.h + "px", display: "block" });
+    });
+    ov.addEventListener("pointerup", e => {
+      if (!p0) return;
+      const r = rect(p0, [e.clientX, e.clientY]); p0 = null;
+      if (r.w < 4 || r.h < 4) { box.style.display = "none"; return; }
+      // from the picture on screen back to the frame's own pixels
+      const sr = shot.getBoundingClientRect(), k = frame.width / sr.width;
+      const sx = Math.max(0, Math.round((r.x - sr.left) * k)), sy = Math.max(0, Math.round((r.y - sr.top) * k));
+      const w = Math.min(frame.width - sx, Math.round(r.w * k)), h = Math.min(frame.height - sy, Math.round(r.h * k));
+      done();
+      if (w < 1 || h < 1) { say("Scissors: that box was outside the picture"); return; }
+      const c = document.createElement("canvas"); c.width = w; c.height = h;
+      c.getContext("2d").drawImage(frame, sx, sy, w, h, 0, 0, w, h);
+      const img = c.toDataURL("image/png");
+      const n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: "clip", fx: 0, fy: 0, inputs: [], img, w, h });
+      if (!n) return;
+      n.fx = Math.max(4, Math.min(window.innerWidth - n.el.offsetWidth - 4, r.x)) / window.innerWidth;
+      n.fy = Math.max(4, Math.min(window.innerHeight - n.el.offsetHeight - 22, r.y)) / window.innerHeight;
+      place(n);
+      persist(); tick();
+      say("Clip " + w + "×" + h + " px: click it to save, drag it onto the palette to remove it");
+      if (navigator.clipboard && window.ClipboardItem) c.toBlob(b => { if (b) navigator.clipboard.write([new ClipboardItem({ "image/png": b })]).catch(() => { /* not allowed: fine */ }); });
+    });
+  }
+
   // ---- the palette -----------------------------------------------------
   function build() {
     if (document.querySelector(".lv-palette")) return;
@@ -348,7 +464,7 @@
     let open = false, chosen = false;
     try { const s = localStorage.getItem("lv:open"); if (s !== null) { open = s === "1"; chosen = true; } } catch (_) { /* fine */ }
     pal.innerHTML = '<button type="button" class="lv-head" aria-expanded="false"><span class="lv-title">Functions</span><span class="lv-caret" aria-hidden="true"></span></button>' +
-      '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite">Drag a node onto any button to wire it, or press it to run it on π</output>';
+      '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite">Drag a node onto any number or button to wire it, or press it to run it on π</output>';
     const grid = pal.querySelector(".lv-grid"), head = pal.querySelector(".lv-head");
     out = pal.querySelector(".lv-out");
     const setOpen = v => {
@@ -359,14 +475,14 @@
     head.addEventListener("click", () => { chosen = true; setOpen(!open); try { localStorage.setItem("lv:open", open ? "1" : "0"); } catch (_) { /* fine */ } });
     pal.classList.toggle("is-open", open); head.setAttribute("aria-expanded", String(open));
 
-    FNS.forEach(f => {
+    FNS.filter(f => !f.hidden).forEach(f => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
-      b.title = f.name + ": press to run on π, drag onto a button to wire it";
+      b.title = f.press ? f.name + ": press to capture pixels from the screen" : f.name + ": press to run on π, drag onto a button to wire it";
       b.setAttribute("aria-label", f.name);
       glyph(b, f);
-      b.addEventListener("pointerdown", e => drag(e, b, f));
+      if (!f.press) b.addEventListener("pointerdown", e => drag(e, b, f));
       b.addEventListener("click", () => {
         if (b.dataset.dragged) return;
         b.classList.remove("fired"); void b.offsetWidth; b.classList.add("fired");
@@ -399,5 +515,5 @@
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
-  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text, str: n.fn === "num" ? n.str : undefined })) };
+  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text })) };
 })();
