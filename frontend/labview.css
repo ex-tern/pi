@@ -180,3 +180,8 @@ html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { text-align: center; }
 .lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) - 16px); min-width: calc(var(--lv-s, 56px) - 16px); max-width: 220px; field-sizing: content; padding: 0; }
 .lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in) { padding: 0 6px; }
+/* fields inside nodes: no page-wide text-field look (border, padding, focus ring); the node shows focus */
+.lv-node input.lv-in, .lv-node input.lv-in:focus, .lv-node input.lv-q, .lv-node input.lv-q:focus { border: 0; border-radius: 0; box-shadow: none; outline: none; background: transparent; margin: 0; height: auto; min-height: 0; }
+.lv-node input.lv-in, .lv-node input.lv-in:focus { padding: 0; }
+.lv-node:has(input:focus) { border-color: var(--cobalt); }
+.lv-node input.lv-in:focus-visible, .lv-node input.lv-q:focus-visible { outline: none !important; }   /* the node's cobalt edge shows focus instead */

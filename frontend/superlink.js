@@ -190,6 +190,7 @@
   const term = ([x, y]) => se() ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 4.5, 4.5) + '"/>' : '<rect class="wire-term" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
   function curve(p, q) {
     const hz = Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]);
+    if (se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], hz);
     const c = Math.max(24, (hz ? Math.abs(q[0] - p[0]) : Math.abs(q[1] - p[1])) * 0.5);
     const sx = q[0] >= p[0] ? 1 : -1, sy = q[1] >= p[1] ? 1 : -1;
     return hz ? "M" + p[0] + "," + p[1] + "C" + (p[0] + sx * c) + "," + p[1] + " " + (q[0] - sx * c) + "," + q[1] + " " + q[0] + "," + q[1]

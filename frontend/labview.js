@@ -377,7 +377,8 @@
         }
         // a curve out of the source's side and into the node's input from the left
         const c = Math.max(30, Math.abs(tx - sx) * 0.5), sg = right ? 1 : -1;
-        const d = "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
+        const d = se() && window.SeMorph.wire ? window.SeMorph.wire(sx, cy, tx, ty, true)
+          : "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
         s += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
