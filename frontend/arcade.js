@@ -907,18 +907,13 @@
       el.innerHTML = `<table class="data-table"><thead><tr>
           <th>#</th><th>Player</th><th class="num">Best</th><th class="num">Wins</th><th class="num">Lvl</th>
         </tr></thead><tbody>` + rows.map(r => `
-          <tr><td>${r.rank}</td><td>${escapeHtmlLocal(r.player)}</td>
+          <tr><td>${r.rank}</td><td>${escapeHtml(r.player)}</td>
             <td class="num">${r.best_mass.toFixed(0)}</td>
             <td class="num">${r.wins}</td><td class="num">${r.difficulty_level}</td></tr>`).join("")
-        + `</tbody></table><p class="hint">${escapeHtmlLocal(data.note || "")}</p>`;
+        + `</tbody></table><p class="hint">${escapeHtml(data.note || "")}</p>`;
     } catch (e) {
       el.innerHTML = `<p class="hint">Leaderboard unavailable.</p>`;
     }
-  }
-
-  function escapeHtmlLocal(v) {
-    return String(v == null ? "" : v).replace(/[&<>"']/g,
-      c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
   }
 
   function showOverlay(won, data) {
@@ -1925,133 +1920,6 @@
         ctx.font = `400 ${Math.min(12, r / 4)}px Geist, system-ui, sans-serif`;
         ctx.fillText(`${b.papers} paper${b.papers === 1 ? "" : "s"}`, s.x, s.y + 9);
       }
-    }
-  }
-
-  // ---------------------------------------------------------------------
-  // Soap film
-  // ---------------------------------------------------------------------
-  //
-  // A real bubble is not a coloured disc. It is a transparent shell whose
-  // colour lives almost entirely at the rim: thin-film interference makes the
-  // soap layer refract into bands that shift with viewing angle, the middle
-  // shows whatever is behind it, and one or two hard specular dots mark the
-  // light source. Drawing those four things in order is what makes this read
-  // as a bubble rather than as a circle with a gradient on it.
-  //
-  // The field's own colour is kept as the CENTRE of the iridescent sweep
-  // rather than being replaced by a full rainbow. Colour on this map means
-  // discipline — a legend maps hue to field — so a bubble that shimmered
-  // through every hue would be prettier and unreadable.
-
-  /** Rotate a hex colour's hue by `deg`, keeping saturation and lightness.
-   *  Used to build the interference bands either side of the field's hue. */
-  function shiftHue(hex, deg) {
-    const n = parseInt(hex.slice(1), 16);
-    let r = ((n >> 16) & 255) / 255, g = ((n >> 8) & 255) / 255, bl = (n & 255) / 255;
-    const max = Math.max(r, g, bl), min = Math.min(r, g, bl);
-    const l = (max + min) / 2;
-    let h = 0, sat = 0;
-    const d = max - min;
-    if (d) {
-      sat = l > 0.5 ? d / (2 - max - min) : d / (max + min);
-      if (max === r) h = ((g - bl) / d + (g < bl ? 6 : 0));
-      else if (max === g) h = (bl - r) / d + 2;
-      else h = (r - g) / d + 4;
-      h /= 6;
-    }
-    h = (h + deg / 360 + 1) % 1;
-    const q = l < 0.5 ? l * (1 + sat) : l + sat - l * sat;
-    const p = 2 * l - q;
-    const chan = (t) => {
-      t = (t + 1) % 1;
-      if (t < 1 / 6) return p + (q - p) * 6 * t;
-      if (t < 1 / 2) return q;
-      if (t < 2 / 3) return p + (q - p) * (2 / 3 - t) * 6;
-      return p;
-    };
-    return [chan(h + 1 / 3), chan(h), chan(h - 1 / 3)].map(v => Math.round(v * 255));
-  }
-
-  const rgbaArr = (c, a) => `rgba(${c[0]},${c[1]},${c[2]},${a})`;
-
-  /** Draw one soap bubble at (x, y) with radius r. */
-  function drawSoapFilm(ctx, x, y, r, color, opts) {
-    const alpha = opts.alpha;
-    const live = opts.live;
-    const phase = opts.phase || 0;
-
-    // 1. The body. Densest at the rim and nearly clear through the middle,
-    //    which is the whole visual difference between a bubble and a ball.
-    //    `live` fields hold a little more colour so the corpus still reads
-    //    louder than the taxonomy around it.
-    const body = ctx.createRadialGradient(x, y, r * 0.05, x, y, r);
-    body.addColorStop(0.00, rgba(color, alpha * (live ? 0.13 : 0.06)));
-    body.addColorStop(0.55, rgba(color, alpha * (live ? 0.20 : 0.10)));
-    body.addColorStop(0.82, rgba(color, alpha * (live ? 0.52 : 0.26)));
-    body.addColorStop(1.00, rgba(color, alpha * (live ? 0.98 : 0.58)));
-    ctx.fillStyle = body;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-
-    // Below this size the film detail is sub-pixel and costs more than it
-    // shows, so a small bubble is just the body and its outline.
-    if (effectsQuality === 0 || r < 9) return;
-
-    // 2. Interference bands. A ring stroked with a sweep that runs through the
-    //    field's hue and ±70° of it — the same asymmetric magenta/cyan/green
-    //    split a real film produces, anchored to a colour that still names the
-    //    discipline.
-    const t = phase + (state.driftClock || 0) * 0.25;
-    const bandW = Math.max(1.8, r * 0.20);
-    ctx.save();
-    ctx.lineWidth = bandW;
-    let sweep = null;
-    if (typeof ctx.createConicGradient === "function") {
-      sweep = ctx.createConicGradient(t, x, y);
-      const stops = [-70, -25, 15, 60, 110, 200, 290];
-      stops.forEach((deg, i) => {
-        sweep.addColorStop(i / (stops.length - 1),
-                           rgbaArr(shiftHue(color, deg), alpha * 0.72));
-      });
-    } else {
-      // Safari before 16 has no conic gradient. A linear sweep across the
-      // bubble is a weaker imitation but keeps the rim iridescent rather than
-      // flat, which is the part that matters.
-      sweep = ctx.createLinearGradient(x - r, y - r, x + r, y + r);
-      sweep.addColorStop(0.0, rgbaArr(shiftHue(color, -60), alpha * 0.5));
-      sweep.addColorStop(0.5, rgbaArr(shiftHue(color, 40), alpha * 0.5));
-      sweep.addColorStop(1.0, rgbaArr(shiftHue(color, 150), alpha * 0.5));
-    }
-    ctx.strokeStyle = sweep;
-    ctx.beginPath(); ctx.arc(x, y, r - bandW / 2, 0, Math.PI * 2); ctx.stroke();
-    ctx.restore();
-
-    // 3. Rim light. A thin bright edge just inside the boundary — the film
-    //    catching the light all the way round, which is what gives a bubble
-    //    its shell rather than its silhouette.
-    const rim = ctx.createRadialGradient(x, y, r * 0.82, x, y, r);
-    rim.addColorStop(0, "rgba(255,255,255,0)");
-    rim.addColorStop(0.75, `rgba(255,255,255,${alpha * 0.20})`);
-    rim.addColorStop(1, `rgba(255,255,255,${alpha * 0.55})`);
-    ctx.fillStyle = rim;
-    ctx.beginPath(); ctx.arc(x, y, r, 0, Math.PI * 2); ctx.fill();
-
-    // 4. Speculars: one large soft highlight upper-left where the key light
-    //    sits, one small hard dot lower-right from the light passing through
-    //    and reflecting off the far wall of the shell. Both are needed — the
-    //    second is what tells the eye the surface is a sphere and hollow.
-    const hx = x - r * 0.34, hy = y - r * 0.40;
-    const hi = ctx.createRadialGradient(hx, hy, 0, hx, hy, r * 0.42);
-    hi.addColorStop(0, `rgba(255,255,255,${alpha * 0.75})`);
-    hi.addColorStop(1, "rgba(255,255,255,0)");
-    ctx.fillStyle = hi;
-    ctx.beginPath(); ctx.ellipse(hx, hy, r * 0.34, r * 0.24, -0.7, 0, Math.PI * 2); ctx.fill();
-
-    if (r > 16) {
-      ctx.fillStyle = `rgba(255,255,255,${alpha * 0.5})`;
-      ctx.beginPath();
-      ctx.arc(x + r * 0.42, y + r * 0.46, Math.max(1, r * 0.07), 0, Math.PI * 2);
-      ctx.fill();
     }
   }
 

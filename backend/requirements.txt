@@ -27,24 +27,22 @@ numpy~=1.26
 #
 #   torch                  -> only the LSTM forecast (USE_LSTM_FORECAST=false).
 #                             The default forecast is Holt's method in NumPy.
-#   transformers/accelerate-> only the local TinyLlama chat model
-#                             (ENABLE_SCILEM_LOCAL_MODEL=false). The assistant
-#                             answers from live state and its knowledge base.
+#   transformers/accelerate-> no longer used: the local TinyLlama loader was
+#                             never called and was removed (2026-10-10). The
+#                             assistant answers from live state and its
+#                             knowledge base.
 #
-# Both imports are lazy and both paths degrade cleanly when the package is
-# absent, so omitting them changes nothing about default behaviour — it only
+# The torch import is lazy and its path degrades cleanly when the package is
+# absent, so omitting it changes nothing about default behaviour — it only
 # removes the build time, the image size and the memory pressure. That matters
 # most on a small host, which is exactly where the unused weight hurt.
 #
-# To enable either, uncomment its block AND set the matching env var.
+# To enable it, uncomment its block AND set the matching env var.
 #
 # LSTM forecast:
 #   --extra-index-url https://download.pytorch.org/whl/cpu
 #   torch~=2.4
 #
-# Local chat model (needs several GB of RAM — not viable on a small instance):
-#   transformers~=4.45
-#   accelerate~=0.34
 
 # --- LLM providers ---
 openai~=1.51

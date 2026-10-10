@@ -1,6 +1,5 @@
 import re
 import json
-import math
 import requests
 
 try:
@@ -117,31 +116,6 @@ def estimate_characters_per_page(text, rect, fontsize):
     except Exception:
         return len(text)
 
-def fetch_legacy_author_metrics(author_name):
-    try:
-        clean_name = clean_author_name(author_name)
-        if (
-            not clean_name
-            or clean_name.lower() in ["unidentified", "unknown"]
-            or is_likely_institution(clean_name)
-        ):
-            return 0.0, 0, "Data/Software Curation"
-        first_author = clean_name.split(",")[0].strip()
-        url = f"https://api.openalex.org/authors?search={first_author}"
-        res = requests.get(url, timeout=5)
-        if res.status_code == 200:
-            data = res.json()
-            if data.get("results") and len(data["results"]) > 0:
-                author_obj = data["results"][0]
-                works_count = author_obj.get("works_count", 0)
-                return (
-                    float(works_count),
-                    int(author_obj.get("cited_by_count", 0)),
-                    "Open Access & Dataset Curation",
-                )
-    except Exception:
-        pass
-    return 0.0, 0, "Methodology & Validation"
 
 def normalize_doi(raw):
     """Strip URL prefixes so a DOI is always a bare identifier."""
@@ -428,33 +402,3 @@ def download_pdf(pdf_url):
 
     return None
 
-def measure_legacy_citation_entropy(doi: str) -> float:
-    if not doi or doi == "None":
-        return 0.50
-
-    clean_doi = doi.replace("https://doi.org/", "").strip()
-    url = f"https://api.openalex.org/works/https://doi.org/{clean_doi}"
-    
-    try:
-        res = requests.get(url, timeout=10)
-        if res.status_code != 200:
-            return 0.50
-            
-        data = res.json()
-        concepts = data.get("concepts", [])
-        scores = [c.get("score", 0.0) for c in concepts if c.get("score", 0.0) > 0]
-
-        if len(scores) < 2:
-            topological_entropy = 0.35
-        else:
-            total = sum(scores)
-            probs = [s / total for s in scores]
-            shannon_entropy = -sum(p * math.log(p) for p in probs if p > 0)
-            max_entropy = math.log(len(probs))
-            normalized_entropy = shannon_entropy / max_entropy if max_entropy > 0 else 0.0
-            topological_entropy = max(0.1, min(1.0, normalized_entropy))
-
-        return topological_entropy
-        
-    except Exception:
-        return 0.50

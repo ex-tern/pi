@@ -25,7 +25,7 @@ than to "unavailable".
 """
 import re
 import logging
-from typing import Dict, List, Optional
+from typing import Dict, Optional
 
 try:
     from config import GROQ_API_KEY, OR_API_KEY, PRIMARY_MODEL

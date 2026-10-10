@@ -35,7 +35,7 @@ import re
 import math
 import logging
 from collections import Counter
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List, Optional
 
 
 from integrations import clean_author_name, is_likely_institution
@@ -390,22 +390,6 @@ def fetch_author_metrics(author_name: str) -> Dict:
     return empty
 
 
-def format_author_metrics(metrics: Dict) -> str:
-    """One-line human summary for the dossier."""
-    if not metrics or not metrics.get("resolved"):
-        return "Author bibliometrics unavailable."
-    parts = []
-    if metrics.get("h_index") is not None:
-        parts.append(f"h-index {metrics['h_index']}")
-    if metrics.get("i10_index") is not None:
-        parts.append(f"i10-index {metrics['i10_index']}")
-    if metrics.get("works_count") is not None:
-        parts.append(f"{metrics['works_count']} works")
-    if metrics.get("cited_by_count") is not None:
-        parts.append(f"{metrics['cited_by_count']:,} citations")
-    return (metrics.get("display_name") or metrics.get("queried", "Author")) + ": " + ", ".join(parts) \
-        if parts else "Author resolved, but no bibliometric summary is published."
-
 
 # ===========================================================================
 # 4. TRENDING TOPICS (live, not a hardcoded list)
@@ -701,7 +685,6 @@ def classify_manuscript_fields(text: str, topics: List[dict] = None) -> Dict:
 # 2. REFERENCE INTEGRITY ("Baseline Scout")
 # ===========================================================================
 _DOI_RE = re.compile(r"\b10\.\d{4,9}/[-._;()/:A-Za-z0-9]+\b")
-_ARXIV_RE = re.compile(r"\barXiv\s*:\s*(\d{4}\.\d{4,5})(v\d+)?\b", re.IGNORECASE)
 
 # Trailing punctuation that belongs to the sentence, not the identifier.
 _DOI_TRAILING = ".,;:)]}>\"'"

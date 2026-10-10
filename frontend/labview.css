@@ -58,8 +58,6 @@
 .lv-node.lv-show .lv-val { display: none; }
 /* the output terminal, on the right like LabVIEW's */
 .lv-node::after { content: ""; position: absolute; right: -4px; top: 50%; width: 6px; height: 6px; margin-top: -3px; background: var(--ink); }
-.lv-node.is-true { border-color: var(--cobalt); color: var(--cobalt); }
-.lv-node.is-true .lv-val { color: var(--cobalt); }
 .lv-node.is-dragging { cursor: grabbing; opacity: 0.85; box-shadow: 0 10px 24px rgba(25, 25, 25, 0.18); }
 .lv-palette .lv-fn { cursor: grab; touch-action: none; }
 html.lv-dragging, html.lv-dragging * { cursor: grabbing !important; user-select: none; }

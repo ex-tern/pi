@@ -109,10 +109,6 @@ def get_web3():
     return instance
 
 
-def is_chain_connected() -> bool:
-    _, uri = _select_working_rpc()
-    return uri is not None
-
 
 # Minimal read-only ABI. Only the views needed to answer "is the address in
 # config actually the contract we think it is?" — deliberately not the full
@@ -825,15 +821,6 @@ def mint_pi_quotient_token(book_address: str, amount: float, eval_hash: str, zk_
         logging.error("piQ mint failed: %s", e)
         return f"Eth Tx Failed: {str(e)}"
 
-def generate_blockchain_pi(block_height: int) -> float:
-    iterations = max(1, block_height * 50)
-    pi_approx = 3.0
-    sign = 1.0
-    for i in range(1, iterations + 1):
-        n = i * 2
-        pi_approx += sign * (4.0 / (n * (n + 1) * (n + 2)))
-        sign *= -1.0
-    return pi_approx
 
 def get_sepolia_explorer_url(identifier: str, kind="tx") -> str:
     if not identifier or not isinstance(identifier, str):

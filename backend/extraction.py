@@ -32,7 +32,7 @@ consumers can tell a publisher-deposited title from a guess.
 """
 import re
 import logging
-from typing import Dict, List, Optional, Tuple
+from typing import Dict, List
 
 try:
     import fitz

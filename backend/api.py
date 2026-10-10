@@ -11,7 +11,6 @@ Production:  gunicorn api:app -c gunicorn.conf.py   (see README)
 """
 import os
 import shutil
-import io
 import re
 import json
 import uuid
@@ -35,7 +34,7 @@ from typing import Optional, List, Dict, Tuple
 import sqlite3
 
 import requests
-from fastapi import (FastAPI, HTTPException, UploadFile, File, Form, Header, Query, Request,
+from fastapi import (FastAPI, HTTPException, UploadFile, File, Form, Query, Request,
                      BackgroundTasks)
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import RedirectResponse, HTMLResponse, StreamingResponse, PlainTextResponse, JSONResponse, FileResponse
@@ -60,12 +59,13 @@ from config import (
     TURNSTILE_SITE_KEY, REQUIRE_PROOF_OF_WORK, USE_LSTM_FORECAST,
     ENABLE_AUTO_SETTLEMENT, AUTO_SETTLE_BATCH, AUTO_SETTLE_INTERVAL_SECONDS,
 )
+from api_helpers import client_ip
 from database import (
     get_db_connection, get_free_evals_used, increment_free_evals_used,
     get_piq_balance, charge_piq_fee, refund_piq_fee, get_piq_fee_history,
     get_piq_rewards_total,
     award_onboarding_grant, has_received_grant,
-    get_bonus_evals, get_bonus_award_state, grant_bonus_evals,
+    get_bonus_evals, get_bonus_award_state,
     get_field_corpus_stats, save_researcher_profile, get_researcher_profile,
     list_profile_slots, save_profile_slot, activate_profile_slot, delete_profile_slot,
     MAX_PROFILE_SLOTS,
@@ -75,9 +75,9 @@ from database import (
     list_unclaimed_escrow, disown_escrow, list_disowned,
     list_unsettled_mintable, record_settlement, real_doi, grant_piq,
     get_curation_stats, credit_curation_reward, get_curation_award_for,
-    list_escrowed_for_identity, total_escrowed, release_escrow,
+    list_escrowed_for_identity, release_escrow,
     store_challenge, get_challenge, record_challenge_attempt,
-    set_published, is_published, publication_fee_paid,
+    set_published, publication_fee_paid,
     open_review_request, list_open_reviews, complete_review, review_summary,
     record_llm_review, has_open_review_request, open_review_bounty,
     has_human_review, cancel_review_request,
@@ -89,7 +89,7 @@ from database import (
     RESET_GROUPS, reset_state_groups,
     record_paper_read, get_paper_reads,
     create_review_job, finish_review_job, list_review_jobs, reclaim_stale_review_jobs,
-    record_backup_cid, latest_backups, list_scilem_observations,
+    latest_backups, list_scilem_observations,
     get_papers_for_recommendation, get_corpus_totals,
     record_visit, visitor_stats,
 )
@@ -103,11 +103,11 @@ from integrations import (
     normalize_doi, search_scholarly_works,
     clean_author_name, is_likely_institution, fetch_doi_metadata,
     fetch_semantic_scholar_pdf, download_pdf, fetch_core_text_by_doi,
-    build_pdf_from_text, search_open_access_works,
+    build_pdf_from_text,
 )
 from attribution import (verify_authorship, verify_journal_claim,
                          names_match, fetch_orcid_profile_name)
-from extraction import fetch_registry_metadata, full_text_from_pdf
+from extraction import full_text_from_pdf
 from brain import (
     process_single_pdf, generate_rebuttal_strategy, PidyneLSTM,
     PidyneBlockchainDataset, clear_structural_analyzer_state,
@@ -209,12 +209,7 @@ def add_log(msg: str):
 
 
 def get_client_ip(request: Request) -> str:
-    """Respect X-Forwarded-For when running behind a reverse proxy (nginx,
-    a load balancer, etc.) — falls back to the direct connection otherwise."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    return request.client.host if request.client else "unknown"
+    return client_ip(request)
 
 
 def check_rate_limit(ip: str, bucket: str = "default"):
@@ -827,11 +822,6 @@ def count_assessed_papers() -> int:
 # same award; it does not un-earn anything. `piq_held` (unclaimed) and
 # `piq_claimed` (released) split the escrow, and always sum back to it.
 PIQ_TOTAL_SQL = "(COALESCE(piq_minted, 0) + COALESCE(piq_escrowed, 0))"
-PIQ_SELECT = ("COALESCE(piq_minted, 0) AS piq_minted, "
-              "CASE WHEN piq_claimed_at IS NULL THEN COALESCE(piq_escrowed, 0) ELSE 0 END "
-              "AS piq_held, "
-              f"{PIQ_TOTAL_SQL} AS piq")
-
 
 def piq_fields(minted, escrowed, claimed_at) -> dict:
     """The figures every table reports, from the three stored columns.

@@ -27,7 +27,6 @@ from datetime import datetime
 from typing import Tuple, Dict
 
 import fitz
-import numpy as np
 from openai import OpenAI
 from functools import lru_cache
 import sim_engine as scilem_learning
@@ -81,18 +80,6 @@ def load_torch():
     return _TORCH
 
 
-def torch_available() -> bool:
-    """Whether torch can be loaded, WITHOUT loading it.
-
-    Used by status endpoints, which must not trigger a 350MB import just to
-    render a badge.
-    """
-    if _TORCH is not None:
-        return True
-    if _TORCH_FAILED:
-        return False
-    import importlib.util
-    return importlib.util.find_spec("torch") is not None
 
 # NOTE: the `openrouter` SDK was imported here and never used. OpenRouter is
 # reached through the OpenAI-compatible client like every other provider, so
@@ -100,19 +87,17 @@ def torch_available() -> bool:
 # both this module and requirements.txt.
 
 from config import (
-    GROQ_API_KEY, OR_API_KEY, GEMINI_API_KEY,
     OPENROUTER_SITE_URL, OPENROUTER_SITE_NAME, OPENROUTER_DATA_COLLECTION,
-    PRIMARY_MODEL, FALLBACK_MODEL, MAX_TEXT_TOKENS, EPOCH_BLOCK_SIZE, BASE_DIR,
+    PRIMARY_MODEL, MAX_TEXT_TOKENS, BASE_DIR,
     PANEL_BUDGET_SECONDS, PROVIDER_TIMEOUT_SECONDS,
 )
 from database import get_db_connection, find_existing_paper, set_content_hash, real_doi
 from ledger import (
     backup_state_to_web3, generate_zk_snark_proof, mint_pi_quotient_token, 
-    validate_block_por, generate_blockchain_pi
+    validate_block_por
 )
 from integrations import (
-    clean_author_name, fetch_legacy_author_metrics,
-    measure_legacy_citation_entropy
+    clean_author_name
 )
 from scientometrics import (
     fetch_topic_diversity_for_doi, audit_citation_integrity, assess_authorship_consistency,
@@ -127,7 +112,7 @@ from security import (
     issue_integrity_canary, build_security_directive, run_static_integrity_scan,
     apply_panel_integrity_verdict, redact_canary, detect_canary_in_panel_output,
 )
-from rebuttal import generate_rebuttal_strategy as _optimized_rebuttal_strategy
+from rebuttal import generate_rebuttal_strategy  # noqa: F401 -- re-exported for api.py
 from attribution import verify_authorship
 from providers import (
     build_routes, classify_provider_error, redact_provider_text,
@@ -135,27 +120,13 @@ from providers import (
     is_provider_unreachable, record_provider_unreachable,
     is_scilm_route,
 )
-from emission import compute_piq_emission, emission_manifest
+from emission import compute_piq_emission
 from extraction import (
     extract_from_pdf_layout, fetch_registry_metadata, reconcile_bibliographic_record,
     parse_reference_entries, summarize_references, clean_author_list,
 )
 from http_client import guarded, run_bounded
 
-@lru_cache(maxsize=1)
-def load_local_language_model():
-    from transformers import pipeline
-    return pipeline("text-generation", model="TinyLlama/TinyLlama-1.1B-Chat-v1.0", device_map="auto")
-
-def generate_assistant_reply(raw_text):
-    try:
-        scilem_nlp = load_local_language_model()
-        prompt = f"<|system|>\nYou are SciLM (siM), the AI assistant for the Pi-Index Framework.\n<|user|>\n{raw_text}\n<|assistant|>"
-        response = scilem_nlp(prompt, max_new_tokens=150, truncation=True)
-        generated_text = response[0]['generated_text'].split("<|assistant|>")[-1].strip()
-        return f"**SciLM (siM):** {generated_text}"
-    except Exception as e:
-        return f"SciLM (siM) Local Neural Engine initialization failed: {e}"
 
 def measure_structural_signals(paper_text: str) -> dict:
     """The four deterministic measurements SciLM (siM) is built on.
@@ -1283,9 +1254,6 @@ Respond strictly in JSON with keys:
             
     return evidence_report, rating
 
-def generate_scilem_fallback_report(text):
-    scilem_rep = generate_assistant_reply(text)
-    return f"Synthesized Evidence Report (Unified Consensus)\n\n### SciLM (siM) Neural Assessment\n{scilem_rep}"
 
 def measure_mdar_adherence(text: str) -> Tuple[float, int]:
     text_lower = text.lower()
@@ -1674,9 +1642,6 @@ def derive_next_epoch_weights(scores_dict, previous_weights=None, corpus_scores=
         if all(w_min - 1e-9 <= w <= w_max + 1e-9 for w in blended):
             break
     return [round(w, 8) for w in blended]
-
-def generate_rebuttal_strategy(scores_dict):
-    return _optimized_rebuttal_strategy(scores_dict)
 
 _CREDIT_PATTERNS = {
     "Conceptualization": r"\b(conceptuali[sz]ation|study design|research question|hypothes[ei]s)\b",
