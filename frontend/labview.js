@@ -118,7 +118,13 @@
   function linkIns(n) {
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
     const out = [];
+    // a blank ■ shows: between it and another node the value flows into the ■, whichever end the wire began at
+    const sink = h => { const x = h && h.startsWith("node:") && nodes.find(m => "node:" + m.id === h); return !!(x && x.fn === "box" && !x.role); };
+    const meSink = n.fn === "box" && !n.role;
     L.forEach(l => {
+      const ah = l.a && l.a.h, bh = l.b && l.b.h;
+      const other = ah === me ? bh : bh === me ? ah : null;
+      if (other && other !== me && other.startsWith("node:") && meSink !== sink(other)) { if (meSink) out.push(ah === me ? l.b : l.a); return; }
       if (l.b && l.b.h === me && !(l.a && l.a.h === me)) out.push(l.a);
       else if (l.a && l.a.h === me && l.b && !(l.b.h && l.b.h.startsWith("node:"))) out.push(l.b);   // node → a number: the number still feeds it
     });
@@ -309,7 +315,7 @@
       }
       if (n.fn === "box" || n.fn === "dot") {
         const lab = n.role === "stop" ? "stop · " + (n.targetTitle || "window")
-          : n.role === "loop" ? "↻ " + (n.i || 0) + (n.paused ? " · paused" : "")
+          : n.role === "loop" ? ""                                            // a loop is just its ring: no counter on the page
           : n.role === "text" ? "text" : n.role === "int" ? "integer"
           : n.stopped ? "stopped" : n.paused ? "paused" : "";
         if (n.val.textContent !== lab) n.val.textContent = lab;
@@ -622,7 +628,7 @@
     sizeDot(n, d);
     const b = n.el.getBoundingClientRect();
     n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n);
-    if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts ↻ once a second; press its label to pause"); }
+    if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
     clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
   }
   function grow2(e, n, grip) {
@@ -642,7 +648,7 @@
       n.el.classList.remove("is-growing");
       const b = n.el.getBoundingClientRect();
       n.fx = b.left / window.innerWidth; n.fy = b.top / window.innerHeight;
-      if (n.size >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts ↻ once a second; press its label to pause"); }
+      if (n.size >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
       else if (n.role !== "loop" && n.size < LOOP_AT) sizeDot(n, n.size);
       persist(); tick();
     };
@@ -817,6 +823,17 @@
       zoomed = { n, t: performance.now() };
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
+    // a click on a loop's ring pauses it (or lets it go on)
+    document.addEventListener("click", e => {
+      const n = nodes.find(x => {
+        if (x.role !== "loop") return false;
+        const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
+        return Math.abs(d - r.width / 2) < 7;
+      });
+      if (!n) return;
+      e.preventDefault(); e.stopPropagation();
+      n.paused = !n.paused; say("●: the loop " + (n.paused ? "is paused" : "goes on")); tick();
+    }, true);
     // two fingers on a node: their spread sizes it
     const touches = new Map();
     canvas.addEventListener("pointerdown", e => {
