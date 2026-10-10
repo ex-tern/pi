@@ -191,7 +191,9 @@
     '<g class="om-sweep">' +
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text>' +
-    '</svg></button>' +
+    '</svg>' +
+    '<svg class="om-page" aria-hidden="true"><path class="om-page-loop" d=""/><line class="om-page-r" x1="0" y1="0" x2="0" y2="0"/></svg>' +
+    '</button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
     '<div class="orbit-bubbles" role="list" aria-label="Everything on Pi Tech Lab"></div>' +
@@ -461,29 +463,123 @@
     clearTimeout(nShowT);
     nShowT = setTimeout(() => { if (t) t.classList.remove("show"); store("orbit:mark:n", +markN.toPrecision(5)); }, 900);
   }
-  const loopR = th => { const n = loopN(); return 150 / Math.pow(Math.pow(Math.abs(Math.cos(th)), n) + Math.pow(Math.abs(Math.sin(th)), n), 1 / n); };
-  let loopDrawn = 0;
-  function drawLoop() {
-    const n = loopN();
-    if (Math.abs(n - loopDrawn) < 1e-6) return;
-    loopDrawn = n;
-    const e = 2 / n, pts = [], K = 360;
-    for (let i = 0; i < K; i++) {
-      const t = i / K * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
+  // The loop holds everything: each time it is drawn it measures every object on the
+  // page (bubbles, title, counter, palette, Live, nodes) and grows just enough that
+  // all their corners are inside |x/a|^n + |y/b|^n = 1. At n = π that is the page's
+  // own frame; for small n its sides curve in and hug the outermost objects.
+  const LOOP_M = 0.94;                                  // half-axes at scale 1: 94% of half the screen
+  // With a window open the loop gathers into a small mark above the windows (a click on it closes
+  // them all, as in the plain look); with none open it is the page again.
+  const pageLoop = () => merged() && !document.documentElement.classList.contains("orbit-open");
+  let miniKey = "";
+  function drawMini() {
+    const n = loopN(), key = n.toPrecision(6);
+    if (key === miniKey) return;
+    miniKey = key;
+    const e = 2 / n, pts = [];
+    for (let i = 0; i < 360; i++) {
+      const t = i / 360 * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
       pts.push((200 + 150 * Math.sign(c) * Math.pow(Math.abs(c), e)).toFixed(2) + "," + (200 + 150 * Math.sign(sn) * Math.pow(Math.abs(sn), e)).toFixed(2));
     }
     const path = $(".om-loop");
     if (path) path.setAttribute("d", "M" + pts.join("L") + "Z");
   }
+  function miniSweep(deg, sweep) {
+    const th = deg * Math.PI / 180, len = Math.min(400, 150 / seNorm(Math.abs(Math.cos(th)), Math.abs(Math.sin(th)), loopN()));
+    const k = len.toFixed(1);
+    if (k === sweep.dataset.len) return;
+    sweep.dataset.len = k;
+    const [l1, l2] = sweep.querySelectorAll("line");
+    l1.setAttribute("x2", (200 + len).toFixed(1)); l2.setAttribute("x2", (200 - len).toFixed(1));
+  }
+  const CONTAIN = ".orbit-bubble, .orbit-title, .orbit-pi, .lv-palette, .live-tab, .live-dock.open .live-body, .lv-node";
+  let loopG = { cx: 0, cy: 0, a: 1, b: 1, n: Math.PI }, loopKey = "";
+  // r ↦ (u^n + v^n)^(1/n), safely for any n
+  const seNorm = (u, v, n) => { const m = Math.max(u, v); return m ? m * Math.pow(Math.pow(u / m, n) + Math.pow(v / m, n), 1 / n) : 0; };
+  function drawLoop() {
+    if (!pageLoop()) { if (merged()) drawMini(); return; }
+    const Wv = window.innerWidth, Hv = H, n = loopN();
+    const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = top + Hv / 2;
+    let sc = 1;
+    document.querySelectorAll(CONTAIN).forEach(el => {
+      if (el.hidden || !el.getClientRects().length) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
+        sc = Math.max(sc, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
+    });
+    sc = Math.ceil(sc * 200) / 200;                      // steps of 0.5%, so it does not shimmer
+    const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
+    loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
+    if (key === loopKey) return;
+    loopKey = key;
+    const X0 = Wv / 2, Y0 = Hv / 2, pts = [];
+    if (sc < 3) {                                        // the whole curve, by angle
+      const e = 2 / n, K = 720;
+      for (let i = 0; i < K; i++) {
+        const t = i / K * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
+        pts.push([X0 + a * Math.sign(c) * Math.pow(Math.abs(c), e), Y0 + b * Math.sign(sn) * Math.pow(Math.abs(sn), e)]);
+      }
+    } else {                                             // a huge loop: only the part on screen, by x
+      const X = Math.min(a, Wv / 2 + 40), K = 480, lim = Hv / 2 + 40;
+      const yAt = x => { const u = Math.abs(x) / a, t = u > 0 ? Math.exp(n * Math.log(u)) : 0; return t >= 1 ? 0 : Math.min(lim, b * Math.exp(Math.log1p(-t) / n)); };
+      for (let i = 0; i <= K; i++) { const x = -X + 2 * X * i / K; pts.push([X0 + x, Y0 - yAt(x)]); }
+      for (let i = K; i >= 0; i--) { const x = -X + 2 * X * i / K; pts.push([X0 + x, Y0 + yAt(x)]); }
+    }
+    const svg = $(".om-page"), path = $(".om-page-loop");
+    if (svg) svg.setAttribute("viewBox", "0 0 " + Wv + " " + Hv);
+    if (path) path.setAttribute("d", "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z");
+  }
+  // the diameter, reaching the loop at every angle
+  function sweepPx(deg) {
+    const line = $(".om-page-r");
+    if (!line) return;
+    const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), { cx, cy, a, b, n } = loopG;
+    const r = Math.min(Math.hypot(cx, cy) * 2, 1 / seNorm(Math.abs(c) / a, Math.abs(sn) / b, n));
+    line.setAttribute("x1", (cx - r * c).toFixed(1)); line.setAttribute("y1", (cy - r * sn).toFixed(1));
+    line.setAttribute("x2", (cx + r * c).toFixed(1)); line.setAttribute("y2", (cy + r * sn).toFixed(1));
+  }
+  // The title, the Functions palette and the Live panel sit inside the loop too: each steps in from
+  // its edge or corner until it fits inside the loop at its usual n (π, scale 1), on any screen.
+  function seatEdges() {
+    if (!merged()) return;
+    const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = top + H / 2, root = document.documentElement.style;
+    const fits = (l, t, r, b) => [l - 6, r + 6].every(x => [t - 6, b + 6].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, Math.PI) <= 1));
+    const title = $(".orbit-title");
+    if (title && title.offsetWidth) {
+      const tr = title.getBoundingClientRect(), h = tr.height;    // centred over the stage, not the screen
+      for (let y = 8; y < H / 3; y += 2) if (fits(tr.left, top + y, tr.right, top + y + h)) { root.setProperty("--se-title-top", y + "px"); break; }
+    }
+    const pal = $(".lv-palette");
+    if (pal && pal.offsetWidth) {
+      const w = pal.offsetWidth, h = pal.offsetHeight;
+      for (let k = 0.01; k < 0.45; k += 0.004) {
+        const l = k * Wv, bt = k * H;
+        if (fits(l, top + H - bt - h, l + w, top + H - bt)) { root.setProperty("--se-pal-left", Math.round(l) + "px"); root.setProperty("--se-pal-bottom", Math.round(bt) + "px"); break; }
+      }
+    }
+    const live = $(".live-dock.open .live-body");
+    if (live && live.offsetWidth) {
+      const w = live.offsetWidth, rr = Math.round(Wv * 0.06);
+      for (let m = 0.02 * H; m < H / 3; m += 4) if (fits(Wv - rr - w, top + m, Wv - rr, top + H - m)) { root.setProperty("--se-live-m", Math.round(m) + "px"); break; }
+    }
+  }
+  // the room the layout may use: inside the loop at its usual n (π, scale 1), so the frame fits the page
+  function insideLoop(r) {
+    const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = H / 2, n = Math.PI;
+    for (const x of [r.x - 6, r.x + r.w + 6]) for (const y of [r.y - 6, r.y + r.h + 6])
+      if (seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n) > 1) return false;
+    return true;
+  }
   function placeMark() {
-    const r = shownR(), se = merged();
-    if (se) drawLoop();
-    document.documentElement.classList.toggle("orbit-mark-big", se || r > capR());   // behind the pills
-    document.documentElement.classList.toggle("orbit-mark-tiny", !se && r < 40);    // too small to hold the counter
+    const r = shownR(), se = pageLoop();
+    drawLoop();
+    document.documentElement.classList.toggle("orbit-mark-big", se || (!merged() && r > capR()));   // behind the pills
+    document.documentElement.classList.toggle("orbit-mark-tiny", !merged() && r < 40);    // too small to hold the counter
     const core = $(".orbit-core"), svg = core.querySelector(".orbit-mark");
     if (se) {
       // the loop is the page: stretched over the whole stage, everything inside it
-      core.style.width = W + "px"; core.style.height = H + "px";
+      core.style.width = window.innerWidth + "px"; core.style.height = H + "px";   // the whole screen, the Live panel inside it too
       core.style.left = "0px"; core.style.top = top + "px";
       svg.setAttribute("preserveAspectRatio", "none");
     } else {
@@ -505,10 +601,14 @@
   }
 
   // the docked Live panel (live.js) and the room left beside it for windows
-  function dockWidth() { const d = document.querySelector(".live-dock.docked .live-body"); return d ? d.offsetWidth : 0; }
+  function dockWidth() {
+    const d = document.querySelector(".live-dock.docked .live-body");
+    return d ? d.offsetWidth + (merged() ? Math.round(window.innerWidth * 0.06) : 0) : 0;   // inset from the edge, inside the loop
+  }
   const vw = () => window.innerWidth - dockWidth();
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => hit(r, p));
+  const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => hit(r, p)) &&
+    (!merged() || insideLoop(r));          // superellipse look: inside the loop
   function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
 
   function obstacles() {
@@ -518,7 +618,7 @@
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     out.push(grow(titleRect(), g));
-    document.querySelectorAll(".buddy-float, .live-dock:not(.docked) .live-tab").forEach(el => {
+    document.querySelectorAll(".buddy-float, .live-dock:not(.docked) .live-tab, .lv-palette").forEach(el => {     // the Functions palette too: it sits inside the loop
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
     });
@@ -768,6 +868,11 @@
     });
     // double-click: the mark stops turning and π stops growing; again to carry on
     core.addEventListener("dblclick", () => { clearTimeout(closeT); setStill(!still); });
+    // In the superellipse look the mark is the loop behind everything, so empty space inside it
+    // stands in for it: a click closes every window, a double-click stops or restarts π.
+    const emptySpot = e => merged() && !(e.target.closest && e.target.closest(".orbit-bubble, .orbit-pi, .wire-handle, .wire-hit, .orbit-title, .orbit-panel, input, button, a, textarea, select"));
+    stage.addEventListener("click", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("click", { detail: e.detail })); });
+    stage.addEventListener("dblclick", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("dblclick")); });
     const setLogo = v => { logoScale = v; };
     core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: scrolling changes the loop's n
     wheelResize(core, () => logoScale, setLogo, logoMin, logoMax, "orbit:logo:scale");
@@ -1319,7 +1424,7 @@
       move(e);
     });
   }
-  setInterval(() => { if (document.visibilityState === "visible") drawWires(); }, 250);
+  setInterval(() => { if (document.visibilityState === "visible") { drawWires(); seatEdges(); drawLoop(); } }, 250);
 
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered
@@ -1374,14 +1479,7 @@
       speed += (target - speed) * Math.min(1, dt * 2.5);
       angle = (angle - speed * dt) % 360;
       sweep.style.transform = "rotate(" + angle.toFixed(2) + "deg)";
-      if (merged()) {
-        const len = loopR(angle * Math.PI / 180).toFixed(2);
-        if (len !== sweep.dataset.len) {
-          sweep.dataset.len = len;
-          const [l1, l2] = sweep.querySelectorAll("line");
-          l1.setAttribute("x2", 200 + +len); l2.setAttribute("x2", 200 - +len);
-        }
-      }
+      if (pageLoop()) sweepPx(angle); else if (merged()) miniSweep(angle, sweep);
       requestAnimationFrame(frame);
     };
     requestAnimationFrame(frame);
@@ -1731,7 +1829,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
+    window.PiOrbit = { loop: () => Object.assign({}, loopG), still: () => still, setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

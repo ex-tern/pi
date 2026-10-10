@@ -1017,3 +1017,15 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 **Why:** owner: "remove shift scrolling. zooming makes it n from 0 to infinity and everything is inside this super[ellipse]".
 
 **Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look): the loop spans the stage and every bubble is inside it; scrolling gives n = 0.128, n → 0 and n → ∞; it opens no windows; n survives a reload; the counter opens π and friends. Plain look at 1280 and 390: dot to page size scroll unchanged, and the page-sized mark is now visible. No horizontal scroll, no page errors.
+
+## 2026-10-10: Everything inside the loop
+
+**What:** in the superellipse look the loop always holds every object on the page.
+- **Containment:** each time it is drawn (and every 250 ms), `drawLoop` measures the bubbles, title, π counter, Functions palette, Live tab and panel, and diagram nodes, and scales the superellipse just enough that every corner (plus 6 px) satisfies |x/a|^n + |y/b|^n ≤ 1. At n = π this is the page's own frame; for small n the sides curve inward and hug the outermost objects (the loop itself grows far beyond the screen, and only the visible part is drawn, by x, so it stays smooth down to n = 0.01).
+- **Layout:** the loop is drawn in page coordinates over the whole screen, including the Live panel. The bubble layout only uses room inside the loop at n = π, and treats the Functions palette as an obstacle (re-laid out when the palette opens or closes).
+- **Edge items:** `seatEdges` steps the title, the palette and the floating Live panel in from their edge or corner until they fit inside it, on any screen.
+- **Mark behaviour:** empty space inside the loop now acts as the mark (a click closes all windows, a double-click pauses π). With a window open, the loop gathers into a small superellipse mark above the windows, as in the plain look, so it can still be tapped on a phone.
+
+**Why:** owner: "put everything inside the main super".
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px: no object outside the loop at n = π (scale 1, the page frame), 0.285, 0.0116, 0.01 and ∞, and with Live opened and closed; the palette covers no bubble, open or closed; a click on empty space and a tap on the small mark close windows; a double-click pauses and restarts π; the diagram, Ask SciM and window morph tests pass; no horizontal scroll, no page errors.

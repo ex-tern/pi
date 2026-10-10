@@ -138,3 +138,22 @@ html.shape-se.orbit-open .orbit-pi { opacity: 1; }
   opacity: 0; transition: opacity 0.3s ease;
 }
 .orbit-nread.show { opacity: 1; }
+
+/* the loop around everything, drawn in page coordinates (orbit.js drawLoop):
+   it grows to hold every object for the current n */
+.om-page { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+html.shape-se:not(.orbit-open) .orbit-mark { display: none; }
+html.shape-se:not(.orbit-open) .om-page { display: block; }
+/* with a window open the loop gathers into a small mark above the windows: click it to close them */
+.om-page-loop { fill: var(--surface); stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }
+.om-page-r { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; }
+/* what used to sit on the page's edge steps inside the loop */
+html.shape-se .orbit-title { top: calc(var(--orbit-top, 0px) + var(--se-title-top, 36px)); }   /* orbit.js seatEdges */
+html.shape-se .lv-palette { left: var(--se-pal-left, 9vw); bottom: var(--se-pal-bottom, 10vh); }
+html.shape-se .live-tab { right: 6vw; }
+html.shape-se .live-dock.open .live-tab { right: calc(300px + 6vw); }
+html.shape-se .live-dock.open .live-body {
+  margin: var(--se-live-m, 14vh) 6vw 0 0; height: calc(100% - 2 * var(--se-live-m, 14vh));
+  border: 1px solid var(--hair-strong); border-radius: 26px; corner-shape: superellipse(var(--se-k-window));
+}
+@media (max-width: 380px) { html.shape-se .live-dock.open .live-tab { right: calc(88vw - 6vw); } }
