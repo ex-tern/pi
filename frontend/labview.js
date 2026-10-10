@@ -20,7 +20,10 @@
 // "Connect Contact"; a button, bubble or window counts as its name), × multiplies them, − and ÷ take the first and subtract
 // or divide by the rest. Show is an empty box: wire anything into it and it
 // shows that value inside itself. Play runs π, Stop stops it (the same as
-// double-clicking the π mark); everything wired to π follows.
+// double-clicking the π mark); everything wired to π follows. Stop also holds
+// whatever is wired into it, for as long as the wire is there: a Super Neural
+// Engine or "?" stops thinking (a question on its way is cancelled), a Show
+// freezes, and the π mark, counter or loop stops π. Unwire it to let go.
 // The Super Neural Engine is the pill star (a superellipse at n = γ). It is
 // prompted by wiring: whatever reaches it (words, numbers, buttons, windows,
 // other nodes) is joined into a prompt and sent to /api/super/ask, where every
@@ -54,7 +57,7 @@
     { k: "div", g: "÷", name: "Divide", n: 9 },
     { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
     { k: "flip", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Flip", n: 0, act: true },   // a superellipse diamond, n = 1.3: drop it on a node to swap its inputs
-    { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
+    { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 9 },
     { k: "show", g: "", name: "Show", n: 1 },
     { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super Neural Engine", n: 9 },   // the pill star, n = γ
     { k: "panel", g: "?", name: "Ask the panel", n: 9 },
@@ -197,7 +200,7 @@
       }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
-      case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
+      case "stop": { const k = (n.holds || 0); r = { num: k, bool: k > 0 || still(), text: k ? "holding " + k : still() ? "stopped" : "running" }; break; }
       case "show": r = ins.length ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
       default: r = ZERO;
     }
@@ -206,21 +209,50 @@
     return r;
   }
 
+  // Stop holds whatever is wired into it, for as long as the wire is there
+  let piHeld = false;
+  function holds() {
+    const held = new Set(); let pi = false;
+    nodes.filter(x => x.fn === "stop").forEach(st => {
+      let k = 0;
+      st.inputs.forEach(ref => { if (ref.node) { held.add(ref.node); k++; } else if (ref.core || ref.pi) { pi = true; k++; } });
+      linkIns(st).forEach(an => {
+        if (an.loop || an.h === "pi") { pi = true; k++; }
+        else if (an.h && an.h.startsWith("node:")) { held.add(an.h.slice(5)); k++; }
+      });
+      st.holds = k;
+    });
+    if (pi && !piHeld) { piHeld = true; if (!still()) run(false); }        // the π mark, counter or loop wired in: π stops
+    else if (!pi && piHeld) { piHeld = false; run(true); }                // unwired: it goes on
+    nodes.forEach(n => {
+      const was = n.held; n.held = held.has(n.id);
+      n.el.classList.toggle("is-held", n.held);
+      if (n.held && !was && n.st.ctrl) n.st.ctrl.abort();                // a question on its way is cancelled
+      if (n.held && n.st.timer) { clearTimeout(n.st.timer); n.st.timer = 0; }
+      if (!n.held && was && n.fn === "show") n.text = null;             // released: show the current value again
+    });
+  }
+
   function tick() {
     memo = {}; visiting = {};
+    holds();
     const now = performance.now();
     nodes.forEach(n => {
       const r = evalNode(n);
+      if (n.held && n.fn === "show") return;                             // held by Stop: frozen as it is
       if (n.text !== r.text) {
         n.text = r.text; n.changed = now;
         if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
-        else if (n.fn === "super" || n.fn === "panel") n.val.textContent = n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
-        else n.val.textContent = r.text;
+        else if (n.fn !== "super" && n.fn !== "panel") n.val.textContent = r.text;
+      }
+      if (n.fn === "super" || n.fn === "panel") {                         // its status, always current
+        const st = n.held ? "stopped" : n.st.go ? "thinking…" : n.answer ? "answered" : n.prompt ? "press to ask" : "wire a prompt";
+        if (n.val.textContent !== st) n.val.textContent = st;
       }
       if (n.fn === "show") n.el.classList.toggle("is-long", r.text.length > 28 || /\n/.test(r.text));
       if (n.fn === "super" || n.fn === "panel") {
         const w = wiringOf(n) + (n.fn === "panel" ? "|" + (n.supAnswer || "") : "");   // the panel also follows the engine's answers
-        if (n.wiring !== undefined && w !== n.wiring && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "panel" ? askPanel(n) : askEngine(n)), n.fn === "panel" ? 1500 : 900); }
+        if (n.wiring !== undefined && w !== n.wiring && n.prompt && !n.held) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "panel" ? askPanel(n) : askEngine(n)), n.fn === "panel" ? 1500 : 900); }
         n.wiring = w;
       }
       n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
@@ -431,6 +463,7 @@
       else if (n.fn === "cut") cut();
       else if (n.fn === "super") askEngine(n, true);
       else if (n.fn === "panel") askPanel(n, true);
+      else if (n.fn === "stop" && n.holds) say("Stop: holding " + n.holds + " (unwire it to let them go)");
       else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
@@ -486,19 +519,23 @@
     const prompt = n.prompt || "";
     if (!prompt) { if (pressed) say("Super Neural Engine: wire something into it first"); return; }
     if (n.st.go) return;
+    if (n.held) { say("Super Neural Engine: stopped (it is wired to Stop)"); return; }
     // what the wiring means: if its words name a window, open it, then ask the engines too
     const meant = window.SuperLink && window.SuperLink.intent ? window.SuperLink.intent([prompt]) : null;
     const opened = meant && O().openTitle && O().openTitle(meant) ? "Opened " + meant + ".\n" : "";
     n.st.go = true; n.st.asked = prompt; n.el.classList.add("is-thinking"); grow(n); tick();
     say("Super Neural Engine: asking every engine about “" + clip(prompt) + "”");
     try {
-      const res = await fetch("/api/super/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.slice(0, 4000) }) });
+      n.st.ctrl = new AbortController();
+      const res = await fetch("/api/super/ask", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ prompt: prompt.slice(0, 4000) }), signal: n.st.ctrl.signal });
       const data = await res.json().catch(() => ({}));
       n.answer = opened + (res.ok ? (data.answer || "No engine had an answer for that.") : "Super Neural Engine: " + (data.detail || "unavailable right now"));
       if (res.ok) say("Super Neural Engine: " + (data.parts || []).map(x => x.engine).join(", ") + " answered");
-    } catch (_) {
-      n.answer = opened + "Super Neural Engine: could not reach the engines";
+    } catch (e) {
+      if (e && e.name === "AbortError") say("Super Neural Engine: stopped");
+      else n.answer = opened + "Super Neural Engine: could not reach the engines";
     }
+    n.st.ctrl = null;
     n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
     persist(); tick();
   }
@@ -506,15 +543,21 @@
     const prompt = n.prompt || "";
     if (!prompt) { if (pressed) say("Ask the panel: wire the Super Neural Engine (or some text) into it first"); return; }
     if (n.st.go) return;
+    if (n.held) { say("Ask the panel: stopped (it is wired to Stop)"); return; }
     n.st.go = true; n.el.classList.add("is-thinking"); tick();
     say("Ask the panel: every juror is answering “" + clip(prompt) + "”");
     try {
-      const res = await fetch("/api/super/panel", { method: "POST", headers: { "Content-Type": "application/json" },
+      n.st.ctrl = new AbortController();
+      const res = await fetch("/api/super/panel", { method: "POST", headers: { "Content-Type": "application/json" }, signal: n.st.ctrl.signal,
         body: JSON.stringify({ prompt: prompt.slice(0, 4000), context: (n.context || "").slice(0, 4000) }) });
       const data = await res.json().catch(() => ({}));
       n.answer = res.ok ? (data.answer || "The panel had no answer.") : "Ask the panel: " + (data.detail || "unavailable right now");
       if (res.ok) say("Ask the panel: " + (data.answered || 0) + " of " + (data.asked || 0) + " answered" + (data.judge && data.judge.agreement ? ", agreement " + data.judge.agreement : ""));
-    } catch (_) { n.answer = "Ask the panel: could not reach the panel"; }
+    } catch (e) {
+      if (e && e.name === "AbortError") say("Ask the panel: stopped");
+      else n.answer = "Ask the panel: could not reach the panel";
+    }
+    n.st.ctrl = null;
     n.st.go = false; n.el.classList.remove("is-thinking");
     persist(); tick();
   }
