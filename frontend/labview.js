@@ -61,7 +61,7 @@
 
   // ---- the diagram -----------------------------------------------------
   let nodes = [];           // { id, fn, fx, fy, inputs: [ref], st: {go, t, sn, timer, ctrl}, text, changed, el }
-  let canvas, wires, out, pal, dragging = null, fold = () => {};
+  let canvas, wires, out, pal, dragging = null;
   const ZERO = { num: 0, bool: false, str: "" };
 
   function refOf(el) {
@@ -474,7 +474,6 @@
         moved = true;
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
-        if (window.innerWidth < 700) fold();      // on a phone the palette steps aside: its tab is still the bin
         html.classList.add("lv-dragging");
       }
       n.fx = (ev.clientX - dx) / window.innerWidth; n.fy = (ev.clientY - dy) / window.innerHeight;
@@ -670,25 +669,17 @@
     pal = document.createElement("aside");
     pal.className = "lv-palette";
     pal.setAttribute("aria-label", "Functions palette");
-    let open = false, chosen = false;
-    try { const s = localStorage.getItem("lv:open"); if (s !== null) { open = s === "1"; chosen = true; } } catch (_) { /* fine */ }
-    pal.innerHTML = '<button type="button" class="lv-head" aria-expanded="false"><span class="lv-title">Functions</span><span class="lv-caret" aria-hidden="true"></span></button>' +
-      '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite">Drag a node onto any number or button to wire it, or press it to run it on π</output>';
-    const grid = pal.querySelector(".lv-grid"), head = pal.querySelector(".lv-head");
+    // just the icons; what a press or a drop did is announced to screen readers
+    pal.innerHTML = '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite"></output>';
+    pal.classList.add("is-open");
+    const grid = pal.querySelector(".lv-grid");
     out = pal.querySelector(".lv-out");
-    const setOpen = v => {
-      open = v; pal.classList.toggle("is-open", v); head.setAttribute("aria-expanded", String(v));
-      setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
-    };
-    fold = () => setOpen(false);
-    head.addEventListener("click", () => { chosen = true; setOpen(!open); try { localStorage.setItem("lv:open", open ? "1" : "0"); } catch (_) { /* fine */ } });
-    pal.classList.toggle("is-open", open); head.setAttribute("aria-expanded", String(open));
 
     FNS.forEach(f => {
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
-      b.title = f.name + ": press to run on π, drag onto a button to wire it";
+      b.title = f.name + ": " + HELP[f.k];
       b.setAttribute("aria-label", f.name);
       glyph(b, f);
       b.addEventListener("pointerdown", e => drag(e, b, f));
@@ -701,22 +692,9 @@
     });
     document.body.appendChild(pal);
 
-    // unless you chose, it starts open only where it has room beside the diagram
-    const roomy = () => {
-      pal.classList.add("is-open");
-      const r = pal.getBoundingClientRect();
-      const hit = [...document.querySelectorAll(".orbit-bubble, .orbit-core, .orbit-pi")].some(b => {
-        if (!b.offsetParent) return false;
-        const q = b.getBoundingClientRect();
-        return !(q.right <= r.left || r.right <= q.left || q.bottom <= r.top || r.bottom <= q.top);
-      });
-      pal.classList.toggle("is-open", open);
-      return !hit;
-    };
-    const decide = () => { if (!chosen) setOpen(window.innerWidth >= 700 && roomy()); };
-    setTimeout(decide, 1200);
+    setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
     let rt = 0;
-    window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { decide(); nodes.forEach(place); drawWires(); }, 200); });
+    window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { nodes.forEach(place); drawWires(); }, 200); });
 
     // the diagram you left last time
     (restore("lv:nodes") || []).forEach(make);
