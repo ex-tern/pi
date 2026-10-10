@@ -21,6 +21,10 @@
 // or divide by the rest. Show is an empty box: wire anything into it and it
 // shows that value inside itself. Play runs π, Stop stops it (the same as
 // double-clicking the π mark); everything wired to π follows.
+// Super is the pill star (a superellipse at n = γ). Press it on the page and it
+// starts: n climbs from γ to π and the star grows into a full superellipse; its
+// value is n, so Show or + can read it. Stop pauses it, Play goes on; press the
+// grown shape to make it a star again.
 // Scissors captures pixels from the screen: press it, choose the screen, window
 // or tab to share, drag a box over what you want, and the cut-out lands on the
 // page as a Clip node (its value is its size, "120×80"). Click a clip to save
@@ -39,9 +43,11 @@
     { k: "sub", g: "−", name: "Subtract", n: 9 },
     { k: "mul", g: "×", name: "Multiply", n: 9 },
     { k: "div", g: "÷", name: "Divide", n: 9 },
-    { k: "play", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },   // the icon is a superellipse diamond, n = 1.3
+    { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
+    { k: "flip", svg: sq + '<path d="M16.80 10.00L16.75 10.19L16.60 10.55L16.35 11.01L16.02 11.55L15.60 12.14L15.12 12.75L14.58 13.38L13.99 13.99L13.38 14.58L12.75 15.12L12.14 15.60L11.55 16.02L11.01 16.35L10.55 16.60L10.19 16.75L10.00 16.80L9.81 16.75L9.45 16.60L8.99 16.35L8.45 16.02L7.86 15.60L7.25 15.12L6.62 14.58L6.01 13.99L5.42 13.38L4.88 12.75L4.40 12.14L3.98 11.55L3.65 11.01L3.40 10.55L3.25 10.19L3.20 10.00L3.25 9.81L3.40 9.45L3.65 8.99L3.98 8.45L4.40 7.86L4.88 7.25L5.42 6.62L6.01 6.01L6.62 5.42L7.25 4.88L7.86 4.40L8.45 3.98L8.99 3.65L9.45 3.40L9.81 3.25L10.00 3.20L10.19 3.25L10.55 3.40L11.01 3.65L11.55 3.98L12.14 4.40L12.75 4.88L13.38 5.42L13.99 6.01L14.58 6.62L15.12 7.25L15.60 7.86L16.02 8.45L16.35 8.99L16.60 9.45L16.75 9.81Z" fill="currentColor" stroke="none"/></svg>', name: "Flip", n: 0, act: true },   // a superellipse diamond, n = 1.3: drop it on a node to swap its inputs
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
     { k: "show", g: "", name: "Show", n: 1 },
+    { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super", n: 0 },   // the pill star, n = γ
     { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
     { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
@@ -72,6 +78,8 @@
       case "play": run(true); return "π running";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
+      case "super": return "drag it out, then press it: the star grows into a superellipse as n climbs from γ to π";
+      case "flip": return "drag it onto a node to swap the order of its inputs";
       case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
     }
@@ -145,6 +153,7 @@
     if (visiting[n.id]) return { num: NaN, bool: false, text: "NaN" };
     visiting[n.id] = true;
     const ins = n.inputs.map(valueOf).concat(linkIns(n).map(valueOfAnchor)).slice(-BY[n.fn].n);
+    if (n.flip) ins.reverse();                    // Flip (◆) swapped the order
     const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "–" };
     const allNum = ins.every(v => v.isNum);   // a word, a button or a window is its name: + joins names into text
     let r;
@@ -157,6 +166,7 @@
       case "sub": r = !allNum ? none : ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
       case "mul": r = !allNum ? none : ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
       case "div": r = !allNum ? none : ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
+      case "super": { const v = n.st.sn || G(); r = { num: v, isNum: true, bool: !!n.st.go, text: "n " + v.toFixed(3) }; break; }
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
@@ -220,7 +230,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, img: n.img, w: n.w, h: n.h, flip: n.flip || undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -237,7 +247,13 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h };
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", img: spec.img, w: spec.w, h: spec.h, flip: !!spec.flip };
+    el.classList.toggle("is-flipped", n.flip);
+    if (f.k === "super") {
+      g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
+      n.st.sn = G(); n.st.t = 0;
+      requestAnimationFrame(() => drawSuper(n));
+    }
     if (f.k === "clip") {
       if (!n.img) return null;
       const im = document.createElement("img"); im.src = n.img; im.alt = "Clip, " + n.w + " by " + n.h + " pixels"; im.draggable = false;
@@ -342,6 +358,14 @@
       n.el.classList.remove("is-dragging"); dragging = null;
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
+      if (BY[n.fn].act) {
+        const hit = document.elementsFromPoint(ev.clientX, ev.clientY).map(e => e.closest(".lv-node")).find(e => e && e !== n.el);
+        const tn = ev.type === "pointerup" && hit && nodes.find(x => x.el === hit);
+        remove(n);
+        if (tn) { tn.flip = !tn.flip; tn.el.classList.toggle("is-flipped", tn.flip); persist(); tick(); say(BY[tn.fn].name + ": inputs " + (tn.flip ? "flipped" : "back in order") + " → " + (tn.text || "")); }
+        else say("Flip: drop it on a node to swap its inputs");
+        return;
+      }
       if (t && t.text && BY[n.fn].n && window.SuperLink && window.SuperLink.add) {
         if (n.fn === "show") { window.SuperLink.forget("node:" + n.id, true); n.inputs = []; }   // Show shows one thing: the newest
         window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
@@ -368,6 +392,7 @@
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       if (n.fn === "clip") { const a = document.createElement("a"); a.href = n.img; a.download = "clip-" + n.w + "x" + n.h + ".png"; document.body.appendChild(a); a.click(); a.remove(); say("Clip saved as a PNG"); }
       else if (n.fn === "cut") cut();
+      else if (n.fn === "super") startSuper(n);
       else if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
@@ -381,6 +406,45 @@
   function say(t) { if (out) out.textContent = t; }
   // Play and Stop: π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }
+  // ---- Super: a star that grows into a superellipse ---------------------
+  const G = () => (window.SeMorph && window.SeMorph.gamma) || 0.5772156649;
+  const P = () => (window.SeMorph && window.SeMorph.pi) || Math.PI;
+  function superPath(nn, r) {
+    const e = 2 / nn, pts = [];
+    for (let i = 0; i < 72; i++) {
+      const t = i / 72 * 2 * Math.PI, c = Math.cos(t), s = Math.sin(t);
+      pts.push((50 + r * Math.sign(c) * Math.pow(Math.abs(c), e)).toFixed(2) + "," + (50 + r * Math.sign(s) * Math.pow(Math.abs(s), e)).toFixed(2));
+    }
+    return "M" + pts.join("L") + "Z";
+  }
+  function drawSuper(n) {
+    const path = n.el.querySelector(".lv-star");
+    if (!path) return;
+    const g = G(), k = Math.max(0, Math.min(1, ((n.st.sn || g) - g) / (P() - g)));
+    path.setAttribute("d", superPath(n.st.sn || g, 46));
+    path.style.fillOpacity = (1 - k).toFixed(3);           // the grey star fades as it widens
+    path.style.strokeOpacity = (0.3 + 0.7 * k).toFixed(3);   // and its outline firms up
+    n.el.classList.toggle("is-grown", k >= 1);
+  }
+  const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
+  function startSuper(n) {
+    if (n.st.go) return;
+    if ((n.st.sn || 0) >= P() - 1e-6) { n.st.sn = G(); n.st.t = 0; drawSuper(n); tick(); say("Super: a star again"); return; }
+    n.st.go = true; n.st.t = n.st.t || 0;
+    let last = performance.now();
+    const step = now => {
+      if (!n.el.isConnected) { n.st.go = false; return; }
+      const dt = now - last; last = now;
+      if (!still()) n.st.t = Math.min(1, n.st.t + dt / 2400);   // Stop pauses it, Play goes on
+      const g = G(); n.st.sn = g + (P() - g) * ease(n.st.t);
+      drawSuper(n);
+      if (n.st.t < 1) requestAnimationFrame(step);
+      else { n.st.go = false; say("Super: n = π, a full superellipse"); tick(); }
+    };
+    requestAnimationFrame(step);
+    say("Super started: n climbs from γ to π");
+  }
+
   // ---- Scissors: pixels from the screen --------------------------------
   // One frame of the shared screen, window or tab; drag a box over it; the box becomes a Clip.
   let cutting = false;
