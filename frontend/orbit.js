@@ -465,8 +465,9 @@
   }
   // The loop holds everything: each time it is drawn it measures every object on the
   // page (bubbles, title, counter, palette, Live, nodes) and grows just enough that
-  // all their corners are inside |x/a|^n + |y/b|^n = 1. At n = π that is the page's
-  // own frame; for small n its sides curve in and hug the outermost objects.
+  // all their corners are inside |x/a|^n + |y/b|^n = 1, but never past the display:
+  // it always fits the screen completely. At n = π that is the page's own frame; for
+  // small n its sides curve in.
   const LOOP_M = 0.94;                                  // half-axes at scale 1: 94% of half the screen
   // With a window open the loop gathers into a small mark above the windows (a click on it closes
   // them all, as in the plain look); with none open it is the page again.
@@ -509,6 +510,8 @@
         sc = Math.max(sc, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
     });
     sc = Math.ceil(sc * 200) / 200;                      // steps of 0.5%, so it does not shimmer
+    // it fits the display completely: a superellipse never leaves its a×b box, so the box stays on screen
+    sc = Math.min(sc, (1 - 4 / Math.min(Wv, Hv)) / LOOP_M);
     const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
     loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
     if (key === loopKey) return;
