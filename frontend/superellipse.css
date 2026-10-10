@@ -41,3 +41,11 @@ html.shape-se .orbit-panel {
 }
 /* the wire terminals become small superellipses too */
 html.shape-se .wire-term { rx: 2.5px; }
+
+/* the title, drawn from superellipses in a superellipse badge (selogo.js) */
+html.shape-se .orbit-title .ot-text { display: none; }
+html.shape-se .orbit-title .se-logo { display: block; height: clamp(40px, 4.4vw, 58px); width: auto; }
+.se-logo .sel-ink { fill: var(--ink); }
+.se-logo .sel-dot { fill: var(--cobalt); }
+.se-logo .sel-badge { fill: var(--paper); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 36px; } }
