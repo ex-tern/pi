@@ -1,17 +1,24 @@
-/* superellipse.css — the superellipse ("squircle") look.
+/* superellipse.css — the superellipse look.
  *
  * On when <html> has the class shape-se: on se.pitechlab.com (by its host
  * name), wherever the server sets SCHOLARPI_SHAPE=superellipse, or with
- * ?shape=se in the address (channel.js decides). Buttons, pills, bubbles,
- * cards and windows get superellipse corners: the continuous curve of a
- * squircle instead of a circle arc. Browsers that support CSS corner-shape
- * (Chrome/Edge 139+) draw true superellipses; the others keep the same
- * radii as ordinary rounded corners.
+ * ?shape=se in the address (channel.js decides).
+ *
+ * The corners are superellipses |x|^n + |y|^n = 1, and n says what a thing is:
+ *   buttons, pills, bubbles   n = γ (0.5772…), concave corners
+ *   windows, cards            n = π (3.1415…)
+ * semorph.js computes γ and π in the page and sets --se-k-button and
+ * --se-k-window (CSS writes superellipse(K) with n = 2^K); it also animates
+ * the change of n when a window opens out of its button or closes into it.
+ * Browsers with CSS corner-shape (Chrome/Edge 139+) draw the corners; the
+ * others keep the same radii as rounded corners but still see the morph.
  */
 html.shape-se {
   --se-pill: 1.15em;     /* pills, chips and buttons, relative to their text */
   --se-card: 18px;       /* tiles and cards */
   --se-window: 26px;     /* windows */
+  --se-k-button: -0.79286;   /* log2 γ, until semorph.js has computed it */
+  --se-k-window: 1.65149;    /* log2 π */
 }
 html.shape-se .orbit-bubble,
 html.shape-se .ob-member,
@@ -21,9 +28,9 @@ html.shape-se .dl-btn,
 html.shape-se .live-tab,
 html.shape-se .ob-chat input, html.shape-se .ob-chat button {
   border-radius: var(--se-pill);
-  corner-shape: superellipse(2);
+  corner-shape: superellipse(var(--se-k-button));
 }
-html.shape-se .orbit-bubble.is-group { border-radius: 1.5em; corner-shape: superellipse(2); }
+html.shape-se .orbit-bubble.is-group { border-radius: 1.5em; corner-shape: superellipse(var(--se-k-button)); }
 html.shape-se .live-tab { border-radius: 14px 0 0 14px; }
 html.shape-se .orbit-pi,
 html.shape-se .stat-card,
@@ -33,14 +40,19 @@ html.shape-se .perf-card,
 html.shape-se .perf-next,
 html.shape-se .buddy-corpus {
   border-radius: var(--se-card);
-  corner-shape: superellipse(2);
+  corner-shape: superellipse(var(--se-k-window));
 }
 html.shape-se .orbit-panel {
   border-radius: var(--se-window);
-  corner-shape: superellipse(2);
+  corner-shape: superellipse(var(--se-k-window));
 }
 /* the wire terminals become small superellipses too */
 html.shape-se .wire-term { rx: 2.5px; }
+
+/* a window opening out of its button, or closing into it (semorph.js) */
+.se-morph { position: fixed; inset: 0; pointer-events: none; z-index: 950; overflow: visible; }
+.se-morph path { fill: var(--paper); stroke: var(--ink); stroke-width: 1.25; }
+html.shape-se .orbit-panel.se-arriving { opacity: 0; transition: none; }
 
 /* the title, drawn from superellipses in a superellipse badge (selogo.js) */
 html.shape-se .orbit-title .ot-text { display: none; }
