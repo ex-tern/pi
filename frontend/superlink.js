@@ -266,5 +266,16 @@
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), on: () => on, set: setOn, unitAt };
+  // labview.js: a node dropped on a number is wired here; a removed node takes its wires along
+  // (onlyIn: just the wires coming into it)
+  function add(a, b) {
+    if (links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([a, b]))) return;
+    links.push({ a, b }); save(); lastHtml = ""; draw();
+  }
+  function forget(h, onlyIn) {
+    const before = links.length;
+    links = links.filter(l => !((l.b && l.b.h === h) || (!onlyIn && l.a && l.a.h === h)));
+    if (links.length !== before) { save(); lastHtml = ""; draw(); }
+  }
+  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), on: () => on, set: setOn, unitAt, add, forget };
 })();
