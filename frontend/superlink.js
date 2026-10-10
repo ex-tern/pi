@@ -8,6 +8,9 @@
 // Drag from it to another word, number or character, to a bubble or window, or
 // to the main loop, and a wire joins them. Click a wire to disconnect it.
 //
+// Wiring also says what you mean: when the words at the two ends of a new wire
+// together name a window ("Assess" wired to "Manuscripts"), that window opens.
+//
 // Each end is remembered by where it lives and which occurrence it is (the
 // 2nd "Analytics" in that window), so the wire comes back after a reload and
 // whenever its window is open again. Kept in this browser as "orbit:textwires".
@@ -140,6 +143,43 @@
   }
   const centreOf = an => { if (an.loop) return null; const r = endRect(an); return r ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
 
+  // ---- intent: what the words at a wire's ends mean together -------------
+  // Each word must start like a word of the window's title (see alike), and at least two of the title's words must be
+  // named. The best covered title wins; on a tie, the shorter one.
+  const wordsOf = t => (String(t || "").match(/[\p{L}\p{N}]+/gu) || []).map(w => w.toLowerCase()).filter(w => w.length >= 3);
+  // alike: the same word, or sharing their first letters (≥ 4, and most of the shorter word):
+  // "manuscriptic" ~ "manuscripts", "assess" ~ "assessment"; "assess" ≁ "assist"
+  const alike = (a, b) => {
+    if (a === b) return true;
+    let k = 0; while (k < a.length && k < b.length && a[k] === b[k]) k++;
+    return k >= 4 && k >= Math.min(a.length, b.length) * 0.75;
+  };
+  function intent(words) {
+    const ws = [...new Set(words.flatMap(wordsOf))];
+    if (ws.length < 2) return null;
+    const titles = O().pillTitles ? O().pillTitles() : [];
+    let best = null;
+    titles.forEach(title => {
+      const tw = wordsOf(title);
+      if (tw.length < 2) return;
+      if (!ws.every(w => tw.some(x => alike(w, x)))) return;          // every wired word belongs to the title
+      const named = tw.filter(x => ws.some(w => alike(w, x))).length;
+      if (named < 2) return;
+      const score = named / tw.length;
+      if (!best || score > best.score || (score === best.score && title.length < best.title.length)) best = { title, score };
+    });
+    return best && best.title;
+  }
+  const endWords = an => an.loop ? [] : an.el ? [an.h.replace(/^[a-z#]+:?/, "").replace(/^[a-z]+:/, "")] : [an.t];
+  function act(a, b) {
+    const t = intent(endWords(a).concat(endWords(b)));
+    if (!t || !O().openTitle) return;
+    if (O().openTitle(t)) {
+      const out = document.querySelector(".lv-out");
+      if (out) out.textContent = "Opened " + t + ": you wired " + label(a) + " to " + label(b);
+    }
+  }
+
   // ---- drawing ---------------------------------------------------------
   const se = () => html.classList.contains("shape-se") && window.SeMorph;
   const term = ([x, y]) => se() ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 4.5, 4.5) + '"/>' : '<rect class="wire-term" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
@@ -250,6 +290,7 @@
         if (o && JSON.stringify(o.anchor) !== JSON.stringify(from) &&
             !links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([from, o.anchor]) || JSON.stringify([l.a, l.b]) === JSON.stringify([o.anchor, from]))) {
           links.push({ a: from, b: o.anchor }); save();
+          act(from, o.anchor);
         }
         lastHtml = ""; draw();
       };
@@ -277,5 +318,5 @@
     links = links.filter(l => !((l.b && l.b.h === h) || (!onlyIn && l.a && l.a.h === h)));
     if (links.length !== before) { save(); lastHtml = ""; draw(); }
   }
-  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), on: () => on, set: setOn, unitAt, add, forget };
+  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), on: () => on, set: setOn, unitAt, add, forget, intent };
 })();
