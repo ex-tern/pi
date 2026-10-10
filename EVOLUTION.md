@@ -1029,3 +1029,13 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 **Why:** owner: "put everything inside the main super".
 
 **Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px: no object outside the loop at n = π (scale 1, the page frame), 0.285, 0.0116, 0.01 and ∞, and with Live opened and closed; the palette covers no bubble, open or closed; a click on empty space and a tap on the small mark close windows; a double-click pauses and restarts π; the diagram, Ask SciM and window morph tests pass; no horizontal scroll, no page errors.
+
+## 2026-10-10: The main loop connects to everything
+
+**What:** the main loop (the mark) is a wire end, stored as "π" in `orbit:wires`.
+- **Bubble wires:** drag from a bubble's handle onto the loop's edge, the π counter or the mark (plain look) to wire them. In the superellipse look you can also drag from the loop's edge (`.loop-hit`, a 16 px band along the curve) onto any bubble. The wire meets the loop where it faces the bubble (`loopPoint`), leaving the bubble by the side facing it. Click to disconnect, as with the other wires; the loop lights up while a wire is held over it.
+- **Diagram nodes:** they meet the loop the same way. A node dropped on the loop's edge takes it as an input; a drop on empty space inside it still just places the node (`nearLoop`).
+
+**Why:** owner: "main super can connect to everything".
+
+**Verified:** pytest at baseline (12 failed, 420 passed); `build_hal.py` builds. Browser at 1440 and 390 px (superellipse look) and 1280×720 plain: Lab handle → counter or mark saves ["Lab","π"] and draws it; loop edge → Tools saves ["π","Tools"]; a click removes a loop wire; Add dropped on the loop edge takes it as input, Subtract dropped on empty space stays unwired; no horizontal scroll, no page errors.

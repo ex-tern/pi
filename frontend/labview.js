@@ -8,7 +8,8 @@
 //
 //   a pill, bubble or window   number: how often you have opened it
 //                              Boolean: whether its window is open
-//   the π mark                 number: the newest digit of π; Boolean: π running
+//   the π mark (the main loop) number: the newest digit of π; Boolean: π running
+//                              (in the superellipse look, drop on the loop's edge)
 //   the π counter              number: decimals computed so far
 //   another node               its output
 //
@@ -192,9 +193,12 @@
         const r = src.getBoundingClientRect();
         if (!r.width) return;
         const tx = nr.left, ty = nr.top + nr.height * (idx + 1) / (arity + 1);
-        const cy = r.top + r.height / 2;
-        const right = r.left + r.width / 2 <= tx;
-        const sx = right ? r.right : r.left;
+        let cy = r.top + r.height / 2;
+        let right = r.left + r.width / 2 <= tx;
+        let sx = right ? r.right : r.left;
+        if (ref.core && O().loopPoint) {                 // the main loop: the wire leaves it where it faces the node
+          const lp = O().loopPoint(tx, ty); sx = lp[0]; cy = lp[1]; right = sx <= tx;
+        }
         // a curve out of the source's side and into the node's input from the left
         const c = Math.max(30, Math.abs(tx - sx) * 0.5), sg = right ? 1 : -1;
         const d = "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
@@ -259,6 +263,8 @@
       if (self && (el === self || self.contains(el))) continue;
       if (el.closest(".lv-palette")) return { palette: true };
       const t = el.closest(TARGETS);
+      // the loop behind everything counts only on its edge, so a drop on empty space just places the node
+      if (t && t.matches(".orbit-core") && O().nearLoop && !O().nearLoop(x, y)) continue;
       if (t && t !== self) return { el: t };
     }
     return null;
