@@ -1,7 +1,6 @@
 // labview.js — a Functions palette and block diagram, like LabVIEW's.
 //
-// The palette (bottom-left) holds arithmetic, AND, Play, Stop, Show and
-// Ask SciM. Press one to run it once on the two newest digits of π.
+// The palette (bottom-left) holds Number, arithmetic, Play, Stop and Show. Press one to run it once on the two newest digits of π.
 // Drag one out and it becomes a node on the page; drop it onto any button,
 // bubble, window, the π mark, the π counter or another node and it is wired
 // to it: that thing becomes one of its inputs, and the node computes live.
@@ -13,10 +12,13 @@
 //   the π counter              number: decimals computed so far
 //   another node               its output
 //
-// Play starts π (and everything that follows it), Stop stops it: the same as
-// double-clicking the π mark. Show is an empty box: wire anything into it and
-// it shows that thing's value inside itself. Ask SciM sends the name or text
-// that reaches it to the SciM Assistant when you press it.
+// A Number node holds a number you type. Play runs the diagram and π, Stop
+// freezes both (the same as double-clicking the π mark). Show is an empty box:
+// wire anything into it and it shows that thing's value inside itself. So
+//   [Number 2] ─┐
+//               [+] ── [Show 5]        drag + onto each Number, then Show onto +
+//   [Number 3] ─┘
+// and any node can take the main loop as an input by dropping it on its edge.
 //
 // Click a wire to disconnect it. Drag a node onto the palette to remove it,
 // double-click it to unwire it. The diagram is remembered in this browser.
@@ -24,15 +26,14 @@
   "use strict";
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
   const FNS = [
+    { k: "num", g: "123", name: "Number", n: 0 },
     { k: "add", g: "+", name: "Add", n: 2 },
     { k: "sub", g: "−", name: "Subtract", n: 2 },
     { k: "mul", g: "×", name: "Multiply", n: 2 },
     { k: "div", g: "÷", name: "Divide", n: 2 },
-    { k: "and", g: "AND", name: "And", n: 2 },
     { k: "play", svg: sq + '<path d="M6.5 4.5v11l9-5.5z" fill="currentColor" stroke="none"/></svg>', name: "Play", n: 0 },
     { k: "stop", svg: sq + '<rect x="5" y="5" width="10" height="10" rx="1" fill="currentColor" stroke="none"/></svg>', name: "Stop", n: 0 },
     { k: "show", g: "", name: "Show", n: 1 },
-    { k: "ask", svg: sq + '<path d="M3 4.5h14v8.5H9l-4 3v-3H3z" fill="none"/><text x="7.4" y="11.4">?</text></svg>', name: "Ask SciM", n: 1 },
   ];
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel";
@@ -46,7 +47,6 @@
   const restore = k => { try { return JSON.parse(localStorage.getItem(k)); } catch (_) { return null; } };
 
   // ---- the quick run, from the palette ----------------------------------
-  const bits = n => (n & 15).toString(2).padStart(4, "0");
   function quick(f) {
     const d = piStr() || "31", a = +d[d.length - 2] || 3, b = +d[d.length - 1] || 1;
     switch (f.k) {
@@ -54,11 +54,10 @@
       case "sub": return a + " − " + b + " = " + (a - b);
       case "mul": return a + " × " + b + " = " + a * b;
       case "div": return b ? a + " ÷ " + b + " = " + +(a / b).toFixed(4) : a + " ÷ 0 = NaN";
-      case "and": return bits(a) + " AND " + bits(b) + " = " + bits(a & b);
+      case "num": return "drag it out and type a number; drag + onto two of them, then Show onto +";
       case "play": run(true); return "π running";
       case "stop": run(false); return "π stopped";
       case "show": return "drag it out and drop it on anything to show its value";
-      case "ask": return "drag it out, wire a button into it, press it to ask SciM about that";
       default: return "drag it onto a button to give it an input";
     }
   }
@@ -104,7 +103,6 @@
   }
   const clip = t => t.length > 28 ? t.slice(0, 27) + "…" : t;
   const strOf = v => v.str != null && v.str !== "" ? v.str : v.text || (v === ZERO ? "" : String(v.num));
-  const B = v => ({ num: v ? 1 : 0, bool: !!v, text: v ? "T" : "F" });
   const N = v => ({ num: v, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
   function evalNode(n) {
     if (!n) return ZERO;
@@ -118,11 +116,10 @@
       case "sub": r = N(a.num - b.num); break;
       case "mul": r = N(a.num * b.num); break;
       case "div": r = N(b.num ? a.num / b.num : NaN); break;
-      case "and": r = B(a.bool && b.bool); break;
+      case "num": { const v = parseFloat(String(n.str).replace(",", ".")); r = Number.isNaN(v) ? { num: 0, bool: false, text: "" } : { num: v, bool: v !== 0, text: "" }; break; }
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
       case "show": r = n.inputs[0] ? { num: a.num, bool: a.bool, str: strOf(a), text: a.text != null && a.text !== "" ? a.text : clip(strOf(a)) } : { num: 0, bool: false, text: "" }; break;
-      case "ask": { const t = strOf(a); r = { num: t.length, bool: !!t, str: t, text: n.sent ? "sent ✓" : t ? "press to ask" : "wire text in" }; break; }
       default: r = ZERO;
     }
     visiting[n.id] = false;
@@ -137,10 +134,11 @@
       const r = evalNode(n);
       if (n.text !== r.text) {
         n.text = r.text; n.changed = now;
-        if (n.fn === "show") n.el.querySelector(".lv-glyph").textContent = r.text;   // Show holds its value inside
+        if (n.fn === "show") { if (!still()) n.el.querySelector(".lv-glyph").textContent = r.text; }   // Show holds its value inside; Stop freezes it
         else n.val.textContent = r.text;
       }
-      n.el.classList.toggle("is-true", r.bool === true && n.fn === "and");
+      if (n.fn === "show" && still() && n.text !== n.el.querySelector(".lv-glyph").textContent) n.text = null;   // shown again once Play runs
+      n.el.classList.toggle("is-frozen", n.fn === "show" && still());
       n.el.classList.toggle("is-running", (n.fn === "play" && r.bool) || (n.fn === "stop" && r.bool));
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". Output " + r.text + ".");
       n.el.title = BY[n.fn].name + (n.inputs.length ? " ← " + n.inputs.map(nameOf).join(", ") : "") + "\nDrop it on a button to wire it, on the palette to remove it; double-click to unwire";
@@ -183,7 +181,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, str: n.fn === "num" ? n.str : undefined }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -200,7 +198,16 @@
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
-    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "" };
+    const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: { i: 0, paused: false }, el, val, text: "", str: spec.str != null ? spec.str : "" };
+    if (f.k === "num") {
+      const inp = document.createElement("input");
+      inp.type = "text"; inp.inputMode = "decimal"; inp.className = "lv-num"; inp.value = n.str; inp.placeholder = "0";
+      inp.setAttribute("aria-label", "Number"); inp.spellcheck = false; inp.autocomplete = "off";
+      inp.addEventListener("pointerdown", e => e.stopPropagation());
+      inp.addEventListener("keydown", e => e.stopPropagation());
+      inp.addEventListener("input", () => { n.str = inp.value; persist(); tick(); });
+      g.replaceWith(inp);
+    }
     canvas.appendChild(el);
     nodes.push(n);
     place(n);
@@ -287,10 +294,11 @@
       n.el.classList.remove("is-dragging"); dragging = null;
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
-      if (t && t.el) {
+      if (t && t.el && BY[n.fn].n) {                // Number, Play and Stop take no input: they are just placed
         const ref = refOf(t.el);
         if (attach(n, ref)) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
-      } else if (spawn) say(BY[n.fn].name + " placed: drop it on a button to wire it");
+      } else if (spawn) say(BY[n.fn].name + (n.fn === "num" ? " placed: type a number" : BY[n.fn].n ? " placed: drop it on a button to wire it" : " placed"));
+      if (spawn && n.fn === "num") setTimeout(() => { const i = n.el.querySelector("input"); if (i) i.focus(); }, 60);   // after the palette button's own focus
       persist(); tick();
     };
     startEl.addEventListener("pointermove", move);
@@ -303,7 +311,7 @@
       if (n.el.dataset.dragged) return;
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       if (n.fn === "play" || n.fn === "stop") { run(n.fn === "play"); say(n.fn === "play" ? "Play: π running" : "Stop: π stopped"); }
-      else if (n.fn === "ask") ask(n);
+      else if (n.fn === "num") { const i = n.el.querySelector("input"); if (i) i.focus(); }
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
@@ -316,22 +324,6 @@
   function say(t) { if (out) out.textContent = t; }
   // Play and Stop: π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }
-  // Ask SciM: the prompt that reaches the node goes to the SciM Assistant, only when pressed
-  function ask(n) {
-    memo = {}; visiting = {};
-    const q = strOf(valueOf(n.inputs[0])).trim();
-    if (!q) { say("Ask SciM: wire a button into it first"); return; }
-    if (!(O().openTitle && O().openTitle("SciM Assistant"))) { say("SciM Assistant is not available here"); return; }
-    setTimeout(() => {
-      const inp = document.getElementById("scilemInput"), form = document.getElementById("scilemForm");
-      if (!inp || !form) return;
-      inp.value = q;
-      if (form.requestSubmit) form.requestSubmit(); else form.dispatchEvent(new Event("submit", { cancelable: true }));
-    }, 160);
-    n.sent = true; setTimeout(() => { n.sent = false; }, 4000);
-    say("Asked SciM: " + q);
-  }
-
   // ---- the palette -----------------------------------------------------
   function build() {
     if (document.querySelector(".lv-palette")) return;
@@ -407,5 +399,5 @@
     tick();
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", build); else build();
-  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text })) };
+  window.LabView = { nodes: () => nodes.map(n => ({ id: n.id, fn: n.fn, inputs: n.inputs, out: n.text, str: n.fn === "num" ? n.str : undefined })) };
 })();
