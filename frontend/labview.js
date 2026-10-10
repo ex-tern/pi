@@ -40,6 +40,8 @@
 // Wire a Show to it to read the answer. It asks again whenever its wiring
 // changes, or when you press it; while it thinks the star grows toward a
 // superellipse (n climbing from γ to π), and it is fully grown once answered.
+// Trash deletes: drop a node on it, drop it on a node, or press it twice to
+// clear the whole diagram.
 // Scissors captures pixels from the screen: press it, choose the screen, window
 // or tab to share, drag a box over what you want, and the cut-out lands on the
 // page as a Clip node (its value is its size, "120×80"). Click a clip to save
@@ -64,6 +66,7 @@
     { k: "show", g: "", name: "Show", n: 1 },
     { k: "super", svg: sq + '<path class="lv-star" d="M18.20 10.00L17.96 10.01L17.27 10.08L16.23 10.29L14.98 10.74L13.68 11.47L12.47 12.47L11.47 13.68L10.74 14.98L10.29 16.23L10.08 17.27L10.01 17.96L10.00 18.20L9.99 17.96L9.92 17.27L9.71 16.23L9.26 14.98L8.53 13.68L7.53 12.47L6.32 11.47L5.02 10.74L3.77 10.29L2.73 10.08L2.04 10.01L1.80 10.00L2.04 9.99L2.73 9.92L3.77 9.71L5.02 9.26L6.32 8.53L7.53 7.53L8.53 6.32L9.26 5.02L9.71 3.77L9.92 2.73L9.99 2.04L10.00 1.80L10.01 2.04L10.08 2.73L10.29 3.77L10.74 5.02L11.47 6.32L12.47 7.53L13.68 8.53L14.98 9.26L16.23 9.71L17.27 9.92L17.96 9.99Z"/></svg>', name: "Super Neural Engine", n: 9 },   // the pill star, n = γ
     { k: "panel", g: "?", name: "Ask the panel", n: 9 },
+    { k: "trash", svg: sq + '<path d="M4 5.5h12M8 5.5V4h4v1.5M5.5 5.5l.8 11h7.4l.8-11M8.5 8.5v5.5M11.5 8.5v5.5"/></svg>', name: "Trash", n: 0, act: true },
     { k: "cut", svg: sq + '<circle cx="5.5" cy="14.5" r="2.6"/><circle cx="14.5" cy="14.5" r="2.6"/><path d="M7.3 12.6 15 3.5M12.7 12.6 5 3.5"/></svg>', name: "Scissors", n: 0, press: true },
     { k: "clip", g: "", name: "Clip", n: 0, hidden: true },
   ];
@@ -97,6 +100,7 @@
       case "super": return "drag it out and wire words, numbers, buttons or nodes into it: every engine answers, and a Show wired to it shows the answer";
       case "flip": return "drag it onto a node to swap the order of its inputs";
       case "panel": return "drag it out and wire the Super Neural Engine (or any text) into it: the panel of AIs that judges manuscripts answers, and the judge weighs them";
+      case "trash": return trashPress();
       case "cut": cut(); return "choose what to share, then drag a box over the pixels you want";
       default: return "drag it onto a button to give it an input";
     }
@@ -452,6 +456,8 @@
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
       pal.classList.toggle("lv-bin", !!(t && t.palette) && !spawn);
+      const tb = pal.querySelector(".lv-grid .lv-trash");                  // the trash lights up under a node about to go
+      if (tb) { const r = tb.getBoundingClientRect(); tb.classList.toggle("is-over", !spawn && ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom); }
       drawWires();
       ev.preventDefault();
     };
@@ -461,6 +467,7 @@
       startEl.removeEventListener("pointercancel", up);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       pal.classList.remove("lv-bin");
+      const tb0 = pal.querySelector(".lv-grid .lv-trash"); if (tb0) tb0.classList.remove("is-over");
       html.classList.remove("lv-dragging");
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0);
@@ -471,6 +478,10 @@
         const hit = document.elementsFromPoint(ev.clientX, ev.clientY).map(e => e.closest(".lv-node")).find(e => e && e !== n.el);
         const tn = ev.type === "pointerup" && hit && nodes.find(x => x.el === hit);
         remove(n);
+        if (n.fn === "trash") {
+          if (tn) { remove(tn); say(BY[tn.fn].name + " node deleted"); } else say("Trash: drop it on a node to delete it, or drop a node on it");
+          return;
+        }
         if (tn) { tn.flip = !tn.flip; tn.el.classList.toggle("is-flipped", tn.flip); persist(); tick(); say(BY[tn.fn].name + ": inputs " + (tn.flip ? "flipped" : "back in order") + " → " + (tn.text || "")); }
         else say("Flip: drop it on a node to swap its inputs");
         return;
@@ -606,6 +617,22 @@
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
   function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n), !!n.flip]); }
 
+  // ---- Trash: press twice to clear the diagram --------------------------
+  let trashArmed = 0;
+  function trashPress() {
+    if (!nodes.length) return "nothing to delete; drag a node onto the trash to delete it";
+    const tb = pal && pal.querySelector(".lv-grid .lv-trash");
+    if (Date.now() - trashArmed > 3000) {
+      trashArmed = Date.now(); if (tb) tb.classList.add("is-armed");
+      setTimeout(() => { if (Date.now() - trashArmed >= 3000 && tb) tb.classList.remove("is-armed"); }, 3050);
+      return "press again within 3 s to delete " + (nodes.length === 1 ? "the 1 node" : "all " + nodes.length + " nodes");
+    }
+    trashArmed = 0; if (tb) tb.classList.remove("is-armed");
+    const k = nodes.length;
+    nodes.slice().forEach(remove);
+    return "deleted " + k + " node" + (k === 1 ? "" : "s");
+  }
+
   // ---- Scissors: pixels from the screen --------------------------------
   // One frame of the shared screen, window or tab; drag a box over it; the box becomes a Clip.
   let cutting = false;
@@ -710,7 +737,9 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
-      b.title = f.press ? f.name + ": press to capture pixels from the screen" : f.name + ": press to run on π, drag onto a button to wire it";
+      b.title = f.k === "trash" ? "Trash: drag it onto a node, or a node onto it, to delete; press twice to clear the diagram"
+        : f.k === "flip" ? "Flip: drag it onto a node to swap the order of its inputs"
+        : f.press ? f.name + ": press to capture pixels from the screen" : f.name + ": press to run on π, drag onto a button to wire it";
       b.setAttribute("aria-label", f.name);
       glyph(b, f);
       if (!f.press) b.addEventListener("pointerdown", e => drag(e, b, f));
