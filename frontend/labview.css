@@ -5,21 +5,9 @@
   font-size: 12px; color: var(--ink);
   box-shadow: 0 10px 24px rgba(25, 25, 25, 0.08);
 }
-.lv-head {
-  display: flex; align-items: center; justify-content: space-between; width: 100%;
-  padding: 8px 12px; border: 0; background: transparent; color: inherit; font: inherit; font-weight: 500; cursor: pointer;
-}
-.lv-caret::before { content: "▸"; display: inline-block; color: var(--graphite); transition: transform 0.2s ease; }
-.lv-palette.is-open .lv-caret::before { transform: rotate(90deg); }
-.lv-grid, .lv-out { display: none; }
-.lv-palette.is-open { width: 236px; }
-.lv-head { gap: 10px; }
-.lv-palette.is-open .lv-grid { display: grid; grid-template-columns: repeat(5, 1fr); gap: 6px; padding: 0 10px 8px; }
-.lv-palette.is-open .lv-out {
-  display: block; margin: 0 10px 10px; padding: 6px 8px; min-height: 1.4em;
-  border-top: 1px solid var(--hair); font-family: ui-monospace, "Geist Mono", monospace; font-size: 11px; color: var(--graphite);
-  overflow-wrap: anywhere;
-}
+/* just the icons; the message line is for screen readers only */
+.lv-grid { display: grid; grid-template-columns: repeat(5, 40px); gap: 6px; padding: 8px; }
+.lv-out { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
 .lv-fn {
   height: 34px; min-width: 0; padding: 0; border: 1px solid var(--hair-strong); border-radius: 7px;
   background: var(--paper); color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
@@ -27,7 +15,7 @@
 }
 .lv-fn svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.3; fill: none; }
 .lv-fn svg text { fill: currentColor; stroke: none; font-size: 6.5px; font-weight: 600; }
-.lv-fn svg [fill="currentColor"] { fill: currentColor; }   /* Play and Stop are solid */
+.lv-fn svg [fill="currentColor"] { fill: currentColor; }   /* solid shapes */
 .lv-fn:hover { border-color: var(--ink); }
 .lv-fn:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 1px; }
 .lv-fn.fired { animation: lv-fire 0.5s ease; }
@@ -35,7 +23,6 @@
 @keyframes lv-fire { 0% { background: var(--cobalt); color: var(--paper); } 100% { background: var(--paper); } }
 @media (max-width: 700px) {
   .lv-palette { left: 10px; bottom: 10px; }
-  .lv-palette.is-open { width: min(236px, calc(100vw - 20px)); }
 }
 @media (prefers-reduced-motion: reduce) { .lv-fn.fired { animation: none; } }
 
@@ -63,7 +50,6 @@
 html.lv-dragging, html.lv-dragging * { cursor: grabbing !important; user-select: none; }
 .lv-hover { outline: 2px dashed var(--cobalt) !important; outline-offset: 3px; }
 .lv-palette.lv-bin { border-color: #b4574f; box-shadow: 0 0 0 2px rgba(180, 87, 79, 0.25); }
-.lv-palette.lv-bin .lv-out::before { content: "Drop to remove · "; color: #b4574f; }
 
 /* in the superellipse look: nodes are symmetric superellipses (n = π), the palette a window,
    the output terminal a sparkle */
@@ -116,3 +102,4 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node .lv-ans:empty { display: none; }
 .lv-node .lv-ans { max-width: min(320px, calc(100vw - 40px)); max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11.5px/1.45 ui-monospace, "Geist Mono", monospace; color: var(--ink); text-align: left; }
 .lv-fn.lv-ask { font-size: 17px; font-weight: 600; }
+
