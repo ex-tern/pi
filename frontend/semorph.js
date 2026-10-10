@@ -188,5 +188,23 @@
     run(a, b);
   }
 
-  window.SeMorph = { open, close, path: boxPath, star, nOfUse, get gamma() { return gamma; }, get pi() { return pi; } };
+  // a wire: straight runs with two superellipse corners (n = π), out of one side and into the other
+  // (horizontal) or out of the bottom and into the top; nearly straight when the ends line up
+  function wire(x1, y1, x2, y2, horizontal) {
+    const f = v => v.toFixed(1);
+    if (!horizontal) {                                            // the same, with the axes swapped
+      const d = wire(y1, x1, y2, x2, true);
+      return d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (_, a, b) => b + "," + a);
+    }
+    const dx = x2 - x1, dy = y2 - y1, sx = dx >= 0 ? 1 : -1, sy = dy >= 0 ? 1 : -1;
+    const r = Math.min(Math.abs(dx) / 2, Math.abs(dy) / 2, 26);
+    if (r < 1.5) return "M" + f(x1) + "," + f(y1) + "L" + f(x2) + "," + f(y2);
+    const mx = (x1 + x2) / 2, e = 2 / pi, K = 10, pts = [];
+    let cx = mx - r * sx, cy = y1 + r * sy;                       // first corner: from going along to going across
+    for (let i = 0; i <= K; i++) { const t = i / K * Math.PI / 2; pts.push([cx + r * sx * Math.pow(Math.sin(t), e), cy - r * sy * Math.pow(Math.cos(t), e)]); }
+    cx = mx + r * sx; cy = y2 - r * sy;                           // second corner: back to going along
+    for (let i = 0; i <= K; i++) { const t = i / K * Math.PI / 2; pts.push([cx - r * sx * Math.pow(Math.cos(t), e), cy + r * sy * Math.pow(Math.sin(t), e)]); }
+    return "M" + f(x1) + "," + f(y1) + pts.map(q => "L" + f(q[0]) + "," + f(q[1])).join("") + "L" + f(x2) + "," + f(y2);
+  }
+  window.SeMorph = { wire, open, close, path: boxPath, star, nOfUse, get gamma() { return gamma; }, get pi() { return pi; } };
 })();

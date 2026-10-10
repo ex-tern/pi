@@ -1382,6 +1382,7 @@
   const isLive = it => !!it.panel || items.some(m => m.groupOf === it && m.panel);
   // curves: out of one side and into the other, or out of the bottom and into the top
   function curve(x1, y1, x2, y2, horizontal) {
+    if (window.SeMorph && window.SeMorph.wire && document.documentElement.classList.contains("shape-se")) return window.SeMorph.wire(x1, y1, x2, y2, horizontal);
     if (horizontal) {
       const c = Math.max(28, Math.abs(x2 - x1) * 0.5), sg = x2 >= x1 ? 1 : -1;
       return "M" + x1 + "," + y1 + "C" + (x1 + sg * c) + "," + y1 + " " + (x2 - sg * c) + "," + y2 + " " + x2 + "," + y2;
