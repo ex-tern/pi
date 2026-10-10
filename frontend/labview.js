@@ -16,7 +16,8 @@
 // Wires drawn in Connect mode (superlink.js) count too: wire a number, word or
 // node to a node and it becomes one of that node's inputs.
 //
-// + adds every input, × multiplies them, − and ÷ take the first and subtract
+// + adds every input (and joins words: "Connect" + "Contact" shows
+// "Connect Contact"; a button, bubble or window counts as its name), × multiplies them, − and ÷ take the first and subtract
 // or divide by the rest. Show is an empty box: wire anything into it and it
 // shows that value inside itself. Play runs π, Stop stops it (the same as
 // double-clicking the π mark); everything wired to π follows.
@@ -110,8 +111,8 @@
   function valueOf(ref) {
     if (!ref) return ZERO;
     if (ref.node) return evalNode(nodes.find(x => x.id === ref.node));
-    if (ref.core) { const d = piStr(); return { num: +d[d.length - 1] || 0, bool: !still(), str: "π" }; }
-    if (ref.pi) { const d = piStr(); return { num: Math.max(0, d.length - 1), bool: !still(), str: d ? d[0] + "." + d.slice(1) : "π" }; }
+    if (ref.core) { const d = piStr(), v = +d[d.length - 1] || 0; return { num: v, isNum: true, bool: !still(), str: String(v) }; }
+    if (ref.pi) { const d = piStr(), v = Math.max(0, d.length - 1); return { num: v, isNum: true, bool: !still(), str: String(v) }; }
     const i = O().info && O().info(ref.key);
     return i ? { num: i.use, bool: i.open, str: i.title } : ZERO;
   }
@@ -120,7 +121,7 @@
   function valueOfAnchor(an) {
     if (an.loop) return valueOf({ core: 1 });
     if (an.h && an.h.startsWith("node:")) return valueOf({ node: an.h.slice(5) });
-    if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, bool: !!an.t, str: an.t, text: an.t }; }
+    if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, isNum: !Number.isNaN(v), bool: !!an.t, str: an.t, text: an.t }; }
     if (an.h === "pi") return valueOf({ pi: 1 });
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
     const t = an.h ? an.h.replace(/^[a-z#]+:?/, "") : ""; return { num: 0, bool: !!t, str: t };
@@ -137,7 +138,7 @@
   }
   const clip = t => t.length > 28 ? t.slice(0, 27) + "…" : t;
   const strOf = v => v.str != null && v.str !== "" ? v.str : v.text || (v === ZERO ? "" : String(v.num));
-  const N = v => ({ num: v, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
+  const N = v => ({ num: v, isNum: true, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
   function evalNode(n) {
     if (!n) return ZERO;
     if (memo[n.id]) return memo[n.id];
@@ -145,12 +146,17 @@
     visiting[n.id] = true;
     const ins = n.inputs.map(valueOf).concat(linkIns(n).map(valueOfAnchor)).slice(-BY[n.fn].n);
     const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "–" };
+    const allNum = ins.every(v => v.isNum);   // a word, a button or a window is its name: + joins names into text
     let r;
     switch (n.fn) {
-      case "add": r = ins.length ? N(nums.reduce((x, y) => x + y, 0)) : none; break;
-      case "sub": r = ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
-      case "mul": r = ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
-      case "div": r = ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
+      case "add":
+        if (!ins.length) r = none;
+        else if (allNum) r = N(nums.reduce((x, y) => x + y, 0));
+        else { const t = ins.map(strOf).filter(Boolean).join(" "); r = { num: t.length, bool: !!t, str: t, text: clip(t) }; }
+        break;
+      case "sub": r = !allNum ? none : ins.length ? N(nums.slice(1).reduce((x, y) => x - y, nums[0])) : none; break;
+      case "mul": r = !allNum ? none : ins.length ? N(nums.reduce((x, y) => x * y, 1)) : none; break;
+      case "div": r = !allNum ? none : ins.length ? N(nums.slice(1).some(y => !y) ? NaN : nums.slice(1).reduce((x, y) => x / y, nums[0])) : none; break;
       case "clip": r = { num: (n.w || 0) * (n.h || 0), bool: !!n.img, str: (n.w || 0) + "×" + (n.h || 0), text: (n.w || 0) + "×" + (n.h || 0) }; break;
       case "play": r = { num: still() ? 0 : 1, bool: !still(), text: still() ? "stopped" : "running" }; break;
       case "stop": r = { num: still() ? 1 : 0, bool: still(), text: still() ? "stopped" : "running" }; break;
