@@ -85,7 +85,7 @@
     if (el.matches(".lv-node")) return { node: el.dataset.id };
     if (el.matches(".orbit-core")) return { core: 1 };
     if (el.matches(".orbit-pi")) return { pi: 1 };
-    if (el.matches(".se-port")) return { port: el.dataset.port };
+    if (el.matches(".se-port")) return { port: el.dataset.pid || el.dataset.port };
     if (el.matches(".orbit-panel")) { const k = O().keyOf && O().keyOf(el); return k ? { key: k } : null; }
     if (el.dataset.key) return { key: el.dataset.key };
     return null;
@@ -102,7 +102,7 @@
     if (ref.node) { const n = nodes.find(x => x.id === ref.node); return n ? BY[n.fn].name + " node" : "a node"; }
     if (ref.core) return "the π mark";
     if (ref.pi) return "the π counter";
-    if (ref.port) return "the site's " + ref.port + " port";
+    if (ref.port) { const S = window.SeSite, [o, nm] = ref.port.includes("/") ? ref.port.split("/") : ["site", ref.port]; return (S && S.ownerName ? S.ownerName(o) : "the site") + "'s " + nm + " port"; }
     const i = O().info && O().info(ref.key);
     return i ? i.title : ref.key;
   }
@@ -378,11 +378,46 @@
   function feedPorts() {
     const S = window.SeSite, SL = window.SuperLink;
     if (!S || !SL || !SL.links) return;
-    const into = port => SL.links().map(l => (l.a && l.a.h === "port:" + port) ? l.b : (l.b && l.b.h === "port:" + port) ? l.a : null).filter(Boolean).map(valueOfAnchor);
+    const into = pid => SL.links().map(l => (l.a && l.a.h === "port:" + pid) ? l.b : (l.b && l.b.h === "port:" + pid) ? l.a : null).filter(Boolean).map(valueOfAnchor);
     const ins = into("input");
     S.setInput(ins.map(strOf).filter(Boolean).join(" "));
     const cond = into("condition");
     S.setCondition(cond.length ? cond.every(v => v.bool) : null);
+    // every other super's ports: windows (super/site.js takes them) and loops (here)
+    (S.portIds ? S.portIds() : []).forEach(pid => {
+      if (!pid.includes("/")) return;
+      const [owner, port] = pid.split("/");
+      if (port === "output") return;
+      const vals = into(pid);
+      if (owner.startsWith("node:")) feedLoop(owner.slice(5), port, vals.length ? vals : null);
+      else if (S.setPortInput) S.setPortInput(owner, port, vals.length ? vals : null);
+    });
+  }
+  // a loop's ports: input sets its count, sync steps it on every change of what is wired in (the clock
+  // then is that, not the second), condition false pauses it; its output is read by loopPort
+  function feedLoop(id, port, vals) {
+    const n = nodes.find(x => x.id === id); if (!n || n.role !== "loop") return;
+    const st = n.ports || (n.ports = { input: null, sync: null, cond: null });
+    if (port === "input") {
+      const v = vals ? vals.find(x => x && x.isNum) : null, k = v ? v.num : null;
+      if (k !== st.input) { st.input = k; if (k !== null) n.i = Math.round(k); }
+    } else if (port === "sync") {
+      const key = vals ? vals.map(x => x && x.str).join("|") : null;
+      const was = st.sync; st.sync = key;
+      n.clocked = key !== null;
+      if (key !== null && was !== null && key !== was && !n.paused && !n.held) n.i = (n.i || 0) + 1;
+    } else if (port === "condition") {
+      const held = vals ? !vals.every(x => x && x.bool) : null;
+      if (held !== st.cond) { st.cond = held; if (held !== null) n.paused = held; }
+    }
+  }
+  function loopPort(id, port) {
+    const n = nodes.find(x => x.id === id); if (!n) return ZERO;
+    if (port === "output") return evalNode(n);
+    const st = n.ports || {};
+    if (port === "input") { const v = st.input; return v == null ? ZERO : { num: v, isNum: true, bool: true, str: String(v), text: String(v) }; }
+    if (port === "sync") { const v = n.i || 0; return { num: v, isNum: true, bool: !n.paused, str: String(v), text: String(v) }; }
+    return { num: n.paused ? 0 : 1, isNum: true, bool: !n.paused, str: n.paused ? "paused" : "running", text: n.paused ? "paused" : "running" };
   }
   // LabVIEW wires: horizontal, vertical, horizontal, into the node's input terminals
   function drawWires() {
@@ -636,10 +671,11 @@
         say(BY[n.fn].name + " wired to “" + t.text.t + "”"); persist(); tick(); return;
       }
       if (t && t.el && t.el.matches(".se-port") && window.SuperLink && window.SuperLink.add) {
-        const port = t.el.dataset.port, sink = port === "input" || port === "condition";
-        const me = { h: "node:" + n.id, el: 1 }, pa = { h: "port:" + port, el: 1 };
+        const port = t.el.dataset.port, pid = t.el.dataset.pid || port, owned = pid.includes("/");
+        const sink = port === "input" || port === "condition" || (owned && port === "sync");   // the site's sync is its clock (a source); every other sync takes a clock
+        const me = { h: "node:" + n.id, el: 1 }, pa = { h: "port:" + pid, el: 1 };
         window.SuperLink.add(sink ? me : pa, sink ? pa : me);
-        beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + (sink ? " feeds" : " takes from") + " the site's " + port + " port"); persist(); tick(); return;
+        beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + (sink ? " feeds " : " takes from ") + nameOf({ port: pid })); persist(); tick(); return;
       }
       if (t && t.el && BY[n.fn].n) {
         const ref = refOf(t.el);
@@ -897,7 +933,7 @@
       if (f !== lastFit) { lastFit = f; nodes.forEach(place); }
       drawWires();
     });
-    setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count
+    setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held && !n.clocked) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count (a loop with a sync wired in steps on that instead)
     // zooming on a node (a trackpad pinch, or ctrl + wheel; two fingers on a touch screen) sizes it;
     // scrolling stays what it is everywhere: the page's n
     document.addEventListener("wheel", e => {
@@ -917,7 +953,7 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     // super/scroll.js: a scroll on a node sizes it
-    window.LabView = { zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+    window.LabView = { loopPort, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {

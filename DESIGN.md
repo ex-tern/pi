@@ -78,7 +78,10 @@ still drawn at page size but takes no clicks, and the π counter hides. Its n is
 **The lattice.** The site is wired to the main super LabVIEW style through four ports on the sides of
 the inner super: **input** (left; whatever is wired into it is the site's question, sent to every
 engine), **output** (right; the engines' answer, a value you can wire onward), **sync** (top; the site's
-clock, π's digit count, ticking), **condition** (bottom; wired false, the site pauses). A lattice line
+clock, π's digit count, ticking), **condition** (bottom; wired false, the site pauses). Every super is a node of the lattice: open windows and
+loops get the same four ports on their sides, and the wires follow the rule by where the ports are:
+flow left to right (an output into the next super's input), sync down into the top, condition up
+into the bottom. A lattice line
 runs from each port to the main loop: input and output straight out, sync and condition as two curves
 sweeping to either side. Every wire on the page follows the same rule: out of a side it runs nearly
 straight with small superellipse corners; out of a top or bottom it sweeps in one curve. Ports are

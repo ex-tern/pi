@@ -39,7 +39,7 @@
     if (!el) return null;
     let h;
     if ((h = el.closest(".lv-node"))) return { key: "node:" + h.dataset.id, el: h };
-    if ((h = el.closest(".se-port"))) return { key: "port:" + h.dataset.port, el: h };     // a port of the site's super (super/site.js)
+    if ((h = el.closest(".se-port"))) return { key: "port:" + (h.dataset.pid || h.dataset.port), el: h };     // a port: the site's ("input"), a window's or a loop's ("win:k/input"; super/site.js)
     if ((h = el.closest("[data-key]"))) return { key: "k:" + h.dataset.key, el: h };
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
@@ -51,7 +51,7 @@
   }
   function hostEl(key) {
     if (key.startsWith("node:")) return document.querySelector('.lv-node[data-id="' + CSS.escape(key.slice(5)) + '"]');
-    if (key.startsWith("port:")) return document.querySelector('.se-port[data-port="' + CSS.escape(key.slice(5)) + '"]');
+    if (key.startsWith("port:")) return document.querySelector('.se-port[data-pid="' + CSS.escape(key.slice(5)) + '"]');
     if (key.startsWith("k:")) {
       const all = [...document.querySelectorAll('[data-key="' + CSS.escape(key.slice(2)) + '"]')];
       return all.find(e => e.getClientRects().length) || null;
@@ -330,7 +330,7 @@
       if (e.button !== 0 || drag) return;
       let g = edgeAt(e.clientX, e.clientY);
       const port = e.target.closest && e.target.closest(".se-port");
-      if (port) g = { anchor: { h: "port:" + port.dataset.port, el: 1 }, rect: port.getBoundingClientRect(), el: port };
+      if (port) g = { anchor: { h: "port:" + (port.dataset.pid || port.dataset.port), el: 1 }, rect: port.getBoundingClientRect(), el: port };
       if (g) { e.preventDefault(); e.stopImmediatePropagation(); }       // on an edge (or a port) it wires: the thing does not move
       else if (owned(e.target)) return;
       const u = g ? null : unitAt(e.clientX, e.clientY);

@@ -12,6 +12,17 @@
 // node on it, draw a wire to it); super/nodes.js reads them as values (SeSite.value) and feeds the
 // input and condition ports from what is wired into them.
 //
+// Every super is a node of the lattice: windows and loops (a ● grown into a ring, super/nodes.js) get
+// the same four ports on their sides (SePorts here: id "<owner>/<name>", the site's are just "<name>"),
+// and the wires follow the sketch's rule by where the ports are: flow runs left to right (an output
+// into the next super's input), sync comes down into the top, condition comes up into the bottom.
+//   a window:  input   what is wired in is typed into its first field (a search, a question)
+//              output  the window's title and what it says
+//              sync    every tick of what is wired in refreshes it (its field is re-entered) and brings it up
+//              condition  wired false the window is held: dimmed, taking no input
+//   a loop (super/nodes.js reads its ports): input sets its count, sync steps it instead of the
+//              clock, condition false pauses it; its output is what is inside it, or its count
+//
 // Windows are superellipses too (n = π over their whole box): CSS corner-shape where the browser
 // has it, otherwise a clip-path polygon and an outline drawn here, so Safari sees the same shape.
 // Zooming on a window (pinch, ctrl + wheel) sizes it, like a node.
@@ -46,11 +57,100 @@
     PORTS.forEach(([p]) => { lattice[p] = svg.querySelector('.om-lattice[data-port="' + p + '"]'); });
     PORTS.forEach(([p, side]) => {
       const el = document.createElement("div");
-      el.className = "se-port se-port-" + side; el.dataset.port = p;
+      el.className = "se-port se-port-" + side; el.dataset.port = p; el.dataset.pid = p; el.dataset.owner = "site";
       el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + p + "</span>";
       el.title = { input: "input: wire a question in, every engine answers", output: "output: the site's answer", sync: "sync: the site's clock, π's digits", condition: "condition: wired false, the site pauses" }[p];
       document.body.appendChild(el); ports[p] = el;
     });
+  }
+
+  // ---- ports on every super ------------------------------------------------------------------
+  // owner: "win:<key>" (a window, by its item key) or "node:<id>" (a loop); port ids are "<owner>/<name>"
+  const owned = {};                                         // owner -> { input, output, sync, condition } elements
+  const TITLES = { input: "input: what is wired in goes into it", output: "output: what it says", sync: "sync: each tick refreshes it", condition: "condition: wired false, it is held" };
+  function ensurePorts(owner, what) {
+    if (owned[owner]) return owned[owner];
+    const set = {};
+    PORTS.forEach(([p, side]) => {
+      const el = document.createElement("div");
+      el.className = "se-port se-port-" + side + " se-port-owned"; el.dataset.port = p; el.dataset.owner = owner; el.dataset.pid = owner + "/" + p;
+      el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + p + "</span>";
+      el.title = what + ": " + TITLES[p];
+      document.body.appendChild(el); set[p] = el; ports[owner + "/" + p] = el;
+    });
+    owned[owner] = set;
+    return set;
+  }
+  function dropPorts(owner) {
+    const set = owned[owner]; if (!set) return;
+    PORTS.forEach(([p]) => { set[p].remove(); delete ports[owner + "/" + p]; });
+    delete owned[owner];
+  }
+  // the owners on the page now: open windows and loops; ports sit on the four extreme points of each
+  function layoutOwned() {
+    const seen = new Set();
+    if (on()) {
+      document.querySelectorAll(".orbit-panel").forEach(p => {
+        const key = p.item && p.item.key; if (!key || p.classList.contains("leaving")) return;
+        const r = p.getBoundingClientRect(); if (!r.width) return;
+        const owner = "win:" + key; seen.add(owner);
+        const set = ensurePorts(owner, p.item.title || key);
+        placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
+        set.input.classList.toggle("is-held", p.classList.contains("se-held"));
+      });
+      document.querySelectorAll(".lv-node.is-loop[data-id]").forEach(nd => {
+        const r = nd.getBoundingClientRect(); if (!r.width) return;
+        const owner = "node:" + nd.dataset.id; seen.add(owner);
+        const set = ensurePorts(owner, "the loop");
+        placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
+      });
+    }
+    Object.keys(owned).forEach(o => { if (!seen.has(o)) dropPorts(o); });
+  }
+  function placeAt(set, cx, cy, a, b) {
+    const pts = { input: [cx - a, cy], output: [cx + a, cy], sync: [cx, cy - b], condition: [cx, cy + b] };
+    PORTS.forEach(([p]) => { const [x, y] = pts[p], el = set[p]; const l = x + "px", t = y + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; });
+  }
+  const ownerEl = owner => owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
+    : owner.startsWith("node:") ? document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]') : null;
+  const ownerName = owner => { if (owner === "site") return "the site"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; } return "the loop"; };
+  const firstField = p => p && p.querySelector('input[type="search"], input[type="text"], input:not([type]), textarea');
+  // what a window's ports hold (a loop's are read by super/nodes.js, which owns the loops)
+  const winState = {};                                      // key -> { input, ticks, held }
+  function winValue(key, port) {
+    const p = O().elOf && O().elOf(key), st = winState[key] || {}, i = O().info && O().info(key);
+    if (port === "output") { const t = (i ? i.title : key) + (p ? ": " + (p.querySelector(".op-body") || p).innerText.trim().replace(/\s+/g, " ").slice(0, 400) : ""); return { num: t.length, bool: !!p, str: t, text: t }; }
+    if (port === "input") { const t = st.input || ""; return { num: t.length, bool: !!t, str: t, text: t }; }
+    if (port === "sync") { const v = st.ticks || 0; return { num: v, isNum: true, bool: !st.held, str: String(v), text: String(v) }; }
+    return { num: st.held ? 0 : 1, isNum: true, bool: !st.held, str: st.held ? "held" : "running", text: st.held ? "held" : "running" };
+  }
+  // super/nodes.js: what is wired into a window's ports now (values, or null for nothing wired)
+  function setPortInput(owner, port, vals) {
+    if (!owner.startsWith("win:")) return;
+    const key = owner.slice(4), p = O().elOf && O().elOf(key); if (!p) return;
+    const st = winState[key] || (winState[key] = { input: "", ticks: 0, held: false, sync: null });
+    if (port === "input") {
+      const text = (vals || []).map(v => v && (v.text != null ? v.text : v.str)).filter(Boolean).join(" ").trim();
+      if (text === st.input) return;
+      st.input = text;
+      const f = firstField(p);
+      if (f && text) { f.value = text; f.dispatchEvent(new Event("input", { bubbles: true })); f.dispatchEvent(new Event("change", { bubbles: true })); }
+    } else if (port === "sync") {
+      const v = vals && vals.length ? vals.map(x => x && x.str).join("|") : null;
+      if (v === st.sync) return;
+      const first = st.sync === null;
+      st.sync = v;
+      if (v === null || first) return;
+      st.ticks++;                                              // a tick: the window is refreshed and brought up
+      const f = firstField(p);
+      if (f && f.value) f.dispatchEvent(new Event("input", { bubbles: true }));
+      if (O().open && O().keyOf) p.dispatchEvent(new PointerEvent("pointerdown", { bubbles: true, button: 0 }));
+    } else if (port === "condition") {
+      const held = vals && vals.length ? !vals.every(x => x && x.bool) : false;
+      if (held === st.held) return;
+      st.held = held;
+      p.classList.toggle("se-held", held);
+    }
   }
 
   // the inner super: around every bubble, the same n as the main loop
@@ -91,7 +191,13 @@
 
   // ---- the ports' values ---------------------------------------------------
   const still = () => !!(O().still && O().still());
-  function value(port) {
+  function value(pid) {
+    if (pid.includes("/")) {                                 // a window's or a loop's port
+      const [owner, port] = pid.split("/");
+      if (owner.startsWith("win:")) return winValue(owner.slice(4), port);
+      const LV = window.LabView; return LV && LV.loopPort ? LV.loopPort(owner.slice(5), port) : { num: 0, bool: false, str: "", text: "" };
+    }
+    const port = pid;
     if (port === "sync") { const d = O().piDigits ? O().piDigits() : ""; const v = Math.max(0, d.length - 1); return { num: v, isNum: true, bool: !still(), str: String(v), text: String(v) }; }
     if (port === "condition") return { num: still() ? 0 : 1, isNum: true, bool: !still(), str: still() ? "paused" : "running", text: still() ? "paused" : "running" };
     if (port === "output") { const t = answer || ""; return { num: t.length, bool: !!t, str: t, text: t || (asking ? "thinking…" : inputText ? "press ↵ to ask" : "wire a question into input") }; }
@@ -230,10 +336,10 @@
     const ring = !(e.target.closest && e.target.closest(".se-port, .lv-node, .orbit-panel, .lv-palette, .orbit-title, .live-dock, .orbit-bubble")) && onRing(e.clientX, e.clientY);
     html.classList.toggle("se-ring", !!ring);
   }, true);
-  function tick() { layout(); restoreShapes(); clipWindows(); }
+  function tick() { layout(); layoutOwned(); restoreShapes(); clipWindows(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
-  document.addEventListener("se:frame:first", layout);   // super/motion.js: while something moves, every frame, before the wires
-  window.SeSite = { value, setInput, setCondition, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portEl: p => ports[p] || null };
+  document.addEventListener("se:frame:first", () => { layout(); layoutOwned(); });   // super/motion.js: while something moves, every frame, before the wires
+  window.SeSite = { value, setInput, setCondition, setPortInput, ownerName, ownerEl, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portIds: () => Object.keys(ports), portEl: p => ports[p] || null };
 })();
