@@ -200,6 +200,7 @@
         if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
           const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
           n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).filter(Boolean).join(" ").trim();
+          if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
           const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
@@ -766,7 +767,9 @@
     startEl.addEventListener("pointercancel", up);
   }
   function wireNode(n) {
-    n.el.addEventListener("pointerdown", e => drag(e, n.el, null));
+    // it takes the keyboard as soon as it is pressed: a click that moved a hair counts as a drag and never
+    // reached the click handler, so a prompt typed after it went nowhere
+    n.el.addEventListener("pointerdown", e => { if (!(e.target.closest && e.target.closest("input"))) n.el.focus({ preventScroll: true }); drag(e, n.el, null); });
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
@@ -1064,6 +1067,20 @@
       make({ id, fn: "box", role: "engine", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
       // and a Super AI super that says what to do, large, at the inner super's top left (the owner's screenshot)
       make({ id: "start", fn: "box", role: "engine", hint: "Connect wires to begin", size: 132, fx: 0.126, fy: 0.131, inputs: [], n: Math.PI });
+      // "open" and "close" supers below it, ready to wire to windows (verbs: they act on what they are wired to)
+      const sx = 0.126 * window.innerWidth, sy = 0.131 * window.innerHeight;
+      make({ id: "open", fn: "box", role: "engine", str: "open", fx: (sx + 104) / window.innerWidth, fy: (sy + 155) / window.innerHeight, inputs: [], n: Math.PI });
+      make({ id: "close", fn: "box", role: "engine", str: "close", fx: (sx - 15) / window.innerWidth, fy: (sy + 248) / window.innerHeight, inputs: [], n: Math.PI });
+      // and a "run" super between the main loop and the inner super, just above the input line, its output wired
+      // into the site's input port (the owner's screenshot)
+      const sb = O().siteBox ? O().siteBox() : null, W = window.innerWidth, H = window.innerHeight;
+      const rx = sb ? Math.max(4, sb.cx - sb.a - DOT_BASE - 10) : 0.008 * W, ry = (sb ? sb.cy : H / 2) - DOT_BASE - 16;
+      make({ id: "run", fn: "box", role: "engine", str: "run", fx: rx / W, fy: ry / H, inputs: [], n: Math.PI });
+      const wireRun = () => {
+        const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wireRun, 100);
+        SL.add({ h: "port:node:run/output", el: 1 }, { h: "port:input", el: 1 });
+      };
+      wireRun();
       persist();
     } else if (central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && nodes.find(x => x.id === id)) {
@@ -1115,6 +1132,18 @@
     }, true);
     // a wire added or deleted anywhere: values update at once
     document.addEventListener("superlink:change", () => tick());
+    // typing with nothing focused goes into the selected super (a prompt is written straight into it)
+    document.addEventListener("keydown", e => {
+      const a = document.activeElement;
+      if (e.defaultPrevented || e.ctrlKey || e.metaKey || e.altKey || !(e.key.length === 1 || e.key === "Backspace" || e.key === "Enter")) return;
+      if (a && a !== document.body && a !== document.documentElement && !a.classList.contains("orbit-stage")) return;
+      const sel = window.SeSelect && window.SeSelect.selected && window.SeSelect.selected();
+      const n = sel && sel.classList && sel.classList.contains("lv-node") && nodes.find(x => x.el === sel);
+      if (!n || !(n.role === "engine" || ((n.fn === "box" || n.fn === "dot") && !n.role))) return;
+      e.preventDefault();
+      n.el.focus({ preventScroll: true });
+      n.el.dispatchEvent(new KeyboardEvent("keydown", { key: e.key, code: e.code, shiftKey: e.shiftKey, bubbles: true, cancelable: true }));
+    });
     // a loop is moved by its ring, and takes what is inside it along
     document.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
