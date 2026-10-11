@@ -37,19 +37,27 @@
   }
   const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
 
+  // one scroll gesture stays on what it started on: a thing that shrinks under the pointer, or grows past
+  // it, keeps sizing instead of handing the rest of the gesture to the page (that was the glitch)
+  let gesture = null;   // { el (or "page" / "shape"), t }
+  const same = (what, t) => gesture && gesture.what === what && t - gesture.t < 500;
   document.addEventListener("wheel", e => {
     if (!on()) return;
     const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);          // a pinch sends small deltas
-    const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y);
-    // a thing under the pointer
-    let el = hit && hit.closest ? hit.closest(THING) : null;
-    const loop = !el && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
+    const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y), now = e.timeStamp || performance.now();
+    const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
+    gesture = { what: recent, t: now };
+    // a thing under the pointer (or the one this gesture began on)
+    let el = recent && recent !== "page" && recent !== "shape" && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
+    const loop = !el && !recent && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
     if (loop) el = loop;
+    if (recent === "page" || recent === "shape") el = null;
     if (el) {
       if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: labview.js guards the swipe
       const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first
       if (sc && !(el.classList.contains("lv-node"))) return;
       e.preventDefault(); e.stopImmediatePropagation();
+      gesture.what = el;
       if (el.classList.contains("lv-node")) window.LabView.zoomNode(el, dy);
       else if (el.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(el, dy); }
       else if (el.classList.contains("se-port")) { /* ports keep their size */ }
@@ -57,7 +65,9 @@
       return;
     }
     e.preventDefault(); e.stopImmediatePropagation();
-    if (O().inLoop && !O().inLoop(x, y)) { if (O().scrollN) O().scrollN(e); return; }   // outside the super: its shape
+    const outside = recent ? recent === "shape" : (O().inLoop && !O().inLoop(x, y));
+    gesture.what = outside ? "shape" : "page";
+    if (outside) { if (O().scrollN) O().scrollN(e); return; }                            // outside the super: its shape
     if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015));                            // inside, on nothing: zoom
   }, { capture: true, passive: false });
   // Safari's pinch comes as gesture events: never the browser's zoom

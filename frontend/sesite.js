@@ -149,6 +149,43 @@
     if (p.item && O().saveWin) O().saveWin(p.item, p);
   }
 
+  // the inner super is draggable by its ring: the bubbles and their wires move with it, and it stays inside the main loop
+  const onRing = (x, y) => {
+    if (!site) return false;
+    const d = seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n);
+    return Math.abs(d - 1) * Math.min(site.a, site.b) < 11;
+  };
+  document.addEventListener("pointerdown", e => {
+    if (!on() || e.button !== 0 || !O().moveSite || !O().siteBox) return;
+    if (e.target.closest && e.target.closest(".se-port, .lv-node, .orbit-panel, .lv-palette, .orbit-title, .live-dock, .orbit-bubble, input, button, a")) return;
+    if (!onRing(e.clientX, e.clientY)) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const b0 = O().siteBox(), f = b0.fit || 1, x0 = e.clientX, y0 = e.clientY, start = { x: b0.ox || 0, y: b0.oy || 0 };
+    let last = start, moved = false;
+    const fits = (ox, oy) => {
+      const b = O().siteBox(), cx = b.px + (b.cx - b.ox + ox - b.px) * f, cy = b.py + (b.cy - b.oy + oy - b.py) * f, a = b.a * f, bb = b.b * f;
+      return [[cx - a, cy], [cx + a, cy], [cx, cy - bb], [cx, cy + bb]].every(([px, py]) => !O().inLoop || O().inLoop(px, py));
+    };
+    const move = ev => {
+      if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      moved = true; html.classList.add("se-moving");
+      const want = { x: start.x + (ev.clientX - x0) / f, y: start.y + (ev.clientY - y0) / f };
+      if (fits(want.x, want.y)) { last = want; O().moveSite(want.x, want.y, false); layout(); }
+      ev.preventDefault();
+    };
+    const up = () => {
+      window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); window.removeEventListener("pointercancel", up, true);
+      html.classList.remove("se-moving");
+      if (moved) O().moveSite(last.x, last.y, true);
+    };
+    window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", up, true);
+  }, true);
+  // the ring says it moves
+  document.addEventListener("pointermove", e => {
+    if (!on() || e.buttons) return;
+    const ring = !(e.target.closest && e.target.closest(".se-port, .lv-node, .orbit-panel, .lv-palette, .orbit-title, .live-dock, .orbit-bubble")) && onRing(e.clientX, e.clientY);
+    html.classList.toggle("se-ring", !!ring);
+  }, true);
   function tick() { layout(); clipWindows(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
   setInterval(tick, 250);

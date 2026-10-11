@@ -659,9 +659,19 @@
   // The site's super (sesite.js draws it): an inner superellipse the bubbles are laid out in, with the
   // same n as the main loop; the lattice lines from its ports run across the gap to the main loop.
   const SITE_MX = 0.86, SITE_MY = 0.8;
+  let siteOff = load("orbit:site:offset") || { x: 0, y: 0 };
+  if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
   function siteBox() {
     const w = vw();
-    return { cx: w / 2, cy: top + H / 2, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: loopN(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2 };
+    return { cx: w / 2 + siteOff.x, cy: top + H / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: loopN(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2, ox: siteOff.x, oy: siteOff.y };
+  }
+  // sesite.js: drag the inner super's ring and the bubbles and their wires go with it
+  function moveSite(x, y, commit) {
+    siteOff = { x: Math.round(x), y: Math.round(y) };
+    const t = "translate(" + siteOff.x + "px," + siteOff.y + "px)";
+    [".orbit-bubbles", ".orbit-wires"].forEach(sel => { const el = $(sel, stage); if (el) el.style.translate = siteOff.x + "px " + siteOff.y + "px"; });
+    if (commit) store("orbit:site:offset", siteOff);
+    return t;
   }
   // the room the layout may use: inside the site's super at its usual n (π), so the frame fits the page
   function insideLoop(r) {
@@ -1945,6 +1955,7 @@
     // results): keep the orbit in step.
     const mo = new MutationObserver(() => { clearTimeout(start.t); start.t = setTimeout(layout, 120); });
     items.forEach(it => it.nodes.forEach(n => mo.observe(n, { attributes: true, attributeFilter: ["class", "hidden"] })));
+    if (siteOff.x || siteOff.y) moveSite(siteOff.x, siteOff.y, false);   // where the inner super was left
     window.addEventListener("resize", () => { clearTimeout(start.r); start.r = setTimeout(layout, 80); });
     new MutationObserver(() => { if ($(".channel-bar") && !watched.has($(".channel-bar"))) layoutSoon(); })
       .observe(document.body, { childList: true });
@@ -1978,7 +1989,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { scrollN: e => scrollN(e), zoomPage, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { scrollN: e => scrollN(e), zoomPage, moveSite, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

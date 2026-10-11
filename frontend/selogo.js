@@ -66,7 +66,8 @@
     }
     const w = x - TRACK, padX = 70, padY = 42;
     const vb = [-padX, -padY, w + 2 * padX, CAP + 2 * padY];
-    const badge = se(w / 2, CAP / 2, w / 2 + padX - 3, CAP / 2 + padY - 3, N, 160);
+    // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4)
+    const badge = se(w / 2, CAP / 2, w / 2 + padX - 3, CAP / 2 + padY - 3, (window.SeMorph && window.SeMorph.pi) || Math.PI, 160);
     return '<svg class="se-logo" viewBox="' + vb.join(" ") + '" aria-hidden="true" focusable="false">' +
            '<path class="sel-badge" d="' + badge + '"/>' + body + '</svg>';
   }
