@@ -9,6 +9,10 @@
 <link rel="manifest" href="manifest.webmanifest">
 <meta name="theme-color" content="#f6f6f4">
 <meta name="description" content="ScholarPi reviews your manuscript against CoARA-aligned criteria and gives practical feedback on what is holding a paper back.">
+<!-- The look is decided before the first paint: the orbit layout is always on (orbit.js builds it), and
+     the superellipse look on se.<domain> / super.<domain> or with ?shape=se (channel.js confirms it later
+     from /api/build). Without this the classic page showed for a moment on every load. -->
+<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");})(document.documentElement);</script>
 <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=96">
 <link rel="stylesheet" href="theme.css?v=1">
