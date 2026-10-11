@@ -535,16 +535,42 @@
     const cap = (1 - 4 / Math.min(window.innerWidth, H)) / LOOP_M, need = needAt(n);
     return need > cap ? cap / need * 0.985 : 1;
   }
+  // Windows stay inside the main loop: moved toward its centre, and made smaller only if even
+  // centred they would cross it. Not while a pointer is down (a drag or a resize in progress).
+  let pointerHeld = false;
+  document.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
+  document.addEventListener("pointerup", () => { pointerHeld = false; setTimeout(keepWindowsIn, 30); }, true);
+  document.addEventListener("pointercancel", () => { pointerHeld = false; }, true);
+  function keepWindowsIn() {
+    if (!merged() || pointerHeld || !loopG.a) return;
+    const cx = loopG.cx, cy = top + loopG.cy, { a, b, n } = loopG, pad = 6;
+    const fits = (l, t, w, h) => [l - pad, l + w + pad].every(x => [t - pad, t + h + pad].every(y => seNorm(Math.abs(x - cx) / a, Math.abs(y - cy) / b, n) <= 1));
+    document.querySelectorAll(".orbit-panel").forEach(p => {
+      if (p.classList.contains("gliding") || p.classList.contains("leaving")) return;
+      const r = p.getBoundingClientRect();
+      if (!r.width || fits(r.left, r.top, r.width, r.height)) return;
+      let w = r.width, h = r.height;
+      if (!fits(cx - w / 2, cy - h / 2, w, h)) {                          // too big even in the middle: smaller
+        let lo = 0.2, hi = 1;
+        for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (fits(cx - w * m / 2, cy - h * m / 2, w * m, h * m)) lo = m; else hi = m; }
+        w = Math.max(200, Math.floor(w * lo)); h = Math.max(120, Math.floor(h * lo));
+        p.style.width = w + "px"; p.style.height = h + "px";
+      }
+      const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
+      let lo = 0, hi = 1;                                                 // as little a move toward the centre as will do
+      for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (fits(x0 + (cx - x0) * m - w / 2, y0 + (cy - y0) * m - h / 2, w, h)) hi = m; else lo = m; }
+      p.style.left = Math.round(x0 + (cx - x0) * hi - w / 2) + "px"; p.style.top = Math.round(y0 + (cy - y0) * hi - h / 2) + "px";
+      if (p.item) saveWin(p.item, p);
+    });
+  }
   function drawLoop() {
     if (!pageLoop()) { setFit(1); if (merged()) drawMini(); return; }
     const Wv = window.innerWidth, Hv = H, n = loopN();
     const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = top + Hv / 2;
     const need = needAt(n);
-    let sc = Math.max(1, need);
-    sc = Math.ceil(sc * 200) / 200;                      // steps of 0.5%, so it does not shimmer
-    // it fits the display completely: a superellipse never leaves its a×b box, so the box stays on screen
+    // no padding: the loop always reaches the display's edges (its a×b box is the screen, less its stroke)
     const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
-    sc = Math.min(sc, cap);
+    const sc = cap;
     setFit(need > cap ? Math.max(0.05, cap / need * 0.985) : 1, cx, cy);
     if (pageFit < FIT_MIN - 0.01 && markN && !scrollN.fixing) {               // a saved n too small for this page: back up
       scrollN.fixing = true; let k = 0;
@@ -1527,7 +1553,7 @@
       move(e);
     });
   }
-  setInterval(() => { if (document.visibilityState === "visible") { drawWires(); seatEdges(); drawLoop(); } }, 250);
+  setInterval(() => { if (document.visibilityState === "visible") { drawWires(); seatEdges(); drawLoop(); keepWindowsIn(); } }, 250);
 
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered

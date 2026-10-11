@@ -355,6 +355,15 @@
       window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", end, true);
       window.addEventListener("pointercancel", end, true);
     }, true);
+    // a double click on wires lying on top of each other (a bubble wire and a text wire, say) deletes them all,
+    // so a wire never seems to survive its double click
+    document.addEventListener("dblclick", e => {
+      if (!e.isTrusted || !document.elementsFromPoint) return;
+      const hits = document.elementsFromPoint(e.clientX, e.clientY).filter(el => el.classList && el.classList.contains("wire-hit"));
+      if (hits.length < 2) return;
+      const seen = new Set([hits[0].ownerSVGElement]);
+      hits.slice(1).forEach(h => { if (seen.has(h.ownerSVGElement)) return; seen.add(h.ownerSVGElement); h.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: e.clientX, clientY: e.clientY })); });
+    }, true);
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });
   }

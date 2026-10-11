@@ -195,3 +195,9 @@ html.shape-se .lv-node.lv-dot.has-val, .lv-node.lv-dot.has-val { border-radius: 
 .lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), html.shape-se .lv-node.lv-box:has(.lv-in), html.shape-se .lv-node.lv-dot:has(.lv-in) { width: var(--lv-s, 56px); padding: 0; }
 .lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) * 0.8); min-width: 0; max-width: none; field-sizing: fixed; }
 .lv-node .lv-glyph { white-space: nowrap; overflow: hidden; max-width: 100%; }
+
+/* the palette, a size up */
+.lv-grid { grid-template-columns: repeat(5, 52px); gap: 8px; padding: 10px; }
+.lv-palette .lv-fn { height: 46px; }
+.lv-palette .lv-fn svg { width: 26px; height: 26px; }
+html.se-moving, html.se-moving * { cursor: grabbing !important; user-select: none; }
