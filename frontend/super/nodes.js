@@ -201,11 +201,10 @@
           const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
           n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).filter(Boolean).join(" ").trim();
           const t = n.answer || "";
-          const idle = n.held ? "held" : n.paused ? "paused" : "running";
+          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
-          // a Super AI super shows what it is doing, not the answer squeezed into it: its output still carries the
-          // answer, and pressing it shows every engine's (superprompt.js)
-          if (n.id !== "site-box") r.text = n.st.go ? "thinking…" : t ? "answered" : typed || idle;
+          // a Super AI super: the prompt is typed straight into it and the answer shows in it, wrapped (fitText)
+          if (n.id !== "site-box") r.text = n.st.go ? "thinking…" : t || typed || idle;
           break;
         }
         const v = ins[ins.length - 1];
@@ -397,7 +396,7 @@
       }
       if (n.fn === "ask") n.el.classList.toggle("is-asking", !!(n.str || n.answer || r.text || n.st.go || n.el.contains(document.activeElement) && document.activeElement.tagName === "INPUT"));
       if (n.fn === "box" || n.fn === "ask") {
-        const long = String(n.text || "").length > 28 || /\n/.test(n.text || "");
+        const long = !(n.role === "engine" && n.id !== "site-box") && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));
         n.el.classList.toggle("is-long", long);
         if (n.changed === now) clear(n);                                 // its text changed size: step out of the way
       }
@@ -525,7 +524,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -572,7 +571,7 @@
       });
       return inp;
     };
-    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0;
+    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || "";
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -773,7 +772,7 @@
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       const wired = n.inputs.length + linkIns(n).length > 0;
       if (n.fn === "super") askEngine(n, true);
-      else if (n.role === "engine" && n.id !== "site-box" && window.SuperPrompt) openBox(n);
+      else if (n.role === "engine") { n.el.focus({ preventScroll: true }); say("Super AI: type a question into it and press Enter"); }
       else if (n.fn === "ask") { if (n.prompt && !n.st.local) askPanel(n, true); else { n.el.classList.add("is-asking"); const i = n.el.querySelector("input"); if (i) i.focus(); } }
       else if (n.fn === "box" || n.fn === "dot") {
         const sym = n.fn === "box" ? "■" : "●";
@@ -796,7 +795,7 @@
       if (n.role === "engine" && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === "Backspace")) {
         e.preventDefault();
         n.str = e.key === "Backspace" ? (n.str || "").slice(0, -1) : (n.str || "") + e.key;
-        n.answer = ""; n.st.asked = ""; n.st.commit = false;
+        n.answer = ""; n.st.asked = ""; n.st.commit = false; n.hint = "";
         persist(); tick(); return;
       }
       if (n.role === "engine" && e.key === "Enter" && n.str) {          // Enter asks what was typed
@@ -831,7 +830,10 @@
     if (!target) return;
     if (!t || n.role === "loop") { target.style.fontSize = ""; return; }
     const size = n.size || 56, room = size * (n.fn === "dot" ? 0.74 : 0.82);
-    const fs = Math.max(5, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));
+    let fs = Math.max(5, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));
+    const wrap = n.role === "engine" && n.id !== "site-box";            // a Super AI super wraps its words over lines
+    if (wrap) fs = Math.max(6, Math.min(Math.min(14, Math.max(10, size * 0.1)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
+    n.el.classList.toggle("is-wrap", wrap);
     target.style.fontSize = fs.toFixed(1) + "px";
   }
   // a text or integer field inside a ■ or ●, made by its first key
@@ -927,6 +929,8 @@
       if (t) n.answer = t;
       if (r.finished) {
         n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
+        const want = Math.min(240, Math.max(n.size || DOT_BASE, Math.round(70 + Math.sqrt((n.answer || "").length) * 9)));   // room to read the answer
+        if (want > (n.size || DOT_BASE) + 4) zoomNode(n, -Math.log(want / (n.st.sizeTo || n.size || DOT_BASE)) / 0.0015);
         const got = r.engines.filter(e => r.results[e.id] && r.results[e.id].state === "ok").length;
         say("Super AI: " + got + " of " + r.engines.length + " engines answered; press it to see each answer");
         persist();
@@ -1058,6 +1062,8 @@
     const central = nodes.find(x => x.id === id);
     if (!saved && se()) {
       make({ id, fn: "box", role: "engine", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
+      // and a Super AI super that says what to do, large, at the inner super's top left (the owner's screenshot)
+      make({ id: "start", fn: "box", role: "engine", hint: "Connect wires to begin", size: 132, fx: 0.126, fy: 0.131, inputs: [], n: Math.PI });
       persist();
     } else if (central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && nodes.find(x => x.id === id)) {
