@@ -196,3 +196,14 @@ html.shape-se .lv-node.lv-dot.has-val, .lv-node.lv-dot.has-val { border-radius: 
 .lv-palette .lv-fn { height: 46px; }
 .lv-palette .lv-fn svg { width: 26px; height: 26px; }
 html.se-moving, html.se-moving * { cursor: grabbing !important; user-select: none; }
+
+/* a node is a super: the superellipse at its own n (--lv-k = log2 n) says what it is; no palette any more */
+html.shape-se .lv-palette { display: none; }
+html.shape-se .lv-out { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html.shape-se .lv-node, html.shape-se .lv-node.lv-dot, html.shape-se .lv-node.lv-box, html.shape-se .lv-node.lv-super, html.shape-se .lv-node.lv-ask, html.shape-se .lv-node.lv-add {
+  border-radius: 50%; corner-shape: superellipse(var(--lv-k, 1.65)); border: 1.5px solid var(--ink); background: var(--paper);
+}
+html.shape-se .lv-node .lv-glyph svg { display: none; }           /* the shape is the icon */
+html.shape-se .lv-node.lv-super.is-thinking { border-color: var(--cobalt); border-style: dashed; }
+html.shape-se .lv-node.lv-dot.is-loop { background: transparent; }
+html.shape-se .lv-node.lv-add .lv-glyph, html.shape-se .lv-node.lv-super .lv-glyph { font-size: 0; }

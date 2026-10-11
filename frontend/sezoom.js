@@ -51,6 +51,11 @@
     // wheel into a sideways delta, so dy above already carries it)
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault(); e.stopImmediatePropagation();
+      const recentNode = gesture && now - gesture.t < 500 && gesture.what && gesture.what.classList && gesture.what.classList.contains("lv-node") && gesture.what.isConnected ? gesture.what : null;
+      let node = recentNode || (hit && hit.closest ? hit.closest(".lv-node") : null);
+      if (!node && gesture && now - gesture.t < 500 && gesture.what && gesture.what.classList && gesture.what.dataset && gesture.what.dataset.id)
+        node = document.querySelector('.lv-node[data-id="' + gesture.what.dataset.id + '"]');   // the node was remade (it changed function): the same id
+      if (node && window.LabView && window.LabView.shapeNode) { gesture = { what: node, t: now }; window.LabView.shapeNode(node, dy); return; }   // a node: its own shape
       gesture = { what: "shape", t: now };
       if (O().scrollN) O().scrollN(e);
       return;

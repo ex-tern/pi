@@ -40,6 +40,16 @@
     { k: "ask", svg: sq + '<path d="M7.2 7.4a2.8 2.8 0 1 1 4.2 2.4c-.9.5-1.4 1.1-1.4 2.1v.6"/><path d="M10 15.4v.1" stroke-width="2.2"/></svg>', name: "Help", n: 9 },
   ];
   const RENAMED = { show: "box", stop: "box", panel: "ask" };   // diagrams saved before the five shapes
+  // A node is a super: a superellipse whose exponent n says what it is. A click on bare page makes one
+  // with a random n; shift + scroll on it changes n, and with it the function (kept as the node's n).
+  //   n < 1          a star       +  (add, join, open)
+  //   1 ≤ n < 1.7    a diamond    ◆  (the Super AI)
+  //   1.7 ≤ n < 2.6  round        ●  (an input, a pause, a loop)
+  //   2.6 ≤ n < 5    a squircle   ■  (shows, stops)
+  //   n ≥ 5          a box        ?  (help: the panel of AIs)
+  const fnOfN = n => n < 1 ? "add" : n < 1.7 ? "super" : n < 2.6 ? "dot" : n < 5 ? "box" : "ask";
+  const nOfFn = { add: 0.6, super: 1.3, dot: 2, box: Math.PI, ask: 7 };
+  const randomN = () => +Math.exp(Math.log(0.45) + Math.random() * (Math.log(9) - Math.log(0.45))).toFixed(3);
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel, .se-port";
   const html = document.documentElement;
@@ -408,7 +418,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n }))); }
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
@@ -427,6 +437,8 @@
     el.append(g, val);
     const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "" };
     n.str = spec.str || "";
+    n.n = +spec.n || nOfFn[f.k];
+    shape(n);
     const field = (cls, ph, label) => {
       const inp = document.createElement("input");
       inp.type = "text"; inp.className = cls; inp.placeholder = ph; inp.value = n.str; inp.spellcheck = false; inp.autocomplete = "off";
@@ -450,18 +462,44 @@
       const ans = document.createElement("div"); ans.className = "lv-ans"; ans.textContent = n.answer;
       g.after(q); el.appendChild(ans);
     }
-    if (f.k === "super") {
-      g.innerHTML = '<svg viewBox="0 0 100 100" aria-hidden="true"><path class="lv-star" d=""/></svg>';
-      n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || "";
-      if (n.answer) { n.st.t = 1; n.st.sn = P(); }
-      requestAnimationFrame(() => drawSuper(n));
-    }
+    if (f.k === "super") { g.textContent = ""; n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || ""; }   // the shape itself is the diamond
+    if (f.k === "add") g.textContent = "";
     if (n.size) sizeDot(n, n.size);
     canvas.appendChild(el);
     nodes.push(n);
     place(n);
     wireNode(n);
     return n;
+  }
+  // the node's shape: a whole superellipse at its n (CSS corner-shape; a clipped polygon where that is missing)
+  const hasCorner = typeof CSS !== "undefined" && CSS.supports && CSS.supports("corner-shape", "round");
+  function shape(n) {
+    n.el.style.setProperty("--lv-k", Math.log2(n.n).toFixed(4));
+    n.el.dataset.n = n.n.toFixed(3);
+    if (!hasCorner && window.SeMorph) { const s = n.size || DOT_BASE; n.el.style.clipPath = "path('" + window.SeMorph.star(s / 2, s / 2, s / 2, s / 2, n.n) + "')"; }
+  }
+  // shift + scroll on a node: its n, and with it what it is (the same node, same id, same wires)
+  function reshape(n, dy) {
+    const nn = Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
+    n.st.nTo = nn;
+    const fn = fnOfN(nn);
+    if (fn !== n.fn) {                                              // across a band: it becomes that function
+      const spec = { id: n.id, fn, fx: n.fx, fy: n.fy, inputs: n.inputs, n: nn, size: n.size, str: n.str, answer: n.answer };
+      const i = nodes.indexOf(n); n.el.remove(); nodes.splice(i, 1);
+      const m = make(spec); m.st.nTo = nn; say(BY[fn].name + " now"); persist(); tick(); return;
+    }
+    if (window.SeMotion) { const s = { v: n.n }; window.SeMotion.glide("shape:" + n.id, s, "v", nn, 160, () => { n.n = s.v; shape(n); }); }
+    else { n.n = nn; shape(n); }
+    clearTimeout(n.st.pt); n.st.pt = setTimeout(persist, 300);
+  }
+  // a click on bare page (no window open) makes a node there, in a random super shape
+  function spawnAt(x, y) {
+    const nn = randomN(), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const m = make({ id, fn: fnOfN(nn), fx: (x - DOT_BASE / 2) / window.innerWidth, fy: (y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
+    clear(m); persist(); tick();
+    say(BY[m.fn].name + " made, n = " + nn.toFixed(2) + ": shift + scroll to change its shape, type into it, wire it");
+    setTimeout(() => m.el.focus({ preventScroll: true }), 60);
+    return m;
   }
   function remove(n) {
     nodes = nodes.filter(x => x !== n);
@@ -553,7 +591,7 @@
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
-      pal.classList.toggle("lv-bin", !!(t && t.palette) && !spawn);
+      if (pal) pal.classList.toggle("lv-bin", !!(t && t.palette) && !spawn);
       drawWires();
       ev.preventDefault();
     };
@@ -562,7 +600,7 @@
       startEl.removeEventListener("pointerup", up);
       startEl.removeEventListener("pointercancel", up);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
-      pal.classList.remove("lv-bin");
+      if (pal) pal.classList.remove("lv-bin");
       html.classList.remove("lv-dragging");
       if (n && n.st.pinched) { n.st.pinched = false; n.el.classList.remove("is-dragging"); dragging = null; startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350); persist(); return; }
       if (!moved) return;
@@ -813,31 +851,21 @@
     });
     document.body.appendChild(canvas);
 
-    pal = document.createElement("aside");
-    pal.className = "lv-palette";
-    pal.setAttribute("aria-label", "Functions palette");
-    // just the icons; what a press or a drop did is announced to screen readers
-    pal.innerHTML = '<div class="lv-grid" role="group" aria-label="Functions"></div><output class="lv-out" aria-live="polite"></output>';
-    pal.classList.add("is-open");
-    const grid = pal.querySelector(".lv-grid");
-    out = pal.querySelector(".lv-out");
-
-    FNS.forEach(f => {
-      const b = document.createElement("button");
-      b.type = "button";
-      b.className = "lv-fn lv-" + f.k;
-      b.title = f.name;
-      b.setAttribute("aria-label", f.name);
-      glyph(b, f);
-      b.addEventListener("pointerdown", e => drag(e, b, f));
-      b.addEventListener("click", () => {
-        if (b.dataset.dragged) return;
-        b.classList.remove("fired"); void b.offsetWidth; b.classList.add("fired");
-        say(f.name + ": " + quick(f));
-      });
-      grid.appendChild(b);
+    // no palette: a click on bare page makes a node; what happened is announced to screen readers
+    out = document.createElement("output"); out.className = "lv-out"; out.setAttribute("aria-live", "polite");
+    document.body.appendChild(out);
+    let down = null;
+    document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
+    document.addEventListener("click", e => {
+      if (!html.classList.contains("shape-se") || e.button) return;
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
+      if (document.querySelector(".orbit-panel")) return;                                      // windows open: the click closes them
+      const t = e.target;
+      if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return;
+      if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return;
+      if (window.PiOrbit && window.PiOrbit.inLoop && !window.PiOrbit.inLoop(e.clientX, e.clientY)) return;   // outside the super: nothing
+      spawnAt(e.clientX, e.clientY);
     });
-    document.body.appendChild(pal);
 
     setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
     let rt = 0;
@@ -867,6 +895,7 @@
     }, { capture: true, passive: false });
     // sezoom.js: a scroll on a node sizes it
     window.LabView = { zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+                       shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {
       const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });

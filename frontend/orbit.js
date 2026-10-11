@@ -1468,7 +1468,8 @@
                  ["Explore", "SciM Assistant"], ["Connect", "Your account"], ["Lab", "Library"]];
   const LOOP = "π";                                    // the main loop (the mark), wired like a bubble
   const LOOP_ITEM = { title: LOOP, loop: true, bubble: document.documentElement };
-  let WIRES = (load("orbit:wires") || WIRES_DEFAULT).filter(w => Array.isArray(w) && w.length === 2).map(w => w.slice());
+  // the superellipse look starts with nothing connected: wires are the visitor's to draw
+  let WIRES = (load("orbit:wires") || (document.documentElement.classList.contains("shape-se") ? [] : WIRES_DEFAULT)).filter(w => Array.isArray(w) && w.length === 2).map(w => w.slice());
   const saveWires = () => store("orbit:wires", WIRES);
   function wireEnd(title) {
     const it = items.find(i => i.title === title && i.bubble && !i.groupOf);

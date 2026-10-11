@@ -27,10 +27,7 @@
     document.dispatchEvent(new CustomEvent("superlink:change"));      // the diagram (labview.js) recomputes at once
   };
   let links = load().filter(l => l && l.a && l.b);
-  // the default wiring, on a first visit: the title (the site's name) into the site's input port
-  let fresh = false;
-  try { fresh = localStorage.getItem(KEY) === null; } catch (_) { /* private mode */ }
-  if (fresh && document.documentElement.classList.contains("shape-se")) links = [{ a: { h: "title", el: 1 }, b: { h: "port:input", el: 1 } }];
+  // nothing is connected at first: every wire is the visitor's to draw
   let svg, drag = null, lastHtml = "";
   const LETTER = /[\p{L}\p{M}'’]/u, DIGIT = /\p{Nd}/u;
 
