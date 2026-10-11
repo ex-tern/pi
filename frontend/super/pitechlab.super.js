@@ -52,13 +52,14 @@ window.SUPERAI_PROGRAM = {
 
   // ---- the site: bubbles, each a super holding pills (windows) ------------------------------------------
   // A bubble with a source holds every window that source makes; members name windows from anywhere.
+  // Five bubbles at the start: Lab, Library, Tools, Explore and Connect (owner, 2026-10-12). What was in About
+  // reads in Library (the papers about the project), is looked at in Explore (the numbers) or links from Connect.
   bubbles: [
     { title: "Lab", source: "lab" },
     { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
-    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science"] },
-    { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments"] },
-    { title: "About", key: "about", members: ["Architecture", "Whitepaper", "Capabilities", "Performance", "Analytics", "Minting Difficulty", "GitHub"] },
-    { title: "Connect", key: "connect", members: ["Why sign in", "Invite a researcher", "Support Pi", "Contact us"] }
+    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"] },
+    { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"] },
+    { title: "Connect", key: "connect", members: ["Your account", "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
 
   // ---- the diagram a first visit starts with ---------------------------------------------------------
@@ -183,7 +184,7 @@ window.SUPERAI_PROGRAM = {
       { label: "the assessment", x: 14, y: 300, w: 972, h: 110 },
       { label: "the site", x: 14, y: 470, w: 972, h: 100 }
     ],
-    siteRow: { x: 20, y: 500, w: 960, h: 40, extra: [{ id: "b-account", label: "Your account", opens: "Your account" }] },
+    siteRow: { x: 20, y: 500, w: 960, h: 40, extra: [] },
     supers: [
       { id: "prompt", label: "Prompt", kind: "in", x: 20, y: 120, w: 150, h: 64, input: true },
       { id: "superai", label: "Super AI", kind: "ai", x: 210, y: 128, w: 96, h: 48, probe: ["/api/super/engines", "{ready} engines"] },

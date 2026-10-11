@@ -310,6 +310,7 @@
         const mb = document.createElement("button");
         mb.type = "button"; mb.className = "ob-member"; mb.textContent = m.title;
         mb.dataset.key = m.key;
+        if (m.key === "account:Your account") { mb.classList.add("is-account"); if (m.bubble && m.bubble.dataset.signed) mb.dataset.signed = m.bubble.dataset.signed; }   // the sign-in state shows on the pill
         mb.addEventListener("click", e => { e.stopPropagation(); if (wireOnly() && e.detail) return; openItem(m); });   // superellipse look: a window opens by wiring (the keyboard still opens it)
         box.appendChild(mb);
       });
@@ -1250,8 +1251,8 @@
   // The wiring is yours: click a wire to disconnect it, drag from a bubble's
   // handle (the small terminal on its edge) onto another bubble to connect
   // them. Kept in this browser; these are the wires it starts with.
-  const WIRES_DEFAULT = [["Your account", "Tools"], ["Tools", "Explore"], ["Explore", "Library"], ["Explore", "About"],
-                 ["Explore", "SciM Assistant"], ["Connect", "Your account"], ["Lab", "Library"]];
+  const WIRES_DEFAULT = [["Connect", "Tools"], ["Tools", "Explore"], ["Explore", "Library"],
+                 ["Explore", "SciM Assistant"], ["Lab", "Library"]];
   const LOOP = "π";                                    // the main loop (the mark), wired like a bubble
   const LOOP_ITEM = { title: LOOP, loop: true, bubble: document.documentElement };
   // the superellipse look starts with nothing connected: wires are the visitor's to draw
@@ -1733,6 +1734,7 @@
       it.bubble.dataset.signed = state;
       it.bubble.setAttribute("aria-label", "Your account: " + words + ". Open");
       it.bubble.title = words.charAt(0).toUpperCase() + words.slice(1);
+      document.querySelectorAll('.ob-member[data-key="account:Your account"]').forEach(mb => { mb.dataset.signed = state; mb.setAttribute("aria-label", "Your account: " + words); });
     });
   }
 

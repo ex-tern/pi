@@ -453,3 +453,7 @@ html.orbit-linking, html.orbit-linking * { cursor: crosshair !important; }
 /* the main loop as a wire end: its edge is a handle, and it lights up when a wire is dropped on it */
 .loop-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: crosshair; }
 html.wire-target .om-page-loop, html.wire-target .om-loop, html.wire-target .om-circle { stroke: var(--cobalt); }
+/* Your account as a pill inside Connect: its mark says whether you are signed in (red out, amber one of two, green in) */
+html .ob-member.is-account::before, html.shape-se .ob-member.is-account::before { background: #c0645c; }
+html .ob-member.is-account[data-signed="partial"]::before, html.shape-se .ob-member.is-account[data-signed="partial"]::before { background: #c9a53e; }
+html .ob-member.is-account[data-signed="true"]::before, html.shape-se .ob-member.is-account[data-signed="true"]::before { background: #4f8f5a; }
