@@ -292,9 +292,8 @@ html.shape-se .orbit-bubbles, html.shape-se .orbit-title, html.shape-se .lv-pale
 html.shape-se .om-page, html.shape-se .om-site, html.shape-se .sl-layer, html.shape-se .lv-wires, html.shape-se .orbit-wires { contain: layout paint; }
 /* no wire handles beside the bubbles: a bubble wires from its edge */
 html.shape-se .wire-handle { display: none; }
-/* the title sits left of centre, clear of the sync port at the inner super's top */
-html.shape-se .orbit-title { left: 14%; }
-@media (max-width: 700px) { html.shape-se .orbit-title { left: 30%; } }
+/* the title sits in the main super's top-left corner, above the inner super (seatEdges finds its height) */
+html.shape-se .orbit-title { left: clamp(18px, 1.8vw, 40px); transform: none; }
 
 /* ports on every super (super/site.js): a window's and a loop's four ports sit on its sides, small,
    the name shown when the pointer is near; a window held by its condition port is dimmed */
@@ -365,5 +364,5 @@ html.shape-se .live-tab:hover, html.shape-se .live-list li button:hover, html.sh
 html.shape-se .arch-step:hover { border-color: inherit; }
 
 /* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
-html.shape-se .orbit-title .se-logo { height: 30px; }
-@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 24px; } }
+html.shape-se .orbit-title .se-logo { height: 24px; }   /* the snugger badge (super/logo.js padX/padY) keeps the letters the size they were at 30 px */
+@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 20px; } }

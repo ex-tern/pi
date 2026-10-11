@@ -8,6 +8,13 @@ terms, and the combined answer goes to a Show node.
     anyone  POST /api/super/ask     {prompt}  ->  {answer, parts: [{engine, text}]}
     anyone  POST /api/super/panel   {prompt, context?}  ->  {answer, jurors, judge}
 
+  The super prompt box (frontend/superprompt.js, a double click on bare page)
+  asks the same engines one by one, so each answer shows as it arrives:
+
+    anyone  GET  /api/super/engines                 ->  {engines: [{id, name, kind, about, ready}]}
+    anyone  POST /api/super/one     {engine, prompt} ->  {ok, text, model?, ms}
+    anyone  POST /api/super/weigh   {prompt, answers: [{label, answer}]} -> {ok, text, agreement}
+
     siM   the SciM assistant (assistant.answer): live state, the knowledge
           base, then optional cloud phrasing. Its answer leads.
     riB   the research buddy's ranking (rib_suggest): the assessed paper that
@@ -54,6 +61,25 @@ class Ask(BaseModel):
 class PanelAsk(BaseModel):
     prompt: str
     context: str = ""
+
+
+class OneAsk(BaseModel):
+    engine: str
+    prompt: str
+
+
+class WeighAsk(BaseModel):
+    prompt: str
+    answers: List[Dict] = []
+
+
+# The project's own engines, as the super prompt box lists them.
+PROJECT_ENGINES = [
+    {"id": "sim", "name": "siM", "about": "The SciM assistant: live data and the knowledge base"},
+    {"id": "rib", "name": "riB", "about": "The research buddy: the assessed paper that best matches, and the hot field"},
+    {"id": "pid", "name": "piD", "about": "The forecaster: what it has learned so far"},
+    {"id": "pien", "name": "PiEn", "about": "The mark's shared model: what people open for these words"},
+]
 
 
 PANEL_BUDGET = 40.0
@@ -225,7 +251,9 @@ def combine(parts: List[Dict]) -> str:
 def build_router(answer: Callable[[str], Dict], rows: Callable[[], List[Dict]], suggest: Callable, hot: Callable,
                  pid_status: Callable[[], Dict], pien_db: str, rate_limit: Callable[[Request], None],
                  jurors: Optional[List[Dict]] = None, ask_juror: Optional[Callable] = None,
-                 judge: Optional[Callable] = None, panel_rate_limit: Optional[Callable[[Request], None]] = None) -> APIRouter:
+                 judge: Optional[Callable] = None, panel_rate_limit: Optional[Callable[[Request], None]] = None,
+                 juror_ready: Optional[Callable[[str], bool]] = None,
+                 one_rate_limit: Optional[Callable[[Request, str], None]] = None) -> APIRouter:
     router = APIRouter(prefix="/api/super", tags=["super"])
 
     @router.post("/ask")
@@ -262,5 +290,93 @@ def build_router(answer: Callable[[str], Dict], rows: Callable[[], List[Dict]], 
             raise HTTPException(status_code=503, detail="The panel is not configured on this deployment.")
         res = run_panel(prompt, (req.context or "").strip(), jurors, ask_juror, judge)
         return {"answer": panel_text(res), **res, "prompt": _clip(prompt, 200)}
+
+    # ---- the super prompt box: one engine at a time ---------------------------------
+    def _engines() -> List[Dict]:
+        out = [dict(e, kind="project", ready=True) for e in PROJECT_ENGINES]
+        for j in (jurors or []):
+            ready = bool(ask_juror) and (juror_ready(j["key"]) if juror_ready else True)
+            out.append({"id": j["key"], "name": j["label"], "kind": "outside",
+                        "about": "Outside model, asked through its own provider routes" if ready
+                        else "No API key for this model on this site yet", "ready": ready})
+        return out
+
+    def _limit_one(request: Request, engine: str):
+        if one_rate_limit:
+            one_rate_limit(request, engine)
+        else:
+            rate_limit(request)
+
+    @router.get("/engines")
+    def engines():
+        return {"engines": _engines(), "judge": bool(judge)}
+
+    @router.post("/one")
+    def one(req: OneAsk, request: Request):
+        import time
+        prompt = (req.prompt or "").strip()
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Type a question first.")
+        if len(prompt) > MAX_PROMPT:
+            raise HTTPException(status_code=413, detail="Prompt is too long (max 4,000 characters).")
+        eid = (req.engine or "").strip().lower()
+        known = {e["id"]: e for e in _engines()}
+        if eid not in known:
+            raise HTTPException(status_code=404, detail="Unknown engine.")
+        _limit_one(request, eid)
+        t0 = time.time()
+        out: Dict = {"engine": eid}
+        try:
+            if eid == "sim":
+                res = answer(prompt) or {}
+                text = res.get("response") or ""
+                out.update(ok=bool(text), text=text or "The SciM assistant is switched off here.",
+                           model=res.get("source", ""))
+            elif eid == "rib":
+                text = rib_part(prompt, rows(), suggest, hot)
+                out.update(ok=bool(text), text=text or "No answer.")
+            elif eid == "pid":
+                text = pid_part(pid_status)
+                out.update(ok=bool(text), text=text or "The forecaster is not available here.")
+            elif eid == "pien":
+                text = pien_part(prompt, pien_db)
+                out.update(ok=bool(text), text=text or "PiEn has not learned anything yet.")
+            elif not known[eid]["ready"]:
+                out.update(ok=False, text="No API key for this model on this site yet.")
+            else:
+                r = ask_juror(eid, panel_prompt(prompt, "")) or {}
+                ans = str(r.get("answer") or "").strip()
+                if r.get("failed") or not ans:
+                    out.update(ok=False, text=str(r.get("failed") or "no answer"))
+                else:
+                    conf = r.get("confidence")
+                    out.update(ok=True, text=ans, model=r.get("model", ""),
+                               confidence=int(conf) if isinstance(conf, (int, float)) else None)
+        except Exception as e:                           # noqa: BLE001 -- one engine never fails the box
+            logging.warning("Super prompt: %s failed: %s", eid, e)
+            out.update(ok=False, text="This engine failed to answer.")
+        out["ms"] = int((time.time() - t0) * 1000)
+        return out
+
+    @router.post("/weigh")
+    def weigh(req: WeighAsk, request: Request):
+        _limit_one(request, "judge")
+        prompt = (req.prompt or "").strip()
+        answers = [{"label": _clip(a.get("label", "?"), 40), "answer": _clip(a.get("answer", ""), 700),
+                    "confidence": a.get("confidence", "?")}
+                   for a in (req.answers or [])[:12] if isinstance(a, dict) and str(a.get("answer") or "").strip()]
+        if not prompt or len(prompt) > MAX_PROMPT:
+            raise HTTPException(status_code=400, detail="Type a question first.")
+        if len(answers) < 2:
+            return {"ok": False, "text": "Fewer than two answers, so there is nothing to weigh."}
+        if not judge:
+            raise HTTPException(status_code=503, detail="The judge is not configured on this deployment.")
+        v = judge(judge_prompt(prompt, answers)) or {}
+        text = v.get("verdict") or v.get("answer") or ""
+        if v.get("failed") or not text:
+            return {"ok": False, "text": str(v.get("failed") or "The judge replied without a verdict.")[:200]}
+        ag = str(v.get("agreement") or "").lower()
+        return {"ok": True, "text": _clip(text, 800), "agreement": ag if ag in AGREEMENT else None,
+                "model": v.get("model", "")}
 
     return router

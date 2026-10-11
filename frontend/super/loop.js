@@ -320,11 +320,13 @@
     function seatEdges() {
       if (!merged()) return;
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
-      const fits = (l, t, r, b) => [l - 6, r + 6].every(x => [t - 6, b + 6].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, Math.PI) <= 1));
+      const fits = (l, t, r, b, n) => [l - 6, r + 6].every(x => [t - 6, b + 6].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
       if (title && title.offsetWidth) {
-        const tr = title.getBoundingClientRect(), h = tr.height;    // centred over the ctx.stage, not the screen
-        for (let y = 8; y < ctx.H() / 3; y += 2) if (fits(tr.left, ctx.top() + y, tr.right, ctx.top() + y + h)) { root.setProperty("--se-title-top", y + "px"); break; }
+        // the title sits in the corner of the main loop as it is now (not at π), so a near-box loop keeps it
+        // high, in the gap above the inner super
+        const tr = title.getBoundingClientRect(), h = tr.height, tn = Math.max(Math.PI, loopN());
+        for (let y = 8; y < ctx.H() / 3; y += 2) if (fits(tr.left, ctx.top() + y, tr.right, ctx.top() + y + h, tn)) { root.setProperty("--se-title-top", y + "px"); break; }
       }
       const pal = $(".lv-palette");
       if (pal && pal.offsetWidth) {
@@ -342,7 +344,7 @@
     }
     // The site's super (super/site.js draws it): an inner superellipse the bubbles are laid out in, with the
     // same n as the main loop; the lattice lines from its ports run across the gap to the main loop.
-    const SITE_MX = 0.86, SITE_MY = 0.8;
+    const SITE_MX = 0.92, SITE_MY = 0.86;   // bigger, with less room between it and the main loop (owner, 2026-10-11)
     let siteOff = load("orbit:site:offset") || { x: 0, y: 0 };
     if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
     // the inner super's n: the main loop's until shift + scroll inside it (on nothing) gives it one of its

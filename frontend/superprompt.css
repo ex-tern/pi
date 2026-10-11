@@ -1,0 +1,74 @@
+/* Super prompt (superprompt.js): ink on paper, cobalt for "here". */
+.sp-veil {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 9vh 16px 16px;
+  background: rgba(246, 246, 244, .72);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+.sp-veil[hidden] { display: none; }
+.sp-box {
+  width: min(880px, 100%);
+  background: var(--surface, #fff); color: var(--ink, #191919);
+  border: 1px solid var(--hair-strong, #c9c9c4); border-radius: 14px;
+  padding: 18px 18px 14px;
+  box-shadow: 0 18px 60px rgba(25, 25, 25, .12);
+  font-family: var(--font); animation: sp-in .16s ease-out;
+}
+@keyframes sp-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+.sp-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.sp-head h2 { font-size: 16px; margin: 0; font-weight: 500; }
+.sp-hint { color: var(--graphite, #6e6e6a); font-size: 13px; flex: 1; min-width: 0; }
+.sp-x { margin-left: auto; border: 0; background: none; font-size: 22px; line-height: 1; color: var(--graphite); cursor: pointer; padding: 0 4px; }
+.sp-x:hover { color: var(--ink); }
+.sp-in {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px;
+  font: 15px/1.5 var(--font); color: var(--ink);
+  background: var(--paper, #f6f6f4); border: 1px solid var(--hair, #dcdcd8); border-radius: 10px;
+  padding: 10px 12px; outline: none;
+}
+.sp-in:focus { border-color: var(--cobalt, #2f40e8); box-shadow: 0 0 0 3px rgba(47, 64, 232, .12); }
+.sp-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.sp-keys { color: var(--faint, #94948e); font-size: 12px; flex: 1; min-width: 0; }
+.sp-go { background: var(--cobalt, #2f40e8) !important; border-color: var(--cobalt, #2f40e8) !important; color: #fff !important; white-space: nowrap; }
+.sp-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px; margin-top: 14px;
+}
+.sp-note { grid-column: 1 / -1; margin: 2px 0; font-size: 13px; color: var(--graphite); }
+.sp-off { color: var(--faint, #94948e); }
+.sp-card {
+  border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px;
+  background: var(--surface, #fff); min-width: 0;
+  display: flex; flex-direction: column; max-height: 360px;
+}
+.sp-card.is-wait { border-style: dashed; }
+.sp-verdict { grid-column: 1 / -1; max-height: none; border-color: var(--ink); }
+.sp-card.is-err { background: var(--paper); }
+.sp-card header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.sp-card header strong { font-weight: 500; font-size: 14px; }
+.sp-kind { font-size: 11px; color: var(--graphite); border: 1px solid var(--hair); border-radius: 999px; padding: 0 7px; }
+.sp-meta { font: 11px var(--font-mono); color: var(--faint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.sp-copy { border: 0; background: none; color: var(--cobalt, #2f40e8); font-size: 12px; cursor: pointer; padding: 0; }
+.sp-body { font-size: 13.5px; line-height: 1.55; overflow-y: auto; overflow-wrap: anywhere; }
+.sp-body p { margin: 0 0 8px; }
+.sp-body p:last-child { margin-bottom: 0; }
+.sp-body ul { margin: 0 0 8px; padding-left: 18px; list-style: disc; }
+.sp-body li { margin: 0; padding: 0; border: 0; background: none; }
+.sp-body code { font: 12px var(--font-mono); background: var(--paper); padding: 0 3px; border-radius: 4px; }
+.sp-body pre { font: 12px/1.45 var(--font-mono); background: var(--paper); padding: 8px; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.sp-dots { display: inline-flex; gap: 4px; padding: 6px 0; }
+.sp-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--cobalt, #2f40e8); opacity: .25; animation: sp-dot 1s infinite; }
+.sp-dots i:nth-child(2) { animation-delay: .15s; }
+.sp-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes sp-dot { 50% { opacity: 1; } }
+html.shape-se .sp-box, html.shape-se .sp-card, html.shape-se .sp-in { border-radius: 22px; }
+@media (max-width: 520px) {
+  .sp-veil { padding-top: 16px; }
+  .sp-box { padding: 14px 12px 12px; }
+  .sp-hint, .sp-keys { display: none; }
+  .sp-row { justify-content: flex-end; }
+  .sp-list { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .sp-box, .sp-dots i { animation: none; } }

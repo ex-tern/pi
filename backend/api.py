@@ -173,6 +173,11 @@ def _super_judge(prompt):
     return _super_route_call("judge", prompt, [r for r in build_routes("judge") if not is_scilm_route(r)])
 
 
+def _super_juror_ready(juror):
+    from providers import build_routes
+    return bool(build_routes(juror))
+
+
 def _super_jurors():
     from brain import MODEL_REGISTRY
     return [{"key": k, "label": v["label"].split(" (")[0]} for k, v in MODEL_REGISTRY.items() if v.get("kind") == "external"]
@@ -185,7 +190,10 @@ app.include_router(_super.build_router(
     rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="scilem"),
     jurors=_super_jurors(), ask_juror=_super_ask_juror, judge=_super_judge,
     # each panel question calls up to six models: its own, stricter bucket
-    panel_rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="assess")))
+    panel_rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="assess"),
+    # the super prompt box asks each engine on its own: one bucket per engine
+    juror_ready=_super_juror_ready,
+    one_rate_limit=lambda request, engine: check_rate_limit(get_client_ip(request), bucket="sp-" + engine)))
 
 
 # ---------------------------------------------------------------------------

@@ -124,3 +124,74 @@ def test_panel_endpoint_unconfigured_is_503(tmp_path):
 def test_panel_says_when_the_judge_is_missing():
     res = super_engine.run_panel("q", "", JURORS, lambda j, q: {"answer": "a", "confidence": 1}, lambda q: {"failed": "down"})
     assert "Judge: could not be reached" in super_engine.panel_text(res)
+
+
+# ---- the super prompt box: one engine at a time -------------------------------------
+def make_box(tmp_path, ask=None, judge=None, ready=None):
+    db = tmp_path / "pien.db"
+    with sqlite3.connect(db) as c:
+        c.execute("CREATE TABLE IF NOT EXISTS opens (card TEXT PRIMARY KEY, n INTEGER NOT NULL)")
+        c.execute("INSERT OR IGNORE INTO opens VALUES ('tools:Assess Manuscripts', 9)")
+    import rib_suggest
+    hits = []
+    app = FastAPI()
+    app.include_router(super_engine.build_router(
+        answer=lambda p: {"response": "SciM on " + p, "source": "knowledge-base"},
+        rows=lambda: ROWS, suggest=rib_suggest.suggest, hot=rib_suggest.hot_topics,
+        pid_status=lambda: {"total_observations": 10}, pien_db=str(db), rate_limit=lambda r: None,
+        jurors=[{"key": "llama", "label": "Llama"}, {"key": "qwen", "label": "Qwen"}],
+        ask_juror=ask or (lambda j, q: {"answer": j + " answers", "confidence": 70, "model": j + "-m"}),
+        judge=judge or (lambda q: {"verdict": "They agree.", "agreement": "high", "model": "judge-m"}),
+        juror_ready=ready or (lambda j: True),
+        one_rate_limit=lambda r, e: hits.append(e)))
+    return TestClient(app), hits
+
+
+def test_engines_list_project_and_outside(tmp_path):
+    c, _ = make_box(tmp_path, ready=lambda j: j == "llama")
+    body = c.get("/api/super/engines").json()
+    ids = {e["id"]: e for e in body["engines"]}
+    assert [e["id"] for e in body["engines"]][:4] == ["sim", "rib", "pid", "pien"]
+    assert ids["llama"]["ready"] and not ids["qwen"]["ready"] and ids["qwen"]["kind"] == "outside"
+    assert body["judge"] is True
+
+
+def test_one_asks_each_engine_on_its_own(tmp_path):
+    c, hits = make_box(tmp_path)
+    r = c.post("/api/super/one", json={"engine": "sim", "prompt": "what is piX"}).json()
+    assert r["ok"] and r["text"] == "SciM on what is piX" and "ms" in r
+    r = c.post("/api/super/one", json={"engine": "rib", "prompt": "protein folding"}).json()
+    assert r["ok"] and "protein" in r["text"].lower()
+    r = c.post("/api/super/one", json={"engine": "llama", "prompt": "hello"}).json()
+    assert r == {**r, "ok": True, "text": "llama answers", "model": "llama-m", "confidence": 70}
+    assert hits == ["sim", "rib", "llama"]          # one rate-limit bucket per engine
+
+
+def test_one_refuses_unknown_empty_and_unconfigured(tmp_path):
+    c, _ = make_box(tmp_path, ready=lambda j: False)
+    assert c.post("/api/super/one", json={"engine": "nope", "prompt": "x"}).status_code == 404
+    assert c.post("/api/super/one", json={"engine": "sim", "prompt": "  "}).status_code == 400
+    assert c.post("/api/super/one", json={"engine": "sim", "prompt": "x" * 4001}).status_code == 413
+    r = c.post("/api/super/one", json={"engine": "qwen", "prompt": "x"}).json()
+    assert r["ok"] is False and "key" in r["text"]
+
+
+def test_one_survives_a_failing_juror(tmp_path):
+    def ask(j, q):
+        raise RuntimeError("boom")
+    c, _ = make_box(tmp_path, ask=ask)
+    r = c.post("/api/super/one", json={"engine": "llama", "prompt": "x"}).json()
+    assert r["ok"] is False and r["text"]
+    c2, _ = make_box(tmp_path, ask=lambda j, q: {"failed": "rate-limited"})
+    assert c2.post("/api/super/one", json={"engine": "qwen", "prompt": "x"}).json()["text"] == "rate-limited"
+
+
+def test_weigh_needs_two_answers_then_asks_the_judge(tmp_path):
+    seen = []
+    c, _ = make_box(tmp_path, judge=lambda q: seen.append(q) or {"verdict": "Mostly yes.", "agreement": "moderate"})
+    one = c.post("/api/super/weigh", json={"prompt": "q", "answers": [{"label": "Llama", "answer": "yes"}]}).json()
+    assert one["ok"] is False and not seen
+    r = c.post("/api/super/weigh", json={"prompt": "q", "answers": [{"label": "Llama", "answer": "yes"},
+                                                                     {"label": "Qwen", "answer": "mostly"}]}).json()
+    assert r["ok"] and r["text"] == "Mostly yes." and r["agreement"] == "moderate"
+    assert "Llama" in seen[0] and "Qwen" in seen[0]

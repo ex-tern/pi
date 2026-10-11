@@ -64,7 +64,7 @@
       body += g.svg;
       x += g.w + TRACK;
     }
-    const w = x - TRACK, padX = 70, padY = 42;
+    const w = x - TRACK, padX = 84, padY = 24;   // snug above and below; the sides keep the letters clear of the n = π ends (was 70 × 42)
     const vb = [-padX, -padY, w + 2 * padX, CAP + 2 * padY];
     // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4),
     // until shift + scroll on the title gives it an n of its own (super/scroll.js, SeLogo.setN)
