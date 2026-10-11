@@ -18,10 +18,10 @@
   dock.setAttribute("aria-label", "Live: what Pi Tech Lab is doing now");
   dock.innerHTML =
     '<button type="button" class="live-tab" aria-expanded="false"><span class="live-dot"></span><span class="live-tab-text">Live</span></button>' +
-    '<div class="live-body"><div class="live-head"><span class="live-dot"></span><b>Live</b>' +
+    '<div class="live-body"><div class="live-scroll"><div class="live-head"><span class="live-dot"></span><b>Live</b>' +
     '<span class="live-updated"></span></div>' +
     '<p class="live-status">…</p><p class="live-counts"></p>' +
-    '<h4>Latest papers</h4><ol class="live-list"></ol></div>';
+    '<h4>Latest papers</h4><ol class="live-list"></ol></div></div>';
 
   const pref = () => { try { return JSON.parse(localStorage.getItem("orbit:live:open") || "null"); } catch (_) { return null; } };
   const isOpen = () => dock.classList.contains("open");

@@ -176,14 +176,14 @@
       });
       separateWindows(fits);
     }
-    // nothing overlaps: windows push each other apart along the shorter way, step away from the nodes
-    // (a node is where you put it and stays), and when there is no room for all of them inside the
+    // nothing overlaps: windows push each other apart along the shorter way, step away from the nodes,
+    // the title and Live (those are where you put them and stay), and when there is no room for all of them inside the
     // inner super they all get a little smaller together, as the pills do, until there is
     function separateWindows(fits) {
       const GAP = 10, MIN_W = 200, MIN_H = 120;
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
-      const nodes = [...document.querySelectorAll(".lv-node")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
+      const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .live-dock.open .live-body, .live-tab")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
         .map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height }));
       let rs = wins.map(p => { const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; });
       if (rs.some(r => !r.width)) return;

@@ -103,7 +103,10 @@ html.shape-se .orbit-panel {
   resize: none;                       /* the corner is gone: zoom on the window to size it */
 }
 html.shape-se .orbit-panel .op-head { padding: 22px calc(12% + 14px) 10px; }   /* the curve cuts deepest at the top corners */
-html.shape-se .orbit-panel .op-body { padding: 12px calc(5% + 12px) calc(5% + 12px); }
+/* the window's content lives in the rectangle the super holds (about 80% of its box at n = π): the scrolling
+   body is inset by margins, not padding, so its scrollbar and its last lines stay inside the curve too */
+html.shape-se .orbit-panel .op-body { margin: 0 9% 9%; padding: 6px 10px 10px; min-height: 0; scrollbar-width: thin; }
+html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin-inline: 9%; }
 html.shape-se .orbit-panel .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
 html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
 @supports not (corner-shape: round) { html.shape-se .orbit-panel { border: 0; } }
@@ -243,7 +246,8 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
   border-radius: 50%; corner-shape: superellipse(var(--se-k-window));
 }
 html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
-html.shape-se .live-dock.open .live-body { padding: 10% 9% 12%; border-left: 1px solid var(--hair-strong); }
+html.shape-se .live-dock.open .live-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--hair-strong); }
+html.shape-se .live-dock.open .live-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 9% 8% 10% 9%; padding: 2px 6px 6px 0; scrollbar-width: thin; }
 html.shape-se .live-tab { padding: 14px 6px; }
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
 @supports not (corner-shape: round) {

@@ -42,3 +42,4 @@
 .live-list li button:hover { color: var(--cobalt); }
 .live-list li.none { color: var(--graphite); }
 .live-dock.ping .live-head .live-dot { animation: live-pulse 0.5s ease-in-out 3; }
+.live-scroll { display: block; }
