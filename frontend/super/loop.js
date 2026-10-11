@@ -102,7 +102,9 @@
         if (!r.width || !r.height) return;
         // the corners at full size: what is on screen, unscaled about the pivot (by whichever factor scaled it)
         const site = !!(siteEl(el) || el.closest(".orbit-bubbles")), k = site ? f : fitOther;
-        for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
+        // the title is a rounded badge: the corners of its box are empty, so they are checked a little inside it
+        const m = el.classList.contains("orbit-title") ? -0.3 * Math.min(r.width, r.height) : 6;
+        for (const x of [r.left - m, r.right + m]) for (const y of [r.top - m, r.bottom + m])
           corners.push([px + (x - px) / k, py + (y - py) / k, site]);
       });
       measuredAt = performance.now();
@@ -325,13 +327,13 @@
     function seatEdges() {
       if (!merged()) return;
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
-      const fits = (l, t, r, b, n) => [l - 6, r + 6].every(x => [t - 6, b + 6].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
+      const fits = (l, t, r, b, n, m = 6) => [l - m, r + m].every(x => [t - m, b + m].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
       if (title && title.offsetWidth) {
         // the title sits in the corner of the main loop as it is now (not at π), so a near-box loop keeps it
         // high, in the gap above the inner super
-        const tr = title.getBoundingClientRect(), h = tr.height, tn = Math.max(Math.PI, loopN());
-        for (let y = 8; y < ctx.H() / 3; y += 2) if (fits(tr.left, ctx.top() + y, tr.right, ctx.top() + y + h, tn)) { root.setProperty("--se-title-top", y + "px"); break; }
+        const tr = title.getBoundingClientRect(), h = tr.height, tn = Math.max(Math.PI, loopN()), TITLE_M = -0.3 * Math.min(tr.width, h);   // its box's corners are empty (see measure)
+        for (let y = 8; y < ctx.H() / 3; y += 2) if (fits(tr.left, ctx.top() + y, tr.right, ctx.top() + y + h, tn, TITLE_M)) { root.setProperty("--se-title-top", y + "px"); break; }
       }
       const pal = $(".lv-palette");
       if (pal && pal.offsetWidth) {

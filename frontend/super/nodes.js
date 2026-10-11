@@ -203,6 +203,9 @@
           const t = n.answer || "";
           const idle = n.held ? "held" : n.paused ? "paused" : "running";
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
+          // a Super AI super shows what it is doing, not the answer squeezed into it: its output still carries the
+          // answer, and pressing it shows every engine's (superprompt.js)
+          if (n.id !== "site-box") r.text = n.st.go ? "thinking…" : t ? "answered" : typed || idle;
           break;
         }
         const v = ins[ins.length - 1];
@@ -381,7 +384,8 @@
       }
       if (n.role === "engine") {                                         // the central super asks the engines whenever what is wired into it changes
         n.el.classList.toggle("is-thinking", !!n.st.go);
-        if (n.prompt && n.prompt !== n.st.asked && !n.st.go && !n.held && !n.st.timer) n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 900);   // a new question: ask (once it has settled)
+        const typing = n.id !== "site-box" && n.str && !n.st.commit;     // a Super AI super being typed into waits for Enter
+        if (n.prompt && n.prompt !== n.st.asked && !n.st.go && !n.held && !n.st.timer && !typing) n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 900);   // a new question: ask (once it has settled)
         if (!n.prompt && (n.answer || n.st.asked)) { n.answer = ""; n.st.asked = ""; persist(); }   // nothing wired in: back to its state
       }
       if (n.fn === "super" || n.fn === "ask") {                          // its status, always current
@@ -609,12 +613,15 @@
     clearTimeout(n.st.pt); n.st.pt = setTimeout(persist, 300);
   }
   // a click on bare page (no window open) makes a node there, in a random super shape
-  function spawnAt(x, y) {
+  function spawnAt(x, y, ai) {
     const nn = +Math.PI.toFixed(3), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);   // a click makes a super: a ■ at n = π, like everything else
     const L = toLayout(x, y);
-    const m = make({ id, fn: fnOfN(nn), fx: (L.x - DOT_BASE / 2) / window.innerWidth, fy: (L.y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
+    // ai: a Super AI super, the same as the central one (role "engine"), asking every engine, the lab's and outside
+    const m = make({ id, fn: fnOfN(nn), role: ai ? "engine" : undefined, fx: (L.x - DOT_BASE / 2) / window.innerWidth, fy: (L.y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     clear(m); persist(); tick();
-    say(BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
+    say(ai ? "Super AI made: type a question and press Enter, and every engine answers; press it to see each answer"
+           : BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
+    if (ai && window.SeSelect && window.SeSelect.select) window.SeSelect.select(m.el);
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
     return m;
   }
@@ -766,6 +773,7 @@
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       const wired = n.inputs.length + linkIns(n).length > 0;
       if (n.fn === "super") askEngine(n, true);
+      else if (n.role === "engine" && n.id !== "site-box" && window.SuperPrompt) openBox(n);
       else if (n.fn === "ask") { if (n.prompt && !n.st.local) askPanel(n, true); else { n.el.classList.add("is-asking"); const i = n.el.querySelector("input"); if (i) i.focus(); } }
       else if (n.fn === "box" || n.fn === "dot") {
         const sym = n.fn === "box" ? "■" : "●";
@@ -788,8 +796,12 @@
       if (n.role === "engine" && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === "Backspace")) {
         e.preventDefault();
         n.str = e.key === "Backspace" ? (n.str || "").slice(0, -1) : (n.str || "") + e.key;
-        n.answer = ""; n.st.asked = "";
+        n.answer = ""; n.st.asked = ""; n.st.commit = false;
         persist(); tick(); return;
+      }
+      if (n.role === "engine" && e.key === "Enter" && n.str) {          // Enter asks what was typed
+        e.preventDefault(); e.stopPropagation();
+        n.st.commit = true; clearTimeout(n.st.timer); n.st.timer = 0; askEngine(n, true); return;   // asks (and ticks) at once: no settle timer to ask again
       }
       // the first thing typed into a blank ■ or ● decides: a letter makes a text field, a digit an integer field
       if ((n.fn === "box" || n.fn === "dot") && !n.role && !n.field && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") {
@@ -898,8 +910,42 @@
     };
     requestAnimationFrame(step);
   }
+  // a Super AI super (made by a double click): every engine, the lab's and the outside models, each answer
+  // kept with it (n.st.run) for the box; its short answer (the verdict, else siM's) shows inside it
+  function askEvery(n, prompt) {
+    if (n.st.run && !n.st.run.finished) n.st.run.stop();
+    const r = window.SuperPrompt.run(prompt.slice(0, 4000));
+    follow(n, r, prompt);
+    say("Super AI: asking every engine about “" + clip(prompt) + "”");
+    return r;
+  }
+  function follow(n, r, prompt) {
+    n.st.run = r; n.st.go = true; n.st.asked = prompt; n.el.classList.add("is-thinking"); grow(n); tick();
+    r.on(() => {
+      if (n.st.run !== r) return;
+      const t = window.SuperPrompt.summary(r);
+      if (t) n.answer = t;
+      if (r.finished) {
+        n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
+        const got = r.engines.filter(e => r.results[e.id] && r.results[e.id].state === "ok").length;
+        say("Super AI: " + got + " of " + r.engines.length + " engines answered; press it to see each answer");
+        persist();
+      }
+      tick();
+    });
+  }
+  function openBox(n) {
+    window.SuperPrompt.open(n.str || n.prompt || "", n.st.run || null, (q, r) => {
+      n.str = q; n.st.commit = true; n.answer = "";
+      follow(n, r, q); persist();
+    });
+  }
   async function askEngine(n, pressed) {
     const prompt = n.prompt || "";
+    if (n.role === "engine" && n.id !== "site-box" && window.SuperPrompt && prompt) {
+      if (n.held) { say("Super AI: stopped"); return; }
+      askEvery(n, prompt); return;
+    }
     if (!prompt) { if (pressed) say("Super Neural Engine: wire something into it first"); return; }
     if (n.st.go) return;
     if (n.held) { say("◆: stopped"); return; }
@@ -979,22 +1025,22 @@
     });
     document.body.appendChild(canvas);
 
-    // no palette: Shift + double click on bare page makes a node there (a plain double click opens
-    // the super prompt box, superprompt.js; a single click selects the super, super/select.js);
-    // what happened is announced to screen readers
+    // no palette: a double click on bare page makes a Super AI super there (a ■ like the central one: type a
+    // question, Enter, and every engine answers, superprompt.js); Shift + double click makes a plain node;
+    // a single click selects the super (super/select.js); what happened is announced to screen readers
     out = document.createElement("output"); out.className = "lv-out"; out.setAttribute("aria-live", "polite");
     document.body.appendChild(out);
     let down = null;
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
     document.addEventListener("dblclick", e => {
-      if (!html.classList.contains("shape-se") || e.button || !e.shiftKey) return;
+      if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
       if (document.querySelector(".orbit-panel")) return;                                      // windows open: the click closes them
       const t = e.target;
       if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return;
       if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return;
       if (window.PiOrbit && window.PiOrbit.inLoop && !window.PiOrbit.inLoop(e.clientX, e.clientY)) return;   // outside the super: nothing
-      spawnAt(e.clientX, e.clientY);
+      spawnAt(e.clientX, e.clientY, !e.shiftKey);
     });
 
     setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it

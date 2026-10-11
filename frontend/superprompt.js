@@ -1,11 +1,15 @@
-// Super prompt: double-click empty space to open a box that asks every engine at once.
+// Super prompt: one question, every engine, each answer in its own card as it arrives.
 //
 // The engines are the project's own (siM, riB, piD, PiEn) and the outside models the
 // panel uses (Llama, Mistral, Qwen, Gemini, DeepSeek); see backend/super_engine.py
 // (/api/super/engines, /one, /weigh). Each engine is asked on its own, so its card fills
 // in the moment it answers; once two outside models have answered, the judge weighs them.
-// In the superellipse look Shift + double-click still makes a node (super/nodes.js);
-// in the round look double-clicking the π mark itself still stops π.
+//
+// In the superellipse look a double click on bare page makes a Super AI super
+// (super/nodes.js): what is typed into it is asked here (SuperPrompt.run), its short
+// answer shows inside it, and pressing it opens this box with every engine's answer
+// (SuperPrompt.open(question, run)). In the round look a double click on empty space
+// opens the box directly; double-clicking the π mark itself still stops π.
 (function () {
   "use strict";
   if (window.__superprompt) return;
@@ -26,37 +30,67 @@
     t = t.split(/\n{2,}/).map(p => /^\s*\u0000\d+\u0000\s*$/.test(p) ? p.trim() : /^\s*<li>/.test(p) ? "<ul>" + p.replace(/\n/g, "") + "</ul>" : "<p>" + p.replace(/\n/g, "<br>") + "</p>").join("");
     return t.replace(/\u0000(\d+)\u0000/g, (_, i) => "<pre>" + blocks[+i] + "</pre>");
   }
+  const post = (path, data, signal) => fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data), signal });
 
-  let box = null, list = null, input = null, engines = null, run = 0, judgeOn = false, verdict = null, lastOutside = [];
-  const post = (path, data) => fetch(API + path, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data) });
-
-  // the judge reads the outside models' answers and says what they agree on
-  function weigh(q, mine) {
-    if (!verdict) return;
-    const meta = verdict.querySelector(".sp-meta"), body = verdict.querySelector(".sp-body");
-    if (lastOutside.length < 2) {
-      verdict.classList.remove("is-wait"); verdict.classList.add("is-err");
-      meta.textContent = "nothing to weigh";
-      body.innerHTML = '<p class="sp-off">Fewer than two outside models answered, so there is nothing to weigh.</p>';
-      return;
-    }
-    meta.textContent = "weighing…";
-    post("/weigh", { prompt: q, answers: lastOutside })
-      .then(r => r.json())
-      .then(j => {
-        if (mine !== run) return;
-        verdict.classList.remove("is-wait");
-        if (j.ok) {
-          body.innerHTML = md(j.text);
-          meta.textContent = (j.agreement ? j.agreement + " agreement" : "") + (j.model ? (j.agreement ? " · " : "") + j.model : "");
-        } else {
-          verdict.classList.add("is-err");
-          body.innerHTML = '<p class="sp-off">' + esc(j.text || j.detail || "The judge did not answer.") + "</p>";
-          meta.textContent = "no verdict";
-        }
-      })
-      .catch(() => { if (mine === run) { verdict.classList.remove("is-wait"); verdict.classList.add("is-err"); meta.textContent = "no verdict"; } });
+  // ------------------------------------------------------------ the engines
+  let engines = null, judgeOn = false, loading = null;
+  function loadEngines() {
+    if (engines) return Promise.resolve(engines);
+    if (loading) return loading;
+    loading = fetch(API + "/engines").then(r => { if (!r.ok) throw new Error(r.status); return r.json(); })
+      .then(j => { engines = j.engines || []; judgeOn = !!j.judge; return engines; })
+      .catch(() => null).finally(() => { loading = null; });
+    return loading;
   }
+
+  // One question to every engine. Returns a run: {q, engines, results: {id: {state, text, model, ms}},
+  // verdict, done (a promise), stop()}; listeners added with run.on(fn) hear every change.
+  function run(q, opts) {
+    const r = { q, engines: [], off: [], results: {}, verdict: null, fns: [], stopped: false };
+    const ctrl = new AbortController();
+    r.on = fn => { r.fns.push(fn); return r; };
+    const emit = () => r.fns.forEach(fn => { try { fn(r); } catch (_) { /* a listener's fault is its own */ } });
+    r.stop = () => { r.stopped = true; ctrl.abort(); };
+    r.done = loadEngines().then(all => {
+      if (!all) { r.error = "The engines cannot be reached from here right now."; emit(); return r; }
+      r.engines = all.filter(e => e.ready);
+      r.off = all.filter(e => !e.ready);
+      r.engines.forEach(e => { r.results[e.id] = { state: "wait" }; });
+      const outside = r.engines.filter(e => e.kind === "outside");
+      if (outside.length >= 2 && judgeOn) r.verdict = { state: "wait", text: "" };
+      emit();
+      const answered = [];
+      const asks = r.engines.map(e => post("/one", { engine: e.id, prompt: q }, ctrl.signal)
+        .then(res => res.json().then(j => ({ ok: res.ok, j })))
+        .then(({ ok, j }) => {
+          const ans = ok && j.ok;
+          r.results[e.id] = { state: ans ? "ok" : "err", text: (ans ? j.text : (j.text || j.detail)) || "No answer.", model: j.model || "", ms: j.ms };
+          if (ans && e.kind === "outside") answered.push({ label: e.name, answer: j.text, confidence: j.confidence });
+        })
+        .catch(() => { if (!r.stopped) r.results[e.id] = { state: "err", text: "Could not reach this engine." }; })
+        .finally(emit));
+      return Promise.all(asks).then(() => {
+        if (!r.verdict || r.stopped) return r;
+        if (answered.length < 2) { r.verdict = { state: "err", text: "Fewer than two outside models answered, so there is nothing to weigh." }; emit(); return r; }
+        r.verdict.state = "weigh"; emit();
+        return post("/weigh", { prompt: q, answers: answered }, ctrl.signal).then(res => res.json())
+          .then(j => { r.verdict = j.ok ? { state: "ok", text: j.text, agreement: j.agreement, model: j.model || "" } : { state: "err", text: j.text || j.detail || "The judge did not answer." }; })
+          .catch(() => { r.verdict = { state: "err", text: "The judge could not be reached." }; })
+          .then(() => { emit(); return r; });
+      });
+    });
+    r.done.then(() => { r.finished = true; emit(); });
+    return r;
+  }
+  // the short answer a super shows inside itself: the verdict, else the lab's own answer, else the first one
+  function summary(r) {
+    if (r.verdict && r.verdict.state === "ok") return r.verdict.text;
+    const firstOk = id => r.results[id] && r.results[id].state === "ok" ? r.results[id].text : "";
+    return firstOk("sim") || (r.engines.map(e => firstOk(e.id)).find(Boolean)) || (r.error || "");
+  }
+
+  // ------------------------------------------------------------ the box
+  let box = null, list = null, input = null, current = null;
 
   function build() {
     box = document.createElement("div");
@@ -64,7 +98,7 @@
     box.hidden = true;
     box.innerHTML =
       '<div class="sp-box" role="dialog" aria-modal="true" aria-labelledby="sp-title">' +
-      '<div class="sp-head"><h2 id="sp-title">Super prompt</h2>' +
+      '<div class="sp-head"><h2 id="sp-title">Super AI</h2>' +
       '<span class="sp-hint">Every engine in the lab and outside it, at once</span>' +
       '<button type="button" class="sp-x" aria-label="Close">×</button></div>' +
       '<form class="sp-form"><textarea class="sp-in" rows="3" maxlength="4000" placeholder="Ask anything…" aria-label="Your question"></textarea>' +
@@ -81,18 +115,22 @@
       if (e.key === "Enter" && !e.shiftKey && !e.isComposing) { e.preventDefault(); ask(); }
     });
     box.addEventListener("keydown", e => { if (e.key === "Escape") { e.stopPropagation(); close(); } });
-    // stop clicks in the box from reaching the page (the mark closes windows on click)
+    // clicks in the box stay in the box (a click on the page closes windows, a double click makes a super)
     ["click", "dblclick"].forEach(t => box.addEventListener(t, e => e.stopPropagation()));
   }
 
-  function open() {
+  // open the box; with a question and a run (a super's), show that run's answers
+  function open(q, r, onAsk) {
     if (!box) build();
     box.hidden = false;
+    box.onAsk = onAsk || null;
     document.documentElement.classList.add("sp-open");
     const sel = window.getSelection && window.getSelection();
-    if (sel && sel.removeAllRanges) sel.removeAllRanges();   // a double-click selects a word; drop it
-    setTimeout(() => { input.focus(); input.select(); }, 0);
-    loadEngines();
+    if (sel && sel.removeAllRanges) sel.removeAllRanges();   // a double click selects a word; drop it
+    if (q != null) input.value = q;
+    if (r) show(r);
+    else loadEngines().then(all => { if (!current) idle(all); });
+    setTimeout(() => { input.focus(); if (!r) input.select(); }, 0);
   }
   function close() {
     if (!box) return;
@@ -100,123 +138,102 @@
     document.documentElement.classList.remove("sp-open");
   }
 
-  async function loadEngines() {
-    if (engines) return engines;
-    try {
-      const r = await fetch(API + "/engines");
-      if (!r.ok) throw new Error(r.status);
-      const j = await r.json();
-      engines = j.engines || [];
-      judgeOn = !!j.judge;
-    } catch (_) {
-      engines = null;
-      list.innerHTML = '<p class="sp-note">The engines cannot be reached from here right now.</p>';
-    }
-    if (engines && !list.children.length) idle();
-    return engines;
-  }
-
-  function idle() {
-    const ready = engines.filter(e => e.ready), off = engines.filter(e => !e.ready);
+  function idle(all) {
+    if (!all) { list.innerHTML = '<p class="sp-note">The engines cannot be reached from here right now.</p>'; return; }
+    const ready = all.filter(e => e.ready), off = all.filter(e => !e.ready);
     list.innerHTML = '<p class="sp-note">Ready: ' + ready.map(e => esc(e.name)).join(", ") +
       (off.length ? '<br><span class="sp-off">No key yet: ' + off.map(e => esc(e.name)).join(", ") + "</span>" : "") + "</p>";
   }
 
-  function card(e) {
+  function card(name, kind) {
     const el = document.createElement("article");
     el.className = "sp-card is-wait";
     el.innerHTML =
-      '<header><strong>' + esc(e.name) + '</strong>' +
-      '<span class="sp-kind">' + (e.kind === "project" ? "in the lab" : e.kind === "judge" ? "the judge" : "outside") + "</span>" +
+      '<header><strong>' + esc(name) + '</strong>' +
+      '<span class="sp-kind">' + (kind === "project" ? "in the lab" : kind === "judge" ? "the judge" : "outside") + "</span>" +
       '<span class="sp-meta">asking…</span>' +
-      '<button type="button" class="sp-copy" aria-label="Copy ' + esc(e.name) + "'s answer\" hidden>Copy</button></header>" +
+      '<button type="button" class="sp-copy" aria-label="Copy ' + esc(name) + "'s answer\" hidden>Copy</button></header>" +
       '<div class="sp-body"><span class="sp-dots" aria-hidden="true"><i></i><i></i><i></i></span></div>';
     return el;
   }
+  function fill(el, res, metaOk) {
+    if (!res || res.state === "wait" || res.state === "weigh") {
+      if (res && res.state === "weigh") el.querySelector(".sp-meta").textContent = "weighing…";
+      return;
+    }
+    if (el.dataset.done === res.text) return;
+    el.dataset.done = res.text;
+    el.classList.remove("is-wait");
+    el.classList.toggle("is-err", res.state !== "ok");
+    const meta = el.querySelector(".sp-meta"), body = el.querySelector(".sp-body"), copy = el.querySelector(".sp-copy");
+    if (res.state === "ok") {
+      body.innerHTML = md(res.text);
+      meta.textContent = metaOk;
+      copy.hidden = false;
+      copy.onclick = () => navigator.clipboard && navigator.clipboard.writeText(res.text).then(() => { copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1200); });
+    } else {
+      body.innerHTML = '<p class="sp-off">' + esc(res.text) + "</p>";
+      meta.textContent = "no answer";
+    }
+  }
 
-  async function ask() {
+  // render a run into the box and keep it current
+  function show(r) {
+    current = r;
+    list.innerHTML = "";
+    const cards = {};
+    let verdictEl = null;
+    const paint = () => {
+      if (current !== r) return;
+      if (r.error && !r.engines.length) { list.innerHTML = '<p class="sp-note">' + esc(r.error) + "</p>"; return; }
+      if (r.verdict && !verdictEl) {
+        verdictEl = card("Verdict", "judge");
+        verdictEl.classList.add("sp-verdict");
+        verdictEl.querySelector(".sp-meta").textContent = "waiting for the outside models…";
+        list.prepend(verdictEl);
+      }
+      r.engines.forEach(e => {
+        if (!cards[e.id]) { cards[e.id] = card(e.name, e.kind); list.appendChild(cards[e.id]); }
+        const res = r.results[e.id];
+        fill(cards[e.id], res, res ? [res.model, res.ms != null ? (res.ms / 1000).toFixed(1) + " s" : ""].filter(Boolean).join(" · ") : "");
+      });
+      if (verdictEl && r.verdict) fill(verdictEl, r.verdict, [r.verdict.agreement ? r.verdict.agreement + " agreement" : "", r.verdict.model].filter(Boolean).join(" · "));
+      if (r.off.length && !list.querySelector(".sp-off-note")) {
+        const p = document.createElement("p");
+        p.className = "sp-note sp-off sp-off-note";
+        p.textContent = "Not asked (no API key on this site yet): " + r.off.map(e => e.name).join(", ");
+        list.appendChild(p);
+      }
+    };
+    r.on(paint);
+    paint();
+  }
+
+  function ask() {
     const q = input.value.trim();
     if (!q) { input.focus(); return; }
-    const all = await loadEngines();
-    if (!all) return;
-    const mine = ++run;
-    const ready = all.filter(e => e.ready), off = all.filter(e => !e.ready);
-    const outside = [];
-    let pending = ready.filter(e => e.kind === "outside").length;
-    list.innerHTML = "";
-    if (pending >= 2 && judgeOn) {
-      verdict = card({ name: "Verdict", kind: "judge" });
-      verdict.classList.add("sp-verdict");
-      verdict.querySelector(".sp-meta").textContent = "waiting for the outside models…";
-      list.appendChild(verdict);
-    } else verdict = null;
-    lastOutside = outside;
-    ready.forEach(e => {
-      const el = card(e);
-      list.appendChild(el);
-      const meta = el.querySelector(".sp-meta"), body = el.querySelector(".sp-body"), copy = el.querySelector(".sp-copy");
-      post("/one", { engine: e.id, prompt: q })
-        .then(r => r.json().then(j => ({ ok: r.ok, j })))
-        .then(({ ok, j }) => {
-          if (mine !== run) return;
-          el.classList.remove("is-wait");
-          if (ok && j.ok) {
-            if (e.kind === "outside") { outside.push({ label: e.name, answer: j.text, confidence: j.confidence }); }
-            body.innerHTML = md(j.text);
-            meta.textContent = [j.model || j.provider, (j.ms / 1000).toFixed(1) + " s"].filter(Boolean).join(" · ");
-            copy.hidden = false;
-            copy.onclick = () => navigator.clipboard && navigator.clipboard.writeText(j.text).then(() => { copy.textContent = "Copied"; setTimeout(() => copy.textContent = "Copy", 1200); });
-          } else {
-            el.classList.add("is-err");
-            body.innerHTML = '<p class="sp-off">' + esc((j && (j.text || j.detail)) || "No answer.") + "</p>";
-            meta.textContent = "no answer";
-          }
-        })
-        .finally(() => { if (mine === run && e.kind === "outside" && --pending === 0) weigh(q, mine); })
-        .catch(() => {
-          if (mine !== run) return;
-          el.classList.remove("is-wait"); el.classList.add("is-err");
-          body.innerHTML = '<p class="sp-off">Could not reach this engine.</p>';
-          meta.textContent = "no answer";
-        });
-    });
-    if (off.length) {
-      const p = document.createElement("p");
-      p.className = "sp-note sp-off";
-      p.textContent = "Not asked (no API key on this site yet): " + off.map(e => e.name).join(", ");
-      list.appendChild(p);
-    }
+    if (current && !current.finished) current.stop();
+    const r = run(q);
+    if (box.onAsk) box.onAsk(q, r);   // a super that opened the box hears the new question
+    show(r);
   }
 
-  // ------------------------------------------------------------ the trigger
-  // Bare page: not a control, window, bubble, node, port, wire or the π mark itself.
+  // ------------------------------------------------------------ the trigger (round look only)
+  // Empty space: not a control, window, bubble, node, wire or the π mark itself. In the superellipse
+  // look a double click on bare page makes a Super AI super instead (super/nodes.js).
   const merged = () => document.documentElement.classList.contains("shape-se");
-  const SE_BUSY = ".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, label, [contenteditable], .wire-hit, .wire-handle, .sp-veil";
   const BUSY = "a, button, input, textarea, select, label, summary, [contenteditable], [role=button], [role=dialog], " +
-    ".orbit-bubble, .orbit-pi, .orbit-title, .orbit-panel, .wire-handle, .wire-hit, .orbit-mark, .lv-node, .live-dock, " +
+    ".orbit-bubble, .orbit-pi, .orbit-title, .orbit-panel, .wire-handle, .wire-hit, .orbit-mark, .orbit-core, .lv-node, .live-dock, " +
     ".buddy-win, .sp-veil, header, nav, footer, form, table, pre, code, video, img, iframe, " +
     "p, li, h1, h2, h3, h4, h5, h6, dd, dt, td, th, blockquote";
-  let down = null;
-  document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY]; }, true);
-  function bare(e) {
-    const t = e.target;
-    if (!t || !t.closest) return false;
-    if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return false;   // a drag, not a double click
-    if (merged()) {
-      if (t.closest(SE_BUSY)) return false;
-      if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return false;   // a loop's ring
-      return true;
-    }
-    // round look: the core button is the mark, and double-clicking it stops π
-    if (t.closest(".orbit-core")) return false;
-    return !t.closest(BUSY);
-  }
   document.addEventListener("dblclick", e => {
-    if (e.shiftKey || e.button || e.defaultPrevented || !bare(e)) return;   // Shift + double-click: a node (super/nodes.js)
+    if (merged() || e.shiftKey || e.button || e.defaultPrevented) return;
+    const t = e.target;
+    if (!t || !t.closest || t.closest(BUSY)) return;
     e.preventDefault();
     e.stopPropagation();
     open();
   }, true);
 
-  window.SuperPrompt = { open, close };
+  window.SuperPrompt = { open, close, run, summary, loadEngines };
 })();

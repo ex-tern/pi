@@ -364,5 +364,5 @@ html.shape-se .live-tab:hover, html.shape-se .live-list li button:hover, html.sh
 html.shape-se .arch-step:hover { border-color: inherit; }
 
 /* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
-html.shape-se .orbit-title .se-logo { height: 24px; }   /* the snugger badge (super/logo.js padX/padY) keeps the letters the size they were at 30 px */
-@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 20px; } }
+html.shape-se .orbit-title .se-logo { height: calc(24px * var(--se-title-k, 1)); }   /* the snugger badge (super/logo.js padX/padY) keeps the letters the size they were at 30 px */
+@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: calc(20px * var(--se-title-k, 1)); } }

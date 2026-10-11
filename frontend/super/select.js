@@ -14,7 +14,10 @@
   const O = () => window.PiOrbit || {};
   const S = () => window.SeSite || {};
   const INSIDE_PANEL = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile";
-  let sel = "loop";                                           // "loop", "site", or an element (a window, a bubble, a loop)
+  let sel = "";                                               // "loop", "site", or an element (a window, a bubble, a loop); set below
+  const markSite = () => { if (sel === "site" && html.classList.contains("shape-se") && !html.classList.contains("se-sel-site")) html.classList.add("se-sel-site"); };
+  markSite();
+  new MutationObserver(markSite).observe(html, { attributes: true, attributeFilter: ["class"] });   // the look may be decided later (channel.js)
 
   const inSite = (x, y) => !!(S().inSite && S().inSite(x, y));
   const inLoop = (x, y) => !O().inLoop || O().inLoop(x, y);
@@ -89,6 +92,6 @@
   // a selected super that goes away (a window closes, a loop is deleted): the main super again
   setInterval(() => { const el = elOf(sel); if (el && !el.isConnected) select("loop"); }, 500);
   document.addEventListener("dblclick", e => { if (on() && e.target.closest && e.target.closest(".wire-hit")) return; }, true);
-  select("loop");
+  select("site");                                             // the site (the inner super) is selected at first, as in the owner's screenshot
   window.SeSelect = { selected: () => sel, select, containerOf, superAt, isSelected: s => s === sel };
 })();

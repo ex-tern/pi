@@ -25,8 +25,13 @@
   // a bubble's size is a scale inside orbit.js's transform (translate, then scale about its centre), so sizing
   // keeps its centre and never fights the layout's translate; the others are scaled with the CSS scale property
   const isBubble = el => el.classList.contains("orbit-bubble");
-  const getScale = el => isBubble(el) ? (parseFloat(el.style.getPropertyValue("--se-scale")) || 1) : (parseFloat(el.style.scale) || 1);
-  const putScale = (el, v) => { if (isBubble(el)) el.style.setProperty("--se-scale", v.toFixed(3)); else el.style.scale = v.toFixed(3); };
+  // the title is sized by its own height (--se-title-k, super/super.css), not the CSS scale: the page's fit
+  // (super/loop.js setFit) scales the title about the page's centre with that property, and the two writers
+  // fought, so the title flew off the page and snapped back while it was sized
+  const isTitle = el => el.classList.contains("orbit-title");
+  const VAR = el => isBubble(el) ? "--se-scale" : isTitle(el) ? "--se-title-k" : null;
+  const getScale = el => VAR(el) ? (parseFloat(el.style.getPropertyValue(VAR(el))) || 1) : (parseFloat(el.style.scale) || 1);
+  const putScale = (el, v) => { if (VAR(el)) el.style.setProperty(VAR(el), v.toFixed(3)); else el.style.scale = v.toFixed(3); };
   function sizeThing(el, dy) {
     const name = nameOf(el); if (!name) return;
     const cur = el._seScaleTo || getScale(el) || load(name) || 1;
@@ -36,7 +41,7 @@
       max = Math.max(0.3, Math.min(3, 1.2 * sb.a / w0, 1.2 * sb.b / h0));
     }
     const v = Math.max(0.3, Math.min(max, cur * Math.exp(-dy * 0.0015)));
-    if (!isBubble(el)) { const o = el.style.transformOrigin; if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%"; }
+    if (!VAR(el)) { const o = el.style.transformOrigin; if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%"; }
     el._seScaleTo = v; save(name, +v.toFixed(3));
     // a sized bubble takes more (or less) room: the others are re-laid around it once the gesture has settled
     // (not while it glides: a relayout every few frames made the page jerk)
@@ -51,7 +56,7 @@
       if (el.dataset.seSized) return;
       const name = nameOf(el), v = name && load(name);
       el.dataset.seSized = "1";
-      if (v && v !== 1) { if (!isBubble(el)) el.style.transformOrigin = "50% 50%"; putScale(el, v); }
+      if (v && v !== 1) { if (!VAR(el)) el.style.transformOrigin = "50% 50%"; putScale(el, v); }
     });
   }
   // the super whose edge a point is just outside of (within BAND px): the nearest one not covered by

@@ -64,15 +64,16 @@
       body += g.svg;
       x += g.w + TRACK;
     }
-    const w = x - TRACK, padX = 84, padY = 24;   // snug above and below; the sides keep the letters clear of the n = π ends (was 70 × 42)
+    const w = x - TRACK, padX = 90, padY = 26;   // snug all round (was 70 × 42); at n = 6 the ends are square enough for the letters
     const vb = [-padX, -padY, w + 2 * padX, CAP + 2 * padY];
-    // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4),
-    // until shift + scroll on the title gives it an n of its own (super/scroll.js, SeLogo.setN)
+    // the badge is a super, n = 6 (BADGE_N: a squarer badge, as in the owner's screenshot of 2026-10-11; the
+    // letters keep n = 4), until shift + scroll on the title gives it an n of its own (super/scroll.js, SeLogo.setN)
     geo = { w, padX, padY };
     return '<svg class="se-logo" viewBox="' + vb.join(" ") + '" aria-hidden="true" focusable="false">' +
-           '<path class="sel-badge" d="' + badgePath(badgeN || (window.SeMorph && window.SeMorph.pi) || Math.PI) + '"/>' + body + '</svg>';
+           '<path class="sel-badge" d="' + badgePath(badgeN || BADGE_N) + '"/>' + body + '</svg>';
   }
   let geo = null, badgeN = 0;
+  const BADGE_N = 6;
   const badgePath = n => se(geo.w / 2, CAP / 2, geo.w / 2 + geo.padX - 3, CAP / 2 + geo.padY - 3, n, 160);
   function setN(n) {
     badgeN = n;
@@ -96,5 +97,5 @@
       .observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
-  window.SeLogo = { build, setN, n: () => badgeN };
+  window.SeLogo = { build, setN, n: () => badgeN || BADGE_N };
 })();

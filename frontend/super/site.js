@@ -331,7 +331,7 @@
     if (!hasCorner) { delete el.dataset.seClip; clipWindows(); }
   }
   function shapeEl(el, dy) {
-    const cur = el._seNTo || +el.dataset.seN || (SM() && SM().pi) || Math.PI;
+    const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || (SM() && SM().pi) || Math.PI;   // the badge starts at its own n
     const nn = Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
     el._seNTo = nn;
     if (!el._seShapeId) el._seShapeId = ++shapeId;
