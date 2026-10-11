@@ -71,6 +71,7 @@ window.SUPERAI_PROGRAM = {
     supers: [
       { id: "site-box", kind: "engine", at: { center: true } },
       { id: "start", kind: "engine", hint: "Connect wires to begin", size: 132, at: { fx: 0.126, fy: 0.131 } },
+      { id: "shift", kind: "engine", hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
       { id: "open", kind: "engine", text: "open", at: { from: "start", dx: 104, dy: 155 } },
       { id: "close", kind: "engine", text: "close", at: { from: "start", dx: -15, dy: 248 } },
       { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
