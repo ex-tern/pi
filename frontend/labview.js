@@ -328,6 +328,8 @@
   const wiredToPi = n => n.inputs.some(r => r.core || r.pi) || linkIns(n).some(an => an.loop || an.h === "pi");
 
   function tick() {
+    const f = O().fit ? O().fit().f : 1;
+    if (f !== lastFit) { lastFit = f; nodes.forEach(place); }           // the fit changed: every node to its scaled place
     memo = {}; visiting = {};
     holds();
     feedPorts();
@@ -419,11 +421,24 @@
 
   // ---- making, moving and removing nodes -------------------------------
   function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n }))); }
+  // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
+  function toLayout(sx, sy) {
+    const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
+    const f = F.f || 1;
+    return { x: F.px + (sx - F.px) / f, y: F.py + (sy - F.py) / f, f };
+  }
+  // a node sits at its layout point (fx, fy), scaled about the page's centre by the fit like everything
+  // else; the scale is applied here, from the node's own corner, so moving it never moves its pivot
+  let lastFit = 1;
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
     const y = Math.max(4, Math.min(window.innerHeight - h - 22, n.fy * window.innerHeight));
-    n.el.style.left = x + "px"; n.el.style.top = y + "px";
+    const F = O().fit ? O().fit() : null, f = F ? F.f || 1 : 1;
+    if (F && f !== 1) {
+      n.el.style.left = (F.px + (x - F.px) * f).toFixed(1) + "px"; n.el.style.top = (F.py + (y - F.py) * f).toFixed(1) + "px";
+      n.el.style.transformOrigin = "0 0"; n.el.style.scale = String(f);
+    } else { n.el.style.left = x + "px"; n.el.style.top = y + "px"; n.el.style.scale = ""; n.el.style.transformOrigin = ""; }
   }
   function make(spec) {
     const f = BY[RENAMED[spec.fn] || spec.fn];
@@ -495,7 +510,8 @@
   // a click on bare page (no window open) makes a node there, in a random super shape
   function spawnAt(x, y) {
     const nn = randomN(), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
-    const m = make({ id, fn: fnOfN(nn), fx: (x - DOT_BASE / 2) / window.innerWidth, fy: (y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
+    const L = toLayout(x, y);
+    const m = make({ id, fn: fnOfN(nn), fx: (L.x - DOT_BASE / 2) / window.innerWidth, fy: (L.y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     clear(m); persist(); tick();
     say(BY[m.fn].name + " made, n = " + nn.toFixed(2) + ": shift + scroll to change its shape, type into it, wire it");
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
@@ -549,11 +565,12 @@
       n.fy = Math.max(4, Math.min(window.innerHeight - h - 22, y - h / 2)) / window.innerHeight;
       place(n); return;
     }
-    let x = r.right + 28;
+    let x = r.right + 28, y;
     if (x + w > window.innerWidth - 4) x = r.left - w - 28;
-    if (el.matches(".orbit-panel")) x = Math.min(window.innerWidth - w - 8, Math.max(8, r.right - w - 16)), n.fy = (r.top + 8) / window.innerHeight;
-    else n.fy = (r.top + r.height / 2 - h / 2) / window.innerHeight;
-    n.fx = Math.max(4, x) / window.innerWidth;
+    if (el.matches(".orbit-panel")) { x = Math.min(window.innerWidth - w - 8, Math.max(8, r.right - w - 16)); y = r.top + 8; }
+    else y = r.top + r.height / 2 - h / 2;
+    const L = toLayout(Math.max(4, x), y);                              // screen → layout, since the node is scaled by the fit
+    n.fx = L.x / window.innerWidth; n.fy = L.y / window.innerHeight;
     place(n);
     clear(n);
   }
@@ -575,7 +592,7 @@
     if (e.button !== undefined && e.button !== 0) return;
     const x0 = e.clientX, y0 = e.clientY;
     let n = spawn ? null : nodes.find(x => x.el === startEl), moved = false, dx = 0, dy = 0;
-    if (n) { const r = n.el.getBoundingClientRect(); dx = x0 - r.left; dy = y0 - r.top; }
+    if (n) { const r = n.el.getBoundingClientRect(), f = toLayout(0, 0).f; dx = (x0 - r.left) / f; dy = (y0 - r.top) / f; }
     try { startEl.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
     const move = ev => {
       if (ev.pointerId !== e.pointerId || (n && n.st.pinch)) return;     // a second finger zooms, it does not drag
@@ -586,7 +603,8 @@
         n.el.classList.add("is-dragging"); dragging = n;
         html.classList.add("lv-dragging");
       }
-      n.fx = (ev.clientX - dx) / window.innerWidth; n.fy = (ev.clientY - dy) / window.innerHeight;
+      const L = toLayout(ev.clientX, ev.clientY);
+      n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
@@ -722,7 +740,7 @@
     const d = Math.round(Math.max(36, Math.min(n.fn === "dot" ? max : 240, cur * Math.exp(-dy * 0.0015))));
     if (d === cur) return;
     n.st.sizeTo = d;
-    const settle = () => { const b = n.el.getBoundingClientRect(); n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n); };
+    const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s / 2) / window.innerHeight; place(n); };
     if (window.SeMotion) { const s = { v: n.size || DOT_BASE }; window.SeMotion.glide("node:" + n.id, s, "v", d, 160, () => { sizeDot(n, Math.round(s.v)); settle(); drawWires(); }); }
     else { sizeDot(n, d); settle(); }
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
@@ -915,7 +933,7 @@
       const move = ev => {
         if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
         if (!moved) { moved = true; n.el.classList.add("is-dragging"); html.classList.add("lv-dragging"); }
-        const dx = (ev.clientX - x0) / window.innerWidth, dy = (ev.clientY - y0) / window.innerHeight;
+        const f = toLayout(0, 0).f, dx = (ev.clientX - x0) / f / window.innerWidth, dy = (ev.clientY - y0) / f / window.innerHeight;
         crew.forEach((m, i) => { m.fx = start[i][0] + dx; m.fy = start[i][1] + dy; place(m); });
         drawWires();
       };

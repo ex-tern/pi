@@ -83,7 +83,8 @@
   function start() {
     document.body.appendChild(dock);
     const p = pref();
-    apply(p === null ? window.innerWidth >= WIDE : !!p);
+    // the superellipse look starts with Live folded to its tab, inside the main super
+    apply(p === null ? (window.innerWidth >= WIDE && !document.documentElement.classList.contains("shape-se")) : !!p);
     window.addEventListener("resize", () => apply(isOpen()));
     refresh();
     setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30000);

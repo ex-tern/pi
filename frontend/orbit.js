@@ -502,10 +502,11 @@
   const seNorm = (u, v, n) => { const m = Math.max(u, v); return m ? m * Math.pow(Math.pow(u / m, n) + Math.pow(v / m, n), 1 / n) : 0; };
   // Everything stays inside the mark. When the mark, grown to the display, still cannot hold
   // the page (a small n, a star), the page shrinks toward the centre until it does.
-  const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock, .lv-node";   // wire layers are drawn from what is on screen, so they are not scaled
+  const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock";   // nodes scale themselves (labview.js place), from a pivot that moves with them   // wire layers are drawn from what is on screen, so they are not scaled
   let pageFit = 1;
   // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
-  let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || 1)), zoomT;
+  // the superellipse look starts zoomed out: the site a small super in the middle of the main one
+  let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 0.5 : 1))), zoomT;
   let zoomTo = null;
   function zoomPage(k) {
     const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
@@ -530,22 +531,39 @@
       if (el.hidden || !el.getClientRects().length) return;
       const r = el.getBoundingClientRect();
       if (!r.width || !r.height) return;
-      // the corners at full size: what is on screen, unscaled about the pivot
+      // the corners at full size: what is on screen, unscaled about the pivot (by whichever factor scaled it)
+      const k = (siteEl(el) || el.closest(".orbit-bubbles")) ? f : fitOther;
       for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
-        corners.push([px + (x - px) / f, py + (y - py) / f]);
+        corners.push([px + (x - px) / k, py + (y - py) / k]);
     });
     measuredAt = performance.now();
   }
-  function setFit(f, px, py) {
-    f = Math.round(f * 200) / 200;
-    if (f === pageFit && f === 1) return;
-    pageFit = f;
-    document.documentElement.classList.toggle("orbit-fit", f < 1);
+  // the fit never changes under a pressed pointer (a drag would jump), and glides to its new value after
+  // Two factors: the zoom scales the site (the bubbles, and the nodes with them); the room factor, never
+  // above 1, shrinks everything (the title, the counter, the palette, Live too) only when it would cross
+  // the loop. So zooming out leaves the title and Live at full size, as on the sketch.
+  let fitTarget = 1, pointerHeld = false, fitOther = 1;
+  function fitTo(want, other, px, py) {
+    if (pointerHeld) return;
+    if (Math.abs(want - fitTarget) < 0.004 && Math.abs(other - fitOther) < 0.004) return;
+    fitTarget = want;
+    if (window.SeMotion && Math.abs(want - pageFit) > 0.02) {
+      const st = { v: pageFit, o: fitOther };
+      window.SeMotion.tween(st, { v: want, o: other }, { duration: 220, easing: "easeOutCubic", update: () => setFit(st.v, st.o, px, py) });
+    } else setFit(want, other, px, py);
+  }
+  const siteEl = el => el.classList.contains("orbit-bubbles") || el.classList.contains("lv-node");
+  function setFit(f, fo, px, py) {
+    f = Math.round(f * 200) / 200; fo = Math.round((fo == null ? f : fo) * 200) / 200;
+    if (f === pageFit && fo === fitOther && f === 1 && fo === 1) return;
+    pageFit = f; fitOther = fo;
+    document.documentElement.classList.toggle("orbit-fit", f < 1 || fo < 1);
     if (!fitEls.length || performance.now() - measuredAt > 400) measure();
     fitEls.forEach(({ el, origin }) => {
-      if (f === 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
+      const k = siteEl(el) ? f : fo;
+      if (k === 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
       if (el.style.transformOrigin !== origin) el.style.transformOrigin = origin;
-      el.style.scale = String(f);
+      el.style.scale = String(k);
     });
   }
   // how big the loop must be (in units of its usual a, b) to hold the page at full size: from the cached corners
@@ -558,9 +576,8 @@
   }
   // Windows stay inside the main loop: moved toward its centre, and made smaller only if even
   // centred they would cross it. Not while a pointer is down (a drag or a resize in progress).
-  let pointerHeld = false;
   document.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
-  document.addEventListener("pointerup", () => { pointerHeld = false; setTimeout(keepWindowsIn, 30); }, true);
+  document.addEventListener("pointerup", () => { pointerHeld = false; setTimeout(() => { keepWindowsIn(); loopKey = ""; drawLoop(); }, 30); }, true);   // the fit it held back
   document.addEventListener("pointercancel", () => { pointerHeld = false; }, true);
   function keepWindowsIn() {
     if (!merged() || pointerHeld || !loopG.a) return;
@@ -585,7 +602,7 @@
     });
   }
   function drawLoop() {
-    if (!pageLoop()) { setFit(1); if (merged()) drawMini(); return; }
+    if (!pageLoop()) { setFit(1, 1); if (merged()) drawMini(); return; }
     const Wv = window.innerWidth, Hv = H, n = loopN();
     const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = top + Hv / 2;
     const need = needAt(n);
@@ -593,7 +610,7 @@
     const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
     const sc = cap;
     const room = need > 0 ? cap / need * 0.985 : zoom;                 // the largest scale that still fits inside the loop
-    setFit(Math.max(0.005, Math.min(zoom, room)), cx, cy);
+    fitTo(Math.max(0.005, Math.min(zoom, room)), Math.max(0.005, Math.min(1, room)), cx, cy);
     const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
     loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
     if (key === loopKey) return;
@@ -917,6 +934,12 @@
 
   // ------------------------------------------------------------ drag + click
   let dragging = null;
+  // a point on the screen, in the bubbles' own layout coordinates (stage-relative, before the page's
+  // scale about its centre and the inner super's offset)
+  function toLayout(sx, sy) {
+    const f = pageFit || 1, px = window.innerWidth / 2, py = H / 2;
+    return { x: px + (sx - px) / f - siteOff.x, y: py + (sy - top - py) / f - siteOff.y };
+  }
   function wireDrag(it) {
     const b = it.bubble;
     let sx = 0, sy = 0, moved = false, ox = 0, oy = 0;
@@ -924,14 +947,15 @@
       if (e.button !== 0) return;
       if (e.target.closest(".ob-chat, .ob-member")) return;   // typing or a member pill, not a drag
       sx = e.clientX; sy = e.clientY; moved = false;
-      const r = b.getBoundingClientRect(); ox = e.clientX - r.left; oy = e.clientY - r.top;
+      const r = b.getBoundingClientRect(); ox = (e.clientX - r.left) / (pageFit || 1); oy = (e.clientY - r.top) / (pageFit || 1);
       b.setPointerCapture(e.pointerId);
     });
     b.addEventListener("pointermove", e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
       moved = true; dragging = it; b.classList.add("dragging");
-      const x = Math.min(W - it.w, Math.max(0, e.clientX - ox)), y = Math.min(H - it.h, Math.max(0, e.clientY - top - oy));
+      const L = toLayout(e.clientX, e.clientY);
+      const x = Math.min(W - it.w, Math.max(0, L.x - ox)), y = Math.min(H - it.h, Math.max(0, L.y - oy));
       b.style.transform = "translate(" + x + "px," + y + "px)";
     });
     const end = e => {
@@ -939,8 +963,9 @@
       b.releasePointerCapture(e.pointerId);
       b.classList.remove("dragging");
       if (!moved) return;                 // a click: handled by the click event
-      const x = Math.min(W - it.w, Math.max(0, e.clientX - ox)) + it.w / 2;
-      const y = Math.min(H - it.h, Math.max(0, e.clientY - top - oy)) + it.h / 2;
+      const L = toLayout(e.clientX, e.clientY);
+      const x = Math.min(W - it.w, Math.max(0, L.x - ox)) + it.w / 2;
+      const y = Math.min(H - it.h, Math.max(0, L.y - oy)) + it.h / 2;
       it.custom = { fx: +((x - lx) / W).toFixed(4), fy: +((y - ly) / H).toFixed(4) };
       store("orbit:at2:" + it.key, it.custom);
       prio = [it.key, ...prio.filter(k => k !== it.key)];
@@ -2030,7 +2055,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { scrollN: e => scrollN(e), zoomPage, moveSite, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { fit: () => ({ f: pageFit, px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), zoomPage, moveSite, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

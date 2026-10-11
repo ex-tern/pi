@@ -36,7 +36,7 @@
       const move = ev => {
         if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
         if (!moved) { moved = true; html.classList.add("se-moving"); }
-        const v = { x: Math.round(v0.x + ev.clientX - x0), y: Math.round(v0.y + ev.clientY - y0) };
+        const v = { x: Math.round(v0.x + ev.clientX - x0), y: Math.round(v0.y + ev.clientY - y0) };   // translate is unscaled by the fit
         apply(el, v);
         const box = name === "live" ? (el.querySelector(".live-body") && el.classList.contains("open") ? el.querySelector(".live-body") : el.querySelector(".live-tab")) || el : el;
         if (inside(box.getBoundingClientRect())) last = v; else apply(el, last);   // it stops at the loop (Live: its panel, not the whole dock)
