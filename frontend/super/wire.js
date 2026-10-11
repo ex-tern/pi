@@ -30,7 +30,7 @@
   // at first, one wire: the title (the site's name) into the site's input port; the bubbles start unconnected
   let fresh = false;
   try { fresh = localStorage.getItem(KEY) === null; } catch (_) { /* private mode */ }
-  if (fresh && document.documentElement.classList.contains("shape-se")) links = [{ a: { h: "title", el: 1 }, b: { h: "port:input", el: 1 } }];
+  // a first visit starts with no text wires: the central engine super, wired by its ports, shows "running"
   let svg, drag = null, lastHtml = "";
   const LETTER = /[\p{L}\p{M}'’]/u, DIGIT = /\p{Nd}/u;
 

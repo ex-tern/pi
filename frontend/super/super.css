@@ -41,8 +41,8 @@ html.shape-se .ob-chat button {
   border-radius: 50%;
   corner-shape: superellipse(var(--se-k-window));
 }
-html.shape-se .orbit-bubble { padding: 0.75em 1.7em 0.75em 1.5em; }
-html.shape-se .orbit-bubble.is-group { padding: 1.1em 2.6em 1.1em 2.4em; }
+html.shape-se .orbit-bubble { padding: 0.45em 1.15em 0.45em 1em; }              /* little padding: just clear of the curve */
+html.shape-se .orbit-bubble.is-group { padding: 0.6em 1.6em 0.6em 1.45em; }
 html.shape-se .btn, html.shape-se .dl-btn { padding-inline: 1.6em; }
 @media (max-width: 700px) {
   html.shape-se .orbit-bubble { padding-inline: 1.1em 1.2em; }
@@ -363,3 +363,7 @@ html.shape-se .wire:hover .wire-bed { stroke: inherit; stroke-dasharray: none; }
 html.shape-se .wire:hover .wire-term { stroke: inherit; }
 html.shape-se .live-tab:hover, html.shape-se .live-list li button:hover, html.shape-se .cap-open:hover { color: inherit; }
 html.shape-se .arch-step:hover { border-color: inherit; }
+
+/* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
+html.shape-se .orbit-title .se-logo { height: 30px; }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 24px; } }

@@ -12,7 +12,9 @@
     const { $, store, load } = ctx;
     const merged = () => document.documentElement.classList.contains("shape-se");
     // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
-    let markN = load("orbit:mark:n");
+    // the first visit in the superellipse look: the main super nearly a box (n = 24) holding the site, itself a
+    // near-box (n = 24), at full size; after that, whatever you scrolled them to
+    let markN = load("orbit:mark:n") || (document.documentElement.classList.contains("shape-se") ? 24 : null);
     const loopN = () => markN || (window.SeMorph && window.SeMorph.pi) || Math.PI;
     let nShowT = 0;
     // In the superellipse look the loop is the page: |x/a|^n + |y/b|^n = 1 with a, b half the
@@ -73,7 +75,7 @@
     let pageFit = 1;
     // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
-    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 0.6 : 1))), zoomT;
+    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 1 : 1))), zoomT;
     let zoomTo = null;
     function zoomPage(k) {
       const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
@@ -345,7 +347,7 @@
     if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
     // the inner super's n: the main loop's until shift + scroll inside it (on nothing) gives it one of its
     // own (super/scroll.js), kept as orbit:site:n; from then on the two change shape independently
-    let siteN = +load("orbit:site:n") || 0;
+    let siteN = +load("orbit:site:n") || (document.documentElement.classList.contains("shape-se") ? 24 : 0);
     const siteNv = () => siteN || loopN();
     function scrollSiteN(e) {
       if (!merged()) return;
