@@ -115,6 +115,12 @@
         const set = ensurePorts(owner, (bb.querySelector(".ob-name, .ob-title, b") || bb).textContent.trim().slice(0, 40) || "the bubble");
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
       });
+      const pj = document.querySelector(".se-project");                     // the project super has four ports too
+      if (pj && pj.getClientRects().length) {
+        const r = pj.getBoundingClientRect(); seen.add("project");
+        const set = ensurePorts("project", "the project");
+        placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
+      }
       document.querySelectorAll(".lv-node[data-id]").forEach(nd => {       // every node is a super with four ports
         const r = nd.getBoundingClientRect(); if (!r.width) return;
         const owner = "node:" + nd.dataset.id; seen.add(owner);
@@ -129,10 +135,10 @@
     PORTS.forEach(([p]) => { const [x, y] = pts[p], el = set[p]; const l = x + "px", t = y + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; });
   }
   const bubbleEl = key => [...document.querySelectorAll('.orbit-bubble[data-key]')].find(b => b.dataset.key === key) || null;
-  const ownerEl = owner => owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
+  const ownerEl = owner => owner === "project" ? document.querySelector(".se-project") : owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
     : owner.startsWith("bubble:") ? bubbleEl(owner.slice(7))
     : owner.startsWith("node:") ? document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]') : null;
-  const ownerName = owner => { if (owner === "site") return "the site"; if (owner === "main") return "the main super"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
+  const ownerName = owner => { if (owner === "site") return "the site"; if (owner === "main") return "the main super"; if (owner === "project") return "the project"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
     if (owner.startsWith("bubble:")) { const i = O().info && O().info(owner.slice(7)); return i ? i.title : "the bubble"; } return "the node"; };
   // a bubble's ports: output is its name and its pills, input goes into its field (SciM's), a tick brings it up, condition false holds it
   const bubState = {};
@@ -249,6 +255,7 @@
   function value(pid) {
     if (pid.includes("/")) {                                 // a window's or a loop's port
       const [owner, port] = pid.split("/");
+      if (owner === "project") { const open = !!document.querySelector(".se-project.is-open"), t = "Pi Tech Lab in SuperAI" + (open ? ", open" : ""); return { num: open ? 1 : 0, isNum: true, bool: open, str: t, text: t }; }
       if (owner.startsWith("win:")) return winValue(owner.slice(4), port);
       if (owner.startsWith("bubble:")) return bubbleValue(owner.slice(7), port);
       if (owner === "main") return port === "input" ? { num: mainInput.length, bool: !!mainInput, str: mainInput, text: mainInput } : value(port);   // the page's terminals: its output, clock and condition are the site's
@@ -316,9 +323,9 @@
   // the title's badge) changes that one's n and nothing else's: --se-k-window (log₂ n) is set on the
   // element, so its corners (and, inside a window, the buttons and cards that inherit it) follow;
   // named supers keep their n per browser as se:n:<name>.
-  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .live-body, .live-tab, .lv-palette, .orbit-bubble, .orbit-title";
+  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .live-body, .live-tab, .lv-palette, .orbit-bubble, .orbit-title, .se-project";
   const nameOfSuper = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("live-body") ? "live"
-    : el.classList.contains("live-tab") ? "live-tab" : el.classList.contains("lv-palette") ? "palette"
+    : el.classList.contains("live-tab") ? "live-tab" : el.classList.contains("lv-palette") ? "palette" : el.classList.contains("se-project") ? "project"
     : el.classList.contains("orbit-bubble") ? (el.dataset.key ? "bubble:" + el.dataset.key : null)
     : el.classList.contains("orbit-panel") ? (el.item && el.item.key ? "window:" + el.item.key : null) : null;
   const loadN = name => { try { return +localStorage.getItem("se:n:" + name) || 0; } catch (_) { return 0; } };

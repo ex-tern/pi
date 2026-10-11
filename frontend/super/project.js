@@ -96,7 +96,6 @@
     el.setAttribute("aria-label", "Pi Tech Lab, the whole project written in SuperAI, drawn small. Zoom in on it to read and use it, zoom out to make it small again.");
     el.innerHTML =
 
-      '<i class="pj-port pj-l"></i><i class="pj-port pj-r"></i><i class="pj-port pj-t"></i><i class="pj-port pj-b"></i>' +
       '<div class="pj-map" aria-hidden="false"></div>' +
       '<button type="button" class="pj-prog-btn">Program</button>' +
       '<div class="pj-editor" hidden><div class="pj-ed-head"><strong>Pi Tech Lab in SuperAI</strong><span class="pj-ed-state"></span></div>' +
@@ -240,16 +239,25 @@
   }
   function wire() {
     // zoom on it: open or compact it. Taken before the page's own scroll handlers (super/scroll.js)
+    // like every super (owner, 2026-10-12): a few steps in open it, a few steps out compact it, as a bubble does
+    // (super/bubble.js); Shift + scroll changes its n (super/scroll.js, SeSite.shapeEl), so it is left alone here
+    let acc = 0, accT = 0;
     window.addEventListener("wheel", e => {
-      if (!html.classList.contains("shape-se") || !inside(e)) return;
+      if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
       if (e.target.closest(".pj-editor")) { e.stopImmediatePropagation(); return; }   // the program scrolls; it does not zoom
       e.preventDefault(); e.stopImmediatePropagation();
-      const dy = e.deltaY || e.deltaX, k = e.ctrlKey ? 0.012 : 0.0016;   // a pinch reports small deltas
-      setT(tTo - dy * k);
+      const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);                    // a pinch reports small deltas
+      acc += dy; clearTimeout(accT); accT = setTimeout(() => { acc = 0; }, 500);
+      if (acc < -60 && tTo < 0.5) { acc = 0; setT(1); }
+      else if (acc > 60 && tTo >= 0.5) { acc = 0; setT(0); }
     }, { capture: true, passive: false });
     // presses inside it are its own: the page does not select, wire or drag through it
     window.addEventListener("pointerdown", e => {
       if (!inside(e)) return;
+      // on its edge the press wires (super/wire.js), as on any super: left to the page
+      const r = el.getBoundingClientRect(), d = Math.min(e.clientX - r.left, r.right - e.clientX, e.clientY - r.top, r.bottom - e.clientY);
+      if (d <= 10 && !el.classList.contains("is-open")) return;
+      if (window.SeSelect && window.SeSelect.select) window.SeSelect.select(el);   // a click selects it, like any super
       e.stopImmediatePropagation();
       if (e.button !== 0) return;
       const onNode = e.target.closest(".pj-node, .pj-field");

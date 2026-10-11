@@ -46,6 +46,7 @@
     if ((h = el.closest("[data-key]"))) return { key: "k:" + h.dataset.key, el: h };
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
+    if ((h = el.closest(".se-project"))) return { key: "project", el: h };   // the project super: a wire end like any super
     if ((h = el.closest(".live-dock"))) return { key: "live", el: (h.classList.contains("open") && h.querySelector(".live-body")) || h.querySelector(".live-tab") || h };   // Live: its tab when folded, its panel when open
     if ((h = el.closest(".lv-palette"))) return { key: "palette", el: h };
     if ((h = el.closest(".orbit-title"))) return { key: "title", el: h };
@@ -63,6 +64,7 @@
     if (key === "pi") return document.querySelector(".orbit-pi");
     if (key === "live") return document.querySelector(".live-dock.open .live-body") || document.querySelector(".live-tab");
     if (key === "palette") return document.querySelector(".lv-palette");
+    if (key === "project") return document.querySelector(".se-project");
     if (key === "title") return document.querySelector(".orbit-title");
     if (key.startsWith("#")) return document.getElementById(key.slice(1));
     return null;
@@ -312,7 +314,7 @@
   // Bubbles, windows, nodes, the counter, Live and the title: on their edge (a few pixels either side of
   // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
   // their own use (moving, pressing, typing).
-  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
+  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
   const IN = 10, OUT = 9;                                            // wide enough to find without hunting
   // the edge band shrinks with a small super, so a tiny thing is not all edge: about a tenth of its smaller side
   const bands = r => { const k = Math.min(1, Math.min(r.width, r.height) / 56); return { in: Math.max(4, IN * k), out: Math.max(4, OUT * k) }; };

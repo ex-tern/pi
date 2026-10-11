@@ -4,7 +4,7 @@
   background: var(--surface, #fff); color: var(--ink, #191919);
   border: 1.5px solid var(--ink, #191919);
   border-radius: 50%;
-  corner-shape: superellipse(1.65);                         /* n = π: the same superellipse as every super */
+  corner-shape: superellipse(var(--se-k-window, 1.6515));   /* n = π like every super; Shift + scroll gives it its own (super/site.js) */
   overflow: hidden; touch-action: none; overscroll-behavior: contain;
   cursor: grab;
 }
