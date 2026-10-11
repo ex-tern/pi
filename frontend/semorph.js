@@ -151,19 +151,23 @@
   // from {rect, r, n} to {rect, r, n}; done() at the end
   function run(a, b, done) {
     const g = ghost();
-    const t0 = performance.now();
     const lerp = (p, q, t) => p + (q - p) * t;
-    function frame(now) {
-      const t = Math.max(0, Math.min(1, (now - t0) / DUR)), k = ease(t);
+    const s = { k: 0 };
+    const draw = () => {
+      const k = s.k;
       const x = lerp(a.rect.x, b.rect.x, k), y = lerp(a.rect.y, b.rect.y, k);
       const w = lerp(a.rect.w, b.rect.w, k), h = lerp(a.rect.h, b.rect.h, k);
       const r = [lerp(a.r[0], b.r[0], k), lerp(a.r[1], b.r[1], k)], n = lerp(a.n, b.n, k);
       g.path.setAttribute("d", boxPath(x, y, w, h, r, n));
       g.svg.dataset.n = n.toFixed(4);
-      if (t < 1) requestAnimationFrame(frame);
-      else { g.svg.remove(); if (done) done(); }
+    };
+    const end = () => { g.svg.remove(); if (done) done(); };
+    if (window.SeMotion) window.SeMotion.tween(s, { k: 1 }, { duration: DUR, easing: "easeInOutCubic", update: draw, complete: end });
+    else {                                                        // no semotion.js: the plain loop
+      const t0 = performance.now();
+      const frame = now => { s.k = ease(Math.max(0, Math.min(1, (now - t0) / DUR))); draw(); if (s.k < 1) requestAnimationFrame(frame); else end(); };
+      requestAnimationFrame(frame);
     }
-    requestAnimationFrame(frame);
     return g;
   }
 
@@ -190,14 +194,16 @@
 
   // a wire: straight runs with two superellipse corners (n = π), out of one side and into the other
   // (horizontal) or out of the bottom and into the top; nearly straight when the ends line up
+  // The same rule as the main super's lattice: a wire out of a top or bottom (sync, condition) sweeps in
+  // a curve; one out of a side (input, output) runs nearly straight, with small corners.
   function wire(x1, y1, x2, y2, horizontal) {
     const f = v => v.toFixed(1);
-    if (!horizontal) {                                            // the same, with the axes swapped
-      const d = wire(y1, x1, y2, x2, true);
-      return d.replace(/(-?[\d.]+),(-?[\d.]+)/g, (_, a, b) => b + "," + a);
+    if (!horizontal) {                                            // up or down: one smooth sweep
+      const dy = y2 - y1;
+      return "M" + f(x1) + "," + f(y1) + "C" + f(x1) + "," + f(y1 + dy * 0.55) + " " + f(x2) + "," + f(y2 - dy * 0.55) + " " + f(x2) + "," + f(y2);
     }
     const dx = x2 - x1, dy = y2 - y1, sx = dx >= 0 ? 1 : -1, sy = dy >= 0 ? 1 : -1;
-    const r = Math.min(Math.abs(dx) / 2, Math.abs(dy) / 2, 26);
+    const r = Math.min(Math.abs(dx) / 2, Math.abs(dy) / 2, 14);
     if (r < 1.5) return "M" + f(x1) + "," + f(y1) + "L" + f(x2) + "," + f(y2);
     const mx = (x1 + x2) / 2, e = 2 / pi, K = 10, pts = [];
     let cx = mx - r * sx, cy = y1 + r * sy;                       // first corner: from going along to going across

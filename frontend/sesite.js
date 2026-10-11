@@ -142,11 +142,13 @@
   }
   // sezoom.js: a scroll on a window sizes it (about its centre), unless its content scrolls
   function sizeWindow(p, dy) {
-    const r = p.getBoundingClientRect(), k = Math.exp(-dy * 0.0015);
-    const w = Math.max(260, Math.min(window.innerWidth - 16, r.width * k)), h = Math.max(140, Math.min(window.innerHeight - 16, r.height * k));
-    p.style.width = w + "px"; p.style.height = h + "px";
-    p.style.left = Math.round(r.left + r.width / 2 - w / 2) + "px"; p.style.top = Math.round(r.top + r.height / 2 - h / 2) + "px";
-    if (p.item && O().saveWin) O().saveWin(p.item, p);
+    const r = p.getBoundingClientRect(), k = Math.exp(-dy * 0.0015), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    const cur = p._seTo || { w: r.width, h: r.height };
+    const to = { w: Math.max(260, Math.min(window.innerWidth - 16, cur.w * k)), h: Math.max(140, Math.min(window.innerHeight - 16, cur.h * k)) };
+    p._seTo = to;
+    const put = s => { p.style.width = s.w + "px"; p.style.height = s.h + "px"; p.style.left = Math.round(cx - s.w / 2) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
+    if (window.SeMotion) { const s = { w: r.width, h: r.height }; window.SeMotion.tween(s, to, { duration: 160, easing: "easeOutCubic", update: () => put(s), complete: () => { if (p.item && O().saveWin) O().saveWin(p.item, p); } }); }
+    else { put(to); if (p.item && O().saveWin) O().saveWin(p.item, p); }
   }
 
   // the inner super is draggable by its ring: the bubbles and their wires move with it, and it stays inside the main loop

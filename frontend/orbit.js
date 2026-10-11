@@ -457,13 +457,14 @@
     if (!merged()) return;
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = e.deltaY || e.deltaX;
-    const nn = Math.min(N_MAX, Math.max(N_MIN, loopN() * Math.exp(-dy * 0.002)));
-    markN = nn;                                                     // n goes all the way to 0: the page shrinks toward the centre to stay inside
-    drawLoop();
+    const nn = Math.min(N_MAX, Math.max(N_MIN, (scrollN.to || loopN()) * Math.exp(-dy * 0.002)));
+    scrollN.to = nn;                                                // n goes all the way to 0: the page shrinks toward the centre to stay inside
+    if (window.SeMotion) { const s = { v: loopN() }; window.SeMotion.glide("page:n", s, "v", nn, 160, () => { markN = s.v; drawLoop(); }); }
+    else { markN = nn; drawLoop(); }
     const t = $(".orbit-nread");
     if (t) { t.textContent = nLabel(markN); t.classList.add("show"); }
     clearTimeout(nShowT);
-    nShowT = setTimeout(() => { if (t) t.classList.remove("show"); store("orbit:mark:n", +markN.toPrecision(5)); }, 900);
+    nShowT = setTimeout(() => { if (t) t.classList.remove("show"); scrollN.to = null; store("orbit:mark:n", +markN.toPrecision(5)); }, 900);
   }
   // The loop holds everything: each time it is drawn it measures every object on the
   // page (bubbles, title, counter, palette, Live, nodes) and grows just enough that
@@ -505,10 +506,13 @@
   let pageFit = 1;
   // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
   let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || 1)), zoomT;
+  let zoomTo = null;
   function zoomPage(k) {
-    zoom = Math.max(0.25, Math.min(3, zoom * k));
-    clearTimeout(zoomT); zoomT = setTimeout(() => store("orbit:zoom", +zoom.toFixed(3)), 400);
-    loopKey = ""; drawLoop();
+    const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
+    zoomTo = target;
+    clearTimeout(zoomT); zoomT = setTimeout(() => { store("orbit:zoom", +target.toFixed(3)); zoomTo = null; }, 400);
+    if (window.SeMotion) { const s = { v: zoom }; window.SeMotion.glide("page:zoom", s, "v", target, 160, () => { zoom = s.v; loopKey = ""; drawLoop(); }); }
+    else { zoom = target; loopKey = ""; drawLoop(); }
   }
   function setFit(f, px, py) {
     f = Math.round(f * 200) / 200;

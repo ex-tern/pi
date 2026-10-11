@@ -21,11 +21,13 @@
     : el.classList.contains("live-dock") ? "live" : el.dataset.key ? "bubble:" + el.dataset.key : null;
   function sizeThing(el, dy) {
     const name = nameOf(el); if (!name) return;
-    const cur = parseFloat(el.style.scale) || load(name) || 1;
+    const cur = el._seScaleTo || parseFloat(el.style.scale) || load(name) || 1;
     const v = Math.max(0.3, Math.min(3, cur * Math.exp(-dy * 0.0015)));
     const o = el.style.transformOrigin;
     if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%";
-    el.style.scale = v.toFixed(3); save(name, +v.toFixed(3));
+    el._seScaleTo = v; save(name, +v.toFixed(3));
+    if (window.SeMotion) { const s = { v: parseFloat(el.style.scale) || 1 }; window.SeMotion.glide("size:" + name, s, "v", v, 160, () => { el.style.scale = s.v.toFixed(3); }); }
+    else el.style.scale = v.toFixed(3);
   }
   function restore() {
     document.querySelectorAll(".orbit-title, .lv-palette, .live-dock, .orbit-bubble[data-key]").forEach(el => {

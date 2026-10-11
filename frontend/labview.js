@@ -114,6 +114,7 @@
     if (an.loop) return valueOf({ core: 1 });
     if (an.h && an.h.startsWith("node:")) return valueOf({ node: an.h.slice(5) });
     if (an.h && an.h.startsWith("port:")) return valueOf({ port: an.h.slice(5) });
+    if (an.h === "title") { const t = "Pi Tech Lab"; return { num: t.length, bool: true, str: t, text: t }; }   // the site's name
     if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, isNum: !Number.isNaN(v), bool: !!an.t, str: an.t, text: an.t }; }
     if (an.h === "pi") return valueOf({ pi: 1 });
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
@@ -394,7 +395,7 @@
         }
         // a curve out of the source's side and into the node's input from the left
         const c = Math.max(30, Math.abs(tx - sx) * 0.5), sg = right ? 1 : -1;
-        const d = se() && window.SeMorph.wire ? window.SeMorph.wire(sx, cy, tx, ty, true)
+        const d = se() && window.SeMorph.wire ? window.SeMorph.wire(sx, cy, tx, ty, Math.abs(ty - cy) <= 1.5 * Math.abs(tx - sx))   // from above or below: the curvy kind
           : "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
@@ -679,12 +680,13 @@
   let zoomed = null, suppressRing = false;
   function zoomNode(n, dy) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const cur = n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
+    const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
     const d = Math.round(Math.max(36, Math.min(n.fn === "dot" ? max : 240, cur * Math.exp(-dy * 0.0015))));
     if (d === cur) return;
-    sizeDot(n, d);
-    const b = n.el.getBoundingClientRect();
-    n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n);
+    n.st.sizeTo = d;
+    const settle = () => { const b = n.el.getBoundingClientRect(); n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n); };
+    if (window.SeMotion) { const s = { v: n.size || DOT_BASE }; window.SeMotion.glide("node:" + n.id, s, "v", d, 160, () => { sizeDot(n, Math.round(s.v)); settle(); drawWires(); }); }
+    else { sizeDot(n, d); settle(); }
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
     clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
   }
@@ -712,18 +714,22 @@
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
   // the star grows while the engines think: toward 90% of the way to π, then all the way once answered
   function grow(n) {
+    const goal = n.st.go ? 0.9 : (n.answer ? 1 : 0);
+    const draw = () => { if (!n.el.isConnected) return; const g = G(); n.st.sn = g + (P() - g) * ease(Math.max(0, Math.min(1, n.st.t))); drawSuper(n); };
+    if (n.st.goal === goal) return;
+    n.st.goal = goal;
+    if (window.SeMotion) { window.SeMotion.glide("super:" + n.id, n.st, "t", goal, n.st.go ? 1800 : 300, draw); return; }
     if (n.st.anim) return;
     n.st.anim = true;
     let last = performance.now();
     const step = now => {
       if (!n.el.isConnected) { n.st.anim = false; return; }
       const dt = now - last; last = now;
-      const goal = n.st.go ? 0.9 : (n.answer ? 1 : 0);
-      n.st.t += (goal - n.st.t) * Math.min(1, dt / (n.st.go ? 1800 : 260));
-      if (Math.abs(goal - n.st.t) < 0.002) n.st.t = goal;
-      const g = G(); n.st.sn = g + (P() - g) * ease(Math.max(0, Math.min(1, n.st.t)));
-      drawSuper(n);
-      if (n.st.go || n.st.t !== goal) requestAnimationFrame(step); else n.st.anim = false;
+      const g2 = n.st.goal;
+      n.st.t += (g2 - n.st.t) * Math.min(1, dt / (n.st.go ? 1800 : 260));
+      if (Math.abs(g2 - n.st.t) < 0.002) n.st.t = g2;
+      draw();
+      if (n.st.t !== g2) requestAnimationFrame(step); else n.st.anim = false;
     };
     requestAnimationFrame(step);
   }
