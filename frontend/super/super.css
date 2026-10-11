@@ -305,3 +305,13 @@ html.shape-se .orbit-title { left: 14%; }
 .se-port-owned:hover .se-port-name, html.sl-dragging .se-port-owned .se-port-name, html.lv-dragging .se-port-owned .se-port-name { opacity: 1; }
 html.shape-se .orbit-panel.se-held { opacity: 0.45; }
 html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }
+
+/* the super under the pointer (super/hover.js): its edge turns cobalt, "here" */
+html.shape-se .orbit-bubble.se-on, html.shape-se .orbit-panel.se-on, html.shape-se .live-body.se-on, html.shape-se .live-tab.se-on,
+html.shape-se .lv-palette.se-on, html.shape-se .op-body .card.se-on, html.shape-se .rs-card.se-on, html.shape-se .perf-card.se-on,
+html.shape-se .perf-next.se-on, html.shape-se .buddy-corpus.se-on, html.shape-se .stat-card.se-on, html.shape-se .tr-tile.se-on { border-color: var(--cobalt) !important; }
+html.shape-se .orbit-panel.se-on .op-outline path, html.shape-se .se-on > .op-outline path { stroke: var(--cobalt); }
+html.shape-se .lv-node.se-on { border-color: var(--cobalt) !important; }
+html.shape-se .orbit-title.se-on .sel-badge { stroke: var(--cobalt); }
+html.shape-se.se-on-site .om-site-loop { stroke: var(--cobalt); }
+html.shape-se.se-on-loop .om-page-loop { stroke: var(--cobalt); }
