@@ -326,3 +326,11 @@ html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shap
 html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 3; }
 html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-site.se-on-site .om-site-loop { stroke: var(--cobalt); stroke-width: 2.5; }
 html.shape-se.se-sel-loop .om-page-loop, html.shape-se.se-sel-loop.se-on-loop .om-page-loop { stroke: var(--cobalt); }
+
+/* a bubble being sized (super/scroll.js): the glide moves it, not a transition on its transform */
+html.shape-se .orbit-bubble.se-sizing { transition: border-color 0.15s ease, background 0.15s ease !important; }
+
+/* a bubble held by its condition port, and a tick on its sync port */
+html.shape-se .orbit-bubble.se-held { opacity: 0.45; }
+html.shape-se .orbit-bubble.se-tick { animation: se-tick 0.5s ease-out; }
+@keyframes se-tick { 0% { border-color: var(--cobalt); } 100% { border-color: var(--hair-strong); } }

@@ -600,7 +600,7 @@
   // a bubble's box for the layout: its size times the scale a scroll gave it (super/scroll.js), so sized
   // bubbles never overlap
   function measureBubble(it) {
-    const k = parseFloat(it.bubble.style.scale) || 1;
+    const k = parseFloat(it.bubble.style.getPropertyValue("--se-scale")) || 1;   // super/scroll.js: its size, a scale in its transform
     it.w0 = it.bubble.offsetWidth || 120; it.h0 = it.bubble.offsetHeight || 32;
     it.w = it.w0 * k; it.h = it.h0 * k;
   }
@@ -655,9 +655,8 @@
       const r = it.at || { x: Math.min(W - it.w - 6, Math.max(6, lx - it.w / 2)), y: Math.min(H - it.h - 6, ly + R + piBox.h + 20), w: it.w, h: it.h };
       // a bubble sized by scrolling (super/scroll.js: CSS scale about its centre) is laid out at its sized box:
       // the translate puts the unscaled box where its scaled box lands on r
-      // (the CSS scale property applies after the transform, so the translate is divided by it)
-      const k = (it.w0 && r.w / it.w0) || 1;
-      it.bubble.style.transform = "translate(" + ((r.x - ((it.w0 || r.w) - r.w) / 2) / k).toFixed(1) + "px," + ((r.y - ((it.h0 || r.h) - r.h) / 2) / k).toFixed(1) + "px)";
+      // translate first, then the size as a scale about its centre: sizing keeps the centre, the layout the box
+      it.bubble.style.transform = "translate(" + (r.x - ((it.w0 || r.w) - r.w) / 2).toFixed(1) + "px," + (r.y - ((it.h0 || r.h) - r.h) / 2).toFixed(1) + "px) scale(var(--se-scale, 1))";
     });
     drawRings();
   }
@@ -703,8 +702,7 @@
       moved = true; dragging = it; b.classList.add("dragging");
       const L = toLayout(e.clientX, e.clientY);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)), y = Math.min(H - it.h, Math.max(0, L.y - oy));
-      const k = (it.w0 && it.w / it.w0) || 1;                            // a sized bubble: its scaled box lands on (x, y)
-      b.style.transform = "translate(" + (x - ((it.w0 || it.w) - it.w) / 2) / k + "px," + (y - ((it.h0 || it.h) - it.h) / 2) / k + "px)";
+      b.style.transform = "translate(" + (x - ((it.w0 || it.w) - it.w) / 2) + "px," + (y - ((it.h0 || it.h) - it.h) / 2) + "px) scale(var(--se-scale, 1))";   // a sized bubble: its scaled box lands on (x, y)
     });
     const end = e => {
       if (!b.hasPointerCapture(e.pointerId)) return;

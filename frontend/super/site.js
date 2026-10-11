@@ -99,6 +99,13 @@
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
         set.input.classList.toggle("is-held", p.classList.contains("se-held"));
       });
+      document.querySelectorAll(".orbit-bubble[data-key]").forEach(bb => {   // bubbles are supers too
+        if (bb.hidden || !bb.getClientRects().length) return;
+        const r = bb.getBoundingClientRect(); if (!r.width) return;
+        const owner = "bubble:" + bb.dataset.key; seen.add(owner);
+        const set = ensurePorts(owner, (bb.querySelector(".ob-name, .ob-title, b") || bb).textContent.trim().slice(0, 40) || "the bubble");
+        placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
+      });
       document.querySelectorAll(".lv-node[data-id]").forEach(nd => {       // every node is a super with four ports
         const r = nd.getBoundingClientRect(); if (!r.width) return;
         const owner = "node:" + nd.dataset.id; seen.add(owner);
@@ -112,9 +119,21 @@
     const pts = { input: [cx - a, cy], output: [cx + a, cy], sync: [cx, cy - b], condition: [cx, cy + b] };
     PORTS.forEach(([p]) => { const [x, y] = pts[p], el = set[p]; const l = x + "px", t = y + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; });
   }
+  const bubbleEl = key => [...document.querySelectorAll('.orbit-bubble[data-key]')].find(b => b.dataset.key === key) || null;
   const ownerEl = owner => owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
+    : owner.startsWith("bubble:") ? bubbleEl(owner.slice(7))
     : owner.startsWith("node:") ? document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]') : null;
-  const ownerName = owner => { if (owner === "site") return "the site"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; } return "the loop"; };
+  const ownerName = owner => { if (owner === "site") return "the site"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
+    if (owner.startsWith("bubble:")) { const i = O().info && O().info(owner.slice(7)); return i ? i.title : "the bubble"; } return "the node"; };
+  // a bubble's ports: output is its name and its pills, input goes into its field (SciM's), a tick brings it up, condition false holds it
+  const bubState = {};
+  function bubbleValue(key, port) {
+    const el = bubbleEl(key), st = bubState[key] || {};
+    if (port === "output") { const t = el ? el.innerText.trim().replace(/\s+/g, " ").slice(0, 200) : key; return { num: t.length, bool: !!el, str: t, text: t }; }
+    if (port === "input") { const t = st.input || ""; return { num: t.length, bool: !!t, str: t, text: t }; }
+    if (port === "sync") { const v = st.ticks || 0; return { num: v, isNum: true, bool: !st.held, str: String(v), text: String(v) }; }
+    return { num: st.held ? 0 : 1, isNum: true, bool: !st.held, str: st.held ? "held" : "running", text: st.held ? "held" : "running" };
+  }
   const firstField = p => p && p.querySelector('input[type="search"], input[type="text"], input:not([type]), textarea');
   // what a window's ports hold (a loop's are read by super/nodes.js, which owns the loops)
   const winState = {};                                      // key -> { input, ticks, held }
@@ -127,6 +146,27 @@
   }
   // super/nodes.js: what is wired into a window's ports now (values, or null for nothing wired)
   function setPortInput(owner, port, vals) {
+    if (owner.startsWith("bubble:")) {
+      const key = owner.slice(7), el = bubbleEl(key); if (!el) return;
+      const st = bubState[key] || (bubState[key] = { input: "", ticks: 0, held: false, sync: null });
+      if (port === "input") {
+        const text = (vals || []).map(v => v && (v.text != null ? v.text : v.str)).filter(Boolean).join(" ").trim();
+        if (text === st.input) return;
+        st.input = text;
+        const f = el.querySelector(".ob-chat input, input");
+        if (f && text) { f.value = text; f.dispatchEvent(new Event("input", { bubbles: true })); }
+      } else if (port === "sync") {
+        const v = vals && vals.length ? vals.map(x => x && x.str).join("|") : null;
+        const first = st.sync === null; const was = st.sync; st.sync = v;
+        if (v === null || first || v === was) return;
+        st.ticks++; el.classList.remove("se-tick"); void el.offsetWidth; el.classList.add("se-tick");
+      } else if (port === "condition") {
+        const held = vals && vals.length ? !vals.every(x => x && x.bool) : false;
+        if (held === st.held) return;
+        st.held = held; el.classList.toggle("se-held", held);
+      }
+      return;
+    }
     if (!owner.startsWith("win:")) return;
     const key = owner.slice(4), p = O().elOf && O().elOf(key); if (!p) return;
     const st = winState[key] || (winState[key] = { input: "", ticks: 0, held: false, sync: null });
@@ -196,6 +236,7 @@
     if (pid.includes("/")) {                                 // a window's or a loop's port
       const [owner, port] = pid.split("/");
       if (owner.startsWith("win:")) return winValue(owner.slice(4), port);
+      if (owner.startsWith("bubble:")) return bubbleValue(owner.slice(7), port);
       const LV = window.LabView; return LV && LV.loopPort ? LV.loopPort(owner.slice(5), port) : { num: 0, bool: false, str: "", text: "" };
     }
     const port = pid;

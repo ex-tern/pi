@@ -359,11 +359,17 @@
       // or bubble wired in, "close" (hide) closes it, "pause" and "run" hold and release it, each time
       // the wiring changes (type "Open" into a ■, wire a bubble into it: its window opens)
       if ((n.fn === "box" || n.fn === "dot") && n.str && VERBS[n.str.trim().toLowerCase()]) {
-        const w = wiringOf(n);
+        // every wire touching the node, its body or any of its ports, whichever way it was drawn: what is
+        // at the other end (a bubble, a window, or one of their ports) is what the verb acts on
+        const me = "node:" + n.id, mine = h => h === me || (h && h.startsWith("port:" + me + "/"));
+        const touching = (window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : []).map(l => mine(l.a && l.a.h) ? l.b : mine(l.b && l.b.h) ? l.a : null).filter(Boolean);
+        const w = JSON.stringify([n.inputs, touching]);
         if (n.verbWiring !== undefined && w !== n.verbWiring && !n.held) {
           const verb = VERBS[n.str.trim().toLowerCase()];
-          linkIns(n).concat(n.inputs).forEach(an => {
-            const key = an.key ? an.key : an.h && an.h.startsWith("k:") ? an.h.slice(2) : an.h && an.h.startsWith("w:") && O().keyOfTitle ? O().keyOfTitle(an.h.slice(2)) : null;
+          touching.concat(n.inputs).forEach(an => {
+            const h = an.h || "";
+            const key = an.key ? an.key : h.startsWith("k:") ? h.slice(2) : h.startsWith("w:") && O().keyOfTitle ? O().keyOfTitle(h.slice(2))
+              : /^port:(bubble|win):/.test(h) ? h.replace(/^port:(bubble|win):/, "").replace(/\/\w+$/, "") : null;
             if (!key) return;
             const own = key.replace(/ group$/, "");
             if (verb === "open") { if (O().openKey && (O().openKey(own) || O().openKey(key))) say("Opened " + nameOf({ key: own })); }

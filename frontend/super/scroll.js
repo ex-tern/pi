@@ -22,30 +22,36 @@
   // a thing with a size of its own: scaled about its centre, remembered by name
   const nameOf = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette"
     : el.classList.contains("live-dock") ? "live" : el.dataset.key ? "bubble:" + el.dataset.key : null;
+  // a bubble's size is a scale inside orbit.js's transform (translate, then scale about its centre), so sizing
+  // keeps its centre and never fights the layout's translate; the others are scaled with the CSS scale property
+  const isBubble = el => el.classList.contains("orbit-bubble");
+  const getScale = el => isBubble(el) ? (parseFloat(el.style.getPropertyValue("--se-scale")) || 1) : (parseFloat(el.style.scale) || 1);
+  const putScale = (el, v) => { if (isBubble(el)) el.style.setProperty("--se-scale", v.toFixed(3)); else el.style.scale = v.toFixed(3); };
   function sizeThing(el, dy) {
     const name = nameOf(el); if (!name) return;
-    const cur = el._seScaleTo || parseFloat(el.style.scale) || load(name) || 1;
+    const cur = el._seScaleTo || getScale(el) || load(name) || 1;
     let max = 3;
-    if (el.classList.contains("orbit-bubble") && O().siteBox) {                 // a bubble stays well inside the inner super
+    if (isBubble(el) && O().siteBox) {                                          // a bubble stays well inside the inner super
       const sb = O().siteBox(), w0 = el.offsetWidth || 1, h0 = el.offsetHeight || 1;
       max = Math.max(0.3, Math.min(3, 1.2 * sb.a / w0, 1.2 * sb.b / h0));
     }
     const v = Math.max(0.3, Math.min(max, cur * Math.exp(-dy * 0.0015)));
-    const o = el.style.transformOrigin;
-    if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%";
+    if (!isBubble(el)) { const o = el.style.transformOrigin; if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%"; }
     el._seScaleTo = v; save(name, +v.toFixed(3));
-    // a sized bubble takes more (or less) room: the others are re-laid around it (a few times a second)
-    if (el.classList.contains("orbit-bubble") && el.dataset.key && O().prioritize) O().prioritize(el.dataset.key);
-    const relay = () => { if (el.classList.contains("orbit-bubble") && O().layout) { const t = performance.now(); if (t - (relay.t || 0) > 80) { relay.t = t; O().layout(); } } };
-    if (window.SeMotion) { const s = { v: parseFloat(el.style.scale) || 1 }; window.SeMotion.glide("size:" + name, s, "v", v, 160, () => { el.style.scale = s.v.toFixed(3); relay(); }); }
-    else { el.style.scale = v.toFixed(3); relay(); }
+    // a sized bubble takes more (or less) room: the others are re-laid around it once the gesture has settled
+    // (not while it glides: a relayout every few frames made the page jerk)
+    if (isBubble(el) && el.dataset.key && O().prioritize) O().prioritize(el.dataset.key);
+    const relay = () => { if (!isBubble(el) || !O().layout) return; clearTimeout(el._seRelay); el._seRelay = setTimeout(() => { el.classList.remove("se-sizing"); O().layout(); }, 260); };
+    if (isBubble(el)) el.classList.add("se-sizing");                            // its transform transition off while it sizes: the glide is the motion
+    if (window.SeMotion) { const s = { v: getScale(el) }; window.SeMotion.glide("size:" + name, s, "v", v, 160, () => { putScale(el, s.v); relay(); }); }
+    else { putScale(el, v); relay(); }
   }
   function restore() {
     document.querySelectorAll(".orbit-title, .lv-palette, .live-dock, .orbit-bubble[data-key]").forEach(el => {
       if (el.dataset.seSized) return;
       const name = nameOf(el), v = name && load(name);
       el.dataset.seSized = "1";
-      if (v && v !== 1) { el.style.transformOrigin = "50% 50%"; el.style.scale = String(v); }
+      if (v && v !== 1) { if (!isBubble(el)) el.style.transformOrigin = "50% 50%"; putScale(el, v); }
     });
   }
   // the super whose edge a point is just outside of (within BAND px): the nearest one not covered by
