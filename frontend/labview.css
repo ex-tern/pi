@@ -189,3 +189,9 @@ html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .lv-node .lv-val, .lv-node.lv-dot.is-loop .lv-val { display: none; }
 /* the edge under the pointer: only the crosshair says so, no halo */
 .sl-edge-on, .lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: none; }
+/* a ■ or ● keeps its shape: what it holds is fitted inside (labview.js fitText), not grown around */
+.lv-node.lv-dot.has-val, .lv-node.lv-box.has-val, html.shape-se .lv-node.lv-dot.has-val, html.shape-se .lv-node.lv-box.has-val { width: var(--lv-s, 56px); padding: 0; }
+html.shape-se .lv-node.lv-dot.has-val, .lv-node.lv-dot.has-val { border-radius: 50%; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), html.shape-se .lv-node.lv-box:has(.lv-in), html.shape-se .lv-node.lv-dot:has(.lv-in) { width: var(--lv-s, 56px); padding: 0; }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) * 0.8); min-width: 0; max-width: none; field-sizing: fixed; }
+.lv-node .lv-glyph { white-space: nowrap; overflow: hidden; max-width: 100%; }

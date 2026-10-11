@@ -1435,7 +1435,7 @@
         const d = curve(o[0], o[1], P[0], P[1], hz);
         html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
                 wireTerm(o, "wire-term") + wireTerm(P, "wire-term") +
-                '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(O.title) + ' – the loop: click to disconnect</title></path></g>';
+                '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(O.title) + ' – the loop: double-click to delete</title></path></g>';
         return;
       }
       const A = wireEnd(a), B = wireEnd(b);
@@ -1457,7 +1457,7 @@
       const live = isLive(A) || isLive(B) || (a === "Tools" && b === "Explore" && actLevel !== "quiet");
       html += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
               wireTerm(t1, "wire-term") + wireTerm(t2, "wire-term") +
-              '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(a) + " – " + esc(b) + ': click to disconnect</title></path></g>';
+              '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(a) + " – " + esc(b) + ': double-click to delete</title></path></g>';
     });
     // the loop's own edge: drag from it to wire the loop to a bubble
     if (pageLoop() && loopD) html += '<path class="loop-hit" transform="translate(0,' + (top - sr0.top) + ')" d="' + loopD + '"><title>Drag from the loop onto a bubble to connect them</title></path>';
@@ -1472,7 +1472,7 @@
   }
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
   function wireEditing(svg) {
-    svg.addEventListener("click", e => {
+    svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation();
