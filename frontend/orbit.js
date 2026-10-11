@@ -1642,6 +1642,7 @@
     if (k !== seatKey) { seatKey = k; seatEdges(); }               // the frame changed: re-seat the edges
     measure(); drawLoop(); keepWindowsIn();
   }, 250);
+  document.addEventListener("se:frame", drawWires);   // semotion.js: while something moves, every frame
 
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered

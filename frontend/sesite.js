@@ -194,5 +194,6 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
+  document.addEventListener("se:frame:first", layout);   // semotion.js: while something moves, every frame, before the wires
   window.SeSite = { value, setInput, setCondition, sizeWindow, site: () => site, ports: () => ports, portEl: p => ports[p] || null };
 })();

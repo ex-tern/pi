@@ -892,6 +892,11 @@
     // the diagram you left last time
     (restore("lv:nodes") || []).forEach(make);
     setInterval(tick, 250);
+    document.addEventListener("se:frame", () => {              // semotion.js: while something moves, every frame
+      const f = O().fit ? O().fit().f : 1;
+      if (f !== lastFit) { lastFit = f; nodes.forEach(place); }
+      drawWires();
+    });
     setInterval(() => { let k = 0; nodes.forEach(n => { if (n.role === "loop" && !n.paused && !n.held) { n.i = (n.i || 0) + 1; k++; } }); if (k) tick(); }, 1000);   // loops count
     // zooming on a node (a trackpad pinch, or ctrl + wheel; two fingers on a touch screen) sizes it;
     // scrolling stays what it is everywhere: the page's n

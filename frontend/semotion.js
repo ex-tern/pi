@@ -12,13 +12,36 @@
   const EASE = { easeInOutCubic: t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2,
                  easeOutCubic: t => 1 - Math.pow(1 - t, 3), easeOutQuad: t => 1 - (1 - t) * (1 - t), linear: t => t };
 
+  // ---- the frame: while anything moves, every wire is redrawn each animation frame --------------
+  // Wires (orbit.js, labview.js, superlink.js) and the inner super's lattice (sesite.js) are drawn from
+  // where their ends are on screen. Between gestures a redraw four times a second is plenty; while a
+  // pointer is down, a tween runs or a scroll just happened they would lag what they join (the stutter),
+  // so "se:frame" is dispatched on the document once per animation frame for as long as that lasts.
+  let running = 0, pointer = 0, hot = 0, pumping = false;
+  const se = () => document.documentElement.classList.contains("shape-se");
+  function frame(now) {
+    document.dispatchEvent(new CustomEvent("se:frame:first"));   // what places things (sesite.js's ports) goes first
+    document.dispatchEvent(new CustomEvent("se:frame"));
+    if (running > 0 || pointer > 0 || now < hot) requestAnimationFrame(frame); else pumping = false;
+  }
+  function pump() { if (pumping || !se()) return; pumping = true; requestAnimationFrame(frame); }
+  function mark() { hot = performance.now() + 300; pump(); }
+  document.addEventListener("pointerdown", () => { pointer++; pump(); }, true);
+  ["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, () => { pointer = Math.max(0, pointer - 1); mark(); }, true));
+  window.addEventListener("blur", () => { pointer = 0; });
+  ["wheel", "touchmove", "keydown"].forEach(t => document.addEventListener(t, mark, { capture: true, passive: true }));
+  window.addEventListener("resize", mark);
+
   function tween(obj, to, opt) {
     opt = opt || {};
     const duration = reduce.matches ? 0 : (opt.duration == null ? 400 : opt.duration);
     const easing = opt.easing || "easeInOutCubic";
+    let open = true;
+    const done = () => { if (open) { open = false; running = Math.max(0, running - 1); mark(); } };
+    running++; pump();
     if (window.anime && duration > 0) {
-      const a = window.anime(Object.assign({ targets: obj, duration, easing, update: opt.update, complete: opt.complete }, to));
-      return { cancel: () => { a.pause(); } };
+      const a = window.anime(Object.assign({ targets: obj, duration, easing, update: opt.update, complete: () => { done(); if (opt.complete) opt.complete(); } }, to));
+      return { cancel: () => { a.pause(); done(); } };
     }
     const from = {}; Object.keys(to).forEach(k => { from[k] = obj[k]; });
     const t0 = performance.now(), f = EASE[easing] || EASE.easeInOutCubic;
@@ -28,10 +51,10 @@
       const t = duration > 0 ? Math.max(0, Math.min(1, (now - t0) / duration)) : 1, k = f(t);
       Object.keys(to).forEach(key => { obj[key] = from[key] + (to[key] - from[key]) * k; });
       if (opt.update) opt.update();
-      if (t < 1) requestAnimationFrame(step); else if (opt.complete) opt.complete();
+      if (t < 1) requestAnimationFrame(step); else { done(); if (opt.complete) opt.complete(); }
     };
     requestAnimationFrame(step);
-    return { cancel: () => { stopped = true; } };
+    return { cancel: () => { stopped = true; done(); } };
   }
   // a value that keeps gliding: each new target replaces the last tween (scroll steps become one motion)
   const live = {};
@@ -41,5 +64,5 @@
     live[key] = tween(obj, to, { duration: duration == null ? 160 : duration, easing: "easeOutCubic", update, complete: () => { delete live[key]; } });
     return live[key];
   }
-  window.SeMotion = { tween, glide, has: () => !!window.anime };
+  window.SeMotion = { tween, glide, has: () => !!window.anime, busy: () => running > 0 || pointer > 0 || performance.now() < hot, wake: mark };
 })();

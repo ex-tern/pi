@@ -379,6 +379,7 @@
       hits.slice(1).forEach(h => { if (seen.has(h.ownerSVGElement)) return; seen.add(h.ownerSVGElement); h.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: e.clientX, clientY: e.clientY })); });
     }, true);
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
+    document.addEventListener("se:frame", draw);                      // semotion.js: while something moves, every frame
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
