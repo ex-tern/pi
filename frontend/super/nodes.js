@@ -162,10 +162,19 @@
     return xs.slice(1).reduce((a, b) => op === "*" ? a * b : op === "+" ? a + b : op === "-" ? a - b : op === "/" ? a / b : op === "^" ? Math.pow(a, b) : a % b, xs[0]);
   }
   // what sits inside a loop's ring, and which of it is the result: the node nothing else inside takes from
+  // a holder: a ■ grown past HOLD_AT is a super that holds supers, as a loop's ring does (super/nodes.css .is-holder)
+  const HOLD_AT = 150;
+  const isHolder = n => n && n.fn === "box" && !!n.hold && (n.size || 0) >= HOLD_AT && n.role !== "stop";   // sized up by you, not grown to show an answer
+  function within(holder, m) {                                         // m sits inside the holder (clear of its curved corners)
+    const r = holder.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.06;
+    return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k;
+  }
   function inside(loop) {
+    if (isHolder(loop)) return nodes.filter(m => m !== loop && within(loop, m) && !(isHolder(m) && within(m, loop)));
     const r = loop.el.getBoundingClientRect(), R = r.width / 2, cx = r.left + R, cy = r.top + r.height / 2;
     return nodes.filter(m => m !== loop && (() => { const b = m.el.getBoundingClientRect(); return Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) + Math.max(b.width, b.height) / 2 <= R + 4; })());
   }
+  const holderOf = m => nodes.filter(h => h !== m && isHolder(h) && within(h, m)).sort((a, b) => (a.size || 0) - (b.size || 0))[0] || null;
   function bodyOut(loop) {
     const ins = inside(loop);
     if (!ins.length) return null;
@@ -199,7 +208,8 @@
       case "dot": {
         if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
           const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
-          n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).filter(Boolean).join(" ").trim();
+          const held = isHolder(n) ? bodyOut(n) : null;                    // a holder: what is inside it is part of its question
+          n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).concat(held ? [strOf(evalNode(held))] : []).filter(Boolean).join(" ").trim();
           if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
           const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
@@ -209,7 +219,7 @@
           break;
         }
         const v = ins[ins.length - 1];
-        const body = n.role === "loop" ? bodyOut(n) : null;                // a loop gives what is inside it: its body's result
+        const body = n.role === "loop" || (isHolder(n) && !n.field) ? bodyOut(n) : null;   // a loop or a holder gives what is inside it: its body's result
         if (body) { const v = evalNode(body); r = Object.assign({}, v, { bool: !n.paused }); }
         else if (n.role === "loop") r = { num: n.i || 0, isNum: true, bool: !n.paused, str: String(n.i || 0), text: String(n.i || 0) };
         else if (n.role === "int") { const x = parseInt(n.str, 10); r = Number.isNaN(x) ? { num: 0, isNum: true, bool: false, str: "", text: "" } : { num: x, isNum: true, bool: x !== 0, str: String(x), text: String(x) }; }
@@ -409,6 +419,7 @@
         if (n.val.textContent !== lab) n.val.textContent = lab;
         n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
         n.el.classList.toggle("is-loop", n.role === "loop");
+        n.el.classList.toggle("is-holder", isHolder(n));
         fitText(n);
         n.el.classList.toggle("has-val", !!n.text && !n.field && n.role !== "stop" && n.role !== "loop");
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
@@ -525,7 +536,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -572,7 +583,7 @@
       });
       return inp;
     };
-    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || "";
+    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold;
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -717,12 +728,15 @@
   }
   // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
   function clear(n) {
-    if (n.role === "loop") return;                                       // a loop holds things: nothing steps out of it
+    if (n.role === "loop" || isHolder(n) || holderOf(n)) return;         // a loop or a holder holds things, and what is inside stays
     for (let k = 0; k < 8; k++) {
       const a = n.el.getBoundingClientRect();
-      const hit = nodes.find(o => o !== n && o.role !== "loop" && (() => { const b = o.el.getBoundingClientRect(); return a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom; })());
-      if (!hit) return;
-      const b = hit.el.getBoundingClientRect();
+      const over = b => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
+      const hit = nodes.find(o => o !== n && o.role !== "loop" && !(isHolder(o) && within(o, n)) && !(isHolder(n) && within(n, o)) && over(o.el.getBoundingClientRect()));
+      // nothing overlaps unless it is inside a super: the project super, the title and Live are in the way too
+      const fixed = !hit && [...document.querySelectorAll(".se-project:not(.is-open), .orbit-title, .live-tab, .live-dock.open .live-body")].find(el => el.getClientRects().length && over(el.getBoundingClientRect()));
+      if (!hit && !fixed) return;
+      const b = hit ? hit.el.getBoundingClientRect() : fixed.getBoundingClientRect();
       n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 18) / window.innerHeight; place(n);
       if (b.bottom + 18 + a.height > window.innerHeight - 22) return;
     }
@@ -740,13 +754,16 @@
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
       if (!moved) {
         moved = true;
+        if (n && isHolder(n)) n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
         html.classList.add("lv-dragging");
       }
       const L = toLayout(ev.clientX, ev.clientY);
+      const fx0 = n.fx, fy0 = n.fy;
       n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
+      if (n.st.crew) n.st.crew.forEach(c => { c.m.fx += n.fx - fx0; c.m.fy += n.fy - fy0; place(c.m); });
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
@@ -765,6 +782,9 @@
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
+      if (n.st.crew) { n.st.crew = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
+      const into = holderOf(n);
+      if (into && ev.type === "pointerup") { place(n); persist(); tick(); say(BY[n.fn].name + " is now inside a super"); return; }   // dropped into a holder: it stays where it was put
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
       if (n.fn === "box" && ev.type === "pointerup" && boxGuess(n, ev.clientX, ev.clientY)) { persist(); tick(); return; }
@@ -785,7 +805,7 @@
       }
       if (t && t.el && BY[n.fn].n) {
         const ref = refOf(t.el);
-        if ((n.fn === "box" || n.fn === "dot") && n.role) { place(n); persist(); tick(); return; }   // it already is something: just moved
+        if ((n.fn === "box" || n.fn === "dot") && n.role) { place(n); clear(n); persist(); tick(); return; }   // it already is something: just moved
         attach(n, ref);
         if (n.fn === "add" && n.inputs.length === 1 && ref.key) setTimeout(() => signOn(n, ref, t.el), 0);
         if (n.inputs.some(r => same(r, ref))) { beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + " wired to " + nameOf(ref)); }
@@ -793,6 +813,7 @@
         say(BY[n.fn].name + " placed" + (n.fn === "box" || n.fn === "dot" ? ": it is nothing yet; type a letter for text or a digit for an integer" : n.fn === "ask" ? ": type a question and press Enter" : ": drop it on something to wire it"));
         if (n.fn === "ask" || ((n.fn === "box" || n.fn === "dot") && !n.role)) setTimeout(() => n.el.focus({ preventScroll: true }), 60);
       }
+      clear(n);                                                          // nothing overlaps unless it is inside a super
       persist(); tick();
     };
     startEl.addEventListener("pointermove", move);
@@ -824,6 +845,10 @@
     });
     n.el.addEventListener("dblclick", e => {                              // a double click deletes it, wires and all
       if (e.target.closest && e.target.closest("input")) return;
+      if (isHolder(n)) {                                                  // a holder: inside, a new super; on its label strip at the top, removed
+        const r = n.el.getBoundingClientRect();
+        if (e.clientY - r.top > Math.max(34, r.height * 0.16)) { e.preventDefault(); e.stopPropagation(); const m = spawnAt(e.clientX, e.clientY, !e.shiftKey); if (m) say("A super made inside " + (n.str || "the super")); return; }
+      }
       e.preventDefault(); e.stopPropagation(); remove(n); say(BY[n.fn].name + " deleted");
     });
     n.el.addEventListener("keydown", e => {
@@ -893,16 +918,17 @@
   function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
   let zoomed = null, suppressRing = false;
-  function zoomNode(n, dy) {
+  function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
-    const d = Math.round(Math.max(36, Math.min(n.fn === "dot" ? max : 240, cur * Math.exp(-dy * 0.0015))));
+    const d = Math.round(Math.max(36, Math.min(n.fn === "dot" || n.fn === "box" ? max : 240, cur * Math.exp(-dy * 0.0015))));
     if (d === cur) return;
     n.st.sizeTo = d;
     const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s / 2) / window.innerHeight; place(n); };
     if (window.SeMotion) { const s = { v: n.size || DOT_BASE }; window.SeMotion.glide("node:" + n.id, s, "v", d, 160, () => { sizeDot(n, Math.round(s.v)); settle(); drawWires(); }); }
     else { sizeDot(n, d); settle(); }
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
+    if (n.fn === "box" && !auto && (cur < HOLD_AT) !== (d < HOLD_AT)) { n.hold = d >= HOLD_AT; say(d >= HOLD_AT ? "■ now holds supers: drop supers into it, or double-click inside it to make one" : "■ is small again: it holds nothing"); }
     clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
   }
   // π, and everything that follows it, runs or stands still
@@ -966,7 +992,7 @@
       if (r.finished) {
         n.st.go = false; n.el.classList.remove("is-thinking"); grow(n);
         const want = Math.min(240, Math.max(n.size || DOT_BASE, Math.round(70 + Math.sqrt((n.answer || "").length) * 9)));   // room to read the answer
-        if (want > (n.size || DOT_BASE) + 4) zoomNode(n, -Math.log(want / (n.st.sizeTo || n.size || DOT_BASE)) / 0.0015);
+        if (want > (n.size || DOT_BASE) + 4) zoomNode(n, -Math.log(want / (n.st.sizeTo || n.size || DOT_BASE)) / 0.0015, true);   // grown to read, not to hold
         const got = r.engines.filter(e => r.results[e.id] && r.results[e.id].state === "ok").length;
         say("Super AI: " + got + " of " + r.engines.length + " engines answered; press it to see each answer");
         persist();
@@ -1148,6 +1174,7 @@
     }, true);
     // a wire added or deleted anywhere: values update at once
     document.addEventListener("superlink:change", () => tick());
+    document.addEventListener("se:obstacle", () => { nodes.forEach(n => clear(n)); persist(); });   // something moved onto the nodes: they step off it
     // typing with nothing focused goes into the selected super (a prompt is written straight into it)
     document.addEventListener("keydown", e => {
       const a = document.activeElement;

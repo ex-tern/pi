@@ -113,6 +113,7 @@
     document.body.appendChild(el);
     wire();
     place();
+    setTimeout(settleFree, 1500);                                    // never on top of something to begin with
   }
   function port(n, side) {
     return side === "out" ? [n.x + n.w, n.y + n.h / 2] : side === "in" ? [n.x, n.y + n.h / 2] : side === "top" ? [n.x + n.w / 2, n.y] : [n.x + n.w / 2, n.y + n.h];
@@ -296,6 +297,19 @@
     document.addEventListener("se:frame", place);
     setInterval(place, 500);                                         // the inner super moves with the page's fit
   }
+  // nothing overlaps unless it is inside a super: dropped on the title, Live, the inner super's ring area
+  // edges or a window, the compact project super moves to the nearest free spot
+  function settleFree() {
+    const vw = window.innerWidth, vh = window.innerHeight, c = compactRect();
+    const blocks = [...document.querySelectorAll(".orbit-title, .live-tab, .live-dock.open .live-body, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => x.getBoundingClientRect());
+    const free = (x, y) => blocks.every(b => x + MIN + 8 <= b.left || b.right + 8 <= x || y + MIN + 8 <= b.top || b.bottom + 8 <= y);
+    if (free(c.x, c.y)) return;
+    for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
+      const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
+      if (x < 4 || y < 4 || x > vw - MIN - 4 || y > vh - MIN - 4 || !free(x, y)) continue;
+      state.x = x / vw; state.y = y / vh; place(); return;
+    }
+  }
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
@@ -306,7 +320,12 @@
       state.x = (ev.clientX - dx) / window.innerWidth; state.y = (ev.clientY - dy) / window.innerHeight;
       place();
     };
-    const up = () => { window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); if (moved) save(state); };
+    const up = () => {
+      window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
+      if (!moved) return;
+      settleFree(); save(state);
+      document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves
+    };
     window.addEventListener("pointermove", move, true);
     window.addEventListener("pointerup", up, true);
   }

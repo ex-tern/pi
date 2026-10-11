@@ -476,7 +476,7 @@
     // superellipse look: an open window sits inside the inner super with the bubbles, and hides none of
     // them: the bubbles step out of its way (in their own layout coordinates) and come back when it closes
     // nothing overlaps: nodes, the Live panel when open and the title are in the way too
-    if (merged()) document.querySelectorAll(".orbit-panel, .lv-node, .live-dock.open .live-body").forEach(p => {
+    if (merged()) document.querySelectorAll(".orbit-panel, .lv-node, .live-dock.open .live-body, .se-project:not(.is-open)").forEach(p => {
       if (p.classList.contains("leaving") || p.classList.contains("is-dragging")) return;
       const b = p.getBoundingClientRect();
       if (!b.width || !b.height) return;
@@ -1396,7 +1396,7 @@
     if (k !== seatKey) { seatKey = k; seatEdges(); }               // the frame changed: re-seat the edges
     measure(); drawLoop(); keepWindowsIn();
     if (merged() && !L.pointerHeld()) {                                   // a window opened, closed, moved or sized: the bubbles make room
-      const wk = L.pageFit() + "|" + [...document.querySelectorAll(".orbit-panel, .lv-node, .live-dock.open .live-body")].map(p => { const r = p.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(); }).join("|");
+      const wk = L.pageFit() + "|" + [...document.querySelectorAll(".orbit-panel, .lv-node, .live-dock.open .live-body, .se-project:not(.is-open)")].map(p => { const r = p.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(); }).join("|");
       if (wk !== winKey) { winKey = wk; layoutSoon(); }
     }
   }, 250);

@@ -23,10 +23,12 @@
   const inLoop = (x, y) => !O().inLoop || O().inLoop(x, y);
   function loopHolding(x, y, except) {                        // the smallest loop whose ring holds the point
     let best = null;
-    document.querySelectorAll(".lv-node.is-loop").forEach(l => {
-      if (l === except) return;
+    document.querySelectorAll(".lv-node.is-loop, .lv-node.is-holder").forEach(l => {
+      if (l === except || (except && except.contains && l.contains(except))) return;
       const r = l.getBoundingClientRect(), R = r.width / 2;
-      if (Math.hypot(x - (r.left + R), y - (r.top + r.height / 2)) < R - 4 && (!best || r.width < best.getBoundingClientRect().width)) best = l;
+      const ins = l.classList.contains("is-holder") ? (x > r.left + 6 && x < r.right - 6 && y > r.top + 6 && y < r.bottom - 6)   // a holder: its box
+        : Math.hypot(x - (r.left + R), y - (r.top + r.height / 2)) < R - 4;                                                      // a loop: its ring
+      if (ins && (!best || r.width < best.getBoundingClientRect().width)) best = l;
     });
     return best;
   }

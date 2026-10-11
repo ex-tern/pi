@@ -213,3 +213,9 @@ html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: 
 /* a Super AI super (super/nodes.js): its prompt and answer wrap over lines inside it, sized by fitText */
 .lv-node.lv-box.is-wrap .lv-glyph { white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.25; text-overflow: clip; padding: 0 10%; box-sizing: border-box; width: 100%; max-height: 84%; overflow: hidden; }
 .lv-node.lv-box.is-wrap .lv-glyph { display: grid; place-content: center; }
+
+/* a holder (super/nodes.js): a ■ grown past 150 px holds supers; its label sits at the top, out of their way,
+   and it lies under what it holds */
+.lv-node.lv-box.is-holder { z-index: 0; }
+.lv-node.lv-box.is-holder .lv-glyph { place-content: start center; align-self: start; padding-top: 12px; height: auto; font-size: 12px !important; }
+.lv-node.lv-box.is-holder.is-wrap .lv-glyph { max-height: 22%; }
