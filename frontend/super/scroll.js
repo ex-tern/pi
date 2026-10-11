@@ -80,6 +80,30 @@
     return null;
   }
   const seNorm = (u, v, n) => Math.pow(Math.pow(u, n) + Math.pow(v, n), 1 / n);
+  // THE zone, one function for the pointer's shape (super/hover.js) and for what a scroll does (below):
+  //   "hand"  on a super: a thing's surface, the inner super's inside, the main loop's own ring  → its n
+  //   "arrow" off a super: the band just outside a thing or the inner ring, the bare space between,
+  //           the bare corners                                                                   → zoom
+  // target: the super (an element, "site" or "loop") the scroll acts on
+  const RING = 18;                                          // the main loop's ring: this close to its edge, inside or out
+  function zoneAt(x, y, hit) {
+    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit")) return null;
+    const edge = edgeSuper(x, y, hit);
+    if (edge) return { kind: "arrow", target: edge.shapeOf };                     // just outside a super: size it
+    const el = hit && hit.closest ? hit.closest(THING) : null;
+    if (el && !el.classList.contains("se-port")) return { kind: "hand", target: el };
+    const loopRing = window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
+    if (loopRing) return { kind: "hand", target: loopRing };
+    const S = window.SeSite || {};
+    if (S.inSite && S.inSite(x, y)) return { kind: "hand", target: "site" };       // the inner super's inside: its n
+    const g = O().loop ? O().loop() : null;
+    if (g && g.a) {
+      const top = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
+      const d = seNorm(Math.abs(x - g.cx) / g.a, Math.abs(y - (g.cy + top)) / g.b, g.n);
+      if (Math.abs(d - 1) * Math.min(g.a, g.b) < RING) return { kind: "hand", target: "loop" };   // on the main loop's ring: its n
+    }
+    return { kind: "arrow", target: "site" };                                      // bare space: the site zooms
+  }
   const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
 
   // one scroll gesture stays on what it started on: a thing that shrinks under the pointer, or grows past
@@ -111,62 +135,36 @@
       else if (O().scrollN) O().scrollN(e);                                        // the main super
       return;
     }
-    // the gesture memory holds only within one kind of zone: a hand (shape) or an arrow (size); when the
-    // pointer's shape changes, the scroll changes with it, at once
-    const freshEdge = !e.ctrlKey && !scrolls(hit) ? edgeSuper(x, y, hit) : null;
-    const freshKind = freshEdge || (O().inLoop && !O().inLoop(x, y)) ? "size" : "shape";
-    let recent = gesture && now - gesture.t < 500 && gesture.kind === freshKind ? gesture.what : null;
-    gesture = { what: recent, t: now, kind: freshKind };
-    // the one rule, for every super, by the pointer's shape: a hand on a super (its surface, or bare space
-    // inside it) and a scroll changes its n; an arrow just outside its edge and a scroll sizes it (the
-    // inner super: the site zooms; the main super, from the bare corners: the site zooms too)
+    // what the zone says, held for one gesture (half a second) only while the zone's kind stays the same:
+    // when the pointer's shape changes, the scroll changes with it at once
+    const z = zoneAt(x, y, hit);
+    if (!z) return;                                                        // a field, a port, a wire: their own
+    const fresh = gesture && now - gesture.t < 500 && gesture.kind === z.kind && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
+    const target = fresh ? gesture.what : z.target;
+    gesture = { what: target, t: now, kind: z.kind };
+    if (z.kind === "hand" && typeof target !== "string" && !target.classList.contains("lv-node")) {
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: super/nodes.js guards the swipe
+      if (!e.ctrlKey && scrolls(hit)) return;                              // content that scrolls keeps scrolling
+    }
+    e.preventDefault(); e.stopImmediatePropagation();
     const size = what => {
       if (what === "site" || what === "loop") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015)); }
       else if (what.classList.contains("lv-node")) window.LabView.zoomNode(what, dy);
       else if (what.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(what, dy); }
-      else if (what.classList.contains("se-port")) { /* ports keep their size */ }
       else sizeThing(what, dy);
     };
     const shape = what => {
       if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
       else if (what === "loop") { if (O().scrollN) O().scrollN(e); }
       else if (what.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(what, dy); }
-      else if (what.classList.contains("se-port")) { /* ports keep their shape */ }
       else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(what, dy);
     };
-    const edge = recent ? (recent && recent.shapeOf ? recent : null) : freshEdge;
-    if (edge && (edge.shapeOf === "site" || edge.shapeOf.isConnected)) {   // the arrow, just outside a super: it is sized
-      e.preventDefault(); e.stopImmediatePropagation();
-      gesture.what = edge;
-      size(edge.shapeOf);
-      return;
-    }
-    // a thing under the pointer (or the one this gesture began on): the hand, its shape
-    let el = recent && recent !== "page" && recent !== "shape" && recent !== "site" && !recent.shapeOf && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
-    const loop = !el && !recent && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
-    if (loop) el = loop;
-    if (recent === "page" || recent === "shape" || recent === "site" || (recent && recent.shapeOf)) el = null;
-    if (el) {
-      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: super/nodes.js guards the swipe
-      const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first
-      if (sc && !(el.classList.contains("lv-node"))) return;
-      e.preventDefault(); e.stopImmediatePropagation();
-      gesture.what = el;
-      shape(el);
-      return;
-    }
-    e.preventDefault(); e.stopImmediatePropagation();
-    const S = window.SeSite || {};
-    const outside = recent ? recent === "shape" : (O().inLoop && !O().inLoop(x, y));
-    const inSite = recent ? recent === "site" : !outside && !!(S.inSite && S.inSite(x, y));
-    gesture.what = outside ? "shape" : inSite ? "site" : "page";
-    if (outside) { size("loop"); return; }                                 // the bare corners, an arrow: the site zooms
-    shape(inSite ? "site" : "loop");                                       // bare space inside, a hand: that super's n
+    if (z.kind === "hand") shape(target); else size(target);
   }, { capture: true, passive: false });
   // Safari's pinch comes as gesture events: never the browser's zoom
   ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (on()) e.preventDefault(); }, { passive: false }));
   setInterval(restore, 1000);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
   // super/hover.js shows the zone by the pointer's shape: the band where a scroll changes n, or a surface a scroll sizes
-  window.SeZoom = { edgeSuper, sizeThing, THING, BAND };
+  window.SeZoom = { edgeSuper, zoneAt, sizeThing, THING, BAND };
 })();

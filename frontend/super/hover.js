@@ -23,14 +23,12 @@
   // the pointer's shape says what a scroll does here: a hand on a super (its surface, bare space inside
   // it), where a scroll changes its n; an arrow in the band just outside it (and the bare corners), where
   // a scroll sizes it (the site zooms); on its very edge, a + for wiring
-  function zone(x, y, hit) {
+  function zone(x, y, hit) {                                          // the same zone a scroll acts on (super/scroll.js)
     const Z = window.SeZoom;
-    if (!Z) return "";
-    if (hit && hit.closest && hit.closest("input, textarea, select, button, a, [contenteditable], .op-head, .se-port, .wire-hit")) return "";   // their own cursors
-    if (Z.edgeSuper(x, y, hit)) return "n";
-    if (hit && hit.closest && hit.closest(Z.THING)) return "size";
-    if (O().inLoop && !O().inLoop(x, y)) return "n";                      // the bare corners: the main super's n
-    return "size";                                                        // bare space inside: the site zooms
+    if (!Z || !Z.zoneAt) return "";
+    if (hit && hit.closest && hit.closest("button, a, .op-head")) return "";
+    const z = Z.zoneAt(x, y, hit);
+    return z ? z.kind : "";
   }
   function update() {
     pending = false;
@@ -38,7 +36,7 @@
     const [x, y] = last;
     const hit = document.elementFromPoint(x, y);
     const z = zone(x, y, hit);
-    html.classList.toggle("se-zone-n", z === "n"); html.classList.toggle("se-zone-size", z === "size");
+    html.classList.toggle("se-zone-hand", z === "hand"); html.classList.toggle("se-zone-arrow", z === "arrow");
     if (!hit) return set(null, "");
     // inside a super that is not selected (super/select.js) the super itself is what lights up
     const Sel = window.SeSelect;

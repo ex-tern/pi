@@ -344,9 +344,10 @@ html.shape-se .buddy-corpus.se-sel, html.shape-se .stat-card.se-sel, html.shape-
    (its surface, bare space inside it), an arrow where it sizes the super (just outside it, the bare
    corners), a + on an edge where a drag wires; the rule covers everything, so cursor and action never
    disagree, except what has a pointer of its own (fields, buttons, links, ports, wires, window heads) */
-html.shape-se.se-zone-n, html.shape-se.se-zone-n * { cursor: default; }
-html.shape-se.se-zone-size, html.shape-se.se-zone-size * { cursor: pointer; }
-html.shape-se.se-zone-n .se-port, html.shape-se.se-zone-size .se-port, html.shape-se.se-zone-n .se-port *, html.shape-se.se-zone-size .se-port * { cursor: crosshair; }
-html.shape-se.se-zone-n .op-head, html.shape-se.se-zone-size .op-head { cursor: move; }
-html.shape-se.se-zone-n input, html.shape-se.se-zone-size input, html.shape-se.se-zone-n textarea, html.shape-se.se-zone-size textarea { cursor: text; }
-html.shape-se.se-zone-n button, html.shape-se.se-zone-size button, html.shape-se.se-zone-n a, html.shape-se.se-zone-size a, html.shape-se.se-zone-n summary, html.shape-se.se-zone-size summary, html.shape-se.se-zone-n select, html.shape-se.se-zone-size select { cursor: pointer; }
+/* the pointer's shape is what a scroll does (super/hover.js, from super/scroll.js zoneAt): a hand on a super
+   changes its n, an arrow off a super zooms; one rule, set on everything but fields, buttons, links and ports */
+html.shape-se.se-zone-hand *:not(input):not(textarea):not(select):not(button):not(a):not(.se-port):not(.se-port *):not(.op-head):not(.op-head *),
+html.shape-se.se-zone-hand { cursor: pointer !important; }
+html.shape-se.se-zone-arrow *:not(input):not(textarea):not(select):not(button):not(a):not(.se-port):not(.se-port *):not(.op-head):not(.op-head *),
+html.shape-se.se-zone-arrow { cursor: default !important; }
+html.shape-se.sl-edge, html.shape-se.sl-edge * { cursor: crosshair !important; }       /* the + on an edge: a drag wires */

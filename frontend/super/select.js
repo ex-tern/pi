@@ -84,23 +84,7 @@
     select(at.inside);
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Selected " + name(at.inside) + ": now its inside answers";
   }, true);
-  // a scroll on something inside an unselected super is a scroll on the super itself: its n
-  document.addEventListener("wheel", e => {
-    if (!on() || e.shiftKey) return;
-    const t = e.target, x = e.clientX, y = e.clientY;
-    if (ownCursor(t)) return;
-    const Z = window.SeZoom;
-    if (Z && Z.edgeSuper && Z.edgeSuper(x, y, t)) return;       // the band outside a super: its n, as always
-    const at = superAt(t, x, y);
-    if (at.on || at.inside === sel) return;
-    const c = at.inside;
-    e.preventDefault(); e.stopImmediatePropagation();
-    const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);
-    if (c === "loop") { if (O().scrollN) O().scrollN(e); return; }
-    if (c === "site") { if (O().scrollSiteN) O().scrollSiteN(e); return; }
-    if (c.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(c, dy); return; }
-    if (S().shapeEl) S().shapeEl(c, dy);
-  }, { capture: true, passive: false });
+  // a scroll is not about selection: the pointer's shape says what it does (super/scroll.js zoneAt)
   // a selection sticks: it changes only when another super is clicked (or the selected one goes away)
   // a selected super that goes away (a window closes, a loop is deleted): the main super again
   setInterval(() => { const el = elOf(sel); if (el && !el.isConnected) select("loop"); }, 500);
