@@ -82,17 +82,10 @@ window.SUPERAI_PROGRAM = {
       { id: "close", kind: "engine", everywhere: true, text: "close", at: { from: "start", dx: -15, dy: 248 } },
       { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
     ],
-    // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition)
+    // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition).
+    // No wires at the start (owner, 2026-10-12): the visitor connects the supers; the ones a program could
+    // ship would be, say, ["run.output", "site.input"] or ["bubble:Connect.output", "bubble:Tools.input"].
     wires: [
-      ["site.input", "site-box.input"],
-      ["site.sync", "site-box.sync"],
-      ["site-box.output", "site.output"],
-      ["site.condition", "site-box.condition"],
-      ["run.output", "site.input"],
-      ["bubble:Connect.output", "bubble:Tools.input"],
-      ["bubble:Tools.output", "bubble:Explore.input"],
-      ["bubble:Explore.output", "bubble:Library.input"],
-      ["bubble:Lab.output", "bubble:Library.input"]
     ]
   },
 
