@@ -174,6 +174,65 @@
         p.style.left = Math.round(x0 + (cx - x0) * hi - w / 2) + "px"; p.style.top = Math.round(y0 + (cy - y0) * hi - h / 2) + "px";
         if (p.item) ctx.saveWin(p.item, p);
       });
+      separateWindows(fits);
+    }
+    // nothing overlaps: windows push each other apart along the shorter way, step away from the nodes
+    // (a node is where you put it and stays), and when there is no room for all of them inside the
+    // inner super they all get a little smaller together, as the pills do, until there is
+    function separateWindows(fits) {
+      const GAP = 10, MIN_W = 200, MIN_H = 120;
+      const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
+      if (!wins.length) return;
+      const nodes = [...document.querySelectorAll(".lv-node")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
+        .map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height }));
+      let rs = wins.map(p => { const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; });
+      if (rs.some(r => !r.width)) return;
+      const overlap = (a, b) => a.left < b.left + b.width + GAP && b.left < a.left + a.width + GAP && a.top < b.top + b.height + GAP && b.top < a.top + a.height + GAP;
+      const ok = r => fits(r.left, r.top, r.width, r.height);
+      // the shortest push that takes a off b
+      const push = (a, b) => [
+        { dx: b.left + b.width + GAP - a.left, dy: 0 }, { dx: b.left - GAP - (a.left + a.width), dy: 0 },
+        { dx: 0, dy: b.top + b.height + GAP - a.top }, { dx: 0, dy: b.top - GAP - (a.top + a.height) },
+      ].sort((u, v) => Math.hypot(u.dx, u.dy) - Math.hypot(v.dx, v.dy));
+      const moved = (r, d, k) => ({ left: r.left + d.dx * k, top: r.top + d.dy * k, width: r.width, height: r.height });
+      let clean = false;
+      for (let pass = 0; pass < 4 && !clean; pass++) {
+        for (let iter = 0; iter < 24; iter++) {
+          let any = false;
+          for (let i = 0; i < rs.length; i++) {
+            for (const nd of nodes) if (overlap(rs[i], nd)) {                 // off a node, as far as the inner super allows
+              const way = push(rs[i], nd).find(d => ok(moved(rs[i], d, 1)));
+              if (way) { rs[i] = moved(rs[i], way, 1); any = true; }
+            }
+            for (let j = i + 1; j < rs.length; j++) if (overlap(rs[i], rs[j])) {
+              const ways = push(rs[i], rs[j]);
+              let done = false;
+              for (const d of ways) {                                         // half each, or all of it on the one that can
+                const a = moved(rs[i], d, 0.5), b = moved(rs[j], d, -0.5);
+                if (ok(a) && ok(b)) { rs[i] = a; rs[j] = b; done = true; break; }
+                const a1 = moved(rs[i], d, 1); if (ok(a1)) { rs[i] = a1; done = true; break; }
+                const b1 = moved(rs[j], d, -1); if (ok(b1)) { rs[j] = b1; done = true; break; }
+              }
+              if (done) any = true;
+            }
+          }
+          if (!any) break;
+        }
+        clean = !rs.some((r, i) => nodes.some(nd => overlap(r, nd)) || rs.some((q, j) => j > i && overlap(r, q)));
+        if (!clean) {                                                         // no room: all of them a little smaller
+          const next = rs.map(r => { const w = Math.max(MIN_W, Math.floor(r.width * 0.9)), h = Math.max(MIN_H, Math.floor(r.height * 0.9));
+            return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h }; });
+          if (next.every((r, i) => r.width === rs[i].width && r.height === rs[i].height)) break;
+          rs = next;
+        }
+      }
+      wins.forEach((p, i) => {
+        const r = rs[i], cur = p.getBoundingClientRect();
+        if (Math.abs(r.left - cur.left) < 1 && Math.abs(r.top - cur.top) < 1 && Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) return;
+        p.style.left = Math.round(r.left) + "px"; p.style.top = Math.round(r.top) + "px";
+        p.style.width = Math.round(r.width) + "px"; p.style.height = Math.round(r.height) + "px";
+        if (p.item) ctx.saveWin(p.item, p);
+      });
     }
     function drawLoop() {
       if (!pageLoop()) { setFit(1, 1); if (merged()) drawMini(); return; }
