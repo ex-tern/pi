@@ -6,7 +6,7 @@ ScholarPi runs as two copies of this repository:
 |---|---|---|---|
 | https://pitechlab.com | `main` | production | Stable. Real users, real data. |
 | https://exp.pitechlab.com | `experimental` | experimental | Evolves constantly. May break. Separate data volume. |
-| https://se.pitechlab.com | `super` | its own environment | The superellipse site (`frontend/superellipse.css`, on by host name `se.*`, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). Deploys alone from `super`, branched from `experimental` on 2026-10-10. Changes the owner asks for on se. go to `super`. |
+| https://se.pitechlab.com (also super.pitechlab.com) | `super` | its own environment | The superellipse site (`frontend/superellipse.css`, on by host name `se.*` or `super.*`, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). Deploys alone from `super`, branched from `experimental` on 2026-10-10. Changes the owner asks for on se. go to `super`. |
 
 ## Rules for Claude
 
