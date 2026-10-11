@@ -429,8 +429,7 @@ html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }
-/* the title super is the Reset view button (super/scroll.js): "reset view" in cobalt under its name once the view has changed */
+/* the title super is the Reset view button (super/scroll.js): no words on it; once the view has changed a click on it resets */
 html.shape-se .orbit-title .sts-reset { display: none; font-size: 0.72em; color: var(--cobalt); line-height: 1.2; margin-top: 2px; }
 html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: pointer; }
-html.shape-se .orbit-title .se-titlesuper.is-changed .sts-reset { display: block; }
 html.shape-se .se-reset { display: none !important; }
