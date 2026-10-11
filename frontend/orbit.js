@@ -939,6 +939,12 @@
     const emptySpot = e => merged() && !(e.target.closest && e.target.closest(".orbit-bubble, .orbit-pi, .wire-handle, .wire-hit, .orbit-title, .orbit-panel, input, button, a, textarea, select"));
     stage.addEventListener("click", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("click", { detail: e.detail })); });
     stage.addEventListener("dblclick", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("dblclick")); });
+    // with a window open the mark is hidden: a click on the bare page behind the windows closes them instead
+    document.addEventListener("click", e => {
+      const h = document.documentElement;
+      if (h.classList.contains("shape-se") && h.classList.contains("orbit-open") && (e.target === document.body || e.target === h))
+        core.dispatchEvent(new MouseEvent("click", { detail: e.detail }));
+    });
     const setLogo = v => { logoScale = v; };
     core.addEventListener("wheel", scrollN, { passive: false });     // superellipse look: scrolling changes the loop's n
     wheelResize(core, () => logoScale, setLogo, logoMin, logoMax, "orbit:logo:scale");
