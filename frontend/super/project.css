@@ -3,8 +3,8 @@
   position: fixed; z-index: 957; box-sizing: border-box;
   background: var(--surface, #fff); color: var(--ink, #191919);
   border: 1.5px solid var(--ink, #191919);
-  border-radius: min(26%, 44px);
-  corner-shape: superellipse(1.65);                         /* n = π */
+  border-radius: 50%;
+  corner-shape: superellipse(1.65);                         /* n = π: the same superellipse as every super */
   overflow: hidden; touch-action: none; overscroll-behavior: contain;
   cursor: grab;
 }
@@ -30,10 +30,14 @@
 
 /* open: the diagram, drawn at 1000 × 620 and scaled to fit */
 .pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }   /* always drawn: small, the miniature */
-.se-project.is-mini .pj-sec span, .se-project.is-mini .pj-val { visibility: hidden; }        /* the miniature: shapes and wires, the names */
-.se-project.is-mini .pj-wire { stroke-width: 9; }                                      /* drawn about a tenth of its size: thick enough to see */
-.se-project.is-mini .pj-node { border-width: 11px; }
-.se-project.is-mini .pj-sec { border-width: 6px; }
+/* the miniature is drawn like a compact bubble's (super/bubble.js mini): boxes with an ink edge of about 1.4 px
+   on paper, wires in graphite of about 1 px, no section frames, no names, no values (drawn at about a tenth of
+   its size, so the strokes are ten times thicker here) */
+.se-project.is-mini .pj-sec { display: none; }
+.se-project.is-mini .pj-val, .se-project.is-mini .pj-node b { visibility: hidden; }
+.se-project.is-mini .pj-wire { stroke: var(--graphite, #6e6e6a); stroke-width: 10; opacity: 0.7; }
+.se-project.is-mini .pj-node { border-width: 15px; border-color: var(--ink, #191919); background: var(--paper, #f6f6f4); border-radius: 30%; }
+.se-project.is-mini .pj-ai, .se-project.is-mini .pj-answer { border-width: 15px; }
 .se-project.is-mini .pj-end { display: none; }
 .se-project.is-open .pj-map { pointer-events: auto; }
 .pj-wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
