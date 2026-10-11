@@ -1,6 +1,9 @@
 // sezoom.js — what a scroll (or a pinch) does in the superellipse look depends on where it lands:
 //
 //   outside the main super   (the corners the superellipse leaves bare)   it changes the super's shape: n
+//   shift + scroll            the shape of the super under the pointer alone: a node, a window, a card,
+//                             the Live panel, the palette, a bubble, the title's badge, the inner super
+//                             (bare space inside it) or the main super (anywhere else); each keeps its own n
 //   inside it, on nothing    (bare space between the things)              it zooms: everything inside scales
 //   on a thing               (a node, a bubble, a window, the title,      it sizes that thing
 //                             the palette, the Live panel, a loop's ring)
@@ -47,17 +50,25 @@
     if (!on()) return;
     const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);          // a pinch sends small deltas
     const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y), now = e.timeStamp || performance.now();
-    // shift + scroll, anywhere: the super's shape (n), as a scroll outside it does (browsers turn a shifted
-    // wheel into a sideways delta, so dy above already carries it)
+    // shift + scroll: the shape (n) of the super under the pointer, and of nothing else: a node, a window,
+    // a card, the Live panel or its tab, the palette, a bubble, the title; on bare space inside the inner
+    // super, the inner super; anywhere else, the main super (browsers turn a shifted wheel into a sideways
+    // delta, so dy above already carries it)
     if (e.shiftKey && !e.ctrlKey) {
       e.preventDefault(); e.stopImmediatePropagation();
-      const recentNode = gesture && now - gesture.t < 500 && gesture.what && gesture.what.classList && gesture.what.classList.contains("lv-node") && gesture.what.isConnected ? gesture.what : null;
-      let node = recentNode || (hit && hit.closest ? hit.closest(".lv-node") : null);
-      if (!node && gesture && now - gesture.t < 500 && gesture.what && gesture.what.classList && gesture.what.dataset && gesture.what.dataset.id)
-        node = document.querySelector('.lv-node[data-id="' + gesture.what.dataset.id + '"]');   // the node was remade (it changed function): the same id
+      const fresh = gesture && now - gesture.t < 500 ? gesture.what : null;
+      const recentEl = fresh && fresh.classList && fresh.isConnected ? fresh : null;
+      let node = recentEl && recentEl.classList.contains("lv-node") ? recentEl : recentEl ? null : (hit && hit.closest ? hit.closest(".lv-node") : null);
+      if (!node && !recentEl && fresh && fresh.dataset && fresh.dataset.id)
+        node = document.querySelector('.lv-node[data-id="' + fresh.dataset.id + '"]');   // the node was remade (it changed function): the same id
       if (node && window.LabView && window.LabView.shapeNode) { gesture = { what: node, t: now }; window.LabView.shapeNode(node, dy); return; }   // a node: its own shape
-      gesture = { what: "shape", t: now };
-      if (O().scrollN) O().scrollN(e);
+      const S = window.SeSite || {};
+      const sup = recentEl && !recentEl.classList.contains("lv-node") ? recentEl : (!fresh && hit && hit.closest && S.SHAPES ? hit.closest(S.SHAPES) : null);
+      if (sup && S.shapeEl) { gesture = { what: sup, t: now }; S.shapeEl(sup, dy); return; }   // a super: its own shape
+      const what = fresh === "site" || fresh === "shape" ? fresh : (S.inSite && S.inSite(x, y) ? "site" : "shape");
+      gesture = { what, t: now };
+      if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }           // the inner super
+      else if (O().scrollN) O().scrollN(e);                                        // the main super
       return;
     }
     const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
@@ -66,7 +77,7 @@
     let el = recent && recent !== "page" && recent !== "shape" && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
     const loop = !el && !recent && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
     if (loop) el = loop;
-    if (recent === "page" || recent === "shape") el = null;
+    if (recent === "page" || recent === "shape" || recent === "site") el = null;
     if (el) {
       if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: labview.js guards the swipe
       const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first

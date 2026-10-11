@@ -61,7 +61,7 @@
     const k = [...document.querySelectorAll(".orbit-bubble")].filter(el => !el.hidden && el.getClientRects().length).length;
     const g = O().loop ? O().loop() : null, box = O().siteBox ? O().siteBox() : null;
     if (!k || !g || !g.a || !box) { svg.style.display = "none"; Object.values(ports).forEach(p => { p.style.display = "none"; }); return; }
-    const n = g.n, f = box.fit || 1;
+    const n = box.n, f = box.fit || 1;                                 // its own n (orbit.js siteN): the main loop's until scrolled apart
     // the box orbit.js lays the bubbles out in, scaled toward the page's centre as the page is (setFit)
     const cx = box.px + (box.cx - box.px) * f, cy = box.py + (box.cy - box.py) * f, a = box.a * f, bb = box.b * f;
     site = { cx, cy, a, b: bb, n };
@@ -132,16 +132,56 @@
   function clipWindows() {
     if (!on() || hasCorner || !SM()) return;
     document.querySelectorAll(SUPERS).forEach(p => {
-      const w = p.offsetWidth, h = p.offsetHeight, key = w + "x" + h;
+      const w = p.offsetWidth, h = p.offsetHeight, key = w + "x" + h + "@" + (p.dataset.seN || "");
       if (!w || p.dataset.seClip === key) return;
       p.dataset.seClip = key;
-      const d = SM().path(0, 0, w, h, [w / 2, h / 2], SM().pi, 24);
+      const d = SM().path(0, 0, w, h, [w / 2, h / 2], +p.dataset.seN || SM().pi, 24);
       p.style.clipPath = "path('" + d + "')";
       let o = p.querySelector(":scope > .op-outline");
       if (!o) { o = document.createElementNS("http://www.w3.org/2000/svg", "svg"); o.setAttribute("class", "op-outline"); o.setAttribute("aria-hidden", "true"); o.innerHTML = "<path/>"; p.appendChild(o); }
       o.setAttribute("viewBox", "0 0 " + w + " " + h); o.querySelector("path").setAttribute("d", d);
     });
   }
+  // ---- every super has a shape of its own ------------------------------------------------------
+  // shift + scroll on a super (a window, a card in it, the Live panel or its tab, the palette, a bubble,
+  // the title's badge) changes that one's n and nothing else's: --se-k-window (log₂ n) is set on the
+  // element, so its corners (and, inside a window, the buttons and cards that inherit it) follow;
+  // named supers keep their n per browser as se:n:<name>.
+  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .live-body, .live-tab, .lv-palette, .orbit-bubble, .orbit-title";
+  const nameOfSuper = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("live-body") ? "live"
+    : el.classList.contains("live-tab") ? "live-tab" : el.classList.contains("lv-palette") ? "palette"
+    : el.classList.contains("orbit-bubble") ? (el.dataset.key ? "bubble:" + el.dataset.key : null)
+    : el.classList.contains("orbit-panel") ? (el.item && el.item.key ? "window:" + el.item.key : null) : null;
+  const loadN = name => { try { return +localStorage.getItem("se:n:" + name) || 0; } catch (_) { return 0; } };
+  const saveN = (name, n) => { try { localStorage.setItem("se:n:" + name, String(+n.toPrecision(5))); } catch (_) { /* private mode */ } };
+  let shapeId = 0;
+  function applyN(el, n) {
+    el.dataset.seN = n.toFixed(4);
+    el.style.setProperty("--se-k-window", Math.log2(n).toFixed(4));
+    if (el.classList.contains("orbit-title") && window.SeLogo && window.SeLogo.setN) window.SeLogo.setN(n);
+    if (!hasCorner) { delete el.dataset.seClip; clipWindows(); }
+  }
+  function shapeEl(el, dy) {
+    const cur = el._seNTo || +el.dataset.seN || (SM() && SM().pi) || Math.PI;
+    const nn = Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
+    el._seNTo = nn;
+    if (!el._seShapeId) el._seShapeId = ++shapeId;
+    const name = nameOfSuper(el);
+    if (name) saveN(name, nn);
+    if (window.SeMotion) { const s = { v: +el.dataset.seN || cur }; window.SeMotion.glide("shape:" + el._seShapeId, s, "v", nn, 160, () => applyN(el, s.v)); }
+    else applyN(el, nn);
+  }
+  function restoreShapes() {                                 // a super that was given a shape keeps it
+    if (!on()) return;
+    document.querySelectorAll(SHAPES).forEach(el => {
+      if (el.dataset.seNChecked) return;
+      el.dataset.seNChecked = "1";
+      const name = nameOfSuper(el), n = name && loadN(name);
+      if (n) applyN(el, n);
+    });
+  }
+  const inSite = (x, y) => !!site && seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n) <= 1;
+
   // sezoom.js: a scroll on a window sizes it (about its centre), unless its content scrolls
   function sizeWindow(p, dy) {
     const r = p.getBoundingClientRect(), k = Math.exp(-dy * 0.0015), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
@@ -190,10 +230,10 @@
     const ring = !(e.target.closest && e.target.closest(".se-port, .lv-node, .orbit-panel, .lv-palette, .orbit-title, .live-dock, .orbit-bubble")) && onRing(e.clientX, e.clientY);
     html.classList.toggle("se-ring", !!ring);
   }, true);
-  function tick() { layout(); clipWindows(); }
+  function tick() { layout(); restoreShapes(); clipWindows(); }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
   document.addEventListener("se:frame:first", layout);   // semotion.js: while something moves, every frame, before the wires
-  window.SeSite = { value, setInput, setCondition, sizeWindow, site: () => site, ports: () => ports, portEl: p => ports[p] || null };
+  window.SeSite = { value, setInput, setCondition, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portEl: p => ports[p] || null };
 })();

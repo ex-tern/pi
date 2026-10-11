@@ -710,9 +710,24 @@
   const SITE_MX = 0.86, SITE_MY = 0.8;
   let siteOff = load("orbit:site:offset") || { x: 0, y: 0 };
   if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
+  // the inner super's n: the main loop's until shift + scroll inside it (on nothing) gives it one of its
+  // own (sezoom.js), kept as orbit:site:n; from then on the two change shape independently
+  let siteN = +load("orbit:site:n") || 0;
+  const siteNv = () => siteN || loopN();
+  function scrollSiteN(e) {
+    if (!merged()) return;
+    e.preventDefault(); e.stopImmediatePropagation();
+    const dy = e.deltaY || e.deltaX;
+    const nn = Math.min(N_MAX, Math.max(N_MIN, (scrollSiteN.to || siteNv()) * Math.exp(-dy * 0.002)));
+    scrollSiteN.to = nn;
+    if (window.SeMotion) { const s = { v: siteNv() }; window.SeMotion.glide("site:n", s, "v", nn, 160, () => { siteN = s.v; }); }
+    else siteN = nn;
+    clearTimeout(scrollSiteN.t);
+    scrollSiteN.t = setTimeout(() => { scrollSiteN.to = null; store("orbit:site:n", +siteN.toPrecision(5)); }, 900);
+  }
   function siteBox() {
     const w = vw();
-    return { cx: w / 2 + siteOff.x, cy: top + H / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: loopN(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2, ox: siteOff.x, oy: siteOff.y };
+    return { cx: w / 2 + siteOff.x, cy: top + H / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: siteNv(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2, ox: siteOff.x, oy: siteOff.y };
   }
   // sesite.js: drag the inner super's ring and the bubbles (and so their wires) go with it
   function moveSite(x, y, commit) {
@@ -2056,7 +2071,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { fit: () => ({ f: pageFit, px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), zoomPage, moveSite, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { fit: () => ({ f: pageFit, px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), scrollSiteN, siteN: siteNv, zoomPage, moveSite, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

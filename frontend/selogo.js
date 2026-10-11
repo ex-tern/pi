@@ -66,10 +66,18 @@
     }
     const w = x - TRACK, padX = 70, padY = 42;
     const vb = [-padX, -padY, w + 2 * padX, CAP + 2 * padY];
-    // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4)
-    const badge = se(w / 2, CAP / 2, w / 2 + padX - 3, CAP / 2 + padY - 3, (window.SeMorph && window.SeMorph.pi) || Math.PI, 160);
+    // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4),
+    // until shift + scroll on the title gives it an n of its own (sezoom.js, SeLogo.setN)
+    geo = { w, padX, padY };
     return '<svg class="se-logo" viewBox="' + vb.join(" ") + '" aria-hidden="true" focusable="false">' +
-           '<path class="sel-badge" d="' + badge + '"/>' + body + '</svg>';
+           '<path class="sel-badge" d="' + badgePath(badgeN || (window.SeMorph && window.SeMorph.pi) || Math.PI) + '"/>' + body + '</svg>';
+  }
+  let geo = null, badgeN = 0;
+  const badgePath = n => se(geo.w / 2, CAP / 2, geo.w / 2 + geo.padX - 3, CAP / 2 + geo.padY - 3, n, 160);
+  function setN(n) {
+    badgeN = n;
+    const b = document.querySelector(".orbit-title .sel-badge");
+    if (b && geo) b.setAttribute("d", badgePath(n));
   }
 
   function apply() {
@@ -88,5 +96,5 @@
       .observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
-  window.SeLogo = { build };
+  window.SeLogo = { build, setN, n: () => badgeN };
 })();
