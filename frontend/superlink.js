@@ -22,7 +22,10 @@
   const html = document.documentElement;
   const O = () => window.PiOrbit || {};
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (_) { return []; } };
-  const save = () => { try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (_) { /* private mode */ } };
+  const save = () => {
+    try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (_) { /* private mode */ }
+    document.dispatchEvent(new CustomEvent("superlink:change"));      // the diagram (labview.js) recomputes at once
+  };
   let links = load().filter(l => l && l.a && l.b);
   let svg, drag = null, lastHtml = "";
   const LETTER = /[\p{L}\p{M}'’]/u, DIGIT = /\p{Nd}/u;
@@ -343,7 +346,7 @@
         window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", end, true);
         window.removeEventListener("pointercancel", end, true);
         if (!drag) return;                                                     // it was a click: leave it alone
-        eatClick = true; setTimeout(() => { eatClick = false; }, 0);           // the click that ends a wire opens nothing
+        eatClick = true; setTimeout(() => { eatClick = false; }, 350);         // the click that ends a wire (it comes a moment later) does nothing
         html.classList.remove("wire-target", "sl-dragging");
         const o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY) : null;
         drag = null;

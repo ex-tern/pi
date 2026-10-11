@@ -619,7 +619,7 @@
   // the diameter, reaching the loop at every angle
   function sweepPx(deg) {
     const tp = $(".om-page-pi textPath");
-    if (tp) tp.setAttribute("startOffset", ((((deg % 360) + 360) % 360) / 720 * 100).toFixed(2) + "%");   // the π line creeps round the loop
+    if (tp) tp.setAttribute("startOffset", ((((deg / 8) % 360) + 360) % 360 / 720 * 100).toFixed(2) + "%");   // the π line creeps round the loop, slowly (an eighth of the sweep)
     const line = $(".om-page-r");
     if (!line) return;
     const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), { cx, cy, a, b, n } = loopG;
@@ -960,12 +960,16 @@
     // In the superellipse look the mark is the loop behind everything, so empty space inside it
     // stands in for it: a click closes every window, a double-click stops or restarts π.
     const emptySpot = e => merged() && !(e.target.closest && e.target.closest(".orbit-bubble, .orbit-pi, .wire-handle, .wire-hit, .orbit-title, .orbit-panel, input, button, a, textarea, select"));
-    stage.addEventListener("click", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("click", { detail: e.detail })); });
+    // a click, not the end of a drag (a wire, a node, a window): the press and the release are in one place
+    let downAt = [0, 0];
+    document.addEventListener("pointerdown", e => { downAt = [e.clientX, e.clientY]; }, true);
+    const wasDrag = e => Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6;
+    stage.addEventListener("click", e => { if (emptySpot(e) && !wasDrag(e)) core.dispatchEvent(new MouseEvent("click", { detail: e.detail })); });
     stage.addEventListener("dblclick", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("dblclick")); });
     // with a window open the mark is hidden: a click on the bare page behind the windows closes them instead
     document.addEventListener("click", e => {
       const h = document.documentElement;
-      if (h.classList.contains("shape-se") && h.classList.contains("orbit-open") && (e.target === document.body || e.target === h))
+      if (h.classList.contains("shape-se") && h.classList.contains("orbit-open") && (e.target === document.body || e.target === h) && !wasDrag(e))
         core.dispatchEvent(new MouseEvent("click", { detail: e.detail }));
     });
     const setLogo = v => { logoScale = v; };

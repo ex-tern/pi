@@ -183,3 +183,21 @@ html.shape-se .orbit-pi { visibility: hidden; pointer-events: none; }
 html.shape-se:not(.orbit-on) .om-page-pi { display: none; }
 /* no "n = …" label while scrolling: the shape says it */
 html.shape-se .orbit-nread { display: none; }
+
+/* Safari and other browsers without CSS corner-shape: border-radius: 50% alone would make every
+   bubble an ellipse and every star a grey dot. Near-superellipse radii instead, and the pill
+   stars cut with the same sparkle polygon the dots use (they stay stars beside their names). */
+@supports not (corner-shape: round) {
+  html.shape-se .orbit-bubble, html.shape-se .btn, html.shape-se .dl-btn, html.shape-se .ob-chat button,
+  html.shape-se .nf-go, html.shape-se .nf-mute, html.shape-se .nf-reset, html.shape-se .nf-alt, html.shape-se .nf-diff button { border-radius: 1.45em; }
+  html.shape-se .orbit-bubble.is-group { border-radius: 2.2em; }
+  html.shape-se .lv-fn { border-radius: 30%; }
+  html.shape-se .lv-node.lv-dot { border-radius: 50%; }
+  html.shape-se .ob-member::before, html.shape-se .ob-member:hover::before, html.shape-se .ob-member:focus-visible::before {
+    width: var(--star); height: var(--star); border: 0; border-radius: 0;
+    clip-path: var(--se-sparkle); background: var(--graphite);
+  }
+  html.shape-se .ob-member:hover::before, html.shape-se .ob-member:focus-visible::before { background: var(--cobalt); }
+}
+/* no text selection while dragging a wire, a node or a moved panel (Safari needs the prefix) */
+html.sl-dragging, html.sl-dragging *, html.lv-dragging, html.lv-dragging *, html.se-moving, html.se-moving * { -webkit-user-select: none !important; user-select: none !important; }
