@@ -164,3 +164,5 @@ html.shape-se .orbit-bubble.pien-pick::after { display: none; animation: none; }
 
 /* with a window open the mark is off: no small mark, no π counter, nothing to press under the windows */
 html.shape-se.orbit-open .orbit-core, html.shape-se.orbit-open .orbit-pi { visibility: hidden; pointer-events: none; }
+/* no pinch-zoom of the page on touch screens: two fingers size a node instead (labview.js) */
+html.shape-se, html.shape-se body { touch-action: pan-x pan-y; }

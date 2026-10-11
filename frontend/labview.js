@@ -858,6 +858,7 @@
         const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
         return Math.abs(d - r.width / 2) < 14;
       });
+      if (e.ctrlKey && !n && html.classList.contains("shape-se")) { e.preventDefault(); e.stopImmediatePropagation(); return; }   // a pinch elsewhere never zooms the page: the mark always fits the screen
       if (!n || (hit && hit.tagName === "INPUT" && n.el.contains(hit) && n.fn === "ask")) return;
       if (!e.ctrlKey) { zoomed = null; if (O().scrollN) O().scrollN(e); return; }   // scrolling is the page's n, as anywhere else
       e.preventDefault(); e.stopImmediatePropagation();
@@ -880,6 +881,8 @@
       e.preventDefault(); e.stopPropagation();
       n.paused = !n.paused; say("●: the loop " + (n.paused ? "is paused" : "goes on")); tick();
     }, true);
+    // Safari's pinch (gesture events) and touch pinches never zoom the page either
+    ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (html.classList.contains("shape-se")) e.preventDefault(); }, { passive: false }));
     // two fingers on a node: their spread sizes it
     const touches = new Map();
     canvas.addEventListener("pointerdown", e => {
