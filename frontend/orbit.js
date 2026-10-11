@@ -25,18 +25,11 @@
   };
   const load = k => { try { return JSON.parse(localStorage.getItem(k) || "null"); } catch (_) { return null; } };
 
-  const SECTIONS = [
-    { key: "assess", name: "Evaluate", panel: "tab-assess" },
-    { key: "journal", name: "Explore", panel: "tab-journal" },
-    { key: "analytics", name: "Envision", panel: "tab-analytics" },
-    { key: "lab", name: "Lab", panel: "tab-lab" },
-    { key: "diagram", name: "Architecture", panel: "tab-diagram" },
-    { key: "account", name: "Account", panel: null },
-  ];
-  const FALLBACK_TITLES = {
-    signInNotice: "Why sign in", profileCard: "Research profile", resultsSection: "Assessment results",
-    historyCard: "Your assessments", ownerResetCard: "Reset platform", claimableCard: "piQ held for you",
-  };
+  // The site is a SuperAI program (super/pitechlab.super.js, loaded by super/runtime.js as SuperAI.program):
+  // what exists, what each window is called, which bubble holds it. This module builds the page from it.
+  const PROGRAM = window.SuperAI.program;
+  const SECTIONS = PROGRAM.sources;                     // native blocks: the parts of the page the windows come from
+  const FALLBACK_TITLES = PROGRAM.titles.byId || {};
 
   // ------------------------------------------------------------ collect items
   const items = [];       // {key, section, title, nodes, content, bubble, panel, orbit}
@@ -117,12 +110,7 @@
   }
 
   // Cards that read better as one window, at the owner's request.
-  const MERGES = [
-    { section: "journal", title: "Leaderboards",
-      parts: ["pi-Index (piX) Leaderboard [Top Papers]", "pi-Quotient (piQ) Leaderboard [Top Authors]"] },
-    { section: "diagram", title: "Architecture",
-      parts: ["Overview", "Scoring Pipeline in Detail", "Stage Reference", "CoARA Compliance & Core Pillars"] },
-  ];
+  const MERGES = (PROGRAM.merges || []).map(m => ({ section: m.source, title: m.title, parts: m.parts }));
   function mergeItems() {
     MERGES.forEach(m => {
       const parts = m.parts.map(t => items.find(it => it.section.key === m.section && it.title === t)).filter(Boolean);
@@ -139,26 +127,11 @@
     });
   }
   // Renamed pills keep what was remembered about them (place, size, use, window).
-  const RENAMED = { "analytics:Key numbers": "analytics:Analytics", "analytics:Forecast": "analytics:Performance",
-                    "account:SciLM (siM) Assistant": "account:SciM Assistant", "account:siM Assistant": "account:SciM Assistant",
-                    "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]",
-                    "account:Support ScholarPi": "account:Support Pi", "lib:Lib group": "lib:Library group" };
-  const RETITLE = { "assess:Assess a Manuscript": "Assess Manuscripts [Pi]", "analytics:Forecast": "Performance", "account:SciLM (siM) Assistant": "SciM Assistant" };
+  const RENAMED = PROGRAM.titles.renamed || {};
+  const RETITLE = PROGRAM.titles.retitle || {};
   // Pills that hold other pills: the group's bubble shows its members inside it.
-  const GROUPS = [
-    { section: "lab", title: "Lab" },
-    { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
-    // RiBD and the Map of Science, plus what modules add (Neuro Frenzy, MD)
-    { title: "Library", members: ["RiBD", "The Global Map of Science"], section: { key: "lib", name: "Library" } },
-    // The page, super-simplified: everything else lives in three more bubbles,
-    // so the stage holds six bubbles and two pills (Your account, SciM).
-    { title: "Explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments"],
-      section: { key: "explore", name: "Explore" } },
-    { title: "About", members: ["Architecture", "Whitepaper", "Capabilities", "Performance", "Analytics", "Minting Difficulty", "GitHub"],
-      section: { key: "about", name: "About" } },
-    { title: "Connect", members: ["Why sign in", "Invite a researcher", "Support Pi", "Contact us"],
-      section: { key: "connect", name: "Connect" } },
-  ];
+  const GROUPS = PROGRAM.bubbles.map(b => b.source ? { section: b.source, title: b.title }
+    : { title: b.title, members: b.members, section: b.key ? { key: b.key, name: b.title } : undefined });
   function migrateRenamed() {
     try {
       Object.entries(RENAMED).forEach(([from, to]) => {

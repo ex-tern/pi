@@ -57,8 +57,8 @@ button.pj-node:focus-visible { outline: 2px solid var(--cobalt, #2f40e8); outlin
 .pj-out { background: var(--surface, #fff); }
 .pj-site { background: var(--surface, #fff); border-color: var(--hair-strong, #c9c9c4); }
 .pj-sink .pj-val, .pj-in .pj-val { white-space: normal; }
-.pj-node[data-id="answer"] { justify-content: flex-start; padding: 10px 12px; }
-.pj-node[data-id="answer"] .pj-val { white-space: normal; text-overflow: clip; color: var(--ink, #191919); font-size: 10px; margin-top: 4px; }
+.pj-node.pj-answer { justify-content: flex-start; padding: 10px 12px; }
+.pj-node.pj-answer .pj-val { white-space: normal; text-overflow: clip; color: var(--ink, #191919); font-size: 10px; margin-top: 4px; }
 .pj-node input.pj-field { width: 100%; box-sizing: border-box; margin-top: 4px; border: 1px solid var(--hair, #dcdcd8); border-radius: 8px;
   background: var(--surface, #fff); font: 11px var(--font-mono, ui-monospace, monospace); padding: 4px 6px; color: var(--ink, #191919); outline: none; }
 .pj-node input.pj-field:focus { border-color: var(--cobalt, #2f40e8); }
@@ -67,3 +67,26 @@ button.pj-node:focus-visible { outline: 2px solid var(--cobalt, #2f40e8); outlin
 .pj-node.is-ok { border-color: var(--cobalt, #2f40e8); }
 .pj-node.is-err .pj-val { color: var(--faint, #94948e); }
 @media (prefers-reduced-motion: reduce) { .pj-wire.is-live { animation: none; } }
+
+/* the program: read, edit and run it (super/project.js) */
+.pj-prog-btn { position: absolute; right: 14px; top: 12px; z-index: 2; opacity: var(--pj-show, 0); pointer-events: none;
+  font: 500 12px var(--font, system-ui); color: var(--ink, #191919); background: var(--surface, #fff);
+  border: 1px solid var(--hair-strong, #c9c9c4); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
+.se-project.is-open .pj-prog-btn { pointer-events: auto; }
+.pj-prog-btn:hover, .se-project.is-editing .pj-prog-btn { border-color: var(--cobalt, #2f40e8); color: var(--cobalt, #2f40e8); }
+.pj-editor { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 14px;
+  background: var(--surface, #fff); box-sizing: border-box; }
+.pj-editor[hidden] { display: none; }
+.pj-ed-head { display: flex; align-items: baseline; gap: 10px; padding-right: 90px; }
+.pj-ed-head strong { font: 500 14px var(--font, system-ui); }
+.pj-ed-state { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }
+.pj-ed-text { flex: 1; min-height: 0; resize: none; box-sizing: border-box; width: 100%; padding: 10px 12px;
+  font: 12px/1.5 var(--font-mono, ui-monospace, monospace); color: var(--ink, #191919); background: var(--paper, #f6f6f4);
+  border: 1px solid var(--hair, #dcdcd8); border-radius: 12px; outline: none; tab-size: 2; white-space: pre; overflow: auto; }
+.pj-ed-text:focus { border-color: var(--cobalt, #2f40e8); }
+.pj-ed-errors { font: 11.5px/1.4 var(--font-mono, ui-monospace, monospace); color: var(--danger, #b3261e); min-height: 1.4em; }
+.pj-ed-row { display: flex; gap: 8px; flex-wrap: wrap; }
+.pj-ed-row button { font: 500 12.5px var(--font, system-ui); border: 1px solid var(--hair-strong, #c9c9c4); background: var(--surface, #fff);
+  color: var(--ink, #191919); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
+.pj-ed-row .pj-ed-run { background: var(--cobalt, #2f40e8); border-color: var(--cobalt, #2f40e8); color: #fff; }
+.pj-ed-row button:hover { border-color: var(--cobalt, #2f40e8); }

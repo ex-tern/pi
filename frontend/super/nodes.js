@@ -625,6 +625,39 @@
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
     return m;
   }
+  // ---- the program's diagram ---------------------------------------------------------------------
+  // A first visit lays out SuperAI.program.diagram: each super where its "at" says, then its wires
+  // ("super.port" to "super.port"; "site" is the inner super) as SuperLink port wires.
+  function layoutProgram() {
+    const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
+    if (!prog) return;
+    const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
+    const sb = O().siteBox ? O().siteBox() : null;
+    const portXY = name => {                                        // a port of the inner super, on screen
+      if (!sb) return [Wv / 2, Hv / 2];
+      return name === "input" ? [sb.cx - sb.a, sb.cy] : name === "output" ? [sb.cx + sb.a, sb.cy] : name === "sync" ? [sb.cx, sb.cy - sb.b] : [sb.cx, sb.cy + sb.b];
+    };
+    const where = s => {
+      const size = s.size || DOT_BASE, at = s.at || {};
+      if (at.center) return [(Wv - size) / 2, (Hv - size) / 2];
+      if (at.from && done[at.from]) return [done[at.from][0] + (at.dx || 0), done[at.from][1] + (at.dy || 0)];
+      if (at.leftOf) { const p = portXY(String(at.leftOf).split(".")[1]); return [Math.max(4, p[0] - size - 10), p[1] + (at.dy || 0)]; }
+      if (at.rightOf) { const p = portXY(String(at.rightOf).split(".")[1]); return [Math.min(Wv - size - 4, p[0] + 10), p[1] + (at.dy || 0)]; }
+      return [(at.fx || 0) * Wv, (at.fy || 0) * Hv];
+    };
+    (prog.supers || []).forEach(s => {
+      const xy = where(s); done[s.id] = xy;
+      make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
+             str: s.text || undefined, hint: s.hint || undefined, size: s.size, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
+    });
+    const end = e => { const [who, port] = String(e).split("."); return { h: who === "site" ? "port:" + port : "port:node:" + who + "/" + port, el: 1 }; };
+    const wireUp = () => {
+      const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wireUp, 100);
+      (prog.wires || []).forEach(([a, b]) => SL.add(end(a), end(b)));
+    };
+    wireUp();
+    persist();
+  }
   function remove(n) {
     nodes = nodes.filter(x => x !== n);
     nodes.forEach(x => { x.inputs = x.inputs.filter(r => r.node !== n.id); });
@@ -1063,27 +1096,10 @@
     // into its input, "running" when nothing is; its ports are the site's: input and sync in, output and condition
     const id = "site-box";
     const central = nodes.find(x => x.id === id);
-    if (!saved && se()) {
-      make({ id, fn: "box", role: "engine", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
-      // and a Super AI super that says what to do, large, at the inner super's top left (the owner's screenshot)
-      make({ id: "start", fn: "box", role: "engine", hint: "Connect wires to begin", size: 132, fx: 0.126, fy: 0.131, inputs: [], n: Math.PI });
-      // "open" and "close" supers below it, ready to wire to windows (verbs: they act on what they are wired to)
-      const sx = 0.126 * window.innerWidth, sy = 0.131 * window.innerHeight;
-      make({ id: "open", fn: "box", role: "engine", str: "open", fx: (sx + 104) / window.innerWidth, fy: (sy + 155) / window.innerHeight, inputs: [], n: Math.PI });
-      make({ id: "close", fn: "box", role: "engine", str: "close", fx: (sx - 15) / window.innerWidth, fy: (sy + 248) / window.innerHeight, inputs: [], n: Math.PI });
-      // and a "run" super between the main loop and the inner super, just above the input line, its output wired
-      // into the site's input port (the owner's screenshot)
-      const sb = O().siteBox ? O().siteBox() : null, W = window.innerWidth, H = window.innerHeight;
-      const rx = sb ? Math.max(4, sb.cx - sb.a - DOT_BASE - 10) : 0.008 * W, ry = (sb ? sb.cy : H / 2) - DOT_BASE - 16;
-      make({ id: "run", fn: "box", role: "engine", str: "run", fx: rx / W, fy: ry / H, inputs: [], n: Math.PI });
-      const wireRun = () => {
-        const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wireRun, 100);
-        SL.add({ h: "port:node:run/output", el: 1 }, { h: "port:input", el: 1 });
-      };
-      wireRun();
-      persist();
-    } else if (central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
-    if (se() && nodes.find(x => x.id === id)) {
+    const fresh = !saved && se();
+    if (fresh) layoutProgram();                                     // a first visit: the program's diagram (super/pitechlab.super.js)
+    if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
+    if (se() && !fresh && nodes.find(x => x.id === id)) {
       const wire = () => {
         const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wire, 100);
         const me = "node:" + id, old = SL.links().filter(l => (l.a && l.a.h === me) || (l.b && l.b.h === me));

@@ -27,62 +27,20 @@
   const esc = s => String(s == null ? "" : s).replace(/[&<>"']/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 
   // ------------------------------------------------------------ the program
-  // A super: id, label, x, y, w, h (in a 1000 × 620 drawing), kind (in: an input you type into; ai: the
-  // Super AI; lab: an engine of the lab; out: an outside model; judge; step: a step of the assessment;
-  // site: a bubble of the site; sink: an output), a probe [url, value] and what pressing it opens.
-  const W = 1000, H = 620, S = 74, h = 40;
-  const P = [
-    // one prompt, every engine
-    { id: "prompt", label: "Prompt", kind: "in", x: 20, y: 120, w: 150, h: 64 },
-    { id: "superai", label: "Super AI", kind: "ai", x: 210, y: 128, w: 96, h: 48, probe: ["/api/super/engines", j => (j.engines || []).filter(e => e.ready).length + " engines"] },
-    { id: "sim", label: "siM", kind: "lab", engine: "sim", x: 350, y: 20, w: S, h, probe: ["/api/scilem/status", j => j.badge || j.mode || (j.enabled ? "on" : "off")], opens: "SciM Assistant" },
-    { id: "rib", label: "riB", kind: "lab", engine: "rib", x: 350, y: 76, w: S, h, probe: ["/api/engines/status", j => j.riB ? Object.keys(j.riB.weights || {}).length + " weights" : "—"], opens: "Capabilities" },
-    { id: "pid", label: "piD", kind: "lab", engine: "pid", x: 350, y: 132, w: S, h, probe: ["/api/forecast", j => (j.blocks_recorded || 0) + " blocks"], opens: "Performance" },
-    { id: "pien", label: "PiEn", kind: "lab", engine: "pien", x: 350, y: 188, w: S, h, probe: ["/api/pien/model", j => (j.interactions || 0) + " uses"], opens: "Capabilities" },
-    { id: "llama", label: "Llama", kind: "out", engine: "llama", x: 470, y: 8, w: S, h },
-    { id: "mistral", label: "Mistral", kind: "out", engine: "mistral", x: 470, y: 58, w: S, h },
-    { id: "qwen", label: "Qwen", kind: "out", engine: "qwen", x: 470, y: 108, w: S, h },
-    { id: "gemini", label: "Gemini", kind: "out", engine: "gemini", x: 470, y: 158, w: S, h },
-    { id: "deepseek", label: "DeepSeek", kind: "out", engine: "deepseek", x: 470, y: 208, w: S, h },
-    { id: "judge", label: "Judge", kind: "judge", x: 600, y: 108, w: S, h, probe: ["/api/super/engines", j => j.judge ? "ready" : "no key"] },
-    { id: "answer", label: "Answer", kind: "sink", x: 720, y: 70, w: 160, h: 118 },
-    { id: "live", label: "Live", kind: "site", x: 906, y: 20, w: S, h, probe: ["/api/live", j => (j.today || 0) + " today"], live: true },
-    { id: "traffic", label: "Traffic", kind: "site", x: 906, y: 200, w: S, h, probe: ["/api/traffic", j => (j.today || 0) + " visits"], opens: "Analytics" },
-    // the assessment: a manuscript in, a score, a token and a record on the ledger out
-    { id: "manuscript", label: "Manuscript", kind: "in", x: 20, y: 330, w: 92, h: 46, probe: ["/api/stats/count", j => (j.total_analyzed || 0) + " assessed"], opens: "Assess Manuscripts [Pi]" },
-    { id: "extract", label: "Extract", kind: "step", x: 132, y: 333, w: 88, h, probe: null, note: "PDF → text" },
-    { id: "integrity", label: "Integrity", kind: "step", x: 238, y: 333, w: 88, h, note: "MDAR · RRID" },
-    { id: "jurors", label: "Jurors", kind: "step", x: 344, y: 333, w: 88, h, probe: ["/api/super/engines", j => (j.engines || []).filter(e => e.kind === "outside" && e.ready).length + " models"] },
-    { id: "verdict", label: "Verdict", kind: "judge", x: 450, y: 333, w: 88, h, note: "the judge" },
-    { id: "pix", label: "piX", kind: "step", x: 556, y: 333, w: 88, h, probe: ["/api/analytics/summary", j => "avg " + Math.round(+j.avg_score || 0)], opens: "Whitepaper" },
-    { id: "piq", label: "piQ", kind: "step", x: 662, y: 333, w: 88, h, probe: ["/api/emission", j => "floor " + (+j.current_quality_floor || 0).toFixed(1)], opens: "Minting Difficulty" },
-    { id: "ledger", label: "Ledger", kind: "step", x: 768, y: 333, w: 88, h, probe: ["/api/chain/status", j => j.connected ? (j.chain_name || "chain") + " #" + j.block_number : "offline"], opens: "Proof-of-Research Ledger Explorer" },
-    { id: "explorer", label: "Explorer", kind: "sink", x: 874, y: 333, w: 106, h, probe: ["/api/explorer/latest", j => (j.count || 0) + " records"], opens: "Proof-of-Research Ledger Explorer" },
-    // the site: its bubbles, each a super that opens what it holds
-    { id: "b-connect", label: "Connect", kind: "site", x: 20, y: 500, w: 104, h, opens: "Why sign in" },
-    { id: "b-account", label: "Your account", kind: "site", x: 140, y: 500, w: 104, h, opens: "Your account" },
-    { id: "b-scim", label: "SciM Assistant", kind: "site", x: 260, y: 500, w: 104, h, opens: "SciM Assistant" },
-    { id: "b-about", label: "About", kind: "site", x: 380, y: 500, w: 104, h, opens: "Capabilities" },
-    { id: "b-lab", label: "Lab", kind: "site", x: 500, y: 500, w: 104, h, opens: "HAL-OS" },
-    { id: "b-library", label: "Library", kind: "site", x: 620, y: 500, w: 104, h, opens: "The Global Map of Science" },
-    { id: "b-tools", label: "Tools", kind: "site", x: 740, y: 500, w: 104, h, opens: "Assess Manuscripts [Pi]" },
-    { id: "b-explore", label: "Explore", kind: "site", x: 860, y: 500, w: 120, h, opens: "Recent assessments", probe: ["/api/assessments/recent", j => (j.total || 0) + " recent"] },
-  ];
+  // The map is the program's project section (super/pitechlab.super.js, SuperAI.program.project), and its
+  // site row is the program's bubbles, so the map and the site are drawn from one source.
+  const W = 1000, H = 620;
+  const PROGRAM = (window.SuperAI && window.SuperAI.program) || window.SUPERAI_PROGRAM;
+  const PR = PROGRAM.project;
+  const row = PR.siteRow || { x: 20, y: 500, w: 960, h: 40 };
+  const siteSupers = PROGRAM.bubbles.map(b => ({ id: "b-" + b.title, label: b.title, kind: "site", opens: b.members ? b.members[0] : "@source:" + b.source }))
+    .concat(row.extra || []).map(x => Object.assign({ kind: "site" }, x));
+  const gap = 14, bw = (row.w - gap * (siteSupers.length - 1)) / siteSupers.length;
+  siteSupers.forEach((n, k) => Object.assign(n, { x: row.x + k * (bw + gap), y: row.y, w: bw, h: row.h }));
+  const P = PR.supers.map(n => Object.assign({}, n, { live: n.opens === "@live" })).concat(siteSupers);
   const BY = Object.fromEntries(P.map(n => [n.id, n]));
-  const WIRES = [
-    ["prompt", "superai"],
-    ...["sim", "rib", "pid", "pien", "llama", "mistral", "qwen", "gemini", "deepseek"].map(e => ["superai", e]),
-    ...["llama", "mistral", "qwen", "gemini", "deepseek"].map(e => [e, "judge"]),
-    ["judge", "answer"], ["sim", "answer"],
-    ["manuscript", "extract"], ["extract", "integrity"], ["integrity", "jurors"], ["jurors", "verdict"], ["verdict", "pix"], ["pix", "piq"], ["piq", "ledger"], ["ledger", "explorer"],
-    ["pix", "pid"], ["pix", "rib"],                               // the scores teach the forecaster and the research buddy
-    ["b-tools", "manuscript"], ["b-scim", "sim"], ["explorer", "b-explore"], ["ledger", "live"],
-  ];
-  const SECTIONS = [
-    { label: "one prompt, every engine", x: 14, y: 0, w: 972, h: 270 },
-    { label: "the assessment", x: 14, y: 300, w: 972, h: 110 },
-    { label: "the site", x: 14, y: 470, w: 972, h: 100 },
-  ];
+  const WIRES = (PR.wires || []).filter(([a, b]) => BY[a] && BY[b]);
+  const SECTIONS = PR.sections || [];
 
   // ------------------------------------------------------------ the super on the page
   let el = null, map = null, wiresSvg = null, state = load() || {}, t = +state.t || 0, tTo = t;
@@ -109,6 +67,7 @@
     el.style.setProperty("--pj-show", show.toFixed(3));
     el.classList.toggle("is-open", show > 0.02);
     el.classList.toggle("is-full", t > 0.98);
+    if (t < 0.6 && el.classList.contains("is-editing")) { el.querySelector(".pj-editor").hidden = true; el.classList.remove("is-editing"); }
     // the drawing fits the box, centred
     const pad = 0.05, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);
     map.style.transform = "translate(" + ((r.w - W * s) / 2).toFixed(1) + "px," + ((r.h - H * s) / 2).toFixed(1) + "px) scale(" + s.toFixed(4) + ")";
@@ -129,17 +88,23 @@
     el.innerHTML =
       '<div class="pj-face"><strong>Pi Tech Lab</strong><span>the project in SuperAI</span><em>zoom in</em></div>' +
       '<i class="pj-port pj-l"></i><i class="pj-port pj-r"></i><i class="pj-port pj-t"></i><i class="pj-port pj-b"></i>' +
-      '<div class="pj-map" aria-hidden="false"></div>';
+      '<div class="pj-map" aria-hidden="false"></div>' +
+      '<button type="button" class="pj-prog-btn">Program</button>' +
+      '<div class="pj-editor" hidden><div class="pj-ed-head"><strong>Pi Tech Lab in SuperAI</strong><span class="pj-ed-state"></span></div>' +
+      '<textarea class="pj-ed-text" spellcheck="false" aria-label="The SuperAI program the site runs"></textarea>' +
+      '<div class="pj-ed-errors" role="alert"></div>' +
+      '<div class="pj-ed-row"><button type="button" class="pj-ed-run">Run</button><button type="button" class="pj-ed-reset">Back to shipped</button>' +
+      '<button type="button" class="pj-ed-dl">Download</button><button type="button" class="pj-ed-close">Close</button></div></div>';
     map = el.querySelector(".pj-map");
     map.style.width = W + "px"; map.style.height = H + "px";
     let inner = '<svg class="pj-wires" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"></svg>';
     SECTIONS.forEach(s => { inner += '<div class="pj-sec" style="left:' + s.x + "px;top:" + s.y + "px;width:" + s.w + "px;height:" + s.h + 'px"><span>' + esc(s.label) + "</span></div>"; });
     P.forEach(n => {
-      const tag = n.opens || n.live ? "button" : "div";
-      inner += "<" + tag + ' class="pj-node pj-' + n.kind + '" data-id="' + n.id + '"' + (tag === "button" ? ' type="button"' : "") +
+      const tag = (n.opens || n.live) && !n.input ? "button" : "div";
+      inner += "<" + tag + ' class="pj-node pj-' + n.kind + (n.id === ANS_ID() ? " pj-answer" : "") + '" data-id="' + n.id + '"' + (tag === "button" ? ' type="button"' : "") +
         ' style="left:' + n.x + "px;top:" + n.y + "px;width:" + n.w + "px;height:" + n.h + 'px">' +
         '<b>' + esc(n.label) + "</b>" +
-        (n.id === "prompt" ? '<input class="pj-field" type="text" placeholder="ask everything…" aria-label="Prompt for every engine" maxlength="4000">' : '<span class="pj-val">' + esc(n.note || "") + "</span>") +
+        (n.input ? '<input class="pj-field" type="text" placeholder="ask everything…" aria-label="Prompt for every engine" maxlength="4000">' : '<span class="pj-val">' + esc(n.note || "") + "</span>") +
         "</" + tag + ">";
     });
     map.innerHTML = inner;
@@ -189,7 +154,7 @@
     P.forEach(n => { if (n.probe) (urls[n.probe[0]] = urls[n.probe[0]] || []).push(n); });
     Object.entries(urls).forEach(([u, ns]) => {
       fetch(u).then(r => r.ok ? r.json() : Promise.reject(r.status)).then(j => {
-        ns.forEach(n => { try { setVal(n.id, n.probe[1](j)); } catch (_) { setVal(n.id, "—"); } });
+        ns.forEach(n => { try { setVal(n.id, window.SuperAI.value(n.probe[1], j)); } catch (_) { setVal(n.id, "—"); } });
         if (u === "/api/super/engines") (j.engines || []).forEach(e => { if (BY[e.id] && BY[e.id].kind === "out") setVal(e.id, e.ready ? "ready" : "no key"); });
       }).catch(() => ns.forEach(n => setVal(n.id, "unreachable", "err")));
     });
@@ -198,6 +163,13 @@
   }
 
   // ------------------------------------------------------------ running it
+  // the run follows the program's wires: the input super feeds the Super AI, it feeds the engines (by their
+  // engine field), the outside models feed a judge, and the judge feeds the answer
+  const IN = P.find(n => n.input) || {}, AI = P.find(n => n.kind === "ai") || {};
+  const JUDGE = P.find(n => n.kind === "judge" && WIRES.some(([a, b]) => b === n.id && BY[a].kind === "out")) || {};
+  const ANS = BY[(WIRES.find(([a]) => a === JUDGE.id) || [])[1]] || P.find(n => n.kind === "sink") || {};
+  function ANS_ID() { return ANS.id; }
+  const nodeFor = eid => P.find(n => n.engine === eid);
   let run = null;
   function ask(q) {
     if (!q || !window.SuperPrompt) return;
@@ -206,34 +178,34 @@
     const lit = new Set();
     map.querySelectorAll(".pj-wire").forEach(w => w.classList.remove("is-live"));
     const light = (a, b) => { const w = map.querySelector('.pj-wire[data-a="' + a + '"][data-b="' + b + '"]'); if (w) w.classList.add("is-live"); };
-    light("prompt", "superai");
-    setVal("superai", "thinking…", "busy");
-    setVal("answer", "", "busy");
+    light(IN.id, AI.id);
+    setVal(AI.id, "thinking…", "busy");
+    setVal(ANS.id, "", "busy");
     r.on(() => {
       if (run !== r) return;
       r.engines.forEach(e => {
-        const id = e.id, res = r.results[id];
-        if (!BY[id]) return;
-        if (!lit.has(id)) { lit.add(id); light("superai", id); setVal(id, "…", "busy"); }
+        const sup = nodeFor(e.id), res = r.results[e.id];
+        if (!sup) return;
+        const id = sup.id;
+        if (!lit.has(id)) { lit.add(id); light(AI.id, id); setVal(id, "…", "busy"); }
         if (res && res.state !== "wait" && !lit.has(id + ":done")) {
           lit.add(id + ":done");
           setVal(id, clip(res.text, 46), res.state === "ok" ? "ok" : "err");
-          if (BY[id].kind === "out" && res.state === "ok") light(id, "judge");
-          if (id === "sim" && res.state === "ok") light("sim", "answer");
+          if (res.state === "ok") { light(id, JUDGE.id); light(id, ANS.id); }
         }
       });
       if (r.verdict) {
-        if (r.verdict.state === "weigh") setVal("judge", "weighing…", "busy");
-        else if (r.verdict.state !== "wait") setVal("judge", r.verdict.agreement ? r.verdict.agreement + " agreement" : (r.verdict.state === "ok" ? "weighed" : "no verdict"), r.verdict.state === "ok" ? "ok" : "err");
-        if (r.verdict.state === "ok") light("judge", "answer");
+        if (r.verdict.state === "weigh") setVal(JUDGE.id, "weighing…", "busy");
+        else if (r.verdict.state !== "wait") setVal(JUDGE.id, r.verdict.agreement ? r.verdict.agreement + " agreement" : (r.verdict.state === "ok" ? "weighed" : "no verdict"), r.verdict.state === "ok" ? "ok" : "err");
+        if (r.verdict.state === "ok") light(JUDGE.id, ANS.id);
       }
       const t = window.SuperPrompt.summary(r);
       if (t) answer(t);
-      if (r.finished) { setVal("superai", r.engines.filter(e => r.results[e.id] && r.results[e.id].state === "ok").length + " answered", "ok"); if (!t) answer(r.error || "No engine had an answer.", true); }
+      if (r.finished) { setVal(AI.id, r.engines.filter(e => r.results[e.id] && r.results[e.id].state === "ok").length + " answered", "ok"); if (!t) answer(r.error || "No engine had an answer.", true); }
     });
   }
   function answer(text, err) {
-    const n = nodeEl("answer"); if (!n) return;
+    const n = nodeEl(ANS.id); if (!n) return;
     const s = n.querySelector(".pj-val");
     s.textContent = clip(text, 420);
     n.classList.remove("is-busy"); n.classList.toggle("is-ok", !err); n.classList.toggle("is-err", !!err);
@@ -242,10 +214,25 @@
 
   // ------------------------------------------------------------ gestures
   const inside = e => !!(el && e.target && e.target.closest && e.target.closest(".se-project"));
+  // the program as text: anything short enough stays on one line, so it reads like the program it is
+  function inline(v) {
+    if (Array.isArray(v)) return "[" + v.map(inline).join(", ") + "]";
+    if (v && typeof v === "object") return "{" + Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => JSON.stringify(k) + ": " + inline(x)).join(", ") + "}";
+    return v === undefined ? "null" : JSON.stringify(v);
+  }
+  function pretty(v, ind) {
+    ind = ind || "";
+    const one = inline(v);
+    if (typeof v !== "object" || v === null || one.length + ind.length <= 110) return one;
+    const next = ind + "  ";
+    if (Array.isArray(v)) return "[\n" + v.map(x => next + pretty(x, next)).join(",\n") + "\n" + ind + "]";
+    return "{\n" + Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => next + JSON.stringify(k) + ": " + pretty(x, next)).join(",\n") + "\n" + ind + "}";
+  }
   function wire() {
     // zoom on it: open or compact it. Taken before the page's own scroll handlers (super/scroll.js)
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e)) return;
+      if (e.target.closest(".pj-editor")) { e.stopImmediatePropagation(); return; }   // the program scrolls; it does not zoom
       e.preventDefault(); e.stopImmediatePropagation();
       const dy = e.deltaY || e.deltaX, k = e.ctrlKey ? 0.012 : 0.0016;   // a pinch reports small deltas
       setT(tTo - dy * k);
@@ -264,12 +251,47 @@
     map.addEventListener("click", e => {
       const n = e.target.closest(".pj-node"); if (!n || e.target.closest(".pj-field")) return;
       const spec = BY[n.dataset.id]; if (!spec) return;
-      if (spec.id === "prompt") { map.querySelector(".pj-field").focus(); return; }
+      if (spec.input) { map.querySelector(".pj-field").focus(); return; }
       if (spec.live && window.PiLive && window.PiLive.open) { setT(0); window.PiLive.open(); return; }
+      if (spec.opens && String(spec.opens).startsWith("@source:") && O().open) { const k = spec.opens.slice(8); setT(0); setTimeout(() => O().open(k), 220); return; }
       if (spec.opens && O().openTitle) { setT(0); setTimeout(() => O().openTitle(spec.opens), 220); }
     });
     const input = map.querySelector(".pj-field");
     input.addEventListener("keydown", e => { if (e.key === "Enter" && input.value.trim()) { e.preventDefault(); ask(input.value.trim()); } });
+    // the program itself: read it, edit it, run it (it is kept in this browser and the site rebuilds from it)
+    const ed = el.querySelector(".pj-editor"), text = el.querySelector(".pj-ed-text"), errs = el.querySelector(".pj-ed-errors");
+    const stateLine = () => { el.querySelector(".pj-ed-state").textContent = window.SuperAI.edited ? "running: your edited copy" : "running: the shipped program"; };
+    const show = on => {
+      ed.hidden = !on; el.classList.toggle("is-editing", on);
+      if (on) { text.value = pretty(window.SuperAI.program); errs.textContent = ""; stateLine(); setTimeout(() => { text.focus({ preventScroll: true }); text.setSelectionRange(0, 0); text.scrollTop = 0; }, 0); }
+    };
+    el.querySelector(".pj-prog-btn").addEventListener("click", () => { if (t < 0.6) setT(1); show(ed.hidden); });
+    el.querySelector(".pj-ed-close").addEventListener("click", () => show(false));
+    el.querySelector(".pj-ed-run").addEventListener("click", () => {
+      let p;
+      try { p = JSON.parse(text.value); } catch (e) { errs.textContent = "Not valid JSON: " + e.message; return; }
+      const bad = window.SuperAI.save(p);
+      if (bad.length) { errs.textContent = bad.slice(0, 6).join(" · ") + (bad.length > 6 ? " · and " + (bad.length - 6) + " more" : ""); return; }
+      // a program that changes the starting diagram starts it afresh
+      if (JSON.stringify(p.diagram) !== JSON.stringify(window.SuperAI.program.diagram)) { try { localStorage.removeItem("lv:nodes"); localStorage.removeItem("orbit:textwires"); } catch (_) { /* private mode */ } }
+      errs.textContent = "Running it…";
+      setTimeout(() => location.reload(), 150);
+    });
+    el.querySelector(".pj-ed-reset").addEventListener("click", () => {
+      if (!window.SuperAI.edited) { text.value = pretty(window.SuperAI.shipped); errs.textContent = "This is the shipped program."; return; }
+      window.SuperAI.reset(); errs.textContent = "Back to the shipped program…"; setTimeout(() => location.reload(), 150);
+    });
+    el.querySelector(".pj-ed-dl").addEventListener("click", () => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(new Blob([text.value], { type: "application/json" }));
+      a.download = "pitechlab.super.json"; document.body.appendChild(a); a.click();
+      setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
+    });
+    text.addEventListener("keydown", e => {
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); el.querySelector(".pj-ed-run").click(); }
+      if (e.key === "Tab") { e.preventDefault(); const a = text.selectionStart; text.setRangeText("  ", a, text.selectionEnd, "end"); }
+      if (e.key === "Escape") show(false);
+    });
     window.addEventListener("resize", place);
     document.addEventListener("se:frame", place);
     setInterval(place, 500);                                         // the inner super moves with the page's fit
