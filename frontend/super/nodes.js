@@ -53,6 +53,7 @@
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel, .se-port";
   const html = document.documentElement;
+  let pickedWire = null;                                 // the node wire selected by a click (superellipse look)
   const se = () => html.classList.contains("shape-se") && window.SeMorph;
   const O = () => window.PiOrbit || {};
   const piStr = () => (O().piDigits && O().piDigits()) || "";
@@ -578,7 +579,7 @@
           : "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
-        s += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+        s += '<g class="wire' + (live ? " live" : "") + (pickedWire && pickedWire.node === n.id && +pickedWire.i === idx ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
              term(sx, cy, "wire-term") + term(tx, ty, "wire-term") +
              '<path class="wire-hit" data-node="' + n.id + '" data-i="' + idx + '" d="' + d + '"><title>Click to disconnect</title></path></g>';
       });
@@ -718,20 +719,21 @@
   function layoutProgram(round) {
     const all = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
     if (!all) return;
-    const keep = s => !round || s.everywhere;
+    const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
-    const prog = round ? { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(e => ids.has(String(e).split(".")[0]))) } : all;
+    const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(e => ids.has(String(e).split(".")[0]) || String(e).split(".")[0] === "site")) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
     const sb = O().siteBox ? O().siteBox() : null;
+    const K = Wv < 700 ? 0.72 : 1;                                   // a phone: the first supers smaller and closer
     const portXY = name => {                                        // a port of the inner super, on screen
       if (!sb) return [Wv / 2, Hv / 2];
       return name === "input" ? [sb.cx - sb.a, sb.cy] : name === "output" ? [sb.cx + sb.a, sb.cy] : name === "sync" ? [sb.cx, sb.cy - sb.b] : [sb.cx, sb.cy + sb.b];
     };
     const where = s => {
-      const size = s.size || DOT_BASE, at = s.at || {};
+      const size = s.size ? Math.round(s.size * K) : DOT_BASE, at = s.at || {};
       if (at.center) return [(Wv - size) / 2, (Hv - size) / 2];
-      if (at.from && done[at.from]) return [done[at.from][0] + (at.dx || 0), done[at.from][1] + (at.dy || 0)];
+      if (at.from && done[at.from]) return [done[at.from][0] + (at.dx || 0) * K, done[at.from][1] + (at.dy || 0) * K];
       if (at.leftOf) { const p = portXY(String(at.leftOf).split(".")[1]); return [Math.max(4, p[0] - size - 10), p[1] + (at.dy || 0)]; }
       if (at.rightOf) { const p = portXY(String(at.rightOf).split(".")[1]); return [Math.min(Wv - size - 4, p[0] + 10), p[1] + (at.dy || 0)]; }
       return [(at.fx || 0) * Wv, (at.fy || 0) * Hv];
@@ -740,7 +742,7 @@
       const xy = where(s); done[s.id] = xy;
       if (nodes.some(x => x.id === s.id)) return;                     // already on the page (a diagram kept from the round look)
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
-             str: s.text || undefined, hint: s.hint || undefined, size: s.size, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
+             str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
     });
     const end = e => { const [who, port] = String(e).split("."); return { h: who === "site" ? "port:" + port : "port:node:" + who + "/" + port, el: 1 }; };
     const wireUp = () => {
@@ -1232,16 +1234,39 @@
     canvas.className = "lv-canvas";
     canvas.innerHTML = '<svg class="lv-wires" aria-hidden="true"></svg>';
     wires = canvas.firstChild;
-    // click a wire to disconnect that input
-    wires.addEventListener("dblclick", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
+    // a wire: double-click to disconnect that input (round look); in the superellipse look a double click
+    // deletes nothing (owner, 2026-10-12): click it to select it and press Delete
+    const cut = w => {
       const n = w && nodes.find(x => x.id === w.dataset.node);
       if (!n) return;
-      e.stopPropagation();
       const ref = n.inputs.splice(+w.dataset.i, 1)[0];
       persist(); tick();
       say(BY[n.fn].name + " disconnected from " + (ref ? nameOf(ref) : "its input"));
+    };
+    wires.addEventListener("dblclick", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      if (!w) return;
+      e.stopPropagation(); e.preventDefault();
+      if (!html.classList.contains("shape-se")) cut(w);
     });
+    wires.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      if (!w || !html.classList.contains("shape-se")) return;
+      e.stopPropagation();
+      pickedWire = pickedWire && pickedWire.node === w.dataset.node && pickedWire.i === w.dataset.i ? null : { node: w.dataset.node, i: w.dataset.i };
+      wires.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", !!pickedWire && h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i));
+    });
+    document.addEventListener("pointerdown", e => { if (pickedWire && !(e.target.closest && e.target.closest(".wire-hit"))) { pickedWire = null; wires.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
+    document.addEventListener("keydown", e => {
+      if (!pickedWire) return;
+      const a = document.activeElement;
+      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Delete" || e.key === "Backspace") {
+        e.preventDefault(); e.stopImmediatePropagation();
+        const w = [...wires.querySelectorAll(".wire-hit")].find(h => h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i);
+        pickedWire = null; cut(w);
+      } else if (e.key === "Escape") { pickedWire = null; wires.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); }
+    }, true);
     document.body.appendChild(canvas);
 
     // no palette: a double click on bare page makes a Super AI super there (a ■ like the central one: type a

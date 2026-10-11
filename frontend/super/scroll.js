@@ -88,12 +88,15 @@
 
   // ---- what a scroll or a pinch does: one rule ------------------------------------------------------
   //   scroll or pinch anywhere           zooms the site (the view), and nothing else changes shape
-  //   ... on a super (Super AI too)      zooms into what it shows (its prompt, answer, value) about the
-  //                                      pointer; Alt + scroll sizes the super (and grows a ■ into a holder)
+  //   ... on a super (Super AI too)      sizes the super (and grows a ■ into a holder); Alt + scroll zooms
+  //                                      into what it shows (an answer, anything long) about the pointer
+  //   ... on a bubble                    opens it (a scroll in) or compacts it (a scroll out): super/bubble.js
   //   ... in a window                    zooms its content about the pointer (no scroll bars anywhere:
   //                                      super/zoombox.js); Alt + scroll sizes the window
   //   Alt + scroll on a thing            sizes that thing (a super, a window, a bubble, the title, Live)
-  //   ... on a super's ring              changes that super's n (the pointer is a hand there): the inner
+  //   Shift + scroll                     changes the n of the super under the pointer, and nothing else does
+  //                                      (the ring is no longer a control: RING_N)
+  //   (was:) ... on a super's ring       changes that super's n (the pointer is a hand there): the inner
   //                                      super's ring, the main loop's, a window's, a node's, a bubble's
   //   Shift + scroll                     changes the shape (n) of the super under the pointer, anywhere
   // A gesture keeps doing what it started doing (400 ms), so a zoom never turns into an n by drifting. The zoom is coalesced to one step per frame and
@@ -104,8 +107,10 @@
   // super's n (the owner's n control); everywhere else an arrow, and a scroll zooms
   const RING_IN = 16, RING_OUT = 12;                        // the ring's band, inside and outside the edge
   const ringBand = (w, h) => { const k = Math.min(1, Math.min(w, h) / 64); return { in: Math.max(3, RING_IN * k), out: Math.max(3, RING_OUT * k) }; };
+  const RING_N = false;                                                     // a scroll on a ring used to change its n; now only Shift + scroll does
   function zoneAt(x, y, hit) {
     if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project")) return null;
+    if (!RING_N) return { kind: "arrow" };                                    // no ring control: an arrow everywhere, a scroll zooms
     const over = hit && hit.closest ? hit.closest(THING) : null;
     let best = null;                                          // the nearest ring the point is on
     const S = window.SeSite || {}, sel = (S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
@@ -155,11 +160,10 @@
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
     const node = t && t.closest(".lv-node");
     if (node) {
-      if (alt) return node;                                          // Alt: the super's size
+      // a scroll on a super sizes it (owner, 2026-10-12); Alt + scroll zooms what it shows (an answer, anything long)
       const g = node.querySelector(":scope > .lv-glyph");
-      // what it shows, zoomed: an answer or anything long; a word or two fit already (a scroll there zooms the view)
-      if (g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim().length > 24) return g;
-      return "site";                                                 // nothing in it to zoom: the view
+      if (alt && g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim().length > 24) return g;
+      return node;
     }
     const panel = t && t.closest(".orbit-panel");
     if (panel && alt) return panel;                                  // Alt: the window's size
@@ -167,24 +171,28 @@
     if (zb && zb._zoom) return zb;                                   // a window's content: zoomed, never scrolled
     if (panel) return pinch ? panel : "nothing";
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette, .live-dock"); if (th && nameOf(th)) return th; }
+    // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it
+    const bubble = t && t.closest(".orbit-bubble.is-group");
+    if (bubble && window.SeBubble && !pinch) return bubble;
     return "site";
   }
   // one gesture stays on what it started on, so a thing that grows under the pointer keeps being sized
   let gesture = null;
   const pending = new Map();
   let frameAsked = false, settleT = 0;
-  function queue(target, dy, direct, x, y) {
+  function queue(target, dy, direct, x, y, alt) {
     const p = pending.get(target) || { dy: 0, direct: true };
-    p.dy += dy; p.direct = p.direct && direct; p.x = x; p.y = y;
+    p.dy += dy; p.direct = p.direct && direct; p.x = x; p.y = y; p.alt = !!alt;
     pending.set(target, p);
     if (!frameAsked) { frameAsked = true; requestAnimationFrame(flush); }
   }
   function flush() {
     frameAsked = false;
-    pending.forEach(({ dy, direct, x, y }, what) => {
+    pending.forEach(({ dy, direct, x, y, alt }, what) => {
       if (what === "nothing") return;
       if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
       else if (!what.isConnected) return;
+      else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
       else if (what.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(what, dy); }
@@ -231,7 +239,8 @@
     const fresh = gesture && now - gesture.t < 400 && gesture.pinch === pinch && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
     // on a ring (the hand) a scroll changes that super's n; a gesture keeps doing what it started doing,
     // so a zoom that drifts over a ring keeps zooming and an n that drifts inside keeps changing n
-    if (!pinch && !e.altKey && (fresh ? gesture.ring : true)) {
+    // only Shift + scroll changes an n (owner, 2026-10-12): the ring is not a control any more
+    if (RING_N && !pinch && !e.altKey && (fresh ? gesture.ring : true)) {
       const z = fresh ? { kind: "hand", target: gesture.what } : zoneAt(x, y, hit);
       if (z && z.kind === "hand") {
         e.preventDefault(); e.stopImmediatePropagation();
@@ -247,7 +256,7 @@
     const dy = e.deltaY * unit * (pinch ? 4 : 1);                           // a pinch reports small deltas
     // a trackpad's or a pinch's stream is already smooth: apply it at once; a wheel's steps glide
     const direct = pinch || (e.deltaMode === 0 && Math.abs(e.deltaY) < 50);
-    queue(target, dy, direct, x, y);
+    queue(target, dy, direct, x, y, e.altKey);
   }, { capture: true, passive: false });
   // Safari's pinch comes as gesture events (no wheel): the same zoom, never the browser's
   let gs = null;

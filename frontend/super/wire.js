@@ -191,6 +191,11 @@
   const touchesLive = an => an && !an.loop && an.h === "live";
   function act(a, b) {
     if ([a, b].some(touchesLive) && window.PiLive && window.PiLive.open) window.PiLive.open();   // a wire to Live unfolds it
+    // a wire to a compact bubble opens the bubble (super/bubble.js), so its pills show
+    [a, b].forEach(an => {
+      const el = an && an.h && an.h.startsWith("k:") ? hostEl(an.h) : null, bubble = el && el.closest && el.closest(".orbit-bubble.is-group.is-compact");
+      if (bubble && window.SeBubble) window.SeBubble.open(bubble, true);
+    });
     const t = intent(endWords(a).concat(endWords(b)));
     if ([a, b].some(an => an && an.h && an.h.startsWith("port:"))) return;   // a wire to a port carries a value, it opens nothing
     if (!t || !O().openTitle) {                                   // no window named together: a window's button at either end opens it
@@ -343,11 +348,12 @@
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
     const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
+    // a double click on a wire deletes nothing (owner, 2026-10-12): click it to select it and press Delete;
+    // the double click only stops short of the page behind (which would make a super there)
     svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
-      e.stopPropagation();
-      removeWire(+w.dataset.i);
+      e.stopPropagation(); e.preventDefault();
     });
     // a click selects a wire (cobalt); Delete or Backspace removes it, Escape or a click elsewhere lets go
     svg.addEventListener("click", e => {
@@ -438,15 +444,6 @@
       };
       window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", end, true);
       window.addEventListener("pointercancel", end, true);
-    }, true);
-    // a double click on wires lying on top of each other (a bubble wire and a text wire, say) deletes them all,
-    // so a wire never seems to survive its double click
-    document.addEventListener("dblclick", e => {
-      if (!e.isTrusted || !document.elementsFromPoint) return;
-      const hits = document.elementsFromPoint(e.clientX, e.clientY).filter(el => el.classList && el.classList.contains("wire-hit"));
-      if (hits.length < 2) return;
-      const seen = new Set([hits[0].ownerSVGElement]);
-      hits.slice(1).forEach(h => { if (seen.has(h.ownerSVGElement)) return; seen.add(h.ownerSVGElement); h.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: e.clientX, clientY: e.clientY })); });
     }, true);
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
     document.addEventListener("se:frame", draw);                      // super/motion.js: while something moves, every frame

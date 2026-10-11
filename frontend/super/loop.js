@@ -179,14 +179,17 @@
       document.querySelectorAll(".orbit-panel").forEach(p => {
         if (p.classList.contains("gliding") || p.classList.contains("leaving")) return;
         const r = p.getBoundingClientRect();
-        if (!r.width || (fits(r.left, r.top, r.width, r.height) && r.width <= a * 1.1 + 1 && r.height <= b * 1.3 + 1)) return;
+        // no more than about half the inner super, so the bubbles keep their room; on a phone there is no room
+        // to share, so a window may take most of it (and never shrinks below a readable size)
+        const sm = window.innerWidth < 700, wCap = sm ? a * 1.84 : a * 1.1, hCap = sm ? b * 1.2 : b * 1.3, minW = sm ? Math.floor(a * 1.5) : 200, minH = sm ? Math.floor(b * 0.6) : 120;
+        if (!r.width || (fits(r.left, r.top, r.width, r.height) && r.width <= wCap + 1 && r.height <= hCap + 1)) return;
         let w = r.width, h = r.height;
-        const k = Math.min(1, a * 1.1 / w, b * 1.3 / h);                   // no more than about half the inner super: the bubbles keep their room
-        if (k < 1) { w = Math.max(200, Math.floor(w * k)); h = Math.max(120, Math.floor(h * k)); p.style.width = w + "px"; p.style.height = h + "px"; }
+        const k = Math.min(1, wCap / w, hCap / h);
+        if (k < 1) { w = Math.max(minW, Math.floor(w * k)); h = Math.max(minH, Math.floor(h * k)); p.style.width = w + "px"; p.style.height = h + "px"; }
         if (!fits(cx - w / 2, cy - h / 2, w, h)) {                          // too big even in the middle: smaller
           let lo = 0.2, hi = 1;
           for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (fits(cx - w * m / 2, cy - h * m / 2, w * m, h * m)) lo = m; else hi = m; }
-          w = Math.max(200, Math.floor(w * lo)); h = Math.max(120, Math.floor(h * lo));
+          w = Math.max(minW, Math.floor(w * lo)); h = Math.max(minH, Math.floor(h * lo));
           p.style.width = w + "px"; p.style.height = h + "px";
         }
         const x0 = r.left + r.width / 2, y0 = r.top + r.height / 2;
@@ -201,7 +204,8 @@
     // the title and Live (those are where you put them and stay), and when there is no room for all of them inside the
     // inner super they all get a little smaller together, as the pills do, until there is
     function separateWindows(fits) {
-      const GAP = 10, MIN_W = 200, MIN_H = 120;
+      const sm = window.innerWidth < 700, sbm = siteBox(), fm = sbm.fit || 1;
+      const GAP = 10, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
       const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .live-dock.open .live-body, .live-tab, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())

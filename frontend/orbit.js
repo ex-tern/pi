@@ -1151,10 +1151,6 @@
     p.addEventListener("pointerup", e => {
       if (!wasTop && Math.hypot(e.clientX - cx0, e.clientY - cy0) < 6) raise(p, true);
     });
-    head.addEventListener("pointerdown", e => {
-      drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
-      head.setPointerCapture(e.pointerId);
-    });
     // Pushed against an edge of the screen, a window closes: while it is far
     // enough out it fades, and letting go there closes it.
     const atEdge = e => {
@@ -1162,18 +1158,30 @@
       const shownW = Math.max(0, Math.min(r.right, W0) - Math.max(r.left, 0));
       return e.clientX <= 8 || e.clientX >= W0 - 8 || e.clientY >= H0 - 8 || shownW < r.width * 0.5;
     };
-    head.addEventListener("pointermove", e => {
-      if (!drag) return;
-      p.style.left = Math.min(window.innerWidth - 60, Math.max(-p.offsetWidth + 60, px + e.clientX - sx)) + "px";
-      p.style.top = Math.min(window.innerHeight - 40, Math.max(top, py + e.clientY - sy)) + "px";
-      p.classList.toggle("leaving", atEdge(e));
-    });
-    head.addEventListener("pointerup", e => {
-      if (drag && atEdge(e)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
-      if (drag) { p.userMoved = true; saveWin(it, p); }
-      drag = false;
-    });
-    head.addEventListener("pointercancel", () => { drag = false; p.classList.remove("leaving"); });
+    // the window moves by its head (the round look), or by the blank margin inside its edge (the superellipse
+    // look has no bar on windows: owner, 2026-10-12; the edge itself wires, super/wire.js)
+    const grip = (el, only) => {
+      el.addEventListener("pointerdown", e => {
+        if (only && e.target !== el) return;
+        if (e.button !== 0 || e.defaultPrevented) return;
+        if (only) e.preventDefault();                                   // from the margin: no text selection on the way
+        drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
+        el.setPointerCapture(e.pointerId);
+      });
+      el.addEventListener("pointermove", e => {
+        if (!drag) return;
+        p.style.left = Math.min(window.innerWidth - 60, Math.max(-p.offsetWidth + 60, px + e.clientX - sx)) + "px";
+        p.style.top = Math.min(window.innerHeight - 40, Math.max(top, py + e.clientY - sy)) + "px";
+        p.classList.toggle("leaving", atEdge(e));
+      });
+      el.addEventListener("pointerup", e => {
+        if (drag && atEdge(e)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
+        if (drag) { p.userMoved = true; saveWin(it, p); }
+        drag = false;
+      });
+    };
+    grip(head, false); grip(p, true);
+    [head, p].forEach(el => el.addEventListener("pointercancel", () => { drag = false; p.classList.remove("leaving"); }));
   }
 
   // ------------------------------------------------------------ busy: the mark spins faster
@@ -1307,7 +1315,7 @@
         const dx = P[0] - oc[0], dy = P[1] - oc[1], hz = Math.abs(dx) > q.w / 2;
         const o = hz ? [dx > 0 ? q.x + q.w : q.x, oc[1]] : [oc[0], dy > 0 ? q.y + q.h : q.y];
         const d = curve(o[0], o[1], P[0], P[1], hz);
-        html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+        html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + (i === pickedWire ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
                 wireTerm(o, "wire-term") + wireTerm(P, "wire-term") +
                 '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(O.title) + ' – the loop: double-click to delete</title></path></g>';
         return;
@@ -1346,14 +1354,33 @@
     if (html !== wiresHtml) { wiresHtml = html; svg.querySelector(".wires-base").innerHTML = html; }
   }
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
+  let pickedWire = -1;                                  // the bubble wire selected by a click (superellipse look)
   function wireEditing(svg) {
+    // superellipse look: a double click deletes nothing (owner, 2026-10-12); a click selects the wire (cobalt)
+    // and Delete or Backspace removes it, as for text wires (super/wire.js)
     svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
-      e.stopPropagation();
+      e.stopPropagation(); e.preventDefault();
+      if (merged()) return;
       WIRES.splice(+w.dataset.i, 1);
       saveWires(); drawWires();
     });
+    svg.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      if (!w || !merged()) return;
+      e.stopPropagation();
+      pickedWire = +w.dataset.i === pickedWire ? -1 : +w.dataset.i;
+      svg.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", +h.dataset.i === pickedWire));
+    });
+    document.addEventListener("pointerdown", e => { if (pickedWire >= 0 && !(e.target.closest && e.target.closest(".wire-hit"))) { pickedWire = -1; svg.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
+    document.addEventListener("keydown", e => {
+      if (pickedWire < 0) return;
+      const a = document.activeElement;
+      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); e.stopImmediatePropagation(); WIRES.splice(pickedWire, 1); pickedWire = -1; saveWires(); drawWires(); }
+      else if (e.key === "Escape") { pickedWire = -1; svg.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); }
+    }, true);
     svg.addEventListener("pointerdown", e => {
       const h = e.target.closest && e.target.closest(".wire-handle, .loop-hit");
       if (!h || e.button !== 0) return;

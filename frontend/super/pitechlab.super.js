@@ -66,14 +66,15 @@ window.SUPERAI_PROGRAM = {
   // A super: id, kind (engine: a Super AI super; box: a plain one), text typed into it, a hint shown until
   // something is, size (px), and where it is: { center }, { fx, fy } (fractions of the screen),
   // { from: id, dx, dy } (px from another super) or { leftOf: "site.input", dy } (beside a port of the site);
-  // everywhere: shown to first-time visitors in the round look too (pitechlab.com), not only the superellipse one.
+  // everywhere: shown to first-time visitors in the round look too (pitechlab.com), not only the superellipse one;
+  // desktop: not on a phone (narrower than 700 px), where there is no shift + scroll and little room.
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
   // and condition, as every super's are.
   diagram: {
     supers: [
       { id: "site-box", kind: "engine", at: { center: true } },
       { id: "start", kind: "engine", everywhere: true, hint: "Connect wires to begin", size: 132, at: { fx: 0.126, fy: 0.131 } },
-      { id: "shift", kind: "engine", everywhere: true, hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
+      { id: "shift", kind: "engine", everywhere: true, desktop: true, hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
       { id: "open", kind: "engine", everywhere: true, text: "open", at: { from: "start", dx: 104, dy: 155 } },
       { id: "close", kind: "engine", everywhere: true, text: "close", at: { from: "start", dx: -15, dy: 248 } },
       { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
