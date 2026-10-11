@@ -315,3 +315,12 @@ html.shape-se .lv-node.se-on { border-color: var(--cobalt) !important; }
 html.shape-se .orbit-title.se-on .sel-badge { stroke: var(--cobalt); }
 html.shape-se.se-on-site .om-site-loop { stroke: var(--cobalt); }
 html.shape-se.se-on-loop .om-page-loop { stroke: var(--cobalt); }
+
+/* what a scroll does here, by the pointer's shape (super/hover.js): an arrow where it changes a super's n,
+   a finger where it sizes the super under it (or zooms the site), a + on an edge where a drag wires */
+html.shape-se.se-zone-n, html.shape-se.se-zone-n .orbit-stage, html.shape-se.se-zone-n .orbit-bubble, html.shape-se.se-zone-n .orbit-panel,
+html.shape-se.se-zone-n .live-body, html.shape-se.se-zone-n .orbit-title { cursor: default; }
+html.shape-se.se-zone-size, html.shape-se.se-zone-size .orbit-stage, html.shape-se.se-zone-size .orbit-bubble, html.shape-se.se-zone-size .orbit-bubble *,
+html.shape-se.se-zone-size .orbit-panel .op-body, html.shape-se.se-zone-size .live-body, html.shape-se.se-zone-size .live-scroll, html.shape-se.se-zone-size .orbit-title,
+html.shape-se.se-zone-size .lv-node, html.shape-se.se-zone-size .lv-palette, html.shape-se.se-zone-size .op-body .card { cursor: pointer; }
+html.shape-se.se-zone-size .orbit-panel input, html.shape-se.se-zone-size .orbit-panel textarea { cursor: text; }

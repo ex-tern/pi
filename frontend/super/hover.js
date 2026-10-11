@@ -20,11 +20,25 @@
     if (el) el.classList.add("se-on");
     else if (kind) html.classList.add("se-on-" + kind);
   }
+  // the pointer's shape says what a scroll does here: an arrow in the band just outside a super, where a
+  // scroll changes its n (and, on its very edge, a + for wiring); a finger on a super's surface, where a
+  // scroll makes it bigger or smaller (bare space inside the loop: the site zooms)
+  function zone(x, y, hit) {
+    const Z = window.SeZoom;
+    if (!Z) return "";
+    if (hit && hit.closest && hit.closest("input, textarea, select, button, a, [contenteditable], .op-head, .se-port, .wire-hit")) return "";   // their own cursors
+    if (Z.edgeSuper(x, y, hit)) return "n";
+    if (hit && hit.closest && hit.closest(Z.THING)) return "size";
+    if (O().inLoop && !O().inLoop(x, y)) return "n";                      // the bare corners: the main super's n
+    return "size";                                                        // bare space inside: the site zooms
+  }
   function update() {
     pending = false;
     if (!on() || !last) return;
     const [x, y] = last;
     const hit = document.elementFromPoint(x, y);
+    const z = zone(x, y, hit);
+    html.classList.toggle("se-zone-n", z === "n"); html.classList.toggle("se-zone-size", z === "size");
     if (!hit) return set(null, "");
     const el = hit.closest && hit.closest(EL);
     if (el) return set(el, "");

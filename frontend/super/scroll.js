@@ -147,4 +147,6 @@
   ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (on()) e.preventDefault(); }, { passive: false }));
   setInterval(restore, 1000);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
+  // super/hover.js shows the zone by the pointer's shape: the band where a scroll changes n, or a surface a scroll sizes
+  window.SeZoom = { edgeSuper, THING, BAND };
 })();
