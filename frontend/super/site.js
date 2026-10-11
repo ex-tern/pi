@@ -201,11 +201,17 @@
     const port = pid;
     if (port === "sync") { const d = O().piDigits ? O().piDigits() : ""; const v = Math.max(0, d.length - 1); return { num: v, isNum: true, bool: !still(), str: String(v), text: String(v) }; }
     if (port === "condition") return { num: still() ? 0 : 1, isNum: true, bool: !still(), str: still() ? "paused" : "running", text: still() ? "paused" : "running" };
-    if (port === "output") { const t = answer || ""; return { num: t.length, bool: !!t, str: t, text: t || (asking ? "thinking…" : inputText ? "press ↵ to ask" : "wire a question into input") }; }
+    if (port === "output") {                                // the site's answer: what is wired into its output port (the central engine super), else its own
+      if (fedOutput !== null) { const t = fedOutput; return { num: t.length, bool: !!t, str: t, text: t }; }
+      const t = answer || ""; return { num: t.length, bool: !!t, str: t, text: t || (asking ? "thinking…" : inputText ? "press ↵ to ask" : "wire a question into input") };
+    }
     const t = inputText || ""; return { num: t.length, bool: !!t, str: t, text: t };
   }
+  let fedOutput = null;                                     // super/nodes.js: what is wired into the site's output port (null: nothing)
+  function setOutput(text) { fedOutput = text == null ? null : String(text); }
   async function ask() {
     const prompt = inputText.trim();
+    if (fedOutput !== null) return;                          // an engine super answers for the site: it asks, not the site
     if (!prompt || prompt === lastAsked || asking) return;
     asking = true; lastAsked = prompt; html.classList.add("se-site-thinking");
     try {
@@ -342,5 +348,5 @@
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
   document.addEventListener("se:frame:first", () => { layout(); layoutOwned(); });   // super/motion.js: while something moves, every frame, before the wires
-  window.SeSite = { value, setInput, setCondition, setPortInput, ownerName, ownerEl, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portIds: () => Object.keys(ports), portEl: p => ports[p] || null };
+  window.SeSite = { value, setInput, setOutput, setCondition, setPortInput, ownerName, ownerEl, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portIds: () => Object.keys(ports), portEl: p => ports[p] || null };
 })();

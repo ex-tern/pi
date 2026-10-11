@@ -207,3 +207,5 @@ html.shape-se .lv-node .lv-glyph svg { display: none; }           /* the shape i
 html.shape-se .lv-node.lv-super.is-thinking { border-color: var(--cobalt); border-style: dashed; }
 html.shape-se .lv-node.lv-dot.is-loop { background: transparent; }
 html.shape-se .lv-node.lv-add .lv-glyph, html.shape-se .lv-node.lv-super .lv-glyph { font-size: 0; }
+/* the central super (role "engine"): cobalt while it asks the engines */
+html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: var(--cobalt); }

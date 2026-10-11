@@ -141,8 +141,8 @@
     const meSink = isSink(n);
     const inPort = "port:" + me + "/input";                      // the node's own input port (super/site.js): what is wired to it feeds the node
     L.forEach(l => {
-      if (l.a && l.a.h === inPort && l.b && !(l.b.h && l.b.h === me)) { out.push(l.b); return; }
-      if (l.b && l.b.h === inPort && l.a && !(l.a.h && l.a.h === me)) { out.push(l.a); return; }
+      if (l.a && l.a.h === inPort && l.b && !(l.b.h && l.b.h === me) && !sinkPort(l.b)) { out.push(l.b); return; }
+      if (l.b && l.b.h === inPort && l.a && !(l.a.h && l.a.h === me) && !sinkPort(l.a)) { out.push(l.a); return; }
       const ah = l.a && l.a.h, bh = l.b && l.b.h;
       const other = ah === me ? bh : bh === me ? ah : null;
       if (other && other !== me && other.startsWith("node:") && meSink !== sink(other)) { if (meSink) out.push(ah === me ? l.b : l.a); return; }
@@ -152,7 +152,7 @@
     return out;
   }
   const clip = t => t.length > 28 ? t.slice(0, 27) + "…" : t;
-  const strOf = v => v.str != null && v.str !== "" ? v.str : v.text || (v === ZERO ? "" : String(v.num));
+  const strOf = v => v.str != null && v.str !== "" ? v.str : v.text ? v.text : (v.isNum ? String(v.num) : "");   // an empty value is "", not "0"
   const N = v => ({ num: v, isNum: true, bool: !!v && !Number.isNaN(v), text: Number.isNaN(v) ? "NaN" : Number.isInteger(v) ? String(v) : v.toFixed(3) });
   // a word typed into a ■ or ● that names an operation
   const OPS = { x: "*", "×": "*", "*": "*", "·": "*", "+": "+", "-": "-", "−": "-", "–": "-", "/": "/", "÷": "/", ":": "/", "^": "^", "%": "%" };
@@ -197,6 +197,13 @@
       }
       case "box":                                      // ■ and ●: what their first use made them
       case "dot": {
+        if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
+          n.prompt = ins.map(strOf).filter(Boolean).join(" ").trim();
+          const t = n.answer || "";
+          const idle = n.held ? "held" : n.paused ? "paused" : "running";
+          r = { num: t.length, bool: !n.held, str: t || idle, text: t || (n.st.go ? "thinking…" : n.prompt ? "thinking…" : idle) };
+          break;
+        }
         const v = ins[ins.length - 1];
         const body = n.role === "loop" ? bodyOut(n) : null;                // a loop gives what is inside it: its body's result
         if (body) { const v = evalNode(body); r = Object.assign({}, v, { bool: !n.paused }); }
@@ -347,6 +354,11 @@
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
       }
+      if (n.role === "engine") {                                         // the central super asks the engines whenever what is wired into it changes
+        n.el.classList.toggle("is-thinking", !!n.st.go);
+        if (n.prompt && n.prompt !== n.st.asked && !n.st.go && !n.held && !n.st.timer) n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 900);   // a new question: ask (once it has settled)
+        if (!n.prompt && (n.answer || n.st.asked)) { n.answer = ""; n.st.asked = ""; persist(); }   // nothing wired in: back to its state
+      }
       if (n.fn === "super" || n.fn === "ask") {                          // its status, always current
         const st = n.held ? "stopped" : n.st.go ? "thinking…" : n.answer ? (n.fn === "ask" ? "" : "answered") : n.prompt ? "press to ask" : "";
         if (n.val.textContent !== st) n.val.textContent = st;
@@ -382,9 +394,11 @@
   function feedPorts() {
     const S = window.SeSite, SL = window.SuperLink;
     if (!S || !SL || !SL.links) return;
-    const into = pid => SL.links().map(l => (l.a && l.a.h === "port:" + pid) ? l.b : (l.b && l.b.h === "port:" + pid) ? l.a : null).filter(Boolean).map(valueOfAnchor);
+    const into = pid => SL.links().map(l => (l.a && l.a.h === "port:" + pid) ? l.b : (l.b && l.b.h === "port:" + pid) ? l.a : null).filter(an => an && !sinkPort(an)).map(valueOfAnchor);
     const ins = into("input");
     S.setInput(ins.map(strOf).filter(Boolean).join(" "));
+    const outs = into("output");                                          // the site's output: what is wired into it (the central engine)
+    S.setOutput(outs.length ? outs.map(strOf).filter(Boolean).join(" ") : null);
     const cond = into("condition");
     S.setCondition(cond.length ? cond.every(v => v.bool) : null);
     // every other super's ports: windows (super/site.js takes them) and loops (here)
@@ -397,6 +411,9 @@
       else if (S.setPortInput) S.setPortInput(owner, port, vals.length ? vals : null);
     });
   }
+  // a node's or a window's port that takes (input, sync, condition) never feeds the other end; the site's own
+  // ports are its terminals both ways (from inside, its input and its clock are read, its output is fed)
+  const sinkPort = an => !!(an && an.h && /^port:.+\/(input|sync|condition)$/.test(an.h));
   // a loop's ports: input sets its count, sync steps it on every change of what is wired in (the clock
   // then is that, not the second), condition false pauses it; its output is read by loopPort
   function feedNode(id, port, vals) {
@@ -478,7 +495,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -954,15 +971,24 @@
     // so the page starts as a diagram that runs
     const saved = restore("lv:nodes");
     (saved || []).forEach(make);
+    // the central super is the AI engine: a ■ with the role "engine" shows the engines' answer to what is wired
+    // into its input, "running" when nothing is; its ports are the site's: input and sync in, output and condition
+    const id = "site-box";
+    const central = nodes.find(x => x.id === id);
     if (!saved && se()) {
-      const id = "site-box";
-      make({ id, fn: "box", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
+      make({ id, fn: "box", role: "engine", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
       persist();
+    } else if (central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
+    if (se() && nodes.find(x => x.id === id)) {
       const wire = () => {
         const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wire, 100);
-        const me = { h: "node:" + id, el: 1 };
-        SL.add({ h: "port:input", el: 1 }, me); SL.add({ h: "port:sync", el: 1 }, me);
-        SL.add(me, { h: "port:output", el: 1 }); SL.add(me, { h: "port:condition", el: 1 });
+        const me = "node:" + id, old = SL.links().filter(l => (l.a && l.a.h === me) || (l.b && l.b.h === me));
+        if (old.length) SL.forget(me);                                   // the older wiring to its body: now by its ports
+        if (!old.length && SL.links().some(l => [l.a, l.b].some(an => an && an.h && an.h.startsWith("port:" + me + "/")))) return;
+        SL.add({ h: "port:input", el: 1 }, { h: "port:" + me + "/input", el: 1 });
+        SL.add({ h: "port:sync", el: 1 }, { h: "port:" + me + "/sync", el: 1 });
+        SL.add({ h: "port:" + me + "/output", el: 1 }, { h: "port:output", el: 1 });
+        SL.add({ h: "port:condition", el: 1 }, { h: "port:" + me + "/condition", el: 1 });
       };
       wire();
     }
