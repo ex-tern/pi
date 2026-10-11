@@ -1,7 +1,9 @@
 // super/wire.js — every word, every character, every number can have a connector.
 //
-// Wiring is what the mouse does by default: drag from a piece of text and a
-// wire follows the pointer (a plain click still clicks). The piece is
+// Wiring starts on purpose: from an edge or a port at once, from a piece of text after holding the press
+// still for a moment (or with Alt held), so an ordinary drag or text selection never starts a wire by
+// accident. A dragged wire snaps to the nearest port or thing within reach. Click a wire to select it and
+// press Delete (or double-click it) to remove it. The piece of text is
 //   a word                 letters together ("Analytics")
 //   a number               digits together ("1,549" counts as "1" "549"; up to 12 digits)
 //   a character            a symbol (+, ✦, =) or one digit of π (or e, φ, γ), or inside a run over 12 digits
@@ -31,8 +33,9 @@
   let fresh = false;
   try { fresh = localStorage.getItem(KEY) === null; } catch (_) { /* private mode */ }
   // a first visit starts with no text wires: the central engine super, wired by its ports, shows "running"
-  let svg, drag = null, lastHtml = "";
+  let svg, drag = null, lastHtml = "", selected = -1;
   const LETTER = /[\p{L}\p{M}'’]/u, DIGIT = /\p{Nd}/u;
+  const HOLD_MS = 280;                                              // how long a press on text is held before it wires
 
   // ---- where a piece of text lives ------------------------------------
   function hostOf(el) {
@@ -241,7 +244,7 @@
       if (!p || !q) return;
       const p2 = l.a.loop ? endPoint(l.a, q) : p;
       const d = curve(p2, q);
-      s += '<g class="wire sl-wire"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + term(p2) + term(q) +
+      s += '<g class="wire sl-wire' + (i === selected ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + term(p2) + term(q) +
            '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': double-click to delete</title></path></g>';
     });
     if (drag) {
@@ -253,14 +256,41 @@
   }
 
   // ---- what a point can connect to -------------------------------------
-  function targetAt(x, y) {
+  // a port within reach wins (they are small); then what is under the pointer; then the nearest thing within reach
+  const SNAP_PORT = 26, SNAP_THING = 18;
+  function nearPort(x, y, except) {
+    let best = null;
+    document.querySelectorAll(".se-port").forEach(p => {
+      if (!p.getClientRects().length) return;
+      const dot = p.querySelector(".se-port-dot") || p, r = dot.getBoundingClientRect();
+      const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
+      const key = "port:" + (p.dataset.pid || p.dataset.port);
+      if (d <= SNAP_PORT && key !== except && (!best || d < best.d)) best = { d, p, key };
+    });
+    return best && { anchor: { h: best.key, el: 1 }, rect: best.p.getBoundingClientRect() };
+  }
+  function nearThing(x, y) {
+    let best = null;
+    document.querySelectorAll(".orbit-bubble, .orbit-panel, .lv-node, .live-body, .live-tab").forEach(el => {
+      if (!el.getClientRects().length || el.hidden) return;
+      const r = el.getBoundingClientRect();
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d <= SNAP_THING && (!best || d < best.d)) best = { d, el, r };
+    });
+    if (!best) return null;
+    const h = hostOf(best.el);
+    return h ? { anchor: { h: h.key, el: 1 }, rect: best.r } : null;
+  }
+  function targetAt(x, y, fromKey) {
+    const port = nearPort(x, y, fromKey);
+    if (port) return port;
     const u = unitAt(x, y);
     if (u) return { anchor: u.anchor, rect: rectOf(u.node, u.a, u.b) };
     const el = document.elementFromPoint(x, y);
     const box = el && el.closest(".orbit-bubble, .ob-member, .orbit-panel, .lv-node, .live-body, .orbit-pi, .se-port");
     if (box) { const h = hostOf(box); if (h) return { anchor: { h: h.key, el: 1 }, rect: box.getBoundingClientRect() }; }
     if (O().nearLoop && O().nearLoop(x, y)) return { anchor: { loop: 1 }, rect: null };
-    return null;
+    return nearThing(x, y);
   }
 
   // ---- the edge of a thing: there the pointer wires --------------------
@@ -268,9 +298,9 @@
   // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
   // their own use (moving, pressing, typing).
   const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
-  const IN = 6, OUT = 5;
+  const IN = 10, OUT = 9;                                            // wide enough to find without hunting
   // the edge band shrinks with a small super, so a tiny thing is not all edge: about a tenth of its smaller side
-  const bands = r => { const k = Math.min(1, Math.min(r.width, r.height) / 56); return { in: Math.max(2, IN * k), out: Math.max(2, OUT * k) }; };
+  const bands = r => { const k = Math.min(1, Math.min(r.width, r.height) / 56); return { in: Math.max(4, IN * k), out: Math.max(4, OUT * k) }; };
   function edgeAt(x, y) {
     if (!x && !y) return null;
     const v = svg ? svg.style.visibility : "";
@@ -311,13 +341,29 @@
     svg.setAttribute("class", "sl-layer");
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
+    const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
     svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation();
-      const gone = links.splice(+w.dataset.i, 1)[0]; save(); lastHtml = ""; draw();
-      unact(gone);
+      removeWire(+w.dataset.i);
     });
+    // a click selects a wire (cobalt); Delete or Backspace removes it, Escape or a click elsewhere lets go
+    svg.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit");
+      if (!w) return;
+      e.stopPropagation();
+      selected = +w.dataset.i === selected ? -1 : +w.dataset.i; lastHtml = ""; draw();
+      const out = document.querySelector(".lv-out"); if (out && selected >= 0) out.textContent = "Wire selected: press Delete to remove it";
+    });
+    document.addEventListener("pointerdown", e => { if (selected >= 0 && !(e.target.closest && e.target.closest(".sl-layer .wire-hit"))) { selected = -1; lastHtml = ""; draw(); } }, true);
+    document.addEventListener("keydown", e => {
+      if (selected < 0) return;
+      const a = document.activeElement;
+      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); e.stopImmediatePropagation(); removeWire(selected); }
+      else if (e.key === "Escape") { selected = -1; lastHtml = ""; draw(); }
+    }, true);
     // a drag from a piece of text draws a wire; a click stays a click
     const FIELDS = ".lv-palette, .lv-node, input, textarea, select, [contenteditable], canvas, video";
     const MOVERS = ".orbit-pi, .op-head, .orbit-bubble";                         // dragging these moves them
@@ -344,9 +390,14 @@
       const u = g ? null : unitAt(e.clientX, e.clientY);
       if (!g && !u) return;
       const x0 = e.clientX, y0 = e.clientY, from = g ? g.anchor : u.anchor;
+      // from text: only after holding still a moment (or with Alt), so a drag or a selection stays one
+      let armed = !!g || e.altKey, holdT = 0;
+      if (!armed) holdT = setTimeout(() => { armed = true; html.classList.add("sl-armed"); try { window.getSelection().removeAllRanges(); } catch (_) { /* fine */ } }, HOLD_MS);
+      const disarm = () => { clearTimeout(holdT); html.classList.remove("sl-armed"); };
       const move = ev => {
         if (!drag) {
           if (Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;      // not yet: it may be a click
+          if (!armed) { disarm(); window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", end, true); window.removeEventListener("pointercancel", end, true); return; }   // moved before the hold: an ordinary drag
           const p = endPoint(from, [ev.clientX, ev.clientY]) || [x0, y0];
           drag = { from, p, q: [ev.clientX, ev.clientY], overRect: null };
           html.classList.add("sl-dragging");
@@ -354,7 +405,7 @@
         }
         ev.preventDefault();
         drag.q = [ev.clientX, ev.clientY];
-        const o = targetAt(ev.clientX, ev.clientY);
+        const o = targetAt(ev.clientX, ev.clientY, from.h);
         drag.overRect = o && o.rect ? o.rect : null;
         html.classList.toggle("wire-target", !!(o && o.anchor.loop));
         draw();
@@ -362,10 +413,11 @@
       const end = ev => {
         window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", end, true);
         window.removeEventListener("pointercancel", end, true);
+        disarm();
         if (!drag) return;                                                     // it was a click: leave it alone
         eatClick = true; setTimeout(() => { eatClick = false; }, 350);         // the click that ends a wire (it comes a moment later) does nothing
         html.classList.remove("wire-target", "sl-dragging");
-        const o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY) : null;
+        const o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, from.h) : null;
         drag = null;
         if (o && JSON.stringify(o.anchor) !== JSON.stringify(from) &&
             !links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([from, o.anchor]) || JSON.stringify([l.a, l.b]) === JSON.stringify([o.anchor, from]))) {

@@ -83,10 +83,15 @@
     const at = superAt(t, x, y);
     if (at.on) { select(at.on); return; }
     if (at.inside === sel) return;
-    e.preventDefault(); e.stopImmediatePropagation();
+    // the press selects the super around it; its click presses nothing (eaten below), but the press itself
+    // goes on, so a wire can start from a pill's words without pressing twice (super/wire.js)
+    e.preventDefault();
+    eatClick = performance.now() + 700;
     select(at.inside);
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Selected " + name(at.inside) + ": now its inside answers";
   }, true);
+  let eatClick = 0;
+  document.addEventListener("click", e => { if (eatClick && performance.now() < eatClick) { eatClick = 0; e.preventDefault(); e.stopImmediatePropagation(); } }, true);
   // a scroll is not about selection: the pointer's shape says what it does (super/scroll.js zoneAt)
   // a selection sticks: it changes only when another super is clicked (or the selected one goes away)
   // a selected super that goes away (a window closes, a loop is deleted): the main super again

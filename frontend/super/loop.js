@@ -77,13 +77,28 @@
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
     let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 1 : 1))), zoomT;
     let zoomTo = null;
-    function zoomPage(k) {
+    // direct: set at once (a trackpad or a pinch, already smooth, coalesced per frame by super/scroll.js);
+    // otherwise glide there (a mouse wheel's coarse steps)
+    function zoomPage(k, direct) {
       const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
       zoomTo = target;
       clearTimeout(zoomT); zoomT = setTimeout(() => { store("orbit:zoom", +target.toFixed(3)); zoomTo = null; }, 400);
-      if (window.SeMotion) { const s = { v: zoom }; window.SeMotion.glide("page:zoom", s, "v", target, 160, () => { zoom = s.v; loopKey = ""; drawLoop(); }); }
-      else { zoom = target; loopKey = ""; drawLoop(); }
+      if (direct || !window.SeMotion) { if (window.SeMotion) window.SeMotion.glide("page:zoom", { v: target }, "v", target, 0, () => {}); zoom = target; loopKey = ""; drawLoop(); }
+      else { const s = { v: zoom }; window.SeMotion.glide("page:zoom", s, "v", target, 160, () => { zoom = s.v; loopKey = ""; drawLoop(); }); }
     }
+    // back to how a first visit sees it: zoom 1, both supers at n = 24, the inner super in the middle
+    const VIEW_N = 24;
+    function resetView() {
+      zoomTo = null; scrollN.to = null; scrollSiteN.to = null;
+      const from = { z: zoom, m: loopN(), s: siteNv(), x: siteOff.x, y: siteOff.y };
+      const to = { z: 1, m: VIEW_N, s: VIEW_N, x: 0, y: 0 };
+      const apply = v => { zoom = v.z; markN = v.m; siteN = v.s; siteOff = { x: v.x, y: v.y }; placeBubblesLayer(); loopKey = ""; drawLoop(); };
+      const done = () => { apply(to); store("orbit:zoom", 1); store("orbit:mark:n", VIEW_N); store("orbit:site:n", VIEW_N); store("orbit:site:offset", { x: 0, y: 0 }); if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
+      if (window.SeMotion) window.SeMotion.tween(from, to, { duration: 380, easing: "easeOutCubic", update: () => apply(from), complete: done });
+      else done();
+    }
+    // how far the view is from that (super/scroll.js shows the way back when it is not)
+    const viewChanged = () => Math.abs((zoomTo == null ? zoom : zoomTo) - 1) > 0.02 || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(siteOff.x, siteOff.y) > 4;
     // Smoothness: the page is measured (every element's box, and where each scaled element pivots) once per
     // layout tick, never inside an animation frame, so a frame that moves n or the zoom does arithmetic and
     // style writes only, with no layout forced in between.
@@ -396,7 +411,7 @@
       return true;
     }
     return {
-      merged, loopN, scrollN, pageLoop, drawMini, miniSweep, seNorm, zoomPage, measure, fitTo, setFit, needAt,
+      merged, loopN, scrollN, pageLoop, resetView, viewChanged, drawMini, miniSweep, seNorm, zoomPage, measure, fitTo, setFit, needAt,
       keepWindowsIn, drawLoop, loopPoint, nearLoop, sweepPx, seatEdges, scrollSiteN, siteNv, siteBox, moveSite,
       placeBubblesLayer, insideLoop,
       pageFit: () => pageFit, loopG: () => loopG, loopD: () => loopD, siteOff: () => siteOff, zoom: () => zoom,

@@ -366,3 +366,17 @@ html.shape-se .arch-step:hover { border-color: inherit; }
 /* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
 html.shape-se .orbit-title .se-logo { height: calc(24px * var(--se-title-k, 1)); }   /* the snugger badge (super/logo.js padX/padY) keeps the letters the size they were at 30 px */
 @media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: calc(20px * var(--se-title-k, 1)); } }
+
+/* Reset view (super/scroll.js): back to 100 % and the first shape; shown only when the view has changed */
+.se-reset { position: fixed; right: 30px; bottom: 26px; z-index: 965;
+  font: 500 12px var(--font, system-ui); color: var(--ink); background: var(--surface, #fff);
+  border: 1px solid var(--hair-strong); border-radius: 999px; padding: 6px 13px; cursor: pointer;
+  box-shadow: 0 4px 16px rgba(25, 25, 25, 0.06); }
+.se-reset:hover, .se-reset:focus-visible { border-color: var(--cobalt); color: var(--cobalt); outline: none; }
+.se-reset[hidden] { display: none; }
+
+/* wiring (super/wire.js): held long enough on text, the pointer is a wire's end; a clicked wire is selected */
+html.sl-armed, html.sl-armed * { cursor: crosshair !important; user-select: none !important; -webkit-user-select: none !important; }
+.sl-wire.is-sel .wire-bed, .sl-wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
+.sl-wire.is-sel .wire-term { fill: var(--cobalt) !important; }
+.sl-layer .wire-hit { stroke-width: 16; }

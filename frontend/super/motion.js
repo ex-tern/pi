@@ -30,6 +30,12 @@
   ["pointerup", "pointercancel"].forEach(t => document.addEventListener(t, () => { pointer = Math.max(0, pointer - 1); mark(); }, true));
   window.addEventListener("blur", () => { pointer = 0; });
   ["wheel", "touchmove", "keydown"].forEach(t => document.addEventListener(t, mark, { capture: true, passive: true }));
+  // a CSS transition moving a window or a bubble: the wires follow it every frame instead of a few times a second
+  document.addEventListener("transitionrun", e => {
+    const t = e.target;
+    if (!t || !t.closest || !t.closest(".orbit-panel, .orbit-bubble, .orbit-bubbles, .lv-node, .live-dock, .orbit-title")) return;
+    hot = Math.max(hot, performance.now() + 700); pump();
+  }, true);
   window.addEventListener("resize", mark);
 
   function tween(obj, to, opt) {
