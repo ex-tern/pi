@@ -657,7 +657,7 @@
   // every node's size is one number (--lv-s); a value, a field or an answer still makes it grow around them
   function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
-  let zoomed = null;
+  let zoomed = null, suppressRing = false;
   function zoomNode(n, dy) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const cur = n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
@@ -864,19 +864,42 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     document.addEventListener("dblclick", e => {
-      const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); return Math.abs(d - r.width / 2) < 7; });
+      const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });
       if (!n) return;
       e.preventDefault(); e.stopPropagation(); remove(n); say("● loop deleted");
+    }, true);
+    // a loop is moved by its ring, and takes what is inside it along
+    document.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)) - r.width / 2; return d >= -10 && d <= 4; });
+      if (!n) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      const crew = [n].concat(inside(n)), x0 = e.clientX, y0 = e.clientY, start = crew.map(m => [m.fx, m.fy]);
+      let moved = false;
+      const move = ev => {
+        if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 5) return;
+        if (!moved) { moved = true; n.el.classList.add("is-dragging"); html.classList.add("lv-dragging"); }
+        const dx = (ev.clientX - x0) / window.innerWidth, dy = (ev.clientY - y0) / window.innerHeight;
+        crew.forEach((m, i) => { m.fx = start[i][0] + dx; m.fy = start[i][1] + dy; place(m); });
+        drawWires();
+      };
+      const up = () => {
+        window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true); window.removeEventListener("pointercancel", up, true);
+        n.el.classList.remove("is-dragging"); html.classList.remove("lv-dragging");
+        if (moved) { suppressRing = true; setTimeout(() => { suppressRing = false; }, 0); persist(); tick(); }
+      };
+      window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", up, true); window.addEventListener("pointercancel", up, true);
     }, true);
     // a click on a loop's ring pauses it (or lets it go on)
     document.addEventListener("click", e => {
       const n = nodes.find(x => {
         if (x.role !== "loop") return false;
         const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
-        return Math.abs(d - r.width / 2) < 7;
+        const k = d - r.width / 2; return k >= -10 && k <= 4;
       });
       if (!n) return;
       e.preventDefault(); e.stopPropagation();
+      if (suppressRing) return;                                          // the end of a move, not a click
       n.paused = !n.paused; say("●: the loop " + (n.paused ? "is paused" : "goes on")); tick();
     }, true);
     // a sideways swipe on the bare page never navigates back: it is eaten unless something under it scrolls sideways

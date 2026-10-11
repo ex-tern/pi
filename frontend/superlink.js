@@ -270,7 +270,9 @@
       let d;
       if (el.classList.contains("lv-dot")) {                              // round: its ring
         const R = r.width / 2, c = Math.hypot(x - (r.left + R), y - (r.top + r.height / 2));
-        d = c - R; if (d > OUT || d < -IN) return;
+        d = c - R;
+        if (el.classList.contains("is-loop")) { if (d <= 4 || d > 13) return; }   // a loop: its ring moves it (labview.js), just outside wires
+        else if (d > OUT || d < -IN) return;
       } else {
         const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
         if (ins) { d = -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y); if (d < -IN) return; }

@@ -192,7 +192,8 @@
     '<line class="om-r om-main" x1="200" y1="200" x2="350" y2="200"/><line class="om-r om-main" x1="200" y1="200" x2="50" y2="200"/></g>' +
     '<text class="om-name" x="200" y="300" text-anchor="middle">PiEN</text>' +
     '</svg>' +
-    '<svg class="om-page" aria-hidden="true"><path class="om-page-loop" d=""/><line class="om-page-r" x1="0" y1="0" x2="0" y2="0"/></svg>' +
+    '<svg class="om-page" aria-hidden="true"><path class="om-page-loop" d=""/><line class="om-page-r" x1="0" y1="0" x2="0" y2="0"/>' +
+    '<path id="omPiPath" class="om-page-pipath" d=""/><text class="om-page-pi" dy="15"><textPath href="#omPiPath" startOffset="0%"></textPath></text></svg>' +
     '</button>' +
     '<div class="orbit-pi" role="button" tabindex="0" aria-label="π, computed live. Open π and other constants" title="Click for π and friends · drag to move · drag the corner to resize">' +
     '<span class="op-digits"></span><span class="op-count"></span><span class="op-grip" aria-hidden="true"></span></div></div>' +
@@ -598,6 +599,7 @@
     if (svg) svg.setAttribute("viewBox", "0 0 " + Wv + " " + Hv);
     loopD = "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z";
     if (path) path.setAttribute("d", loopD);
+    const pp = $(".om-page-pipath"); if (pp) pp.setAttribute("d", loopD + loopD);   // twice round: the digits wrap
   }
   let loopD = "";
   // The loop can be wired like a bubble. loopPoint gives the point on it facing (x, y), in
@@ -623,6 +625,8 @@
   }
   // the diameter, reaching the loop at every angle
   function sweepPx(deg) {
+    const tp = $(".om-page-pi textPath");
+    if (tp) tp.setAttribute("startOffset", ((((deg % 360) + 360) % 360) / 720 * 100).toFixed(2) + "%");   // the π line creeps round the loop
     const line = $(".om-page-r");
     if (!line) return;
     const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), { cx, cy, a, b, n } = loopG;
@@ -1626,6 +1630,14 @@
       out.append("π = 3." + lead + tail.slice(0, -1));
       const b = document.createElement("b"); b.textContent = tail.slice(-1); out.append(b);
       cnt.textContent = (digits.length - 1).toLocaleString() + " decimals" + (still ? ", paused" : ACT_WORDS[actLevel]);
+      const tp = $(".om-page-pi textPath");
+      if (tp) {                                                   // the same digits, small, running along the main loop
+        const run = after.length <= 240 ? after : after.slice(-240);
+        tp.textContent = "π 3." + (after.length > 240 ? "…" : "") + run.slice(0, -1);
+        const last = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); last.setAttribute("class", "om-pi-new"); last.textContent = run.slice(-1); tp.appendChild(last);
+        const tag = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); tag.setAttribute("class", "om-pi-count"); tag.textContent = "  · " + cnt.textContent; tp.appendChild(tag);
+        tp.closest("text").classList.toggle("is-still", !!still);
+      }
     };
     showPi = show;
     try {
