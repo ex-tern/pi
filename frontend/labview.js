@@ -881,6 +881,13 @@
       e.preventDefault(); e.stopPropagation();
       n.paused = !n.paused; say("●: the loop " + (n.paused ? "is paused" : "goes on")); tick();
     }, true);
+    // a sideways swipe on the bare page never navigates back: it is eaten unless something under it scrolls sideways
+    document.addEventListener("wheel", e => {
+      if (!html.classList.contains("shape-se") || Math.abs(e.deltaX) <= Math.abs(e.deltaY)) return;
+      for (let el = e.target; el && el !== document.body; el = el.parentElement)
+        if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return;
+      e.preventDefault();
+    }, { passive: false });
     // Safari's pinch (gesture events) and touch pinches never zoom the page either
     ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (html.classList.contains("shape-se")) e.preventDefault(); }, { passive: false }));
     // two fingers on a node: their spread sizes it

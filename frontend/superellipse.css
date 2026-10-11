@@ -168,3 +168,5 @@ html.shape-se.orbit-open .orbit-pi { visibility: hidden; pointer-events: none; }
 html.shape-se.orbit-open .orbit-core, html.shape-se.orbit-open .orbit-core:hover { opacity: 1; pointer-events: none; }
 /* no pinch-zoom of the page on touch screens: two fingers size a node instead (labview.js) */
 html.shape-se, html.shape-se body { touch-action: pan-x pan-y; }
+/* a fast or sideways swipe never takes the browser back (or forward) a page, nor bounces the page */
+html.shape-se, html.shape-se body { overscroll-behavior: none; }
