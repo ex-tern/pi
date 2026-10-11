@@ -89,7 +89,8 @@
   // ---- what a scroll or a pinch does: one rule ------------------------------------------------------
   //   scroll or pinch anywhere           zooms the site (the view), and nothing else changes shape
   //   ... on a node                      sizes that node
-  //   ... in a window                    its content scrolls; a pinch sizes the window
+  //   ... in a window                    zooms its content about the pointer (no scroll bars anywhere:
+  //                                      super/zoombox.js); Alt + scroll sizes the window
   //   Alt + scroll on a thing            sizes that thing (a bubble, the title, the palette, Live)
   //   Shift + scroll                     changes the shape (n) of the super under the pointer
   // (A band round every super's edge used to turn a scroll into a change of n: it was easy to hit by
@@ -111,11 +112,14 @@
   // null: leave it to the browser (content that scrolls)
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
-    if (t && t.closest("input, textarea, select, [contenteditable]")) return pinch ? "site" : null;
+    if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
     const node = t && t.closest(".lv-node");
     if (node) return node;
     const panel = t && t.closest(".orbit-panel");
-    if (panel) return pinch ? panel : (scrolls(t) ? null : "nothing");
+    if (panel && alt) return panel;                                  // Alt: the window's size
+    const zb = t && t.closest("[data-zoombox]");
+    if (zb && zb._zoom) return zb;                                   // a window's content: zoomed, never scrolled
+    if (panel) return pinch ? panel : "nothing";
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette, .live-dock"); if (th && nameOf(th)) return th; }
     return "site";
   }
@@ -123,18 +127,19 @@
   let gesture = null;
   const pending = new Map();
   let frameAsked = false, settleT = 0;
-  function queue(target, dy, direct) {
+  function queue(target, dy, direct, x, y) {
     const p = pending.get(target) || { dy: 0, direct: true };
-    p.dy += dy; p.direct = p.direct && direct;
+    p.dy += dy; p.direct = p.direct && direct; p.x = x; p.y = y;
     pending.set(target, p);
     if (!frameAsked) { frameAsked = true; requestAnimationFrame(flush); }
   }
   function flush() {
     frameAsked = false;
-    pending.forEach(({ dy, direct }, what) => {
+    pending.forEach(({ dy, direct, x, y }, what) => {
       if (what === "nothing") return;
       if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
       else if (!what.isConnected) return;
+      else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
       else if (what.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(what, dy); }
       else sizeThing(what, dy);
@@ -185,20 +190,20 @@
     const dy = e.deltaY * unit * (pinch ? 4 : 1);                           // a pinch reports small deltas
     // a trackpad's or a pinch's stream is already smooth: apply it at once; a wheel's steps glide
     const direct = pinch || (e.deltaMode === 0 && Math.abs(e.deltaY) < 50);
-    queue(target, dy, direct);
+    queue(target, dy, direct, x, y);
   }, { capture: true, passive: false });
   // Safari's pinch comes as gesture events (no wheel): the same zoom, never the browser's
   let gs = null;
   document.addEventListener("gesturestart", e => {
     if (!on()) return; e.preventDefault();
     const hit = document.elementFromPoint(e.clientX || innerWidth / 2, e.clientY || innerHeight / 2);
-    gs = { last: 1, target: pick(hit, true, false) || "site" };
+    gs = { last: 1, target: pick(hit, true, false) || "site", x: e.clientX || innerWidth / 2, y: e.clientY || innerHeight / 2 };
   }, { passive: false });
   document.addEventListener("gesturechange", e => {
     if (!on()) return; e.preventDefault();
     if (!gs || !(e.scale > 0)) return;
     const k = e.scale / gs.last; gs.last = e.scale;
-    queue(gs.target, -Math.log(k) / 0.0015, true);
+    queue(gs.target, -Math.log(k) / 0.0015, true, gs.x, gs.y);
   }, { passive: false });
   document.addEventListener("gestureend", e => { if (on()) e.preventDefault(); gs = null; }, { passive: false });
 

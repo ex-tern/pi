@@ -304,7 +304,7 @@
       const w = p.offsetWidth, h = p.offsetHeight, key = w + "x" + h + "@" + (p.dataset.seN || "");
       if (!w || p.dataset.seClip === key) return;
       p.dataset.seClip = key;
-      const d = SM().path(0, 0, w, h, [w / 2, h / 2], +p.dataset.seN || SM().pi, 24);
+      const d = SM().path(0, 0, w, h, [w / 2, h / 2], +p.dataset.seN || (p.classList.contains("orbit-panel") ? 8 : SM().pi), 24);   // windows: n = 8 (super/super.css)
       p.style.clipPath = "path('" + d + "')";
       let o = p.querySelector(":scope > .op-outline");
       if (!o) { o = document.createElementNS("http://www.w3.org/2000/svg", "svg"); o.setAttribute("class", "op-outline"); o.setAttribute("aria-hidden", "true"); o.innerHTML = "<path/>"; p.appendChild(o); }
@@ -327,11 +327,12 @@
   function applyN(el, n) {
     el.dataset.seN = n.toFixed(4);
     el.style.setProperty("--se-k-window", Math.log2(n).toFixed(4));
+    if (el.classList.contains("orbit-panel")) el.style.setProperty("--se-k-panel", Math.log2(n).toFixed(4));   // a window's own shape
     if (el.classList.contains("orbit-title") && window.SeLogo && window.SeLogo.setN) window.SeLogo.setN(n);
     if (!hasCorner) { delete el.dataset.seClip; clipWindows(); }
   }
   function shapeEl(el, dy) {
-    const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || (SM() && SM().pi) || Math.PI;   // the badge starts at its own n
+    const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || (el.classList.contains("orbit-panel") ? 8 : 0) || (SM() && SM().pi) || Math.PI;   // the badge starts at its own n
     const nn = Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
     el._seNTo = nn;
     if (!el._seShapeId) el._seShapeId = ++shapeId;

@@ -961,10 +961,17 @@
     p.querySelector(".op-section").textContent = where === it.title ? "" : where;
     const title = p.querySelector(".op-title"); title.id = hid; title.textContent = it.title;
     p.querySelector(".op-body").appendChild(it.content);
+    // superellipse look: the window's own heading says what it is, so the same heading repeated as the
+    // content's first line is not shown again
+    if (merged()) hideRepeatedTitle(p, it.title);
     document.body.appendChild(p);
     fit(it, p);
     centre(p);
+    if (merged()) centreInSite(p);
     restoreWin(it, p);
+    // superellipse look: no scroll bars; the content fits the window whole and a scroll zooms into it
+    // (super/zoombox.js); the emulator and other embedded pages keep their own size
+    if (merged() && window.SeZoomBox && !it.content.querySelector("iframe")) window.SeZoomBox.attach(p.querySelector(".op-body"), it.content);
     // content that loads later (lists, results) refits the window, until you resize it yourself
     if (window.ResizeObserver) {
       const ro2 = new ResizeObserver(() => {
@@ -995,7 +1002,15 @@
 
   // A window is as big as what is in it: narrow for a few lines, wide for a
   // tool (the emulator, the map, tables), and only as tall as its content.
+  // The superellipse look: every window is the same size (the content scrolls inside it), so they read as
+  // one family; a size you give a window yourself (pinch or zoom on it) is kept.
+  function uniformSize() {
+    const H0 = window.innerHeight - top, sm = window.innerWidth < 700;
+    return { w: sm ? vw() - 20 : Math.round(Math.min(vw() - 32, Math.max(460, Math.min(640, vw() * 0.38)))),
+             h: Math.round(sm ? H0 * 0.72 : Math.min(H0 - 48, Math.max(360, Math.min(560, H0 * 0.58)))) };
+  }
   function fit(it, p) {
+    if (merged()) { const u = uniformSize(); p.style.width = u.w + "px"; p.style.height = u.h + "px"; p.fitW = p.offsetWidth; p.fitH = p.offsetHeight; return; }
     const sm = window.innerWidth < 700;
     const H0 = window.innerHeight - top;
     const wide = it.content.matches(".nb, .unigyro") || it.content.querySelector(".arch, iframe, canvas, #arcadeStage, table, .leaderboard");
@@ -1014,6 +1029,25 @@
   }
 
   // Bring a window to the front and, when asked, glide it to the centre.
+  const norm = t => String(t || "").replace(/\?/g, "").replace(/\s+/g, " ").trim().toLowerCase();
+  function hideRepeatedTitle(p, title) {
+    const body = p.querySelector(".op-body"), want = norm(title);
+    const h = body && body.querySelector("h1, h2, h3, .section-heading, summary");
+    if (!h) return;
+    const c = h.cloneNode(true);
+    c.querySelectorAll(".help-btn, .pill, button, .count").forEach(x => x.remove());
+    const got = norm(c.textContent);
+    if (got === want || got.replace(/^assess a /, "assess ") === want.replace(/ manuscripts \[pi\]$/, " manuscript")) h.classList.add("op-dup");
+  }
+  // the superellipse look: a new window opens in the middle of the inner super, each one after the first
+  // a little lower and to the right, so they never land exactly on top of each other
+  function centreInSite(p) {
+    const sb = siteBox(), f = sb.fit || 1, w = p.offsetWidth, h = p.offsetHeight;
+    const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
+    const n = items.filter(i => i.panel && i.panel !== p).length % 5, step = 28;
+    p.style.left = Math.round(Math.max(8, Math.min(vw() - w - 8, cx - w / 2 + n * step))) + "px";
+    p.style.top = Math.round(Math.max(top + 8, Math.min(window.innerHeight - h - 8, cy - h / 2 + n * step))) + "px";
+  }
   function centre(p) {
     const w = p.offsetWidth, h = p.offsetHeight;
     p.style.left = Math.max(8, (vw() - w) / 2) + "px";

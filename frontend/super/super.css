@@ -380,3 +380,27 @@ html.sl-armed, html.sl-armed * { cursor: crosshair !important; user-select: none
 .sl-wire.is-sel .wire-bed, .sl-wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
 .sl-wire.is-sel .wire-term { fill: var(--cobalt) !important; }
 .sl-layer .wire-hit { stroke-width: 16; }
+
+/* ---- windows, one family (orbit.js uniformSize, super/zoombox.js) ------------------------------------
+   No scroll bars anywhere in this look: a scroll zooms. Every window is the same size and the same shape, a
+   superellipse at n = 8 (square enough that nothing is cut at its corners), with the same margins; its
+   content fits it whole and zooms about the pointer. The window's own heading says what it is; the same
+   heading repeated as the content's first line is hidden. */
+html.shape-se, html.shape-se * { scrollbar-width: none; }
+html.shape-se ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+html.shape-se .orbit-panel { --se-k-panel: 3; corner-shape: superellipse(var(--se-k-panel)); }
+html.shape-se .orbit-panel .op-head { padding: 18px 7% 8px; }
+html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 0 4.5% 4.5%; padding: 0; }
+html.shape-se .se-zoombox { overflow: hidden !important; position: relative; overscroll-behavior: none; }
+html.shape-se .se-zoomed { transform-origin: 0 0; will-change: transform; box-sizing: border-box; padding: 4px 6px 10px; }
+html.shape-se .se-zoombox.is-zoomed { cursor: zoom-out; }
+html.shape-se .orbit-panel .op-dup { display: none !important; }
+html.shape-se .orbit-panel .op-section { font: 500 11px var(--font-mono); color: var(--graphite); letter-spacing: 0.02em; }
+html.shape-se .orbit-panel .op-title { font: 500 15px/1.25 var(--font); letter-spacing: -0.01em; }
+html.shape-se .orbit-panel .op-body h1, html.shape-se .orbit-panel .op-body h2 { font-size: 15px !important; font-weight: 500 !important; line-height: 1.3; margin: 14px 0 6px; letter-spacing: -0.01em; }
+html.shape-se .orbit-panel .op-body h3, html.shape-se .orbit-panel .op-body h4 { font-size: 13px !important; font-weight: 500 !important; line-height: 1.3; margin: 12px 0 4px; }
+html.shape-se .orbit-panel .op-body > .orbit-content > :first-child, html.shape-se .orbit-panel .op-body .op-dup + * { margin-top: 0; }
+html.shape-se .orbit-panel .op-body p, html.shape-se .orbit-panel .op-body li { font-size: 13.5px; line-height: 1.55; }
+html.shape-se .orbit-panel .op-body .card { padding: 14px 16px; margin: 0 0 10px; box-shadow: none; }
+html.shape-se .orbit-panel .op-body .card > .card { padding: 12px 14px; }
+html.shape-se .live-body *, html.shape-se .orbit-panel * { overscroll-behavior: none; }
