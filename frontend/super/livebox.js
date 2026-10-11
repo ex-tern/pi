@@ -8,7 +8,7 @@
 (function () {
   "use strict";
   const html = document.documentElement;
-  const DEFAULT_N = 8;
+  const DEFAULT_N = Math.PI;                                   // the windows' n (super/super.css: every super at π)
   const on = () => html.classList.contains("shape-se");
 
   function inset(body, scroll) {

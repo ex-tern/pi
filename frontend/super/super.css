@@ -249,7 +249,6 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
 html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
 html.shape-se .live-dock.open .live-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--hair-strong); }
 html.shape-se .live-dock.open .live-scroll { flex: 1; min-height: 0; overflow: hidden; margin: 22px 20px; padding: 0; }   /* super/livebox.js sets the margins from n */
-html.shape-se .live-dock.open .live-body { --se-k-window: 3; }   /* the windows' kind of super: n = 8 until shift + scroll gives it another */
 html.shape-se .live-inner { padding: 0 2px 6px; }
 html.shape-se .live-tab { padding: 14px 6px; }
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
@@ -459,3 +458,27 @@ html.shape-se .ob-mini .obm-text { font: 500 7px "Geist Mono", ui-monospace, mon
 /* growing or shrinking: the pills fade in with it, nothing spills */
 html.shape-se .orbit-bubble.is-group.is-growing { overflow: hidden; transition: none; }
 html.shape-se .orbit-bubble.is-group.is-growing > .ob-members, html.shape-se .orbit-bubble.is-group.is-growing > .ob-label { opacity: var(--sb-t, 1); }
+
+/* ---- one look for every super (owner, 2026-10-12: all supers uniform, all elements uniform) -----------------
+   Every super on the page, a Super AI super, a bubble (compact or open), a window, the Live panel and its tab,
+   the title, the project super and the palette, is drawn the same way: paper, a 1.5 px ink edge, a superellipse
+   at n = π (--se-k-window; Shift + scroll gives one its own), the same port sparkles, no shadow and no tint. */
+html.shape-se .lv-node, html.shape-se .lv-node.lv-box, html.shape-se .lv-node.lv-dot, html.shape-se .lv-node.lv-super, html.shape-se .lv-node.lv-ask, html.shape-se .lv-node.lv-add,
+html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
+html.shape-se .orbit-panel, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab, html.shape-se .orbit-title .se-titlesuper,
+html.shape-se .se-project, html.shape-se .lv-palette {
+  background: var(--paper); border: 1.5px solid var(--ink); box-shadow: none; filter: none;
+}
+html.shape-se .lv-node.lv-box.is-holder { background: transparent; }        /* a holder stays see-through */
+html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 1.6515); }    /* windows at n = π like everything else */
+html.shape-se .live-dock.open .live-body { --se-k-window: 1.6515; }
+html.shape-se .live-tab { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); border-right: 1.5px solid var(--ink); }
+/* the content of a window stays clear of the π corners: the inset a superellipse needs is (1 − 2^(−1/n)) / 2 ≈ 10 % */
+html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 9%; }
+/* the same port sparkles everywhere */
+html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p, html.shape-se .se-project .pj-port { width: 10px; height: 10px; background: var(--ink); }
+/* the same type inside supers: the diagram's mono for what a super says, Geist for what it reads */
+html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; }
+/* selected and hovered the same way everywhere: the edge takes cobalt */
+html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .live-body.se-sel, html.shape-se .live-tab.se-sel, html.shape-se .se-project.se-sel { border-color: var(--cobalt); }
+html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
