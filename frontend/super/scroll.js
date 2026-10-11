@@ -157,7 +157,8 @@
     if (node) {
       if (alt) return node;                                          // Alt: the super's size
       const g = node.querySelector(":scope > .lv-glyph");
-      if (g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim()) return g;   // what it shows: zoomed
+      // what it shows, zoomed: an answer or anything long; a word or two fit already (a scroll there zooms the view)
+      if (g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim().length > 24) return g;
       return "site";                                                 // nothing in it to zoom: the view
     }
     const panel = t && t.closest(".orbit-panel");

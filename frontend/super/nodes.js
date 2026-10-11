@@ -738,6 +738,7 @@
     };
     (prog.supers || []).forEach(s => {
       const xy = where(s); done[s.id] = xy;
+      if (nodes.some(x => x.id === s.id)) return;                     // already on the page (a diagram kept from the round look)
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
              str: s.text || undefined, hint: s.hint || undefined, size: s.size, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
     });
@@ -809,6 +810,7 @@
   // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
   function clear(n) {
     if (n.role === "loop" || isHolder(n) || holderOf(n)) return;         // a loop or a holder holds things, and what is inside stays
+    if (n.id === "site-box") return;                                      // the central super is the diagram's centre: it stays (Live opens over it)
     for (let k = 0; k < 8; k++) {
       const a = n.el.getBoundingClientRect();
       const over = b => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;
@@ -1273,8 +1275,8 @@
     // into its input, "running" when nothing is; its ports are the site's: input and sync in, output and condition
     const id = "site-box";
     const central = nodes.find(x => x.id === id);
-    const fresh = !saved && se();
-    if (fresh) layoutProgram();                                     // a first visit: the program's diagram (super/pitechlab.super.js)
+    const fresh = (!saved || !central) && se();
+    if (fresh) layoutProgram();                                     // a first visit (or a diagram kept from the round look, without the central super): the program's diagram (super/pitechlab.super.js)
     else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && !fresh && nodes.find(x => x.id === id)) {

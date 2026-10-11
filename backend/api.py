@@ -97,6 +97,7 @@ import recent as _recent  # noqa: E402
 app.include_router(_recent.build_router(get_db_connection))
 import live as _live
 import traffic as _traffic
+import shape  # noqa: E402
 app.include_router(_traffic.build_router(get_db_connection))
 app.include_router(_live.build_router(get_db_connection, idle_worker.public_status, idle_worker.activity))
 
@@ -234,7 +235,7 @@ def _versioned_index() -> str:
         version = _asset_version(match.group("file"))
         return f"{match.group('file')}?v={version}" if version else match.group(0)
 
-    return _ASSET_QUERY.sub(sub, html)
+    return shape.stamp(_ASSET_QUERY.sub(sub, html), os.getenv("SCHOLARPI_SHAPE", ""))
 
 
 if os.path.isdir(_FRONTEND_DIR):
