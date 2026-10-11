@@ -40,6 +40,8 @@ window.SUPERAI_PROGRAM = {
                "assess:ResBD": "assess:RiBD", "assess:Assess a Manuscript": "assess:Assess Manuscripts [Pi]",
                "account:Support ScholarPi": "account:Support Pi", "lib:Lib group": "lib:Library group" }
   },
+  // windows switched off: not shown anywhere on the site (their pill, bubble and map super are left out)
+  hide: ["SciM Assistant"],
   // cards that read better as one window
   merges: [
     { source: "journal", title: "Leaderboards",
@@ -92,11 +94,11 @@ window.SUPERAI_PROGRAM = {
       { label: "the assessment", x: 14, y: 300, w: 972, h: 110 },
       { label: "the site", x: 14, y: 470, w: 972, h: 100 }
     ],
-    siteRow: { x: 20, y: 500, w: 960, h: 40, extra: [{ id: "b-account", label: "Your account", opens: "Your account" }, { id: "b-scim", label: "SciM Assistant", opens: "SciM Assistant" }] },
+    siteRow: { x: 20, y: 500, w: 960, h: 40, extra: [{ id: "b-account", label: "Your account", opens: "Your account" }] },
     supers: [
       { id: "prompt", label: "Prompt", kind: "in", x: 20, y: 120, w: 150, h: 64, input: true },
       { id: "superai", label: "Super AI", kind: "ai", x: 210, y: 128, w: 96, h: 48, probe: ["/api/super/engines", "{ready} engines"] },
-      { id: "sim", label: "siM", kind: "lab", engine: "sim", x: 350, y: 20, w: 74, h: 40, probe: ["/api/scilem/status", "{badge}"], opens: "SciM Assistant" },
+      { id: "sim", label: "siM", kind: "lab", engine: "sim", x: 350, y: 20, w: 74, h: 40, probe: ["/api/scilem/status", "{badge}"], opens: "Capabilities" },
       { id: "rib", label: "riB", kind: "lab", engine: "rib", x: 350, y: 76, w: 74, h: 40, probe: ["/api/engines/status", "{riB.weights#} weights"], opens: "Capabilities" },
       { id: "pid", label: "piD", kind: "lab", engine: "pid", x: 350, y: 132, w: 74, h: 40, probe: ["/api/forecast", "{blocks_recorded} blocks"], opens: "Performance" },
       { id: "pien", label: "PiEn", kind: "lab", engine: "pien", x: 350, y: 188, w: 74, h: 40, probe: ["/api/pien/model", "{interactions} uses"], opens: "Capabilities" },
@@ -128,7 +130,7 @@ window.SUPERAI_PROGRAM = {
       ["manuscript", "extract"], ["extract", "integrity"], ["integrity", "jurors"], ["jurors", "verdict"],
       ["verdict", "pix"], ["pix", "piq"], ["piq", "ledger"], ["ledger", "explorer"],
       ["pix", "pid"], ["pix", "rib"],
-      ["b-Tools", "manuscript"], ["b-scim", "sim"], ["explorer", "b-Explore"], ["ledger", "live"]
+      ["b-Tools", "manuscript"], ["explorer", "b-Explore"], ["ledger", "live"]
     ]
   }
 };

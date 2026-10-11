@@ -1759,6 +1759,9 @@
   function start() {
     SECTIONS.forEach(s => (s.panel ? collectSection(s) : collectAccount(s)));
     mergeItems();
+    // windows the program switches off (PROGRAM.hide): no pill, no bubble, no window; their cards stay on the shelf
+    const off = new Set(PROGRAM.hide || []);
+    for (let i = items.length - 1; i >= 0; i--) if (off.has(items[i].title)) items.splice(i, 1);
     makeGroups();
     migrateRenamed();
     document.body.appendChild(shelf);

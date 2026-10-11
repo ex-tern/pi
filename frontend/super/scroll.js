@@ -92,18 +92,57 @@
   //   ... in a window                    zooms its content about the pointer (no scroll bars anywhere:
   //                                      super/zoombox.js); Alt + scroll sizes the window
   //   Alt + scroll on a thing            sizes that thing (a bubble, the title, the palette, Live)
-  //   Shift + scroll                     changes the shape (n) of the super under the pointer
-  // (A band round every super's edge used to turn a scroll into a change of n: it was easy to hit by
-  // accident, so the shape now changes only with Shift.) The zoom is coalesced to one step per frame and
+  //   ... on a super's ring              changes that super's n (the pointer is a hand there): the inner
+  //                                      super's ring, the main loop's, a window's, a node's, a bubble's
+  //   Shift + scroll                     changes the shape (n) of the super under the pointer, anywhere
+  // A gesture keeps doing what it started doing (400 ms), so a zoom never turns into an n by drifting. The zoom is coalesced to one step per frame and
   // applied at once for a trackpad or a pinch, glided for a mouse wheel's coarse steps; it settles on 100 %
   // when it ends near it, and the Reset view button (or the 0 key) brings the first view back.
-  // zoneAt is what super/hover.js shows: an arrow, a scroll zooms.
+  // zoneAt is what super/hover.js shows: a hand on a ring (n), an arrow elsewhere (zoom).
+  // the ring: a band either side of a super's edge, where the pointer is a hand and a scroll changes that
+  // super's n (the owner's n control); everywhere else an arrow, and a scroll zooms
+  const RING_IN = 16, RING_OUT = 12;                        // the ring's band, inside and outside the edge
+  const ringBand = (w, h) => { const k = Math.min(1, Math.min(w, h) / 64); return { in: Math.max(3, RING_IN * k), out: Math.max(3, RING_OUT * k) }; };
   function zoneAt(x, y, hit) {
-    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit")) return null;
+    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project, .se-reset")) return null;
     const over = hit && hit.closest ? hit.closest(THING) : null;
+    let best = null;                                          // the nearest ring the point is on
+    const S = window.SeSite || {}, sel = (S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
+    document.querySelectorAll(sel).forEach(el => {
+      if (el.hidden || !el.getClientRects().length || el.classList.contains("se-port")) return;
+      const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
+      const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      const d = ins ? -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y)
+        : Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      const b = ringBand(r.width, r.height);
+      if (d < -b.in || d > b.out) return;
+      if (over && over !== el && !over.classList.contains("is-holder") && !over.contains(el) && !el.contains(over)) return;    // the point is on something else (a holder is under what it holds)
+      if (!best || Math.abs(d) < Math.abs(best.d)) best = { target: el, d };
+    });
+    const site = S.site && S.site();
+    if (site) {
+      const d = (seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n) - 1) * Math.min(site.a, site.b);
+      if (d >= -RING_IN && d <= RING_OUT && (!best || Math.abs(d) < Math.abs(best.d)) && !over) best = { target: "site", d };
+    }
+    const g = O().loop ? O().loop() : null;
+    if (g && g.a) {
+      const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
+      const d = (seNorm(Math.abs(x - g.cx) / g.a, Math.abs(y - (g.cy + off)) / g.b, g.n) - 1) * Math.min(g.a, g.b);
+      if (d >= -(RING_IN + 2) && d <= RING_OUT + 6 && (!best || Math.abs(d) < Math.abs(best.d))) best = { target: "loop", d };
+    }
+    if (best) return { kind: "hand", target: best.target };                        // on a ring: its n
+    const loopRing = window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
+    if (loopRing) return { kind: "hand", target: loopRing };
     if (over && (over.classList.contains("lv-node") || over.classList.contains("orbit-panel"))) return { kind: "arrow", target: over };
-    const S = window.SeSite || {};
     return { kind: "arrow", target: S.inSite && S.inSite(x, y) ? "site" : "loop" };
+  }
+  // a ring's n, by a scroll (the hand)
+  function shapeOf(what, e, dy) {
+    if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
+    else if (what === "loop") { if (O().scrollN) O().scrollN(e); }
+    else if (!what.isConnected) return;
+    else if (what.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(what, dy); }
+    else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(what, dy);
   }
 
   const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
@@ -183,7 +222,18 @@
     const pinch = e.ctrlKey;
     if (!pinch && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;          // sideways: super/nodes.js guards the swipe
     const fresh = gesture && now - gesture.t < 400 && gesture.pinch === pinch && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
-    const target = fresh ? gesture.what : pick(hit, pinch, e.altKey);
+    // on a ring (the hand) a scroll changes that super's n; a gesture keeps doing what it started doing,
+    // so a zoom that drifts over a ring keeps zooming and an n that drifts inside keeps changing n
+    if (!pinch && !e.altKey && (fresh ? gesture.ring : true)) {
+      const z = fresh ? { kind: "hand", target: gesture.what } : zoneAt(x, y, hit);
+      if (z && z.kind === "hand") {
+        e.preventDefault(); e.stopImmediatePropagation();
+        gesture = { what: z.target, t: now, pinch, ring: true };
+        shapeOf(z.target, e, (e.deltaY || e.deltaX) * unit);
+        return;
+      }
+    }
+    const target = fresh && !gesture.ring ? gesture.what : pick(hit, pinch, e.altKey);
     if (target === null) { gesture = null; return; }                         // content that scrolls keeps scrolling
     gesture = { what: target, t: now, pinch };
     e.preventDefault(); e.stopImmediatePropagation();

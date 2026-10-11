@@ -209,7 +209,30 @@
         if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
           const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
           const held = isHolder(n) ? bodyOut(n) : null;                    // a holder: what is inside it is part of its question
-          n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).concat(held ? [strOf(evalNode(held))] : []).filter(Boolean).join(" ").trim();
+          const all = held ? ins.concat([evalNode(held)]) : ins;
+          // what is computable is computed here, at once, and never sent to the engines:
+          //   a number typed into it          it is that number
+          //   an operator typed into it       that operation on the numbers wired in (2, 3 into + is 5)
+          //   only numbers wired in, nothing typed: it says what they make ("2 + 3 = 5")
+          const numOf = v => v.isNum ? v.num : (/^\s*-?\d+(?:[.,]\d+)?\s*$/.test(strOf(v)) ? +strOf(v).replace(",", ".") : NaN);
+          const say1 = v => v.expr ? v.expr + " = " + strOf(v) : strOf(v);
+          if (/^-?\d+(?:[.,]\d+)?$/.test(typed)) {
+            const x = +typed.replace(",", "."); n.prompt = ""; n.answer = "";
+            r = Object.assign(N(x), { str: typed, text: typed }); break;
+          }
+          const op = opOf(typed);
+          if (op && all.length && all.every(v => Number.isFinite(numOf(v)))) {
+            const sym = { "*": "×", "/": "÷" }[op] || op, val = applyOp(op, all.map(numOf));
+            n.prompt = ""; n.answer = "";
+            r = Object.assign(N(val), { str: N(val).text, text: typed, expr: all.map(v => v.expr ? "(" + v.expr + ")" : strOf(v)).join(" " + sym + " ") }); break;
+          }
+          if (!typed && !verb && all.length && all.every(v => Number.isFinite(numOf(v)))) {
+            const text = all.map(say1).join(", "); n.prompt = ""; n.answer = "";
+            r = Object.assign(N(all.length === 1 ? numOf(all[0]) : all.reduce((a, v) => a + numOf(v), 0)), { str: text, text }); break;
+          }
+          // a question with things wired in: they go with it, numbers with how they were made
+          const wired = all.map(say1).filter(Boolean);
+          n.prompt = verb ? "" : (typed ? (wired.length ? typed + " (wired in: " + wired.join("; ") + ")" : typed) : wired.join(" ")).trim();
           if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
           const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
@@ -407,7 +430,7 @@
       }
       if (n.fn === "ask") n.el.classList.toggle("is-asking", !!(n.str || n.answer || r.text || n.st.go || n.el.contains(document.activeElement) && document.activeElement.tagName === "INPUT"));
       if (n.fn === "box" || n.fn === "ask") {
-        const long = !(n.role === "engine" && n.id !== "site-box") && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));
+        const long = !(n.role === "engine" && n.id !== "site-box") && !isHolder(n) && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));   // a holder keeps its shape: its text stays in its label strip
         n.el.classList.toggle("is-long", long);
         if (n.changed === now) clear(n);                                 // its text changed size: step out of the way
       }
@@ -783,11 +806,29 @@
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
       if (n.st.crew) { n.st.crew = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
-      const into = holderOf(n);
-      if (into && ev.type === "pointerup") { place(n); persist(); tick(); say(BY[n.fn].name + " is now inside a super"); return; }   // dropped into a holder: it stays where it was put
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
+      // a super dropped on another super (not a holder: that is where it goes in) wires its output into the
+      // other's input and sits down beside it, wherever on it it lands (its words, its value, its body)
+      if (ev.type === "pointerup" && n.role && window.SuperLink && window.SuperLink.add) {
+        const ontoEl = under(n, ev.clientX, ev.clientY).map(e => e.closest && e.closest(".lv-node")).find(e => e && e !== n.el);
+        const other = ontoEl && nodes.find(x => x.el === ontoEl);
+        if (other && !isHolder(other)) {
+          window.SuperLink.add({ h: "port:node:" + n.id + "/output", el: 1 }, { h: "port:node:" + other.id + "/input", el: 1 });
+          const home = holderOf(other);                                 // wired inside a holder: it stays inside it
+          beside(n, ontoEl, ev.clientX, ev.clientY);
+          if (home && !within(home, n)) {
+            const r = home.el.getBoundingClientRect(), k = r.width * 0.08, w = n.el.offsetWidth, h = n.el.offsetHeight, b = n.el.getBoundingClientRect();
+            const x = Math.max(r.left + k, Math.min(r.right - k - w, b.left)), y = Math.max(r.top + k + r.height * 0.12, Math.min(r.bottom - k - h, b.top));
+            const L = toLayout(x, y); n.fx = L.x / window.innerWidth; n.fy = L.y / window.innerHeight; place(n);
+          }
+          say((n.str || BY[n.fn].name) + " wired into " + (other.str || BY[other.fn].name)); persist(); tick(); return;
+        }
+      }
+      // dropped into a holder, on nothing in it (no super, port or word to wire to): it just stays there
+      const into = holderOf(n);
+      if (into && ev.type === "pointerup" && (!t || (t.el && t.el === into.el))) { place(n); persist(); tick(); say(BY[n.fn].name + " is now inside a super"); return; }
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
-      if (n.fn === "box" && ev.type === "pointerup" && boxGuess(n, ev.clientX, ev.clientY)) { persist(); tick(); return; }
+      if (n.fn === "box" && !n.role && ev.type === "pointerup" && boxGuess(n, ev.clientX, ev.clientY)) { persist(); tick(); return; }   // a blank ■ only: a super is never used up as an eraser
       if (n.fn === "ask" && ev.type === "pointerup" && askGuess(n, ev.clientX, ev.clientY, t)) { persist(); tick(); return; }
       if (t && t.text && BY[n.fn].n && !((n.fn === "box" || n.fn === "dot") && n.role) && window.SuperLink && window.SuperLink.add) {
         window.SuperLink.add(t.text, { h: "node:" + n.id, el: 1 });
@@ -805,6 +846,16 @@
       }
       if (t && t.el && BY[n.fn].n) {
         const ref = refOf(t.el);
+        // a super dropped on another super wires its output into the other's input, and sits down beside it
+        const onto = t.el.closest && t.el.closest(".lv-node");
+        if (onto && onto !== n.el && n.role && window.SuperLink && window.SuperLink.add) {
+          const other = nodes.find(x => x.el === onto);
+          if (other) {
+            window.SuperLink.add({ h: "port:node:" + n.id + "/output", el: 1 }, { h: "port:node:" + other.id + "/input", el: 1 });
+            beside(n, onto, ev.clientX, ev.clientY);
+            say(BY[n.fn].name + " wired into " + (other.str || BY[other.fn].name)); persist(); tick(); return;
+          }
+        }
         if ((n.fn === "box" || n.fn === "dot") && n.role) { place(n); clear(n); persist(); tick(); return; }   // it already is something: just moved
         attach(n, ref);
         if (n.fn === "add" && n.inputs.length === 1 && ref.key) setTimeout(() => signOn(n, ref, t.el), 0);

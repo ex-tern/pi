@@ -325,8 +325,9 @@
         const b = bands(r);
         if (ins) { d = -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y); if (d < -b.in) return; }
         else { d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom)); if (d > b.out) return; }
-        if (!ins && owner && owner !== el) return;                        // just outside it, but over something else
-        if (ins && owner && owner !== el && !owner.contains(el) && !el.contains(owner)) return;   // covered
+        const holds = owner && owner.classList.contains("is-holder");   // a super that holds supers is under them, not in their way
+        if (!ins && owner && owner !== el && !holds) return;              // just outside it, but over something else
+        if (ins && owner && owner !== el && !holds && !owner.contains(el) && !el.contains(owner)) return;   // covered
       }
       if (!best || Math.abs(d) < Math.abs(best.d)) best = { el, d };
     };

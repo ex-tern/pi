@@ -31,6 +31,7 @@
     });
     if (!p.titles || typeof p.titles !== "object") bad.push("titles must be an object");
     if (p.merges) isArr(p.merges, "merges");
+    if (p.hide != null && (!Array.isArray(p.hide) || p.hide.some(t => typeof t !== "string"))) bad.push("hide must be a list of window titles");
     const d = p.diagram;
     if (!d || typeof d !== "object") bad.push("diagram must be an object");
     else {
