@@ -63,15 +63,17 @@
     const r = { x: c.x + (f.x - c.x) * k, y: c.y + (f.y - c.y) * k, w: c.w + (f.w - c.w) * k, h: c.h + (f.h - c.h) * k };
     el.style.left = r.x.toFixed(1) + "px"; el.style.top = r.y.toFixed(1) + "px";
     el.style.width = r.w.toFixed(1) + "px"; el.style.height = r.h.toFixed(1) + "px";
+    // the program is always drawn: small, it is the miniature of itself; zoomed in, it can be read and used
     const show = Math.max(0, Math.min(1, (t - 0.25) / 0.35));
     el.style.setProperty("--pj-show", show.toFixed(3));
     el.classList.toggle("is-open", show > 0.02);
+    el.classList.toggle("is-mini", t < 0.12);
     el.classList.toggle("is-full", t > 0.98);
     if (t < 0.6 && el.classList.contains("is-editing")) { el.querySelector(".pj-editor").hidden = true; el.classList.remove("is-editing"); }
     // the drawing fits the box, centred
     const pad = 0.05, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);
     map.style.transform = "translate(" + ((r.w - W * s) / 2).toFixed(1) + "px," + ((r.h - H * s) / 2).toFixed(1) + "px) scale(" + s.toFixed(4) + ")";
-    if (show > 0.02 && !probed) probeAll();
+    if (!probed) probeAll();
   }
   function setT(v, commit) {
     tTo = Math.max(0, Math.min(1, v));
@@ -84,9 +86,9 @@
     el = document.createElement("div");
     el.className = "se-project";
     el.setAttribute("role", "region");
-    el.setAttribute("aria-label", "Pi Tech Lab, the whole project written in SuperAI. Zoom in to open it, zoom out to compact it.");
+    el.setAttribute("aria-label", "Pi Tech Lab, the whole project written in SuperAI, drawn small. Zoom in on it to read and use it, zoom out to make it small again.");
     el.innerHTML =
-      '<div class="pj-face"><strong>Pi Tech Lab</strong><span>the project in SuperAI</span><em>zoom in</em></div>' +
+
       '<i class="pj-port pj-l"></i><i class="pj-port pj-r"></i><i class="pj-port pj-t"></i><i class="pj-port pj-b"></i>' +
       '<div class="pj-map" aria-hidden="false"></div>' +
       '<button type="button" class="pj-prog-btn">Program</button>' +

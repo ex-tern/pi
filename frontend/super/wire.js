@@ -368,7 +368,14 @@
     // a drag from a piece of text draws a wire; a click stays a click
     const FIELDS = ".lv-palette, .lv-node, input, textarea, select, [contenteditable], canvas, video";
     const MOVERS = ".orbit-pi, .op-head, .orbit-bubble";                         // dragging these moves them
-    const owned = t => !t.closest || !!t.closest(FIELDS) || (!t.closest(".ob-member") && !!t.closest(MOVERS));
+    // inside a Super AI super (or a holder) its words wire as words on the page do: held, then dragged
+    const SUPER_TEXT = ".lv-node.is-holder, .lv-node.is-wrap";
+    const owned = t => {
+      if (!t.closest) return true;
+      const node = t.closest(".lv-node");
+      if (node && node.matches(SUPER_TEXT) && !t.closest("input, textarea, select, [contenteditable]")) return false;
+      return !!t.closest(FIELDS) || (!t.closest(".ob-member") && !!t.closest(MOVERS));
+    };
     let eatClick = false;
     document.addEventListener("click", e => { if (eatClick) { eatClick = false; e.preventDefault(); e.stopPropagation(); } }, true);
     // the pointer shows when it is on an edge
@@ -392,7 +399,9 @@
       if (!g && !u) return;
       const x0 = e.clientX, y0 = e.clientY, from = g ? g.anchor : u.anchor;
       // from text: only after holding still a moment (or with Alt), so a drag or a selection stays one
-      let armed = !!g || e.altKey, holdT = 0;
+      // on a touch screen an edge waits for the hold too, so a finger scrolling past a bubble or a pill never wires
+      // it (and never opens its window); a port wires at once
+      let armed = (!!g && (e.pointerType !== "touch" || !!port)) || e.altKey, holdT = 0;
       if (!armed) holdT = setTimeout(() => { armed = true; html.classList.add("sl-armed"); try { window.getSelection().removeAllRanges(); } catch (_) { /* fine */ } }, HOLD_MS);
       const disarm = () => { clearTimeout(holdT); html.classList.remove("sl-armed"); };
       const move = ev => {

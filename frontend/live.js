@@ -41,6 +41,9 @@
     const t = Date.parse(String(ts).replace(" ", "T") + (/[zZ+]/.test(ts) ? "" : "Z"));
     if (!t) return "";
     const m = Math.max(0, Math.round((Date.now() - t) / 60000));
+    // written in SuperAI (pitechlab.super.js: functions.ago), run by the Rust engine; the same in JavaScript until it loads
+    const s = window.SuperAI && window.SuperAI.call ? window.SuperAI.call("ago", { m }) : null;
+    if (s) return s;
     return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago";
   }
 

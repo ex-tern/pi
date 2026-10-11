@@ -16,7 +16,12 @@
     '<details class="perf-more"><summary>Show the detailed forecast</summary><div class="perf-more-body"></div></details>';
   const cards = root.querySelector(".perf-cards");
 
-  const pct = (a, b) => (b ? Math.round((100 * a) / b) : null);
+  // written in SuperAI (pitechlab.super.js: functions.percent), run by the Rust engine; JavaScript until it loads
+  const pct = (a, b) => {
+    const s = window.SuperAI && window.SuperAI.call ? window.SuperAI.call("percent", { part: +a || 0, whole: +b || 0 }) : null;
+    if (s != null) return s === "" ? null : +s;
+    return b ? Math.round((100 * a) / b) : null;
+  };
   function card(name, what, status, meter, note) {
     return '<div class="perf-card"><div class="pc-head"><b>' + name + '</b>' +
       (note ? '<span class="pc-tag">' + note + '</span>' : '') + '</div>' +

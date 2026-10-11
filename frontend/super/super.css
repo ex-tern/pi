@@ -161,7 +161,7 @@ html.shape-se .om-page { display: block; }
 html.shape-se .orbit-title { top: calc(var(--orbit-top, 0px) + var(--se-title-top, 36px)); }   /* orbit.js seatEdges */
 html.shape-se .lv-palette { left: var(--se-pal-left, 9vw); bottom: var(--se-pal-bottom, 10vh); }
 html.shape-se .live-tab { right: 6vw; }
-html.shape-se .live-dock.open .live-tab { right: calc(300px + 6vw); }
+html.shape-se .live-dock.open .live-tab { right: calc(300px + 6vw + 12px); }   /* beside the panel, never on its curve */
 html.shape-se .live-dock.open .live-body {
   margin: var(--se-live-m, 14vh) 6vw 0 0; height: calc(100% - 2 * var(--se-live-m, 14vh));
   border: 1px solid var(--hair-strong); border-radius: 26px; corner-shape: superellipse(var(--se-k-window));
@@ -246,7 +246,9 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
 }
 html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
 html.shape-se .live-dock.open .live-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--hair-strong); }
-html.shape-se .live-dock.open .live-scroll { flex: 1; min-height: 0; overflow-y: auto; margin: 9% 8% 10% 9%; padding: 2px 6px 6px 0; scrollbar-width: thin; }
+html.shape-se .live-dock.open .live-scroll { flex: 1; min-height: 0; overflow: hidden; margin: 22px 20px; padding: 0; }   /* super/livebox.js sets the margins from n */
+html.shape-se .live-dock.open .live-body { --se-k-window: 3; }   /* the windows' kind of super: n = 8 until shift + scroll gives it another */
+html.shape-se .live-inner { padding: 0 2px 6px; }
 html.shape-se .live-tab { padding: 14px 6px; }
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
 @supports not (corner-shape: round) {
@@ -404,3 +406,24 @@ html.shape-se .orbit-panel .op-body p, html.shape-se .orbit-panel .op-body li { 
 html.shape-se .orbit-panel .op-body .card { padding: 14px 16px; margin: 0 0 10px; box-shadow: none; }
 html.shape-se .orbit-panel .op-body .card > .card { padding: 12px 14px; }
 html.shape-se .live-body *, html.shape-se .orbit-panel * { overscroll-behavior: none; }
+/* the open Live panel is a super over the diagram, never under the nodes on top of it (a phone has no room beside it) */
+html.shape-se .live-dock.open { z-index: 962; }
+/* the title is a simple super (super/logo.js): a ■ at n = π with its four ports, "pi tech lab" in mono inside */
+html.shape-se .orbit-title .se-logo { display: none; }
+html.shape-se .orbit-title .se-titlesuper {
+  position: relative; display: grid; place-items: center; box-sizing: border-box;
+  width: calc(80px * var(--se-title-k, 1)); height: calc(68px * var(--se-title-k, 1));
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 1.6515));
+  font: 500 calc(12.5px * var(--se-title-k, 1))/1.3 "Geist Mono", ui-monospace, monospace; color: var(--ink);
+  text-align: center; text-transform: lowercase; letter-spacing: 0; padding: 0 8%;
+  white-space: normal; overflow-wrap: normal; user-select: none; -webkit-user-select: none;
+}
+html.shape-se .orbit-title .sts-text { display: block; max-width: 7.4ch; white-space: normal; }
+@supports not (corner-shape: round) { html.shape-se .orbit-title .se-titlesuper { border-radius: 32%; } }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(66px * var(--se-title-k, 1)); height: calc(56px * var(--se-title-k, 1)); font-size: calc(11px * var(--se-title-k, 1)); } }
+html.shape-se .orbit-title .sts-p { position: absolute; width: 9px; height: 9px; background: var(--ink); clip-path: var(--se-sparkle); pointer-events: none; }
+html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
+html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }

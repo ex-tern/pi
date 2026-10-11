@@ -79,14 +79,21 @@
     badgeN = n;
     const b = document.querySelector(".orbit-title .sel-badge");
     if (b && geo) b.setAttribute("d", badgePath(n));
+    const sup = document.querySelector(".orbit-title .se-titlesuper");
+    if (sup) sup.style.setProperty("--sts-k", Math.log2(Math.max(0.3, n)).toFixed(4));
   }
 
+  // The title is a simple super, like every other: a ■ at n = π with its four ports, "pi tech lab" inside
+  // in the diagram's mono type. (build() still draws the superellipse lettering, for anything that wants it.)
+  const TITLE_N = Math.PI;
   function apply() {
     if (!document.documentElement.classList.contains("shape-se")) return false;
     const t = document.querySelector(".orbit-title");
-    if (!t || t.querySelector(".se-logo")) return !!t;
-    t.insertAdjacentHTML("afterbegin", build("Pi Tech Lab"));
-    t.title = "Pi Tech Lab, drawn from superellipses (|x|^" + N + " + |y|^" + N + " = 1)";
+    if (!t || t.querySelector(".se-titlesuper")) return !!t;
+    t.insertAdjacentHTML("afterbegin", '<span class="se-titlesuper" aria-hidden="true"><span class="sts-text">pi tech lab</span>' +
+      '<i class="sts-p sts-in"></i><i class="sts-p sts-out"></i><i class="sts-p sts-sync"></i><i class="sts-p sts-cond"></i></span>');
+    t.title = "Pi Tech Lab";
+    if (badgeN) setN(badgeN);
     if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout();
     return true;
   }
@@ -97,5 +104,5 @@
       .observe(document.documentElement, { attributes: true, attributeFilter: ["class"] });
   }
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
-  window.SeLogo = { build, setN, n: () => badgeN || BADGE_N };
+  window.SeLogo = { build, setN, n: () => badgeN || TITLE_N };
 })();

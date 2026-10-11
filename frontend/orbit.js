@@ -787,6 +787,7 @@
   // pill), nor are links or bubbles. On touch screens a vertical swipe opens a
   // random window.
   function scrollPick() {
+    if (merged()) return;                                      // the superellipse look opens windows only by wiring
     const can = items.filter(i => !i.group && !i.href && !isHal(i) && (i.virtual || visible(i)) && i.title);
     const shut = can.filter(i => !i.panel);
     const pool = shut.length ? shut : can;
@@ -821,6 +822,7 @@
     }, { passive: true });
     stage.addEventListener("touchend", e => {
       if (ty === null || !e.changedTouches.length) return;
+      if (merged()) { ty = null; return; }                    // superellipse look: a swipe never opens a window (windows open by wiring)
       const dy = e.changedTouches[0].clientY - ty, dx = e.changedTouches[0].clientX - tx;
       ty = null;
       if (Math.abs(dy) > 60 && Math.abs(dy) > 1.5 * Math.abs(dx)) scrollPick();

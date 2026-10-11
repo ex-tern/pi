@@ -29,7 +29,12 @@
 .pj-t { top: -1px; left: calc(50% - 4px); } .pj-b { bottom: -1px; left: calc(50% - 4px); }
 
 /* open: the diagram, drawn at 1000 × 620 and scaled to fit */
-.pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; opacity: var(--pj-show, 0); pointer-events: none; }
+.pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }   /* always drawn: small, the miniature */
+.se-project.is-mini .pj-sec span, .se-project.is-mini .pj-val { visibility: hidden; }        /* the miniature: shapes and wires, the names */
+.se-project.is-mini .pj-wire { stroke-width: 9; }                                      /* drawn about a tenth of its size: thick enough to see */
+.se-project.is-mini .pj-node { border-width: 11px; }
+.se-project.is-mini .pj-sec { border-width: 6px; }
+.se-project.is-mini .pj-end { display: none; }
 .se-project.is-open .pj-map { pointer-events: auto; }
 .pj-wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
 .pj-wire { fill: none; stroke: var(--hair-strong, #c9c9c4); stroke-width: 1.4; }

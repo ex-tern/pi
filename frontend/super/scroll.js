@@ -88,10 +88,11 @@
 
   // ---- what a scroll or a pinch does: one rule ------------------------------------------------------
   //   scroll or pinch anywhere           zooms the site (the view), and nothing else changes shape
-  //   ... on a node                      sizes that node
+  //   ... on a super (Super AI too)      zooms into what it shows (its prompt, answer, value) about the
+  //                                      pointer; Alt + scroll sizes the super (and grows a ■ into a holder)
   //   ... in a window                    zooms its content about the pointer (no scroll bars anywhere:
   //                                      super/zoombox.js); Alt + scroll sizes the window
-  //   Alt + scroll on a thing            sizes that thing (a bubble, the title, the palette, Live)
+  //   Alt + scroll on a thing            sizes that thing (a super, a window, a bubble, the title, Live)
   //   ... on a super's ring              changes that super's n (the pointer is a hand there): the inner
   //                                      super's ring, the main loop's, a window's, a node's, a bubble's
   //   Shift + scroll                     changes the shape (n) of the super under the pointer, anywhere
@@ -153,7 +154,12 @@
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
     const node = t && t.closest(".lv-node");
-    if (node) return node;
+    if (node) {
+      if (alt) return node;                                          // Alt: the super's size
+      const g = node.querySelector(":scope > .lv-glyph");
+      if (g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim()) return g;   // what it shows: zoomed
+      return "site";                                                 // nothing in it to zoom: the view
+    }
     const panel = t && t.closest(".orbit-panel");
     if (panel && alt) return panel;                                  // Alt: the window's size
     const zb = t && t.closest("[data-zoombox]");

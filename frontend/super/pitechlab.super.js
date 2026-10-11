@@ -85,6 +85,54 @@ window.SUPERAI_PROGRAM = {
     ]
   },
 
+  // ---- functions: small parts of the site, written in SuperAI ----------------------------------------
+  // Each is supers and wires with inputs (kind input, by name) and an output (kind output, "out"), run by
+  // the Rust engine (rust/superai, as super/superai.wasm): SuperAI.call(name, inputs) gives the output's
+  // text. A ■ with a number typed in is that number, with an operator that operation on what is wired in
+  // (words join with +), with words those words; an empty ■ passes the first wired value that is not held,
+  // and a super whose condition is false is held, so gated supers into an empty ■ make a choice.
+  functions: {
+    // a share as a whole percent, nothing when the whole is 0 (the Performance window)
+    percent: {
+      supers: [
+        { id: "part", kind: "input" }, { id: "whole", kind: "input" }, { id: "hundred", text: "100" },
+        { id: "times", text: "×" }, { id: "over", text: "/" }, { id: "round", text: "round" }, { id: "out", kind: "output" }
+      ],
+      wires: [
+        ["hundred.output", "times.input"], ["part.output", "times.input"], ["times.output", "over.input"], ["whole.output", "over.input"],
+        ["over.output", "round.input"], ["whole.output", "round.condition"], ["round.output", "out.input"]
+      ]
+    },
+    // how long ago, from minutes: just now, 45 min ago, 3 h ago, 2 d ago (the Live panel)
+    ago: {
+      supers: [
+        { id: "m", kind: "input" }, { id: "one", text: "1" }, { id: "sixty", text: "60" }, { id: "day", text: "1440" },
+        { id: "lt1", text: "<" }, { id: "lt60", text: "<" }, { id: "ltday", text: "<" },
+        { id: "now", text: "just now" },
+        { id: "minw", text: "min ago" }, { id: "mins", text: "+" },
+        { id: "inh", text: "/" }, { id: "rh", text: "round" }, { id: "hw", text: "h ago" }, { id: "hrs", text: "+" },
+        { id: "ind", text: "/" }, { id: "rd", text: "round" }, { id: "dw", text: "d ago" }, { id: "days", text: "+" },
+        { id: "pick" }, { id: "out", kind: "output" }
+      ],
+      wires: [
+        ["m.output", "lt1.input"], ["one.output", "lt1.input"], ["lt1.output", "now.condition"],
+        ["m.output", "lt60.input"], ["sixty.output", "lt60.input"],
+        ["m.output", "mins.input"], ["minw.output", "mins.input"], ["lt60.output", "mins.condition"],
+        ["m.output", "ltday.input"], ["day.output", "ltday.input"],
+        ["m.output", "inh.input"], ["sixty.output", "inh.input"], ["inh.output", "rh.input"],
+        ["rh.output", "hrs.input"], ["hw.output", "hrs.input"], ["ltday.output", "hrs.condition"],
+        ["m.output", "ind.input"], ["day.output", "ind.input"], ["ind.output", "rd.input"], ["rd.output", "days.input"], ["dw.output", "days.input"],
+        ["now.output", "pick.input"], ["mins.output", "pick.input"], ["hrs.output", "pick.input"], ["days.output", "pick.input"],
+        ["pick.output", "out.input"]
+      ]
+    },
+    // two numbers added, or two words joined (the + super)
+    add: {
+      supers: [{ id: "a", kind: "input" }, { id: "b", kind: "input" }, { id: "plus", text: "+" }, { id: "out", kind: "output" }],
+      wires: [["a.output", "plus.input"], ["b.output", "plus.input"], ["plus.output", "out.input"]]
+    }
+  },
+
   // ---- the project, as one super's inside (super/project.js) -----------------------------------------
   // Drawn at 1000 × 620. kind: in, ai, lab, out, judge, step, site, sink. probe: [GET url, field path or
   // template] read live while the map is open; opens: the window pressing it opens; engine: the engine

@@ -63,6 +63,9 @@
         if (!Array.isArray(w) || w.some(x => !ids.has(x) && !/^b-/.test(x))) bad.push("project wire " + JSON.stringify(w) + " joins a super that does not exist");
       });
     }
+    // the Rust engine's own check too (rust/superai), once it has loaded: functions, loops of wires
+    const rs = window.SuperAI && window.SuperAI.rs;
+    if (rs && rs.ready) (rs.validate(p) || []).forEach(e => { if (!bad.includes(e) && !bad.some(b => e.endsWith(b))) bad.push(e); });
     return bad;
   }
 
@@ -95,10 +98,10 @@
     });
   }
 
-  window.SuperAI = {
+  window.SuperAI = Object.assign(window.SuperAI || {}, {
     program, shipped, edited, setAside, validate, value,
     save(p) { const bad = validate(p); if (bad.length) return bad; try { localStorage.setItem(KEY, JSON.stringify(p)); } catch (_) { return ["this browser does not keep data for this site"]; } return []; },
     reset() { try { localStorage.removeItem(KEY); } catch (_) { /* private mode */ } },
     copy: () => clone(program),
-  };
+  });
 })();

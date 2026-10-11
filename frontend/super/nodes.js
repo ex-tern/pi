@@ -220,14 +220,42 @@
             const x = +typed.replace(",", "."); n.prompt = ""; n.answer = "";
             r = Object.assign(N(x), { str: typed, text: typed }); break;
           }
-          const op = opOf(typed);
+          // an operator super joined to this one, by a wire into it or by any of its ports (above, below,
+          // beside): its operation works on this super's numbers (3 and 5 wired in, + attached: 8)
+          const opIns = all.filter(v => opOf(strOf(v)) && !Number.isFinite(numOf(v)));
+          let op = opOf(typed) || (opIns.length ? opOf(strOf(opIns[0])) : null) || (!typed ? attachedOp(n) : null);
+          const nums = all.filter(v => !opIns.includes(v));
+          // the language's own engine (rust/superai, WebAssembly) decides what is computable and computes it;
+          // the JavaScript below does the same until it has loaded
+          const RS = window.SuperAI && window.SuperAI.rs;
+          if (RS && RS.ready && !verb) {
+            const out = RS.engine(typed, all.map(v => { const x = numOf(v); return Number.isFinite(x) ? x : strOf(v); }), !typed ? attachedOp(n) : null, "");
+            if (out && out.kind === "bool") { n.prompt = ""; n.answer = ""; r = { num: out.value ? 1 : 0, isNum: true, bool: !!out.value, str: out.text, text: out.text }; break; }   // "<", "=", "and" …
+            if (out && (out.kind === "number" || out.kind === "list")) {
+              n.prompt = ""; n.answer = "";
+              if (out.kind === "number") {
+                const nv = N(out.value == null ? NaN : out.value), sym = op ? ({ "*": "×", "/": "÷" }[op] || op) : "";
+                const parts = (opOf(typed) ? all : nums);
+                r = Object.assign(nv, { str: nv.text, text: opOf(typed) ? typed : nv.text, expr: sym && parts.length > 1 ? parts.map(v => v.expr ? "(" + v.expr + ")" : strOf(v)).join(" " + sym + " ") : undefined });
+              } else {
+                const xs = (out.value || []).map(x => x && typeof x === "object" ? +x.value : +x);
+                r = Object.assign(N(xs.reduce((a, b) => a + b, 0)), { str: out.text, text: out.text });
+              }
+              break;
+            }
+          }
+          if (op && !opOf(typed) && nums.length && nums.every(v => Number.isFinite(numOf(v)))) {
+            const sym = { "*": "×", "/": "÷" }[op] || op, val = applyOp(op, nums.map(numOf));
+            n.prompt = ""; n.answer = "";
+            r = Object.assign(N(val), { str: N(val).text, text: N(val).text, expr: nums.map(v => v.expr ? "(" + v.expr + ")" : strOf(v)).join(" " + sym + " ") }); break;
+          }
           if (op && all.length && all.every(v => Number.isFinite(numOf(v)))) {
             const sym = { "*": "×", "/": "÷" }[op] || op, val = applyOp(op, all.map(numOf));
             n.prompt = ""; n.answer = "";
             r = Object.assign(N(val), { str: N(val).text, text: typed, expr: all.map(v => v.expr ? "(" + v.expr + ")" : strOf(v)).join(" " + sym + " ") }); break;
           }
           if (!typed && !verb && all.length && all.every(v => Number.isFinite(numOf(v)))) {
-            const text = all.map(say1).join(", "); n.prompt = ""; n.answer = "";
+            const text = all.map(v => N(numOf(v)).text).join(", "); n.prompt = ""; n.answer = "";   // simply the number (how it was made goes with questions)
             r = Object.assign(N(all.length === 1 ? numOf(all[0]) : all.reduce((a, v) => a + numOf(v), 0)), { str: text, text }); break;
           }
           // a question with things wired in: they go with it, numbers with how they were made
@@ -238,7 +266,7 @@
           const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
           // a Super AI super: the prompt is typed straight into it and the answer shows in it, wrapped (fitText)
-          if (n.id !== "site-box") r.text = n.st.go ? "thinking…" : t || typed || idle;
+          r.text = n.st.go ? "thinking…" : t || typed || idle;          // every engine super, the central one too
           break;
         }
         const v = ins[ins.length - 1];
@@ -430,7 +458,7 @@
       }
       if (n.fn === "ask") n.el.classList.toggle("is-asking", !!(n.str || n.answer || r.text || n.st.go || n.el.contains(document.activeElement) && document.activeElement.tagName === "INPUT"));
       if (n.fn === "box" || n.fn === "ask") {
-        const long = !(n.role === "engine" && n.id !== "site-box") && !isHolder(n) && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));   // a holder keeps its shape: its text stays in its label strip
+        const long = n.role !== "engine" && !isHolder(n) && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));   // a holder keeps its shape: its text stays in its label strip
         n.el.classList.toggle("is-long", long);
         if (n.changed === now) clear(n);                                 // its text changed size: step out of the way
       }
@@ -588,6 +616,7 @@
     el.className = "lv-node lv-fn lv-" + f.k;
     el.dataset.id = spec.id;
     const g = document.createElement("span"); g.className = "lv-glyph"; glyph(g, f);
+    textZoom(el, g);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
     const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "" };
@@ -656,7 +685,8 @@
     const nn = Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
     n.st.nTo = nn;
     const fn = fnOfN(nn);
-    if (fn !== n.fn) {                                              // across a band: it becomes that function
+    // a Super AI super or a holder keeps what it is (its role, hint, members, transparency): only its shape changes
+    if (fn !== n.fn && n.role !== "engine" && !n.hold) {             // across a band: it becomes that function
       const spec = { id: n.id, fn, fx: n.fx, fy: n.fy, inputs: n.inputs, n: nn, size: n.size, str: n.str, answer: n.answer, use: n.use, manual: true };
       const i = nodes.indexOf(n); n.el.remove(); nodes.splice(i, 1);
       const m = make(spec); m.st.nTo = nn; say(BY[fn].name + " now"); persist(); tick(); return;
@@ -793,6 +823,7 @@
     try { startEl.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
     const move = ev => {
       if (ev.pointerId !== e.pointerId || (n && n.st.pinch)) return;     // a second finger zooms, it does not drag
+      if (!moved && (html.classList.contains("sl-armed") || html.classList.contains("sl-dragging"))) return;   // held on its words: that drag is a wire
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
       if (!moved) {
         moved = true;
@@ -957,14 +988,53 @@
   }
   function say(t) { if (out) out.textContent = t; }
   // what a ■ or ● holds fits inside it: the type shrinks with the length (Geist Mono is ~0.62 em a character)
+  // The zoom rule, for supers as for windows: a scroll or a pinch on a super zooms into what it shows (its
+  // prompt, its answer, its value) about the pointer, from the whole of it (1) to 4 ×; Alt + scroll sizes the
+  // super itself (super/scroll.js). New text starts from the whole again.
+  function textZoom(el, g) {
+    const z = { k: 1, tx: 0, ty: 0, text: "" };
+    const apply = () => {
+      const w = g.offsetWidth, h = g.offsetHeight;
+      z.tx = Math.min(0, Math.max(w - w * z.k, z.tx)); z.ty = Math.min(0, Math.max(h - h * z.k, z.ty));
+      g.style.transformOrigin = "0 0";
+      g.style.transform = z.k > 1.001 ? "translate(" + z.tx.toFixed(1) + "px," + z.ty.toFixed(1) + "px) scale(" + z.k.toFixed(3) + ")" : "";
+      el.classList.toggle("is-tzoom", z.k > 1.001);
+    };
+    g._zoom = {
+      zoomAt(x, y, dy) {
+        const b = g.getBoundingClientRect(), ox = x - (b.left - z.tx), oy = y - (b.top - z.ty);   // the point, in the glyph's own box
+        const k1 = Math.max(1, Math.min(4, z.k * Math.exp(-dy * 0.0015)));
+        if (k1 === z.k) return false;
+        z.tx = ox - (ox - z.tx) * (k1 / z.k); z.ty = oy - (oy - z.ty) * (k1 / z.k); z.k = k1;
+        apply(); return true;
+      },
+      reset() { if (z.k !== 1) { z.k = 1; z.tx = z.ty = 0; apply(); } },
+    };
+  }
+  // the operation of an operator super (+ − × ÷ ^ %) joined to n by any port or wire, other than one feeding n's input
+  function attachedOp(n) {
+    if (!window.SuperLink) return null;
+    const me = "node:" + n.id;
+    for (const l of window.SuperLink.links()) {
+      const ends = [l.a, l.b].map(an => an && an.h || "");
+      const mine = ends.findIndex(h => h === me || h.startsWith("port:" + me + "/"));
+      if (mine < 0) continue;
+      const other = ends[1 - mine], m = /^(?:port:)?node:([^/]+)/.exec(other);
+      const o = m && nodes.find(x => x.id === m[1]);
+      if (o && o !== n && opOf((o.str || "").trim())) return opOf(o.str.trim());
+    }
+    return null;
+  }
   function fitText(n) {
+    const g0 = n.el.querySelector(".lv-glyph");
+    if (g0 && g0._zoom && g0.dataset.t !== String(n.text || "")) { g0.dataset.t = String(n.text || ""); g0._zoom.reset(); }   // new text: the whole of it
     const t = n.field ? n.field.value : n.el.classList.contains("is-long") ? "" : String(n.text || "");
     const target = n.field || n.el.querySelector(".lv-glyph");
     if (!target) return;
     if (!t || n.role === "loop") { target.style.fontSize = ""; return; }
     const size = n.size || 56, room = size * (n.fn === "dot" ? 0.74 : 0.82);
     let fs = Math.max(5, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));
-    const wrap = n.role === "engine" && n.id !== "site-box";            // a Super AI super wraps its words over lines
+    const wrap = n.role === "engine";                                   // an engine super (the central one too) wraps its words inside its shape
     if (wrap) fs = Math.max(6, Math.min(Math.min(14, Math.max(10, size * 0.1)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
     n.el.classList.toggle("is-wrap", wrap);
     target.style.fontSize = fs.toFixed(1) + "px";

@@ -221,3 +221,7 @@ html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: 
 .lv-node.lv-box.is-holder .lv-glyph, .lv-node.lv-box.is-holder.is-wrap .lv-glyph {
   display: block; position: absolute; left: 12%; right: 12%; top: 5%; width: auto; height: auto; max-height: 17%; overflow: hidden;
   padding: 0; text-align: center; font-size: 11px !important; line-height: 1.3; pointer-events: none; }
+
+/* a super zoomed into (super/nodes.js textZoom): its text is clipped to its shape */
+.lv-node.is-tzoom { overflow: hidden; }
+.lv-node.is-tzoom .lv-glyph { will-change: transform; }

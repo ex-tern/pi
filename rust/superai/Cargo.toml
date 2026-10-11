@@ -1,0 +1,22 @@
+[package]
+name = "superai"
+version = "1.0.0"
+edition = "2021"
+description = "SuperAI, Pi Tech Lab's graphical language: supers and wires, run as dataflow"
+license = "MIT"
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[[bin]]
+name = "superai"
+path = "src/main.rs"
+
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true
+
