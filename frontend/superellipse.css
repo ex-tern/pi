@@ -252,3 +252,34 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
   html.shape-se .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
   html.shape-se .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
 }
+
+/* ---- one shape language throughout: inside windows too --------------------------------------
+   Every rounded corner in the superellipse look is a superellipse corner (n = π); pressable and
+   typeable things (buttons, pills, chips, tags, inputs, selects) are whole supers; boxes and cards are
+   whole supers with their content padded clear of the corners; tables, scrollers, images and bars keep
+   their small radii but take the same corner. */
+html.shape-se .orbit-panel *, html.shape-se .live-body *, html.shape-se .modal, html.shape-se .modal * { corner-shape: superellipse(var(--se-k-window)); }
+html.shape-se .orbit-panel button:not(.op-close):not(.lv-fn), html.shape-se .orbit-panel .pill, html.shape-se .orbit-panel .hot-topic-chip,
+html.shape-se .orbit-panel .stage-tag, html.shape-se .orbit-panel .linked-badge, html.shape-se .orbit-panel .rank,
+html.shape-se .orbit-panel .status-reward, html.shape-se .orbit-panel .status-reward-none, html.shape-se .orbit-panel .status-curation,
+html.shape-se .orbit-panel .subtab-btn, html.shape-se .orbit-panel .tag-input, html.shape-se .orbit-panel .btn-like,
+html.shape-se .orbit-panel input:not([type=checkbox]):not([type=radio]):not([type=range]), html.shape-se .orbit-panel select, html.shape-se .orbit-panel textarea,
+html.shape-se .live-body a.btn, html.shape-se .modal button, html.shape-se .modal input {
+  border-radius: 50%; padding-inline: 1.1em;
+}
+html.shape-se .orbit-panel textarea { border-radius: 2.2em; padding: 0.9em 1.3em; }
+html.shape-se .orbit-panel .result-card, html.shape-se .orbit-panel .llm-card, html.shape-se .orbit-panel .opt-card, html.shape-se .orbit-panel .referral-card,
+html.shape-se .orbit-panel .report-body, html.shape-se .orbit-panel .judge-summary, html.shape-se .orbit-panel .researcher-info,
+html.shape-se .orbit-panel .status-box, html.shape-se .orbit-panel .ok-box, html.shape-se .orbit-panel .warning-box, html.shape-se .orbit-panel .insight-box,
+html.shape-se .orbit-panel .quality-rationale, html.shape-se .orbit-panel .fee-notice, html.shape-se .orbit-panel .est-cost, html.shape-se .orbit-panel .log-box,
+html.shape-se .orbit-panel .filter-panel, html.shape-se .orbit-panel .field-checklist, html.shape-se .orbit-panel .lab-text, html.shape-se .orbit-panel .lab-doc,
+html.shape-se .orbit-panel .opt-ok, html.shape-se .orbit-panel .opt-inactive, html.shape-se .orbit-panel .opt-blocked, html.shape-se .orbit-panel .warn-item,
+html.shape-se .modal {
+  border-radius: 50%; padding-inline: calc(5% + 12px); padding-block: calc(3% + 10px);
+}
+html.shape-se .orbit-panel .table-scroll, html.shape-se .orbit-panel .legend-scroll, html.shape-se .orbit-panel .lab-frame, html.shape-se .orbit-panel .lab-img,
+html.shape-se .orbit-panel .fm-item, html.shape-se .orbit-panel .fl-item, html.shape-se .orbit-panel .sidebar-expander { border-radius: 18px; }
+html.shape-se .orbit-panel .progress-track, html.shape-se .orbit-panel .progress-fill, html.shape-se .orbit-panel .engine-fill, html.shape-se .orbit-panel .rs-heat { border-radius: 999px; }
+/* what is pressable inside a window shows it; the one accent stays cobalt */
+html.shape-se .orbit-panel button:not(:disabled), html.shape-se .orbit-panel a, html.shape-se .orbit-panel .btn-like, html.shape-se .orbit-panel summary { cursor: pointer; }
+html.shape-se .orbit-panel button:focus-visible, html.shape-se .orbit-panel input:focus-visible, html.shape-se .orbit-panel select:focus-visible, html.shape-se .orbit-panel textarea:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
