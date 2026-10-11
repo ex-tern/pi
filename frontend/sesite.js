@@ -73,8 +73,19 @@
     PORTS.forEach(([p, side]) => {
       const [x, y] = pts[p], el = ports[p];
       el.style.left = x + "px"; el.style.top = y + "px";
-      const lp = O().loopPoint ? O().loopPoint(x + (side === "left" ? -4000 : side === "right" ? 4000 : 0), y + (side === "top" ? -4000 : side === "bottom" ? 4000 : 0)) : null;
-      if (lp) lattice[p].setAttribute("d", "M" + (x - sr.left).toFixed(1) + "," + (y - sr.top).toFixed(1) + "L" + (lp[0] - sr.left).toFixed(1) + "," + (lp[1] - sr.top).toFixed(1));
+      if (!O().loopPoint) return;
+      const X = x - sr.left, Y = y - sr.top, f = v => v.toFixed(1);
+      if (side === "left" || side === "right") {                   // input and output: straight out to the main loop
+        const lp = O().loopPoint(x + (side === "left" ? -4000 : 4000), y);
+        lattice[p].setAttribute("d", "M" + f(X) + "," + f(Y) + "L" + f(lp[0] - sr.left) + "," + f(lp[1] - sr.top));
+      } else {                                                      // sync and condition: two curves, sweeping out to either side
+        const up = side === "top" ? -1 : 1;
+        const d = [-1, 1].map(sx => {
+          const lp = O().loopPoint(x + sx * 3000, y + up * 2600), px = lp[0] - sr.left, py = lp[1] - sr.top;
+          return "M" + f(X) + "," + f(Y) + "C" + f(X) + "," + f(Y + (py - Y) * 0.7) + " " + f(px - (px - X) * 0.55) + "," + f(py) + " " + f(px) + "," + f(py);
+        }).join("");
+        lattice[p].setAttribute("d", d);
+      }
     });
   }
 
