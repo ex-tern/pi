@@ -37,7 +37,7 @@
     { k: "box", svg: sq + '<rect x="4" y="4" width="12" height="12" rx="1.5"/></svg>', name: "Square", n: 9 },
     { k: "super", svg: sq + '<path class="lv-star" d="M10 2.8L17.2 10L10 17.2L2.8 10Z" stroke-linejoin="round"/></svg>', name: "Super AI", n: 9 },
     { k: "dot", svg: sq + '<circle cx="10" cy="10" r="6.6"/></svg>', name: "Circle", n: 9 },
-    { k: "ask", svg: sq + '<path d="M7.2 7.4a2.8 2.8 0 1 1 4.2 2.4c-.9.5-1.4 1.1-1.4 2.1v.6"/><path d="M10 15.4v.1" stroke-width="2.2"/></svg>', name: "Help: ask the AIs", n: 9 },
+    { k: "ask", svg: sq + '<path d="M7.2 7.4a2.8 2.8 0 1 1 4.2 2.4c-.9.5-1.4 1.1-1.4 2.1v.6"/><path d="M10 15.4v.1" stroke-width="2.2"/></svg>', name: "Help", n: 9 },
   ];
   const RENAMED = { show: "box", stop: "box", panel: "ask" };   // diagrams saved before the five shapes
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
@@ -350,7 +350,7 @@
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
       }
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". " + (r.text ? "Value " + clip(String(r.text)) + "." : ""));
-      n.el.title = n.fn === "super" ? "Super AI" : BY[n.fn].name + (n.inputs.length ? " ← " + n.inputs.map(nameOf).join(", ") : "") + "\n" + HELP[n.fn];
+      n.el.title = BY[n.fn].name;                                          // just its name
     });
     drawWires();
   }
@@ -550,9 +550,9 @@
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       pal.classList.remove("lv-bin");
       html.classList.remove("lv-dragging");
-      if (n && n.st.pinched) { n.st.pinched = false; n.el.classList.remove("is-dragging"); dragging = null; startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0); persist(); return; }
+      if (n && n.st.pinched) { n.st.pinched = false; n.el.classList.remove("is-dragging"); dragging = null; startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350); persist(); return; }
       if (!moved) return;
-      startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 0);
+      startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       if (t && t.palette) { remove(n); say(BY[n.fn].name + " node removed"); return; }
@@ -682,7 +682,7 @@
     };
     const up = () => {
       grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
-      n.el.dataset.dragged = "1"; setTimeout(() => { delete n.el.dataset.dragged; }, 0);   // the release is not a press
+      n.el.dataset.dragged = "1"; setTimeout(() => { delete n.el.dataset.dragged; }, 350);   // the release is not a press
       n.el.classList.remove("is-growing");
       const b = n.el.getBoundingClientRect();
       n.fx = b.left / window.innerWidth; n.fy = b.top / window.innerHeight;
@@ -824,7 +824,7 @@
       const b = document.createElement("button");
       b.type = "button";
       b.className = "lv-fn lv-" + f.k;
-      b.title = f.k === "super" ? "Super AI" : f.name + ": " + HELP[f.k];
+      b.title = f.name;
       b.setAttribute("aria-label", f.name);
       glyph(b, f);
       b.addEventListener("pointerdown", e => drag(e, b, f));
@@ -868,6 +868,8 @@
       if (!n) return;
       e.preventDefault(); e.stopPropagation(); remove(n); say("● loop deleted");
     }, true);
+    // a wire added or deleted anywhere: values update at once
+    document.addEventListener("superlink:change", () => tick());
     // a loop is moved by its ring, and takes what is inside it along
     document.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
