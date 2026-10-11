@@ -928,12 +928,13 @@
     });
     document.body.appendChild(canvas);
 
-    // no palette: a click on bare page makes a node; what happened is announced to screen readers
+    // no palette: a double click on bare page makes a node there (a single click selects the super,
+    // super/select.js); what happened is announced to screen readers
     out = document.createElement("output"); out.className = "lv-out"; out.setAttribute("aria-live", "polite");
     document.body.appendChild(out);
     let down = null;
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
-    document.addEventListener("click", e => {
+    document.addEventListener("dblclick", e => {
       if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
       if (document.querySelector(".orbit-panel")) return;                                      // windows open: the click closes them

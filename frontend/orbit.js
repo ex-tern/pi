@@ -791,7 +791,7 @@
     document.addEventListener("pointerdown", e => { downAt = [e.clientX, e.clientY]; }, true);
     const wasDrag = e => Math.hypot(e.clientX - downAt[0], e.clientY - downAt[1]) > 6;
     stage.addEventListener("click", e => { if (emptySpot(e) && !wasDrag(e)) core.dispatchEvent(new MouseEvent("click", { detail: e.detail })); });
-    stage.addEventListener("dblclick", e => { if (emptySpot(e)) core.dispatchEvent(new MouseEvent("dblclick")); });
+    stage.addEventListener("dblclick", e => { if (emptySpot(e) && !merged()) core.dispatchEvent(new MouseEvent("dblclick")); });   // superellipse look: a double click on bare page makes a node (super/nodes.js), it does not pause π
     // with a window open the mark is hidden: a click on the bare page behind the windows closes them instead
     document.addEventListener("click", e => {
       const h = document.documentElement;
