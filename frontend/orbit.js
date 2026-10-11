@@ -458,8 +458,7 @@
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = e.deltaY || e.deltaX;
     const nn = Math.min(N_MAX, Math.max(N_MIN, loopN() * Math.exp(-dy * 0.002)));
-    // n goes down only while the page, shrunk toward the centre, can still be read inside it
-    if (!(nn < loopN() && fitAt(nn) < FIT_MIN)) markN = nn;
+    markN = nn;                                                     // n goes all the way to 0: the page shrinks toward the centre to stay inside
     drawLoop();
     const t = $(".orbit-nread");
     if (t) { t.textContent = nLabel(markN); t.classList.add("show"); }
@@ -518,7 +517,6 @@
       el.style.scale = String(f);
     });
   }
-  const FIT_MIN = 0.35;
   // how big the loop must be (in units of its usual a, b) to hold the page at full size
   function needAt(n) {
     const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = top + H / 2;
@@ -572,12 +570,7 @@
     // no padding: the loop always reaches the display's edges (its a×b box is the screen, less its stroke)
     const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
     const sc = cap;
-    setFit(need > cap ? Math.max(0.05, cap / need * 0.985) : 1, cx, cy);
-    if (pageFit < FIT_MIN - 0.01 && markN && !scrollN.fixing) {               // a saved n too small for this page: back up
-      scrollN.fixing = true; let k = 0;
-      while (markN < Math.PI && fitAt(markN) < FIT_MIN && k++ < 200) markN *= 1.05;
-      loopKey = ""; drawLoop(); scrollN.fixing = false; return;
-    }
+    setFit(need > cap ? Math.max(0.005, cap / need * 0.985) : 1, cx, cy);
     const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
     loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
     if (key === loopKey) return;
