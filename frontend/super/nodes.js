@@ -959,7 +959,17 @@
   function wireNode(n) {
     // it takes the keyboard as soon as it is pressed: a click that moved a hair counts as a drag and never
     // reached the click handler, so a prompt typed after it went nowhere
-    n.el.addEventListener("pointerdown", e => { if (!(e.target.closest && e.target.closest("input"))) n.el.focus({ preventScroll: true }); drag(e, n.el, null); });
+    n.el.addEventListener("pointerdown", e => {
+      if (!(e.target.closest && e.target.closest("input"))) n.el.focus({ preventScroll: true });
+      // inside a holder it is like the page (owner, 2026-10-12: wiring inside a prompt super is the same as outside):
+      // a press on its bare space moves nothing (a double click makes a super there, a hold on words wires); the
+      // holder moves by its label strip at the top or its edge
+      if (isHolder(n) && e.target === n.el) {
+        const r = n.el.getBoundingClientRect(), d = Math.min(e.clientX - r.left, r.right - e.clientX, e.clientY - r.top, r.bottom - e.clientY);
+        if (d > 12 && e.clientY - r.top > r.height * 0.22) return;
+      }
+      drag(e, n.el, null);
+    });
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
       used(n);
