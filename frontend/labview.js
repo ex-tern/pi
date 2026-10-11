@@ -345,6 +345,7 @@
         if (n.val.textContent !== lab) n.val.textContent = lab;
         n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
         n.el.classList.toggle("is-loop", n.role === "loop");
+        fitText(n);
         n.el.classList.toggle("has-val", !!n.text && !n.field && n.role !== "stop" && n.role !== "loop");
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
       }
@@ -628,6 +629,16 @@
     });
   }
   function say(t) { if (out) out.textContent = t; }
+  // what a ■ or ● holds fits inside it: the type shrinks with the length (Geist Mono is ~0.62 em a character)
+  function fitText(n) {
+    const t = n.field ? n.field.value : n.el.classList.contains("is-long") ? "" : String(n.text || "");
+    const target = n.field || n.el.querySelector(".lv-glyph");
+    if (!target) return;
+    if (!t || n.role === "loop") { target.style.fontSize = ""; return; }
+    const size = n.size || 56, room = size * (n.fn === "dot" ? 0.74 : 0.82);
+    const fs = Math.max(5, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));
+    target.style.fontSize = fs.toFixed(1) + "px";
+  }
   // a text or integer field inside a ■ or ●, made by its first key
   function fieldFor(n) {
     const inp = document.createElement("input");
@@ -791,10 +802,11 @@
     canvas.innerHTML = '<svg class="lv-wires" aria-hidden="true"></svg>';
     wires = canvas.firstChild;
     // click a wire to disconnect that input
-    wires.addEventListener("click", e => {
+    wires.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       const n = w && nodes.find(x => x.id === w.dataset.node);
       if (!n) return;
+      e.stopPropagation();
       const ref = n.inputs.splice(+w.dataset.i, 1)[0];
       persist(); tick();
       say(BY[n.fn].name + " disconnected from " + (ref ? nameOf(ref) : "its input"));

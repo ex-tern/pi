@@ -214,7 +214,7 @@
       const p2 = l.a.loop ? endPoint(l.a, q) : p;
       const d = curve(p2, q);
       s += '<g class="wire sl-wire"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + term(p2) + term(q) +
-           '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': click to disconnect</title></path></g>';
+           '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': double-click to delete</title></path></g>';
     });
     if (drag) {
       if (drag.overRect) s += '<rect class="sl-hover" x="' + (drag.overRect.left - 2) + '" y="' + (drag.overRect.top - 1) + '" width="' + (drag.overRect.width + 4) + '" height="' + (drag.overRect.height + 2) + '" rx="3"/>';
@@ -277,7 +277,7 @@
     svg.setAttribute("class", "sl-layer");
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
-    svg.addEventListener("click", e => {
+    svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation();

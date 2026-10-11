@@ -157,3 +157,7 @@ html.shape-se .live-dock.open .live-body {
   border: 1px solid var(--hair-strong); border-radius: 26px; corner-shape: superellipse(var(--se-k-window));
 }
 @media (max-width: 380px) { html.shape-se .live-dock.open .live-tab { right: calc(88vw - 6vw); } }
+
+/* no PiEN halo around the suggested bubble in this look (PiEN still learns; the bubble just is not ringed) */
+html.shape-se .orbit-bubble.pien-pick { box-shadow: none; }
+html.shape-se .orbit-bubble.pien-pick::after { display: none; animation: none; }
