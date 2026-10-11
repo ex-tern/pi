@@ -597,6 +597,19 @@
     return vis.filter(it => it !== dragging && !it.at).length;
   }
 
+  // a bubble's box for the layout: its size times the scale a scroll gave it (super/scroll.js), so sized
+  // bubbles never overlap
+  function measureBubble(it) {
+    const k = parseFloat(it.bubble.style.scale) || 1;
+    it.w0 = it.bubble.offsetWidth || 120; it.h0 = it.bubble.offsetHeight || 32;
+    it.w = it.w0 * k; it.h = it.h0 * k;
+  }
+  // a bubble that was just sized (super/scroll.js) settles first: the others go round it
+  function prioritize(key) {
+    if (prio[0] === key) return;
+    prio = [key, ...prio.filter(k => k !== key)];
+    store("orbit:prio", prio);
+  }
   function layout() {
     const bar = $(".channel-bar");
     watch(bar); watch($(".orbit-pi")); watch($(".orbit-title"));
@@ -622,14 +635,14 @@
     renderGroups();
     items.forEach(it => { it.bubble.hidden = !visible(it) || !!it.groupOf; });
     const vis = items.filter(it => !it.bubble.hidden);
-    vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
+    vis.forEach(measureBubble);
 
     // Nothing may overlap, on any screen. If there is no room for every pill,
     // all pills shrink together a step at a time until they fit.
     let fitK = 1, missing = 0, toKeep;
     for (let tries = 0; tries < 9; tries++) {
       stage.style.setProperty("--pill-fit", fitK.toFixed(3));
-      vis.forEach(it => { it.w = it.bubble.offsetWidth || 120; it.h = it.bubble.offsetHeight || 32; });
+      vis.forEach(measureBubble);
       toKeep = new Set();
       missing = placePills(vis, toKeep);
       if (!missing) break;
@@ -640,7 +653,11 @@
     vis.forEach(it => {
       if (it === dragging) return;
       const r = it.at || { x: Math.min(W - it.w - 6, Math.max(6, lx - it.w / 2)), y: Math.min(H - it.h - 6, ly + R + piBox.h + 20), w: it.w, h: it.h };
-      it.bubble.style.transform = "translate(" + r.x.toFixed(1) + "px," + r.y.toFixed(1) + "px)";
+      // a bubble sized by scrolling (super/scroll.js: CSS scale about its centre) is laid out at its sized box:
+      // the translate puts the unscaled box where its scaled box lands on r
+      // (the CSS scale property applies after the transform, so the translate is divided by it)
+      const k = (it.w0 && r.w / it.w0) || 1;
+      it.bubble.style.transform = "translate(" + ((r.x - ((it.w0 || r.w) - r.w) / 2) / k).toFixed(1) + "px," + ((r.y - ((it.h0 || r.h) - r.h) / 2) / k).toFixed(1) + "px)";
     });
     drawRings();
   }
@@ -686,7 +703,8 @@
       moved = true; dragging = it; b.classList.add("dragging");
       const L = toLayout(e.clientX, e.clientY);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)), y = Math.min(H - it.h, Math.max(0, L.y - oy));
-      b.style.transform = "translate(" + x + "px," + y + "px)";
+      const k = (it.w0 && it.w / it.w0) || 1;                            // a sized bubble: its scaled box lands on (x, y)
+      b.style.transform = "translate(" + (x - ((it.w0 || it.w) - it.w) / 2) / k + "px," + (y - ((it.h0 || it.h) - it.h) / 2) / k + "px)";
     });
     const end = e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
@@ -1791,7 +1809,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), scrollSiteN, siteN: siteNv, zoomPage, moveSite, zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), prioritize, scrollSiteN, _items: () => items.filter(i => !i.bubble.hidden).map(i => ({ key: i.key, w: i.w, h: i.h, w0: i.w0, at: i.at, custom: i.custom, pushed: i.pushed })), _geom: () => ({ W, H, lx, ly, R, site: siteBox() }), siteN: siteNv, zoomPage, moveSite, zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 
