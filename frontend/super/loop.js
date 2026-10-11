@@ -181,7 +181,7 @@
         const r = p.getBoundingClientRect();
         // no more than about half the inner super, so the bubbles keep their room; on a phone there is no room
         // to share, so a window may take most of it (and never shrinks below a readable size)
-        const sm = window.innerWidth < 700, wCap = sm ? a * 1.84 : a * 1.1, hCap = sm ? b * 1.2 : b * 1.3, minW = sm ? Math.floor(a * 1.5) : 200, minH = sm ? Math.floor(b * 0.6) : 120;
+        const sm = window.innerWidth < 700 || p.seSized, wCap = sm ? a * 1.84 : a * 1.1, hCap = sm ? b * 1.2 : b * 1.3, minW = sm ? Math.floor(a * 1.5) : 200, minH = sm ? Math.floor(b * 0.6) : 120;   // sized by you (super/site.js): as big as the inner super lets
         if (!r.width || (fits(r.left, r.top, r.width, r.height) && r.width <= wCap + 1 && r.height <= hCap + 1)) return;
         let w = r.width, h = r.height;
         const k = Math.min(1, wCap / w, hCap / h);
@@ -206,6 +206,7 @@
     function separateWindows(fits) {
       const sm = window.innerWidth < 700, sbm = siteBox(), fm = sbm.fit || 1;
       const GAP = 10, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
+      const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
       const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .live-dock.open .live-body, .live-tab, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
@@ -245,7 +246,7 @@
         }
         clean = !rs.some((r, i) => nodes.some(nd => overlap(r, nd)) || rs.some((q, j) => j > i && overlap(r, q)));
         if (!clean) {                                                         // no room: all of them a little smaller
-          const next = rs.map(r => { const w = Math.max(MIN_W, Math.floor(r.width * 0.9)), h = Math.max(MIN_H, Math.floor(r.height * 0.9));
+          const next = rs.map((r, i) => { const m = minOf(wins[i]); const w = Math.max(m.w, Math.floor(r.width * 0.9)), h = Math.max(m.h, Math.floor(r.height * 0.9));
             return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h }; });
           if (next.every((r, i) => r.width === rs[i].width && r.height === rs[i].height)) break;
           rs = next;

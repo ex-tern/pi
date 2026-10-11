@@ -212,9 +212,19 @@
 
   // disconnecting undoes it: a window whose button (or words) the removed wire touched closes,
   // once no other wire still touches it
+  // deleting a wire cancels what it did (owner, 2026-10-12): the windows it opened close, the bubble it opened
+  // compacts, Live folds, and a Super AI super it joined to run stops and shows its question again (super/nodes.js
+  // sees it is no longer connected), each once no other wire still does the same
   function unact(l) {
     if (!l) return;
     if ([l.a, l.b].some(touchesLive) && !links.some(m => [m.a, m.b].some(touchesLive)) && window.PiLive && window.PiLive.close) window.PiLive.close();   // the last wire to Live gone: it folds
+    [l.a, l.b].forEach(an => {
+      const el = an && an.h && an.h.startsWith("k:") ? hostEl(an.h) : null, bubble = el && el.closest && el.closest(".orbit-bubble.is-group:not(.is-compact)");
+      if (!bubble || !window.SeBubble) return;
+      const still = links.some(m => [m.a, m.b].some(x => { const e = x && x.h && x.h.startsWith("k:") ? hostEl(x.h) : null; return e && bubble.contains(e); }));
+      if (!still) window.SeBubble.open(bubble, false);
+    });
+    if (window.LabView && window.LabView.unrun) window.LabView.unrun();
     if (!O().close) return;
     const keys = new Set();
     [l.a, l.b].forEach(an => { if (an && !an.loop && an.h && an.h.startsWith("k:")) keys.add(an.h.slice(2)); });
@@ -348,12 +358,12 @@
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
     const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
-    // a double click on a wire deletes nothing (owner, 2026-10-12): click it to select it and press Delete;
-    // the double click only stops short of the page behind (which would make a super there)
+    // a double click on a wire deletes it (owner, 2026-10-12); a click selects it and Delete removes it too
     svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation(); e.preventDefault();
+      removeWire(+w.dataset.i);
     });
     // a click selects a wire (cobalt); Delete or Backspace removes it, Escape or a click elsewhere lets go
     svg.addEventListener("click", e => {

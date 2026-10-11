@@ -91,8 +91,8 @@
   //   ... on a super (Super AI too)      sizes the super (and grows a ■ into a holder); Alt + scroll zooms
   //                                      into what it shows (an answer, anything long) about the pointer
   //   ... on a bubble                    opens it (a scroll in) or compacts it (a scroll out): super/bubble.js
-  //   ... in a window                    zooms its content about the pointer (no scroll bars anywhere:
-  //                                      super/zoombox.js); Alt + scroll sizes the window
+  //   ... in a window                    sizes the window (its content refits: bigger, more readable); Alt +
+  //                                      scroll zooms its content about the pointer (no scroll bars anywhere)
   //   Alt + scroll on a thing            sizes that thing (a super, a window, a bubble, the title, Live)
   //   Shift + scroll                     changes the n of the super under the pointer, and nothing else does
   //                                      (the ring is no longer a control: RING_N)
@@ -165,11 +165,12 @@
       if (alt && g && g._zoom && !node.classList.contains("is-holder") && (g.textContent || "").trim().length > 24) return g;
       return node;
     }
+    // a scroll on a window sizes the window (owner, 2026-10-12: bigger, and its content refits, so more readable);
+    // Alt + scroll zooms the content about the pointer
     const panel = t && t.closest(".orbit-panel");
-    if (panel && alt) return panel;                                  // Alt: the window's size
     const zb = t && t.closest("[data-zoombox]");
-    if (zb && zb._zoom) return zb;                                   // a window's content: zoomed, never scrolled
-    if (panel) return pinch ? panel : "nothing";
+    if (panel && alt && zb && zb._zoom) return zb;
+    if (panel) return panel;
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette, .live-dock"); if (th && nameOf(th)) return th; }
     // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it
     const bubble = t && t.closest(".orbit-bubble.is-group");
@@ -195,7 +196,15 @@
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
-      else if (what.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(what, dy); }
+      else if (what.classList.contains("orbit-panel")) {
+        // the window grows (or shrinks) with the scroll; as big as the inner super lets, the scroll goes on into
+        // its content (zoomed about the pointer), and scrolling back zooms the content out before the window shrinks
+        const zb = what.querySelector("[data-zoombox]"), z = zb && zb._zoom, sb = O().siteBox ? O().siteBox() : null;
+        const maxW = sb ? 2 * sb.a * (sb.fit || 1) * 0.92 : window.innerWidth - 16, maxH = sb ? 2 * sb.b * (sb.fit || 1) * 0.6 : window.innerHeight - 16;
+        const full = what.offsetWidth >= maxW * 0.97 || what.offsetHeight >= maxH * 0.97;
+        if (z && ((dy < 0 && full) || (dy > 0 && z.state.k > z.state.fitK * 1.001))) z.zoomAt(x, y, dy);
+        else if (window.SeSite) window.SeSite.sizeWindow(what, dy);
+      }
       else sizeThing(what, dy);
     });
     const touchedSite = pending.has("site");

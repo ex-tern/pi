@@ -357,7 +357,7 @@
     const r = p.getBoundingClientRect(), k = Math.exp(-dy * 0.0015), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const cur = p._seTo || { w: r.width, h: r.height };
     const to = { w: Math.max(260, Math.min(window.innerWidth - 16, cur.w * k)), h: Math.max(140, Math.min(window.innerHeight - 16, cur.h * k)) };
-    p._seTo = to;
+    p._seTo = to; p.userSized = true; p.seSized = true;               // sized by you (seSized): it may take more than half the inner super (super/loop.js keepWindowsIn)
     const put = s => { p.style.width = s.w + "px"; p.style.height = s.h + "px"; p.style.left = Math.round(cx - s.w / 2) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
     if (window.SeMotion) { const s = { w: r.width, h: r.height }; window.SeMotion.tween(s, to, { duration: 160, easing: "easeOutCubic", update: () => put(s), complete: () => { if (p.item && O().saveWin) O().saveWin(p.item, p); } }); }
     else { put(to); if (p.item && O().saveWin) O().saveWin(p.item, p); }

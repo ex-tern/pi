@@ -449,8 +449,10 @@
         n.el.classList.toggle("is-thinking", !!n.st.go);
         const typing = n.id !== "site-box" && n.str && !n.st.commit;     // a Super AI super being typed into waits for Enter
         if (n.prompt && n.prompt !== n.st.asked && !n.st.go && !n.held && !n.st.timer && !typing) n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 900);   // a new question: ask (once it has settled)
-        // a Super AI super waiting for a wire to run: the moment it is connected, it asks
+        // a Super AI super waiting for a wire to run: the moment it is connected, it asks; disconnected from run
+        // again, what the wire did is undone: the run stops, the answer goes, its question shows (see unrun)
         if (n.st.unrun && !n.st.go && !n.st.timer && n.prompt && connectedToRun(n)) { n.st.unrun = false; n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 300); }
+        if (n.id !== "site-box" && (n.st.go || n.answer) && !n.st.unrun && n.st.asked && !connectedToRun(n)) unrunOne(n);
         if (!n.prompt && (n.answer || n.st.asked)) { n.answer = ""; n.st.asked = ""; persist(); }   // nothing wired in: back to its state
       }
       if (n.fn === "super" || n.fn === "ask") {                          // its status, always current
@@ -725,7 +727,7 @@
     const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
     const who = e => String(e).slice(0, String(e).lastIndexOf("."));
-    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "title" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
+    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "main" || who(e) === "title" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
     const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(known)) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
@@ -754,6 +756,7 @@
     const end = e => {
       const s = String(e), i = s.lastIndexOf("."), w = s.slice(0, i), port = s.slice(i + 1);
       if (w === "site") return { h: "port:" + port, el: 1 };
+      if (w === "main") return { h: "port:main/" + port, el: 1 };     // the main super's ports (super/site.js)
       if (w === "title") return { h: "title", el: 1 };                 // the title super: its edge is the end (super/wire.js host "title")
       if (w.startsWith("bubble:")) { const k = bubbleKey(w.slice(7)); return k ? { h: "port:bubble:" + k + "/" + port, el: 1 } : null; }
       return { h: "port:node:" + w + "/" + port, el: 1 };
@@ -1195,6 +1198,14 @@
     while (q.length) { const id = q.shift(); if (id === "site-box") return true; (near.get(id) || []).forEach(o => { if (!seen.has(o)) { seen.add(o); q.push(o); } }); }
     return false;
   }
+  function unrunOne(n) {
+    if (n.st.run && !n.st.run.finished) n.st.run.stop();
+    if (n.st.ctrl) { try { n.st.ctrl.abort(); } catch (_) { /* fine */ } }
+    n.st.go = false; n.st.run = null; n.answer = ""; n.st.unrun = true; n.st.asked = n.prompt || "";
+    n.el.classList.remove("is-thinking"); persist(); tick();
+    say("Super AI: disconnected from run, it stops; its answer is gone until it is connected again");
+  }
+  function unrun() { nodes.forEach(n => { if (n.role === "engine" && n.id !== "site-box" && (n.st.go || n.answer) && !connectedToRun(n)) unrunOne(n); }); }
   async function askEngine(n, pressed) {
     const prompt = n.prompt || "";
     if (n.role === "engine" && n.id !== "site-box" && window.SuperPrompt && prompt) {
@@ -1270,8 +1281,7 @@
     canvas.className = "lv-canvas";
     canvas.innerHTML = '<svg class="lv-wires" aria-hidden="true"></svg>';
     wires = canvas.firstChild;
-    // a wire: double-click to disconnect that input (round look); in the superellipse look a double click
-    // deletes nothing (owner, 2026-10-12): click it to select it and press Delete
+    // a wire: double-click to disconnect that input; in the superellipse look a click also selects it, and Delete cuts it
     const cut = w => {
       const n = w && nodes.find(x => x.id === w.dataset.node);
       if (!n) return;
@@ -1283,7 +1293,7 @@
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation(); e.preventDefault();
-      if (!html.classList.contains("shape-se")) cut(w);
+      cut(w);
     });
     wires.addEventListener("click", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
@@ -1358,7 +1368,7 @@
         if (!SL.links().length && !restore("lv:start-wired")) {
           save("lv:start-wired", 1);
           const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
-          const end = e => { const t = String(e), i = t.lastIndexOf("."), w = t.slice(0, i), port = t.slice(i + 1); return w === "site" ? { h: "port:" + port, el: 1 } : w === "title" ? { h: "title", el: 1 } : nodes.some(x => x.id === w) ? { h: "port:node:" + w + "/" + port, el: 1 } : null; };
+          const end = e => { const t = String(e), i = t.lastIndexOf("."), w = t.slice(0, i), port = t.slice(i + 1); return w === "site" ? { h: "port:" + port, el: 1 } : w === "main" ? { h: "port:main/" + port, el: 1 } : w === "title" ? { h: "title", el: 1 } : nodes.some(x => x.id === w) ? { h: "port:node:" + w + "/" + port, el: 1 } : null; };
           ((prog && prog.wires) || []).forEach(([a, b]) => { const A = end(a), B = end(b); if (A && B) SL.add(A, B); });
         }
       };
@@ -1390,7 +1400,7 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     // super/scroll.js: a scroll on a node sizes it
-    window.LabView = { loopPort, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+    window.LabView = { loopPort, unrun, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {

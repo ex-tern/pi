@@ -1358,13 +1358,12 @@
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
   let pickedWire = -1;                                  // the bubble wire selected by a click (superellipse look)
   function wireEditing(svg) {
-    // superellipse look: a double click deletes nothing (owner, 2026-10-12); a click selects the wire (cobalt)
-    // and Delete or Backspace removes it, as for text wires (super/wire.js)
+    // a double click deletes a wire; in the superellipse look a click also selects it (cobalt) and Delete or
+    // Backspace removes it, as for text wires (super/wire.js)
     svg.addEventListener("dblclick", e => {
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation(); e.preventDefault();
-      if (merged()) return;
       WIRES.splice(+w.dataset.i, 1);
       saveWires(); drawWires();
     });
