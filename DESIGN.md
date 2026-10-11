@@ -197,7 +197,7 @@ The engines behind the routes:
    graphical language), `super/wire.js` (wiring as the mouse's default; edges and ports as wire ends;
    opening by wiring), `super/move.js` (moving the title, palette and Live), `super/site.js` (the inner super,
    its ports, lattice and values; every super's own shape; windows clipped to supers where CSS cannot),
-   `super/scroll.js` (what a scroll does, where), `super/hover.js` (the super under the pointer lights up cobalt).
+   `super/scroll.js` (what a scroll does, where), `super/hover.js` (the super under the pointer lights up cobalt), `super/select.js` (a super has to be selected before anything inside it answers).
 
 Everything the page remembers lives in `localStorage` under short prefixed keys (`orbit:`, `se:`,
 `lv:`), and a signed-in researcher's layout is synced through the backend.

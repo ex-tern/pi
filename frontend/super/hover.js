@@ -40,6 +40,13 @@
     const z = zone(x, y, hit);
     html.classList.toggle("se-zone-n", z === "n"); html.classList.toggle("se-zone-size", z === "size");
     if (!hit) return set(null, "");
+    // inside a super that is not selected (super/select.js) the super itself is what lights up
+    const Sel = window.SeSelect;
+    if (Sel) {
+      const thing = hit.closest && hit.closest(EL + ", .ob-member");
+      const c = Sel.containerOf(thing, x, y);
+      if (!Sel.isSelected(c)) { if (c === "site") return set(null, "site"); if (c === "loop") return set(null, "loop"); return set(c, ""); }
+    }
     const el = hit.closest && hit.closest(EL);
     if (el) return set(el, "");
     if (hit.closest && hit.closest(".se-port, .sl-layer, .lv-wires, .orbit-wires")) return;   // a port or a wire: leave it as it is

@@ -50,7 +50,7 @@
   }
   // the super whose edge a point is just outside of (within BAND px): the nearest one not covered by
   // something else; then the inner super's ring; nothing when the point is inside every super around it
-  const BAND = 28;
+  const BAND = 12;
   function edgeSuper(x, y, hit) {
     const S = window.SeSite, over = hit && hit.closest ? hit.closest(THING) : null;
     let best = null;
@@ -148,5 +148,5 @@
   setInterval(restore, 1000);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
   // super/hover.js shows the zone by the pointer's shape: the band where a scroll changes n, or a surface a scroll sizes
-  window.SeZoom = { edgeSuper, THING, BAND };
+  window.SeZoom = { edgeSuper, sizeThing, THING, BAND };
 })();

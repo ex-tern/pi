@@ -324,3 +324,9 @@ html.shape-se.se-zone-size, html.shape-se.se-zone-size .orbit-stage, html.shape-
 html.shape-se.se-zone-size .orbit-panel .op-body, html.shape-se.se-zone-size .live-body, html.shape-se.se-zone-size .live-scroll, html.shape-se.se-zone-size .orbit-title,
 html.shape-se.se-zone-size .lv-node, html.shape-se.se-zone-size .lv-palette, html.shape-se.se-zone-size .op-body .card { cursor: pointer; }
 html.shape-se.se-zone-size .orbit-panel input, html.shape-se.se-zone-size .orbit-panel textarea { cursor: text; }
+
+/* the selected super (super/select.js): a cobalt edge that stays; only its inside answers */
+html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel { border-color: var(--cobalt) !important; box-shadow: 0 0 0 1px var(--cobalt); }
+html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 3; }
+html.shape-se.se-sel-site .om-site-loop { stroke: var(--cobalt); stroke-width: 2.5; }
+html.shape-se.se-sel-loop .om-page-loop { stroke: var(--cobalt); }
