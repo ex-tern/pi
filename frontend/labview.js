@@ -426,9 +426,6 @@
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0;
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
-    if (f.k === "dot") {                                                  // a grip on its edge: drag it bigger for a loop
-      // no grip on its edge any more: zooming on it sizes it (zoomNode), and past twice its size it is a loop
-    }
     if (f.k === "ask") {
       n.answer = spec.answer || "";
       const q = field("lv-q", "", "Ask a question, then press Enter");
@@ -652,8 +649,8 @@
     });
     return inp;
   }
-  // ● dragged bigger by its grip: past twice its size it becomes a loop, a ring that counts
-  const DOT = 52, DOT_BASE = 56, LOOP_AT = 104;
+  // ● zoomed past twice its size becomes a loop, a ring that counts
+  const DOT_BASE = 56, LOOP_AT = 104;
   // every node's size is one number (--lv-s); a value, a field or an answer still makes it grow around them
   function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
@@ -668,29 +665,6 @@
     n.fx = (cx - b.width / 2) / window.innerWidth; n.fy = (cy - b.height / 2) / window.innerHeight; place(n);
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
     clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
-  }
-  function grow2(e, n, grip) {
-    if (e.button !== 0) return;
-    e.stopPropagation(); e.preventDefault();
-    const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    try { grip.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
-    const move = ev => {
-      const d = Math.max(DOT, Math.min(Math.min(window.innerWidth, window.innerHeight) - 20, 2 * Math.hypot(ev.clientX - cx, ev.clientY - cy)));
-      sizeDot(n, Math.round(d));
-      n.el.style.left = (cx - d / 2) + "px"; n.el.style.top = (cy - d / 2) + "px";
-      n.el.classList.toggle("is-growing", d >= LOOP_AT && n.role !== "loop");
-    };
-    const up = () => {
-      grip.removeEventListener("pointermove", move); grip.removeEventListener("pointerup", up); grip.removeEventListener("pointercancel", up);
-      n.el.dataset.dragged = "1"; setTimeout(() => { delete n.el.dataset.dragged; }, 350);   // the release is not a press
-      n.el.classList.remove("is-growing");
-      const b = n.el.getBoundingClientRect();
-      n.fx = b.left / window.innerWidth; n.fy = b.top / window.innerHeight;
-      if (n.size >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
-      else if (n.role !== "loop" && n.size < LOOP_AT) sizeDot(n, n.size);
-      persist(); tick();
-    };
-    grip.addEventListener("pointermove", move); grip.addEventListener("pointerup", up); grip.addEventListener("pointercancel", up);
   }
   // π, and everything that follows it, runs or stands still
   function run(on) { if (O().setStill) O().setStill(!on); }

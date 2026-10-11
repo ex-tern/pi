@@ -530,10 +530,6 @@
     });
     return need / pageFit;
   }
-  function fitAt(n) {
-    const cap = (1 - 4 / Math.min(window.innerWidth, H)) / LOOP_M, need = needAt(n);
-    return need > cap ? cap / need * 0.985 : 1;
-  }
   // Windows stay inside the main loop: moved toward its centre, and made smaller only if even
   // centred they would cross it. Not while a pointer is down (a drag or a resize in progress).
   let pointerHeld = false;

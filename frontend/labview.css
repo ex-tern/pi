@@ -104,13 +104,8 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-fn.lv-ask { font-size: 17px; font-weight: 600; }
 
 
-/* ● grows into a loop by the grip on its edge */
-.lv-node .lv-grip { position: absolute; right: -3px; bottom: -3px; width: 12px; height: 12px; border-radius: 50%; background: var(--paper); border: 1.5px solid var(--hair-strong); cursor: nwse-resize; opacity: 0; transition: opacity 0.15s; pointer-events: auto; }
-.lv-node.lv-dot:hover .lv-grip, .lv-node.lv-dot:focus-within .lv-grip, .lv-node.lv-dot.is-growing .lv-grip { opacity: 1; }
-.lv-node.lv-dot.is-growing { border-color: var(--cobalt); border-style: dashed; }
 /* a loop: a ring that counts; what sits inside it stays reachable */
 .lv-node.lv-dot.is-loop { background: transparent; box-shadow: none; border: 1.5px solid var(--ink); pointer-events: none; z-index: 0; }
-.lv-node.lv-dot.is-loop .lv-grip { opacity: 1; }
 .lv-node.lv-dot.is-loop .lv-val { top: -9px; transform: translateX(-50%); pointer-events: auto; cursor: pointer; color: var(--ink); font-size: 12px; }
 .lv-node.lv-dot.is-loop.is-stopped { border-style: dashed; border-color: var(--cobalt); }
 .lv-node.lv-dot.is-loop::after { display: none; }
@@ -157,7 +152,7 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-super, html.shape-se .lv-node.lv-super { background: transparent; }
 .lv-node.lv-super .lv-star { fill: none; }
 .lv-node .lv-val { background: transparent; }
-/* one size per node, set by scrolling on it (or the ● grip) */
+/* one size per node, set by zooming on it */
 .lv-node, html.shape-se .lv-node,
 .lv-node.lv-box, html.shape-se .lv-node.lv-box,
 .lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
