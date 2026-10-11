@@ -101,9 +101,9 @@
         const r = el.getBoundingClientRect();
         if (!r.width || !r.height) return;
         // the corners at full size: what is on screen, unscaled about the pivot (by whichever factor scaled it)
-        const k = (siteEl(el) || el.closest(".orbit-bubbles")) ? f : fitOther;
+        const site = !!(siteEl(el) || el.closest(".orbit-bubbles")), k = site ? f : fitOther;
         for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
-          corners.push([px + (x - px) / k, py + (y - py) / k]);
+          corners.push([px + (x - px) / k, py + (y - py) / k, site]);
       });
       measuredAt = performance.now();
     }
@@ -137,11 +137,13 @@
       placeBubblesLayer();
     }
     // how big the loop must be (in units of its usual a, b) to hold the page at full size: from the cached corners
-    function needAt(n) {
+    // site: true counts only what the zoom scales (the bubbles, the nodes), false only the rest (the title,
+    // the counter, the palette, Live), undefined everything
+    function needAt(n, site) {
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2;
       if (!corners.length || performance.now() - measuredAt > 400) measure();
       let need = 0;
-      for (const [x, y] of corners) need = Math.max(need, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
+      for (const [x, y, s] of corners) if (site == null || s === site) need = Math.max(need, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
       return need;
     }
     // Windows stay inside the main loop: moved toward its centre, and made smaller only if even
@@ -240,12 +242,15 @@
       if (!pageLoop()) { setFit(1, 1); if (merged()) drawMini(); return; }
       const Wv = window.innerWidth, Hv = ctx.H(), n = loopN();
       const A = LOOP_M * Wv / 2, B = LOOP_M * Hv / 2, cx = Wv / 2, cy = ctx.top() + Hv / 2;
-      const need = needAt(n);
       // no padding: the loop always reaches the display's edges (its a×b box is the screen, less its stroke)
       const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
       const sc = cap;
-      const room = need > 0 ? cap / need * 0.985 : zoom;                 // the largest scale that still fits inside the loop
-      fitTo(Math.max(0.005, Math.min(zoom, room)), Math.max(0.005, Math.min(1, room)), cx, cy);
+      // the largest scale that still fits inside the loop, for the site (what the zoom scales) and for the rest
+      // apart: the title and Live sit near the display's edge and are never zoomed, so counting them capped the
+      // zoom at about 1 and the inner super could not grow (owner, 2026-10-11)
+      const needS = needAt(n, true), needO = needAt(n, false);
+      const roomS = needS > 0 ? cap / needS * 0.985 : zoom, roomO = needO > 0 ? cap / needO * 0.985 : 1;
+      fitTo(Math.max(0.005, Math.min(zoom, roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
       const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
       loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
       if (key === loopKey) return;
