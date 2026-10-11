@@ -59,7 +59,8 @@ window.SUPERAI_PROGRAM = {
     { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
     { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"] },
     { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"] },
-    { title: "Connect", key: "connect", members: ["Your account", "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
+    { title: "Connect", key: "connect", members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
+                                                 "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
 
   // ---- the diagram a first visit starts with ---------------------------------------------------------
