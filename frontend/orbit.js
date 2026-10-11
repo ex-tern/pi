@@ -514,32 +514,47 @@
     if (window.SeMotion) { const s = { v: zoom }; window.SeMotion.glide("page:zoom", s, "v", target, 160, () => { zoom = s.v; loopKey = ""; drawLoop(); }); }
     else { zoom = target; loopKey = ""; drawLoop(); }
   }
+  // Smoothness: the page is measured (every element's box, and where each scaled element pivots) once per
+  // layout tick, never inside an animation frame, so a frame that moves n or the zoom does arithmetic and
+  // style writes only, with no layout forced in between.
+  let fitEls = [], corners = [], measuredAt = 0;
+  function measure() {
+    const px = window.innerWidth / 2, py = top + H / 2, f = pageFit;
+    fitEls = [...document.querySelectorAll(FIT)].map(el => {
+      let lx = 0, ly = 0;
+      for (let e = el; e; e = e.offsetParent) { lx += e.offsetLeft; ly += e.offsetTop; }
+      return { el, origin: (px - lx).toFixed(1) + "px " + (py - ly).toFixed(1) + "px" };
+    });
+    corners = [];
+    document.querySelectorAll(CONTAIN).forEach(el => {
+      if (el.hidden || !el.getClientRects().length) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      // the corners at full size: what is on screen, unscaled about the pivot
+      for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
+        corners.push([px + (x - px) / f, py + (y - py) / f]);
+    });
+    measuredAt = performance.now();
+  }
   function setFit(f, px, py) {
     f = Math.round(f * 200) / 200;
     if (f === pageFit && f === 1) return;
     pageFit = f;
     document.documentElement.classList.toggle("orbit-fit", f < 1);
-    document.querySelectorAll(FIT).forEach(el => {
+    if (!fitEls.length || performance.now() - measuredAt > 400) measure();
+    fitEls.forEach(({ el, origin }) => {
       if (f === 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
-      // its layout box, where it sits before any transform: scaled about (px, py) from there
-      let lx = 0, ly = 0;
-      for (let e = el; e; e = e.offsetParent) { lx += e.offsetLeft; ly += e.offsetTop; }
-      el.style.transformOrigin = (px - lx).toFixed(1) + "px " + (py - ly).toFixed(1) + "px";
+      if (el.style.transformOrigin !== origin) el.style.transformOrigin = origin;
       el.style.scale = String(f);
     });
   }
-  // how big the loop must be (in units of its usual a, b) to hold the page at full size
+  // how big the loop must be (in units of its usual a, b) to hold the page at full size: from the cached corners
   function needAt(n) {
     const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = top + H / 2;
+    if (!corners.length || performance.now() - measuredAt > 400) measure();
     let need = 0;
-    document.querySelectorAll(CONTAIN).forEach(el => {
-      if (el.hidden || !el.getClientRects().length) return;
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      for (const x of [r.left - 6, r.right + 6]) for (const y of [r.top - 6, r.bottom + 6])
-        need = Math.max(need, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
-    });
-    return need / pageFit;
+    for (const [x, y] of corners) need = Math.max(need, seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n));
+    return need;
   }
   // Windows stay inside the main loop: moved toward its centre, and made smaller only if even
   // centred they would cross it. Not while a pointer is down (a drag or a resize in progress).
@@ -585,7 +600,7 @@
     loopKey = key;
     const X0 = Wv / 2, Y0 = Hv / 2, pts = [];
     if (sc < 3) {                                        // the whole curve, by angle
-      const e = 2 / n, K = 720;
+      const e = 2 / n, K = 360;
       for (let i = 0; i < K; i++) {
         const t = i / K * 2 * Math.PI, c = Math.cos(t), sn = Math.sin(t);
         pts.push([X0 + a * Math.sign(c) * Math.pow(Math.abs(c), e), Y0 + b * Math.sign(sn) * Math.pow(Math.abs(sn), e)]);
@@ -596,13 +611,23 @@
       for (let i = 0; i <= K; i++) { const x = -X + 2 * X * i / K; pts.push([X0 + x, Y0 - yAt(x)]); }
       for (let i = K; i >= 0; i--) { const x = -X + 2 * X * i / K; pts.push([X0 + x, Y0 + yAt(x)]); }
     }
-    const svg = $(".om-page"), path = $(".om-page-loop");
+    const svg = EL.page || (EL.page = $(".om-page")), path = EL.loop || (EL.loop = $(".om-page-loop"));
     if (svg) svg.setAttribute("viewBox", "0 0 " + Wv + " " + Hv);
     loopD = "M" + pts.map(p => p[0].toFixed(1) + "," + p[1].toFixed(1)).join("L") + "Z";
     if (path) path.setAttribute("d", loopD);
-    const pp = $(".om-page-pipath"); if (pp) pp.setAttribute("d", loopD + loopD);   // twice round: the digits wrap
+    // the π line's path (text on a path is costly to lay out): at most a few times a second while the loop
+    // moves, and once more when it has settled
+    const pp = EL.pipath || (EL.pipath = $(".om-page-pipath"));
+    if (pp) {
+      const now = performance.now();
+      clearTimeout(piPathT);
+      if (now - piPathAt > 150) { piPathAt = now; pp.setAttribute("d", loopD + loopD); }
+      else piPathT = setTimeout(() => { piPathAt = performance.now(); pp.setAttribute("d", loopD + loopD); }, 160);
+    }
   }
   let loopD = "";
+  const EL = {};                      // the loop's elements, looked up once
+  let piPathAt = 0, piPathT = 0;
   // The loop can be wired like a bubble. loopPoint gives the point on it facing (x, y), in
   // screen coordinates; nearLoop says whether (x, y) is on its edge (or on the mark, when small).
   function loopPoint(x, y) {
@@ -626,9 +651,12 @@
   }
   // the diameter, reaching the loop at every angle
   function sweepPx(deg) {
-    const tp = $(".om-page-pi textPath");
-    if (tp) tp.setAttribute("startOffset", ((((deg / 8) % 360) + 360) % 360 / 720 * 100).toFixed(2) + "%");   // the π line creeps round the loop, slowly (an eighth of the sweep)
-    const line = $(".om-page-r");
+    const tp = EL.tp || (EL.tp = $(".om-page-pi textPath"));
+    if (tp) {                                                      // the π line creeps round the loop, slowly (an eighth of the sweep)
+      const off = ((((deg / 8) % 360) + 360) % 360 / 720 * 100).toFixed(1) + "%";
+      if (off !== sweepPx.last) { sweepPx.last = off; tp.setAttribute("startOffset", off); }   // a tenth of a percent at a time: a few times a second, not every frame
+    }
+    const line = EL.r || (EL.r = $(".om-page-r"));
     if (!line) return;
     const th = deg * Math.PI / 180, c = Math.cos(th), sn = Math.sin(th), { cx, cy, a, b, n } = loopG;
     const r = Math.min(Math.hypot(cx, cy) * 2, 1 / seNorm(Math.abs(c) / a, Math.abs(sn) / b, n));
@@ -1579,7 +1607,15 @@
       move(e);
     });
   }
-  setInterval(() => { if (document.visibilityState === "visible") { drawWires(); seatEdges(); drawLoop(); keepWindowsIn(); } }, 250);
+  let seatKey = "";
+  setInterval(() => {
+    if (document.visibilityState !== "visible") return;
+    drawWires();
+    const pal = $(".lv-palette"), live = $(".live-dock.open .live-body"), title = $(".orbit-title");
+    const k = [window.innerWidth, window.innerHeight, pal && pal.offsetWidth, live && live.offsetWidth, title && title.offsetWidth].join();
+    if (k !== seatKey) { seatKey = k; seatEdges(); }               // the frame changed: re-seat the edges
+    measure(); drawLoop(); keepWindowsIn();
+  }, 250);
 
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered

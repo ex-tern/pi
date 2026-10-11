@@ -283,3 +283,7 @@ html.shape-se .orbit-panel .progress-track, html.shape-se .orbit-panel .progress
 /* what is pressable inside a window shows it; the one accent stays cobalt */
 html.shape-se .orbit-panel button:not(:disabled), html.shape-se .orbit-panel a, html.shape-se .orbit-panel .btn-like, html.shape-se .orbit-panel summary { cursor: pointer; }
 html.shape-se .orbit-panel button:focus-visible, html.shape-se .orbit-panel input:focus-visible, html.shape-se .orbit-panel select:focus-visible, html.shape-se .orbit-panel textarea:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+
+/* smooth motion: what scales or moves as one is promoted to its own layer */
+html.shape-se .orbit-bubbles, html.shape-se .orbit-title, html.shape-se .lv-palette, html.shape-se .live-dock, html.shape-se .lv-node { will-change: transform, scale, translate; }
+html.shape-se .om-page, html.shape-se .om-site, html.shape-se .sl-layer, html.shape-se .lv-wires, html.shape-se .orbit-wires { contain: layout paint; }
