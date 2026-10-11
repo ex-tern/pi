@@ -725,7 +725,7 @@
     const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
     const who = e => String(e).slice(0, String(e).lastIndexOf("."));
-    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && who(e).startsWith("bubble:"));   // bubble wires: the superellipse look (bubbles are supers there)
+    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "title" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
     const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(known)) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
@@ -754,6 +754,7 @@
     const end = e => {
       const s = String(e), i = s.lastIndexOf("."), w = s.slice(0, i), port = s.slice(i + 1);
       if (w === "site") return { h: "port:" + port, el: 1 };
+      if (w === "title") return { h: "title", el: 1 };                 // the title super: its edge is the end (super/wire.js host "title")
       if (w.startsWith("bubble:")) { const k = bubbleKey(w.slice(7)); return k ? { h: "port:bubble:" + k + "/" + port, el: 1 } : null; }
       return { h: "port:node:" + w + "/" + port, el: 1 };
     };
@@ -764,6 +765,7 @@
       if (left.length && (tries || 0) < 30) { prog.wires = left; setTimeout(() => wireUp((tries || 0) + 1), 200); }   // the bubbles may not be built yet
     };
     wireUp(0);
+    save("lv:start-wired", 1);
     persist();
   }
   function remove(n) {
@@ -1347,12 +1349,18 @@
     else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && !fresh && nodes.find(x => x.id === id)) {
-      // nothing is wired by itself (owner, 2026-10-12): the older wiring to the central super's body is only
-      // let go of (its ports are the wire ends now); what the visitor wired stays, what they deleted stays deleted
+      // the older wiring to the central super's body is let go of (its ports are the wire ends now); a kept
+      // diagram with no wires at all gets the start's wires once (lv:start-wired); what the visitor wired stays
       const wire = () => {
         const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wire, 100);
         const me = "node:" + id;
         if (SL.links().some(l => (l.a && l.a.h === me) || (l.b && l.b.h === me))) SL.forget(me);
+        if (!SL.links().length && !restore("lv:start-wired")) {
+          save("lv:start-wired", 1);
+          const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
+          const end = e => { const t = String(e), i = t.lastIndexOf("."), w = t.slice(0, i), port = t.slice(i + 1); return w === "site" ? { h: "port:" + port, el: 1 } : w === "title" ? { h: "title", el: 1 } : nodes.some(x => x.id === w) ? { h: "port:node:" + w + "/" + port, el: 1 } : null; };
+          ((prog && prog.wires) || []).forEach(([a, b]) => { const A = end(a), B = end(b); if (A && B) SL.add(A, B); });
+        }
       };
       wire();
     }

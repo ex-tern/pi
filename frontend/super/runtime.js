@@ -35,7 +35,7 @@
     const d = p.diagram;
     if (!d || typeof d !== "object") bad.push("diagram must be an object");
     else {
-      const ids = new Set(["site"]);
+      const ids = new Set(["site", "title"]);
       if (isArr(d.supers, "diagram.supers")) d.supers.forEach((s, i) => {
         if (!s || !s.id) { bad.push("diagram.supers[" + i + "] needs an id"); return; }
         if (ids.has(s.id)) bad.push("two supers are called " + s.id);

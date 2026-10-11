@@ -276,7 +276,7 @@ pub fn read(j: &Json) -> Result<Program, Vec<String>> {
     if !matches!(j.get("supers"), Some(Json::Arr(_))) {
         bad.push("supers must be a list".to_string());
     }
-    let mut ids: Vec<String> = vec!["site".into()];
+    let mut ids: Vec<String> = vec!["site".into(), "title".into()];
     for (i, s) in j.get("supers").map(Json::arr).unwrap_or(&[]).iter().enumerate() {
         let id = match s.s("id") {
             Some(id) if !id.is_empty() => id.to_string(),
