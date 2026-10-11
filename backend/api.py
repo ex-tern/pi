@@ -599,7 +599,10 @@ def verify_wallet(req: WalletVerifyRequest, request: Request):
 # these callbacks must be registered with the ORCID app:
 #   https://pitechlab.com/api/auth/orcid/callback
 #   https://exp.pitechlab.com/api/auth/orcid/callback
-_OWN_ORIGINS = ("https://pitechlab.com", "https://www.pitechlab.com", "https://exp.pitechlab.com")
+#   https://se.pitechlab.com/api/auth/orcid/callback
+#   https://super.pitechlab.com/api/auth/orcid/callback
+_OWN_ORIGINS = ("https://pitechlab.com", "https://www.pitechlab.com", "https://exp.pitechlab.com",
+                "https://se.pitechlab.com", "https://super.pitechlab.com")
 
 
 def resolve_orcid_redirect_uri(request: Request) -> str:
