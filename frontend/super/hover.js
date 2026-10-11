@@ -42,10 +42,9 @@
     if (!hit) return set(null, "");
     // inside a super that is not selected (super/select.js) the super itself is what lights up
     const Sel = window.SeSelect;
-    if (Sel) {
-      const thing = hit.closest && hit.closest(EL + ", .ob-member");
-      const c = Sel.containerOf(thing, x, y);
-      if (!Sel.isSelected(c)) { if (c === "site") return set(null, "site"); if (c === "loop") return set(null, "loop"); return set(c, ""); }
+    if (Sel && Sel.superAt) {
+      const at = Sel.superAt(hit, x, y);
+      if (at.inside && !Sel.isSelected(at.inside)) { const c = at.inside; if (c === "site") return set(null, "site"); if (c === "loop") return set(null, "loop"); return set(c, ""); }
     }
     const el = hit.closest && hit.closest(EL);
     if (el) return set(el, "");

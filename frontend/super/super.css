@@ -299,9 +299,13 @@ html.shape-se .orbit-title { left: 14%; }
 
 /* ports on every super (super/site.js): a window's and a loop's four ports sit on its sides, small,
    the name shown when the pointer is near; a window held by its condition port is dimmed */
-.se-port-owned { z-index: 960; padding: 3px 4px; gap: 3px; font-size: 10px; }
+.se-port-owned { z-index: 960; padding: 2px; gap: 0; font-size: 10px; }                    /* just the dot: the name takes no room (a small node's body stays its own) */
 .se-port-owned .se-port-dot { width: 8px; height: 8px; }
-.se-port-owned .se-port-name { opacity: 0; transition: opacity 0.15s ease; }
+.se-port-owned .se-port-name { opacity: 0; transition: opacity 0.15s ease; position: absolute; white-space: nowrap; pointer-events: none; }
+.se-port-owned.se-port-left .se-port-name { right: 100%; margin-right: 4px; }
+.se-port-owned.se-port-right .se-port-name { left: 100%; margin-left: 4px; }
+.se-port-owned.se-port-top .se-port-name { bottom: 100%; margin-bottom: 2px; }
+.se-port-owned.se-port-bottom .se-port-name { top: 100%; margin-top: 2px; }
 .se-port-owned:hover .se-port-name, html.sl-dragging .se-port-owned .se-port-name, html.lv-dragging .se-port-owned .se-port-name { opacity: 1; }
 html.shape-se .orbit-panel.se-held { opacity: 0.45; }
 html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }

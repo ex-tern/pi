@@ -3,10 +3,10 @@
 // The supers nest: the main loop holds the inner super, the title, Live, the nodes and the loops; the
 // inner super holds the bubbles and the windows; a window holds its cards; a bubble holds its pills; a
 // loop holds the nodes inside its ring. One super is selected at a time (the main loop at first) and
-// shows a cobalt edge. A click, a scroll, a drag or a wire on something inside a super that is not
-// selected does not reach it: the first click selects that super instead, and a scroll there sizes
-// the super as a whole (a finger on its surface). Once a super is selected, everything inside it
-// answers as usual: a click on its bare space makes a node, a scroll sizes a thing, a drag wires it.
+// shows a cobalt edge. A click on a super selects it (and goes on to it). A click, a scroll, a drag or
+// a wire on something inside a super that is not selected does not reach it: the click selects that
+// super instead, and a scroll there sizes the super as a whole. Once a super is selected, everything
+// inside it answers as usual: a double click on its bare space makes a node, a scroll sizes a thing.
 (function () {
   "use strict";
   const html = document.documentElement;
@@ -53,26 +53,43 @@
   }
   const name = s => s === "loop" ? "the main super" : s === "site" ? "the site" : s.classList.contains("orbit-panel") ? "the window" : s.classList.contains("orbit-bubble") ? "the bubble" : "the loop";
 
-  // a pointer on something inside an unselected super: the super is selected instead, nothing inside moves
+  // what a point is on: a super itself (a bubble, a window, a node, a loop, the inner super's or the main
+  // loop's bare space), or something inside one (a pill, a card, a button: {inside: its super})
+  function superAt(t, x, y) {
+    if (t && t.closest) {
+      let h;
+      if ((h = t.closest(INSIDE_PANEL + ", .op-body, .op-head"))) return { inside: h.closest(".orbit-panel") || "site" };
+      if ((h = t.closest(".ob-member, .ob-chat"))) return { inside: h.closest(".orbit-bubble") || "site" };
+      if ((h = t.closest(".orbit-panel"))) return { on: h };
+      if ((h = t.closest(".orbit-bubble"))) return { on: h };
+      if ((h = t.closest(".lv-node"))) return { on: h };
+      if (t.closest(".orbit-title, .live-dock, .lv-palette")) return { inside: "loop" };
+    }
+    return { on: loopHolding(x, y) || (inSite(x, y) ? "site" : "loop") };
+  }
+  // a click on a super selects it (and goes on to it: a drag, a press); a click on something inside a super
+  // that is not selected selects that super instead and goes no further
   document.addEventListener("pointerdown", e => {
     if (!on() || e.button !== 0) return;
     const t = e.target, x = e.clientX, y = e.clientY;
     if (ownCursor(t)) return;                                  // ports and wires are the lattice's own, always live
-    const c = containerOf(isThing(t) || (t.closest && t.closest(INSIDE_PANEL + ", .ob-member")) ? t : null, x, y);
-    if (c === sel) return;
+    const at = superAt(t, x, y);
+    if (at.on) { select(at.on); return; }
+    if (at.inside === sel) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    select(c);
-    const out = document.querySelector(".lv-out"); if (out) out.textContent = "Selected " + name(c) + ": now its inside answers";
+    select(at.inside);
+    const out = document.querySelector(".lv-out"); if (out) out.textContent = "Selected " + name(at.inside) + ": now its inside answers";
   }, true);
-  // a scroll inside an unselected super sizes the super as a whole
+  // a scroll on something inside an unselected super sizes the super as a whole
   document.addEventListener("wheel", e => {
     if (!on() || e.shiftKey) return;
     const t = e.target, x = e.clientX, y = e.clientY;
     if (ownCursor(t)) return;
     const Z = window.SeZoom;
     if (Z && Z.edgeSuper && Z.edgeSuper(x, y, t)) return;       // the band outside a super: its n, as always
-    const c = containerOf(isThing(t) || (t.closest && t.closest(INSIDE_PANEL + ", .ob-member")) ? t : null, x, y);
-    if (c === sel) return;
+    const at = superAt(t, x, y);
+    if (at.on || at.inside === sel) return;
+    const c = at.inside;
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);
     if (c === "loop") return;                                   // the main super is the display: nothing to size
@@ -86,5 +103,5 @@
   setInterval(() => { const el = elOf(sel); if (el && !el.isConnected) select("loop"); }, 500);
   document.addEventListener("dblclick", e => { if (on() && e.target.closest && e.target.closest(".wire-hit")) return; }, true);
   select("loop");
-  window.SeSelect = { selected: () => sel, select, containerOf, isSelected: s => s === sel };
+  window.SeSelect = { selected: () => sel, select, containerOf, superAt, isSelected: s => s === sel };
 })();
