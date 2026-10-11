@@ -181,3 +181,5 @@ html.shape-se .orbit-pi { visibility: hidden; pointer-events: none; }
 .om-page-pi .om-pi-count { fill: var(--faint, #9a9a96); letter-spacing: 0.02em; }
 .om-page-pi.is-still { opacity: 0.3; }
 html.shape-se:not(.orbit-on) .om-page-pi { display: none; }
+/* no "n = …" label while scrolling: the shape says it */
+html.shape-se .orbit-nread { display: none; }
