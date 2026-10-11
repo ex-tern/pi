@@ -443,6 +443,7 @@
         n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
         n.el.classList.toggle("is-loop", n.role === "loop");
         n.el.classList.toggle("is-holder", isHolder(n));
+        autoShape(n);
         fitText(n);
         n.el.classList.toggle("has-val", !!n.text && !n.field && n.role !== "stop" && n.role !== "loop");
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
@@ -559,7 +560,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -606,7 +607,7 @@
       });
       return inp;
     };
-    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold;
+    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual;
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -632,13 +633,31 @@
     n.el.dataset.n = n.n.toFixed(3);
     if (!hasCorner && window.SeMorph) { const s = n.size || DOT_BASE; n.el.style.clipPath = "path('" + window.SeMorph.star(s / 2, s / 2, s / 2, s / 2, n.n) + "')"; }
   }
+  // A ■'s n follows its size and its use, inside the ■ band (2.6–5, so it stays what it is): small and new
+  // it is soft (n ≈ 2.8), bigger it is boxier (a holder reaches ≈ 4), and each use firms it a little more
+  // (up to +0.8). Changed by hand (Shift + scroll, or a scroll on its ring) it keeps the n you gave it.
+  function autoN(n) {
+    const s = Math.max(0, Math.min(1, ((n.size || DOT_BASE) - DOT_BASE) / 340));
+    const u = 1 - Math.exp(-(n.use || 0) / 8);
+    return Math.max(2.7, Math.min(4.9, 2.8 + 1.3 * s * (2 - s) + 0.8 * u));
+  }
+  function used(n, k) { n.use = (n.use || 0) + (k || 1); clearTimeout(n.st.ut); n.st.ut = setTimeout(persist, 800); }
+  function autoShape(n) {
+    if (n.fn !== "box" || n.manual || n.role === "stop") return;
+    const want = autoN(n);
+    if (Math.abs(want - n.n) < 0.02) return;
+    n.n = n.n + (want - n.n) * 0.35;                                   // eases toward it over a few ticks
+    if (Math.abs(want - n.n) < 0.02) n.n = want;
+    shape(n);
+  }
   // shift + scroll on a node: its n, and with it what it is (the same node, same id, same wires)
   function reshape(n, dy) {
+    n.manual = true;                                                   // your n: it no longer follows size and use
     const nn = Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
     n.st.nTo = nn;
     const fn = fnOfN(nn);
     if (fn !== n.fn) {                                              // across a band: it becomes that function
-      const spec = { id: n.id, fn, fx: n.fx, fy: n.fy, inputs: n.inputs, n: nn, size: n.size, str: n.str, answer: n.answer };
+      const spec = { id: n.id, fn, fx: n.fx, fy: n.fy, inputs: n.inputs, n: nn, size: n.size, str: n.str, answer: n.answer, use: n.use, manual: true };
       const i = nodes.indexOf(n); n.el.remove(); nodes.splice(i, 1);
       const m = make(spec); m.st.nTo = nn; say(BY[fn].name + " now"); persist(); tick(); return;
     }
@@ -814,6 +833,7 @@
         const other = ontoEl && nodes.find(x => x.el === ontoEl);
         if (other && !isHolder(other)) {
           window.SuperLink.add({ h: "port:node:" + n.id + "/output", el: 1 }, { h: "port:node:" + other.id + "/input", el: 1 });
+          used(n); used(other);
           const home = holderOf(other);                                 // wired inside a holder: it stays inside it
           beside(n, ontoEl, ev.clientX, ev.clientY);
           if (home && !within(home, n)) {
@@ -877,6 +897,7 @@
     n.el.addEventListener("pointerdown", e => { if (!(e.target.closest && e.target.closest("input"))) n.el.focus({ preventScroll: true }); drag(e, n.el, null); });
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
+      used(n);
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       const wired = n.inputs.length + linkIns(n).length > 0;
       if (n.fn === "super") askEngine(n, true);
@@ -1028,6 +1049,7 @@
   // a Super AI super (made by a double click): every engine, the lab's and the outside models, each answer
   // kept with it (n.st.run) for the box; its short answer (the verdict, else siM's) shows inside it
   function askEvery(n, prompt) {
+    used(n, 2);
     if (n.st.run && !n.st.run.finished) n.st.run.stop();
     const r = window.SuperPrompt.run(prompt.slice(0, 4000));
     follow(n, r, prompt);
