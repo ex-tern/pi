@@ -99,6 +99,15 @@
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
         set.input.classList.toggle("is-held", p.classList.contains("se-held"));
       });
+      // the main super has the four ports too, where the lattice lines meet it: input left, output right,
+      // sync top, condition bottom (a little inside the display's edge, so they can be reached)
+      const g = O().loop ? O().loop() : null;
+      if (g && g.a) {
+        const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0, IN = 10;
+        seen.add("main");
+        const set = ensurePorts("main", "the main super");
+        placeAt(set, g.cx, g.cy + off, g.a - IN, g.b - IN);
+      }
       document.querySelectorAll(".orbit-bubble[data-key]").forEach(bb => {   // bubbles are supers too
         if (bb.hidden || !bb.getClientRects().length) return;
         const r = bb.getBoundingClientRect(); if (!r.width) return;
@@ -123,7 +132,7 @@
   const ownerEl = owner => owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
     : owner.startsWith("bubble:") ? bubbleEl(owner.slice(7))
     : owner.startsWith("node:") ? document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]') : null;
-  const ownerName = owner => { if (owner === "site") return "the site"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
+  const ownerName = owner => { if (owner === "site") return "the site"; if (owner === "main") return "the main super"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
     if (owner.startsWith("bubble:")) { const i = O().info && O().info(owner.slice(7)); return i ? i.title : "the bubble"; } return "the node"; };
   // a bubble's ports: output is its name and its pills, input goes into its field (SciM's), a tick brings it up, condition false holds it
   const bubState = {};
@@ -145,7 +154,12 @@
     return { num: st.held ? 0 : 1, isNum: true, bool: !st.held, str: st.held ? "held" : "running", text: st.held ? "held" : "running" };
   }
   // super/nodes.js: what is wired into a window's ports now (values, or null for nothing wired)
+  let mainInput = "";
   function setPortInput(owner, port, vals) {
+    if (owner === "main") {                                  // the page's input feeds the site's question; its condition pauses everything
+      if (port === "input") mainInput = (vals || []).map(v => v && (v.text != null ? v.text : v.str)).filter(Boolean).join(" ").trim();
+      return;
+    }
     if (owner.startsWith("bubble:")) {
       const key = owner.slice(7), el = bubbleEl(key); if (!el) return;
       const st = bubState[key] || (bubState[key] = { input: "", ticks: 0, held: false, sync: null });
@@ -237,6 +251,7 @@
       const [owner, port] = pid.split("/");
       if (owner.startsWith("win:")) return winValue(owner.slice(4), port);
       if (owner.startsWith("bubble:")) return bubbleValue(owner.slice(7), port);
+      if (owner === "main") return port === "input" ? { num: mainInput.length, bool: !!mainInput, str: mainInput, text: mainInput } : value(port);   // the page's terminals: its output, clock and condition are the site's
       const LV = window.LabView; return LV && LV.loopPort ? LV.loopPort(owner.slice(5), port) : { num: 0, bool: false, str: "", text: "" };
     }
     const port = pid;
@@ -389,5 +404,5 @@
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
   document.addEventListener("se:frame:first", () => { layout(); layoutOwned(); });   // super/motion.js: while something moves, every frame, before the wires
-  window.SeSite = { value, setInput, setOutput, setCondition, setPortInput, ownerName, ownerEl, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portIds: () => Object.keys(ports), portEl: p => ports[p] || null };
+  window.SeSite = { value, mainInput: () => mainInput, setInput, setOutput, setCondition, setPortInput, ownerName, ownerEl, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portIds: () => Object.keys(ports), portEl: p => ports[p] || null };
 })();

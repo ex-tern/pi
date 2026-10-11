@@ -420,17 +420,17 @@
     const S = window.SeSite, SL = window.SuperLink;
     if (!S || !SL || !SL.links) return;
     const into = pid => SL.links().map(l => (l.a && l.a.h === "port:" + pid) ? l.b : (l.b && l.b.h === "port:" + pid) ? l.a : null).filter(an => an && !sinkPort(an)).map(valueOfAnchor);
-    const ins = into("input");
+    const ins = into("input").concat(into("main/input"));                 // the main super's input is the page's question too
     S.setInput(ins.map(strOf).filter(Boolean).join(" "));
     const outs = into("output");                                          // the site's output: what is wired into it (the central engine)
     S.setOutput(outs.length ? outs.map(strOf).filter(Boolean).join(" ") : null);
-    const cond = into("condition");
+    const cond = into("condition").concat(into("main/condition"));        // wired false, the main super's condition pauses the page
     S.setCondition(cond.length ? cond.every(v => v.bool) : null);
     // every other super's ports: windows (super/site.js takes them) and loops (here)
     (S.portIds ? S.portIds() : []).forEach(pid => {
       if (!pid.includes("/")) return;
       const [owner, port] = pid.split("/");
-      if (port === "output") return;
+      if (port === "output" || owner === "main" && port !== "input") return;
       const vals = into(pid);
       if (owner.startsWith("node:")) feedNode(owner.slice(5), port, vals.length ? vals : null);
       else if (S.setPortInput) S.setPortInput(owner, port, vals.length ? vals : null);

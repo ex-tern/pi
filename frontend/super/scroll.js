@@ -80,30 +80,48 @@
     return null;
   }
   const seNorm = (u, v, n) => Math.pow(Math.pow(u, n) + Math.pow(v, n), 1 / n);
-  // THE zone, one function for the pointer's shape (super/hover.js) and for what a scroll does (below):
-  //   "hand"  on a super: a thing's surface, the inner super's inside, the main loop's own ring  → its n
-  //   "arrow" off a super: the band just outside a thing or the inner ring, the bare space between,
-  //           the bare corners                                                                   → zoom
+  // THE zone, one function for the pointer's shape (super/hover.js) and for what a scroll does (below), the
+  // same for every super, as the main loop does it:
+  //   "hand"  on a super's ring: within a band either side of its edge          → a scroll changes its n
+  //   "arrow" inside a super, away from its ring                                → a scroll zooms it: a thing
+  //           is sized, the inner super's and the main loop's inside zoom the site
   // target: the super (an element, "site" or "loop") the scroll acts on
-  const RING = 18;                                          // the main loop's ring: this close to its edge, inside or out
+  const RING_IN = 16, RING_OUT = 12;                        // the ring's band, inside and outside the edge
+  const ringBand = (w, h) => { const k = Math.min(1, Math.min(w, h) / 64); return { in: Math.max(3, RING_IN * k), out: Math.max(3, RING_OUT * k) }; };
   function zoneAt(x, y, hit) {
     if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit")) return null;
-    const edge = edgeSuper(x, y, hit);
-    if (edge) return { kind: "arrow", target: edge.shapeOf };                     // just outside a super: size it
-    const el = hit && hit.closest ? hit.closest(THING) : null;
-    if (el && !el.classList.contains("se-port")) return { kind: "hand", target: el };
-    const loopRing = window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
-    if (loopRing) return { kind: "hand", target: loopRing };
-    const S = window.SeSite || {};
-    if (S.inSite && S.inSite(x, y)) return { kind: "hand", target: "site" };       // the inner super's inside: its n
+    const over = hit && hit.closest ? hit.closest(THING) : null;
+    let best = null;                                          // the nearest ring the point is on
+    const S = window.SeSite || {}, sel = (S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
+    document.querySelectorAll(sel).forEach(el => {
+      if (el.hidden || !el.getClientRects().length || el.classList.contains("se-port")) return;
+      const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
+      const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
+      const d = ins ? -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y)
+        : Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      const b = ringBand(r.width, r.height);
+      if (d < -b.in || d > b.out) return;
+      if (over && over !== el && !over.contains(el) && !el.contains(over)) return;    // the point is on something else
+      if (!best || Math.abs(d) < Math.abs(best.d)) best = { target: el, d };
+    });
+    const site = S.site && S.site();
+    if (site) {
+      const d = (seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n) - 1) * Math.min(site.a, site.b);
+      if (d >= -RING_IN && d <= RING_OUT && (!best || Math.abs(d) < Math.abs(best.d)) && !over) best = { target: "site", d };
+    }
     const g = O().loop ? O().loop() : null;
     if (g && g.a) {
-      const top = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
-      const d = seNorm(Math.abs(x - g.cx) / g.a, Math.abs(y - (g.cy + top)) / g.b, g.n);
-      if (Math.abs(d - 1) * Math.min(g.a, g.b) < RING) return { kind: "hand", target: "loop" };   // on the main loop's ring: its n
+      const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
+      const d = (seNorm(Math.abs(x - g.cx) / g.a, Math.abs(y - (g.cy + off)) / g.b, g.n) - 1) * Math.min(g.a, g.b);
+      if (d >= -(RING_IN + 2) && d <= RING_OUT + 6 && (!best || Math.abs(d) < Math.abs(best.d))) best = { target: "loop", d };
     }
-    return { kind: "arrow", target: "site" };                                      // bare space: the site zooms
+    if (best) return { kind: "hand", target: best.target };                        // on a ring: its n
+    const loopRing = window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
+    if (loopRing) return { kind: "hand", target: loopRing };
+    if (over) return { kind: "arrow", target: over };                              // inside a thing: size it
+    return { kind: "arrow", target: S.inSite && S.inSite(x, y) ? "site" : "loop" }; // inside the inner super or the main loop: zoom
   }
+
   const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
 
   // one scroll gesture stays on what it started on: a thing that shrinks under the pointer, or grows past
@@ -142,7 +160,7 @@
     const fresh = gesture && now - gesture.t < 500 && gesture.kind === z.kind && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
     const target = fresh ? gesture.what : z.target;
     gesture = { what: target, t: now, kind: z.kind };
-    if (z.kind === "hand" && typeof target !== "string" && !target.classList.contains("lv-node")) {
+    if (z.kind === "arrow" && typeof target !== "string" && !target.classList.contains("lv-node")) {   // inside a thing
       if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: super/nodes.js guards the swipe
       if (!e.ctrlKey && scrolls(hit)) return;                              // content that scrolls keeps scrolling
     }
