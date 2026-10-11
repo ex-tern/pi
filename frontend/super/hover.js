@@ -20,9 +20,9 @@
     if (el) el.classList.add("se-on");
     else if (kind) html.classList.add("se-on-" + kind);
   }
-  // the pointer's shape says what a scroll does here: an arrow in the band just outside a super, where a
-  // scroll changes its n (and, on its very edge, a + for wiring); a finger on a super's surface, where a
-  // scroll makes it bigger or smaller (bare space inside the loop: the site zooms)
+  // the pointer's shape says what a scroll does here: a hand on a super (its surface, bare space inside
+  // it), where a scroll changes its n; an arrow in the band just outside it (and the bare corners), where
+  // a scroll sizes it (the site zooms); on its very edge, a + for wiring
   function zone(x, y, hit) {
     const Z = window.SeZoom;
     if (!Z) return "";

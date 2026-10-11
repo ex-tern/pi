@@ -80,7 +80,7 @@
     select(at.inside);
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Selected " + name(at.inside) + ": now its inside answers";
   }, true);
-  // a scroll on something inside an unselected super sizes the super as a whole
+  // a scroll on something inside an unselected super is a scroll on the super itself: its n
   document.addEventListener("wheel", e => {
     if (!on() || e.shiftKey) return;
     const t = e.target, x = e.clientX, y = e.clientY;
@@ -92,11 +92,10 @@
     const c = at.inside;
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);
-    if (c === "loop") return;                                   // the main super is the display: nothing to size
-    if (c === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015)); return; }
-    if (c.classList.contains("orbit-panel")) { if (S().sizeWindow) S().sizeWindow(c, dy); return; }
-    if (c.classList.contains("lv-node")) { if (window.LabView && window.LabView.zoomNode) window.LabView.zoomNode(c, dy); return; }
-    if (Z && Z.sizeThing) Z.sizeThing(c, dy);
+    if (c === "loop") { if (O().scrollN) O().scrollN(e); return; }
+    if (c === "site") { if (O().scrollSiteN) O().scrollSiteN(e); return; }
+    if (c.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(c, dy); return; }
+    if (S().shapeEl) S().shapeEl(c, dy);
   }, { capture: true, passive: false });
   // a selection sticks: it changes only when another super is clicked (or the selected one goes away)
   // a selected super that goes away (a window closes, a loop is deleted): the main super again

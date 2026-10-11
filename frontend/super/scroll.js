@@ -113,20 +113,31 @@
     }
     const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
     gesture = { what: recent, t: now };
-    // the one rule, for every super: a scroll just outside its edge changes its shape, a scroll inside it
-    // sizes (zooms) what is in it. Just outside a node, a window, a card, a bubble, the title, the palette
-    // or Live: that one's n; just outside the inner super's ring: the inner super's n; outside the main
-    // super (the bare corners): the main super's n.
+    // the one rule, for every super, by the pointer's shape: a hand on a super (its surface, or bare space
+    // inside it) and a scroll changes its n; an arrow just outside its edge and a scroll sizes it (the
+    // inner super: the site zooms; the main super, from the bare corners: the site zooms too)
+    const size = what => {
+      if (what === "site" || what === "loop") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015)); }
+      else if (what.classList.contains("lv-node")) window.LabView.zoomNode(what, dy);
+      else if (what.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(what, dy); }
+      else if (what.classList.contains("se-port")) { /* ports keep their size */ }
+      else sizeThing(what, dy);
+    };
+    const shape = what => {
+      if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
+      else if (what === "loop") { if (O().scrollN) O().scrollN(e); }
+      else if (what.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(what, dy); }
+      else if (what.classList.contains("se-port")) { /* ports keep their shape */ }
+      else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(what, dy);
+    };
     const edge = recent ? (recent && recent.shapeOf ? recent : null) : (!e.ctrlKey && !scrolls(hit) ? edgeSuper(x, y, hit) : null);
-    if (edge && (edge.shapeOf === "site" || edge.shapeOf.isConnected)) {
+    if (edge && (edge.shapeOf === "site" || edge.shapeOf.isConnected)) {   // the arrow, just outside a super: it is sized
       e.preventDefault(); e.stopImmediatePropagation();
       gesture.what = edge;
-      if (edge.shapeOf === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
-      else if (edge.shapeOf.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(edge.shapeOf, dy); }
-      else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(edge.shapeOf, dy);
+      size(edge.shapeOf);
       return;
     }
-    // a thing under the pointer (or the one this gesture began on)
+    // a thing under the pointer (or the one this gesture began on): the hand, its shape
     let el = recent && recent !== "page" && recent !== "shape" && recent !== "site" && !recent.shapeOf && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
     const loop = !el && !recent && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
     if (loop) el = loop;
@@ -137,17 +148,16 @@
       if (sc && !(el.classList.contains("lv-node"))) return;
       e.preventDefault(); e.stopImmediatePropagation();
       gesture.what = el;
-      if (el.classList.contains("lv-node")) window.LabView.zoomNode(el, dy);
-      else if (el.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(el, dy); }
-      else if (el.classList.contains("se-port")) { /* ports keep their size */ }
-      else sizeThing(el, dy);
+      shape(el);
       return;
     }
     e.preventDefault(); e.stopImmediatePropagation();
+    const S = window.SeSite || {};
     const outside = recent ? recent === "shape" : (O().inLoop && !O().inLoop(x, y));
-    gesture.what = outside ? "shape" : "page";
-    if (outside) { if (O().scrollN) O().scrollN(e); return; }                            // outside the super: its shape
-    if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015));                            // inside, on nothing: zoom
+    const inSite = recent ? recent === "site" : !outside && !!(S.inSite && S.inSite(x, y));
+    gesture.what = outside ? "shape" : inSite ? "site" : "page";
+    if (outside) { size("loop"); return; }                                 // the bare corners, an arrow: the site zooms
+    shape(inSite ? "site" : "loop");                                       // bare space inside, a hand: that super's n
   }, { capture: true, passive: false });
   // Safari's pinch comes as gesture events: never the browser's zoom
   ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (on()) e.preventDefault(); }, { passive: false }));
