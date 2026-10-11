@@ -584,13 +584,16 @@
           : "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
-        s += '<g class="wire' + (live ? " live" : "") + (pickedWire && pickedWire.node === n.id && +pickedWire.i === idx ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+        s += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
              term(sx, cy, "wire-term") + term(tx, ty, "wire-term") +
              '<path class="wire-hit" data-node="' + n.id + '" data-i="' + idx + '" d="' + d + '"><title>Click to disconnect</title></path></g>';
       });
     });
     if (html.classList.contains("shape-se")) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
-    if (s !== wires.dataset.last) { wires.dataset.last = s; wires.innerHTML = s; }   // unchanged wires stay, so a click lands
+    if (s !== wires.dataset.last) {                                     // unchanged wires stay, so a click lands
+      wires.dataset.last = s; wires.innerHTML = s;
+      if (pickedWire) wires.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i));
+    }
   }
 
   // ---- making, moving and removing nodes -------------------------------

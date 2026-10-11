@@ -1317,7 +1317,7 @@
         const dx = P[0] - oc[0], dy = P[1] - oc[1], hz = Math.abs(dx) > q.w / 2;
         const o = hz ? [dx > 0 ? q.x + q.w : q.x, oc[1]] : [oc[0], dy > 0 ? q.y + q.h : q.y];
         const d = curve(o[0], o[1], P[0], P[1], hz);
-        html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + (i === pickedWire ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+        html += '<g class="wire wire-loop' + (isLive(O) ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
                 wireTerm(o, "wire-term") + wireTerm(P, "wire-term") +
                 '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(O.title) + ' – the loop: double-click to delete</title></path></g>';
         return;
@@ -1353,7 +1353,10 @@
               wireTerm([x, y], "wh-dot") + '<title>Drag onto another bubble to connect ' + esc(it.title) + '</title></g>';
     });
     if (merged()) html = html.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
-    if (html !== wiresHtml) { wiresHtml = html; svg.querySelector(".wires-base").innerHTML = html; }
+    if (html !== wiresHtml) {
+      wiresHtml = html; svg.querySelector(".wires-base").innerHTML = html;
+      if (pickedWire >= 0) svg.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", +h.dataset.i === pickedWire));   // the selection survives a redraw (it is never baked in: a redraw between two clicks would lose the double click)
+    }
   }
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
   let pickedWire = -1;                                  // the bubble wire selected by a click (superellipse look)

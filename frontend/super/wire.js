@@ -370,10 +370,12 @@
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation();
-      selected = +w.dataset.i === selected ? -1 : +w.dataset.i; lastHtml = ""; draw();
+      selected = +w.dataset.i === selected ? -1 : +w.dataset.i;
+      // the class is toggled in place, not redrawn: rebuilding the layer between two clicks lost the double click
+      svg.querySelectorAll(".sl-wire").forEach((g, i) => g.classList.toggle("is-sel", i === selected));
       const out = document.querySelector(".lv-out"); if (out && selected >= 0) out.textContent = "Wire selected: press Delete to remove it";
     });
-    document.addEventListener("pointerdown", e => { if (selected >= 0 && !(e.target.closest && e.target.closest(".sl-layer .wire-hit"))) { selected = -1; lastHtml = ""; draw(); } }, true);
+    document.addEventListener("pointerdown", e => { if (selected >= 0 && !(e.target.closest && e.target.closest(".sl-layer .wire-hit"))) { selected = -1; svg.querySelectorAll(".sl-wire.is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
     document.addEventListener("keydown", e => {
       if (selected < 0) return;
       const a = document.activeElement;
