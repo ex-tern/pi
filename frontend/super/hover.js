@@ -57,5 +57,19 @@
     if (!pending) { pending = true; requestAnimationFrame(update); }
   }, { passive: true });
   document.addEventListener("pointerleave", () => set(null, ""));
+  // no tooltips: a hover lights the super and does nothing else. A title under the pointer becomes the
+  // element's accessible name (aria-label) and stops being a tooltip; an SVG <title> (a wire's) is dropped
+  document.addEventListener("pointerover", e => {
+    if (!on()) return;
+    for (let el = e.target; el && el !== document.documentElement; el = el.parentElement || el.parentNode) {
+      if (el.nodeType !== 1) break;
+      if (el.hasAttribute && el.hasAttribute("title")) {
+        const t = el.getAttribute("title");
+        if (t && !el.hasAttribute("aria-label")) el.setAttribute("aria-label", t);
+        el.removeAttribute("title");
+      }
+      if (el.namespaceURI === "http://www.w3.org/2000/svg") { const st = el.querySelector && el.querySelector(":scope > title"); if (st) st.remove(); }
+    }
+  }, true);
   document.addEventListener("se:frame", () => { if (last && !pending) { pending = true; requestAnimationFrame(update); } });
 })();

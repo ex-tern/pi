@@ -410,7 +410,7 @@
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
       }
       n.el.setAttribute("aria-label", BY[n.fn].name + " node" + (n.inputs.length ? ", wired to " + n.inputs.map(nameOf).join(" and ") : ", not wired") + ". " + (r.text ? "Value " + clip(String(r.text)) + "." : ""));
-      n.el.title = BY[n.fn].name;                                          // just its name
+      if (!html.classList.contains("shape-se")) n.el.title = BY[n.fn].name;   // just its name; none in the superellipse look (a hover only lights)
     });
     drawWires();
   }
@@ -516,6 +516,7 @@
              '<path class="wire-hit" data-node="' + n.id + '" data-i="' + idx + '" d="' + d + '"><title>Click to disconnect</title></path></g>';
       });
     });
+    if (html.classList.contains("shape-se")) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (s !== wires.dataset.last) { wires.dataset.last = s; wires.innerHTML = s; }   // unchanged wires stay, so a click lands
   }
 

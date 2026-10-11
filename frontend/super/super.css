@@ -230,8 +230,7 @@ html.se-site-thinking .om-site-loop { stroke: var(--cobalt); }
 .se-port-right { flex-direction: row-reverse; }
 .se-port-top, .se-port-bottom { flex-direction: column; }
 .se-port-top .se-port-name { order: -1; }
-.se-port:hover { color: var(--cobalt); }
-.se-port:hover .se-port-dot { background: var(--cobalt); }
+/* (a port does not change on hover: hovering only lights the super, super/hover.js) */
 html.se-ring, html.se-ring * { cursor: grab !important; }
 /* nothing on a pill is pushable: no hand, no hover glow, no tooltip (a drag from its words wires it, a wire opens it) */
 html.shape-se .ob-member, html.shape-se .ob-member * { cursor: default; }
@@ -306,7 +305,7 @@ html.shape-se .orbit-title { left: 14%; }
 .se-port-owned.se-port-right .se-port-name { left: 100%; margin-left: 4px; }
 .se-port-owned.se-port-top .se-port-name { bottom: 100%; margin-bottom: 2px; }
 .se-port-owned.se-port-bottom .se-port-name { top: 100%; margin-top: 2px; }
-.se-port-owned:hover .se-port-name, html.sl-dragging .se-port-owned .se-port-name, html.lv-dragging .se-port-owned .se-port-name { opacity: 1; }
+html.sl-dragging .se-port-owned .se-port-name, html.lv-dragging .se-port-owned .se-port-name { opacity: 1; }   /* names while wiring, not on hover */
 html.shape-se .orbit-panel.se-held { opacity: 0.45; }
 html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }
 
@@ -351,3 +350,16 @@ html.shape-se.se-zone-hand { cursor: pointer !important; }
 html.shape-se.se-zone-arrow *:not(input):not(textarea):not(select):not(button):not(a):not(.se-port):not(.se-port *):not(.op-head):not(.op-head *),
 html.shape-se.se-zone-arrow { cursor: default !important; }
 html.shape-se.sl-edge, html.shape-se.sl-edge * { cursor: crosshair !important; }       /* the + on an edge: a drag wires */
+
+/* hovering only lights the super (super/hover.js): in this look nothing else changes under the pointer, no
+   colour, no growth, no glow, no dashed wire, no reveal; the light is the --se-hint edge alone */
+html.shape-se .orbit-core:hover { transform: none; }
+html.shape-se .orbit-pi:hover { border-color: inherit; }
+html.shape-se .orbit-pi:hover .op-grip, html.shape-se .orbit-core:hover .om-name { opacity: 0; }
+html.shape-se .orbit-bubble:hover:not(.se-on):not(.se-sel), html.shape-se .ob-member:hover { border-color: inherit; color: inherit; }
+html.shape-se .op-head button:hover { border-color: var(--hair); }
+html.shape-se .lv-fn:hover:not(.se-on):not(.se-sel) { border-color: inherit; }
+html.shape-se .wire:hover .wire-bed { stroke: inherit; stroke-dasharray: none; }
+html.shape-se .wire:hover .wire-term { stroke: inherit; }
+html.shape-se .live-tab:hover, html.shape-se .live-list li button:hover, html.shape-se .cap-open:hover { color: inherit; }
+html.shape-se .arch-step:hover { border-color: inherit; }

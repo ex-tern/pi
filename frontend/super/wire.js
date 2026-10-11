@@ -248,6 +248,7 @@
       if (drag.overRect) s += '<rect class="sl-hover" x="' + (drag.overRect.left - 2) + '" y="' + (drag.overRect.top - 1) + '" width="' + (drag.overRect.width + 4) + '" height="' + (drag.overRect.height + 2) + '" rx="3"/>';
       s += '<path class="wire-temp" d="' + curve(drag.p, drag.q) + '"/>';
     }
+    if (se()) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (s !== lastHtml) { lastHtml = s; svg.innerHTML = s; }
   }
 

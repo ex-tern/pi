@@ -1326,6 +1326,7 @@
       html += '<g class="wire-handle" data-t="' + esc(it.title) + '"><circle class="wh-hit" cx="' + x + '" cy="' + y + '" r="11"/>' +
               wireTerm([x, y], "wh-dot") + '<title>Drag onto another bubble to connect ' + esc(it.title) + '</title></g>';
     });
+    if (merged()) html = html.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (html !== wiresHtml) { wiresHtml = html; svg.querySelector(".wires-base").innerHTML = html; }
   }
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
