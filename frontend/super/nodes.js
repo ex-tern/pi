@@ -889,6 +889,21 @@
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
+      // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
+      // all; a holder takes what it holds with it (never the central super, which comes back inside)
+      if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
+        if (n.id === "site-box") {                                      // the central super comes back to the middle
+          n.st.crew = null;
+          const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
+          if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
+          persist(); tick(); say("run stays inside the site"); return;
+        }
+        const crew = n.st.crew ? n.st.crew.map(c => c.m) : [];
+        n.st.crew = null;
+        crew.forEach(remove); remove(n);
+        say((BY[n.fn].name) + " deleted: dropped outside the site" + (crew.length ? ", with what it held" : ""));
+        return;
+      }
       if (n.st.crew) { n.st.crew = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       // a super dropped on another super (not a holder: that is where it goes in) wires its output into the

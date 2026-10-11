@@ -288,6 +288,7 @@
       setLook(it);
       if (it.href) { b.classList.add("is-link"); b.setAttribute("aria-label", it.title + " (opens in a new tab)"); }
       it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
+      it.gone = merged() && !!load("orbit:gone:" + it.key);
       // a bubble starts where the program puts it (pitechlab.super.js bubbles: at), in the superellipse look
       if (!it.custom && it.group && merged()) { const pb = PROGRAM.bubbles.find(b => b.title === it.title); if (pb && pb.at) it.custom = { fx: +pb.at.fx || 0, fy: +pb.at.fy || 0 }; }
       store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
@@ -336,6 +337,7 @@
   // pressed, never by itself (not from a link, not restored from last visit).
   const isHal = it => it.nodes.some(n => n.id === "labHal");
   function visible(it) {
+    if (it.gone) return false;                                       // dropped outside the site (see makeBubble's end)
     if (it.href || it.always) return true;
     return it.nodes.some(n => !(n.classList.contains("section-heading")) && !n.classList.contains("hidden") && !n.hidden);
   }
@@ -691,6 +693,15 @@
       b.releasePointerCapture(e.pointerId);
       b.classList.remove("dragging");
       if (!moved) return;                 // a click: handled by the click event
+      // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
+      // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
+      if (merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY)) {
+        it.gone = true; store("orbit:gone:" + it.key, 1); dragging = null; settlePushes = true;
+        b.dataset.justDragged = "1"; setTimeout(() => delete b.dataset.justDragged, 0);
+        layout();
+        const out = document.querySelector(".lv-out"); if (out) out.textContent = "Gone: " + it.title + " was dropped outside the site";
+        return;
+      }
       const L = toLayout(e.clientX, e.clientY);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)) + it.w / 2;
       const y = Math.min(H - it.h, Math.max(0, L.y - oy)) + it.h / 2;
@@ -1177,7 +1188,8 @@
         p.classList.toggle("leaving", atEdge(e));
       });
       el.addEventListener("pointerup", e => {
-        if (drag && atEdge(e)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
+        const outside = merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY);   // dropped outside the inner super: closed on purpose
+        if (drag && (atEdge(e) || outside)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
         if (drag) { p.userMoved = true; saveWin(it, p); }
         drag = false;
       });
