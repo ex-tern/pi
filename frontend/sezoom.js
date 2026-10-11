@@ -47,6 +47,14 @@
     if (!on()) return;
     const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);          // a pinch sends small deltas
     const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y), now = e.timeStamp || performance.now();
+    // shift + scroll, anywhere: the super's shape (n), as a scroll outside it does (browsers turn a shifted
+    // wheel into a sideways delta, so dy above already carries it)
+    if (e.shiftKey && !e.ctrlKey) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      gesture = { what: "shape", t: now };
+      if (O().scrollN) O().scrollN(e);
+      return;
+    }
     const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
     gesture = { what: recent, t: now };
     // a thing under the pointer (or the one this gesture began on)
