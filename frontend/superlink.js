@@ -190,6 +190,20 @@
     }
   }
 
+  // disconnecting undoes it: a window whose button (or words) the removed wire touched closes,
+  // once no other wire still touches it
+  function unact(l) {
+    if (!l || !O().close) return;
+    const keys = new Set();
+    [l.a, l.b].forEach(an => { if (an && !an.loop && an.h && an.h.startsWith("k:")) keys.add(an.h.slice(2)); });
+    const t = intent(endWords(l.a).concat(endWords(l.b)));
+    if (t && O().keyOfTitle) { const k = O().keyOfTitle(t); if (k) keys.add(k); }
+    keys.forEach(k => {
+      if (links.some(m => [m.a, m.b].some(an => an && an.h === "k:" + k))) return;
+      if (O().close(k)) { const out = document.querySelector(".lv-out"); if (out) out.textContent = "Closed by disconnecting: " + label({ h: "k:" + k, el: 1 }); }
+    });
+  }
+
   // ---- drawing ---------------------------------------------------------
   const se = () => html.classList.contains("shape-se") && window.SeMorph;
   const term = ([x, y]) => se() ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 4.5, 4.5) + '"/>' : '<rect class="wire-term" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
@@ -281,7 +295,8 @@
       const w = e.target.closest && e.target.closest(".wire-hit");
       if (!w) return;
       e.stopPropagation();
-      links.splice(+w.dataset.i, 1); save(); lastHtml = ""; draw();
+      const gone = links.splice(+w.dataset.i, 1)[0]; save(); lastHtml = ""; draw();
+      unact(gone);
     });
     // a drag from a piece of text draws a wire; a click stays a click
     const FIELDS = ".lv-palette, .lv-node, input, textarea, select, [contenteditable], canvas, video";
