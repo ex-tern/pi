@@ -339,3 +339,14 @@ html.shape-se .orbit-bubble.se-tick { animation: se-tick 0.5s ease-out; }
 html.shape-se .ob-member.se-sel::before { border: 2px solid var(--cobalt); }
 html.shape-se .op-body .card.se-sel, html.shape-se .rs-card.se-sel, html.shape-se .perf-card.se-sel, html.shape-se .perf-next.se-sel,
 html.shape-se .buddy-corpus.se-sel, html.shape-se .stat-card.se-sel, html.shape-se .tr-tile.se-sel { border-color: var(--cobalt) !important; border-width: 2px; }
+
+/* what a scroll does here, by the pointer's shape (super/hover.js): a hand where it changes the super's n
+   (its surface, bare space inside it), an arrow where it sizes the super (just outside it, the bare
+   corners), a + on an edge where a drag wires; the rule covers everything, so cursor and action never
+   disagree, except what has a pointer of its own (fields, buttons, links, ports, wires, window heads) */
+html.shape-se.se-zone-n, html.shape-se.se-zone-n * { cursor: default; }
+html.shape-se.se-zone-size, html.shape-se.se-zone-size * { cursor: pointer; }
+html.shape-se.se-zone-n .se-port, html.shape-se.se-zone-size .se-port, html.shape-se.se-zone-n .se-port *, html.shape-se.se-zone-size .se-port * { cursor: crosshair; }
+html.shape-se.se-zone-n .op-head, html.shape-se.se-zone-size .op-head { cursor: move; }
+html.shape-se.se-zone-n input, html.shape-se.se-zone-size input, html.shape-se.se-zone-n textarea, html.shape-se.se-zone-size textarea { cursor: text; }
+html.shape-se.se-zone-n button, html.shape-se.se-zone-size button, html.shape-se.se-zone-n a, html.shape-se.se-zone-size a, html.shape-se.se-zone-n summary, html.shape-se.se-zone-size summary, html.shape-se.se-zone-n select, html.shape-se.se-zone-size select { cursor: pointer; }
