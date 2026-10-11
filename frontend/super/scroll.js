@@ -200,10 +200,12 @@
         // the window grows (or shrinks) with the scroll; as big as the inner super lets, the scroll goes on into
         // its content (zoomed about the pointer), and scrolling back zooms the content out before the window shrinks
         const zb = what.querySelector("[data-zoombox]"), z = zb && zb._zoom, sb = O().siteBox ? O().siteBox() : null;
-        const maxW = sb ? 2 * sb.a * (sb.fit || 1) * 0.92 : window.innerWidth - 16, maxH = sb ? 2 * sb.b * (sb.fit || 1) * 0.6 : window.innerHeight - 16;
+        const maxW = sb ? 2 * sb.a * (sb.fit || 1) * 0.92 : window.innerWidth - 16, maxH = sb ? 2 * sb.b * (sb.fit || 1) * 0.85 : window.innerHeight - 16;
+        // the content zooms with every step (bigger type, owner, 2026-10-12: "bigger, not just the window"), and the
+        // window grows with it while the inner super has room; scrolling back zooms the content out, then shrinks
         const full = what.offsetWidth >= maxW * 0.97 || what.offsetHeight >= maxH * 0.97;
-        if (z && ((dy < 0 && full) || (dy > 0 && z.state.k > z.state.fitK * 1.001))) z.zoomAt(x, y, dy);
-        else if (window.SeSite) window.SeSite.sizeWindow(what, dy);
+        if (z) z.zoomAt(x, y, dy);
+        if (window.SeSite && ((dy < 0 && !full) || (dy > 0 && !(z && z.state.k > z.state.fitK * 1.001)))) window.SeSite.sizeWindow(what, dy);
       }
       else sizeThing(what, dy);
     });

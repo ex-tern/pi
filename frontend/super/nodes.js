@@ -264,7 +264,7 @@
           n.prompt = verb ? "" : (typed ? (wired.length ? typed + " (wired in: " + wired.join("; ") + ")" : typed) : wired.join(" ")).trim();
           if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
-          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "run");
+          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || (n.id === "site-box" ? "run" : "prompt"));   // the central super says run; a new Super AI super says prompt (owner, 2026-10-12)
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
           // a Super AI super: the prompt is typed straight into it and the answer shows in it, wrapped (fitText)
           r.text = n.st.go ? "thinking…" : t || typed || idle;          // every engine super, the central one too

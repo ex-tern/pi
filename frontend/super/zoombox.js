@@ -12,7 +12,7 @@
 (function () {
   "use strict";
   if (window.SeZoomBox) return;
-  const MAX = 2.2;
+  const MAX = 4;                                                  // up to four times its natural size (owner, 2026-10-12: readable in a big window)
 
   function attach(box, content, opts) {
     if (!box || !content || box._zoom) return box && box._zoom;
