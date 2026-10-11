@@ -334,3 +334,8 @@ html.shape-se .orbit-bubble.se-sizing { transition: border-color 0.15s ease, bac
 html.shape-se .orbit-bubble.se-held { opacity: 0.45; }
 html.shape-se .orbit-bubble.se-tick { animation: se-tick 0.5s ease-out; }
 @keyframes se-tick { 0% { border-color: var(--cobalt); } 100% { border-color: var(--hair-strong); } }
+
+/* the supers inside a super, selected: a pill (its shape is its ::before), a card in a window */
+html.shape-se .ob-member.se-sel::before { border: 2px solid var(--cobalt); }
+html.shape-se .op-body .card.se-sel, html.shape-se .rs-card.se-sel, html.shape-se .perf-card.se-sel, html.shape-se .perf-next.se-sel,
+html.shape-se .buddy-corpus.se-sel, html.shape-se .stat-card.se-sel, html.shape-se .tr-tile.se-sel { border-color: var(--cobalt) !important; border-width: 2px; }

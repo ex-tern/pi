@@ -51,15 +51,19 @@
     const el = elOf(s); if (el) el.classList.add("se-sel");
     document.dispatchEvent(new CustomEvent("se:select", { detail: { selected: s } }));
   }
-  const name = s => s === "loop" ? "the main super" : s === "site" ? "the site" : s.classList.contains("orbit-panel") ? "the window" : s.classList.contains("orbit-bubble") ? "the bubble" : "the loop";
+  const name = s => s === "loop" ? "the main super" : s === "site" ? "the site" : s.classList.contains("orbit-panel") ? "the window" : s.classList.contains("orbit-bubble") ? "the bubble" : s.classList.contains("ob-member") ? "the pill" : s.classList.contains("lv-node") ? "the node" : "the card";
 
   // what a point is on: a super itself (a bubble, a window, a node, a loop, the inner super's or the main
   // loop's bare space), or something inside one (a pill, a card, a button: {inside: its super})
   function superAt(t, x, y) {
     if (t && t.closest) {
       let h;
-      if ((h = t.closest(INSIDE_PANEL + ", .op-body, .op-head"))) return { inside: h.closest(".orbit-panel") || "site" };
-      if ((h = t.closest(".ob-member, .ob-chat"))) return { inside: h.closest(".orbit-bubble") || "site" };
+      // the supers inside a super can be selected too, once the super around them is: a card in a selected
+      // window, a pill in a selected bubble
+      if ((h = t.closest(INSIDE_PANEL))) { const w = h.closest(".orbit-panel"); return w === sel ? { on: h } : { inside: w || "site" }; }
+      if ((h = t.closest(".op-body, .op-head"))) return { inside: h.closest(".orbit-panel") || "site" };
+      if ((h = t.closest(".ob-member"))) { const bb = h.closest(".orbit-bubble"); return bb === sel ? { on: h } : { inside: bb || "site" }; }
+      if ((h = t.closest(".ob-chat"))) return { inside: h.closest(".orbit-bubble") || "site" };
       if ((h = t.closest(".orbit-panel"))) return { on: h };
       if ((h = t.closest(".orbit-bubble"))) return { on: h };
       if ((h = t.closest(".lv-node"))) return { on: h };
