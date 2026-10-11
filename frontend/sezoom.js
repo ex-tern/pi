@@ -40,6 +40,32 @@
       if (v && v !== 1) { el.style.transformOrigin = "50% 50%"; el.style.scale = String(v); }
     });
   }
+  // the super whose edge a point is just outside of (within BAND px): the nearest one not covered by
+  // something else; then the inner super's ring; nothing when the point is inside every super around it
+  const BAND = 28;
+  function edgeSuper(x, y, hit) {
+    const S = window.SeSite, over = hit && hit.closest ? hit.closest(THING) : null;
+    let best = null;
+    const sel = (S && S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
+    document.querySelectorAll(sel).forEach(el => {
+      if (el.hidden || !el.getClientRects().length) return;
+      const r = el.getBoundingClientRect();
+      if (!r.width || !r.height) return;
+      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;          // inside it: not its edge
+      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
+      if (d > BAND) return;
+      if (over && over !== el && !over.contains(el) && !el.contains(over)) return;     // the point is on something else
+      if (!best || d < best.d) best = { el, d };
+    });
+    if (best) return { shapeOf: best.el };
+    const site = S && S.site && S.site();
+    if (site && !over) {
+      const d = seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n);
+      if (d > 1 && (d - 1) * Math.min(site.a, site.b) <= BAND) return { shapeOf: "site" };
+    }
+    return null;
+  }
+  const seNorm = (u, v, n) => Math.pow(Math.pow(u, n) + Math.pow(v, n), 1 / n);
   const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
 
   // one scroll gesture stays on what it started on: a thing that shrinks under the pointer, or grows past
@@ -73,11 +99,24 @@
     }
     const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
     gesture = { what: recent, t: now };
+    // the one rule, for every super: a scroll just outside its edge changes its shape, a scroll inside it
+    // sizes (zooms) what is in it. Just outside a node, a window, a card, a bubble, the title, the palette
+    // or Live: that one's n; just outside the inner super's ring: the inner super's n; outside the main
+    // super (the bare corners): the main super's n.
+    const edge = recent ? (recent && recent.shapeOf ? recent : null) : (!e.ctrlKey && !scrolls(hit) ? edgeSuper(x, y, hit) : null);
+    if (edge && (edge.shapeOf === "site" || edge.shapeOf.isConnected)) {
+      e.preventDefault(); e.stopImmediatePropagation();
+      gesture.what = edge;
+      if (edge.shapeOf === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
+      else if (edge.shapeOf.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(edge.shapeOf, dy); }
+      else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(edge.shapeOf, dy);
+      return;
+    }
     // a thing under the pointer (or the one this gesture began on)
-    let el = recent && recent !== "page" && recent !== "shape" && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
+    let el = recent && recent !== "page" && recent !== "shape" && recent !== "site" && !recent.shapeOf && recent.isConnected ? recent : (hit && hit.closest ? hit.closest(THING) : null);
     const loop = !el && !recent && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
     if (loop) el = loop;
-    if (recent === "page" || recent === "shape" || recent === "site") el = null;
+    if (recent === "page" || recent === "shape" || recent === "site" || (recent && recent.shapeOf)) el = null;
     if (el) {
       if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: labview.js guards the swipe
       const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first
