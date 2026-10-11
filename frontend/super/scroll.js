@@ -111,8 +111,12 @@
       else if (O().scrollN) O().scrollN(e);                                        // the main super
       return;
     }
-    const recent = gesture && now - gesture.t < 500 ? gesture.what : null;
-    gesture = { what: recent, t: now };
+    // the gesture memory holds only within one kind of zone: a hand (shape) or an arrow (size); when the
+    // pointer's shape changes, the scroll changes with it, at once
+    const freshEdge = !e.ctrlKey && !scrolls(hit) ? edgeSuper(x, y, hit) : null;
+    const freshKind = freshEdge || (O().inLoop && !O().inLoop(x, y)) ? "size" : "shape";
+    let recent = gesture && now - gesture.t < 500 && gesture.kind === freshKind ? gesture.what : null;
+    gesture = { what: recent, t: now, kind: freshKind };
     // the one rule, for every super, by the pointer's shape: a hand on a super (its surface, or bare space
     // inside it) and a scroll changes its n; an arrow just outside its edge and a scroll sizes it (the
     // inner super: the site zooms; the main super, from the bare corners: the site zooms too)
@@ -130,7 +134,7 @@
       else if (what.classList.contains("se-port")) { /* ports keep their shape */ }
       else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(what, dy);
     };
-    const edge = recent ? (recent && recent.shapeOf ? recent : null) : (!e.ctrlKey && !scrolls(hit) ? edgeSuper(x, y, hit) : null);
+    const edge = recent ? (recent && recent.shapeOf ? recent : null) : freshEdge;
     if (edge && (edge.shapeOf === "site" || edge.shapeOf.isConnected)) {   // the arrow, just outside a super: it is sized
       e.preventDefault(); e.stopImmediatePropagation();
       gesture.what = edge;
