@@ -43,7 +43,7 @@
     if ((h = el.closest("[data-key]"))) return { key: "k:" + h.dataset.key, el: h };
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
-    if ((h = el.closest(".live-body"))) return { key: "live", el: h };
+    if ((h = el.closest(".live-dock"))) return { key: "live", el: (h.classList.contains("open") && h.querySelector(".live-body")) || h.querySelector(".live-tab") || h };   // Live: its tab when folded, its panel when open
     if ((h = el.closest(".lv-palette"))) return { key: "palette", el: h };
     if ((h = el.closest(".orbit-title"))) return { key: "title", el: h };
     if ((h = el.closest("[id]"))) return { key: "#" + h.id, el: h };
@@ -58,7 +58,7 @@
     }
     if (key.startsWith("w:")) return [...document.querySelectorAll(".orbit-panel")].find(p => { const t = p.querySelector(".op-title"); return t && t.textContent === key.slice(2); }) || null;
     if (key === "pi") return document.querySelector(".orbit-pi");
-    if (key === "live") return document.querySelector(".live-dock.open .live-body");
+    if (key === "live") return document.querySelector(".live-dock.open .live-body") || document.querySelector(".live-tab");
     if (key === "palette") return document.querySelector(".lv-palette");
     if (key === "title") return document.querySelector(".orbit-title");
     if (key.startsWith("#")) return document.getElementById(key.slice(1));
@@ -185,7 +185,9 @@
     return best && best.title;
   }
   const endWords = an => an.loop ? [] : an.el ? [an.h.replace(/^[a-z#]+:?/, "").replace(/^[a-z]+:/, "")] : [an.t];
+  const touchesLive = an => an && !an.loop && an.h === "live";
   function act(a, b) {
+    if ([a, b].some(touchesLive) && window.PiLive && window.PiLive.open) window.PiLive.open();   // a wire to Live unfolds it
     const t = intent(endWords(a).concat(endWords(b)));
     if ([a, b].some(an => an && an.h && an.h.startsWith("port:"))) return;   // a wire to a port carries a value, it opens nothing
     if (!t || !O().openTitle) {                                   // no window named together: a window's button at either end opens it
@@ -203,7 +205,9 @@
   // disconnecting undoes it: a window whose button (or words) the removed wire touched closes,
   // once no other wire still touches it
   function unact(l) {
-    if (!l || !O().close) return;
+    if (!l) return;
+    if ([l.a, l.b].some(touchesLive) && !links.some(m => [m.a, m.b].some(touchesLive)) && window.PiLive && window.PiLive.close) window.PiLive.close();   // the last wire to Live gone: it folds
+    if (!O().close) return;
     const keys = new Set();
     [l.a, l.b].forEach(an => { if (an && !an.loop && an.h && an.h.startsWith("k:")) keys.add(an.h.slice(2)); });
     const t = intent(endWords(l.a).concat(endWords(l.b)));
@@ -262,7 +266,7 @@
   // Bubbles, windows, nodes, the counter, Live and the title: on their edge (a few pixels either side of
   // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
   // their own use (moving, pressing, typing).
-  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .orbit-title, .se-port";
+  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
   const IN = 6, OUT = 5;
   function edgeAt(x, y) {
     if (!x && !y) return null;

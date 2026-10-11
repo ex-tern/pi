@@ -44,8 +44,16 @@
     return m < 1 ? "just now" : m < 60 ? m + " min ago" : m < 1440 ? Math.round(m / 60) + " h ago" : Math.round(m / 1440) + " d ago";
   }
 
-  let last = null;
+  let last = null, data = null;
+  // the panel as a value, for a wire from it (super/nodes.js): how many assessed today, whether it works now
+  function value() {
+    const d = data || {}, idle = d.idle || {};
+    const t = d.today == null ? (isOpen() ? "Live" : "Live, folded") : d.today + " assessed today" + (idle.working_now ? ", assessing now" : "");
+    return { num: d.today || 0, isNum: d.today != null, bool: !!idle.working_now || isOpen(), str: t, text: t };
+  }
+  window.PiLive = { open: () => setOpen(true), close: () => setOpen(false), isOpen, value };
   function render(d) {
+    data = d;
     const idle = d.idle || {};
     const status = dock.querySelector(".live-status");
     dock.classList.toggle("working", !!idle.working_now);

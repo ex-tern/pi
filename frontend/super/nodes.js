@@ -125,6 +125,7 @@
     if (an.h && an.h.startsWith("node:")) return valueOf({ node: an.h.slice(5) });
     if (an.h && an.h.startsWith("port:")) return valueOf({ port: an.h.slice(5) });
     if (an.h === "title") { const t = "Pi Tech Lab"; return { num: t.length, bool: true, str: t, text: t }; }   // the site's name
+    if (an.h === "live") return window.PiLive && window.PiLive.value ? window.PiLive.value() : ZERO;            // the Live panel: what the site is doing
     if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, isNum: !Number.isNaN(v), bool: !!an.t, str: an.t, text: an.t }; }
     if (an.h === "pi") return valueOf({ pi: 1 });
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
@@ -925,8 +926,23 @@
     let rt = 0;
     window.addEventListener("resize", () => { clearTimeout(rt); rt = setTimeout(() => { nodes.forEach(place); drawWires(); }, 200); });
 
-    // the diagram you left last time
-    (restore("lv:nodes") || []).forEach(make);
+    // the diagram you left last time; on a first visit in the superellipse look, one ■ in the middle of the
+    // inner super wired to its four ports (input and sync into it, out of it to output and condition),
+    // so the page starts as a diagram that runs
+    const saved = restore("lv:nodes");
+    (saved || []).forEach(make);
+    if (!saved && se()) {
+      const id = "site-box";
+      make({ id, fn: "box", fx: (window.innerWidth - DOT_BASE) / 2 / window.innerWidth, fy: (window.innerHeight - DOT_BASE) / 2 / window.innerHeight, inputs: [], n: Math.PI });
+      persist();
+      const wire = () => {
+        const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wire, 100);
+        const me = { h: "node:" + id, el: 1 };
+        SL.add({ h: "port:input", el: 1 }, me); SL.add({ h: "port:sync", el: 1 }, me);
+        SL.add(me, { h: "port:output", el: 1 }); SL.add(me, { h: "port:condition", el: 1 });
+      };
+      wire();
+    }
     setInterval(tick, 250);
     document.addEventListener("se:frame", () => {              // super/motion.js: while something moves, every frame
       const f = O().fit ? O().fit().f : 1;

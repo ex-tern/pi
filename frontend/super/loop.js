@@ -73,7 +73,7 @@
     let pageFit = 1;
     // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
-    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 0.5 : 1))), zoomT;
+    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 0.6 : 1))), zoomT;
     let zoomTo = null;
     function zoomPage(k) {
       const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
