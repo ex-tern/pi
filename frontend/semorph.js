@@ -79,7 +79,7 @@
         el.dataset.seK = k; el.dataset.seN = n.toFixed(5);
         el.style.setProperty("--se-k", k);
         el.style.setProperty("--se-t", (u / (u + 8)).toFixed(4));   // 0: a star beside the name, 1: the shape around it
-        el.title = el.title.replace(/ · n = [\d.]+$/, "") + " · n = " + n.toFixed(4);
+        el.title = "";                                                 // no tooltip: nothing to press here, the pill is a wire end
       }
     });
   }

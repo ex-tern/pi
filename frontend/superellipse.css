@@ -66,10 +66,9 @@ html.shape-se .ob-member::before {
   background: color-mix(in srgb, var(--paper) calc(min(1, var(--se-t) * 2.5) * 100%), var(--graphite));   /* paper by the time it reaches the name */
   border: 1px solid var(--hair-strong);
 }
-html.shape-se .ob-member:hover, html.shape-se .ob-member:focus-visible {
+html.shape-se .ob-member:focus-visible {                   /* the keyboard still shows where it is */
   --se-t: 1 !important; --se-k: var(--se-k-window) !important;
 }
-html.shape-se .ob-member:hover::before { border-color: var(--cobalt); }
 html.shape-se .ob-member:focus-visible { outline: none; }
 html.shape-se .ob-member:focus-visible::before { border: 2px solid var(--cobalt); }
 @media (prefers-reduced-motion: reduce) { html.shape-se .ob-member { transition: none; } }
@@ -201,11 +200,11 @@ html.shape-se .orbit-nread { display: none; }
   html.shape-se .orbit-bubble.is-group { border-radius: 2.2em; }
   html.shape-se .lv-fn { border-radius: 30%; }
   html.shape-se .lv-node.lv-dot { border-radius: 50%; }
-  html.shape-se .ob-member::before, html.shape-se .ob-member:hover::before, html.shape-se .ob-member:focus-visible::before {
+  html.shape-se .ob-member::before, html.shape-se .ob-member:focus-visible::before {
     width: var(--star); height: var(--star); border: 0; border-radius: 0;
     clip-path: var(--se-sparkle); background: var(--graphite);
   }
-  html.shape-se .ob-member:hover::before, html.shape-se .ob-member:focus-visible::before { background: var(--cobalt); }
+  html.shape-se .ob-member:focus-visible::before { background: var(--cobalt); }
 }
 /* no text selection while dragging a wire, a node or a moved panel (Safari needs the prefix) */
 html.sl-dragging, html.sl-dragging *, html.lv-dragging, html.lv-dragging *, html.se-moving, html.se-moving * { -webkit-user-select: none !important; user-select: none !important; }
@@ -231,5 +230,8 @@ html.se-site-thinking .om-site-loop { stroke: var(--cobalt); }
 .se-port:hover { color: var(--cobalt); }
 .se-port:hover .se-port-dot { background: var(--cobalt); }
 html.se-ring, html.se-ring * { cursor: grab !important; }
-/* a pill is pushable to the eye (its words still start a wire when dragged) */
-html.shape-se .ob-member, html.shape-se .ob-member * { cursor: pointer !important; }
+/* nothing on a pill is pushable: no hand, no hover glow, no tooltip (a drag from its words wires it, a wire opens it) */
+html.shape-se .ob-member, html.shape-se .ob-member * { cursor: default; }
+html.shape-se .ob-member:hover { color: inherit; border-color: var(--hair-strong); }
+html.shape-se .orbit-bubble { cursor: default; }
+html.shape-se .orbit-bubble:hover { border-color: var(--hair-strong); }
