@@ -488,3 +488,9 @@ html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphi
 html.shape-se .live-window .live-body { display: block; width: auto; max-width: none; height: auto; padding: 0; border: 0; background: transparent; overflow: visible; filter: none; }
 html.shape-se .live-window .live-scroll { margin: 0; overflow: visible; }
 html.shape-se .live-window .live-head { margin-top: 0; }
+/* hovering on a wire shows data flowing along it: a dotted cobalt animation (owner, 2026-10-12) */
+html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow {
+  stroke: var(--cobalt); stroke-width: 2; stroke-dasharray: 6 8; animation: wire-flow 1.2s linear infinite;
+}
+html.shape-se .wire:hover .wire-bed, html.shape-se .sl-wire:hover .wire-bed { stroke: color-mix(in srgb, var(--cobalt) 25%, transparent); stroke-width: 3; }
+@media (prefers-reduced-motion: reduce) { html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow { animation: none; } }
