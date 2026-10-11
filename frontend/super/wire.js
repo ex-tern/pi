@@ -217,8 +217,20 @@
   // deleting a wire cancels what it did (owner, 2026-10-12): the windows it opened close, the bubble it opened
   // compacts, Live folds, and a Super AI super it joined to run stops and shows its question again (super/nodes.js
   // sees it is no longer connected), each once no other wire still does the same
+  // the wire from the title into the site's sync is the app's own: removing it resets the app (owner,
+  // 2026-10-12): everything kept in this browser (the diagram, the wires, places, sizes, shapes, the view, the
+  // edited program) is forgotten and the page starts again as on a first visit
+  const isTitleSync = l => l && [l.a, l.b].some(an => an && an.h === "title") && [l.a, l.b].some(an => an && an.h === "port:sync");
+  function resetApp() {
+    try {
+      Object.keys(localStorage).filter(k => /^(lv:|orbit:|se:|superai:|labview)/.test(k)).forEach(k => localStorage.removeItem(k));
+    } catch (_) { /* private mode */ }
+    const out = document.querySelector(".lv-out"); if (out) out.textContent = "Reset: the app starts again";
+    setTimeout(() => location.reload(), 120);
+  }
   function unact(l) {
     if (!l) return;
+    if (isTitleSync(l) && html.classList.contains("shape-se")) { resetApp(); return; }
     if ([l.a, l.b].some(touchesLive) && !links.some(m => [m.a, m.b].some(touchesLive)) && window.PiLive && window.PiLive.close) window.PiLive.close();   // the last wire to Live gone: it folds
     [l.a, l.b].forEach(an => {
       const el = an && an.h && an.h.startsWith("k:") ? hostEl(an.h) : null, bubble = el && el.closest && el.closest(".orbit-bubble.is-group:not(.is-compact)");
