@@ -436,7 +436,7 @@ _ERROR_RULES = [
 # stale, even with working routes behind it. Only failures caused by the
 # prompt itself (a content filter, a context that is too long) end the chain.
 CHAIN_ENDING = ("content_filter", "context_length")
-PROVIDER_ENDING = ("auth", "credit")      # skip the rest of that provider's routes
+PROVIDER_ENDING = ("auth",)      # a bad key: skip the rest of that provider's routes (credit is per model: free ones may still answer)
 
 
 def ends_chain(classified: Dict) -> bool:
