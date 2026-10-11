@@ -427,9 +427,7 @@
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "dot") {                                                  // a grip on its edge: drag it bigger for a loop
-      const grip = document.createElement("span"); grip.className = "lv-grip"; grip.setAttribute("aria-hidden", "true");
-      el.appendChild(grip);
-      grip.addEventListener("pointerdown", e => grow2(e, n, grip));
+      // no grip on its edge any more: zooming on it sizes it (zoomNode), and past twice its size it is a loop
     }
     if (f.k === "ask") {
       n.answer = spec.answer || "";
