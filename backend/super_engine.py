@@ -116,9 +116,14 @@ def run_panel(prompt: str, context: str, jurors: List[Dict], ask_juror: Callable
     if len(answered) >= 2:
         try:
             v = judge(judge_prompt(prompt, answered)) or {}
-            if not v.get("failed"):
+            if v.get("failed"):
+                verdict["failed"] = str(v["failed"])[:120]          # why, for the operator (public-safe text)
+            else:
                 ag = str(v.get("agreement") or "").lower()
-                verdict = {"verdict": _clip(v.get("verdict") or "", 600), "agreement": ag if ag in AGREEMENT else None, "model": v.get("model", "")}
+                text = v.get("verdict") or v.get("answer") or ""    # a judge that answered in the juror's shape still counts
+                verdict = {"verdict": _clip(text, 600), "agreement": ag if ag in AGREEMENT else None, "model": v.get("model", "")}
+                if not text:
+                    verdict["failed"] = "the judge replied without a verdict"
         except Exception as e:                           # noqa: BLE001
             logging.warning("Super panel: judge failed: %s", e)
     elif len(answered) == 1:
