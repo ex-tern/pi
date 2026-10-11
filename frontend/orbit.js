@@ -565,6 +565,7 @@
       if (el.style.transformOrigin !== origin) el.style.transformOrigin = origin;
       el.style.scale = String(k);
     });
+    placeBubblesLayer();
   }
   // how big the loop must be (in units of its usual a, b) to hold the page at full size: from the cached corners
   function needAt(n) {
@@ -579,15 +580,21 @@
   document.addEventListener("pointerdown", () => { pointerHeld = true; }, true);
   document.addEventListener("pointerup", () => { pointerHeld = false; setTimeout(() => { keepWindowsIn(); loopKey = ""; drawLoop(); }, 30); }, true);   // the fit it held back
   document.addEventListener("pointercancel", () => { pointerHeld = false; }, true);
+  // Windows are shown inside the super they belong to: the inner super, where their bubbles are (on
+  // screen: the site box scaled toward the page's centre as the page is), moved in and, only when even
+  // centred they would cross it, made smaller
   function keepWindowsIn() {
     if (!merged() || pointerHeld || !loopG.a) return;
-    const cx = loopG.cx, cy = top + loopG.cy, { a, b, n } = loopG, pad = 6;
+    const sb = siteBox(), f = sb.fit || 1, pad = 6;
+    const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, n = sb.n;
     const fits = (l, t, w, h) => [l - pad, l + w + pad].every(x => [t - pad, t + h + pad].every(y => seNorm(Math.abs(x - cx) / a, Math.abs(y - cy) / b, n) <= 1));
     document.querySelectorAll(".orbit-panel").forEach(p => {
       if (p.classList.contains("gliding") || p.classList.contains("leaving")) return;
       const r = p.getBoundingClientRect();
-      if (!r.width || fits(r.left, r.top, r.width, r.height)) return;
+      if (!r.width || (fits(r.left, r.top, r.width, r.height) && r.width <= a * 1.1 + 1 && r.height <= b * 1.3 + 1)) return;
       let w = r.width, h = r.height;
+      const k = Math.min(1, a * 1.1 / w, b * 1.3 / h);                   // no more than about half the inner super: the bubbles keep their room
+      if (k < 1) { w = Math.max(200, Math.floor(w * k)); h = Math.max(120, Math.floor(h * k)); p.style.width = w + "px"; p.style.height = h + "px"; }
       if (!fits(cx - w / 2, cy - h / 2, w, h)) {                          // too big even in the middle: smaller
         let lo = 0.2, hi = 1;
         for (let k = 0; k < 18; k++) { const m = (lo + hi) / 2; if (fits(cx - w * m / 2, cy - h * m / 2, w * m, h * m)) lo = m; else hi = m; }
@@ -733,9 +740,16 @@
   function moveSite(x, y, commit) {
     siteOff = { x: Math.round(x), y: Math.round(y) };
     const t = "translate(" + siteOff.x + "px," + siteOff.y + "px)";
-    const bb = $(".orbit-bubbles", stage); if (bb) bb.style.translate = siteOff.x + "px " + siteOff.y + "px";   // the wires are drawn from where the bubbles are on screen, so they follow by themselves
+    placeBubblesLayer();   // the wires are drawn from where the bubbles are on screen, so they follow by themselves
     if (commit) store("orbit:site:offset", siteOff);
     return t;
+  }
+  // the bubbles' layer sits where the inner super is: its offset scales with the page's zoom (the inner
+  // super is inside the main super, zoomed about the page's centre), so bubbles and super stay together
+  function placeBubblesLayer() {
+    const bb = $(".orbit-bubbles", stage); if (!bb) return;
+    const f = pageFit || 1, t = (siteOff.x * f).toFixed(2) + "px " + (siteOff.y * f).toFixed(2) + "px";
+    if (bb.style.translate !== t) bb.style.translate = t;
   }
   // the room the layout may use: inside the site's super at its usual n (π), so the frame fits the page
   function insideLoop(r) {
@@ -794,6 +808,15 @@
     document.querySelectorAll(".buddy-float, .live-dock:not(.docked) .live-tab, .lv-palette").forEach(el => {     // the Functions palette too: it sits inside the loop
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
+    });
+    // superellipse look: an open window sits inside the inner super with the bubbles, and hides none of
+    // them: the bubbles step out of its way (in their own layout coordinates) and come back when it closes
+    if (merged()) document.querySelectorAll(".orbit-panel").forEach(p => {
+      if (p.classList.contains("leaving")) return;
+      const b = p.getBoundingClientRect();
+      if (!b.width || !b.height) return;
+      const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
+      out.push(grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g));
     });
     return out;
   }
@@ -1656,7 +1679,12 @@
     const k = [window.innerWidth, window.innerHeight, pal && pal.offsetWidth, live && live.offsetWidth, title && title.offsetWidth].join();
     if (k !== seatKey) { seatKey = k; seatEdges(); }               // the frame changed: re-seat the edges
     measure(); drawLoop(); keepWindowsIn();
+    if (merged() && !pointerHeld) {                                   // a window opened, closed, moved or sized: the bubbles make room
+      const wk = pageFit + "|" + [...document.querySelectorAll(".orbit-panel")].map(p => { const r = p.getBoundingClientRect(); return [r.left, r.top, r.width, r.height].map(Math.round).join(); }).join("|");
+      if (wk !== winKey) { winKey = wk; layoutSoon(); }
+    }
   }, 250);
+  let winKey = "";
   document.addEventListener("se:frame", drawWires);   // semotion.js: while something moves, every frame
 
   // Stillness: a double-click on the mark stops it turning and π growing,
