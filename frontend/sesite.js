@@ -127,9 +127,11 @@
 
   // ---- windows: superellipses in every browser; zooming sizes them --------------
   const hasCorner = typeof CSS !== "undefined" && CSS.supports && CSS.supports("corner-shape", "round");
+  // everything is a super: the windows, the Functions palette, the Live panel and its tab, the cards in windows
+  const SUPERS = ".orbit-panel, .lv-palette, .live-dock.open .live-body, .live-tab, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus";
   function clipWindows() {
     if (!on() || hasCorner || !SM()) return;
-    document.querySelectorAll(".orbit-panel").forEach(p => {
+    document.querySelectorAll(SUPERS).forEach(p => {
       const w = p.offsetWidth, h = p.offsetHeight, key = w + "x" + h;
       if (!w || p.dataset.seClip === key) return;
       p.dataset.seClip = key;

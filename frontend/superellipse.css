@@ -102,7 +102,7 @@ html.shape-se .orbit-panel {
   corner-shape: superellipse(var(--se-k-window));
   resize: none;                       /* the corner is gone: zoom on the window to size it */
 }
-html.shape-se .orbit-panel .op-head { padding: 14px calc(6% + 14px) 10px; }
+html.shape-se .orbit-panel .op-head { padding: 22px calc(12% + 14px) 10px; }   /* the curve cuts deepest at the top corners */
 html.shape-se .orbit-panel .op-body { padding: 12px calc(5% + 12px) calc(5% + 12px); }
 html.shape-se .orbit-panel .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
 html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
@@ -235,3 +235,20 @@ html.shape-se .ob-member, html.shape-se .ob-member * { cursor: default; }
 html.shape-se .ob-member:hover { color: inherit; border-color: var(--hair-strong); }
 html.shape-se .orbit-bubble { cursor: default; }
 html.shape-se .orbit-bubble:hover { border-color: var(--hair-strong); }
+
+/* everything is a super: the Functions palette, the Live panel and its tab, and the cards inside windows are
+   whole superellipses at n = π like the windows and the main loop; their content keeps clear of the corners */
+html.shape-se .lv-palette, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab,
+html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus {
+  border-radius: 50%; corner-shape: superellipse(var(--se-k-window));
+}
+html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
+html.shape-se .live-dock.open .live-body { padding: 10% 9% 12%; border-left: 1px solid var(--hair-strong); }
+html.shape-se .live-tab { padding: 14px 6px; }
+html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
+@supports not (corner-shape: round) {
+  html.shape-se .lv-palette, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab,
+  html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { border: 0; position: relative; }
+  html.shape-se .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+  html.shape-se .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
+}
