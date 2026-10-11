@@ -74,13 +74,10 @@ window.SUPERAI_PROGRAM = {
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
   // and condition, as every super's are; "bubble:Title" is a bubble (a super too).
   diagram: {
+    // Only the central super at the start (owner, 2026-10-12): the "Connect wires to begin", "use shift+scroll",
+    // open, close and run supers are gone; a visitor makes supers with a double click.
     supers: [
-      { id: "site-box", kind: "engine", at: { center: true } },
-      { id: "start", kind: "engine", everywhere: true, hint: "Connect wires to begin", size: 132, at: { fx: 0.126, fy: 0.131 } },
-      { id: "shift", kind: "engine", everywhere: true, desktop: true, hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
-      { id: "open", kind: "engine", everywhere: true, text: "open", at: { from: "start", dx: 104, dy: 155 } },
-      { id: "close", kind: "engine", everywhere: true, text: "close", at: { from: "start", dx: -15, dy: 248 } },
-      { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
+      { id: "site-box", kind: "engine", at: { center: true } }
     ],
     // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition).
     // No wires at the start (owner, 2026-10-12): the visitor connects the supers; the ones a program could

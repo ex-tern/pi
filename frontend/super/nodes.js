@@ -264,10 +264,11 @@
           n.prompt = verb ? "" : (typed ? (wired.length ? typed + " (wired in: " + wired.join("; ") + ")" : typed) : wired.join(" ")).trim();
           if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
-          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "running");
+          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || "run");
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
           // a Super AI super: the prompt is typed straight into it and the answer shows in it, wrapped (fitText)
           r.text = n.st.go ? "thinking…" : t || typed || idle;          // every engine super, the central one too
+          if (n.id !== "site-box" && n.prompt && !t && !n.st.go && !connectedToRun(n)) r.text = typed || n.prompt;   // waits for a wire to run: it shows its question
           break;
         }
         const v = ins[ins.length - 1];
@@ -448,6 +449,8 @@
         n.el.classList.toggle("is-thinking", !!n.st.go);
         const typing = n.id !== "site-box" && n.str && !n.st.commit;     // a Super AI super being typed into waits for Enter
         if (n.prompt && n.prompt !== n.st.asked && !n.st.go && !n.held && !n.st.timer && !typing) n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 900);   // a new question: ask (once it has settled)
+        // a Super AI super waiting for a wire to run: the moment it is connected, it asks
+        if (n.st.unrun && !n.st.go && !n.st.timer && n.prompt && connectedToRun(n)) { n.st.unrun = false; n.st.timer = setTimeout(() => { n.st.timer = 0; askEngine(n); }, 300); }
         if (!n.prompt && (n.answer || n.st.asked)) { n.answer = ""; n.st.asked = ""; persist(); }   // nothing wired in: back to its state
       }
       if (n.fn === "super" || n.fn === "ask") {                          // its status, always current
@@ -1172,10 +1175,30 @@
       follow(n, r, q); persist();
     });
   }
+  // A Super AI super runs only when it is connected to run, the central super (owner, 2026-10-12): joined to it
+  // by wires (through other supers too), or sitting inside it. Unconnected, it computes what is computable
+  // (numbers) but asks no engine, and says so.
+  function connectedToRun(n) {
+    if (n.id === "site-box") return true;
+    const run = nodes.find(x => x.id === "site-box");
+    if (!run) return false;
+    if (isHolder(run) && within(run, n)) return true;
+    const SL = window.SuperLink, links = SL && SL.links ? SL.links() : [];
+    const idOf = an => { const m = an && an.h && /^(?:port:)?node:([^/]+)/.exec(an.h); return m ? m[1] : null; };
+    const near = new Map();
+    const join = (a, b) => { if (!a || !b || a === b) return; (near.get(a) || near.set(a, new Set()).get(a)).add(b); (near.get(b) || near.set(b, new Set()).get(b)).add(a); };
+    links.forEach(l => join(idOf(l.a), idOf(l.b)));
+    nodes.forEach(m => m.inputs.forEach(ref => ref.node && join(m.id, ref.node)));
+    const seen = new Set([n.id]), q = [n.id];
+    while (q.length) { const id = q.shift(); if (id === "site-box") return true; (near.get(id) || []).forEach(o => { if (!seen.has(o)) { seen.add(o); q.push(o); } }); }
+    return false;
+  }
   async function askEngine(n, pressed) {
     const prompt = n.prompt || "";
     if (n.role === "engine" && n.id !== "site-box" && window.SuperPrompt && prompt) {
       if (n.held) { say("Super AI: stopped"); return; }
+      if (!connectedToRun(n)) { n.st.unrun = true; n.st.asked = prompt; say("Super AI: connect it to run first (the super in the middle)"); tick(); return; }   // asked again when its wiring changes
+      n.st.unrun = false;
       askEvery(n, prompt); return;
     }
     if (!prompt) { if (pressed) say("Super Neural Engine: wire something into it first"); return; }
@@ -1305,10 +1328,18 @@
     // the diagram you left last time; on a first visit in the superellipse look, one ■ in the middle of the
     // inner super wired to its four ports (input and sync into it, out of it to output and condition),
     // so the page starts as a diagram that runs
-    const saved = restore("lv:nodes");
+    let saved = restore("lv:nodes");
+    // the first supers of earlier visits (Connect wires to begin, use shift+scroll, open, close, run) are gone
+    // from the start (owner, 2026-10-12): a kept diagram loses them too, unless something was typed into them
+    if (saved && !restore("lv:intro-gone")) {
+      const intro = { start: "", shift: "", open: "open", close: "close", run: "run" };
+      saved = saved.filter(n => !(n && n.id in intro && ((n.str || "").trim() === intro[n.id] || !(n.str || "").trim())));
+      save("lv:nodes", saved); save("lv:intro-gone", 1);
+      if (window.SuperLink && window.SuperLink.forget) Object.keys(intro).forEach(id => window.SuperLink.forget("node:" + id));
+    }
     (saved || []).forEach(make);
     // the central super is the AI engine: a ■ with the role "engine" shows the engines' answer to what is wired
-    // into its input, "running" when nothing is; its ports are the site's: input and sync in, output and condition
+    // into its input, "run" when nothing is (owner, 2026-10-12); its ports are the site's: input and sync in, output and condition
     const id = "site-box";
     const central = nodes.find(x => x.id === id);
     const fresh = (!saved || !central) && se();
