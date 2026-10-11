@@ -161,3 +161,6 @@ html.shape-se .live-dock.open .live-body {
 /* no PiEN halo around the suggested bubble in this look (PiEN still learns; the bubble just is not ringed) */
 html.shape-se .orbit-bubble.pien-pick { box-shadow: none; }
 html.shape-se .orbit-bubble.pien-pick::after { display: none; animation: none; }
+
+/* with a window open the mark is off: no small mark, no π counter, nothing to press under the windows */
+html.shape-se.orbit-open .orbit-core, html.shape-se.orbit-open .orbit-pi { visibility: hidden; pointer-events: none; }
