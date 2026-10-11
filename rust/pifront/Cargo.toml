@@ -1,0 +1,16 @@
+[package]
+name = "pifront"
+version = "0.1.0"
+edition = "2021"
+description = "Pi Tech Lab's front door: static files, the site password, and the way through to the Python engines"
+license = "MIT"
+
+# Deliberately no dependencies: the standard library alone, so it builds anywhere, offline,
+# in seconds, and nothing in the front door can go stale. See src/main.rs.
+[dependencies]
+
+[profile.release]
+opt-level = 2
+lto = true
+codegen-units = 1
+strip = true
