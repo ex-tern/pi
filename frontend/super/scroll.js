@@ -67,7 +67,7 @@
       if (!r.width || !r.height) return;
       if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;          // inside it: not its edge
       const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
-      if (d > BAND) return;
+      if (d > Math.max(3, BAND * Math.min(1, Math.min(r.width, r.height) / 56))) return;   // a small super has a small band
       if (over && over !== el && !over.contains(el) && !el.contains(over)) return;     // the point is on something else
       if (!best || d < best.d) best = { el, d };
     });

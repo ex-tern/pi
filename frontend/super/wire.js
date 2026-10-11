@@ -268,6 +268,8 @@
   // their own use (moving, pressing, typing).
   const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
   const IN = 6, OUT = 5;
+  // the edge band shrinks with a small super, so a tiny thing is not all edge: about a tenth of its smaller side
+  const bands = r => { const k = Math.min(1, Math.min(r.width, r.height) / 56); return { in: Math.max(2, IN * k), out: Math.max(2, OUT * k) }; };
   function edgeAt(x, y) {
     if (!x && !y) return null;
     const v = svg ? svg.style.visibility : "";
@@ -286,11 +288,12 @@
         const R = r.width / 2, c = Math.hypot(x - (r.left + R), y - (r.top + r.height / 2));
         d = c - R;
         if (el.classList.contains("is-loop")) { if (d <= 4 || d > 13) return; }   // a loop: its ring moves it (super/nodes.js), just outside wires
-        else if (d > OUT || d < -IN) return;
+        else { const b = bands(r); if (d > b.out || d < -b.in) return; }
       } else {
         const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-        if (ins) { d = -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y); if (d < -IN) return; }
-        else { d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom)); if (d > OUT) return; }
+        const b = bands(r);
+        if (ins) { d = -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y); if (d < -b.in) return; }
+        else { d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom)); if (d > b.out) return; }
         if (!ins && owner && owner !== el) return;                        // just outside it, but over something else
         if (ins && owner && owner !== el && !owner.contains(el) && !el.contains(owner)) return;   // covered
       }
