@@ -473,6 +473,12 @@
       const b = el.getBoundingClientRect();
       if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
     });
+    // the round look: the first supers a visitor sees (super/nodes.js, everywhere in the program) are in the way too
+    if (!merged()) document.querySelectorAll(".lv-node.is-wrap").forEach(el => {
+      if (el.classList.contains("is-dragging")) return;
+      const b = el.getBoundingClientRect();
+      if (b.width && b.height) out.push(grow({ x: b.left, y: b.top - top, w: b.width, h: b.height }, g));
+    });
     // superellipse look: an open window sits inside the inner super with the bubbles, and hides none of
     // them: the bubbles step out of its way (in their own layout coordinates) and come back when it closes
     // nothing overlaps: nodes, the Live panel when open and the title are in the way too

@@ -64,16 +64,17 @@ window.SUPERAI_PROGRAM = {
   // ---- the diagram a first visit starts with ---------------------------------------------------------
   // A super: id, kind (engine: a Super AI super; box: a plain one), text typed into it, a hint shown until
   // something is, size (px), and where it is: { center }, { fx, fy } (fractions of the screen),
-  // { from: id, dx, dy } (px from another super) or { leftOf: "site.input", dy } (beside a port of the site).
+  // { from: id, dx, dy } (px from another super) or { leftOf: "site.input", dy } (beside a port of the site);
+  // everywhere: shown to first-time visitors in the round look too (pitechlab.com), not only the superellipse one.
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
   // and condition, as every super's are.
   diagram: {
     supers: [
       { id: "site-box", kind: "engine", at: { center: true } },
-      { id: "start", kind: "engine", hint: "Connect wires to begin", size: 132, at: { fx: 0.126, fy: 0.131 } },
-      { id: "shift", kind: "engine", hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
-      { id: "open", kind: "engine", text: "open", at: { from: "start", dx: 104, dy: 155 } },
-      { id: "close", kind: "engine", text: "close", at: { from: "start", dx: -15, dy: 248 } },
+      { id: "start", kind: "engine", everywhere: true, hint: "Connect wires to begin", size: 132, at: { fx: 0.126, fy: 0.131 } },
+      { id: "shift", kind: "engine", everywhere: true, hint: "use shift+scroll", size: 98, at: { from: "start", dx: 261, dy: -19 } },
+      { id: "open", kind: "engine", everywhere: true, text: "open", at: { from: "start", dx: 104, dy: 155 } },
+      { id: "close", kind: "engine", everywhere: true, text: "close", at: { from: "start", dx: -15, dy: 248 } },
       { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
     ],
     wires: [
@@ -84,6 +85,10 @@ window.SUPERAI_PROGRAM = {
       ["run.output", "site.input"]
     ]
   },
+
+  // ---- Live: what the site is doing, a super inside the inner super ------------------------------------
+  // live.js reads it: where its data comes from, how often, and the functions below that write its lines
+  live: { source: "/api/live", every: 30, status: "liveStatus", counts: "liveCounts", ago: "ago", inside: "site" },
 
   // ---- functions: small parts of the site, written in SuperAI ----------------------------------------
   // Each is supers and wires with inputs (kind input, by name) and an output (kind output, "out"), run by
@@ -124,6 +129,41 @@ window.SUPERAI_PROGRAM = {
         ["m.output", "ind.input"], ["day.output", "ind.input"], ["ind.output", "rd.input"], ["rd.output", "days.input"], ["dw.output", "days.input"],
         ["now.output", "pick.input"], ["mins.output", "pick.input"], ["hrs.output", "pick.input"], ["days.output", "pick.input"],
         ["pick.output", "out.input"]
+      ]
+    },
+    // the Live panel's first line: what the site is doing (enabled: it assesses papers by itself while idle;
+    // working: it is assessing one now); gated texts into an empty ■ choose
+    liveStatus: {
+      supers: [
+        { id: "enabled", kind: "input" }, { id: "working", kind: "input" },
+        { id: "off", text: "not" }, { id: "busy", text: "and" },
+        { id: "manual", text: "Papers are assessed when people submit them." },
+        { id: "now", text: "Assessing a paper now, found on its own while the site is quiet." },
+        { id: "idle", text: "Working while idle. When the site is quiet it finds open-access papers and assesses them." },
+        { id: "pick" }, { id: "out", kind: "output" }
+      ],
+      wires: [
+        ["enabled.output", "off.input"], ["off.output", "manual.condition"],
+        ["enabled.output", "busy.input"], ["working.output", "busy.input"], ["busy.output", "now.condition"],
+        ["enabled.output", "idle.condition"],
+        ["manual.output", "pick.input"], ["now.output", "pick.input"], ["idle.output", "pick.input"], ["pick.output", "out.input"]
+      ]
+    },
+    // the Live panel's counts: "21 assessed today (3 by itself) · 26 in total" (the part in brackets only when
+    // the site assesses by itself)
+    liveCounts: {
+      supers: [
+        { id: "today", kind: "input" }, { id: "byself", kind: "input" }, { id: "total", kind: "input" }, { id: "enabled", kind: "input" },
+        { id: "tw", text: "assessed today" }, { id: "day", text: "+" },
+        { id: "open", text: "(" }, { id: "close", text: "by itself)" }, { id: "n", text: "&" }, { id: "self", text: "+" },
+        { id: "dot", text: "·" }, { id: "allw", text: "in total" }, { id: "all", text: "+" },
+        { id: "line", text: "+" }, { id: "out", kind: "output" }
+      ],
+      wires: [
+        ["today.output", "day.input"], ["tw.output", "day.input"],
+        ["open.output", "n.input"], ["byself.output", "n.input"], ["n.output", "self.input"], ["close.output", "self.input"], ["enabled.output", "self.condition"],
+        ["dot.output", "all.input"], ["total.output", "all.input"], ["allw.output", "all.input"],
+        ["day.output", "line.input"], ["self.output", "line.input"], ["all.output", "line.input"], ["line.output", "out.input"]
       ]
     },
     // two numbers added, or two words joined (the + super)

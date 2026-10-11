@@ -48,7 +48,14 @@
   function compactRect() {
     const vw = window.innerWidth, vh = window.innerHeight;
     const x = state.x != null ? state.x * vw : 0.126 * vw, y = state.y != null ? state.y * vh : 0.70 * vh;
-    return { x: Math.max(4, Math.min(vw - MIN - 4, x)), y: Math.max(4, Math.min(vh - MIN - 4, y)), w: MIN, h: MIN };
+    const B = room();                                              // it lives inside the inner super, the second super
+    return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w: MIN, h: MIN };
+  }
+  // where the compact super may sit: inside the inner super, clear of its curved corners (the page when there is none)
+  function room() {
+    const vw = window.innerWidth, vh = window.innerHeight, f = fullRect();
+    const x0 = Math.max(4, f.x), y0 = Math.max(4, f.y), x1 = Math.min(vw - MIN - 4, f.x + f.w - MIN), y1 = Math.min(vh - MIN - 4, f.y + f.h - MIN);
+    return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : { x0: 4, y0: 4, x1: vw - MIN - 4, y1: vh - MIN - 4 };
   }
   function fullRect() {
     const sb = O().siteBox ? O().siteBox() : null, vw = window.innerWidth, vh = window.innerHeight;
@@ -308,7 +315,8 @@
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
-      if (x < 4 || y < 4 || x > vw - MIN - 4 || y > vh - MIN - 4 || !free(x, y)) continue;
+      const B = room();
+      if (x < B.x0 || y < B.y0 || x > B.x1 || y > B.y1 || !free(x, y)) continue;
       state.x = x / vw; state.y = y / vh; place(); return;
     }
   }

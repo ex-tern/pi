@@ -225,3 +225,21 @@ html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: 
 /* a super zoomed into (super/nodes.js textZoom): its text is clipped to its shape */
 .lv-node.is-tzoom { overflow: hidden; }
 .lv-node.is-tzoom .lv-glyph { will-change: transform; }
+
+/* the round look (pitechlab.com): a Super AI super looks as it does in the superellipse look, a squircle at n = π
+   on paper with a port sparkle on each side (the first supers a visitor sees) */
+.lv-sp { display: none; }
+html:not(.shape-se) .lv-node.is-wrap {
+  background: var(--paper, #f6f6f4); border: 1.5px solid var(--ink, #191919); box-shadow: none; overflow: visible;
+  border-radius: 50%; corner-shape: superellipse(1.6515);
+}
+@supports not (corner-shape: round) { html:not(.shape-se) .lv-node.is-wrap { border-radius: 30%; } }
+html:not(.shape-se) .lv-node.is-wrap::after { display: none; }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp {
+  display: block; position: absolute; width: 11px; height: 11px; background: var(--ink, #191919); pointer-events: none;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+}
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-l { left: -6.5px; top: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-r { right: -6.5px; top: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-t { top: -6.5px; left: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-b { bottom: -6.5px; left: calc(50% - 5.5px); }

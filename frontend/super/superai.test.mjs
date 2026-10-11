@@ -29,5 +29,10 @@ assert.equal(call("percent", { part: 1, whole: 0 }), "");
 assert.equal(call("add", { a: 2, b: 3 }), "5");
 assert.equal(call("add", { a: "pi", b: "tech lab" }), "pi tech lab");
 assert.equal(handle({ op: "engine", typed: "", ins: [3, 5], attached: "+" }).value.text, "8");
+assert.equal(call("liveStatus", { enabled: false, working: false }), "Papers are assessed when people submit them.");
+assert.equal(call("liveStatus", { enabled: true, working: true }), "Assessing a paper now, found on its own while the site is quiet.");
+assert.match(call("liveStatus", { enabled: true, working: false }), /^Working while idle\./);
+assert.equal(call("liveCounts", { today: 21, byself: 3, total: 26, enabled: true }), "21 assessed today (3 by itself) · 26 in total");
+assert.equal(call("liveCounts", { today: 21, byself: 0, total: 26, enabled: false }), "21 assessed today · 26 in total");
 for (let i = 0; i < 2000; i++) handle({ op: "engine", typed: "×", ins: [6, 7] });   // memory is reset per request
 console.log("superai.wasm: all good");

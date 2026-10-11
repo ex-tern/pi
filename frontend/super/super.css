@@ -160,10 +160,12 @@ html.shape-se .om-page { display: block; }
 /* what used to sit on the page's edge steps inside the loop */
 html.shape-se .orbit-title { top: calc(var(--orbit-top, 0px) + var(--se-title-top, 36px)); }   /* orbit.js seatEdges */
 html.shape-se .lv-palette { left: var(--se-pal-left, 9vw); bottom: var(--se-pal-bottom, 10vh); }
-html.shape-se .live-tab { right: 6vw; }
-html.shape-se .live-dock.open .live-tab { right: calc(300px + 6vw + 12px); }   /* beside the panel, never on its curve */
+/* Live is inside the inner super (super/loop.js seatEdges sets --se-live-right and --se-live-m): the tab just inside
+   its right side, above the output line, the open panel inside it too */
+html.shape-se .live-tab { right: var(--se-live-right, 6vw); transform: translateY(calc(-100% - 18px)); }
+html.shape-se .live-dock.open .live-tab { right: calc(300px + var(--se-live-right, 6vw) + 12px); }   /* beside the panel, never on its curve */
 html.shape-se .live-dock.open .live-body {
-  margin: var(--se-live-m, 14vh) 6vw 0 0; height: calc(100% - 2 * var(--se-live-m, 14vh));
+  margin: var(--se-live-m, 14vh) var(--se-live-right, 6vw) 0 0; height: calc(100% - 2 * var(--se-live-m, 14vh));
   border: 1px solid var(--hair-strong); border-radius: 26px; corner-shape: superellipse(var(--se-k-window));
 }
 @media (max-width: 380px) { html.shape-se .live-dock.open .live-tab { right: calc(88vw - 6vw); } }
@@ -427,3 +429,8 @@ html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }
+/* the title super is the Reset view button (super/scroll.js): "reset view" in cobalt under its name once the view has changed */
+html.shape-se .orbit-title .sts-reset { display: none; font-size: 0.72em; color: var(--cobalt); line-height: 1.2; margin-top: 2px; }
+html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: pointer; }
+html.shape-se .orbit-title .se-titlesuper.is-changed .sts-reset { display: block; }
+html.shape-se .se-reset { display: none !important; }

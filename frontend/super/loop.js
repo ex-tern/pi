@@ -348,7 +348,9 @@
         // the title sits in the corner of the main loop as it is now (not at π), so a near-box loop keeps it
         // high, in the gap above the inner super
         const tr = title.getBoundingClientRect(), h = tr.height, tn = Math.max(Math.PI, loopN()), TITLE_M = -0.3 * Math.min(tr.width, h);   // its box's corners are empty (see measure)
-        for (let y = 8; y < ctx.H() / 3; y += 2) if (fits(tr.left, ctx.top() + y, tr.right, ctx.top() + y + h, tn, TITLE_M)) { root.setProperty("--se-title-top", y + "px"); break; }
+        // the title (a simple super) stays in the page's top-left corner whatever the loops' n (owner, 2026-10-11)
+        void fits; void tn; void TITLE_M;
+        root.setProperty("--se-title-top", "14px");
       }
       const pal = $(".lv-palette");
       if (pal && pal.offsetWidth) {
@@ -358,10 +360,16 @@
           if (fits(l, ctx.top() + ctx.H() - bt - h, l + w, ctx.top() + ctx.H() - bt)) { root.setProperty("--se-pal-left", Math.round(l) + "px"); root.setProperty("--se-pal-bottom", Math.round(bt) + "px"); break; }
         }
       }
+      // Live sits inside the inner super, the second super (owner, 2026-10-11): its tab just inside the inner
+      // super's right side, above the output line; open, the panel inside it too, clear of its edge
+      const sb = siteBox(), f = sb.fit || 1;
+      const right = sb.px + (sb.cx + sb.a - sb.px) * f, topE = sb.py + (sb.cy - sb.b - sb.py) * f, botE = sb.py + (sb.cy + sb.b - sb.py) * f;
+      const inR = Math.max(8, Math.round(Wv - right + 0.03 * sb.a * f + 12));
+      root.setProperty("--se-live-right", inR + "px");
       const live = $(".live-dock.open .live-body");
       if (live && live.offsetWidth) {
-        const w = live.offsetWidth, rr = Math.round(Wv * 0.06);
-        for (let m = 0.02 * ctx.H(); m < ctx.H() / 3; m += 4) if (fits(Wv - rr - w, ctx.top() + m, Wv - rr, ctx.top() + ctx.H() - m)) { root.setProperty("--se-live-m", Math.round(m) + "px"); break; }
+        const m = Math.max(topE - ctx.top(), ctx.top() + ctx.H() - botE) + 0.05 * sb.b * f + 12;
+        root.setProperty("--se-live-m", Math.round(Math.min(ctx.H() / 3, m)) + "px");
       }
     }
     // The site's super (super/site.js draws it): an inner superellipse the bubbles are laid out in, with the

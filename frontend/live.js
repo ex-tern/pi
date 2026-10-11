@@ -27,7 +27,8 @@
   const isOpen = () => dock.classList.contains("open");
   function apply(open) {
     dock.classList.toggle("open", open);
-    dock.classList.toggle("docked", open && window.innerWidth >= WIDE);
+    // docked, the page makes room for it; in the superellipse look it sits inside the inner super instead
+    dock.classList.toggle("docked", open && window.innerWidth >= WIDE && !document.documentElement.classList.contains("shape-se"));
     dock.querySelector(".live-tab").setAttribute("aria-expanded", String(open));
     if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout();
   }
@@ -60,20 +61,28 @@
     const idle = d.idle || {};
     const status = dock.querySelector(".live-status");
     dock.classList.toggle("working", !!idle.working_now);
-    if (!idle.enabled) status.textContent = "Papers are assessed when people submit them.";
+    // Live is written in SuperAI (pitechlab.super.js: live, and the functions liveStatus, liveCounts and ago),
+    // run by the Rust engine; the same lines in JavaScript until it has loaded
+    const S = window.SuperAI, L = (S && S.program && S.program.live) || {};
+    const said = S && S.call ? S.call(L.status || "liveStatus", { enabled: !!idle.enabled, working: !!idle.working_now }) : null;
+    if (said) {
+      const m = /^([^.,]*[.,])(.*)$/.exec(said);                     // its first phrase in bold, as before
+      status.innerHTML = idle.enabled && m ? "<b>" + esc(m[1].replace(/,$/, "")) + "</b>" + (m[1].endsWith(",") ? "," : "") + esc(m[2]) : esc(said);
+    } else if (!idle.enabled) status.textContent = "Papers are assessed when people submit them.";
     else status.innerHTML = idle.working_now
       ? "<b>Assessing a paper now</b>, found on its own while the site is quiet."
       : "<b>Working while idle.</b> When the site is quiet it finds open-access papers and assesses them.";
-    dock.querySelector(".live-counts").textContent =
-      d.today.toLocaleString() + " assessed today" +
+    const counts = S && S.call ? S.call(L.counts || "liveCounts", { today: d.today || 0, byself: idle.assessed_today || 0, total: d.total || 0, enabled: !!idle.enabled }) : null;
+    dock.querySelector(".live-counts").textContent = counts ||
+      (d.today.toLocaleString() + " assessed today" +
       (idle.enabled ? " (" + (idle.assessed_today || 0) + " by itself)" : "") +
-      " · " + d.total.toLocaleString() + " in total";
+      " · " + d.total.toLocaleString() + " in total");
     const list = dock.querySelector(".live-list");
     list.innerHTML = (d.latest || []).map(p => p.auto
       ? '<li class="auto"><button type="button" data-hash="' + esc(p.eval_hash) + '">' + esc(p.title || "Untitled") + '</button>' +
-        '<span>' + esc(p.field) + ' · piX ' + p.score.toFixed(1) + ' · ' + esc(ago(p.at)) + ' · <em>assessed while idle</em></span></li>'
+        '<span>' + esc(p.field) + ' · piX ' + (+p.score || 0).toFixed(1) + ' · ' + esc(ago(p.at)) + ' · <em>assessed while idle</em></span></li>'
       : '<li><b>A paper in ' + esc(p.field) + '</b>' +
-        '<span>piX ' + p.score.toFixed(1) + ' · ' + esc(p.date) + ' · ' + (p.signed_in ? "by a signed-in researcher" : "anonymous") + '</span></li>'
+        '<span>piX ' + (+p.score || 0).toFixed(1) + ' · ' + esc(p.date) + ' · ' + (p.signed_in ? "by a signed-in researcher" : "anonymous") + '</span></li>'
     ).join("") || '<li class="none">Nothing assessed yet.</li>';
     list.querySelectorAll("button[data-hash]").forEach(b => b.addEventListener("click", () => {
       if (typeof openDossierByHash === "function") openDossierByHash(b.dataset.hash);
@@ -86,7 +95,8 @@
 
   async function refresh() {
     try {
-      const r = await fetch("/api/live");
+      const L = (window.SuperAI && window.SuperAI.program && window.SuperAI.program.live) || {};
+      const r = await fetch(L.source || "/api/live");
       if (r.ok) render(await r.json());
     } catch (_) { /* offline: keep what is shown */ }
   }
@@ -98,7 +108,9 @@
     apply(p === null ? (window.innerWidth >= WIDE && !document.documentElement.classList.contains("shape-se")) : !!p);
     window.addEventListener("resize", () => apply(isOpen()));
     refresh();
-    setInterval(() => { if (document.visibilityState === "visible") refresh(); }, 30000);
+    document.addEventListener("superai:ready", () => { if (data) render(data); });   // the lines again, now from SuperAI
+    const every = ((window.SuperAI && window.SuperAI.program && window.SuperAI.program.live) || {}).every || 30;
+    setInterval(() => { if (document.visibilityState === "visible") refresh(); }, Math.max(5, every) * 1000);
     document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
     document.addEventListener("scholarpi:assessment-done", () => setTimeout(refresh, 1500));
   }

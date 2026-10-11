@@ -619,6 +619,8 @@
     textZoom(el, g);
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
+    // four port sparkles drawn on the super itself, for the round look (in the superellipse look super/site.js places live ports)
+    el.insertAdjacentHTML("beforeend", '<i class="lv-sp lv-sp-l" aria-hidden="true"></i><i class="lv-sp lv-sp-r" aria-hidden="true"></i><i class="lv-sp lv-sp-t" aria-hidden="true"></i><i class="lv-sp lv-sp-b" aria-hidden="true"></i>');
     const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "" };
     n.str = spec.str || "";
     n.n = +spec.n || nOfFn[f.k];
@@ -711,9 +713,15 @@
   // ---- the program's diagram ---------------------------------------------------------------------
   // A first visit lays out SuperAI.program.diagram: each super where its "at" says, then its wires
   // ("super.port" to "super.port"; "site" is the inner super) as SuperLink port wires.
-  function layoutProgram() {
-    const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
-    if (!prog) return;
+  // round: the round look (production's pitechlab.com), which has no inner super and no ports on the page:
+  // only the supers marked everywhere (the first supers a visitor sees) and the wires between them
+  function layoutProgram(round) {
+    const all = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
+    if (!all) return;
+    const keep = s => !round || s.everywhere;
+    const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
+    const prog = round ? { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(e => ids.has(String(e).split(".")[0]))) } : all;
+    if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
     const sb = O().siteBox ? O().siteBox() : null;
     const portXY = name => {                                        // a port of the inner super, on screen
@@ -1267,6 +1275,7 @@
     const central = nodes.find(x => x.id === id);
     const fresh = !saved && se();
     if (fresh) layoutProgram();                                     // a first visit: the program's diagram (super/pitechlab.super.js)
+    else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && !fresh && nodes.find(x => x.id === id)) {
       const wire = () => {

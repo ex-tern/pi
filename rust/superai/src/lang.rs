@@ -17,7 +17,8 @@
 //!   a number            that number                       "60"
 //!   an operator         that operation on what is wired in "+", "-", "×", "/", "^", "%",
 //!                                                         "<", ">", "=", "≤", "≥", "min", "max",
-//!                                                         "round", "floor", "and", "or", "not"
+//!                                                         "round", "floor", "and", "or", "not",
+//!                                                         "&" (words joined with no space)
 //!   other text          that text                          "min ago"
 //!   nothing             the first wired value that is not held (so gated supers make a choice)
 //! An operator on words joins them ("5" + "min ago" is "5 min ago").
@@ -130,7 +131,7 @@ pub fn parse_num(t: &str) -> Option<f64> {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub enum Op { Mul, Add, Sub, Div, Pow, Rem, Lt, Gt, Eq, Le, Ge, Min, Max, Round, Floor, And, Or, Not }
+pub enum Op { Mul, Add, Sub, Div, Pow, Rem, Lt, Gt, Eq, Le, Ge, Min, Max, Round, Floor, And, Or, Not, Cat }
 
 pub fn op_of(t: &str) -> Option<Op> {
     let k = t.trim().to_lowercase();
@@ -153,6 +154,7 @@ pub fn op_of(t: &str) -> Option<Op> {
         "and" => Op::And,
         "or" => Op::Or,
         "not" => Op::Not,
+        "&" | "join" => Op::Cat,
         _ => return None,
     })
 }
@@ -161,7 +163,7 @@ pub fn op_sym(op: Op) -> &'static str {
     match op {
         Op::Mul => "×", Op::Add => "+", Op::Sub => "-", Op::Div => "÷", Op::Pow => "^", Op::Rem => "%",
         Op::Lt => "<", Op::Gt => ">", Op::Eq => "=", Op::Le => "≤", Op::Ge => "≥", Op::Min => "min",
-        Op::Max => "max", Op::Round => "round", Op::Floor => "floor", Op::And => "and", Op::Or => "or", Op::Not => "not",
+        Op::Max => "max", Op::Round => "round", Op::Floor => "floor", Op::And => "and", Op::Or => "or", Op::Not => "not", Op::Cat => "&",
     }
 }
 
@@ -206,6 +208,7 @@ pub fn apply(op: Op, ins: &[Value]) -> Value {
         Op::And => return Value::Bool(ins.iter().all(|v| v.truthy())),
         Op::Or => return Value::Bool(ins.iter().any(|v| v.truthy())),
         Op::Not => return Value::Bool(!ins[0].truthy()),
+        Op::Cat => return Value::Text(ins.iter().map(|v| v.text()).collect::<String>()),   // joined as they are, no spaces
         _ => {}
     }
     let nums: Option<Vec<f64>> = ins.iter().map(|v| v.num()).collect();

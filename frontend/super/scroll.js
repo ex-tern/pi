@@ -105,7 +105,7 @@
   const RING_IN = 16, RING_OUT = 12;                        // the ring's band, inside and outside the edge
   const ringBand = (w, h) => { const k = Math.min(1, Math.min(w, h) / 64); return { in: Math.max(3, RING_IN * k), out: Math.max(3, RING_OUT * k) }; };
   function zoneAt(x, y, hit) {
-    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project, .se-reset")) return null;
+    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project")) return null;
     const over = hit && hit.closest ? hit.closest(THING) : null;
     let best = null;                                          // the nearest ring the point is on
     const S = window.SeSite || {}, sel = (S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
@@ -263,18 +263,33 @@
   }, { passive: false });
   document.addEventListener("gestureend", e => { if (on()) e.preventDefault(); gs = null; }, { passive: false });
 
-  // ---- the way back: Reset view (and the 0 key) -----------------------------------------------------
-  let resetBtn = null;
-  function resetButton() {
-    if (resetBtn || !document.body) return;
-    resetBtn = document.createElement("button");
-    resetBtn.type = "button"; resetBtn.className = "se-reset"; resetBtn.hidden = true; resetBtn.textContent = "Reset view";
-    resetBtn.setAttribute("aria-label", "Reset view: back to 100 % zoom and the first shape");
-    resetBtn.addEventListener("pointerdown", e => e.stopPropagation(), true);
-    resetBtn.addEventListener("click", e => { e.stopPropagation(); if (O().resetView) O().resetView(); });
-    document.body.appendChild(resetBtn);
+  // ---- the way back: the title super is the Reset view button (and the 0 key) ------------------------
+  // When the view has changed (PiOrbit.viewChanged), the title super shows "reset view" in cobalt under its
+  // name, and a click on it (not a drag) brings back the first view (PiOrbit.resetView).
+  let titleHooked = null, down = null;
+  function hookTitle() {
+    const t = document.querySelector(".orbit-title");
+    const sup = t && t.querySelector(".se-titlesuper");
+    if (!sup || titleHooked === sup) return sup;
+    titleHooked = sup;
+    if (!sup.querySelector(".sts-reset")) sup.insertAdjacentHTML("beforeend", '<span class="sts-reset">reset view</span>');
+    // on the window, before anything else (selecting, wiring) can take the press
+    window.addEventListener("pointerdown", e => { down = sup.contains(e.target) ? [e.clientX, e.clientY] : null; }, true);
+    window.addEventListener("pointerup", e => {
+      if (!down || !sup.contains(e.target) || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) { down = null; return; }   // a drag moved it: not a click
+      down = null;
+      if (!(O().viewChanged && O().viewChanged())) return;
+      if (O().resetView) O().resetView();
+    }, true);
+    return sup;
   }
-  setInterval(() => { if (!on()) return; resetButton(); if (resetBtn) resetBtn.hidden = !(O().viewChanged && O().viewChanged()); }, 400);
+  setInterval(() => {
+    if (!on()) return;
+    const sup = hookTitle(), changed = !!(O().viewChanged && O().viewChanged());
+    if (sup) sup.classList.toggle("is-changed", changed);
+    const t = document.querySelector(".orbit-title");
+    if (t) t.setAttribute("aria-label", changed ? "Pi Tech Lab. Press to reset the view" : "Pi Tech Lab");
+  }, 400);
   document.addEventListener("keydown", e => {
     if (!on() || e.key !== "0" || e.ctrlKey || e.metaKey || e.altKey) return;
     const a = document.activeElement;

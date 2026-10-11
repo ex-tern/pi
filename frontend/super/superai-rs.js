@@ -40,7 +40,7 @@
     return o ? o.text : null;
   };
 
-  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=1") || "super/superai.wasm?v=1";
+  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=2") || "super/superai.wasm?v=2";
   fetch(src).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => WebAssembly.instantiate(b, {}))
     .then(({ instance }) => {
