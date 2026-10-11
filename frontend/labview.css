@@ -185,3 +185,5 @@ html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .lv-node input.lv-in, .lv-node input.lv-in:focus { padding: 0; }
 .lv-node:has(input:focus) { border-color: var(--cobalt); }
 .lv-node input.lv-in:focus-visible, .lv-node input.lv-q:focus-visible { outline: none !important; }   /* the node's cobalt edge shows focus instead */
+/* no labels under the shapes: values show inside a ■, status in the shape itself (cobalt while thinking, dashed when held) */
+.lv-node .lv-val, .lv-node.lv-dot.is-loop .lv-val { display: none; }
