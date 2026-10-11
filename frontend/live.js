@@ -23,6 +23,7 @@
     '<p class="live-status">…</p><p class="live-counts"></p>' +
     '<h4>Latest papers</h4><ol class="live-list"></ol></div></div>';
 
+  const body = dock.querySelector(".live-body");               // the panel's content (a window's, in the superellipse look)
   const pref = () => { try { return JSON.parse(localStorage.getItem("orbit:live:open") || "null"); } catch (_) { return null; } };
   const isOpen = () => dock.classList.contains("open");
   function apply(open) {
@@ -52,15 +53,20 @@
   // the panel as a value, for a wire from it (super/nodes.js): how many assessed today, whether it works now
   function value() {
     const d = data || {}, idle = d.idle || {};
-    const t = d.today == null ? (isOpen() ? "Live" : "Live, folded") : d.today + " assessed today" + (idle.working_now ? ", assessing now" : "");
-    return { num: d.today || 0, isNum: d.today != null, bool: !!idle.working_now || isOpen(), str: t, text: t };
+    const open = asWindow ? winOpen() : isOpen();
+    const t = d.today == null ? (open ? "Live" : "Live, folded") : d.today + " assessed today" + (idle.working_now ? ", assessing now" : "");
+    return { num: d.today || 0, isNum: d.today != null, bool: !!idle.working_now || open, str: t, text: t };
   }
-  window.PiLive = { open: () => setOpen(true), close: () => setOpen(false), isOpen, value };
+  const winOpen = () => { const i = window.PiOrbit && window.PiOrbit.info && window.PiOrbit.info("live:Live"); return !!(i && i.open); };
+  window.PiLive = {
+    open: () => { if (asWindow) { if (window.PiOrbit.openKey) window.PiOrbit.openKey("live:Live"); } else setOpen(true); },
+    close: () => { if (asWindow) { if (window.PiOrbit.close) window.PiOrbit.close("live:Live"); } else setOpen(false); },
+    isOpen: () => (asWindow ? winOpen() : isOpen()), value };
   function render(d) {
     data = d;
     const idle = d.idle || {};
-    const status = dock.querySelector(".live-status");
-    dock.classList.toggle("working", !!idle.working_now);
+    const status = body.querySelector(".live-status");
+    body.classList.toggle("working", !!idle.working_now); dock.classList.toggle("working", !!idle.working_now);
     // Live is written in SuperAI (pitechlab.super.js: live, and the functions liveStatus, liveCounts and ago),
     // run by the Rust engine; the same lines in JavaScript until it has loaded
     const S = window.SuperAI, L = (S && S.program && S.program.live) || {};
@@ -73,11 +79,11 @@
       ? "<b>Assessing a paper now</b>, found on its own while the site is quiet."
       : "<b>Working while idle.</b> When the site is quiet it finds open-access papers and assesses them.";
     const counts = S && S.call ? S.call(L.counts || "liveCounts", { today: d.today || 0, byself: idle.assessed_today || 0, total: d.total || 0, enabled: !!idle.enabled }) : null;
-    dock.querySelector(".live-counts").textContent = counts ||
+    body.querySelector(".live-counts").textContent = counts ||
       (d.today.toLocaleString() + " assessed today" +
       (idle.enabled ? " (" + (idle.assessed_today || 0) + " by itself)" : "") +
       " · " + d.total.toLocaleString() + " in total");
-    const list = dock.querySelector(".live-list");
+    const list = body.querySelector(".live-list");
     list.innerHTML = (d.latest || []).map(p => p.auto
       ? '<li class="auto"><button type="button" data-hash="' + esc(p.eval_hash) + '">' + esc(p.title || "Untitled") + '</button>' +
         '<span>' + esc(p.field) + ' · piX ' + (+p.score || 0).toFixed(1) + ' · ' + esc(ago(p.at)) + ' · <em>assessed while idle</em></span></li>'
@@ -87,9 +93,9 @@
     list.querySelectorAll("button[data-hash]").forEach(b => b.addEventListener("click", () => {
       if (typeof openDossierByHash === "function") openDossierByHash(b.dataset.hash);
     }));
-    dock.querySelector(".live-updated").textContent = "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    body.querySelector(".live-updated").textContent = "updated " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
     const n = (d.latest || []).length ? JSON.stringify(d.latest[0]) : "";
-    if (last !== null && n !== last) { dock.classList.remove("ping"); void dock.offsetWidth; dock.classList.add("ping"); }
+    if (last !== null && n !== last) { body.classList.remove("ping"); void dock.offsetWidth; body.classList.add("ping"); }
     last = n;
   }
 
@@ -101,11 +107,30 @@
     } catch (_) { /* offline: keep what is shown */ }
   }
 
+  // the superellipse look: Live is a window in the Explore bubble (owner, 2026-10-12), a pill like the others
+  // (pitechlab.super.js bubbles: Explore holds "Live"); its body is the window's content, and PiLive.open /
+  // close open and close that window. The round look keeps the panel at the side.
+  const se = () => document.documentElement.classList.contains("shape-se");
+  let asWindow = false;
   function start() {
+    if (se() && window.PiOrbit && window.PiOrbit.addPill) {
+      asWindow = true;
+      const content = document.createElement("div");
+      content.className = "live-window";
+      content.appendChild(dock.querySelector(".live-body"));
+      dock.remove();
+      window.PiOrbit.addPill({ key: "live:Live", section: { key: "live", name: "Live" }, title: "Live", content });
+      refresh();
+      document.addEventListener("superai:ready", () => { if (data) render(data); });
+      const every = ((window.SuperAI && window.SuperAI.program && window.SuperAI.program.live) || {}).every || 30;
+      setInterval(() => { if (document.visibilityState === "visible") refresh(); }, Math.max(5, every) * 1000);
+      document.addEventListener("visibilitychange", () => { if (document.visibilityState === "visible") refresh(); });
+      document.addEventListener("scholarpi:assessment-done", () => setTimeout(refresh, 1500));
+      return;
+    }
     document.body.appendChild(dock);
     const p = pref();
-    // the superellipse look starts with Live folded to its tab, inside the main super
-    apply(p === null ? (window.innerWidth >= WIDE && !document.documentElement.classList.contains("shape-se")) : !!p);
+    apply(p === null ? (window.innerWidth >= WIDE && !se()) : !!p);
     window.addEventListener("resize", () => apply(isOpen()));
     refresh();
     document.addEventListener("superai:ready", () => { if (data) render(data); });   // the lines again, now from SuperAI

@@ -484,3 +484,7 @@ html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shap
 html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
 /* wires are drawn in ink like the supers they join (they were hairline grey and hard to see) */
 html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphite); stroke-width: 1.5; }
+/* Live as a window in Explore (live.js, superellipse look): its body is plain window content */
+html.shape-se .live-window .live-body { display: block; width: auto; max-width: none; height: auto; padding: 0; border: 0; background: transparent; overflow: visible; filter: none; }
+html.shape-se .live-window .live-scroll { margin: 0; overflow: visible; }
+html.shape-se .live-window .live-head { margin-top: 0; }

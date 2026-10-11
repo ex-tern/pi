@@ -13,7 +13,7 @@
 .live-tab:hover { color: var(--cobalt); }
 .live-tab-text { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.04em; }
 .live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); flex: none; }
-.live-dock.working .live-dot { background: var(--cobalt); animation: live-pulse 1.6s ease-in-out infinite; }
+.live-dock.working .live-dot, .live-body.working .live-dot { background: var(--cobalt); animation: live-pulse 1.6s ease-in-out infinite; }
 @keyframes live-pulse { 50% { opacity: 0.35; } }
 
 .live-body {
@@ -41,5 +41,5 @@
 }
 .live-list li button:hover { color: var(--cobalt); }
 .live-list li.none { color: var(--graphite); }
-.live-dock.ping .live-head .live-dot { animation: live-pulse 0.5s ease-in-out 3; }
+.live-dock.ping .live-head .live-dot, .live-body.ping .live-head .live-dot { animation: live-pulse 0.5s ease-in-out 3; }
 .live-scroll { display: block; }

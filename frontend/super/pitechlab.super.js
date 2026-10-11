@@ -60,7 +60,7 @@ window.SUPERAI_PROGRAM = {
     { title: "Lab", source: "lab", at: { fx: 0.08, fy: 0.22 } },
     { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.12, fy: -0.02 } },
     { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.3, fy: -0.02 } },
-    { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.1, fy: -0.02 } },
+    { title: "Explore", key: "explore", members: ["Live", "The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.1, fy: -0.02 } },
     { title: "Connect", key: "connect", at: { fx: -0.3, fy: -0.02 }, members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
                                                  "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
@@ -88,7 +88,7 @@ window.SUPERAI_PROGRAM = {
 
   // ---- Live: what the site is doing, a super inside the inner super ------------------------------------
   // live.js reads it: where its data comes from, how often, and the functions below that write its lines
-  live: { source: "/api/live", every: 30, status: "liveStatus", counts: "liveCounts", ago: "ago", inside: "site" },
+  live: { source: "/api/live", every: 30, status: "liveStatus", counts: "liveCounts", ago: "ago", inside: "Explore" },
 
   // ---- functions: small parts of the site, written in SuperAI ----------------------------------------
   // Each is supers and wires with inputs (kind input, by name) and an output (kind output, "out"), run by
