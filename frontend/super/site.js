@@ -20,8 +20,9 @@
 //              output  the window's title and what it says
 //              sync    every tick of what is wired in refreshes it (its field is re-entered) and brings it up
 //              condition  wired false the window is held: dimmed, taking no input
-//   a loop (super/nodes.js reads its ports): input sets its count, sync steps it instead of the
-//              clock, condition false pauses it; its output is what is inside it, or its count
+//   a node:    input feeds it (as a wire to it does), output is its value, sync re-asks it (◆, ?) or
+//              refreshes it on every tick, condition false holds it; a loop (super/nodes.js reads its
+//              ports): input sets its count, sync steps it instead of the clock, condition false pauses it
 //
 // Windows are superellipses too (n = π over their whole box): CSS corner-shape where the browser
 // has it, otherwise a clip-path polygon and an outline drawn here, so Safari sees the same shape.
@@ -98,10 +99,10 @@
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
         set.input.classList.toggle("is-held", p.classList.contains("se-held"));
       });
-      document.querySelectorAll(".lv-node.is-loop[data-id]").forEach(nd => {
+      document.querySelectorAll(".lv-node[data-id]").forEach(nd => {       // every node is a super with four ports
         const r = nd.getBoundingClientRect(); if (!r.width) return;
         const owner = "node:" + nd.dataset.id; seen.add(owner);
-        const set = ensurePorts(owner, "the loop");
+        const set = ensurePorts(owner, nd.classList.contains("is-loop") ? "the loop" : (nd.title || "the node"));
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
       });
     }

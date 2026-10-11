@@ -139,7 +139,10 @@
     const isSink = x => !!x && ((x.fn === "box" && !x.role) || (x.role === "text" && !!opOf(x.str)));
     const sink = h => isSink(h && h.startsWith("node:") && nodes.find(m => "node:" + m.id === h));
     const meSink = isSink(n);
+    const inPort = "port:" + me + "/input";                      // the node's own input port (super/site.js): what is wired to it feeds the node
     L.forEach(l => {
+      if (l.a && l.a.h === inPort && l.b && !(l.b.h && l.b.h === me)) { out.push(l.b); return; }
+      if (l.b && l.b.h === inPort && l.a && !(l.a.h && l.a.h === me)) { out.push(l.a); return; }
       const ah = l.a && l.a.h, bh = l.b && l.b.h;
       const other = ah === me ? bh : bh === me ? ah : null;
       if (other && other !== me && other.startsWith("node:") && meSink !== sink(other)) { if (meSink) out.push(ah === me ? l.b : l.a); return; }
@@ -320,7 +323,7 @@
     if (pi && !piHeld) { piHeld = true; if (!still()) run(false); }
     else if (!pi && piHeld) { piHeld = false; run(true); }
     nodes.forEach(n => {
-      const was = n.held; n.held = held.has(n.id);
+      const was = n.held; n.held = held.has(n.id) || !!n.portHeld;
       n.el.classList.toggle("is-held", n.held);
       if (n.held && !was && n.st.ctrl) n.st.ctrl.abort();
       if (n.held && n.st.timer) { clearTimeout(n.st.timer); n.st.timer = 0; }
@@ -390,15 +393,29 @@
       const [owner, port] = pid.split("/");
       if (port === "output") return;
       const vals = into(pid);
-      if (owner.startsWith("node:")) feedLoop(owner.slice(5), port, vals.length ? vals : null);
+      if (owner.startsWith("node:")) feedNode(owner.slice(5), port, vals.length ? vals : null);
       else if (S.setPortInput) S.setPortInput(owner, port, vals.length ? vals : null);
     });
   }
   // a loop's ports: input sets its count, sync steps it on every change of what is wired in (the clock
   // then is that, not the second), condition false pauses it; its output is read by loopPort
-  function feedLoop(id, port, vals) {
-    const n = nodes.find(x => x.id === id); if (!n || n.role !== "loop") return;
+  function feedNode(id, port, vals) {
+    const n = nodes.find(x => x.id === id); if (!n) return;
     const st = n.ports || (n.ports = { input: null, sync: null, cond: null });
+    if (n.role !== "loop") {                                       // any other node: input feeds it (linkIns), sync re-asks or refreshes it, condition holds it
+      if (port === "sync") {
+        const key = vals ? vals.map(x => x && x.str).join("|") : null;
+        const was = st.sync; st.sync = key;
+        if (key !== null && was !== null && key !== was && !n.held) {
+          n.changed = performance.now();
+          if ((n.fn === "super" || n.fn === "ask") && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "ask" ? askPanel(n) : askEngine(n)), 300); }
+        }
+      } else if (port === "condition") {
+        const held = vals ? !vals.every(x => x && x.bool) : null;
+        if (held !== st.cond) { st.cond = held; n.portHeld = !!held; }
+      }
+      return;
+    }
     if (port === "input") {
       const v = vals ? vals.find(x => x && x.isNum) : null, k = v ? v.num : null;
       if (k !== st.input) { st.input = k; if (k !== null) n.i = Math.round(k); }
@@ -412,10 +429,15 @@
       if (held !== st.cond) { st.cond = held; if (held !== null) n.paused = held; }
     }
   }
-  function loopPort(id, port) {
+  function loopPort(id, port) {                                  // any node's port as a value
     const n = nodes.find(x => x.id === id); if (!n) return ZERO;
     if (port === "output") return evalNode(n);
     const st = n.ports || {};
+    if (n.role !== "loop") {
+      if (port === "input") { const v = linkIns(n).map(valueOfAnchor); const t = v.map(strOf).filter(Boolean).join(" "); return { num: v.length ? v[0].num : 0, isNum: !!(v[0] && v[0].isNum), bool: v.some(x => x.bool), str: t, text: t }; }
+      if (port === "sync") { const v = n.changed ? 1 : 0; return { num: v, isNum: true, bool: !n.held, str: String(v), text: String(v) }; }
+      return { num: n.held ? 0 : 1, isNum: true, bool: !n.held, str: n.held ? "held" : "running", text: n.held ? "held" : "running" };
+    }
     if (port === "input") { const v = st.input; return v == null ? ZERO : { num: v, isNum: true, bool: true, str: String(v), text: String(v) }; }
     if (port === "sync") { const v = n.i || 0; return { num: v, isNum: true, bool: !n.paused, str: String(v), text: String(v) }; }
     return { num: n.paused ? 0 : 1, isNum: true, bool: !n.paused, str: n.paused ? "paused" : "running", text: n.paused ? "paused" : "running" };
@@ -545,11 +567,11 @@
   }
   // a click on bare page (no window open) makes a node there, in a random super shape
   function spawnAt(x, y) {
-    const nn = randomN(), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
+    const nn = +Math.PI.toFixed(3), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);   // a click makes a super: a ■ at n = π, like everything else
     const L = toLayout(x, y);
     const m = make({ id, fn: fnOfN(nn), fx: (L.x - DOT_BASE / 2) / window.innerWidth, fy: (L.y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     clear(m); persist(); tick();
-    say(BY[m.fn].name + " made, n = " + nn.toFixed(2) + ": shift + scroll to change its shape, type into it, wire it");
+    say(BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
     return m;
   }
