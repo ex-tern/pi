@@ -602,7 +602,10 @@
       else say(BY[n.fn].name + ": " + (n.text || "no inputs yet"));
       tick();
     });
-    n.el.addEventListener("dblclick", () => { n.inputs = []; if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id); persist(); tick(); say(BY[n.fn].name + " unwired"); });
+    n.el.addEventListener("dblclick", e => {                              // a double click deletes it, wires and all
+      if (e.target.closest && e.target.closest("input")) return;
+      e.preventDefault(); e.stopPropagation(); remove(n); say(BY[n.fn].name + " deleted");
+    });
     n.el.addEventListener("keydown", e => {
       // the first thing typed into a blank ■ or ● decides: a letter makes a text field, a digit an integer field
       if ((n.fn === "box" || n.fn === "dot") && !n.role && !n.field && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") {
@@ -849,6 +852,11 @@
       zoomed = { n, t: performance.now() };
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
+    document.addEventListener("dblclick", e => {
+      const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); return Math.abs(d - r.width / 2) < 7; });
+      if (!n) return;
+      e.preventDefault(); e.stopPropagation(); remove(n); say("● loop deleted");
+    }, true);
     // a click on a loop's ring pauses it (or lets it go on)
     document.addEventListener("click", e => {
       const n = nodes.find(x => {
