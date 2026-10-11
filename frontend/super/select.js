@@ -81,25 +81,7 @@
     if (c.classList.contains("lv-node")) { if (window.LabView && window.LabView.zoomNode) window.LabView.zoomNode(c, dy); return; }
     if (Z && Z.sizeThing) Z.sizeThing(c, dy);
   }, { capture: true, passive: false });
-  // a selection lasts while the pointer is inside the super: leaving it hands the selection back to the
-  // super around it (a click enters a super, moving out of it leaves it)
-  const parentOf = s => s === "loop" ? "loop" : s === "site" ? "loop" : containerOf(s, 0, 0);
-  let lastXY = null, leaveT = 0;
-  document.addEventListener("pointermove", e => {
-    if (!on() || e.pointerType === "touch" || e.buttons) return;
-    lastXY = [e.clientX, e.clientY];
-    if (leaveT) return;
-    leaveT = setTimeout(() => {
-      leaveT = 0;
-      if (!lastXY || sel === "loop") return;
-      const [x, y] = lastXY, M = 14;
-      let inside;
-      if (sel === "site") inside = inSite(x, y);
-      else if (sel.classList.contains("lv-node")) { const r = sel.getBoundingClientRect(), R = r.width / 2; inside = Math.hypot(x - (r.left + R), y - (r.top + r.height / 2)) <= R + M; }
-      else { const r = sel.getBoundingClientRect(); inside = x >= r.left - M && x <= r.right + M && y >= r.top - M && y <= r.bottom + M; }
-      if (!inside) select(parentOf(sel));
-    }, 120);
-  }, { passive: true });
+  // a selection sticks: it changes only when another super is clicked (or the selected one goes away)
   // a selected super that goes away (a window closes, a loop is deleted): the main super again
   setInterval(() => { const el = elOf(sel); if (el && !el.isConnected) select("loop"); }, 500);
   document.addEventListener("dblclick", e => { if (on() && e.target.closest && e.target.closest(".wire-hit")) return; }, true);

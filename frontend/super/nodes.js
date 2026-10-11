@@ -198,10 +198,11 @@
       case "box":                                      // ■ and ●: what their first use made them
       case "dot": {
         if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
-          n.prompt = ins.map(strOf).filter(Boolean).join(" ").trim();
+          const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
+          n.prompt = verb ? "" : [typed].concat(ins.map(strOf)).filter(Boolean).join(" ").trim();
           const t = n.answer || "";
           const idle = n.held ? "held" : n.paused ? "paused" : "running";
-          r = { num: t.length, bool: !n.held, str: t || idle, text: t || (n.st.go ? "thinking…" : n.prompt ? "thinking…" : idle) };
+          r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
           break;
         }
         const v = ins[ins.length - 1];
@@ -353,6 +354,24 @@
         if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : r.text;   // holds its value inside
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
+      }
+      // a word typed into a super is what it does to what is wired into it: "open" (show) opens the window
+      // or bubble wired in, "close" (hide) closes it, "pause" and "run" hold and release it, each time
+      // the wiring changes (type "Open" into a ■, wire a bubble into it: its window opens)
+      if ((n.fn === "box" || n.fn === "dot") && n.str && VERBS[n.str.trim().toLowerCase()]) {
+        const w = wiringOf(n);
+        if (n.verbWiring !== undefined && w !== n.verbWiring && !n.held) {
+          const verb = VERBS[n.str.trim().toLowerCase()];
+          linkIns(n).concat(n.inputs).forEach(an => {
+            const key = an.key ? an.key : an.h && an.h.startsWith("k:") ? an.h.slice(2) : an.h && an.h.startsWith("w:") && O().keyOfTitle ? O().keyOfTitle(an.h.slice(2)) : null;
+            if (!key) return;
+            const own = key.replace(/ group$/, "");
+            if (verb === "open") { if (O().openKey && (O().openKey(own) || O().openKey(key))) say("Opened " + nameOf({ key: own })); }
+            else if (verb === "close") { if (O().close && (O().close(own) || O().close(key))) say("Closed " + nameOf({ key: own })); }
+            else if (verb === "pause" || verb === "run") { const el = O().elOf && O().elOf(own); if (el && el.classList.contains("orbit-panel")) el.classList.toggle("se-held", verb === "pause"); }
+          });
+        }
+        n.verbWiring = w;
       }
       if (n.role === "engine") {                                         // the central super asks the engines whenever what is wired into it changes
         n.el.classList.toggle("is-thinking", !!n.st.go);
@@ -758,6 +777,13 @@
       e.preventDefault(); e.stopPropagation(); remove(n); say(BY[n.fn].name + " deleted");
     });
     n.el.addEventListener("keydown", e => {
+      // the engine super takes typing as it is: a word in it (Open, Close…) acts on what is wired in, a question is asked
+      if (n.role === "engine" && !e.ctrlKey && !e.metaKey && !e.altKey && (e.key.length === 1 || e.key === "Backspace")) {
+        e.preventDefault();
+        n.str = e.key === "Backspace" ? (n.str || "").slice(0, -1) : (n.str || "") + e.key;
+        n.answer = ""; n.st.asked = "";
+        persist(); tick(); return;
+      }
       // the first thing typed into a blank ■ or ● decides: a letter makes a text field, a digit an integer field
       if ((n.fn === "box" || n.fn === "dot") && !n.role && !n.field && e.key.length === 1 && !e.ctrlKey && !e.metaKey && !e.altKey && e.key !== " ") {
         e.preventDefault();
@@ -925,6 +951,7 @@
   }
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
   function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n)]); }
+  const VERBS = { open: "open", show: "open", close: "close", hide: "close", pause: "pause", hold: "pause", stop: "pause", run: "run", go: "run", resume: "run" };
 
   // ---- the palette -----------------------------------------------------
   function build() {
