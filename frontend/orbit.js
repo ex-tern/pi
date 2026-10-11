@@ -503,13 +503,20 @@
   // the page (a small n, a star), the page shrinks toward the centre until it does.
   const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock, .lv-node";   // wire layers are drawn from what is on screen, so they are not scaled
   let pageFit = 1;
+  // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
+  let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || 1)), zoomT;
+  function zoomPage(k) {
+    zoom = Math.max(0.25, Math.min(3, zoom * k));
+    clearTimeout(zoomT); zoomT = setTimeout(() => store("orbit:zoom", +zoom.toFixed(3)), 400);
+    loopKey = ""; drawLoop();
+  }
   function setFit(f, px, py) {
     f = Math.round(f * 200) / 200;
     if (f === pageFit && f === 1) return;
     pageFit = f;
     document.documentElement.classList.toggle("orbit-fit", f < 1);
     document.querySelectorAll(FIT).forEach(el => {
-      if (f >= 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
+      if (f === 1) { el.style.scale = ""; el.style.transformOrigin = ""; return; }
       // its layout box, where it sits before any transform: scaled about (px, py) from there
       let lx = 0, ly = 0;
       for (let e = el; e; e = e.offsetParent) { lx += e.offsetLeft; ly += e.offsetTop; }
@@ -566,7 +573,8 @@
     // no padding: the loop always reaches the display's edges (its a×b box is the screen, less its stroke)
     const cap = (1 - 4 / Math.min(Wv, Hv)) / LOOP_M;
     const sc = cap;
-    setFit(need > cap ? Math.max(0.005, cap / need * 0.985) : 1, cx, cy);
+    const room = need > 0 ? cap / need * 0.985 : zoom;                 // the largest scale that still fits inside the loop
+    setFit(Math.max(0.005, Math.min(zoom, room)), cx, cy);
     const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
     loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
     if (key === loopKey) return;
@@ -648,11 +656,18 @@
       for (let m = 0.02 * H; m < H / 3; m += 4) if (fits(Wv - rr - w, top + m, Wv - rr, top + H - m)) { root.setProperty("--se-live-m", Math.round(m) + "px"); break; }
     }
   }
-  // the room the layout may use: inside the loop at its usual n (π, scale 1), so the frame fits the page
+  // The site's super (sesite.js draws it): an inner superellipse the bubbles are laid out in, with the
+  // same n as the main loop; the lattice lines from its ports run across the gap to the main loop.
+  const SITE_MX = 0.86, SITE_MY = 0.8;
+  function siteBox() {
+    const w = vw();
+    return { cx: w / 2, cy: top + H / 2, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: loopN(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2 };
+  }
+  // the room the layout may use: inside the site's super at its usual n (π), so the frame fits the page
   function insideLoop(r) {
-    const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * H / 2, cx = Wv / 2, cy = H / 2, n = Math.PI;
+    const s = siteBox(), cy = H / 2, n = Math.PI;
     for (const x of [r.x - 6, r.x + r.w + 6]) for (const y of [r.y - 6, r.y + r.h + 6])
-      if (seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n) > 1) return false;
+      if (seNorm(Math.abs(x - s.cx) / s.a, Math.abs(y - cy) / s.b, n) > 1) return false;
     return true;
   }
   function placeMark() {
@@ -1963,7 +1978,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { scrollN: e => scrollN(e), loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { scrollN: e => scrollN(e), zoomPage, zoom: () => zoom, saveWin, siteBox, inLoop: (x, y) => { if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

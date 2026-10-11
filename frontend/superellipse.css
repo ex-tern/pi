@@ -96,10 +96,18 @@ html.shape-se .buddy-corpus {
   border-radius: var(--se-card);
   corner-shape: superellipse(var(--se-k-window));
 }
+/* windows are supers: a whole superellipse at n = π, like the main loop (sesite.js clips them
+   the same way where corner-shape is missing); the content keeps clear of the curved corners */
 html.shape-se .orbit-panel {
-  border-radius: var(--se-window);
+  border-radius: 50%;
   corner-shape: superellipse(var(--se-k-window));
+  resize: none;                       /* the corner is gone: zoom on the window to size it */
 }
+html.shape-se .orbit-panel .op-head { padding: 14px calc(6% + 14px) 10px; }
+html.shape-se .orbit-panel .op-body { padding: 12px calc(5% + 12px) calc(5% + 12px); }
+html.shape-se .orbit-panel .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
+@supports not (corner-shape: round) { html.shape-se .orbit-panel { border: 0; } }
 /* the wire terminals are sparkles (orbit.js draws them with SeMorph.star) */
 
 /* a window opening out of its button, or closing into it (semorph.js) */
@@ -201,3 +209,24 @@ html.shape-se .orbit-nread { display: none; }
 }
 /* no text selection while dragging a wire, a node or a moved panel (Safari needs the prefix) */
 html.sl-dragging, html.sl-dragging *, html.lv-dragging, html.lv-dragging *, html.se-moving, html.se-moving * { -webkit-user-select: none !important; user-select: none !important; }
+
+
+/* the site's super (sesite.js): the inner superellipse round the bubbles, its lattice lines out to the
+   main loop, and its four ports */
+.om-site { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; }
+html.shape-se .om-site { display: block; }
+.om-site-loop { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.om-lattice { fill: none; stroke: var(--hair-strong); stroke-width: 1.5; }
+html.se-site-thinking .om-site-loop { stroke: var(--cobalt); }
+.se-port {
+  position: fixed; z-index: 240; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px;
+  font: 500 11px/1 var(--font-mono, ui-monospace, monospace); color: var(--graphite); letter-spacing: 0.04em;
+  cursor: crosshair; user-select: none; -webkit-user-select: none; padding: 4px 6px; pointer-events: auto;
+}
+.se-port-dot { width: 11px; height: 11px; background: var(--ink); clip-path: var(--se-sparkle); flex: none; }
+.se-port-left { flex-direction: row; }
+.se-port-right { flex-direction: row-reverse; }
+.se-port-top, .se-port-bottom { flex-direction: column; }
+.se-port-top .se-port-name { order: -1; }
+.se-port:hover { color: var(--cobalt); }
+.se-port:hover .se-port-dot { background: var(--cobalt); }

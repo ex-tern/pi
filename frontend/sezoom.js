@@ -1,0 +1,67 @@
+// sezoom.js — what a scroll (or a pinch) does in the superellipse look depends on where it lands:
+//
+//   outside the main super   (the corners the superellipse leaves bare)   it changes the super's shape: n
+//   inside it, on nothing    (bare space between the things)              it zooms: everything inside scales
+//   on a thing               (a node, a bubble, a window, the title,      it sizes that thing
+//                             the palette, the Live panel, a loop's ring)
+//
+// A window or a list whose content scrolls keeps scrolling while it can; the sizes of bubbles, the title,
+// the palette and Live are kept per browser (se:size:<name>). Sideways swipes never navigate.
+(function () {
+  "use strict";
+  const html = document.documentElement;
+  const on = () => html.classList.contains("shape-se");
+  const O = () => window.PiOrbit || {};
+  const load = k => { try { return +localStorage.getItem("se:size:" + k) || 0; } catch (_) { return 0; } };
+  const save = (k, v) => { try { localStorage.setItem("se:size:" + k, String(v)); } catch (_) { /* private mode */ } };
+  const THING = ".lv-node, .orbit-panel, .orbit-bubble, .orbit-title, .lv-palette, .live-dock, .se-port";
+
+  // a thing with a size of its own: scaled about its centre, remembered by name
+  const nameOf = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette"
+    : el.classList.contains("live-dock") ? "live" : el.dataset.key ? "bubble:" + el.dataset.key : null;
+  function sizeThing(el, dy) {
+    const name = nameOf(el); if (!name) return;
+    const cur = parseFloat(el.style.scale) || load(name) || 1;
+    const v = Math.max(0.3, Math.min(3, cur * Math.exp(-dy * 0.0015)));
+    const o = el.style.transformOrigin;
+    if (!o || o === "50% 50% 0px") el.style.transformOrigin = "50% 50%";
+    el.style.scale = v.toFixed(3); save(name, +v.toFixed(3));
+  }
+  function restore() {
+    document.querySelectorAll(".orbit-title, .lv-palette, .live-dock, .orbit-bubble[data-key]").forEach(el => {
+      if (el.dataset.seSized) return;
+      const name = nameOf(el), v = name && load(name);
+      el.dataset.seSized = "1";
+      if (v && v !== 1) { el.style.transformOrigin = "50% 50%"; el.style.scale = String(v); }
+    });
+  }
+  const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
+
+  document.addEventListener("wheel", e => {
+    if (!on()) return;
+    const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);          // a pinch sends small deltas
+    const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y);
+    // a thing under the pointer
+    let el = hit && hit.closest ? hit.closest(THING) : null;
+    const loop = !el && window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
+    if (loop) el = loop;
+    if (el) {
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: labview.js guards the swipe
+      const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first
+      if (sc && !(el.classList.contains("lv-node"))) return;
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (el.classList.contains("lv-node")) window.LabView.zoomNode(el, dy);
+      else if (el.classList.contains("orbit-panel")) { if (window.SeSite) window.SeSite.sizeWindow(el, dy); }
+      else if (el.classList.contains("se-port")) { /* ports keep their size */ }
+      else sizeThing(el, dy);
+      return;
+    }
+    e.preventDefault(); e.stopImmediatePropagation();
+    if (O().inLoop && !O().inLoop(x, y)) { if (O().scrollN) O().scrollN(e); return; }   // outside the super: its shape
+    if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015));                            // inside, on nothing: zoom
+  }, { capture: true, passive: false });
+  // Safari's pinch comes as gesture events: never the browser's zoom
+  ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (on()) e.preventDefault(); }, { passive: false }));
+  setInterval(restore, 1000);
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
+})();

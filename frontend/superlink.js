@@ -35,6 +35,7 @@
     if (!el) return null;
     let h;
     if ((h = el.closest(".lv-node"))) return { key: "node:" + h.dataset.id, el: h };
+    if ((h = el.closest(".se-port"))) return { key: "port:" + h.dataset.port, el: h };     // a port of the site's super (sesite.js)
     if ((h = el.closest("[data-key]"))) return { key: "k:" + h.dataset.key, el: h };
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
@@ -46,6 +47,7 @@
   }
   function hostEl(key) {
     if (key.startsWith("node:")) return document.querySelector('.lv-node[data-id="' + CSS.escape(key.slice(5)) + '"]');
+    if (key.startsWith("port:")) return document.querySelector('.se-port[data-port="' + CSS.escape(key.slice(5)) + '"]');
     if (key.startsWith("k:")) {
       const all = [...document.querySelectorAll('[data-key="' + CSS.escape(key.slice(2)) + '"]')];
       return all.find(e => e.getClientRects().length) || null;
@@ -181,6 +183,7 @@
   const endWords = an => an.loop ? [] : an.el ? [an.h.replace(/^[a-z#]+:?/, "").replace(/^[a-z]+:/, "")] : [an.t];
   function act(a, b) {
     const t = intent(endWords(a).concat(endWords(b)));
+    if ([a, b].some(an => an && an.h && an.h.startsWith("port:"))) return;   // a wire to a port carries a value, it opens nothing
     if (!t || !O().openTitle) {                                   // no window named together: a window's button at either end opens it
       const ks = [b, a].filter(an => an && !an.loop && an.h && an.h.startsWith("k:"));
       const k = ks.find(an => !/ group$/.test(an.h)) || ks[0];          // a window's own button before its group
@@ -245,7 +248,7 @@
     const u = unitAt(x, y);
     if (u) return { anchor: u.anchor, rect: rectOf(u.node, u.a, u.b) };
     const el = document.elementFromPoint(x, y);
-    const box = el && el.closest(".orbit-bubble, .ob-member, .orbit-panel, .lv-node, .live-body, .orbit-pi");
+    const box = el && el.closest(".orbit-bubble, .ob-member, .orbit-panel, .lv-node, .live-body, .orbit-pi, .se-port");
     if (box) { const h = hostOf(box); if (h) return { anchor: { h: h.key, el: 1 }, rect: box.getBoundingClientRect() }; }
     if (O().nearLoop && O().nearLoop(x, y)) return { anchor: { loop: 1 }, rect: null };
     return null;
@@ -255,7 +258,7 @@
   // Bubbles, windows, nodes, the counter, Live and the title: on their edge (a few pixels either side of
   // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
   // their own use (moving, pressing, typing).
-  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .orbit-title";
+  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .orbit-pi, .live-body, .orbit-title, .se-port";
   const IN = 6, OUT = 5;
   function edgeAt(x, y) {
     if (!x && !y) return null;
@@ -321,8 +324,10 @@
     }, true);
     document.addEventListener("pointerdown", e => {
       if (e.button !== 0 || drag) return;
-      const g = edgeAt(e.clientX, e.clientY);
-      if (g) { e.preventDefault(); e.stopImmediatePropagation(); }       // on an edge it wires: the thing does not move
+      let g = edgeAt(e.clientX, e.clientY);
+      const port = e.target.closest && e.target.closest(".se-port");
+      if (port) g = { anchor: { h: "port:" + port.dataset.port, el: 1 }, rect: port.getBoundingClientRect(), el: port };
+      if (g) { e.preventDefault(); e.stopImmediatePropagation(); }       // on an edge (or a port) it wires: the thing does not move
       else if (owned(e.target)) return;
       const u = g ? null : unitAt(e.clientX, e.clientY);
       if (!g && !u) return;

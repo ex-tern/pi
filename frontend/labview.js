@@ -41,7 +41,7 @@
   ];
   const RENAMED = { show: "box", stop: "box", panel: "ask" };   // diagrams saved before the five shapes
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
-  const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel";
+  const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel, .se-port";
   const html = document.documentElement;
   const se = () => html.classList.contains("shape-se") && window.SeMorph;
   const O = () => window.PiOrbit || {};
@@ -75,6 +75,7 @@
     if (el.matches(".lv-node")) return { node: el.dataset.id };
     if (el.matches(".orbit-core")) return { core: 1 };
     if (el.matches(".orbit-pi")) return { pi: 1 };
+    if (el.matches(".se-port")) return { port: el.dataset.port };
     if (el.matches(".orbit-panel")) { const k = O().keyOf && O().keyOf(el); return k ? { key: k } : null; }
     if (el.dataset.key) return { key: el.dataset.key };
     return null;
@@ -84,12 +85,14 @@
     if (ref.node) { const n = nodes.find(x => x.id === ref.node); return n && n.el; }
     if (ref.core) return document.querySelector(".orbit-core");
     if (ref.pi) return document.querySelector(".orbit-pi");
+    if (ref.port) return window.SeSite ? window.SeSite.portEl(ref.port) : null;
     return O().elOf ? O().elOf(ref.key) : null;
   }
   function nameOf(ref) {
     if (ref.node) { const n = nodes.find(x => x.id === ref.node); return n ? BY[n.fn].name + " node" : "a node"; }
     if (ref.core) return "the π mark";
     if (ref.pi) return "the π counter";
+    if (ref.port) return "the site's " + ref.port + " port";
     const i = O().info && O().info(ref.key);
     return i ? i.title : ref.key;
   }
@@ -101,6 +104,7 @@
     if (ref.node) return evalNode(nodes.find(x => x.id === ref.node));
     if (ref.core) { const d = piStr(), v = +d[d.length - 1] || 0; return { num: v, isNum: true, bool: !still(), str: String(v) }; }
     if (ref.pi) { const d = piStr(), v = Math.max(0, d.length - 1); return { num: v, isNum: true, bool: !still(), str: String(v) }; }
+    if (ref.port) return window.SeSite ? window.SeSite.value(ref.port) : ZERO;
     const i = O().info && O().info(ref.key);
     return i ? { num: i.use, bool: i.open, str: i.title } : ZERO;
   }
@@ -109,6 +113,7 @@
   function valueOfAnchor(an) {
     if (an.loop) return valueOf({ core: 1 });
     if (an.h && an.h.startsWith("node:")) return valueOf({ node: an.h.slice(5) });
+    if (an.h && an.h.startsWith("port:")) return valueOf({ port: an.h.slice(5) });
     if (!an.el) { const v = numOf(an.t); return { num: Number.isNaN(v) ? 0 : v, isNum: !Number.isNaN(v), bool: !!an.t, str: an.t, text: an.t }; }
     if (an.h === "pi") return valueOf({ pi: 1 });
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
@@ -314,6 +319,7 @@
   function tick() {
     memo = {}; visiting = {};
     holds();
+    feedPorts();
     const now = performance.now();
     nodes.forEach(n => {
       const r = evalNode(n);
@@ -355,6 +361,16 @@
     drawWires();
   }
 
+  // what is wired into the site's input and condition ports (sesite.js): any wire with the port at either end
+  function feedPorts() {
+    const S = window.SeSite, SL = window.SuperLink;
+    if (!S || !SL || !SL.links) return;
+    const into = port => SL.links().map(l => (l.a && l.a.h === "port:" + port) ? l.b : (l.b && l.b.h === "port:" + port) ? l.a : null).filter(Boolean).map(valueOfAnchor);
+    const ins = into("input");
+    S.setInput(ins.map(strOf).filter(Boolean).join(" "));
+    const cond = into("condition");
+    S.setCondition(cond.length ? cond.every(v => v.bool) : null);
+  }
   // LabVIEW wires: horizontal, vertical, horizontal, into the node's input terminals
   function drawWires() {
     if (!wires) return;
@@ -561,6 +577,12 @@
         let x = t.rect.right + 28; if (x + w > window.innerWidth - 4) x = t.rect.left - w - 28;
         n.fx = Math.max(4, x) / window.innerWidth; n.fy = (t.rect.top + t.rect.height / 2 - h / 2) / window.innerHeight; place(n); clear(n);
         say(BY[n.fn].name + " wired to “" + t.text.t + "”"); persist(); tick(); return;
+      }
+      if (t && t.el && t.el.matches(".se-port") && window.SuperLink && window.SuperLink.add) {
+        const port = t.el.dataset.port, sink = port === "input" || port === "condition";
+        const me = { h: "node:" + n.id, el: 1 }, pa = { h: "port:" + port, el: 1 };
+        window.SuperLink.add(sink ? me : pa, sink ? pa : me);
+        beside(n, t.el, ev.clientX, ev.clientY); say(BY[n.fn].name + (sink ? " feeds" : " takes from") + " the site's " + port + " port"); persist(); tick(); return;
       }
       if (t && t.el && BY[n.fn].n) {
         const ref = refOf(t.el);
@@ -830,13 +852,16 @@
         const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
         return Math.abs(d - r.width / 2) < 14;
       });
-      if (e.ctrlKey && !n && html.classList.contains("shape-se")) { e.preventDefault(); e.stopImmediatePropagation(); return; }   // a pinch elsewhere never zooms the page: the mark always fits the screen
+      if (html.classList.contains("shape-se")) return;              // the superellipse look: sezoom.js decides what a scroll does
       if (!n || (hit && hit.tagName === "INPUT" && n.el.contains(hit) && n.fn === "ask")) return;
-      if (!e.ctrlKey) { zoomed = null; if (O().scrollN) O().scrollN(e); return; }   // scrolling is the page's n, as anywhere else
+      if (!e.ctrlKey) { zoomed = null; return; }
       e.preventDefault(); e.stopImmediatePropagation();
       zoomed = { n, t: performance.now() };
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
+    // sezoom.js: a scroll on a node sizes it
+    window.LabView = { zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+                       loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {
       const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });
       if (!n) return;
@@ -885,8 +910,6 @@
         if (el.scrollWidth > el.clientWidth + 1 && /auto|scroll/.test(getComputedStyle(el).overflowX)) return;
       e.preventDefault();
     }, { passive: false });
-    // Safari's pinch (gesture events) and touch pinches never zoom the page either
-    ["gesturestart", "gesturechange"].forEach(t => document.addEventListener(t, e => { if (html.classList.contains("shape-se")) e.preventDefault(); }, { passive: false }));
     // two fingers on a node: their spread sizes it
     const touches = new Map();
     canvas.addEventListener("pointerdown", e => {
