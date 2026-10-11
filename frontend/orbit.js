@@ -665,11 +665,11 @@
     const w = vw();
     return { cx: w / 2 + siteOff.x, cy: top + H / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: loopN(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2, ox: siteOff.x, oy: siteOff.y };
   }
-  // sesite.js: drag the inner super's ring and the bubbles and their wires go with it
+  // sesite.js: drag the inner super's ring and the bubbles (and so their wires) go with it
   function moveSite(x, y, commit) {
     siteOff = { x: Math.round(x), y: Math.round(y) };
     const t = "translate(" + siteOff.x + "px," + siteOff.y + "px)";
-    [".orbit-bubbles", ".orbit-wires"].forEach(sel => { const el = $(sel, stage); if (el) el.style.translate = siteOff.x + "px " + siteOff.y + "px"; });
+    const bb = $(".orbit-bubbles", stage); if (bb) bb.style.translate = siteOff.x + "px " + siteOff.y + "px";   // the wires are drawn from where the bubbles are on screen, so they follow by themselves
     if (commit) store("orbit:site:offset", siteOff);
     return t;
   }
