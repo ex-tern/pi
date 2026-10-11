@@ -270,7 +270,7 @@
     if (svg) svg.style.visibility = "hidden";
     let top;
     try { top = document.elementFromPoint(x, y); } finally { if (svg) svg.style.visibility = v; }
-    if (top && top.closest && top.closest(".lv-palette, input, textarea, select, .wire-handle, .op-close, button.orbit-core")) return null;
+    if (top && top.closest && top.closest(".lv-palette, input, textarea, select, .wire-handle, .op-close, button.orbit-core, .ob-member, .ob-chat, a, .op-head button")) return null;   // a pill or a button keeps its own pointer
     const owner = top && top.closest && top.closest(THINGS);
     let best = null;
     const near = el => {

@@ -231,3 +231,5 @@ html.se-site-thinking .om-site-loop { stroke: var(--cobalt); }
 .se-port:hover { color: var(--cobalt); }
 .se-port:hover .se-port-dot { background: var(--cobalt); }
 html.se-ring, html.se-ring * { cursor: grab !important; }
+/* a pill is pushable to the eye (its words still start a wire when dragged) */
+html.shape-se .ob-member, html.shape-se .ob-member * { cursor: pointer !important; }
