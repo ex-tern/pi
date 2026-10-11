@@ -336,7 +336,7 @@
         const mb = document.createElement("button");
         mb.type = "button"; mb.className = "ob-member"; mb.textContent = m.title;
         mb.dataset.key = m.key;
-        mb.addEventListener("click", e => { e.stopPropagation(); openItem(m); });
+        mb.addEventListener("click", e => { e.stopPropagation(); if (wireOnly() && e.detail) return; openItem(m); });   // superellipse look: a window opens by wiring (the keyboard still opens it)
         box.appendChild(mb);
       });
     });
@@ -880,6 +880,7 @@
     b.addEventListener("pointercancel", end);
     b.addEventListener("click", e => {
       if (b.dataset.justDragged || e.target.closest(".ob-chat, .ob-member")) return;
+      if (wireOnly() && e.detail) return;                       // superellipse look: wire it to open it
       openItem(it);
     });
   }
@@ -1342,6 +1343,15 @@
     return it;
   }
   // Open a window by its pill's title (or the numbers window), as a pill click would.
+  // In the superellipse look a click does not open a window: wiring does (superlink.js opens what a new wire touches)
+  const wireOnly = () => document.documentElement.classList.contains("shape-se");
+  function openKey(key) {
+    const it = items.find(i => i.key === key && (i.virtual || visible(i)));
+    if (!it) return false;
+    setAside(false);
+    if (it.panel) raise(it.panel, true); else openItem(it);
+    return true;
+  }
   function openTitle(t) {
     if (t === "π and friends") return openNumbers();
     const it = items.find(i => i.title === t && (i.virtual || visible(i)));
@@ -1916,7 +1926,7 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { scrollN: e => scrollN(e), loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { scrollN: e => scrollN(e), loop: () => Object.assign({}, loopG), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

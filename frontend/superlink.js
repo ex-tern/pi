@@ -178,7 +178,12 @@
   const endWords = an => an.loop ? [] : an.el ? [an.h.replace(/^[a-z#]+:?/, "").replace(/^[a-z]+:/, "")] : [an.t];
   function act(a, b) {
     const t = intent(endWords(a).concat(endWords(b)));
-    if (!t || !O().openTitle) return;
+    if (!t || !O().openTitle) {                                   // no window named together: a window's button at either end opens it
+      const ks = [b, a].filter(an => an && !an.loop && an.h && an.h.startsWith("k:"));
+      const k = ks.find(an => !/ group$/.test(an.h)) || ks[0];          // a window's own button before its group
+      if (k && O().openKey && O().openKey(k.h.slice(2))) { const out = document.querySelector(".lv-out"); if (out) out.textContent = "Opened by wiring: " + label(k); }
+      return;
+    }
     if (O().openTitle(t)) {
       const out = document.querySelector(".lv-out");
       if (out) out.textContent = "Opened " + t + ": you wired " + label(a) + " to " + label(b);
