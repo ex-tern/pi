@@ -170,3 +170,14 @@ html.shape-se.orbit-open .orbit-core, html.shape-se.orbit-open .orbit-core:hover
 html.shape-se, html.shape-se body { touch-action: pan-x pan-y; }
 /* a fast or sideways swipe never takes the browser back (or forward) a page, nor bounces the page */
 html.shape-se, html.shape-se body { overscroll-behavior: none; }
+
+/* the diameter and the π counter, merged: π's digits run quietly along the inside of the main loop,
+   creeping round it as the sweep did; the newest digit is the cobalt one */
+html.shape-se .om-page-r { display: none; }
+html.shape-se .orbit-pi { visibility: hidden; pointer-events: none; }
+.om-page-pipath { fill: none; stroke: none; }
+.om-page-pi { font: 400 10.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing: 0.08em; fill: var(--graphite); opacity: 0.55; pointer-events: none; }
+.om-page-pi .om-pi-new { fill: var(--cobalt); opacity: 1; }
+.om-page-pi .om-pi-count { fill: var(--faint, #9a9a96); letter-spacing: 0.02em; }
+.om-page-pi.is-still { opacity: 0.3; }
+html.shape-se:not(.orbit-on) .om-page-pi { display: none; }
