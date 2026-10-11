@@ -181,7 +181,9 @@ Behind `/api` one FastAPI process (`backend/api.py`) runs everything:
    `performance.js`, `unigyro.js`, `neurofrenzy.js`, `facemace.js`, `medicine.js`, `ribsuggest.js`,
    `live.js`, `download.js`, `traffic.js`, `lab.js`, and `hal/` (HAL-OS in a v86 emulator) and
    `quvi/` (a browser port of QuVI).
-6. The super look, one concern per file: `super/logo.js` (the title), `super/motion.js` (the one tween and the
+6. The super look, one concern per file (`frontend/super/`): `super/loop.js` (the main super: the loop the
+   size of the page, its n, the zoom and the fit, windows kept inside the inner super, the inner super's
+   box and offset; created by orbit.js with what it needs from the layout), `super/logo.js` (the title), `super/motion.js` (the one tween and the
    per-frame redraw signal), `super/shape.js` (shapes, wires' paths, windows morphing), `super/nodes.js` (the
    graphical language), `super/wire.js` (wiring as the mouse's default; edges and ports as wire ends;
    opening by wiring), `super/move.js` (moving the title, palette and Live), `super/site.js` (the inner super,
