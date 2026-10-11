@@ -54,12 +54,14 @@ window.SUPERAI_PROGRAM = {
   // A bubble with a source holds every window that source makes; members name windows from anywhere.
   // Five bubbles at the start: Lab, Library, Tools, Explore and Connect (owner, 2026-10-12). What was in About
   // reads in Library (the papers about the project), is looked at in Explore (the numbers) or links from Connect.
+  // at: where a bubble starts (superellipse look), as an offset from the page's centre in shares of the screen:
+  // the diagram reads left to right, Connect → Tools → Explore → Library, with Lab feeding Library from below
   bubbles: [
-    { title: "Lab", source: "lab" },
-    { title: "Tools", members: ["Assess Manuscripts [Pi]"] },
-    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"] },
-    { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"] },
-    { title: "Connect", key: "connect", members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
+    { title: "Lab", source: "lab", at: { fx: 0.08, fy: 0.22 } },
+    { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.12, fy: -0.02 } },
+    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.3, fy: -0.02 } },
+    { title: "Explore", key: "explore", members: ["The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.1, fy: -0.02 } },
+    { title: "Connect", key: "connect", at: { fx: -0.3, fy: -0.02 }, members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
                                                  "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
 
@@ -70,7 +72,7 @@ window.SUPERAI_PROGRAM = {
   // everywhere: shown to first-time visitors in the round look too (pitechlab.com), not only the superellipse one;
   // desktop: not on a phone (narrower than 700 px), where there is no shift + scroll and little room.
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
-  // and condition, as every super's are.
+  // and condition, as every super's are; "bubble:Title" is a bubble (a super too).
   diagram: {
     supers: [
       { id: "site-box", kind: "engine", at: { center: true } },
@@ -80,12 +82,17 @@ window.SUPERAI_PROGRAM = {
       { id: "close", kind: "engine", everywhere: true, text: "close", at: { from: "start", dx: -15, dy: 248 } },
       { id: "run", kind: "engine", text: "run", at: { leftOf: "site.input", dy: -72 } }
     ],
+    // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition)
     wires: [
       ["site.input", "site-box.input"],
       ["site.sync", "site-box.sync"],
       ["site-box.output", "site.output"],
       ["site.condition", "site-box.condition"],
-      ["run.output", "site.input"]
+      ["run.output", "site.input"],
+      ["bubble:Connect.output", "bubble:Tools.input"],
+      ["bubble:Tools.output", "bubble:Explore.input"],
+      ["bubble:Explore.output", "bubble:Library.input"],
+      ["bubble:Lab.output", "bubble:Library.input"]
     ]
   },
 

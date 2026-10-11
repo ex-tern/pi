@@ -482,3 +482,5 @@ html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, htm
 /* selected and hovered the same way everywhere: the edge takes cobalt */
 html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .live-body.se-sel, html.shape-se .live-tab.se-sel, html.shape-se .se-project.se-sel { border-color: var(--cobalt); }
 html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
+/* wires are drawn in ink like the supers they join (they were hairline grey and hard to see) */
+html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphite); stroke-width: 1.5; }

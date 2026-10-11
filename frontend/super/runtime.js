@@ -45,8 +45,9 @@
       if (isArr(d.wires, "diagram.wires")) d.wires.forEach((w, i) => {
         if (!Array.isArray(w) || w.length !== 2) { bad.push("diagram.wires[" + i + "] must be [from, to]"); return; }
         w.forEach(end => {
-          const m = /^([\w-]+)\.(input|output|sync|condition)$/.exec(end || "");
+          const m = /^((?:bubble:)?[\w -]+)\.(input|output|sync|condition)$/.exec(end || "");
           if (!m) bad.push("wire end " + end + ' must be "super.port" (input, output, sync or condition)');
+          else if (m[1].startsWith("bubble:")) { if (!(p.bubbles || []).some(b => b && b.title === m[1].slice(7))) bad.push("wire end " + end + ": no bubble called " + m[1].slice(7)); }
           else if (!ids.has(m[1])) bad.push("wire end " + end + ": no super called " + m[1]);
         });
       });

@@ -721,7 +721,9 @@
     if (!all) return;
     const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
-    const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(e => ids.has(String(e).split(".")[0]) || String(e).split(".")[0] === "site")) };
+    const who = e => String(e).slice(0, String(e).lastIndexOf("."));
+    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && who(e).startsWith("bubble:"));   // bubble wires: the superellipse look (bubbles are supers there)
+    const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(known)) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
     const sb = O().siteBox ? O().siteBox() : null;
@@ -744,12 +746,22 @@
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
              str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
     });
-    const end = e => { const [who, port] = String(e).split("."); return { h: who === "site" ? "port:" + port : "port:node:" + who + "/" + port, el: 1 }; };
-    const wireUp = () => {
-      const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wireUp, 100);
-      (prog.wires || []).forEach(([a, b]) => SL.add(end(a), end(b)));
+    // "bubble:Title" names a bubble: its ports are "bubble:<key>/<port>" (super/site.js), found by its label
+    const bubbleKey = title => { const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === title); return b ? b.dataset.key : null; };
+    const end = e => {
+      const s = String(e), i = s.lastIndexOf("."), w = s.slice(0, i), port = s.slice(i + 1);
+      if (w === "site") return { h: "port:" + port, el: 1 };
+      if (w.startsWith("bubble:")) { const k = bubbleKey(w.slice(7)); return k ? { h: "port:bubble:" + k + "/" + port, el: 1 } : null; }
+      return { h: "port:node:" + w + "/" + port, el: 1 };
     };
-    wireUp();
+    const wireUp = (tries) => {
+      const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(() => wireUp(tries), 100);
+      const left = [];
+      (prog.wires || []).forEach(([a, b]) => { const A = end(a), B = end(b); if (A && B) SL.add(A, B); else left.push([a, b]); });
+      if (left.length && (tries || 0) < 30) { prog.wires = left; setTimeout(() => wireUp((tries || 0) + 1), 200); }   // the bubbles may not be built yet
+    };
+    wireUp(0);
+    save("lv:bubbles-wired", 1);
     persist();
   }
   function remove(n) {
@@ -1305,6 +1317,22 @@
     else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
     if (se() && !fresh && nodes.find(x => x.id === id)) {
+      // a diagram kept from before the bubbles were wired: the program's bubble wires, once (deleted by hand, they stay deleted)
+      if (!restore("lv:bubbles-wired")) {
+        save("lv:bubbles-wired", 1);
+        const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
+        if (prog && prog.wires) {
+          const bubbleKey = title => { const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === title); return b ? b.dataset.key : null; };
+          const end = e => { const t = String(e), i = t.lastIndexOf("."), w = t.slice(0, i), port = t.slice(i + 1); if (!w.startsWith("bubble:")) return null; const k = bubbleKey(w.slice(7)); return k ? { h: "port:bubble:" + k + "/" + port, el: 1 } : null; };
+          let tries = 0;
+          const go = () => {
+            const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(go, 100);
+            const left = prog.wires.filter(([a, b]) => String(a).startsWith("bubble:") && String(b).startsWith("bubble:")).filter(([a, b]) => { const A = end(a), B = end(b); if (A && B) { SL.add(A, B); return false; } return true; });
+            if (left.length && tries++ < 30) setTimeout(go, 200);
+          };
+          go();
+        }
+      }
       const wire = () => {
         const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(wire, 100);
         const me = "node:" + id, old = SL.links().filter(l => (l.a && l.a.h === me) || (l.b && l.b.h === me));

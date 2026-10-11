@@ -9,7 +9,8 @@
 //!   otherwise its function comes from `fn`, or from its shape n as on the page:
 //!     n < 1 "add" (+), 1–1.7 "super" (◆), 1.7–2.6 "dot" (●), 2.6–5 "box" (■), n ≥ 5 "ask" (?)
 //!
-//! A wire joins "super.port" to "super.port"; the ports are input, output, sync and condition. Data
+//! A wire joins "super.port" to "super.port" ("bubble:Title" is one of the site's bubbles, a super the page
+//! draws; it is held here); the ports are input, output, sync and condition. Data
 //! flows from an output into an input (in the order the wires are written); a condition that is
 //! false holds a super (it gives nothing); sync only paces the page and is ignored here.
 //!
@@ -261,7 +262,7 @@ const PORTS: &[&str] = &["input", "output", "sync", "condition"];
 
 fn end_of(s: &str) -> Option<End> {
     let (id, port) = s.rsplit_once('.')?;
-    let ok_id = !id.is_empty() && id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_');
+    let ok_id = !id.is_empty() && id.chars().all(|c| c.is_alphanumeric() || c == '-' || c == '_' || c == ':' || c == ' ');
     if !ok_id || !PORTS.contains(&port) {
         return None;
     }
@@ -324,7 +325,7 @@ pub fn read(j: &Json) -> Result<Program, Vec<String>> {
                 let t = e.str().unwrap_or("");
                 match end_of(t) {
                     None => bad.push(format!("wire end {} must be \"super.port\" (input, output, sync or condition)", t)),
-                    Some(end) if !ids.contains(&end.id) => bad.push(format!("wire end {}: no super called {}", t, end.id)),
+                    Some(end) if !ids.contains(&end.id) && !end.id.starts_with("bubble:") => bad.push(format!("wire end {}: no super called {}", t, end.id)),
                     Some(end) => ends.push(end),
                 }
             }

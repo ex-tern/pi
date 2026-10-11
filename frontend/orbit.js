@@ -288,6 +288,8 @@
       setLook(it);
       if (it.href) { b.classList.add("is-link"); b.setAttribute("aria-label", it.title + " (opens in a new tab)"); }
       it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
+      // a bubble starts where the program puts it (pitechlab.super.js bubbles: at), in the superellipse look
+      if (!it.custom && it.group && merged()) { const pb = PROGRAM.bubbles.find(b => b.title === it.title); if (pb && pb.at) it.custom = { fx: +pb.at.fx || 0, fy: +pb.at.fy || 0 }; }
       store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
       wireDrag(it);
       if (rich) b.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); openItem(it); } });
