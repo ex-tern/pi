@@ -137,7 +137,13 @@ delete it, wires and all. The diagram is kept in the browser (`lv:nodes`, `orbit
 
 ## 5. The engines
 
-Behind `/api` one FastAPI process (`backend/api.py`) runs everything:
+Behind `/api` one FastAPI process runs everything. `backend/core.py` is the app and what every router
+shares (configuration, logging, the database, the gate, rate limits, the startup hook); `backend/routes/`
+holds one router per concern (meta, auth, piq, chain, status, identity, arcade, visits, profile,
+assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem, forecast,
+analytics, explorer); `backend/api.py` assembles them with the Lab, consent, layout, PiEn, recent, live,
+traffic and Super Neural Engine routers and the static frontend, and is what gunicorn runs (`api:app`).
+The engines behind the routes:
 
 - **Assessment.** `brain.py` orchestrates a paper's assessment: deterministic scoring (`rubric.py`,
   `scientometrics.py`, `extraction.py`, `emission.py`) and multi-LLM consensus over the providers in

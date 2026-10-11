@@ -30,7 +30,7 @@ ScholarPi runs as two copies of this repository:
 ## Layout
 
 ```
-backend/        FastAPI app (api.py), Lab private projects (lab.py),
+backend/        FastAPI app: core.py (the app, configuration, logging, the database, the gate, rate limits, startup) + routes/ (one APIRouter per concern: meta, auth, piq, chain, status, identity, arcade, visits, profile, assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem, forecast, analytics, explorer; `from core import *` plus explicit imports between routers, no cycles) + api.py (assembles them, re-exports every name for idle_worker and the tests; gunicorn runs api:app), Lab private projects (lab.py),
                 permission requests (consent.py), signed-in layout sync (layout.py),
                 PiEN shared model (pien.py), recent assessments (recent.py), RiBD suggestions (rib_suggest.py), Live panel feed (live.py), idle auto-assessment (idle_worker.py), website traffic by day (traffic.py), the Super Neural Engine's one-prompt-every-engine endpoint and the "?" panel of AI jurors with a judge (super_engine.py), the site password (gate.py), tests/
 frontend/       index.html, app.js (the app), style.css + theme.css (look),
