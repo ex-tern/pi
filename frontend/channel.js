@@ -29,7 +29,7 @@
         a.className = "channel-link"; a.href = stable; a.textContent = "Go to the stable site";
         bar.appendChild(a);
       }
-      document.body.prepend(bar);
+      if (!isSe) document.body.prepend(bar);   // the superellipse site: no banner, the main loop fills the whole screen
       const meta = document.createElement("meta");
       meta.name = "robots"; meta.content = "noindex, nofollow";
       document.head.appendChild(meta);

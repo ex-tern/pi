@@ -40,7 +40,7 @@ frontend/       index.html, app.js (the app), style.css + theme.css (look),
 scripts/        build_hal.py (builds HAL-OS's boot image from its own repo), build_hal_shell.py (the HAL-OS shell image; `--check` verifies it matches the source), sync_unigyro.py (Unigyro from its own repo)
 ```
 
-`SCHOLARPI_CHANNEL=experimental` turns on the experimental banner, `robots.txt: Disallow` and `X-Robots-Tag: noindex`.
+`SCHOLARPI_CHANNEL=experimental` turns on the experimental banner (not in the superellipse look, where the main loop fills the whole screen; noindex still applies), `robots.txt: Disallow` and `X-Robots-Tag: noindex`.
 
 **QuVI is owner-only until its author approves.** `QUVI_PUBLIC=1` shows it to everyone. Do not set it, or work around it, unless the owner says the author has given permission (see the Lab's permission requests).
 
