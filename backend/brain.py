@@ -118,7 +118,7 @@ from providers import (
     build_routes, classify_provider_error, redact_provider_text,
     is_route_cooling, record_rate_limit, record_success, parse_retry_after,
     is_provider_unreachable, record_provider_unreachable,
-    is_scilm_route,
+    is_scilm_route, ends_chain, PROVIDER_ENDING,
 )
 from emission import compute_piq_emission
 from extraction import (
@@ -667,7 +667,10 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
 
     attempts = []
     classified = None
+    dead_providers = set()        # a bad key or empty account: that provider's other routes are skipped
     for route in routes:
+        if route["provider"] in dead_providers:
+            continue
         # Cheapest check first: a provider the run has already found
         # unreachable costs microseconds to skip and a full connection timeout
         # to rediscover.
@@ -714,7 +717,9 @@ def assess_with_route_chain(juror: str, paper_text: str, canary: str = ""):
         logging.warning("Juror %s route %s (%s) failed [%s]: %s",
                         juror, route["model"], route["provider"],
                         classified["category"], classified["internal"][:200])
-        if not classified["retryable"]:
+        if classified["category"] in PROVIDER_ENDING:
+            dead_providers.add(route["provider"])
+        if ends_chain(classified):
             break
 
     if classified is None:
@@ -1131,7 +1136,10 @@ Respond strictly in JSON with keys:
     data = None
 
     if judge_routes and active_count > 0:
+        judge_dead = set()
         for route in judge_routes:
+            if route["provider"] in judge_dead:
+                continue
             down, left = is_provider_unreachable(route["provider"])
             if down:
                 judge_attempts.append({"model": route["model"], "provider": route["provider"],
@@ -1169,7 +1177,9 @@ Respond strictly in JSON with keys:
             logging.warning("Judge route %s (%s) failed [%s]: %s",
                             route["model"], route["provider"],
                             classified["category"], classified["internal"][:200])
-            if not classified["retryable"]:
+            if classified["category"] in PROVIDER_ENDING:
+                judge_dead.add(route["provider"])
+            if ends_chain(classified):
                 break
 
     judge_provider = f"{judge_platform} (Model: {model_name})"

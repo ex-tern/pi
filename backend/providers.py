@@ -429,6 +429,20 @@ _ERROR_RULES = [
 ]
 
 
+# Which failures end a juror's whole fallback chain. A bad key or an empty
+# account (auth, credit) is not retryable on THAT provider, but says nothing
+# about the next provider in the chain: stopping there made a juror report
+# "not correctly configured" whenever its first route's key was missing or
+# stale, even with working routes behind it. Only failures caused by the
+# prompt itself (a content filter, a context that is too long) end the chain.
+CHAIN_ENDING = ("content_filter", "context_length")
+PROVIDER_ENDING = ("auth", "credit")      # skip the rest of that provider's routes
+
+
+def ends_chain(classified: Dict) -> bool:
+    return classified.get("category") in CHAIN_ENDING
+
+
 def classify_provider_error(error_text: str) -> Dict:
     """Turn a raw provider error into a public-safe classification.
 

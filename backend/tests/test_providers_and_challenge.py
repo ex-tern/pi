@@ -298,3 +298,12 @@ def test_gemini_has_multiple_free_tier_fallbacks(monkeypatch):
     assert len(routes) >= 4
     assert any(r["provider"] == "OpenRouter" for r in routes), \
         "needs a route that doesn't draw on the Google quota"
+
+
+def test_only_failures_caused_by_the_prompt_end_a_fallback_chain():
+    # a bad key or an empty account on one provider must not stop the juror trying the next one
+    assert providers.ends_chain(providers.classify_provider_error("401 unauthorized")) is False
+    assert providers.ends_chain(providers.classify_provider_error("402 insufficient credits")) is False
+    assert providers.ends_chain(providers.classify_provider_error("429 too many requests")) is False
+    assert providers.ends_chain(providers.classify_provider_error("maximum context length exceeded")) is True
+    assert providers.ends_chain(providers.classify_provider_error("blocked by content filter")) is True

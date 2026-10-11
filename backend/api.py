@@ -7209,12 +7209,16 @@ def _super_route_call(juror, prompt, routes):
     """One answer from the first route of this juror's chain that responds,
     with the same cooldowns and failure handling as manuscript assessment."""
     from providers import (is_route_cooling, is_provider_unreachable, record_success, record_rate_limit,
-                           record_provider_unreachable, parse_retry_after, classify_provider_error)
+                           record_provider_unreachable, parse_retry_after, classify_provider_error,
+                           ends_chain, PROVIDER_ENDING)
     from brain import request_model_assessment
     if not routes:
         return {"failed": "not configured on this deployment"}
     last = "no route was reachable"
+    dead = set()                  # a bad key or empty account: skip that provider's other routes, try the next
     for route in routes:
+        if route["provider"] in dead:
+            continue
         if is_provider_unreachable(route["provider"])[0] or is_route_cooling(route["model"], route["provider"])[0]:
             last = "temporarily rate-limited"
             continue
@@ -7231,7 +7235,9 @@ def _super_route_call(juror, prompt, routes):
         elif c["category"] == "network":
             record_provider_unreachable(route["provider"])
         last = c["public"]
-        if not c["retryable"]:
+        if c["category"] in PROVIDER_ENDING:
+            dead.add(route["provider"])
+        if ends_chain(c):
             break
     return {"failed": last}
 
