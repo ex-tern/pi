@@ -473,7 +473,7 @@
   const LOOP_M = 0.94;                                  // half-axes at scale 1: 94% of half the screen
   // With a window open the loop gathers into a small mark above the windows (a click on it closes
   // them all, as in the plain look); with none open it is the page again.
-  const pageLoop = () => merged() && !document.documentElement.classList.contains("orbit-open");
+  const pageLoop = () => merged();                                 // the main loop never goes away, windows open or not
   let miniKey = "";
   function drawMini() {
     const n = loopN(), key = n.toPrecision(6);
