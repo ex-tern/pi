@@ -195,6 +195,10 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# A password on the whole site when SITE_PASSWORD is set (the experimental copies); see gate.py.
+import gate as _gate
+_gate.install(app, lambda: os.getenv("SESSION_SECRET", "").strip())
+
 w3 = Web3()
 APP_LOGS = deque(maxlen=200)
 _STATE_RESTORED = False
