@@ -1,4 +1,4 @@
-// sesite.js — the superellipse superlattice ("super"): the site itself is a super inside the
+// super/site.js — the superellipse superlattice ("super"): the site itself is a super inside the
 // main super. The bubbles sit inside an inner superellipse (the same n as the main loop, so
 // scrolling morphs both), with four ports on its sides, LabVIEW style:
 //
@@ -8,8 +8,8 @@
 //   condition  (bottom)  wired true the site runs, wired false it pauses (π and the engines)
 //
 // A faint lattice line runs from each port out to the main loop: the inner super is a node of
-// the outer one. Ports are wire ends like anything else (superlink.js: drag from a port, drop a
-// node on it, draw a wire to it); labview.js reads them as values (SeSite.value) and feeds the
+// the outer one. Ports are wire ends like anything else (super/wire.js: drag from a port, drop a
+// node on it, draw a wire to it); super/nodes.js reads them as values (SeSite.value) and feeds the
 // input and condition ports from what is wired into them.
 //
 // Windows are superellipses too (n = π over their whole box): CSS corner-shape where the browser
@@ -109,7 +109,7 @@
     asking = false; html.classList.remove("se-site-thinking");
     document.dispatchEvent(new CustomEvent("superlink:change"));
   }
-  // labview.js tells the ports what is wired into them
+  // super/nodes.js tells the ports what is wired into them
   function setInput(text) {
     text = String(text || "").trim();
     if (text === inputText) return;
@@ -182,7 +182,7 @@
   }
   const inSite = (x, y) => !!site && seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n) <= 1;
 
-  // sezoom.js: a scroll on a window sizes it (about its centre), unless its content scrolls
+  // super/scroll.js: a scroll on a window sizes it (about its centre), unless its content scrolls
   function sizeWindow(p, dy) {
     const r = p.getBoundingClientRect(), k = Math.exp(-dy * 0.0015), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const cur = p._seTo || { w: r.width, h: r.height };
@@ -234,6 +234,6 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", tick); else tick();
   setInterval(tick, 250);
   window.addEventListener("resize", tick);
-  document.addEventListener("se:frame:first", layout);   // semotion.js: while something moves, every frame, before the wires
+  document.addEventListener("se:frame:first", layout);   // super/motion.js: while something moves, every frame, before the wires
   window.SeSite = { value, setInput, setCondition, sizeWindow, shapeEl, inSite, SHAPES, site: () => site, ports: () => ports, portEl: p => ports[p] || null };
 })();

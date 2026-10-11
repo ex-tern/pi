@@ -1,4 +1,4 @@
-// labview.js — a Functions palette and block diagram, like LabVIEW's.
+// super/nodes.js — a Functions palette and block diagram, like LabVIEW's.
 //
 // Five shapes, and each becomes what its first use makes it, then stays that:
 //   ■ dropped on an open window becomes that window's stop button; on empty page
@@ -22,7 +22,7 @@
 //       what that is; on a wire it says what the wiring means; with a ◆ wired
 //       in, the panel weighs the engine's question
 //
-// Wiring is the mouse's default (superlink.js): drag from any word or number
+// Wiring is the mouse's default (super/wire.js): drag from any word or number
 // to a node and it becomes one of its inputs; inputs can also be a pill,
 // bubble or window (its name), the π mark (newest digit), the π counter
 // (decimals so far) or another node (its output). Click a wire to disconnect
@@ -118,7 +118,7 @@
     const i = O().info && O().info(ref.key);
     return i ? { num: i.use, bool: i.open, str: i.title } : ZERO;
   }
-  // a number or word on the page, as a wire from it (superlink.js) remembers it
+  // a number or word on the page, as a wire from it (super/wire.js) remembers it
   const numOf = t => { const v = parseFloat(String(t).replace(/[,\s'’](?=\d{3}\b)/g, "").replace(",", ".")); return Number.isNaN(v) ? NaN : v; };
   function valueOfAnchor(an) {
     if (an.loop) return valueOf({ core: 1 });
@@ -130,7 +130,7 @@
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
     const t = an.h ? an.h.replace(/^[a-z#]+:?/, "") : ""; return { num: 0, bool: !!t, str: t };
   }
-  // wires (superlink.js) that end on this node (and don't come from it), oldest first
+  // wires (super/wire.js) that end on this node (and don't come from it), oldest first
   function linkIns(n) {
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
     const out = [];
@@ -374,7 +374,7 @@
     drawWires();
   }
 
-  // what is wired into the site's input and condition ports (sesite.js): any wire with the port at either end
+  // what is wired into the site's input and condition ports (super/site.js): any wire with the port at either end
   function feedPorts() {
     const S = window.SeSite, SL = window.SuperLink;
     if (!S || !SL || !SL.links) return;
@@ -892,7 +892,7 @@
     // the diagram you left last time
     (restore("lv:nodes") || []).forEach(make);
     setInterval(tick, 250);
-    document.addEventListener("se:frame", () => {              // semotion.js: while something moves, every frame
+    document.addEventListener("se:frame", () => {              // super/motion.js: while something moves, every frame
       const f = O().fit ? O().fit().f : 1;
       if (f !== lastFit) { lastFit = f; nodes.forEach(place); }
       drawWires();
@@ -909,14 +909,14 @@
         const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2));
         return Math.abs(d - r.width / 2) < 14;
       });
-      if (html.classList.contains("shape-se")) return;              // the superellipse look: sezoom.js decides what a scroll does
+      if (html.classList.contains("shape-se")) return;              // the superellipse look: super/scroll.js decides what a scroll does
       if (!n || (hit && hit.tagName === "INPUT" && n.el.contains(hit) && n.fn === "ask")) return;
       if (!e.ctrlKey) { zoomed = null; return; }
       e.preventDefault(); e.stopImmediatePropagation();
       zoomed = { n, t: performance.now() };
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
-    // sezoom.js: a scroll on a node sizes it
+    // super/scroll.js: a scroll on a node sizes it
     window.LabView = { zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };

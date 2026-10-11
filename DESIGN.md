@@ -167,8 +167,8 @@ Behind `/api` one FastAPI process (`backend/api.py`) runs everything:
 
 `index.html` loads, in this order:
 
-1. `style.css`, `theme.css`: the design language and the app's styles; `orbit.css`, `labview.css`,
-   `live.css`, `traffic.css`, `superellipse.css` (the super look, on by host name `se.*` or `super.*`,
+1. `style.css`, `theme.css`: the design language and the app's styles; `orbit.css`, `super/nodes.css`,
+   `live.css`, `traffic.css`, `super/super.css` (the super look, on by host name `se.*` or `super.*`,
    `SCHOLARPI_SHAPE=superellipse` or `?shape=se`, including the Safari fallbacks).
 2. `app.js`: the application: assessment, the ledger explorer, sign-in, the windows' contents. Large and
    load-bearing; new work goes in small modules beside it.
@@ -181,12 +181,12 @@ Behind `/api` one FastAPI process (`backend/api.py`) runs everything:
    `performance.js`, `unigyro.js`, `neurofrenzy.js`, `facemace.js`, `medicine.js`, `ribsuggest.js`,
    `live.js`, `download.js`, `traffic.js`, `lab.js`, and `hal/` (HAL-OS in a v86 emulator) and
    `quvi/` (a browser port of QuVI).
-6. The super look, one concern per file: `selogo.js` (the title), `semotion.js` (the one tween and the
-   per-frame redraw signal), `semorph.js` (shapes, wires' paths, windows morphing), `labview.js` (the
-   graphical language), `superlink.js` (wiring as the mouse's default; edges and ports as wire ends;
-   opening by wiring), `semove.js` (moving the title, palette and Live), `sesite.js` (the inner super,
+6. The super look, one concern per file: `super/logo.js` (the title), `super/motion.js` (the one tween and the
+   per-frame redraw signal), `super/shape.js` (shapes, wires' paths, windows morphing), `super/nodes.js` (the
+   graphical language), `super/wire.js` (wiring as the mouse's default; edges and ports as wire ends;
+   opening by wiring), `super/move.js` (moving the title, palette and Live), `super/site.js` (the inner super,
    its ports, lattice and values; every super's own shape; windows clipped to supers where CSS cannot),
-   `sezoom.js` (what a scroll does, where).
+   `super/scroll.js` (what a scroll does, where).
 
 Everything the page remembers lives in `localStorage` under short prefixed keys (`orbit:`, `se:`,
 `lv:`), and a signed-in researcher's layout is synced through the backend.

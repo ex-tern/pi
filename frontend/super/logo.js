@@ -1,5 +1,5 @@
-// selogo.js — the "Pi Tech Lab" title drawn from superellipses, in a
-// superellipse badge, for the superellipse look (superellipse.css, html.shape-se).
+// super/logo.js — the "Pi Tech Lab" title drawn from superellipses, in a
+// superellipse badge, for the superellipse look (super/super.css, html.shape-se).
 //
 // A superellipse is |x/a|^n + |y/b|^n = 1 (n = 2 is an ellipse; higher n
 // squares it off). Every bowl in the word (P, e, c, h, a, b) is a ring between
@@ -67,7 +67,7 @@
     const w = x - TRACK, padX = 70, padY = 42;
     const vb = [-padX, -padY, w + 2 * padX, CAP + 2 * padY];
     // the badge is a super like the main loop and the windows: n = π (the letters keep n = 4),
-    // until shift + scroll on the title gives it an n of its own (sezoom.js, SeLogo.setN)
+    // until shift + scroll on the title gives it an n of its own (super/scroll.js, SeLogo.setN)
     geo = { w, padX, padY };
     return '<svg class="se-logo" viewBox="' + vb.join(" ") + '" aria-hidden="true" focusable="false">' +
            '<path class="sel-badge" d="' + badgePath(badgeN || (window.SeMorph && window.SeMorph.pi) || Math.PI) + '"/>' + body + '</svg>';

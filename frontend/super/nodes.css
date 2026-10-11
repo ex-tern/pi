@@ -1,4 +1,4 @@
-/* labview.css — the Functions palette (labview.js), a small floating window, as in LabVIEW */
+/* super/nodes.css — the Functions palette (super/nodes.js), a small floating window, as in LabVIEW */
 .lv-palette {
   position: fixed; left: 16px; bottom: 16px; z-index: 250; width: max-content;
   background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 12px;
@@ -59,7 +59,7 @@ html.shape-se .lv-node.lv-box { width: auto; min-width: 54px; }
 html.shape-se .lv-node::after { width: 10px; height: 10px; margin-top: -5px; right: -6px; clip-path: var(--se-sparkle); }
 html.shape-se .lv-palette { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); }   /* a super like everything else */
 
-/* --- superlink.js: dragging from any word, number or character draws a wire --- */
+/* --- super/wire.js: dragging from any word, number or character draws a wire --- */
 .sl-layer { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
 .sl-layer .sl-hover { fill: rgba(47, 64, 232, 0.08); stroke: var(--cobalt); stroke-width: 1.5; }
 html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select: none !important; -webkit-user-select: none !important; }
@@ -168,7 +168,7 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-box.is-long .lv-glyph { font-size: 11.5px; }
 .lv-node .lv-in { font-size: max(13px, calc(var(--lv-s, 56px) * 0.26)); }
 
-/* superlink.js: on the edge of a thing the pointer wires */
+/* super/wire.js: on the edge of a thing the pointer wires */
 html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .sl-edge-on { outline: 1.5px dashed var(--cobalt); outline-offset: 2px; }
 .lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: 0 0 0 2px rgba(47, 64, 232, 0.35); }
@@ -184,7 +184,7 @@ html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
 .lv-node .lv-val, .lv-node.lv-dot.is-loop .lv-val { display: none; }
 /* the edge under the pointer: only the crosshair says so, no halo */
 .sl-edge-on, .lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: none; }
-/* a ■ or ● keeps its shape: what it holds is fitted inside (labview.js fitText), not grown around */
+/* a ■ or ● keeps its shape: what it holds is fitted inside (super/nodes.js fitText), not grown around */
 .lv-node.lv-dot.has-val, .lv-node.lv-box.has-val, html.shape-se .lv-node.lv-dot.has-val, html.shape-se .lv-node.lv-box.has-val { width: var(--lv-s, 56px); padding: 0; }
 html.shape-se .lv-node.lv-dot.has-val, .lv-node.lv-dot.has-val { border-radius: 50%; }
 .lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), html.shape-se .lv-node.lv-box:has(.lv-in), html.shape-se .lv-node.lv-dot:has(.lv-in) { width: var(--lv-s, 56px); padding: 0; }

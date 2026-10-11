@@ -5,7 +5,7 @@
 // know at a glance, and be one click from the stable site.
 (function () {
   "use strict";
-  // The superellipse look (superellipse.css): on se.<domain> or super.<domain>, with
+  // The superellipse look (super/super.css): on se.<domain> or super.<domain>, with
   // ?shape=se, or when the server says so (SCHOLARPI_SHAPE=superellipse).
   const se = () => document.documentElement.classList.add("shape-se");
   if (/^(se|super)\./.test(location.hostname) || /[?&]shape=se\b/.test(location.search)) se();

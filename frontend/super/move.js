@@ -1,5 +1,5 @@
-// semove.js — in the superellipse look the title, the Functions palette and the Live panel can be
-// moved: drag them from inside (their edge still wires, see superlink.js; a word inside still
+// super/move.js — in the superellipse look the title, the Functions palette and the Live panel can be
+// moved: drag them from inside (their edge still wires, see super/wire.js; a word inside still
 // starts a wire, and their buttons and links keep their clicks). Each keeps its offset (the CSS
 // `translate` property, on top of where orbit.js seats it) in localStorage as se:move:<name>,
 // and a move that would take it out of the main loop stops at the loop's edge.

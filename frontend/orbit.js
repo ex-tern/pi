@@ -441,7 +441,7 @@
   }
   // In the superellipse look the mark is the diagram's central loop: a
   // superellipse the size of the page at n = π (the windows' n, computed live by
-  // semorph.js) until you scroll it with the π counter inside it, and the diameter reaching
+  // super/shape.js) until you scroll it with the π counter inside it, and the diameter reaching
   // the curve at every angle.
   const merged = () => document.documentElement.classList.contains("shape-se");
   // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
@@ -502,7 +502,7 @@
   const seNorm = (u, v, n) => { const m = Math.max(u, v); return m ? m * Math.pow(Math.pow(u / m, n) + Math.pow(v / m, n), 1 / n) : 0; };
   // Everything stays inside the mark. When the mark, grown to the display, still cannot hold
   // the page (a small n, a star), the page shrinks toward the centre until it does.
-  const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock";   // nodes scale themselves (labview.js place), from a pivot that moves with them   // wire layers are drawn from what is on screen, so they are not scaled
+  const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock";   // nodes scale themselves (super/nodes.js place), from a pivot that moves with them   // wire layers are drawn from what is on screen, so they are not scaled
   let pageFit = 1;
   // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
   // the superellipse look starts zoomed out: the site a small super in the middle of the main one
@@ -712,13 +712,13 @@
       for (let m = 0.02 * H; m < H / 3; m += 4) if (fits(Wv - rr - w, top + m, Wv - rr, top + H - m)) { root.setProperty("--se-live-m", Math.round(m) + "px"); break; }
     }
   }
-  // The site's super (sesite.js draws it): an inner superellipse the bubbles are laid out in, with the
+  // The site's super (super/site.js draws it): an inner superellipse the bubbles are laid out in, with the
   // same n as the main loop; the lattice lines from its ports run across the gap to the main loop.
   const SITE_MX = 0.86, SITE_MY = 0.8;
   let siteOff = load("orbit:site:offset") || { x: 0, y: 0 };
   if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
   // the inner super's n: the main loop's until shift + scroll inside it (on nothing) gives it one of its
-  // own (sezoom.js), kept as orbit:site:n; from then on the two change shape independently
+  // own (super/scroll.js), kept as orbit:site:n; from then on the two change shape independently
   let siteN = +load("orbit:site:n") || 0;
   const siteNv = () => siteN || loopN();
   function scrollSiteN(e) {
@@ -736,7 +736,7 @@
     const w = vw();
     return { cx: w / 2 + siteOff.x, cy: top + H / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * H / 2, n: siteNv(), fit: pageFit, px: window.innerWidth / 2, py: top + H / 2, ox: siteOff.x, oy: siteOff.y };
   }
-  // sesite.js: drag the inner super's ring and the bubbles (and so their wires) go with it
+  // super/site.js: drag the inner super's ring and the bubbles (and so their wires) go with it
   function moveSite(x, y, commit) {
     siteOff = { x: Math.round(x), y: Math.round(y) };
     const t = "translate(" + siteOff.x + "px," + siteOff.y + "px)";
@@ -1492,7 +1492,7 @@
     return it;
   }
   // Open a window by its pill's title (or the numbers window), as a pill click would.
-  // In the superellipse look a click does not open a window: wiring does (superlink.js opens what a new wire touches)
+  // In the superellipse look a click does not open a window: wiring does (super/wire.js opens what a new wire touches)
   const wireOnly = () => document.documentElement.classList.contains("shape-se");
   function openKey(key) {
     const it = items.find(i => i.key === key && (i.virtual || visible(i)));
@@ -1685,7 +1685,7 @@
     }
   }, 250);
   let winKey = "";
-  document.addEventListener("se:frame", drawWires);   // semotion.js: while something moves, every frame
+  document.addEventListener("se:frame", drawWires);   // super/motion.js: while something moves, every frame
 
   // Stillness: a double-click on the mark stops it turning and π growing,
   // for this visit (π starts again from 3. on every load, so a remembered

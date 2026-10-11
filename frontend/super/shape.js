@@ -1,4 +1,4 @@
-// semorph.js — in the superellipse look (html.shape-se), the shape's exponent n
+// super/shape.js — in the superellipse look (html.shape-se), the shape's exponent n
 // says what a thing is:
 //
 //   a button   a full superellipse whose n grows with use: never used, it is
@@ -163,7 +163,7 @@
     };
     const end = () => { g.svg.remove(); if (done) done(); };
     if (window.SeMotion) window.SeMotion.tween(s, { k: 1 }, { duration: DUR, easing: "easeInOutCubic", update: draw, complete: end });
-    else {                                                        // no semotion.js: the plain loop
+    else {                                                        // no super/motion.js: the plain loop
       const t0 = performance.now();
       const frame = now => { s.k = ease(Math.max(0, Math.min(1, (now - t0) / DUR))); draw(); if (s.k < 1) requestAnimationFrame(frame); else end(); };
       requestAnimationFrame(frame);

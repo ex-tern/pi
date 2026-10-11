@@ -1,4 +1,4 @@
-// superlink.js — every word, every character, every number can have a connector.
+// super/wire.js — every word, every character, every number can have a connector.
 //
 // Wiring is what the mouse does by default: drag from a piece of text and a
 // wire follows the pointer (a plain click still clicks). The piece is
@@ -24,7 +24,7 @@
   const load = () => { try { return JSON.parse(localStorage.getItem(KEY) || "[]"); } catch (_) { return []; } };
   const save = () => {
     try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (_) { /* private mode */ }
-    document.dispatchEvent(new CustomEvent("superlink:change"));      // the diagram (labview.js) recomputes at once
+    document.dispatchEvent(new CustomEvent("superlink:change"));      // the diagram (super/nodes.js) recomputes at once
   };
   let links = load().filter(l => l && l.a && l.b);
   // at first, one wire: the title (the site's name) into the site's input port; the bubbles start unconnected
@@ -39,7 +39,7 @@
     if (!el) return null;
     let h;
     if ((h = el.closest(".lv-node"))) return { key: "node:" + h.dataset.id, el: h };
-    if ((h = el.closest(".se-port"))) return { key: "port:" + h.dataset.port, el: h };     // a port of the site's super (sesite.js)
+    if ((h = el.closest(".se-port"))) return { key: "port:" + h.dataset.port, el: h };     // a port of the site's super (super/site.js)
     if ((h = el.closest("[data-key]"))) return { key: "k:" + h.dataset.key, el: h };
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
@@ -281,7 +281,7 @@
       if (el.classList.contains("lv-dot")) {                              // round: its ring
         const R = r.width / 2, c = Math.hypot(x - (r.left + R), y - (r.top + r.height / 2));
         d = c - R;
-        if (el.classList.contains("is-loop")) { if (d <= 4 || d > 13) return; }   // a loop: its ring moves it (labview.js), just outside wires
+        if (el.classList.contains("is-loop")) { if (d <= 4 || d > 13) return; }   // a loop: its ring moves it (super/nodes.js), just outside wires
         else if (d > OUT || d < -IN) return;
       } else {
         const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
@@ -379,11 +379,11 @@
       hits.slice(1).forEach(h => { if (seen.has(h.ownerSVGElement)) return; seen.add(h.ownerSVGElement); h.dispatchEvent(new MouseEvent("dblclick", { bubbles: true, clientX: e.clientX, clientY: e.clientY })); });
     }, true);
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
-    document.addEventListener("se:frame", draw);                      // semotion.js: while something moves, every frame
+    document.addEventListener("se:frame", draw);                      // super/motion.js: while something moves, every frame
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-  // labview.js: a node dropped on a number is wired here; a removed node takes its wires along
+  // super/nodes.js: a node dropped on a number is wired here; a removed node takes its wires along
   // (onlyIn: just the wires coming into it)
   function add(a, b) {
     if (links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([a, b]))) return;

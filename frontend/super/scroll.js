@@ -1,4 +1,4 @@
-// sezoom.js — what a scroll (or a pinch) does in the superellipse look depends on where it lands:
+// super/scroll.js — what a scroll (or a pinch) does in the superellipse look depends on where it lands:
 //
 //   outside the main super   (the corners the superellipse leaves bare)   it changes the super's shape: n
 //   shift + scroll            the shape of the super under the pointer alone: a node, a window, a card,
@@ -118,7 +118,7 @@
     if (loop) el = loop;
     if (recent === "page" || recent === "shape" || recent === "site" || (recent && recent.shapeOf)) el = null;
     if (el) {
-      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: labview.js guards the swipe
+      if (!e.ctrlKey && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;   // sideways: super/nodes.js guards the swipe
       const sc = !e.ctrlKey && scrolls(hit);                              // its content scrolls first
       if (sc && !(el.classList.contains("lv-node"))) return;
       e.preventDefault(); e.stopImmediatePropagation();

@@ -1,7 +1,7 @@
-// semotion.js — one way to animate, for the superellipse look: anime.js (MIT, loaded from cdnjs in
+// super/motion.js — one way to animate, for the superellipse look: anime.js (MIT, loaded from cdnjs in
 // index.html) drives every tween when it is there, and a small requestAnimationFrame tween stands in
-// when it is not (offline, blocked CDN), so nothing depends on it. Used by semorph.js (windows morphing
-// out of their buttons), labview.js (the ◆ growing while it thinks), sezoom.js, sesite.js and orbit.js
+// when it is not (offline, blocked CDN), so nothing depends on it. Used by super/shape.js (windows morphing
+// out of their buttons), super/nodes.js (the ◆ growing while it thinks), super/scroll.js, super/site.js and orbit.js
 // (sizes, zoom and n gliding to where a scroll takes them instead of stepping).
 //
 //   SeMotion.tween(obj, { x: 1, y: 2 }, { duration, easing, update, complete })  -> handle with .cancel()
@@ -13,14 +13,14 @@
                  easeOutCubic: t => 1 - Math.pow(1 - t, 3), easeOutQuad: t => 1 - (1 - t) * (1 - t), linear: t => t };
 
   // ---- the frame: while anything moves, every wire is redrawn each animation frame --------------
-  // Wires (orbit.js, labview.js, superlink.js) and the inner super's lattice (sesite.js) are drawn from
+  // Wires (orbit.js, super/nodes.js, super/wire.js) and the inner super's lattice (super/site.js) are drawn from
   // where their ends are on screen. Between gestures a redraw four times a second is plenty; while a
   // pointer is down, a tween runs or a scroll just happened they would lag what they join (the stutter),
   // so "se:frame" is dispatched on the document once per animation frame for as long as that lasts.
   let running = 0, pointer = 0, hot = 0, pumping = false;
   const se = () => document.documentElement.classList.contains("shape-se");
   function frame(now) {
-    document.dispatchEvent(new CustomEvent("se:frame:first"));   // what places things (sesite.js's ports) goes first
+    document.dispatchEvent(new CustomEvent("se:frame:first"));   // what places things (super/site.js's ports) goes first
     document.dispatchEvent(new CustomEvent("se:frame"));
     if (running > 0 || pointer > 0 || now < hot) requestAnimationFrame(frame); else pumping = false;
   }
