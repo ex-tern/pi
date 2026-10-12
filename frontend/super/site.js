@@ -304,7 +304,7 @@
   // ---- windows: superellipses in every browser; zooming sizes them --------------
   const hasCorner = typeof CSS !== "undefined" && CSS.supports && CSS.supports("corner-shape", "round");
   // everything is a super: the windows, the Functions palette, the Live panel and its tab, the cards in windows
-  const SUPERS = ".orbit-panel, .lv-palette, .live-dock.open .live-body, .live-tab, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus";
+  const SUPERS = ".orbit-panel, .lv-palette, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus";
   function clipWindows() {
     if (!on() || hasCorner || !SM()) return;
     document.querySelectorAll(SUPERS).forEach(p => {
@@ -323,9 +323,8 @@
   // the title's badge) changes that one's n and nothing else's: --se-k-window (log₂ n) is set on the
   // element, so its corners (and, inside a window, the buttons and cards that inherit it) follow;
   // named supers keep their n per browser as se:n:<name>.
-  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .live-body, .live-tab, .lv-palette, .orbit-bubble, .orbit-title, .se-project";
-  const nameOfSuper = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("live-body") ? "live"
-    : el.classList.contains("live-tab") ? "live-tab" : el.classList.contains("lv-palette") ? "palette" : el.classList.contains("se-project") ? "project"
+  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .lv-palette, .orbit-bubble, .orbit-title, .se-project";
+  const nameOfSuper = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette" : el.classList.contains("se-project") ? "project"
     : el.classList.contains("orbit-bubble") ? (el.dataset.key ? "bubble:" + el.dataset.key : null)
     : el.classList.contains("orbit-panel") ? (el.item && el.item.key ? "window:" + el.item.key : null) : null;
   const loadN = name => { try { return +localStorage.getItem("se:n:" + name) || 0; } catch (_) { return 0; } };

@@ -41,11 +41,11 @@
       if ((h = el.closest(".orbit-panel"))) return "site";
       if ((h = el.closest(".orbit-bubble"))) return "site";
       if ((h = el.closest(".lv-node"))) { const r = h.getBoundingClientRect(); return loopHolding(r.left + r.width / 2, r.top + r.height / 2, h) || (inSite(r.left + r.width / 2, r.top + r.height / 2) ? "site" : "loop"); }
-      if (el.closest(".orbit-title, .live-dock, .lv-palette")) return "loop";
+      if (el.closest(".orbit-title, .lv-palette")) return "loop";
     }
     return loopHolding(x, y) || (inSite(x, y) ? "site" : "loop");
   }
-  const isThing = el => !!(el && el.closest && el.closest(".orbit-panel, .orbit-bubble, .lv-node, .se-project, .orbit-title, .live-dock, .lv-palette"));
+  const isThing = el => !!(el && el.closest && el.closest(".orbit-panel, .orbit-bubble, .lv-node, .se-project, .orbit-title, .lv-palette"));
   const ownCursor = el => !!(el && el.closest && el.closest(".se-port, .wire-hit, .wire-handle, .op-head button, .op-close"));
   function elOf(s) { return s === "loop" ? null : s === "site" ? null : s; }
   function select(s) {
@@ -72,7 +72,7 @@
       if ((h = t.closest(".orbit-panel"))) return { on: h };
       if ((h = t.closest(".orbit-bubble"))) return { on: h };
       if ((h = t.closest(".lv-node, .se-project"))) return { on: h };
-      if (t.closest(".orbit-title, .live-dock, .lv-palette")) return { inside: "loop" };
+      if (t.closest(".orbit-title, .lv-palette")) return { inside: "loop" };
     }
     return { on: loopHolding(x, y) || (inSite(x, y) ? "site" : "loop") };
   }

@@ -47,7 +47,6 @@
     if ((h = el.closest(".orbit-panel"))) { const t = h.querySelector(".op-title"); return { key: "w:" + (t ? t.textContent : ""), el: h }; }
     if ((h = el.closest(".orbit-pi"))) return { key: "pi", el: h };
     if ((h = el.closest(".se-project"))) return { key: "project", el: h };   // the project super: a wire end like any super
-    if ((h = el.closest(".live-dock"))) return { key: "live", el: (h.classList.contains("open") && h.querySelector(".live-body")) || h.querySelector(".live-tab") || h };   // Live: its tab when folded, its panel when open
     if ((h = el.closest(".lv-palette"))) return { key: "palette", el: h };
     if ((h = el.closest(".orbit-title"))) return { key: "title", el: h };
     if ((h = el.closest("[id]"))) return { key: "#" + h.id, el: h };
@@ -62,7 +61,6 @@
     }
     if (key.startsWith("w:")) return [...document.querySelectorAll(".orbit-panel")].find(p => { const t = p.querySelector(".op-title"); return t && t.textContent === key.slice(2); }) || null;
     if (key === "pi") return document.querySelector(".orbit-pi");
-    if (key === "live") return document.querySelector(".live-dock.open .live-body") || document.querySelector(".live-tab");
     if (key === "palette") return document.querySelector(".lv-palette");
     if (key === "project") return document.querySelector(".se-project");
     if (key === "title") return document.querySelector(".orbit-title");
@@ -190,9 +188,7 @@
     return best && best.title;
   }
   const endWords = an => an.loop ? [] : an.el ? [an.h.replace(/^[a-z#]+:?/, "").replace(/^[a-z]+:/, "")] : [an.t];
-  const touchesLive = an => an && !an.loop && an.h === "live";
   function act(a, b) {
-    if ([a, b].some(touchesLive) && window.PiLive && window.PiLive.open) window.PiLive.open();   // a wire to Live unfolds it
     // a wire to a compact bubble opens the bubble (super/bubble.js), so its pills show
     [a, b].forEach(an => {
       const el = an && an.h && an.h.startsWith("k:") ? hostEl(an.h) : null, bubble = el && el.closest && el.closest(".orbit-bubble.is-group.is-compact");
@@ -214,8 +210,8 @@
 
   // disconnecting undoes it: a window whose button (or words) the removed wire touched closes,
   // once no other wire still touches it
-  // deleting a wire cancels what it did (owner, 2026-10-12): the windows it opened close, the bubble it opened
-  // compacts, Live folds, and a Super AI super it joined to run stops and shows its question again (super/nodes.js
+  // deleting a wire cancels what it did (owner, 2026-10-12): the windows it opened close (Live is one), the bubble
+  // it opened compacts, and a Super AI super it joined to run stops and shows its question again (super/nodes.js
   // sees it is no longer connected), each once no other wire still does the same
   // the wire from the title into the site's sync is the app's own: removing it resets the app (owner,
   // 2026-10-12): everything kept in this browser (the diagram, the wires, places, sizes, shapes, the view, the
@@ -231,7 +227,6 @@
   function unact(l) {
     if (!l) return;
     if (isTitleSync(l) && html.classList.contains("shape-se")) { resetApp(); return; }
-    if ([l.a, l.b].some(touchesLive) && !links.some(m => [m.a, m.b].some(touchesLive)) && window.PiLive && window.PiLive.close) window.PiLive.close();   // the last wire to Live gone: it folds
     [l.a, l.b].forEach(an => {
       const el = an && an.h && an.h.startsWith("k:") ? hostEl(an.h) : null, bubble = el && el.closest && el.closest(".orbit-bubble.is-group:not(.is-compact)");
       if (!bubble || !window.SeBubble) return;
@@ -248,6 +243,36 @@
       if (links.some(m => [m.a, m.b].some(an => an && an.h === "k:" + k))) return;
       if (O().close(k)) { const out = document.querySelector(".lv-out"); if (out) out.textContent = "Closed by disconnecting: " + label({ h: "k:" + k, el: 1 }); }
     });
+  }
+
+  // ---- one way to delete a wire, for every wire layer -------------------------------------------------
+  // On a layer of wires (text wires here, bubble wires in orbit.js, node wires in super/nodes.js): a double click
+  // on a wire deletes it; a click selects it (cobalt, .is-sel on its <g>, toggled in place so a redraw between two
+  // clicks never loses the double click) and Delete or Backspace removes it, Escape or a click elsewhere lets go.
+  //   selectable(svg, remove, pick)   remove(hit): delete the wire of this .wire-hit; pick(hit): toggle the
+  //                                   layer's own selection, true when something is selected now
+  // The selection survives a redraw: the layer re-applies .is-sel with reselect(svg, isPicked).
+  function selectable(svg, remove, pick) {
+    let picked = null;
+    const mark = () => svg.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", h === picked));
+    const clear = () => { picked = null; mark(); };
+    svg.addEventListener("dblclick", e => { const w = e.target.closest && e.target.closest(".wire-hit"); if (!w) return; e.stopPropagation(); e.preventDefault(); picked = null; remove(w); });
+    svg.addEventListener("click", e => {
+      const w = e.target.closest && e.target.closest(".wire-hit"); if (!w) return;
+      e.stopPropagation();
+      picked = pick(w) ? w : null; mark();
+      const out = document.querySelector(".lv-out"); if (out && picked) out.textContent = "Wire selected: press Delete to remove it";
+    });
+    document.addEventListener("pointerdown", e => { if (picked && !(e.target.closest && e.target.closest(".wire-hit"))) { pick(picked); clear(); } }, true);
+    document.addEventListener("keydown", e => {
+      if (!picked) return;
+      const a = document.activeElement;
+      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
+      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); e.stopImmediatePropagation(); const w = picked; picked = null; remove(w); }
+      else if (e.key === "Escape") { pick(picked); clear(); }
+    }, true);
+    svg._reselect = () => mark();                                      // after a redraw (new elements): the pick is gone with them
+    return { clear };
   }
 
   // ---- drawing ---------------------------------------------------------
@@ -300,7 +325,7 @@
   }
   function nearThing(x, y) {
     let best = null;
-    document.querySelectorAll(".orbit-bubble, .orbit-panel, .lv-node, .live-body, .live-tab").forEach(el => {
+    document.querySelectorAll(".orbit-bubble, .orbit-panel, .lv-node").forEach(el => {
       if (!el.getClientRects().length || el.hidden) return;
       const r = el.getBoundingClientRect();
       const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
@@ -316,7 +341,7 @@
     const u = unitAt(x, y);
     if (u) return { anchor: u.anchor, rect: rectOf(u.node, u.a, u.b) };
     const el = document.elementFromPoint(x, y);
-    const box = el && el.closest(".orbit-bubble, .ob-member, .orbit-panel, .lv-node, .live-body, .orbit-pi, .se-port");
+    const box = el && el.closest(".orbit-bubble, .ob-member, .orbit-panel, .lv-node, .se-project, .orbit-pi, .se-port");
     if (box) { const h = hostOf(box); if (h) return { anchor: { h: h.key, el: 1 }, rect: box.getBoundingClientRect() }; }
     if (O().nearLoop && O().nearLoop(x, y)) return { anchor: { loop: 1 }, rect: null };
     return nearThing(x, y);
@@ -326,7 +351,7 @@
   // Bubbles, windows, nodes, the counter, Live and the title: on their edge (a few pixels either side of
   // the border, the ring for a round ● or a loop) the pointer becomes a wire's end; inside, they keep
   // their own use (moving, pressing, typing).
-  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-pi, .live-body, .live-tab, .orbit-title, .se-port";
+  const THINGS = ".orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-pi, .orbit-title, .se-port";
   const IN = 10, OUT = 9;                                            // wide enough to find without hunting
   // the edge band shrinks with a small super, so a tiny thing is not all edge: about a tenth of its smaller side
   const bands = r => { const k = Math.min(1, Math.min(r.width, r.height) / 56); return { in: Math.max(4, IN * k), out: Math.max(4, OUT * k) }; };
@@ -372,31 +397,7 @@
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
     const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
-    // a double click on a wire deletes it (owner, 2026-10-12); a click selects it and Delete removes it too
-    svg.addEventListener("dblclick", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w) return;
-      e.stopPropagation(); e.preventDefault();
-      removeWire(+w.dataset.i);
-    });
-    // a click selects a wire (cobalt); Delete or Backspace removes it, Escape or a click elsewhere lets go
-    svg.addEventListener("click", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w) return;
-      e.stopPropagation();
-      selected = +w.dataset.i === selected ? -1 : +w.dataset.i;
-      // the class is toggled in place, not redrawn: rebuilding the layer between two clicks lost the double click
-      svg.querySelectorAll(".sl-wire").forEach((g, i) => g.classList.toggle("is-sel", i === selected));
-      const out = document.querySelector(".lv-out"); if (out && selected >= 0) out.textContent = "Wire selected: press Delete to remove it";
-    });
-    document.addEventListener("pointerdown", e => { if (selected >= 0 && !(e.target.closest && e.target.closest(".sl-layer .wire-hit"))) { selected = -1; svg.querySelectorAll(".sl-wire.is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
-    document.addEventListener("keydown", e => {
-      if (selected < 0) return;
-      const a = document.activeElement;
-      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
-      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); e.stopImmediatePropagation(); removeWire(selected); }
-      else if (e.key === "Escape") { selected = -1; lastHtml = ""; draw(); }
-    }, true);
+    selectable(svg, w => removeWire(+w.dataset.i), w => { const i = +w.dataset.i; selected = selected === i ? -1 : i; return selected >= 0; });
     // a drag from a piece of text draws a wire; a click stays a click
     const FIELDS = ".lv-palette, .lv-node, input, textarea, select, [contenteditable], canvas, video";
     const MOVERS = ".orbit-pi, .op-head, .orbit-bubble";                         // dragging these moves them
@@ -500,5 +501,5 @@
     if (links.length !== before) { save(); lastHtml = ""; draw(); }
   }
   function removeAt(i) { if (i >= 0 && i < links.length) { links.splice(i, 1); save(); lastHtml = ""; draw(); return true; } return false; }
-  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), unitAt, add, forget, intent, removeAt, rectOf: an => (an && !an.loop ? endRect(an) : null) || null };
+  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), unitAt, add, forget, intent, removeAt, selectable, rectOf: an => (an && !an.loop ? endRect(an) : null) || null };
 })();

@@ -10,7 +10,7 @@
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
   const S = () => window.SeSite || {};
-  const EL = ".lv-node, .se-project, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .orbit-bubble, .orbit-title, .live-body, .live-tab, .lv-palette";
+  const EL = ".lv-node, .se-project, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .orbit-bubble, .orbit-title, .lv-palette";
   let cur = null, curKind = "", pending = false, last = null;
   function set(el, kind) {
     if (el === cur && kind === curKind) return;

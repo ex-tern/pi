@@ -7,8 +7,8 @@
   "use strict";
   const html = document.documentElement;
   const O = () => window.PiOrbit || {};
-  const THINGS = { title: ".orbit-title", palette: ".lv-palette", live: ".live-dock" };
-  const KEEP = "a, button, input, textarea, select, .lv-fn, .live-tab, [contenteditable]";
+  const THINGS = { title: ".orbit-title", palette: ".lv-palette" };
+  const KEEP = "a, button, input, textarea, select, .lv-fn, [contenteditable]";
   const load = k => { try { return JSON.parse(localStorage.getItem("se:move:" + k) || "null"); } catch (_) { return null; } };
   const save = (k, v) => { try { localStorage.setItem("se:move:" + k, JSON.stringify(v)); } catch (_) { /* private mode */ } };
   const seNorm = (u, v, n) => Math.pow(Math.pow(u, n) + Math.pow(v, n), 1 / n);
@@ -38,7 +38,7 @@
         if (!moved) { moved = true; html.classList.add("se-moving"); }
         const v = { x: Math.round(v0.x + ev.clientX - x0), y: Math.round(v0.y + ev.clientY - y0) };   // translate is unscaled by the fit
         apply(el, v);
-        const box = name === "live" ? (el.querySelector(".live-body") && el.classList.contains("open") ? el.querySelector(".live-body") : el.querySelector(".live-tab")) || el : el;
+        const box = el;
         if (inside(box.getBoundingClientRect())) last = v; else apply(el, last);   // it stops at the loop (Live: its panel, not the whole dock)
         ev.preventDefault();
       };

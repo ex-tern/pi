@@ -23,8 +23,6 @@
 .pj-face em { font-style: normal; color: var(--cobalt, #2f40e8); margin-top: 4px; }
 
 /* the four ports every super has */
-.pj-port { position: absolute; width: 8px; height: 8px; background: var(--ink, #191919);
-  clip-path: polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%); }
 .pj-l { left: -1px; top: calc(50% - 4px); } .pj-r { right: -1px; top: calc(50% - 4px); }
 .pj-t { top: -1px; left: calc(50% - 4px); } .pj-b { bottom: -1px; left: calc(50% - 4px); }
 

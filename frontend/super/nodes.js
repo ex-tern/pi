@@ -600,7 +600,7 @@
     if (html.classList.contains("shape-se")) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (s !== wires.dataset.last) {                                     // unchanged wires stay, so a click lands
       wires.dataset.last = s; wires.innerHTML = s;
-      if (pickedWire) wires.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i));
+      if (pickedWire) wires.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", h.dataset.node + "/" + h.dataset.i === pickedWire));
     }
   }
 
@@ -762,25 +762,30 @@
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
              str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
     });
-    // "bubble:Title" names a bubble: its ports are "bubble:<key>/<port>" (super/site.js), found by its label
-    const bubbleKey = title => { const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === title); return b ? b.dataset.key : null; };
-    const end = e => {
-      const s = String(e), i = s.lastIndexOf("."), w = s.slice(0, i), port = s.slice(i + 1);
-      if (w === "site") return { h: "port:" + port, el: 1 };
-      if (w === "main") return { h: "port:main/" + port, el: 1 };     // the main super's ports (super/site.js)
-      if (w === "title") return { h: "title", el: 1 };                 // the title super: its edge is the end (super/wire.js host "title")
-      if (w.startsWith("bubble:")) { const k = bubbleKey(w.slice(7)); return k ? { h: "port:bubble:" + k + "/" + port, el: 1 } : null; }
-      return { h: "port:node:" + w + "/" + port, el: 1 };
-    };
-    const wireUp = (tries) => {
-      const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(() => wireUp(tries), 100);
-      const left = [];
-      (prog.wires || []).forEach(([a, b]) => { const A = end(a), B = end(b); if (A && B) SL.add(A, B); else left.push([a, b]); });
-      if (left.length && (tries || 0) < 30) { prog.wires = left; setTimeout(() => wireUp((tries || 0) + 1), 200); }   // the bubbles may not be built yet
-    };
-    wireUp(0);
+    wireUp(prog.wires || []);
     save("lv:start-wired", 1);
     persist();
+  }
+  // A program's wire end ("super.port") as a SuperLink anchor: "site.port" is the inner super's port, "main.port"
+  // the main super's, "title.output" the title super's edge, "bubble:Title.port" a bubble's (its ports are
+  // "bubble:<key>/<port>", super/site.js; found by its label), anything else a super's ("node:<id>/<port>").
+  // null when the bubble is not on the page (yet).
+  function anchorOf(e) {
+    const s = String(e), i = s.lastIndexOf("."), w = s.slice(0, i), port = s.slice(i + 1);
+    if (w === "site") return { h: "port:" + port, el: 1 };
+    if (w === "main") return { h: "port:main/" + port, el: 1 };
+    if (w === "title") return { h: "title", el: 1 };
+    if (w.startsWith("bubble:")) {
+      const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === w.slice(7));
+      return b ? { h: "port:bubble:" + b.dataset.key + "/" + port, el: 1 } : null;
+    }
+    return nodes.some(x => x.id === w) ? { h: "port:node:" + w + "/" + port, el: 1 } : null;
+  }
+  // adds a program's wires once their ends are on the page (the bubbles may be built a little later)
+  function wireUp(list, tries) {
+    const SL = window.SuperLink; if (!SL || !SL.add) return setTimeout(() => wireUp(list, tries), 100);
+    const left = list.filter(([a, b]) => { const A = anchorOf(a), B = anchorOf(b); if (A && B) { SL.add(A, B); return false; } return true; });
+    if (left.length && (tries || 0) < 30) setTimeout(() => wireUp(left, (tries || 0) + 1), 200);
   }
   function remove(n) {
     nodes = nodes.filter(x => x !== n);
@@ -1331,38 +1336,21 @@
     canvas.className = "lv-canvas";
     canvas.innerHTML = '<svg class="lv-wires" aria-hidden="true"></svg>';
     wires = canvas.firstChild;
-    // a wire: double-click to disconnect that input; in the superellipse look a click also selects it, and Delete cuts it
+    // a wire: a double click disconnects that input; a click selects it for Delete (one helper for every wire
+    // layer: super/wire.js selectable; in the round look the double click alone)
     const cut = w => {
       const n = w && nodes.find(x => x.id === w.dataset.node);
       if (!n) return;
       const ref = n.inputs.splice(+w.dataset.i, 1)[0];
-      persist(); tick();
+      pickedWire = null; persist(); tick();
       say(BY[n.fn].name + " disconnected from " + (ref ? nameOf(ref) : "its input"));
     };
-    wires.addEventListener("dblclick", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w) return;
-      e.stopPropagation(); e.preventDefault();
-      cut(w);
-    });
-    wires.addEventListener("click", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w || !html.classList.contains("shape-se")) return;
-      e.stopPropagation();
-      pickedWire = pickedWire && pickedWire.node === w.dataset.node && pickedWire.i === w.dataset.i ? null : { node: w.dataset.node, i: w.dataset.i };
-      wires.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", !!pickedWire && h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i));
-    });
-    document.addEventListener("pointerdown", e => { if (pickedWire && !(e.target.closest && e.target.closest(".wire-hit"))) { pickedWire = null; wires.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
-    document.addEventListener("keydown", e => {
-      if (!pickedWire) return;
-      const a = document.activeElement;
-      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
-      if (e.key === "Delete" || e.key === "Backspace") {
-        e.preventDefault(); e.stopImmediatePropagation();
-        const w = [...wires.querySelectorAll(".wire-hit")].find(h => h.dataset.node === pickedWire.node && h.dataset.i === pickedWire.i);
-        pickedWire = null; cut(w);
-      } else if (e.key === "Escape") { pickedWire = null; wires.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); }
-    }, true);
+    const hook = () => {
+      if (html.classList.contains("shape-se") && window.SuperLink && window.SuperLink.selectable) {
+        window.SuperLink.selectable(wires, cut, w => { const k = w.dataset.node + "/" + w.dataset.i; pickedWire = pickedWire === k ? null : k; return !!pickedWire; });
+      } else wires.addEventListener("dblclick", e => { const w = e.target.closest && e.target.closest(".wire-hit"); if (!w) return; e.stopPropagation(); e.preventDefault(); cut(w); });
+    };
+    if (window.SuperLink) hook(); else setTimeout(hook, 300);
     document.body.appendChild(canvas);
 
     // no palette: a double click on bare page makes a Super AI super there (a ■ like the central one: type a
@@ -1418,8 +1406,7 @@
         if (!SL.links().length && !restore("lv:start-wired")) {
           save("lv:start-wired", 1);
           const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
-          const end = e => { const t = String(e), i = t.lastIndexOf("."), w = t.slice(0, i), port = t.slice(i + 1); return w === "site" ? { h: "port:" + port, el: 1 } : w === "main" ? { h: "port:main/" + port, el: 1 } : w === "title" ? { h: "title", el: 1 } : nodes.some(x => x.id === w) ? { h: "port:node:" + w + "/" + port, el: 1 } : null; };
-          ((prog && prog.wires) || []).forEach(([a, b]) => { const A = end(a), B = end(b); if (A && B) SL.add(A, B); });
+          wireUp((prog && prog.wires) || []);
         }
       };
       wire();

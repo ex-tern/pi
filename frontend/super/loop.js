@@ -65,13 +65,13 @@
       const [l1, l2] = sweep.querySelectorAll("line");
       l1.setAttribute("x2", (200 + len).toFixed(1)); l2.setAttribute("x2", (200 - len).toFixed(1));
     }
-    const CONTAIN = ".orbit-bubble, .orbit-title, .orbit-pi, .lv-palette, .live-tab, .live-dock.open .live-body, .lv-node";
+    const CONTAIN = ".orbit-bubble, .orbit-title, .orbit-pi, .lv-palette, .lv-node";
     let loopG = { cx: 0, cy: 0, a: 1, b: 1, n: Math.PI }, loopKey = "";
     // r ↦ (u^n + v^n)^(1/n), safely for any n
     const seNorm = (u, v, n) => { const m = Math.max(u, v); return m ? m * Math.pow(Math.pow(u / m, n) + Math.pow(v / m, n), 1 / n) : 0; };
     // Everything stays inside the mark. When the mark, grown to the display, still cannot hold
     // the page (a small n, a star), the page shrinks toward the centre until it does.
-    const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette, .live-dock";   // nodes scale themselves (super/nodes.js place), from a pivot that moves with them   // wire layers are drawn from what is on screen, so they are not scaled
+    const FIT = ".orbit-bubbles, .orbit-title, .orbit-pi, .lv-palette";   // nodes scale themselves (super/nodes.js place), from a pivot that moves with them   // wire layers are drawn from what is on screen, so they are not scaled
     let pageFit = 1;
     // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
@@ -210,7 +210,7 @@
       const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
-      const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .live-dock.open .live-body, .live-tab, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
+      const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
         .map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height }));
       let rs = wins.map(p => { const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; });
       if (rs.some(r => !r.width)) return;
@@ -345,8 +345,16 @@
     }
     // The title, the Functions palette and the Live panel sit inside the loop too: each steps in from
     // its edge or corner until it fits inside the loop at its usual n (π, scale 1), on any screen.
+    // the compact supers' side (bubbles, the project super: --se-compact): the largest square of which ten fit in
+    // the inner super (owner, 2026-10-12), on a grid of 5 × 2, 4 × 3, 3 × 4 or 2 × 5, with room between them
+    function compactSide() {
+      const sb = siteBox(), f = sb.fit || 1, w = 2 * sb.a * f, h = 2 * sb.b * f;
+      const best = [[5, 2], [4, 3], [3, 4], [2, 5]].reduce((m, [c, r]) => Math.max(m, Math.min(w / c, h / r)), 0);
+      return Math.max(84, Math.min(280, Math.round(best * 0.82)));
+    }
     function seatEdges() {
       if (!merged()) return;
+      document.documentElement.style.setProperty("--se-compact", compactSide() + "px");
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
       const fits = (l, t, r, b, n, m = 6) => [l - m, r + m].every(x => [t - m, b + m].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
@@ -365,17 +373,6 @@
           const l = k * Wv, bt = k * ctx.H();
           if (fits(l, ctx.top() + ctx.H() - bt - h, l + w, ctx.top() + ctx.H() - bt)) { root.setProperty("--se-pal-left", Math.round(l) + "px"); root.setProperty("--se-pal-bottom", Math.round(bt) + "px"); break; }
         }
-      }
-      // Live sits inside the inner super, the second super (owner, 2026-10-11): its tab just inside the inner
-      // super's right side, above the output line; open, the panel inside it too, clear of its edge
-      const sb = siteBox(), f = sb.fit || 1;
-      const right = sb.px + (sb.cx + sb.a - sb.px) * f, topE = sb.py + (sb.cy - sb.b - sb.py) * f, botE = sb.py + (sb.cy + sb.b - sb.py) * f;
-      const inR = Math.max(8, Math.round(Wv - right + 0.03 * sb.a * f + 12));
-      root.setProperty("--se-live-right", inR + "px");
-      const live = $(".live-dock.open .live-body");
-      if (live && live.offsetWidth) {
-        const m = Math.max(topE - ctx.top(), ctx.top() + ctx.H() - botE) + 0.05 * sb.b * f + 12;
-        root.setProperty("--se-live-m", Math.round(Math.min(ctx.H() / 3, m)) + "px");
       }
     }
     // The site's super (super/site.js draws it): an inner superellipse the bubbles are laid out in, with the
@@ -427,7 +424,7 @@
     return {
       merged, loopN, scrollN, pageLoop, resetView, viewChanged, drawMini, miniSweep, seNorm, zoomPage, measure, fitTo, setFit, needAt,
       keepWindowsIn, drawLoop, loopPoint, nearLoop, sweepPx, seatEdges, scrollSiteN, siteNv, siteBox, moveSite,
-      placeBubblesLayer, insideLoop,
+      placeBubblesLayer, insideLoop, compactSide,
       pageFit: () => pageFit, loopG: () => loopG, loopD: () => loopD, siteOff: () => siteOff, zoom: () => zoom,
       pointerHeld: () => pointerHeld, siteN: () => siteN,
     };

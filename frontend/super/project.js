@@ -44,8 +44,12 @@
 
   // ------------------------------------------------------------ the super on the page
   let el = null, map = null, wiresSvg = null, state = load() || {}, t = +state.t || 0, tTo = t;
-  const MIN = 104;                                                   // the compact super's side
+  // the compact super's side: the same as a compact bubble's (super/loop.js compactSide, --se-compact)
+  const MIN0 = 104;
+  const MINv = () => { const v = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")); return v > 0 ? v : MIN0; };
+  let MIN = MIN0;
   function compactRect() {
+    MIN = MINv();
     const vw = window.innerWidth, vh = window.innerHeight;
     const x = state.x != null ? state.x * vw : 0.126 * vw, y = state.y != null ? state.y * vh : 0.70 * vh;
     const B = room();                                              // it lives inside the inner super, the second super

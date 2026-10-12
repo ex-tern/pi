@@ -17,11 +17,11 @@
   const O = () => window.PiOrbit || {};
   const load = k => { try { return +localStorage.getItem("se:size:" + k) || 0; } catch (_) { return 0; } };
   const save = (k, v) => { try { localStorage.setItem("se:size:" + k, String(v)); } catch (_) { /* private mode */ } };
-  const THING = ".lv-node, .orbit-panel, .orbit-bubble, .orbit-title, .lv-palette, .live-dock, .se-port";
+  const THING = ".lv-node, .orbit-panel, .orbit-bubble, .orbit-title, .lv-palette, .se-port";
 
   // a thing with a size of its own: scaled about its centre, remembered by name
   const nameOf = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette"
-    : el.classList.contains("live-dock") ? "live" : el.dataset.key ? "bubble:" + el.dataset.key : null;
+    : el.dataset.key ? "bubble:" + el.dataset.key : null;
   // a bubble's size is a scale inside orbit.js's transform (translate, then scale about its centre), so sizing
   // keeps its centre and never fights the layout's translate; the others are scaled with the CSS scale property
   const isBubble = el => el.classList.contains("orbit-bubble");
@@ -52,109 +52,43 @@
     else { putScale(el, v); relay(); }
   }
   function restore() {
-    document.querySelectorAll(".orbit-title, .lv-palette, .live-dock, .orbit-bubble[data-key]").forEach(el => {
+    document.querySelectorAll(".orbit-title, .lv-palette, .orbit-bubble[data-key]").forEach(el => {
       if (el.dataset.seSized) return;
       const name = nameOf(el), v = name && load(name);
       el.dataset.seSized = "1";
       if (v && v !== 1) { if (!VAR(el)) el.style.transformOrigin = "50% 50%"; putScale(el, v); }
     });
   }
-  // the super whose edge a point is just outside of (within BAND px): the nearest one not covered by
-  // something else; then the inner super's ring; nothing when the point is inside every super around it
-  const BAND = 12;
-  function edgeSuper(x, y, hit) {
-    const S = window.SeSite, over = hit && hit.closest ? hit.closest(THING) : null;
-    let best = null;
-    const sel = (S && S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
-    document.querySelectorAll(sel).forEach(el => {
-      if (el.hidden || !el.getClientRects().length) return;
-      const r = el.getBoundingClientRect();
-      if (!r.width || !r.height) return;
-      if (x >= r.left && x <= r.right && y >= r.top && y <= r.bottom) return;          // inside it: not its edge
-      const d = Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
-      if (d > Math.max(3, BAND * Math.min(1, Math.min(r.width, r.height) / 56))) return;   // a small super has a small band
-      if (over && over !== el && !over.contains(el) && !el.contains(over)) return;     // the point is on something else
-      if (!best || d < best.d) best = { el, d };
-    });
-    if (best) return { shapeOf: best.el };
-    const site = S && S.site && S.site();
-    if (site && !over) {
-      const d = seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n);
-      if (d > 1 && (d - 1) * Math.min(site.a, site.b) <= BAND) return { shapeOf: "site" };
-    }
-    return null;
+  // what the pointer is on, for super/hover.js: an arrow everywhere a scroll does something (only Shift +
+  // scroll changes an n; the ring is not a control); null where the thing keeps its own pointer
+  function zoneAt(x, y, hit) {
+    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project")) return null;
+    const over = hit && hit.closest ? hit.closest(THING) : null;
+    const S = window.SeSite || {};
+    if (over && (over.classList.contains("lv-node") || over.classList.contains("orbit-panel"))) return { kind: "arrow", target: over };
+    return { kind: "arrow", target: S.inSite && S.inSite(x, y) ? "site" : "loop" };
   }
   const seNorm = (u, v, n) => Math.pow(Math.pow(u, n) + Math.pow(v, n), 1 / n);
 
   // ---- what a scroll or a pinch does: one rule ------------------------------------------------------
-  //   scroll or pinch anywhere           zooms the site (the view), and nothing else changes shape
+  //   scroll or pinch on bare space      zooms the site (the view)
   //   ... on a super (Super AI too)      sizes the super (and grows a ■ into a holder); Alt + scroll zooms
   //                                      into what it shows (an answer, anything long) about the pointer
   //   ... on a bubble                    opens it (a scroll in) or compacts it (a scroll out): super/bubble.js
-  //   ... in a window                    sizes the window (its content refits: bigger, more readable); Alt +
-  //                                      scroll zooms its content about the pointer (no scroll bars anywhere)
-  //   Alt + scroll on a thing            sizes that thing (a super, a window, a bubble, the title, Live)
+  //   ... on the project super           the same (super/project.js takes it)
+  //   ... in a window                    zooms its content with every step and grows the window while there
+  //                                      is room; back out: the content first, then the window; Alt + scroll
+  //                                      zooms the content alone (no scroll bars anywhere: super/zoombox.js)
+  //   Alt + scroll on a thing            sizes that thing (a bubble, the title, the palette)
   //   Shift + scroll                     changes the n of the super under the pointer, and nothing else does
-  //                                      (the ring is no longer a control: RING_N)
-  //   (was:) ... on a super's ring       changes that super's n (the pointer is a hand there): the inner
-  //                                      super's ring, the main loop's, a window's, a node's, a bubble's
-  //   Shift + scroll                     changes the shape (n) of the super under the pointer, anywhere
-  // A gesture keeps doing what it started doing (400 ms), so a zoom never turns into an n by drifting. The zoom is coalesced to one step per frame and
-  // applied at once for a trackpad or a pinch, glided for a mouse wheel's coarse steps; it settles on 100 %
-  // when it ends near it, and the Reset view button (or the 0 key) brings the first view back.
-  // zoneAt is what super/hover.js shows: a hand on a ring (n), an arrow elsewhere (zoom).
-  // the ring: a band either side of a super's edge, where the pointer is a hand and a scroll changes that
-  // super's n (the owner's n control); everywhere else an arrow, and a scroll zooms
-  const RING_IN = 16, RING_OUT = 12;                        // the ring's band, inside and outside the edge
-  const ringBand = (w, h) => { const k = Math.min(1, Math.min(w, h) / 64); return { in: Math.max(3, RING_IN * k), out: Math.max(3, RING_OUT * k) }; };
-  const RING_N = false;                                                     // a scroll on a ring used to change its n; now only Shift + scroll does
-  function zoneAt(x, y, hit) {
-    if (hit && hit.closest && hit.closest("input, textarea, select, [contenteditable], .se-port, .wire-hit, .se-project")) return null;
-    if (!RING_N) return { kind: "arrow" };                                    // no ring control: an arrow everywhere, a scroll zooms
-    const over = hit && hit.closest ? hit.closest(THING) : null;
-    let best = null;                                          // the nearest ring the point is on
-    const S = window.SeSite || {}, sel = (S.SHAPES ? S.SHAPES + ", " : "") + ".lv-node";
-    document.querySelectorAll(sel).forEach(el => {
-      if (el.hidden || !el.getClientRects().length || el.classList.contains("se-port")) return;
-      const r = el.getBoundingClientRect(); if (!r.width || !r.height) return;
-      const ins = x >= r.left && x <= r.right && y >= r.top && y <= r.bottom;
-      const d = ins ? -Math.min(x - r.left, r.right - x, y - r.top, r.bottom - y)
-        : Math.hypot(Math.max(r.left - x, 0, x - r.right), Math.max(r.top - y, 0, y - r.bottom));
-      const b = ringBand(r.width, r.height);
-      if (d < -b.in || d > b.out) return;
-      if (over && over !== el && !over.classList.contains("is-holder") && !over.contains(el) && !el.contains(over)) return;    // the point is on something else (a holder is under what it holds)
-      if (!best || Math.abs(d) < Math.abs(best.d)) best = { target: el, d };
-    });
-    const site = S.site && S.site();
-    if (site) {
-      const d = (seNorm(Math.abs(x - site.cx) / site.a, Math.abs(y - site.cy) / site.b, site.n) - 1) * Math.min(site.a, site.b);
-      if (d >= -RING_IN && d <= RING_OUT && (!best || Math.abs(d) < Math.abs(best.d)) && !over) best = { target: "site", d };
-    }
-    const g = O().loop ? O().loop() : null;
-    if (g && g.a) {
-      const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
-      const d = (seNorm(Math.abs(x - g.cx) / g.a, Math.abs(y - (g.cy + off)) / g.b, g.n) - 1) * Math.min(g.a, g.b);
-      if (d >= -(RING_IN + 2) && d <= RING_OUT + 6 && (!best || Math.abs(d) < Math.abs(best.d))) best = { target: "loop", d };
-    }
-    if (best) return { kind: "hand", target: best.target };                        // on a ring: its n
-    const loopRing = window.LabView && window.LabView.loopAt ? window.LabView.loopAt(x, y) : null;
-    if (loopRing) return { kind: "hand", target: loopRing };
-    if (over && (over.classList.contains("lv-node") || over.classList.contains("orbit-panel"))) return { kind: "arrow", target: over };
-    return { kind: "arrow", target: S.inSite && S.inSite(x, y) ? "site" : "loop" };
-  }
-  // a ring's n, by a scroll (the hand)
-  function shapeOf(what, e, dy) {
-    if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
-    else if (what === "loop") { if (O().scrollN) O().scrollN(e); }
-    else if (!what.isConnected) return;
-    else if (what.classList.contains("lv-node")) { if (window.LabView && window.LabView.shapeNode) window.LabView.shapeNode(what, dy); }
-    else if (window.SeSite && window.SeSite.shapeEl) window.SeSite.shapeEl(what, dy);
-  }
-
-  const scrolls = el => { for (let e = el; e && e !== document.body; e = e.parentElement) { const s = getComputedStyle(e); if (/auto|scroll/.test(s.overflowY) && e.scrollHeight > e.clientHeight + 1) return e; } return null; };
-
-  // what the gesture acts on: "site" (the view), or an element (a node, a window, or with Alt a thing);
-  // null: leave it to the browser (content that scrolls)
+  //                                      (SeSite.shapeEl; nodes: LabView.shapeNode; bare space: the inner
+  //                                      super's n, elsewhere the main super's)
+  // One gesture stays on what it started on for 400 ms. The zoom is coalesced to one step per animation
+  // frame; a wheel's coarse steps glide, a trackpad's or a pinch's stream is applied at once; a gesture that
+  // ends within 6 % of 100 % settles on 100 %. Safari's pinch (gesture events) zooms the same way.
+  // The 0 key, or a click on the title super once the view has changed, brings back the first view.
+  // pick: what the gesture acts on: "site" (the view), an element (a node, a window, a bubble, a zoom box,
+  // or with Alt a thing); null leaves it to the browser (content that scrolls)
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
@@ -171,7 +105,7 @@
     const zb = t && t.closest("[data-zoombox]");
     if (panel && alt && zb && zb._zoom) return zb;
     if (panel) return panel;
-    if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette, .live-dock"); if (th && nameOf(th)) return th; }
+    if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }
     // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it
     const bubble = t && t.closest(".orbit-bubble.is-group");
     if (bubble && window.SeBubble && !pinch) return bubble;
@@ -248,19 +182,7 @@
     const pinch = e.ctrlKey;
     if (!pinch && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;          // sideways: super/nodes.js guards the swipe
     const fresh = gesture && now - gesture.t < 400 && gesture.pinch === pinch && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
-    // on a ring (the hand) a scroll changes that super's n; a gesture keeps doing what it started doing,
-    // so a zoom that drifts over a ring keeps zooming and an n that drifts inside keeps changing n
-    // only Shift + scroll changes an n (owner, 2026-10-12): the ring is not a control any more
-    if (RING_N && !pinch && !e.altKey && (fresh ? gesture.ring : true)) {
-      const z = fresh ? { kind: "hand", target: gesture.what } : zoneAt(x, y, hit);
-      if (z && z.kind === "hand") {
-        e.preventDefault(); e.stopImmediatePropagation();
-        gesture = { what: z.target, t: now, pinch, ring: true };
-        shapeOf(z.target, e, (e.deltaY || e.deltaX) * unit);
-        return;
-      }
-    }
-    const target = fresh && !gesture.ring ? gesture.what : pick(hit, pinch, e.altKey);
+    const target = fresh ? gesture.what : pick(hit, pinch, e.altKey);
     if (target === null) { gesture = null; return; }                         // content that scrolls keeps scrolling
     gesture = { what: target, t: now, pinch };
     e.preventDefault(); e.stopImmediatePropagation();
@@ -319,5 +241,5 @@
   setInterval(restore, 1000);
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
   // super/hover.js shows the zone by the pointer's shape: the band where a scroll changes n, or a surface a scroll sizes
-  window.SeZoom = { edgeSuper, zoneAt, sizeThing, THING, BAND };
+  window.SeZoom = { zoneAt, sizeThing, THING };
 })();

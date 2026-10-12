@@ -1372,31 +1372,16 @@
   }
   // click a wire: gone; drag from a handle: a new wire to wherever you drop it
   let pickedWire = -1;                                  // the bubble wire selected by a click (superellipse look)
+  // a double click deletes a wire; in the superellipse look a click also selects it for Delete (one helper for
+  // every wire layer: super/wire.js selectable)
   function wireEditing(svg) {
-    // a double click deletes a wire; in the superellipse look a click also selects it (cobalt) and Delete or
-    // Backspace removes it, as for text wires (super/wire.js)
-    svg.addEventListener("dblclick", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w) return;
-      e.stopPropagation(); e.preventDefault();
-      WIRES.splice(+w.dataset.i, 1);
-      saveWires(); drawWires();
-    });
-    svg.addEventListener("click", e => {
-      const w = e.target.closest && e.target.closest(".wire-hit");
-      if (!w || !merged()) return;
-      e.stopPropagation();
-      pickedWire = +w.dataset.i === pickedWire ? -1 : +w.dataset.i;
-      svg.querySelectorAll(".wire-hit").forEach(h => h.parentElement.classList.toggle("is-sel", +h.dataset.i === pickedWire));
-    });
-    document.addEventListener("pointerdown", e => { if (pickedWire >= 0 && !(e.target.closest && e.target.closest(".wire-hit"))) { pickedWire = -1; svg.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); } }, true);
-    document.addEventListener("keydown", e => {
-      if (pickedWire < 0) return;
-      const a = document.activeElement;
-      if (a && a.matches && a.matches("input, textarea, select, [contenteditable]")) return;
-      if (e.key === "Delete" || e.key === "Backspace") { e.preventDefault(); e.stopImmediatePropagation(); WIRES.splice(pickedWire, 1); pickedWire = -1; saveWires(); drawWires(); }
-      else if (e.key === "Escape") { pickedWire = -1; svg.querySelectorAll(".is-sel").forEach(g => g.classList.remove("is-sel")); }
-    }, true);
+    const cut = i => { WIRES.splice(i, 1); pickedWire = -1; saveWires(); drawWires(); };
+    if (merged()) {
+      const hook = () => { if (window.SuperLink && window.SuperLink.selectable) window.SuperLink.selectable(svg, w => cut(+w.dataset.i), w => { const i = +w.dataset.i; pickedWire = pickedWire === i ? -1 : i; return pickedWire >= 0; }); else setTimeout(hook, 200); };
+      hook();
+    } else {
+      svg.addEventListener("dblclick", e => { const w = e.target.closest && e.target.closest(".wire-hit"); if (!w) return; e.stopPropagation(); cut(+w.dataset.i); });
+    }
     svg.addEventListener("pointerdown", e => {
       const h = e.target.closest && e.target.closest(".wire-handle, .loop-hit");
       if (!h || e.button !== 0) return;

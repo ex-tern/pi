@@ -73,7 +73,6 @@ html.shape-se .ob-member:focus-visible { outline: none; }
 html.shape-se .ob-member:focus-visible::before { border: 2px solid var(--cobalt); }
 @media (prefers-reduced-motion: reduce) { html.shape-se .ob-member { transition: none; } }
 html.shape-se .ob-chat input { border-radius: 0.6em; corner-shape: superellipse(var(--se-k-window)); }
-html.shape-se .live-tab { border-radius: 14px 0 0 14px; corner-shape: superellipse(var(--se-k-window)); }
 /* dots are whole sparkles: the superellipse at n = γ */
 html.shape-se .ob-dot {
   border: 0 !important; border-radius: 0 !important; width: 0.85em; height: 0.85em;
@@ -102,7 +101,6 @@ html.shape-se .orbit-panel {
   corner-shape: superellipse(var(--se-k-window));
   resize: none;                       /* the corner is gone: zoom on the window to size it */
 }
-html.shape-se .orbit-panel .op-head { padding: 22px calc(12% + 14px) 10px; }   /* the curve cuts deepest at the top corners */
 /* the window's content lives in the rectangle the super holds (about 80% of its box at n = π): the scrolling
    body is inset by margins, not padding, so its scrollbar and its last lines stay inside the curve too */
 html.shape-se .orbit-panel .op-body { margin: 0 9% 9%; padding: 6px 10px 10px; min-height: 0; scrollbar-width: thin; }
@@ -117,13 +115,8 @@ html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-str
 .se-morph path { fill: var(--paper); stroke: var(--ink); stroke-width: 1.25; }
 html.shape-se .orbit-panel.se-arriving { opacity: 0; transition: none; }
 
-/* the title, drawn from superellipses in a superellipse badge (super/logo.js) */
+/* the title is a simple super (super/logo.js) */
 html.shape-se .orbit-title .ot-text { display: none; }
-html.shape-se .orbit-title .se-logo { display: block; height: clamp(40px, 4.4vw, 58px); width: auto; }
-.se-logo .sel-ink { fill: var(--ink); }
-.se-logo .sel-dot { fill: var(--cobalt); }
-.se-logo .sel-badge { fill: var(--paper); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
-@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: 36px; } }
 
 /* the mark is the loop around everything: a superellipse the size of the page
    (a, b = half the stage), n = π until you scroll, which moves n from 0 to ∞;
@@ -160,15 +153,6 @@ html.shape-se .om-page { display: block; }
 /* what used to sit on the page's edge steps inside the loop */
 html.shape-se .orbit-title { top: calc(var(--orbit-top, 0px) + var(--se-title-top, 36px)); }   /* orbit.js seatEdges */
 html.shape-se .lv-palette { left: var(--se-pal-left, 9vw); bottom: var(--se-pal-bottom, 10vh); }
-/* Live is inside the inner super (super/loop.js seatEdges sets --se-live-right and --se-live-m): the tab just inside
-   its right side, above the output line, the open panel inside it too */
-html.shape-se .live-tab { right: var(--se-live-right, 6vw); transform: translateY(calc(-100% - 18px)); }
-html.shape-se .live-dock.open .live-tab { right: calc(300px + var(--se-live-right, 6vw) + 12px); }   /* beside the panel, never on its curve */
-html.shape-se .live-dock.open .live-body {
-  margin: var(--se-live-m, 14vh) var(--se-live-right, 6vw) 0 0; height: calc(100% - 2 * var(--se-live-m, 14vh));
-  border: 1px solid var(--hair-strong); border-radius: 26px; corner-shape: superellipse(var(--se-k-window));
-}
-@media (max-width: 380px) { html.shape-se .live-dock.open .live-tab { right: calc(88vw - 6vw); } }
 
 /* no PiEN halo around the suggested bubble in this look (PiEN still learns; the bubble just is not ringed) */
 html.shape-se .orbit-bubble.pien-pick { box-shadow: none; }
@@ -242,18 +226,14 @@ html.shape-se .orbit-bubble:hover { border-color: var(--hair-strong); }
 
 /* everything is a super: the Functions palette, the Live panel and its tab, and the cards inside windows are
    whole superellipses at n = π like the windows and the main loop; their content keeps clear of the corners */
-html.shape-se .lv-palette, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab,
+html.shape-se .lv-palette,
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus {
   border-radius: 50%; corner-shape: superellipse(var(--se-k-window));
 }
 html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
-html.shape-se .live-dock.open .live-body { padding: 0; overflow: hidden; display: flex; flex-direction: column; border-left: 1px solid var(--hair-strong); }
-html.shape-se .live-dock.open .live-scroll { flex: 1; min-height: 0; overflow: hidden; margin: 22px 20px; padding: 0; }   /* super/livebox.js sets the margins from n */
-html.shape-se .live-inner { padding: 0 2px 6px; }
-html.shape-se .live-tab { padding: 14px 6px; }
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
 @supports not (corner-shape: round) {
-  html.shape-se .lv-palette, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab,
+  html.shape-se .lv-palette,
   html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { border: 0; position: relative; }
   html.shape-se .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
   html.shape-se .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
@@ -264,13 +244,13 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
    typeable things (buttons, pills, chips, tags, inputs, selects) are whole supers; boxes and cards are
    whole supers with their content padded clear of the corners; tables, scrollers, images and bars keep
    their small radii but take the same corner. */
-html.shape-se .orbit-panel *, html.shape-se .live-body *, html.shape-se .modal, html.shape-se .modal * { corner-shape: superellipse(var(--se-k-window)); }
+html.shape-se .orbit-panel *, html.shape-se .modal, html.shape-se .modal * { corner-shape: superellipse(var(--se-k-window)); }
 html.shape-se .orbit-panel button:not(.op-close):not(.lv-fn), html.shape-se .orbit-panel .pill, html.shape-se .orbit-panel .hot-topic-chip,
 html.shape-se .orbit-panel .stage-tag, html.shape-se .orbit-panel .linked-badge, html.shape-se .orbit-panel .rank,
 html.shape-se .orbit-panel .status-reward, html.shape-se .orbit-panel .status-reward-none, html.shape-se .orbit-panel .status-curation,
 html.shape-se .orbit-panel .subtab-btn, html.shape-se .orbit-panel .tag-input, html.shape-se .orbit-panel .btn-like,
 html.shape-se .orbit-panel input:not([type=checkbox]):not([type=radio]):not([type=range]), html.shape-se .orbit-panel select, html.shape-se .orbit-panel textarea,
-html.shape-se .live-body a.btn, html.shape-se .modal button, html.shape-se .modal input {
+html.shape-se .modal button, html.shape-se .modal input {
   border-radius: 50%; padding-inline: 1.1em;
 }
 html.shape-se .orbit-panel textarea { border-radius: 2.2em; padding: 0.9em 1.3em; }
@@ -291,7 +271,7 @@ html.shape-se .orbit-panel button:not(:disabled), html.shape-se .orbit-panel a, 
 html.shape-se .orbit-panel button:focus-visible, html.shape-se .orbit-panel input:focus-visible, html.shape-se .orbit-panel select:focus-visible, html.shape-se .orbit-panel textarea:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
 
 /* smooth motion: what scales or moves as one is promoted to its own layer */
-html.shape-se .orbit-bubbles, html.shape-se .orbit-title, html.shape-se .lv-palette, html.shape-se .live-dock, html.shape-se .lv-node { will-change: transform, scale, translate; }
+html.shape-se .orbit-bubbles, html.shape-se .orbit-title, html.shape-se .lv-palette, html.shape-se .lv-node { will-change: transform, scale, translate; }
 html.shape-se .om-page, html.shape-se .om-site, html.shape-se .sl-layer, html.shape-se .lv-wires, html.shape-se .orbit-wires { contain: layout paint; }
 /* no wire handles beside the bubbles: a bubble wires from its edge */
 html.shape-se .wire-handle { display: none; }
@@ -314,12 +294,11 @@ html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }
 /* the super under the pointer (super/hover.js): a hint of cobalt on its edge, a glance, not a selection
    (a selection takes a click and shows the full cobalt edge below) */
 html.shape-se { --se-hint: color-mix(in srgb, var(--cobalt) 45%, var(--hair-strong)); }
-html.shape-se .orbit-bubble.se-on, html.shape-se .orbit-panel.se-on, html.shape-se .live-body.se-on, html.shape-se .live-tab.se-on,
+html.shape-se .orbit-bubble.se-on, html.shape-se .orbit-panel.se-on,
 html.shape-se .lv-palette.se-on, html.shape-se .op-body .card.se-on, html.shape-se .rs-card.se-on, html.shape-se .perf-card.se-on,
 html.shape-se .perf-next.se-on, html.shape-se .buddy-corpus.se-on, html.shape-se .stat-card.se-on, html.shape-se .tr-tile.se-on { border-color: var(--se-hint) !important; }
 html.shape-se .orbit-panel.se-on .op-outline path, html.shape-se .se-on > .op-outline path { stroke: var(--se-hint); }
 html.shape-se .lv-node.se-on { border-color: var(--se-hint) !important; }
-html.shape-se .orbit-title.se-on .sel-badge { stroke: var(--se-hint); }
 html.shape-se.se-on-site .om-site-loop { stroke: var(--se-hint); }
 html.shape-se.se-on-loop .om-page-loop { stroke: var(--se-hint); }
 /* the selected super (super/select.js): a cobalt edge that stays; only its inside answers */
@@ -363,20 +342,12 @@ html.shape-se .op-head button:hover { border-color: var(--hair); }
 html.shape-se .lv-fn:hover:not(.se-on):not(.se-sel) { border-color: inherit; }
 html.shape-se .wire:hover .wire-bed { stroke: inherit; stroke-dasharray: none; }
 html.shape-se .wire:hover .wire-term { stroke: inherit; }
-html.shape-se .live-tab:hover, html.shape-se .live-list li button:hover, html.shape-se .cap-open:hover { color: inherit; }
+html.shape-se .live-list li button:hover, html.shape-se .cap-open:hover { color: inherit; }
 html.shape-se .arch-step:hover { border-color: inherit; }
 
 /* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
-html.shape-se .orbit-title .se-logo { height: calc(24px * var(--se-title-k, 1)); }   /* the snugger badge (super/logo.js padX/padY) keeps the letters the size they were at 30 px */
-@media (max-width: 700px) { html.shape-se .orbit-title .se-logo { height: calc(20px * var(--se-title-k, 1)); } }
 
 /* Reset view (super/scroll.js): back to 100 % and the first shape; shown only when the view has changed */
-.se-reset { position: fixed; right: 30px; bottom: 26px; z-index: 965;
-  font: 500 12px var(--font, system-ui); color: var(--ink); background: var(--surface, #fff);
-  border: 1px solid var(--hair-strong); border-radius: 999px; padding: 6px 13px; cursor: pointer;
-  box-shadow: 0 4px 16px rgba(25, 25, 25, 0.06); }
-.se-reset:hover, .se-reset:focus-visible { border-color: var(--cobalt); color: var(--cobalt); outline: none; }
-.se-reset[hidden] { display: none; }
 
 /* wiring (super/wire.js): held long enough on text, the pointer is a wire's end; a clicked wire is selected */
 html.sl-armed, html.sl-armed * { cursor: crosshair !important; user-select: none !important; -webkit-user-select: none !important; }
@@ -392,7 +363,6 @@ html.sl-armed, html.sl-armed * { cursor: crosshair !important; user-select: none
 html.shape-se, html.shape-se * { scrollbar-width: none; }
 html.shape-se ::-webkit-scrollbar { display: none; width: 0; height: 0; }
 html.shape-se .orbit-panel { --se-k-panel: 3; corner-shape: superellipse(var(--se-k-panel)); }
-html.shape-se .orbit-panel .op-head { padding: 18px 7% 8px; }
 html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 0 4.5% 4.5%; padding: 0; }
 html.shape-se .se-zoombox { overflow: hidden !important; position: relative; overscroll-behavior: none; }
 html.shape-se .se-zoomed { transform-origin: 0 0; will-change: transform; box-sizing: border-box; padding: 4px 6px 10px; }
@@ -410,11 +380,8 @@ html.shape-se .orbit-panel .op-body > .orbit-content > :first-child, html.shape-
 html.shape-se .orbit-panel .op-body p, html.shape-se .orbit-panel .op-body li { font-size: 13.5px; line-height: 1.55; }
 html.shape-se .orbit-panel .op-body .card { padding: 14px 16px; margin: 0 0 10px; box-shadow: none; }
 html.shape-se .orbit-panel .op-body .card > .card { padding: 12px 14px; }
-html.shape-se .live-body *, html.shape-se .orbit-panel * { overscroll-behavior: none; }
-/* the open Live panel is a super over the diagram, never under the nodes on top of it (a phone has no room beside it) */
-html.shape-se .live-dock.open { z-index: 962; }
+html.shape-se .orbit-panel * { overscroll-behavior: none; }
 /* the title is a simple super (super/logo.js): a ■ at n = π with its four ports, "pi tech lab" in mono inside */
-html.shape-se .orbit-title .se-logo { display: none; }
 html.shape-se .orbit-title .se-titlesuper {
   position: relative; display: grid; place-items: center; box-sizing: border-box;
   width: calc(80px * var(--se-title-k, 1)); height: calc(68px * var(--se-title-k, 1));
@@ -432,10 +399,8 @@ html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }
-/* the title super is the Reset view button (super/scroll.js): no words on it; once the view has changed a click on it resets */
-html.shape-se .orbit-title .sts-reset { display: none; font-size: 0.72em; color: var(--cobalt); line-height: 1.2; margin-top: 2px; }
+/* the title super is the Reset view button (super/scroll.js): nothing is written on it; once the view has changed a click on it resets */
 html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: pointer; }
-html.shape-se .se-reset { display: none !important; }
 /* a bubble wire or a node wire selected by a click (orbit.js, super/nodes.js): cobalt, Delete removes it */
 html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
 
@@ -443,10 +408,9 @@ html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { st
    Compact: a 104 px squircle with a small drawing of the bubble's name wired to its windows; a scroll on it
    opens it into the bubble with its pills, a scroll out compacts it again. */
 html.shape-se .orbit-bubble.is-group.is-compact {
-  width: 104px; height: 104px; min-width: 0; padding: 0; box-sizing: border-box; display: block; overflow: hidden;
+  width: var(--se-compact, 104px); height: var(--se-compact, 104px); min-width: 0; padding: 0; box-sizing: border-box; display: block; overflow: hidden;
   border-radius: 50%; corner-shape: superellipse(var(--se-k, 1.6515)); border: 1.5px solid var(--ink); background: var(--paper);
 }
-@media (max-width: 700px) { html.shape-se .orbit-bubble.is-group.is-compact { width: 84px; height: 84px; } }
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-dot, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label,
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-members, html.shape-se .orbit-bubble.is-group.is-compact > .ob-peek { display: none; }
 html.shape-se .orbit-bubble > .ob-mini { display: none; }
@@ -465,22 +429,20 @@ html.shape-se .orbit-bubble.is-group.is-growing > .ob-members, html.shape-se .or
    at n = π (--se-k-window; Shift + scroll gives one its own), the same port sparkles, no shadow and no tint. */
 html.shape-se .lv-node, html.shape-se .lv-node.lv-box, html.shape-se .lv-node.lv-dot, html.shape-se .lv-node.lv-super, html.shape-se .lv-node.lv-ask, html.shape-se .lv-node.lv-add,
 html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
-html.shape-se .orbit-panel, html.shape-se .live-dock.open .live-body, html.shape-se .live-tab, html.shape-se .orbit-title .se-titlesuper,
+html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper,
 html.shape-se .se-project, html.shape-se .lv-palette {
   background: var(--paper); border: 1.5px solid var(--ink); box-shadow: none; filter: none;
 }
 html.shape-se .lv-node.lv-box.is-holder { background: transparent; }        /* a holder stays see-through */
 html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 1.6515); }    /* windows at n = π like everything else */
-html.shape-se .live-dock.open .live-body { --se-k-window: 1.6515; }
-html.shape-se .live-tab { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); border-right: 1.5px solid var(--ink); }
 /* the content of a window stays clear of the π corners: the inset a superellipse needs is (1 − 2^(−1/n)) / 2 ≈ 10 % */
 html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 9%; }
 /* the same port sparkles everywhere */
-html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p, html.shape-se .se-project .pj-port { width: 10px; height: 10px; background: var(--ink); }
+html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p { width: 10px; height: 10px; background: var(--ink); }
 /* the same type inside supers: the diagram's mono for what a super says, Geist for what it reads */
 html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; }
 /* selected and hovered the same way everywhere: the edge takes cobalt */
-html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .live-body.se-sel, html.shape-se .live-tab.se-sel, html.shape-se .se-project.se-sel { border-color: var(--cobalt); }
+html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .se-project.se-sel { border-color: var(--cobalt); }
 html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
 /* wires are drawn in ink like the supers they join (they were hairline grey and hard to see) */
 html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphite); stroke-width: 1.5; }
