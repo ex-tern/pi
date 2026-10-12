@@ -20,13 +20,16 @@
   const isCompact = el => el.classList.contains("is-compact");
   const esc = s => String(s).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
 
-  // the small drawing: the name's box, wired to one box per pill (drawn in a 104 × 104 box)
+  // the small drawing: the name's box, wired to one box per pill (drawn in a 104 × 104 box); the project super
+  // (super/project.js) is drawn the same way, so every compact super is the same species
   function mini(el) {
     const name = (el.querySelector(":scope > .ob-label") || {}).textContent || "";
-    const members = [...el.querySelectorAll(".ob-member")].map(m => m.textContent.trim());
+    return drawing(name, [...el.querySelectorAll(".ob-member")].map(m => m.textContent.trim()));
+  }
+  function drawing(name, members, cls) {
     const n = Math.max(1, members.length), gap = 4, bh = 8, bw = 30, x1 = 60, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2;
     const lx = 12, lw = 34, lh = 14, ly = SIDE / 2 - lh / 2;
-    let s = '<svg class="ob-mini" viewBox="0 0 ' + SIDE + ' ' + SIDE + '" aria-hidden="true">';
+    let s = '<svg class="' + (cls || "ob-mini") + '" viewBox="0 0 ' + SIDE + ' ' + SIDE + '" aria-hidden="true">';
     members.forEach((m, i) => {
       const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2;
       s += '<path class="obm-wire" d="M' + x0 + ',' + (SIDE / 2) + ' C' + mx + ',' + (SIDE / 2) + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
@@ -103,7 +106,7 @@
     if (O().layout) O().layout();
     return true;
   }
-  window.SeBubble = { zoom, open: (el, open) => setOpen(el, open, true), isCompact, start };
+  window.SeBubble = { zoom, open: (el, open) => setOpen(el, open, true), isCompact, start, drawing };
   const boot = () => { if (!start()) setTimeout(boot, 200); };
   if (window.PiOrbit) boot(); else document.addEventListener("orbit:ready", boot, { once: true });
   setTimeout(boot, 1500);

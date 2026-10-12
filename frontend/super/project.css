@@ -12,22 +12,12 @@
 .se-project.is-full { box-shadow: 0 10px 40px rgba(25, 25, 25, 0.08); }
 .se-project:hover { border-color: color-mix(in srgb, var(--cobalt, #2f40e8) 45%, var(--ink, #191919)); }
 
-/* compact: the name of what it holds */
-.pj-face {
-  position: absolute; inset: 0; display: grid; place-content: center; text-align: center; gap: 2px;
-  font: 500 11px/1.25 var(--font-mono, ui-monospace, monospace); padding: 10px; pointer-events: none;
-  opacity: calc(1 - var(--pj-show, 0) * 1.6);
-}
-.pj-face strong { font: 500 13px/1.2 var(--font, system-ui); letter-spacing: -0.01em; }
-.pj-face span { color: var(--graphite, #6e6e6a); }
-.pj-face em { font-style: normal; color: var(--cobalt, #2f40e8); margin-top: 4px; }
-
-/* the four ports every super has */
-.pj-l { left: -1px; top: calc(50% - 4px); } .pj-r { right: -1px; top: calc(50% - 4px); }
-.pj-t { top: -1px; left: calc(50% - 4px); } .pj-b { bottom: -1px; left: calc(50% - 4px); }
+/* compact: drawn as a bubble is (super/bubble.js drawing), the same species; it fades as the map comes in */
+.pj-face { position: absolute; inset: 0; pointer-events: none; opacity: calc(1 - var(--pj-map, 0)); }
+.pj-face .ob-mini { display: block; width: 100%; height: 100%; }
 
 /* open: the diagram, drawn at 1000 × 620 and scaled to fit */
-.pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; }   /* always drawn: small, the miniature */
+.pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; opacity: var(--pj-map, 0); }   /* comes in as it grows */
 /* the miniature is drawn like a compact bubble's (super/bubble.js mini): boxes with an ink edge of about 1.4 px
    on paper, wires in graphite of about 1 px, no section frames, no names, no values (drawn at about a tenth of
    its size, so the strokes are ten times thicker here) */

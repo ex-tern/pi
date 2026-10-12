@@ -77,6 +77,7 @@
     // the program is always drawn: small, it is the miniature of itself; zoomed in, it can be read and used
     const show = Math.max(0, Math.min(1, (t - 0.25) / 0.35));
     el.style.setProperty("--pj-show", show.toFixed(3));
+    el.style.setProperty("--pj-map", Math.max(0, Math.min(1, (t - 0.04) / 0.22)).toFixed(3));   // the map comes in as the bubble drawing goes
     el.classList.toggle("is-open", show > 0.02);
     el.classList.toggle("is-mini", t < 0.12);
     el.classList.toggle("is-full", t > 0.98);
@@ -100,6 +101,7 @@
     el.setAttribute("aria-label", "Pi Tech Lab, the whole project written in SuperAI, drawn small. Zoom in on it to read and use it, zoom out to make it small again.");
     el.innerHTML =
 
+      '<div class="pj-face" aria-hidden="true"></div>' +
       '<div class="pj-map" aria-hidden="false"></div>' +
       '<button type="button" class="pj-prog-btn">Program</button>' +
       '<div class="pj-editor" hidden><div class="pj-ed-head"><strong>Pi Tech Lab in SuperAI</strong><span class="pj-ed-state"></span></div>' +
@@ -108,6 +110,13 @@
       '<div class="pj-ed-row"><button type="button" class="pj-ed-run">Run</button><button type="button" class="pj-ed-reset">Back to shipped</button>' +
       '<button type="button" class="pj-ed-dl">Download</button><button type="button" class="pj-ed-close">Close</button></div></div>';
     map = el.querySelector(".pj-map");
+    // compact, it is drawn as a bubble is (super/bubble.js drawing): its name's box wired to one box per part of it
+    const face = () => {
+      const f = el.querySelector(".pj-face");
+      if (!f || f.dataset.done || !window.SeBubble || !window.SeBubble.drawing) return !!(f && f.dataset.done);
+      f.innerHTML = window.SeBubble.drawing("Project", SECTIONS.map(x => x.label), "ob-mini pj-mini"); f.dataset.done = "1"; return true;
+    };
+    if (!face()) { const tryFace = setInterval(() => { if (face()) clearInterval(tryFace); }, 200); }
     map.style.width = W + "px"; map.style.height = H + "px";
     let inner = '<svg class="pj-wires" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"></svg>';
     SECTIONS.forEach(s => { inner += '<div class="pj-sec" style="left:' + s.x + "px;top:" + s.y + "px;width:" + s.w + "px;height:" + s.h + 'px"><span>' + esc(s.label) + "</span></div>"; });
@@ -243,17 +252,14 @@
   }
   function wire() {
     // zoom on it: open or compact it. Taken before the page's own scroll handlers (super/scroll.js)
-    // like every super (owner, 2026-10-12): a few steps in open it, a few steps out compact it, as a bubble does
-    // (super/bubble.js); Shift + scroll changes its n (super/scroll.js, SeSite.shapeEl), so it is left alone here
-    let acc = 0, accT = 0;
+    // Shift + scroll changes its n (super/scroll.js, SeSite.shapeEl), so it is left alone here
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
       if (e.target.closest(".pj-editor")) { e.stopImmediatePropagation(); return; }   // the program scrolls; it does not zoom
       e.preventDefault(); e.stopImmediatePropagation();
-      const dy = (e.deltaY || e.deltaX) * (e.ctrlKey ? 4 : 1);                    // a pinch reports small deltas
-      acc += dy; clearTimeout(accT); accT = setTimeout(() => { acc = 0; }, 500);
-      if (acc < -60 && tTo < 0.5) { acc = 0; setT(1); }
-      else if (acc > 60 && tTo >= 0.5) { acc = 0; setT(0); }
+      // it opens gradually with the scroll (owner, 2026-10-12): every step grows it a little toward the whole map
+      const dy = e.deltaY || e.deltaX, k = e.ctrlKey ? 0.012 : 0.0016;            // a pinch reports small deltas
+      setT(tTo - dy * k);
     }, { capture: true, passive: false });
     // presses inside it are its own: the page does not select, wire or drag through it
     window.addEventListener("pointerdown", e => {
