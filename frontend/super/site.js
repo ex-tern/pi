@@ -247,17 +247,17 @@
       el.style.left = x + "px"; el.style.top = y + "px";
       if (!O().loopPoint) return;
       const X = x - sr.left, Y = y - sr.top, f = v => v.toFixed(1);
-      if (side === "left" || side === "right") {                   // input and output: straight out to the main loop
-        const lp = O().loopPoint(x + (side === "left" ? -4000 : 4000), y);
-        lattice[p].setAttribute("d", "M" + f(X) + "," + f(Y) + "L" + f(lp[0] - sr.left) + "," + f(lp[1] - sr.top));
-      } else {                                                      // sync and condition: two curves, sweeping out to either side
-        const up = side === "top" ? -1 : 1;
-        const d = [-1, 1].map(sx => {
-          const lp = O().loopPoint(x + sx * 3000, y + up * 2600), px = lp[0] - sr.left, py = lp[1] - sr.top;
-          return "M" + f(X) + "," + f(Y) + "C" + f(X) + "," + f(Y + (py - Y) * 0.7) + " " + f(px - (px - X) * 0.55) + "," + f(py) + " " + f(px) + "," + f(py);
-        }).join("");
-        lattice[p].setAttribute("d", d);
-      }
+      // every lattice line is a real wire between two ports (owner, 2026-10-12: "the wires are not real wires and
+      // not visible"): the site's input and output run to the main super's input and output; its sync and
+      // condition are wired to the main super's by the start's own wires (main.sync -> site.sync, site.condition
+      // -> main.condition), so they draw no loose sweeps of their own
+      const g = O().loop ? O().loop() : null;
+      if ((side === "left" || side === "right") && g && g.a) {
+        const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
+        const mx = g.cx + (side === "left" ? -1 : 1) * (g.a - 10), my = g.cy + off;     // the main super's port (site.js placeAt, IN = 10)
+        const PX = mx - sr.left, PY = my - sr.top, c = (PX - X) * 0.5;
+        lattice[p].setAttribute("d", "M" + f(X) + "," + f(Y) + "C" + f(X + c) + "," + f(Y) + " " + f(PX - c) + "," + f(PY) + " " + f(PX) + "," + f(PY));
+      } else lattice[p].setAttribute("d", "");
     });
   }
 

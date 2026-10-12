@@ -558,6 +558,6 @@ html.shape-se .se-pressing { outline: 2px solid var(--cobalt) !important; outlin
 /* lines and wires more visible (owner, 2026-10-12): wires in ink, a little heavier; the lattice and the drawings' wires
    in graphite instead of hairline grey */
 html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed, html.shape-se .lv-wires .wire-bed { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; }
-html.shape-se .om-lattice { stroke: color-mix(in srgb, var(--graphite) 75%, transparent); stroke-width: 1.6; }
+html.shape-se .om-lattice { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; stroke-linecap: round; }
 html.shape-se .ob-mini .obm-wire { opacity: 0.95; stroke: var(--graphite); }
 html.shape-se .orbit-bubble > .ob-links path { opacity: 0.9; stroke-width: 1.3; }

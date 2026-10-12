@@ -406,7 +406,7 @@ function drawWires() {
   document.querySelectorAll(".om-site .om-lattice").forEach(p => {
     if (!p.getClientRects().length) return;
     const key = p._seKey || (p._seKey = "l" + (++wk));
-    setWire(key, p, { w: 1.6, color: tokens.graphite, alpha: 0.75, flow: false, order: 3 });
+    setWire(key, p, { w: 2.2, color: tokens.ink, alpha: 0.82, flow: false, order: 3 });   // drawn as the wires are (owner, 2026-10-12: "the wires are not real wires and not visible")
   });
 }
 
