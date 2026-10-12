@@ -480,6 +480,7 @@ html.shape-se .se-glyph:not(svg *) {
   background: color-mix(in srgb, var(--ink) 9%, var(--paper)); border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
 }
 html.shape-se svg .se-glyph { fill: transparent !important; }
+html.shape-se .lv-node .lv-glyph.se-glyph { width: fit-content !important; max-width: 80%; margin-inline: auto; }   /* a box the size of its words, not a bar across the super */
 
 /* slow motion (owner, 2026-10-12: no sudden movement, everything stable and slow): the bubbles' layout and windows
    pushed aside glide slowly; tweens are slowed in super/motion.js (SLOW) */
