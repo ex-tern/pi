@@ -208,7 +208,7 @@
         const kNow = z ? (z.state.kTo != null ? z.state.kTo : z.state.k) : 1, smallest = what.offsetWidth <= 264 || what.offsetHeight <= 144, whole = !(z && kNow > z.state.fitK * 1.001);
         if (dy > 0 && smallest && whole) {
           what._over = (what._over || 0) + dy; clearTimeout(what._overT); what._overT = setTimeout(() => { what._over = 0; }, 900);
-          if (what._over > 160 && O().keyOf && O().close) { what._over = 0; if (window.SeDelete) window.SeDelete.ask(what, x, y); else O().close(O().keyOf(what)); }   // ask first (owner, 2026-10-12)
+          if (what._over > 160 && O().keyOf && O().close) { what._over = 0; if (window.SeDelete) window.SeDelete.ask(what, x, y); else O().close(O().keyOf(what)); gesture = { what: "nothing", t: (gesture ? gesture.t : performance.now()) + 700, pinch: !!(gesture && gesture.pinch) }; }   // closed: the rest of this gesture does not go on to zoom the page
           return;
         }
         // as big as the layout lets, a few steps more fill the inner super (super/maximize.js); filling it, a scroll out

@@ -271,6 +271,16 @@
     if (v && typeof v === "object") return "{" + Object.entries(v).filter(([, x]) => x !== undefined).map(([k, x]) => JSON.stringify(k) + ": " + inline(x)).join(", ") + "}";
     return v === undefined ? "null" : JSON.stringify(v);
   }
+  // the program is shown as it is written, in SuperAI assembly (super/pitechlab.sasm; owner, 2026-10-12: the front end
+  // written in SuperAI): the shipped text, or the text you ran last; the JSON when neither is at hand
+  let shippedSource = "";
+  fetch("super/pitechlab.sasm?v=1").then(r => r.ok ? r.text() : "").then(t => { shippedSource = t || ""; }).catch(() => {});
+  function sourceText() {
+    let mine = null; try { mine = localStorage.getItem("superai:source"); } catch (_) { /* private mode */ }
+    if (window.SuperAI.edited && mine) return mine;
+    if (!window.SuperAI.edited && shippedSource) return shippedSource;
+    return pretty(window.SuperAI.program);
+  }
   function pretty(v, ind) {
     ind = ind || "";
     const one = inline(v);
@@ -329,7 +339,7 @@
     const stateLine = () => { el.querySelector(".pj-ed-state").textContent = window.SuperAI.edited ? "running: your edited copy" : "running: the shipped program"; };
     const show = showProgram = on => {
       ed.hidden = !on; el.classList.toggle("is-editing", on);
-      if (on) { text.value = pretty(window.SuperAI.program); errs.textContent = ""; stateLine(); setTimeout(() => { text.focus({ preventScroll: true }); text.setSelectionRange(0, 0); text.scrollTop = 0; }, 0); }
+      if (on) { text.value = sourceText(); errs.textContent = ""; stateLine(); setTimeout(() => { text.focus({ preventScroll: true }); text.setSelectionRange(0, 0); text.scrollTop = 0; }, 0); }
     };
     const run = () => {
       let p;
@@ -342,19 +352,22 @@
       } else try { p = JSON.parse(text.value); } catch (e) { errs.textContent = "Not valid JSON: " + e.message; return; }
       const bad = window.SuperAI.save(p);
       if (bad.length) { errs.textContent = bad.slice(0, 6).join(" · ") + (bad.length > 6 ? " · and " + (bad.length - 6) + " more" : ""); return; }
+      try { localStorage.setItem("superai:source", text.value); } catch (_) { /* private mode */ }   // the words you wrote, shown again next time
       // a program that changes the starting diagram starts it afresh
       if (JSON.stringify(p.diagram) !== JSON.stringify(window.SuperAI.program.diagram)) { try { localStorage.removeItem("lv:nodes"); localStorage.removeItem("orbit:textwires"); } catch (_) { /* private mode */ } }
       errs.textContent = "Running it…";
       setTimeout(() => location.reload(), 150);
     };
     const backToShipped = () => {
-      if (!window.SuperAI.edited) { text.value = pretty(window.SuperAI.shipped); errs.textContent = "This is the shipped program."; return; }
+      if (!window.SuperAI.edited) { text.value = shippedSource || pretty(window.SuperAI.shipped); errs.textContent = "This is the shipped program."; return; }
+      try { localStorage.removeItem("superai:source"); } catch (_) { /* private mode */ }
       window.SuperAI.reset(); errs.textContent = "Back to the shipped program…"; setTimeout(() => location.reload(), 150);
     };
     const download = () => {
       const a = document.createElement("a");
-      a.href = URL.createObjectURL(new Blob([text.value], { type: "application/json" }));
-      a.download = "pitechlab.super.json"; document.body.appendChild(a); a.click();
+      const json = /^\s*\{/.test(text.value);                           // the program as written: assembly (.sasm) or JSON
+      a.href = URL.createObjectURL(new Blob([text.value], { type: json ? "application/json" : "text/plain" }));
+      a.download = json ? "pitechlab.super.json" : "pitechlab.sasm"; document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
     };
     text.addEventListener("keydown", e => {
