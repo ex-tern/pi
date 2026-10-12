@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Learn SuperAI</title>
-<meta name="description" content="Write and run a small SuperAI program in your browser: signs, wires, a stack of values and one line to ask an LLM.">
+<title>Learn to program</title>
+<meta name="description" content="Learn to program from scratch with SuperAI: nine short lessons with challenges the page checks, from your first line to asking an AI.">
 <link rel="icon" href="../super/icon.svg" type="image/svg+xml">
 <style>
 @font-face { font-family: "Geist"; src: url("../fonts/Geist-Variable.woff2") format("woff2"); font-weight: 100 900; font-display: swap; }
@@ -46,81 +46,208 @@ input { width: 140px; }
 .sheet td { padding: 4px 6px; border-top: 1px solid var(--line); vertical-align: top; }
 .sheet td:first-child { white-space: nowrap; font-family: "Geist Mono", monospace; }
 .side { display: grid; gap: 16px; align-content: start; }
+
+.course { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 18px; }
+@media (max-width: 820px) { .course { grid-template-columns: minmax(0, 1fr); } }
+nav.toc { display: flex; flex-direction: column; gap: 4px; align-self: start; position: sticky; top: 16px; }
+@media (max-width: 820px) { nav.toc { position: static; flex-direction: row; overflow-x: auto; padding-bottom: 4px; } nav.toc button { flex: none; } }
+nav.toc button { text-align: left; font: inherit; font-size: 14px; padding: 7px 10px; border: 1px solid transparent; background: none; color: var(--ink); border-radius: 10px; cursor: pointer; display: flex; gap: 8px; align-items: center; }
+nav.toc button:hover { border-color: var(--line); }
+nav.toc button[aria-current="true"] { border-color: var(--cobalt); color: var(--cobalt); background: var(--card); }
+nav.toc .tick { width: 16px; flex: none; text-align: center; color: var(--soft); }
+nav.toc .done .tick { color: var(--good); }
+.bar { height: 4px; background: var(--line); border-radius: 4px; margin: 4px 0 18px; overflow: hidden; }
+.bar > i { display: block; height: 100%; background: var(--cobalt); width: 0; transition: width .4s ease; }
+.idea p { margin: 0 0 10px; max-width: 68ch; }
+.idea code, .task code { font-family: "Geist Mono", monospace; font-size: 13px; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: 0 4px; }
+pre.ex { font: 13px/1.55 "Geist Mono", monospace; background: var(--paper); border: 1px solid var(--line); border-radius: 12px; padding: 10px 12px; margin: 0 0 8px; overflow-x: auto; }
+.stack { display: flex; gap: 10px; flex-wrap: wrap; margin: 6px 0 12px; }
+.stack figure { margin: 0; text-align: center; font-size: 12px; color: var(--soft); }
+.stack .col { display: flex; flex-direction: column-reverse; gap: 3px; min-height: 66px; justify-content: flex-start; width: 52px; border-bottom: 2px solid var(--ink); padding-bottom: 3px; margin-bottom: 4px; }
+.stack .col span { font: 12px "Geist Mono", monospace; border: 1px solid var(--ink); border-radius: 6px; padding: 1px 0; background: var(--card); color: var(--ink); }
+.task { border-left: 3px solid var(--cobalt); padding: 6px 0 6px 12px; margin: 14px 0 10px; }
+.task b { font-weight: 600; }
+.btns { display: flex; gap: 8px; flex-wrap: wrap; margin: 10px 0; }
+.ghost { font: inherit; font-size: 14px; padding: 7px 14px; border: 1px solid var(--line); border-radius: 12px; background: var(--card); color: var(--ink); cursor: pointer; }
+.ghost:hover { border-color: var(--cobalt); }
+.tests { width: 100%; border-collapse: collapse; font-size: 13.5px; margin-top: 8px; }
+.tests td { padding: 4px 6px; border-top: 1px solid var(--line); font-family: "Geist Mono", monospace; }
+.ok { color: var(--good); } .no { color: var(--bad); }
+.hint { color: var(--soft); margin: 6px 0 0; }
+.win { color: var(--good); font-weight: 600; margin: 8px 0 0; }
 </style>
 </head>
 <body>
 <div class="wrap">
-  <header><div class="pi" aria-hidden="true">π</div><h1>Learn SuperAI</h1></header>
-  <p class="lead">SuperAI is Pi Tech Lab's language. You write one simple word per line, wire supers together with signs, and ask an LLM with one line. Pick a lesson, press Run, then change it and run it again. Everything runs in your browser on the same Rust engine the site uses.</p>
-
-  <div class="steps" id="steps" role="group" aria-label="Lessons"></div>
-
-  <div class="grid">
-    <section class="card">
-      <h2 id="lessonTitle">Lesson</h2>
-      <p class="explain" id="lessonText"></p>
-      <div class="tools" id="tools" aria-label="Insert a sign"></div>
-      <textarea id="code" spellcheck="false" aria-label="Your SuperAI program"></textarea>
-    </section>
-
-    <div class="side">
-      <section class="card">
-        <h2>Run it</h2>
-        <div class="row"><label for="fn">Function</label><select id="fn"></select></div>
-        <div id="inputs"></div>
-        <div class="row"><button class="run" id="run" disabled>Loading the engine…</button></div>
-        <div class="out" id="out" aria-live="polite">The answer shows here.</div>
-        <div class="log" id="log"></div>
+  <header><div class="pi" aria-hidden="true">π</div><h1>Learn to program with SuperAI</h1></header>
+  <p class="lead">Nine short lessons, from your first line to asking an AI. Each one explains one idea, shows it running, then gives you a small challenge that the page checks for you. Nothing to install: it runs in your browser.</p>
+  <div class="bar" aria-hidden="true"><i id="bar"></i></div>
+  <div class="course">
+    <nav class="toc" id="toc" aria-label="Lessons"></nav>
+    <main>
+      <section class="card idea">
+        <h2 id="title"></h2>
+        <div id="idea"></div>
+        <div class="task" id="task"></div>
       </section>
-      <section class="card sheet">
-        <h2>The words</h2>
-        <table>
-          <tr><td>push 5</td><td>put a value on top</td></tr>
-          <tr><td>in name</td><td>put an input on top</td></tr>
-          <tr><td>set x / get x</td><td>keep the top as x, put x back on top</td></tr>
-          <tr><td>add sub mul div</td><td>take two, put back the result</td></tr>
-          <tr><td>cat</td><td>join two texts</td></tr>
-          <tr><td>lt gt eq</td><td>compare two: true or false</td></tr>
-          <tr><td>L: goto L</td><td>a label, and jump to it</td></tr>
-          <tr><td>if L / ifnot L</td><td>jump when the top is true / false</td></tr>
-          <tr><td>ask sim</td><td>send the top to an LLM, put its answer on top</td></tr>
-          <tr><td>say</td><td>the answer of the program</td></tr>
-          <tr><td>■ ● ◆ ✦ ▣</td><td>a super: square, dot, diamond, sparkle, holder</td></tr>
-          <tr><td>⊙ ⟶</td><td>an input or output, a wire</td></tr>
-          <tr><td>▷ ◁ △ ▽</td><td>the connectors: output, input, sync, condition</td></tr>
-          <tr><td>; text</td><td>a note for people</td></tr>
-        </table>
-      </section>
-    </div>
+      <div class="grid" style="margin-top:16px">
+        <section class="card">
+          <h2>Your program</h2>
+          <div class="tools" id="tools" aria-label="Insert a sign"></div>
+          <textarea id="code" spellcheck="false" aria-label="Your SuperAI program" style="min-height:300px"></textarea>
+          <div class="btns">
+            <button class="run" id="check" disabled>Loading…</button>
+            <button class="ghost" id="hintB" type="button">Hint</button>
+            <button class="ghost" id="answerB" type="button">Show an answer</button>
+            <button class="ghost" id="resetB" type="button">Start over</button>
+          </div>
+          <p class="hint" id="hint" hidden></p>
+        </section>
+        <div class="side">
+          <section class="card">
+            <h2>Result</h2>
+            <div class="out" id="out" aria-live="polite">Press Check (or Ctrl + Enter) to run your program.</div>
+            <div class="log" id="log"></div>
+            <table class="tests" id="tests"></table>
+            <p class="win" id="win" hidden></p>
+          </section>
+          <section class="card sheet">
+            <h2>Words you know so far</h2>
+            <table id="sheet"></table>
+          </section>
+        </div>
+      </div>
+    </main>
   </div>
 </div>
-
 <script>
-const LESSONS = [
-  { title: "1. Hello", text: "A program is a fn with a name. push puts a value on top; say gives it as the answer.", code:
-`; my first program
-fn hello
-  push "Hello from SuperAI"
+const S = (...xs) => `<div class="stack">${xs.map(([cap, items]) => `<figure><div class="col">${items.map(v => `<span>${v}</span>`).join("")}</div>${cap}</figure>`).join("")}</div>`;
+const WORDS = {
+  push: ["push 5", "put a value on top of the stack"], say: ["say", "the answer: takes the top value"],
+  math: ["add sub mul div", "take the top two, put back the result"], cat: ["cat", "join the top two as text"],
+  in: ["in x", "put the input x on top"], fn: ["fn name a b … end", "a program with inputs a and b"],
+  set: ["set x", "take the top value and keep it as x"], get: ["get x", "put a copy of x on top"],
+  cmp: ["lt gt eq", "compare the top two: true or false"], jump: ["L:  ifnot L  if L  goto L", "a label; jump when false, when true, always"],
+  stop: ["stop", "end the program here"], call: ["call f", "run your function f on the top value"], give: ["give", "hand the top value back to whoever called"],
+  graph: ["graph … end", "supers and wires instead of lines"], sup: ["⊙ x input  ■ s \"×\"", "an input or output; a super holding a value or an operator"],
+  wire: ["⟶ a▷ b◁", "a wire from a's output (▷) into b's input (◁)"], ask: ["ask sim", "send the top text to an AI, put its answer on top"],
+  note: ["; words", "a note for people, ignored by the machine"],
+};
+const L = [
+ { t: "Your first program", words: ["push", "say", "note"],
+   idea: `<p>A program is a list of instructions the computer follows from top to bottom, one per line. SuperAI works with a <b>stack</b>: a pile of values. <code>push</code> puts a value on top of the pile, and <code>say</code> takes the top value and makes it the program's answer.</p>${S(["push \"Hi\"", ["Hi"]], ["say", []])}<p>Every program starts with <code>fn</code> and a name, and ends with <code>end</code>. Lines after <code>;</code> are notes for people.</p><pre class="ex">fn hello
+  push "Hello"   ; put the word on the stack
+  say            ; and answer with it
+end</pre>`,
+   task: `<b>Your turn:</b> make <code>hello</code> answer <code>Hello, world</code>.`, fn: "hello",
+   start: `fn hello
+  push "Hello"
+  say
+end`, tests: [[{}, "Hello, world"]],
+   hint: `Change only the text between the quotes.`, answer: `fn hello
+  push "Hello, world"
   say
 end` },
-  { title: "2. Inputs", text: "Names after fn are inputs: fill them in on the right. in a puts a on top; add takes two and puts back their sum.", code:
-`; add two numbers
-fn plus a b
+ { t: "Numbers and math", words: ["math"],
+   idea: `<p>Push two numbers, then a math word. <code>add</code> takes the top two values off the pile and puts their sum back. <code>sub</code>, <code>mul</code> (times) and <code>div</code> work the same way.</p>${S(["push 2", ["2"]], ["push 3", ["2", "3"]], ["add", ["5"]])}<pre class="ex">fn sum
+  push 2
+  push 3
+  add       ; 2 + 3
+  say       ; 5
+end</pre>`,
+   task: `<b>Your turn:</b> make <code>answer</code> work out 7 times 6 (it should say <code>42</code>).`, fn: "answer",
+   start: `fn answer
+  push 7
+  
+  say
+end`, tests: [[{}, "42"]], hint: `You need another push and then mul.`, answer: `fn answer
+  push 7
+  push 6
+  mul
+  say
+end` },
+ { t: "Inputs", words: ["in", "fn"],
+   idea: `<p>A program becomes useful when it works on values it is given. Names after the function's name are its <b>inputs</b>. <code>in x</code> puts the input <code>x</code> on the pile.</p><pre class="ex">fn plus a b
   in a
   in b
   add
   say
+end</pre><p>Run with a = 2 and b = 3 it says 5; with a = 10 and b = 1 it says 11. The same program, different answers.</p>`,
+   task: `<b>Your turn:</b> write <code>double x</code>, which answers twice its input. The check tries x = 21 and x = 5.`, fn: "double",
+   start: `fn double x
+  
+end`, tests: [[{ x: 21 }, "42"], [{ x: 5 }, "10"]], hint: `Put x on the stack, then 2, then multiply, then say.`, answer: `fn double x
+  in x
+  push 2
+  mul
+  say
 end` },
-  { title: "3. A loop", text: "set and get keep values. A label (loop:) and a jump (goto loop) repeat lines; ifnot done leaves when the count reaches 0. With loops and memory SuperAI can compute anything.", code:
-`; count down from n
-fn countdown n
-  push ""
-  set words
+ { t: "Remembering", words: ["set", "get"],
+   idea: `<p>Sometimes you need a value more than once. <code>set n</code> takes the top value and keeps it in a box called <code>n</code> (a <b>variable</b>). <code>get n</code> puts a copy back on the pile, as often as you like.</p>${S(["in x", ["4"]], ["set n", []], ["get n", ["4"]], ["get n", ["4", "4"]], ["add", ["8"]])}<pre class="ex">fn twice x
+  in x
+  set n
+  get n
+  get n
+  add
+  say
+end</pre>`,
+   task: `<b>Your turn:</b> write <code>square x</code>, which answers x times x. The check tries 9 and 12.`, fn: "square",
+   start: `fn square x
+  in x
+  set n
+  
+end`, tests: [[{ x: 9 }, "81"], [{ x: 12 }, "144"]], hint: `get n twice, then mul, then say.`, answer: `fn square x
+  in x
+  set n
+  get n
+  get n
+  mul
+  say
+end` },
+ { t: "Decisions", words: ["cmp", "jump", "stop"],
+   idea: `<p>Programs choose. <code>gt</code> compares the top two values and puts back <code>true</code> if the first is greater. A line ending in <code>:</code> is a <b>label</b>, a place in the program. <code>ifnot L</code> takes the top value and jumps to <code>L</code> when it is false; otherwise it carries on with the next line. <code>stop</code> ends the program.</p><pre class="ex">fn grade score
+  in score
+  push 50
+  lt              ; is score less than 50?
+  ifnot pass      ; no: go to pass
+  push "try again"
+  say
+  stop
+pass:
+  push "passed"
+  say
+end</pre>`,
+   task: `<b>Your turn:</b> write <code>bigger a b</code>, which answers the bigger of the two. The check tries (3, 8) and (9, 2).`, fn: "bigger",
+   start: `fn bigger a b
+  in a
+  in b
+  gt
+  ifnot second
+  
+second:
+  
+end`, tests: [[{ a: 3, b: 8 }, "8"], [{ a: 9, b: 2 }, "9"]],
+   hint: `After ifnot: in a, say, stop. After second: in b, say.`, answer: `fn bigger a b
+  in a
+  in b
+  gt
+  ifnot second
+  in a
+  say
+  stop
+second:
+  in b
+  say
+end` },
+ { t: "Loops", words: [],
+   idea: `<p>A <b>loop</b> repeats lines. Jump back to a label with <code>goto</code>, and leave with <code>ifnot</code> when a count runs out. This counts down from n:</p><pre class="ex">fn countdown n
   in n
   set i
-loop:
+  push ""
+  set words
+again:
   get i
-  ifnot done        ; stop at 0
+  ifnot done      ; stop when i is 0
   get words
   get i
   cat
@@ -130,26 +257,98 @@ loop:
   get i
   push 1
   sub
-  set i
-  goto loop
+  set i           ; i = i - 1
+  goto again
 done:
   get words
-  push "liftoff!"
-  cat
+  say
+end</pre><p>With loops, variables and decisions you can, in principle, compute anything a computer can.</p>`,
+   task: `<b>Your turn:</b> write <code>total n</code>, which adds 1 + 2 + … + n. The check tries n = 10 (55) and n = 4 (10).`, fn: "total",
+   start: `fn total n
+  in n
+  set i
+  push 0
+  set sum
+again:
+  get i
+  ifnot done
+  ; add i to sum, then take 1 from i
+  goto again
+done:
+  get sum
+  say
+end`,
+   tests: [[{ n: 10 }, "55"], [{ n: 4 }, "10"]], hint: `Inside the loop: get sum, get i, add, set sum; then get i, push 1, sub, set i.`,
+   answer: `fn total n
+  in n
+  set i
+  push 0
+  set sum
+again:
+  get i
+  ifnot done
+  get sum
+  get i
+  add
+  set sum
+  get i
+  push 1
+  sub
+  set i
+  goto again
+done:
+  get sum
   say
 end` },
-  { title: "4. Ask an LLM", text: "ask sim sends the text on top to the lab's own assistant and puts its answer on top. Try ask llama, ask mistral or ask gemini too.", code:
-`; ask an LLM in one line
-fn explain topic
-  push "Explain in one short sentence for a newcomer: "
-  in topic
-  cat
-  ask sim
+ { t: "Functions", words: ["call", "give"],
+   idea: `<p>Big programs are built from small ones. <code>call f</code> takes the top value as f's input, runs f, and puts f's result on the pile. Inside f, <code>give</code> hands the top value back.</p><pre class="ex">fn square x
+  in x
+  set n
+  get n
+  get n
+  mul
+  give          ; back to whoever called
+end
+
+fn hyp a b
+  in a
+  call square
+  in b
+  call square
+  add
+  say           ; a² + b²
+end</pre>`,
+   task: `<b>Your turn:</b> using <code>square</code>, write <code>cube x</code> (x × x × x). The check tries 3 and 5. Pick <code>cube</code> to check.`, fn: "cube",
+   start: `fn square x
+  in x
+  set n
+  get n
+  get n
+  mul
+  give
+end
+
+fn cube x
+  
+end`, tests: [[{ x: 3 }, "27"], [{ x: 5 }, "125"]],
+   hint: `in x, call square, then in x again, mul, say.`, answer: `fn square x
+  in x
+  set n
+  get n
+  get n
+  mul
+  give
+end
+
+fn cube x
+  in x
+  call square
+  in x
+  mul
   say
 end` },
-  { title: "5. Supers and wires", text: "The graphical side: a graph is supers joined by wires. ⊙ is an input or output, ■ a super that holds a number or an operator, ⟶ a wire from an output (▷) into an input (◁). Data flows along the wires.", code:
-`; double a number with supers and wires
-graph double
+ { t: "Supers and wires", words: ["graph", "sup", "wire"],
+   idea: `<p>SuperAI is also a <b>graphical</b> language: the same ideas drawn as supers joined by wires, as the site itself is built. In a <code>graph</code>, <code>⊙ x input</code> is where a value comes in, <code>■</code> is a super holding a number or an operator, and <code>⟶</code> is a wire. A wire runs from an output (<code>▷</code>) into an input (<code>◁</code>), and values flow along it.</p><pre class="ex">graph double
   ⊙ x input
   ■ two "2"
   ■ times "×"
@@ -157,120 +356,114 @@ graph double
   ⟶ x▷ times◁
   ⟶ two▷ times◁
   ⟶ times▷ out◁
+end</pre><p>Two wires go into <code>times</code>, so it multiplies x by 2 and sends the result to <code>out</code>.</p>`,
+   task: `<b>Your turn:</b> make a graph <code>plus3</code> that answers x + 3. The check tries 4 and 10.`, fn: "plus3",
+   start: `graph plus3
+  ⊙ x input
+  ⊙ out output
+  
+end`, tests: [[{ x: 4 }, "7"], [{ x: 10 }, "13"]],
+   hint: `Add ■ three "3" and ■ plus "+", wire x and three into plus, and plus into out.`, answer: `graph plus3
+  ⊙ x input
+  ■ three "3"
+  ■ plus "+"
+  ⊙ out output
+  ⟶ x▷ plus◁
+  ⟶ three▷ plus◁
+  ⟶ plus▷ out◁
 end` },
-  { title: "6. All together", text: "One program can hold many functions, and one can call another: call fact runs fact on the top of the stack. This one asks an LLM about the number it computed.", code:
-`; n! by a loop, then ask about it
-fn fact n
-  in n
-  set k
-  push 1
-  set acc
-loop:
-  get k
-  push 1
-  gt
-  ifnot done
-  get acc
-  get k
-  mul
-  set acc
-  get k
-  push 1
-  sub
-  set k
-  goto loop
-done:
-  get acc
-  give
-end
-
-fn fun n
-  in n
-  call fact
-  set f
-  push "Give one fun fact about the number "
-  get f
+ { t: "Ask an AI", words: ["ask", "cat"], ai: true,
+   idea: `<p>Here is what makes SuperAI different: asking an AI is just another instruction. <code>ask sim</code> takes the text on top, sends it to the lab's assistant siM, and puts its answer on the pile. Other engines: <code>rib</code>, <code>pid</code>, <code>pien</code>, <code>llama</code>, <code>mistral</code>, <code>qwen</code>, <code>gemini</code>, <code>deepseek</code>.</p><pre class="ex">fn explain topic
+  push "Explain in one sentence: "
+  in topic
+  cat            ; join the two texts
+  ask sim
+  say
+end</pre><p>You can mix it with everything else: compute a number, then ask about it.</p>`,
+   task: `<b>Your turn:</b> write <code>poem word</code>, which asks an AI for a two-line poem about the word. Any answer passes, as long as your program asks.`, fn: "poem",
+   start: `fn poem word
+  push "Write a two-line poem about "
+  
+end`, tests: [[{ word: "stars" }, null]],
+   hint: `in word, cat, ask llama, say.`, answer: `fn poem word
+  push "Write a two-line poem about "
+  in word
   cat
   ask llama
   say
 end` },
 ];
-const SIGNS = [["⟶", "a wire"], ["▷", "output"], ["◁", "input"], ["△", "sync"], ["▽", "condition"], ["■", "a square super"], ["●", "a dot super"], ["◆", "a diamond super"], ["▣", "a holder super"], ["⊙", "an input or output"], ["✦", "ask (same as ask)"]];
+const SIGNS = [["⟶", "a wire"], ["▷", "output"], ["◁", "input"], ["△", "sync"], ["▽", "condition"], ["■", "a square super"], ["●", "a dot super"], ["◆", "a diamond super"], ["✦", "a sparkle super"], ["▣", "a holder"], ["⊙", "an input or output"]];
+const $ = id => document.getElementById(id), code = $("code"), out = $("out"), log = $("log"), checkB = $("check");
+const KEY = "superai:course";
+let st = { at: 0, done: [], code: {} };
+try { Object.assign(st, JSON.parse(localStorage.getItem(KEY) || "{}")); } catch (_) {}
+const save = () => { try { localStorage.setItem(KEY, JSON.stringify(st)); } catch (_) {} };
 
-const $ = id => document.getElementById(id);
-const code = $("code"), fnSel = $("fn"), out = $("out"), log = $("log"), runB = $("run");
-let lesson = 0, program = null;
-const KEY = "superai:learn";
-
-function showLesson(i) {
-  lesson = i;
-  [...$("steps").children].forEach((b, k) => b.setAttribute("aria-pressed", String(k === i)));
-  $("lessonTitle").textContent = LESSONS[i].title.replace(/^\d+\.\s*/, "");
-  $("lessonText").textContent = LESSONS[i].text;
-  let saved = null; try { saved = JSON.parse(localStorage.getItem(KEY) || "{}")[i]; } catch (_) {}
-  code.value = saved || LESSONS[i].code;
-  out.textContent = "The answer shows here."; out.className = "out"; log.textContent = "";
-  assemble();
+function toc() {
+  $("toc").innerHTML = L.map((l, i) => `<button type="button" data-i="${i}" class="${st.done.includes(i) ? "done" : ""}" aria-current="${i === st.at}"><span class="tick">${st.done.includes(i) ? "✓" : i + 1}</span>${l.t}</button>`).join("");
+  $("toc").querySelectorAll("button").forEach(b => b.onclick = () => show(+b.dataset.i));
+  $("bar").style.width = (100 * st.done.length / L.length) + "%";
 }
-LESSONS.forEach((l, i) => { const b = document.createElement("button"); b.type = "button"; b.textContent = l.title; b.onclick = () => showLesson(i); $("steps").appendChild(b); });
-SIGNS.forEach(([s, t]) => {
-  const b = document.createElement("button"); b.type = "button"; b.textContent = s; b.title = "Insert " + t; b.setAttribute("aria-label", "Insert " + t);
-  b.onclick = () => { const a = code.selectionStart, z = code.selectionEnd; code.setRangeText(s, a, z, "end"); code.focus(); assemble(); };
-  $("tools").appendChild(b);
+function show(i) {
+  st.at = i; save(); const l = L[i];
+  $("title").textContent = (i + 1) + ". " + l.t;
+  $("idea").innerHTML = l.idea; $("task").innerHTML = l.task;
+  code.value = st.code[i] != null ? st.code[i] : l.start;
+  $("hint").hidden = true; $("win").hidden = true; $("tests").innerHTML = ""; log.textContent = "";
+  out.className = "out"; out.textContent = "Press Check (or Ctrl + Enter) to run your program.";
+  const known = [...new Set(L.slice(0, i + 1).flatMap(x => x.words))];
+  $("sheet").innerHTML = known.map(k => `<tr><td>${WORDS[k][0]}</td><td>${WORDS[k][1]}</td></tr>`).join("");
+  toc(); window.scrollTo({ top: 0, behavior: "smooth" });
+}
+SIGNS.forEach(([s, t]) => { const b = document.createElement("button"); b.type = "button"; b.textContent = s; b.title = "Insert " + t; b.setAttribute("aria-label", "Insert " + t);
+  b.onclick = () => { code.setRangeText(s, code.selectionStart, code.selectionEnd, "end"); code.focus(); st.code[st.at] = code.value; save(); }; $("tools").appendChild(b); });
+code.addEventListener("input", () => { st.code[st.at] = code.value; save(); });
+code.addEventListener("keydown", e => {
+  if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); checkB.click(); }
+  if (e.key === "Tab") { e.preventDefault(); code.setRangeText("  ", code.selectionStart, code.selectionEnd, "end"); }
 });
+$("hintB").onclick = () => { $("hint").hidden = false; $("hint").textContent = "Hint: " + L[st.at].hint; };
+$("answerB").onclick = () => { code.value = L[st.at].answer; st.code[st.at] = code.value; save(); };
+$("resetB").onclick = () => { code.value = L[st.at].start; delete st.code[st.at]; save(); };
 
-function inputsOf(f) {
-  if (!f) return [];
-  if (f.params) return f.params;
-  return (f.supers || []).filter(s => s.kind === "input").map(s => s.id);
+async function runOne(program, fn, inputs, asked) {
+  const real = window.fetch;
+  window.fetch = (u, o) => { if (String(u).includes("/api/super/one")) { try { const b = JSON.parse(o.body); asked.push(b.engine + " was asked: " + b.prompt); } catch (_) {} } return real(u, o); };
+  try { return await window.SuperAI.ask(fn, inputs, program); } finally { window.fetch = real; }
 }
-function assemble() {
-  try { const all = JSON.parse(localStorage.getItem(KEY) || "{}"); all[lesson] = code.value === LESSONS[lesson].code ? undefined : code.value; localStorage.setItem(KEY, JSON.stringify(all)); } catch (_) {}
-  const rs = window.SuperAI && window.SuperAI.rs;
-  if (!rs || !rs.ready) return;
-  const r = rs.handle({ op: "assemble", source: code.value });
-  if (!r.ok) { program = null; out.className = "out bad"; out.textContent = r.errors.join("\n"); return; }
-  program = r.program;
-  if (out.classList.contains("bad")) { out.className = "out"; out.textContent = "The answer shows here."; }
-  const names = Object.keys(program.functions || {}), keep = fnSel.value;
-  fnSel.innerHTML = names.map(n => `<option>${n}</option>`).join("");
-  fnSel.value = names.includes(keep) ? keep : names[names.length - 1] || "";
-  drawInputs();
-}
-const EXAMPLE = { a: "2", b: "3", n: "5", topic: "piX", x: "21" };
-function drawInputs() {
-  const f = program && program.functions[fnSel.value], box = $("inputs"), old = {};
-  box.querySelectorAll("input").forEach(i => old[i.name] = i.value);
-  box.innerHTML = "";
-  inputsOf(f).forEach(p => {
-    const row = document.createElement("div"); row.className = "row";
-    row.innerHTML = `<label for="in-${p}">${p}</label><input id="in-${p}" name="${p}">`;
-    row.querySelector("input").value = old[p] != null ? old[p] : EXAMPLE[p] || "";
-    box.appendChild(row);
-  });
-}
-fnSel.onchange = drawInputs;
-let t = 0; code.addEventListener("input", () => { clearTimeout(t); t = setTimeout(assemble, 250); });
-
-runB.onclick = async () => {
-  assemble();
-  if (!program || !fnSel.value) return;
-  const inputs = {};
-  $("inputs").querySelectorAll("input").forEach(i => { const v = i.value.trim(); inputs[i.name] = v !== "" && !isNaN(+v) ? +v : v; });
-  runB.disabled = true; out.className = "out"; out.textContent = "Running…"; log.textContent = "";
-  const asked = [];
-  const realFetch = window.fetch;
-  window.fetch = (u, o) => { if (String(u).includes("/api/super/one")) { try { const b = JSON.parse(o.body); asked.push(b.engine + " was asked: " + b.prompt); log.textContent = asked.join("\n"); } catch (_) {} } return realFetch(u, o); };
-  try {
-    const r = await window.SuperAI.ask(fnSel.value, inputs, program);
-    if (r.error) { out.className = "out bad"; out.textContent = r.error; }
-    else out.textContent = r.text === "" ? "(nothing)" : r.text;
-  } finally { window.fetch = realFetch; runB.disabled = false; }
+const esc = t => String(t).replace(/[&<>]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" })[c]);
+checkB.onclick = async () => {
+  const l = L[st.at], rs = window.SuperAI.rs;
+  const a = rs.handle({ op: "assemble", source: code.value });
+  $("tests").innerHTML = ""; $("win").hidden = true; log.textContent = "";
+  if (!a.ok) { out.className = "out bad"; out.textContent = "The machine could not read this yet:\n" + a.errors.join("\n"); return; }
+  if (!a.program.functions || !a.program.functions[l.fn]) { out.className = "out bad"; out.textContent = `There is no function called ${l.fn} yet.`; return; }
+  checkB.disabled = true; out.className = "out"; out.textContent = "Running…";
+  let all = true, rows = [], first = null;
+  for (const [inputs, want] of l.tests) {
+    const asked = [], r = await runOne(a.program, l.fn, inputs, asked);
+    const got = r.error ? "error: " + r.error : r.text;
+    if (first == null) first = got;
+    const ok = !r.error && (want === null ? asked.length > 0 && got !== "" : String(got) === want);
+    all = all && ok;
+    const ins = Object.entries(inputs).map(([k, v]) => k + " = " + v).join(", ") || "no inputs";
+    rows.push(`<tr><td class="${ok ? "ok" : "no"}">${ok ? "✓" : "✗"}</td><td>${esc(ins)}</td><td>${esc(got)}</td><td>${want === null ? "(asks an AI)" : "want " + esc(want)}</td></tr>`);
+    if (asked.length) log.textContent = asked.join("\n");
+    else if (want === null) log.textContent = "Your program did not ask an AI yet.";
+  }
+  out.textContent = first === "" ? "(nothing)" : first;
+  $("tests").innerHTML = rows.join("");
+  if (all) {
+    if (!st.done.includes(st.at)) st.done.push(st.at); save(); toc();
+    $("win").hidden = false;
+    $("win").innerHTML = st.at < L.length - 1 ? `Well done. <button class="ghost" type="button" id="next">Next: ${L[st.at + 1].t} →</button>` : "Well done: you finished the course. Try writing your own program from scratch.";
+    const n = $("next"); if (n) n.onclick = () => show(st.at + 1);
+  }
+  checkB.disabled = false;
 };
-code.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); runB.click(); } });
-
-document.addEventListener("superai:ready", () => { runB.disabled = false; runB.textContent = "Run (Ctrl + Enter)"; assemble(); });
-showLesson(0);
+document.addEventListener("superai:ready", () => { checkB.disabled = false; checkB.textContent = "Check (Ctrl + Enter)"; });
+show(Math.min(st.at || 0, L.length - 1));
 </script>
 <script src="../super/superai-rs.js?v=7"></script>
 </body>
