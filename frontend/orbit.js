@@ -1569,9 +1569,8 @@
         if (se) {
           const len = +($(".sl-pi") || {}).dataset?.run || 0;          // the wire's straight stretch from the title, never round its bend
           const fit = Math.floor(len / 8.6);                   
-          const tag = cnt.textContent.length + 5;
-          tagged = fit - tag >= 12;
-          LIM = Math.max(4, Math.min(60, fit - 5 - (tagged ? tag : 0)));
+          tagged = false;                                             // no count after the digits (owner, 2026-10-12: "delete this")
+          LIM = Math.max(4, Math.min(60, fit - 5));
         }
         const run = after.length <= LIM ? after : after.slice(-LIM);
         tp.textContent = "π 3." + (after.length > LIM ? "…" : "") + run.slice(0, -1);
