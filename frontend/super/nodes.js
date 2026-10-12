@@ -638,7 +638,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -692,6 +692,7 @@
       return inp;
     };
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
+    n.grp = !!spec.grp; if (n.grp) el.classList.add("lv-group");   // a group super round wired supers (regroup)
     n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;   // the window it was dropped on (its layer)
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
@@ -840,6 +841,123 @@
     n.el.remove();
     if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id);
     persist(); tick();
+  }
+  // ---- wired supers are one group (owner, 2026-10-12: "if you connect two supers together or more, they are grouped
+  // as one super inside the super the sync is connected to") -----------------------------------------------------
+  // Supers joined by wires (any port but a sync wire to the super they belong to) are wrapped in a group super: a
+  // holder (grp) around them, chained (super/chain.js), so they move as one. A sync wire says where a super belongs:
+  // drawn into its sync sparkle from another super, or out of its sync sparkle onto one, the group goes inside that
+  // super (a holder, an open bubble, a window, or a super that grows into a holder to take it). Cut the wires apart and
+  // the group lets go of them (its holder goes; they stay where they are).
+  const nodeOfH = h => { const m = h && (/^node:(.+)$/.exec(h) || /^port:node:([^/]+)\//.exec(h)); return m ? m[1] : null; };
+  const syncOf = h => { const m = h && /^port:node:([^/]+)\/sync$/.exec(h); return m ? m[1] : null; };
+  function groupGraph() {
+    const cand = nodes.filter(n => !isHolder(n) && !n.grp && n.role !== "loop" && !n.st.closing && !locked(n));
+    const ids = new Set(cand.map(n => n.id)), up = {}, edges = [], parent = {};
+    const find = x => (up[x] === undefined || up[x] === x ? (up[x] = x) : (up[x] = find(up[x])));
+    const join = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) up[ra] = rb; edges.push(a < b ? a + "-" + b : b + "-" + a); };
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
+    L.forEach(l => {
+      const ha = l.a && l.a.h, hb = l.b && l.b.h, na = nodeOfH(ha), nb = nodeOfH(hb);
+      // a sync wire: into B's sync from A, B belongs in A; out of A's sync onto B (not B's sync), A belongs in B
+      const sb = syncOf(hb), sa = syncOf(ha);
+      if (sb && ids.has(sb)) { if (!parent[sb]) parent[sb] = ha; return; }
+      if (sa && ids.has(sa)) { if (!parent[sa]) parent[sa] = hb; return; }
+      if (na && nb && na !== nb && ids.has(na) && ids.has(nb)) join(na, nb);
+    });
+    cand.forEach(n => n.inputs.forEach(r => { if (r.node && r.node !== n.id && ids.has(r.node)) join(n.id, r.node); }));
+    const comps = {};
+    cand.forEach(n => { const r = find(n.id); (comps[r] = comps[r] || []).push(n); });
+    return { groups: Object.values(comps).filter(c => c.length >= 2), parent, sig: edges.sort().join(",") + "|" + JSON.stringify(parent) };
+  }
+  const GPAD = 18, GTOP = 46;
+  function groupBox(members) {                                          // the holder's box round its members, on screen
+    const rs = members.map(m => m.el.getBoundingClientRect());
+    const l = Math.min(...rs.map(r => r.left)), t = Math.min(...rs.map(r => r.top)), r = Math.max(...rs.map(r => r.right)), b = Math.max(...rs.map(r => r.bottom));
+    const W = Math.max(HOLD_AT + 10, (r - l + 2 * GPAD) / 0.86), k = W * 0.07;
+    const H = Math.max(W * 0.5, (b - t) + 2 * GPAD + 2 * k + GTOP);
+    return { x: (l + r) / 2 - W / 2, y: t - GPAD - k - GTOP, w: W, h: H };
+  }
+  function setBox(n, B) {                                               // a screen box to a node's layout place and size
+    const F = O().fit ? O().fit() : null, f = (F && F.f) || 1, L = toLayout(B.x, B.y);
+    n.aspect = Math.abs(B.h / B.w - 1) < 0.01 ? 0 : B.h / B.w; n.st.sizeTo = null; sizeDot(n, Math.round(B.w / f));
+    n.fx = L.x / window.innerWidth; n.fy = L.y / window.innerHeight; place(n);
+  }
+  function hostRect(h) {                                                // the super a sync wire names, as an element that can hold
+    if (!h) return null;
+    const id = nodeOfH(h); if (id) { const p = nodes.find(x => x.id === id); return p ? { node: p, el: p.el } : null; }
+    let m = /^port:bubble:([^/]+)\//.exec(h) || /^k:(.+)$/.exec(h);
+    if (m) { const b = [...document.querySelectorAll('.orbit-bubble.is-group[data-key="' + CSS.escape(m[1]) + '"]')].find(e => e.getClientRects().length); return b && !b.classList.contains("is-compact") ? { el: b } : null; }
+    m = /^port:win:([^/]+)\//.exec(h);
+    if (m) { const w = [...document.querySelectorAll(".orbit-panel")].find(p => O().keyOf && O().keyOf(p) === m[1]); return w ? { el: w, win: m[1] } : null; }
+    if (h === "project" || /^port:project\//.test(h)) { const p = document.querySelector(".se-project"); return p ? { el: p } : null; }
+    return null;                                                        // the site and the main super: where it already is
+  }
+  function intoParent(g, members, ph) {
+    const P = hostRect(ph); if (!P || P.el === g.el || members.some(m => m.el === P.el)) return;
+    if (members.some(m => m.id === "site-box")) return;                // the central super never steps aside
+    if (locked(g)) return;
+    const gr = g.el.getBoundingClientRect();
+    if (P.node && !isHolder(P.node)) {                                 // a single super grows into a holder to take the group
+      if (locked(P.node)) return;
+      const pr = P.el.getBoundingClientRect(), W = Math.max(pr.width, (gr.width + 24) / 0.86), H = Math.max(pr.height, gr.height + 2 * W * 0.07 + GTOP + 12);
+      if (P.node.fn !== "box") return;
+      P.node.hold = true; setBox(P.node, { x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H });
+    }
+    const pr = P.el.getBoundingClientRect(), k = Math.min(pr.width, pr.height) * 0.07, top = P.node ? GTOP : (P.win ? 8 : 12);
+    const inside = gr.left >= pr.left + k && gr.right <= pr.right - k && gr.top >= pr.top + top && gr.bottom <= pr.bottom - k;
+    if (inside) return;
+    if (P.node && (gr.width > pr.width - 2 * k || gr.height > pr.height - top - k)) {   // a holder too small for it grows
+      const W = Math.max(pr.width, gr.width / 0.86 + 8), H = Math.max(pr.height, gr.height + top + 2 * k + 8);
+      setBox(P.node, { x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H });
+    }
+    const p2 = P.el.getBoundingClientRect();
+    const dx = (p2.left + p2.width / 2) - (gr.left + gr.width / 2), dy = (p2.top + top / 2 + p2.height / 2) - (gr.top + gr.height / 2);
+    if (P.win) [g, ...members].forEach(m => { m.layer = "win:" + P.win; m.el.dataset.layer = m.layer; });   // in a window's layer (hold.js)
+    window.LabView.moveNodes([g.id, ...members.map(m => m.id)], dx, dy);
+    say("Grouped " + members.length + " wired supers inside " + (P.node ? (P.node.str || BY[P.node.fn].name) : ((P.el.querySelector(":scope > .ob-label, .op-title") || {}).textContent || "the super")).trim());
+  }
+  let groupSig = null;
+  function regroup(force) {
+    if (!html.classList.contains("shape-se") || !nodes.length) return;
+    const G = groupGraph();
+    const holders = nodes.filter(n => n.grp);
+    const holderFor = (members, used) => holders.find(h => !used.has(h) && h.mem && members.some(m => h.mem.includes(m.id)))
+      || holders.find(h => !used.has(h) && members.some(m => within(h, m)));
+    const fit = (g, members) => {                                        // it grows to take its members wherever they went, never shrinks under you
+      const B = groupBox(members), r = g.el.getBoundingClientRect();
+      const l = Math.min(r.left, B.x), t = Math.min(r.top, B.y), R = Math.max(r.right, B.x + B.w), Bt = Math.max(r.bottom, B.y + B.h);
+      if (l < r.left - 4 || t < r.top - 4 || R > r.right + 4 || Bt > r.bottom + 4) setBox(g, { x: l, y: t, w: R - l, h: Bt - t });
+    };
+    if (!force && G.sig === groupSig) {                                  // nothing rewired: the groups only keep round their supers
+      const used = new Set();
+      G.groups.forEach(members => { const g = holderFor(members, used); if (g && !g.el.classList.contains("is-dragging") && !html.classList.contains("se-chain-dragging") && !locked(g)) { used.add(g); g.mem = members.map(m => m.id); fit(g, members); } });
+      return;
+    }
+    groupSig = G.sig;
+    const used = new Set();
+    G.groups.forEach(members => {
+      // the group's holder: one that already holds any of them, else a new one round them
+      let g = holderFor(members, used);
+      const B = groupBox(members);
+      if (!g) {
+        g = make({ id: "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: "box", fx: 0, fy: 0, inputs: [], hold: true, str: "group", n: 12, manual: true, size: HOLD_AT + 10 });
+        if (!g) return;
+        g.grp = true; g.el.classList.add("lv-group");
+        canvas.insertBefore(g.el, canvas.firstChild);                  // under what it holds
+        nodes = [g, ...nodes.filter(x => x !== g)];
+        setBox(g, B);
+        if (window.SeChain) window.SeChain.set(g.el, true);             // one group: a drag on any of them moves them all
+        say("Grouped " + members.length + " wired supers");
+      } else fit(g, members);
+      used.add(g); g.mem = members.map(m => m.id);
+      const ph = members.map(m => G.parent[m.id]).find(Boolean) || G.parent[g.id];
+      if (ph) intoParent(g, members, ph);
+    });
+    // a group whose supers are no longer wired together lets go of them: its holder goes, they stay
+    holders.filter(h => !used.has(h)).forEach(h => { say("Ungrouped: its supers are no longer wired together"); remove(h); });
+    persist(); tick();
+    document.dispatchEvent(new CustomEvent("se:obstacle"));
   }
   function attach(n, ref) {
     if (!ref || (ref.node && ref.node === n.id)) return false;
@@ -1637,6 +1755,11 @@
     }, true);
     // a wire added or deleted anywhere: values update at once
     document.addEventListener("superlink:change", () => tick());
+    // wired supers group (regroup): checked after every wire change and now and then (wires dropped on a super's
+    // body go by its inputs), once the layout has settled
+    let rgT = 0;
+    document.addEventListener("superlink:change", () => { clearTimeout(rgT); rgT = setTimeout(regroup, 250); });
+    setTimeout(() => { regroup(); setInterval(regroup, 900); }, 2500);
     document.addEventListener("se:obstacle", () => { nodes.forEach(n => clear(n)); persist(); });   // something moved onto the nodes: they step off it
     // typing with nothing focused goes into the selected super (a prompt is written straight into it)
     document.addEventListener("keydown", e => {

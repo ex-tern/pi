@@ -20,22 +20,35 @@ const O = () => window.PiOrbit || {};
 // ---------------------------------------------------------------- shaders
 // the light behind the glass: soft warm and cool glows drifting slowly (the same function lights the panes)
 const LIGHT = `
-// a deep warm light, as in the owner's reference: amber, honey and sage glows over a warm ground, darker at the edges
+// sunshine through glass (owner, 2026-10-12: "make background so sunshines like this glasses", a photo of an evening
+// sky): a cool grey-blue overcast above, a warm peach glow along a low horizon, a low sun to the right of the middle
+// whose golden light rakes across the page in soft slanting rays, a light vignette; the panes show it through their
+// frost (the same function lights them), so the sun shines in the glass
 vec3 light(vec2 uv, float t) {
-  // the page's paper, flat (owner, 2026-10-12: "remove the gradient background color"), with a light vignette
-  // toward its edges ("add light vignette")
   float a = uRes.x / uRes.y;
   vec2 v = (uv - 0.5) * vec2(a, 1.0);
-  float r = length(v);
-  vec3 c = vec3(0.955, 0.955, 0.947) * (1.0 - 0.10 * smoothstep(0.35, 1.0, r));
-  // a soft halo of light behind the middle of the page, drifting very slowly ("add back ground halo")
-  vec2 hc = vec2(0.03 * sin(t * 0.05), 0.02 * cos(t * 0.04));
-  float halo = exp(-dot(v - hc, v - hc) / 0.16);
-  return mix(c, vec3(1.0), 0.55 * halo);
+  float y = uv.y;                                                          // 0 at the top, 1 at the bottom
+  vec3 sky = mix(vec3(0.80, 0.83, 0.87), vec3(0.91, 0.90, 0.89), smoothstep(0.0, 0.62, y));
+  float hz = 0.74 + 0.006 * sin(t * 0.03);                                 // the horizon, low on the page
+  float band = exp(-pow((y - hz) / 0.075, 2.0));
+  vec3 c = mix(sky, vec3(0.99, 0.87, 0.72), 0.85 * band);                  // the peach glow along it
+  c = mix(c, vec3(0.95, 0.89, 0.79), smoothstep(hz, 1.0, y) * 0.9);        // warm ground light below it
+  // the low sun, drifting very slowly, and its glow
+  vec2 sp = (vec2(0.68 + 0.01 * sin(t * 0.02), hz - 0.035) - 0.5) * vec2(a, 1.0);
+  vec2 d = v - sp; float r = length(d);
+  c += vec3(1.0, 0.80, 0.52) * (0.22 * exp(-r * r / 0.012) + 0.16 * exp(-r / 0.32));
+  // rays fanning out of it, slanting across the page, breathing slowly
+  float ang = atan(d.y, d.x);
+  float rays = 0.5 + 0.5 * sin(ang * 23.0 + t * 0.06) * sin(ang * 9.0 - t * 0.045);
+  c += vec3(1.0, 0.84, 0.60) * 0.085 * pow(rays, 3.0) * exp(-r / 0.55) * smoothstep(0.03, 0.2, r);
+  // a light vignette toward the edges ("add light vignette")
+  c *= 1.0 - 0.10 * smoothstep(0.38, 1.05, length(v));
+  return min(c, vec3(1.0));
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
 float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
 // embers: tiny glowing motes drifting slowly up through the light
 vec3 embers(vec2 px, float t) {
   vec3 acc = vec3(0.0);
@@ -54,7 +67,15 @@ vec3 embers(vec2 px, float t) {
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
-  vec3 c = light(uv, uTime);                                              // flat paper, with its grain (owner, 2026-10-12: "keep the grains")
+  vec3 c = light(uv, uTime);                                              // sunshine, with its grain (owner, 2026-10-12: "keep the grains")
+  // soft stratocumulus drifting slowly across the upper sky, lit gold on their undersides near the horizon
+  vec2 q = vec2(uv.x * uRes.x / uRes.y, uv.y) * vec2(2.2, 5.5) + vec2(uTime * 0.004, 0.0);
+  float cl = 0.5 * vn(q) + 0.3 * vn(q * 2.1 + 3.7) + 0.2 * vn(q * 4.3 - 1.9);
+  float sky = 1.0 - smoothstep(0.55, 0.76, uv.y);
+  float mass = smoothstep(0.36, 0.70, cl) * sky;
+  vec3 cloud = mix(vec3(0.70, 0.73, 0.78), vec3(0.97, 0.88, 0.76), smoothstep(0.35, 0.72, uv.y));
+  c = mix(c, cloud, 0.68 * mass);
+  c += vec3(1.0, 1.0, 0.98) * 0.10 * smoothstep(0.30, 0.10, abs(cl - 0.42)) * sky * (1.0 - mass);   // bright gaps
   c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;
   gl_FragColor = vec4(c, 1.0);
 }`;
