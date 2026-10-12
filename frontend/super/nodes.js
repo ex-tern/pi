@@ -558,7 +558,6 @@
         n.el.classList.toggle("is-stopped", !!(n.stopped || n.paused));
         n.el.classList.toggle("is-loop", n.role === "loop");
         n.el.classList.toggle("is-holder", isHolder(n));
-        autoShape(n);
         fitText(n);
         n.el.classList.toggle("has-val", !!n.text && !n.field && n.role !== "stop" && n.role !== "loop");
         n.el.classList.toggle("is-on", n.role === "stop" && r.bool);       // its window is open
@@ -763,23 +762,9 @@
     n.el.dataset.n = n.n.toFixed(3);
     if (!hasCorner && window.SeMorph) { const s = n.size || DOT_BASE; n.el.style.clipPath = "path('" + window.SeMorph.star(s / 2, s / 2, s / 2, s / 2, n.n) + "')"; }
   }
-  // A ■'s n follows its size and its use, inside the ■ band (2.6–5, so it stays what it is): small and new
-  // it is soft (n ≈ 2.8), bigger it is boxier (a holder reaches ≈ 4), and each use firms it a little more
-  // (up to +0.8). Changed by hand (Shift + scroll, or a scroll on its ring) it keeps the n you gave it.
-  function autoN(n) {
-    const s = Math.max(0, Math.min(1, ((n.size || DOT_BASE) - DOT_BASE) / 340));
-    const u = 1 - Math.exp(-(n.use || 0) / 8);
-    return Math.max(2.7, Math.min(4.9, 2.8 + 1.3 * s * (2 - s) + 0.8 * u));
-  }
+  // A super's n is the one it was made with until you change it (hold shift + scroll); it no longer follows its
+  // size or how much it is used (owner, 2026-10-13: "remove the rule of usage = super's n")
   function used(n, k) { n.use = (n.use || 0) + (k || 1); clearTimeout(n.st.ut); n.st.ut = setTimeout(persist, 800); }
-  function autoShape(n) {
-    if (n.fn !== "box" || n.manual || n.role === "stop") return;
-    const want = autoN(n);
-    if (Math.abs(want - n.n) < 0.02) return;
-    n.n = n.n + (want - n.n) * 0.35;                                   // eases toward it over a few ticks
-    if (Math.abs(want - n.n) < 0.02) n.n = want;
-    shape(n);
-  }
   // shift + scroll on a node: its n, and with it what it is (the same node, same id, same wires)
   function reshape(n, dy) {
     n.manual = true;                                                   // your n: it no longer follows size and use
