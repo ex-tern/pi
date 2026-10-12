@@ -75,18 +75,20 @@
     let pageFit = 1;
     // zooming inside the main loop scales everything in it (orbit:zoom); the fit above keeps it inside the loop
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
-    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? 1 : 1))), zoomT;
+    // the superellipse look starts zoomed out, the inner super small in the middle of the main one (owner, 2026-10-12:
+    // "make this the initial state"); a scroll out goes further, a scroll in comes up to 100 %
+    const START_ZOOM = window.innerWidth < 700 ? 0.6 : 0.4;            // a phone a little closer: its screen is small
+    let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? START_ZOOM : 1))), zoomT;
     let zoomTo = null;
     // direct: set at once (a trackpad or a pinch, already smooth, coalesced per frame by super/scroll.js);
     // otherwise glide there (a mouse wheel's coarse steps)
     // the superellipse look locks the inner super in place (owner, 2026-10-12): no zoom, no offset; it is as big as
     // the main super lets (siteBox), so a scroll on bare space leaves it be
     const locked = () => document.documentElement.classList.contains("shape-se");
-    const zoomV = () => locked() ? 1 : zoom;
+    const zoomV = () => locked() ? Math.min(1, zoom) : zoom;           // locked: it zooms out, never in (owner, 2026-10-12: "second super should be zoom outable")
     const offV = () => locked() ? { x: 0, y: 0 } : siteOff;
     function zoomPage(k, direct) {
-      if (locked()) return;
-      const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
+      const target = Math.max(locked() ? 0.25 : 0.25, Math.min(locked() ? 1 : 3, (zoomTo == null ? zoom : zoomTo) * k));
       zoomTo = target;
       clearTimeout(zoomT); zoomT = setTimeout(() => { store("orbit:zoom", +target.toFixed(3)); zoomTo = null; }, 400);
       if (direct || !window.SeMotion) { if (window.SeMotion) window.SeMotion.glide("page:zoom", { v: target }, "v", target, 0, () => {}); zoom = target; loopKey = ""; drawLoop(); }
@@ -97,14 +99,14 @@
     function resetView() {
       zoomTo = null; scrollN.to = null; scrollSiteN.to = null;
       const from = { z: zoom, m: loopN(), s: siteNv(), x: siteOff.x, y: siteOff.y };
-      const to = { z: 1, m: VIEW_N, s: VIEW_N, x: 0, y: 0 };
+      const z0 = locked() ? START_ZOOM : 1, to = { z: z0, m: VIEW_N, s: VIEW_N, x: 0, y: 0 };
       const apply = v => { zoom = v.z; markN = v.m; siteN = v.s; siteOff = { x: v.x, y: v.y }; placeBubblesLayer(); loopKey = ""; drawLoop(); };
-      const done = () => { apply(to); store("orbit:zoom", 1); store("orbit:mark:n", VIEW_N); store("orbit:site:n", VIEW_N); store("orbit:site:offset", { x: 0, y: 0 }); if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
+      const done = () => { apply(to); store("orbit:zoom", z0); store("orbit:mark:n", VIEW_N); store("orbit:site:n", VIEW_N); store("orbit:site:offset", { x: 0, y: 0 }); if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
       if (window.SeMotion) window.SeMotion.tween(from, to, { duration: 380, easing: "easeOutCubic", update: () => apply(from), complete: done });
       else done();
     }
     // how far the view is from that (super/scroll.js shows the way back when it is not)
-    const viewChanged = () => (!locked() && Math.abs((zoomTo == null ? zoom : zoomTo) - 1) > 0.02) || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(offV().x, offV().y) > 4;
+    const viewChanged = () => Math.abs((zoomTo == null ? zoomV() : Math.min(locked() ? 1 : 9, zoomTo)) - (locked() ? START_ZOOM : 1)) > 0.02 || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(offV().x, offV().y) > 4;
     // Smoothness: the page is measured (every element's box, and where each scaled element pivots) once per
     // layout tick, never inside an animation frame, so a frame that moves n or the zoom does arithmetic and
     // style writes only, with no layout forced in between.
@@ -178,12 +180,13 @@
     // screen: the site box scaled toward the page's centre as the page is), moved in and, only when even
     // centred they would cross it, made smaller
     function keepWindowsIn() {
+      if (locked() && zoomV() < 0.98) return;                         // zoomed out (the start): a window opening brings the view back to 100 % first (super/scroll.js); sized then
       if (!merged() || pointerHeld || !loopG.a) return;
       const sb = siteBox(), f = sb.fit || 1, pad = 6;
       const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, n = sb.n;
       const fits = (l, t, w, h) => [l - pad, l + w + pad].every(x => [t - pad, t + h + pad].every(y => seNorm(Math.abs(x - cx) / a, Math.abs(y - cy) / b, n) <= 1));
       document.querySelectorAll(".orbit-panel").forEach(p => {
-        if (p.classList.contains("gliding") || p.classList.contains("leaving")) return;
+        if (p.classList.contains("gliding") || p.classList.contains("leaving") || p.matches(":hover")) return;   // the window under the pointer stays where it is
         const r = p.getBoundingClientRect();
         // no more than about half the inner super, so the bubbles keep their room; on a phone there is no room
         // to share, so a window may take most of it (and never shrinks below a readable size)
@@ -268,6 +271,7 @@
         }
       }
       wins.forEach((p, i) => {
+        if (p.matches(":hover")) return;                                // the window under the pointer stays; the others make room
         const r = rs[i], cur = p.getBoundingClientRect();
         if (Math.abs(r.left - cur.left) < 1 && Math.abs(r.top - cur.top) < 1 && Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) return;
         if (!p.classList.contains("gliding")) {                        // it glides there, moved or sized (supers never jump)
@@ -293,7 +297,7 @@
       // locked (the superellipse look): no fit at all. The layout already keeps everything inside the inner super, and a
       // fit that follows the bubbles' size fed back into their layout (open bubbles, readable words) and the whole page
       // pulsed (owner, 2026-10-12: "the graphics jerks like this")
-      if (locked()) fitTo(1, 1, cx, cy);
+      if (locked()) fitTo(zoomV(), 1, cx, cy);                      // only the zoom: never a fit that follows the bubbles
       else fitTo(Math.max(0.005, Math.min(zoomV(), roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
       const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
       loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };

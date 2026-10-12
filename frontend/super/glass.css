@@ -81,3 +81,8 @@ html.se-gl .lv-node::after, html.se-gl .lv-sp { opacity: 0 !important; }
 html.se-gl .se-port-dot, html.se-gl .orbit-title .sts-p { background: transparent !important; }
 html.se-gl .wire-bed, html.se-gl .wire-flow, html.se-gl .wire-temp { stroke: transparent !important; }
 html.se-gl .wire-term { fill: transparent !important; stroke: transparent !important; }
+
+/* the first paint (super/boot.js): only the light, until the supers have settled; then everything fades in in place */
+html.se-boot body > * { opacity: 0 !important; transition: none !important; }
+html.se-unveil body > * { transition: opacity 0.9s ease !important; }
+html.se-boot body::before, html.se-unveil body::before { display: block !important; }

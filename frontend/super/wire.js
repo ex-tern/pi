@@ -300,6 +300,7 @@
       .filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect()).filter(r => r.width > 8 && r.height > 8) : [];
     const rr = (r, k) => { const x = r.left + 3, y = r.top + 3, w = r.width - 6, h = r.height - 6, c = Math.min(w, h) * k; return "M" + (x + c) + "," + y + "H" + (x + w - c) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + c) + "V" + (y + h - c) + "Q" + (x + w) + "," + (y + h) + " " + (x + w - c) + "," + (y + h) + "H" + (x + c) + "Q" + x + "," + (y + h) + " " + x + "," + (y + h - c) + "V" + (y + c) + "Q" + x + "," + y + " " + (x + c) + "," + y + "Z"; };
     const inR = (r, pt) => pt && pt[0] >= r.left - 4 && pt[0] <= r.right + 4 && pt[1] >= r.top - 4 && pt[1] <= r.bottom + 4;
+    let piD = "", piRun = 0;
     links.forEach((l, i) => {
       const ca = centreOf(l.a) || (l.a.loop ? null : undefined), cb = centreOf(l.b) || (l.b.loop ? null : undefined);
       if (ca === undefined || cb === undefined) return;
@@ -307,6 +308,8 @@
       if (!p || !q) return;
       const p2 = l.a.loop ? endPoint(l.a, q) : p;
       const d = curve(p2, q, l.a, l.b);
+      // the π line runs along the title's wire (owner, 2026-10-12: "move this inside this wire"), left to right
+      if (se() && isTitleSync(l)) { piD = p2[0] <= q[0] ? d : curve(q, p2, l.b, l.a); piRun = Math.abs(q[0] - p2[0]) - 40; }   // its straight stretch, before the bend
       const cut = covers.filter(r => !inR(r, p2) && !inR(r, q));
       let clip = "";
       if (cut.length) { defs += '<clipPath id="slc' + i + '"><path clip-rule="evenodd" d="M-9999,-9999H99999V99999H-9999Z' + cut.map(r => rr(r, 0.3)).join("") + '"/></clipPath>'; clip = ' clip-path="url(#slc' + i + ')"'; }
@@ -321,7 +324,15 @@
     if (defs) s = "<defs>" + defs + "</defs>" + s;
     if (se()) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (s !== lastHtml) { lastHtml = s; svg.innerHTML = s; }
+    if (piSvg && piD !== piSvg._d) {
+      piSvg._d = piD;
+      piSvg.firstChild.setAttribute("d", piD);
+      piSvg.dataset.run = Math.max(0, Math.round(piRun));
+      piSvg.classList.toggle("is-off", !piD);
+      if (window.OrbitPi) window.OrbitPi();                         // the line fitted to the wire's new length
+    }
   }
+  let piSvg = null;
 
   // ---- what a point can connect to -------------------------------------
   // a port within reach wins (they are small); then what is under the pointer; then the nearest thing within reach
@@ -410,6 +421,12 @@
     svg.setAttribute("class", "sl-layer");
     svg.setAttribute("aria-hidden", "true");
     document.body.appendChild(svg);
+    // the π digits, along the title's wire (a layer of its own: the wires' layer is redrawn whole)
+    piSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
+    piSvg.setAttribute("class", "sl-pi is-off");
+    piSvg.setAttribute("aria-hidden", "true");
+    piSvg.innerHTML = '<path id="slPiPath" class="om-page-pipath" d=""/><text class="om-page-pi" dy="-6"><textPath href="#slPiPath" startOffset="16"></textPath></text>';
+    document.body.appendChild(piSvg);
     const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
     selectable(svg, w => removeWire(+w.dataset.i), w => { const i = +w.dataset.i; selected = selected === i ? -1 : i; return selected >= 0; });
     // a drag from a piece of text draws a wire; a click stays a click

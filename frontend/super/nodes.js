@@ -30,6 +30,7 @@
 // it. The diagram is remembered in this browser (localStorage "lv:nodes").
 (function () {
   "use strict";
+  const ENGINE_BASE = 84;                                              // a Super AI super's size: run and prompt (owner, 2026-10-12: bigger)
   const sq = '<svg viewBox="0 0 20 20" aria-hidden="true">';
   // five line icons of one size and one stroke: the shape is the meaning, nothing filled
   const FNS = [
@@ -685,6 +686,7 @@
     }
     if (f.k === "super") { g.textContent = ""; n.st.sn = G(); n.st.t = 0; n.answer = spec.answer || ""; }   // the shape itself is the diamond
     if (f.k === "add") g.textContent = "";
+    if (!n.size && n.role === "engine") n.size = ENGINE_BASE;            // run and prompt: bigger than a number or an operator (owner, 2026-10-12)
     if (n.size) sizeDot(n, n.size);
     canvas.appendChild(el);
     nodes.push(n);
@@ -737,7 +739,7 @@
     const nn = +Math.PI.toFixed(3), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);   // a click makes a super: a ■ at n = π, like everything else
     const L = toLayout(x, y);
     // ai: a Super AI super, the same as the central one (role "engine"), asking every engine, the lab's and outside
-    const m = make({ id, fn: fnOfN(nn), role: ai ? "engine" : undefined, fx: (L.x - DOT_BASE / 2) / window.innerWidth, fy: (L.y - DOT_BASE / 2) / window.innerHeight, inputs: [], n: nn });
+    const m = make({ id, fn: fnOfN(nn), role: ai ? "engine" : undefined, fx: (L.x - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerWidth, fy: (L.y - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerHeight, inputs: [], n: nn });
     clear(m); persist(); tick();
     say(ai ? "Super AI made: type a question and press Enter, and every engine answers; press it to see each answer"
            : BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
@@ -767,7 +769,7 @@
       return name === "input" ? [sb.cx - sb.a, sb.cy] : name === "output" ? [sb.cx + sb.a, sb.cy] : name === "sync" ? [sb.cx, sb.cy - sb.b] : [sb.cx, sb.cy + sb.b];
     };
     const where = s => {
-      const size = s.size ? Math.round(s.size * K) : DOT_BASE, at = s.at || {};
+      const size = s.size ? Math.round(s.size * K) : s.kind === "engine" ? ENGINE_BASE : DOT_BASE, at = s.at || {};
       if (at.center) return [(Wv - size) / 2, (Hv - size) / 2];
       if (at.from && done[at.from]) return [done[at.from][0] + (at.dx || 0) * K, done[at.from][1] + (at.dy || 0) * K];
       if (at.leftOf) { const p = portXY(String(at.leftOf).split(".")[1]); return [Math.max(4, p[0] - size - 10), p[1] + (at.dy || 0)]; }
@@ -777,6 +779,7 @@
     (prog.supers || []).forEach(s => {
       const xy = where(s); done[s.id] = xy;
       if (nodes.some(x => x.id === s.id)) return;                     // already on the page (a diagram kept from the round look)
+      if (s.locked) { try { if (localStorage.getItem("se:lock:node:" + s.id) == null) localStorage.setItem("se:lock:node:" + s.id, "1"); } catch (_) { /* private mode */ } }   // starts locked (super/lock.js reads it)
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
              str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
     });
@@ -903,7 +906,12 @@
       if (!moved) {
         moved = true;
         if (n) n.st.from = holderOf(n);                                     // the holder it came out of (a locked one takes it back)
-        if (n && isHolder(n)) n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
+        if (n && isHolder(n)) {
+          n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
+          const O = window.PiOrbit, r = n.el.getBoundingClientRect();     // the bubbles it holds too
+          n.st.bubbles = O && O.bubblesIn ? O.bubblesIn(r, r.width * 0.06) : [];
+          n.st.at = [r.left, r.top];
+        }
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
         html.classList.add("lv-dragging");
@@ -913,6 +921,7 @@
       n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
       if (n.st.crew) n.st.crew.forEach(c => { c.m.fx += n.fx - fx0; c.m.fy += n.fy - fy0; place(c.m); });
+      if (n.st.bubbles && n.st.bubbles.length) { const r = n.el.getBoundingClientRect(); window.PiOrbit.moveBubbles(n.st.bubbles, r.left - n.st.at[0], r.top - n.st.at[1]); n.st.at = [r.left, r.top]; }
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
@@ -937,18 +946,18 @@
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
         if (n.id === "site-box") {                                      // the central super comes back to the middle
-          n.st.crew = null;
+          n.st.crew = null; n.st.bubbles = null;
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
           if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
           persist(); tick(); say("run stays inside the site"); return;
         }
         const crew = n.st.crew ? n.st.crew.map(c => c.m) : [];
-        n.st.crew = null;
+        n.st.crew = null; n.st.bubbles = null;
         crew.forEach(remove); remove(n);
         say((BY[n.fn].name) + " deleted: dropped outside the site" + (crew.length ? ", with what it held" : ""));
         return;
       }
-      if (n.st.crew) { n.st.crew = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
+      if (n.st.crew) { n.st.crew = null; n.st.bubbles = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
       // a locked super goes into no other super (super/lock.js): dropped on a holder, it sits beside it, unwired
       if (locked(n)) {
         const h = nodes.filter(x => x !== n && isHolder(x)).find(x => { const r = x.el.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; });
@@ -1152,7 +1161,7 @@
     const size = n.size || 56, room = size * (n.fn === "dot" ? 0.74 : 0.82);
     let fs = Math.max(11, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));   // never under readable (11 px): a long word is cut with an ellipsis instead
     const wrap = n.role === "engine";                                   // an engine super (the central one too) wraps its words inside its shape
-    if (wrap) fs = Math.max(11, Math.min(Math.min(14, Math.max(11, size * 0.1)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
+    if (wrap) fs = Math.max(11, Math.min(Math.min(18, Math.max(13, size * 0.17)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
     n.el.classList.toggle("is-wrap", wrap);
     target.style.fontSize = fs.toFixed(1) + "px";
   }

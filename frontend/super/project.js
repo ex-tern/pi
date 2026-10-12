@@ -49,23 +49,32 @@
   const MIN0 = 104;
   const MINv = () => { const v = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")); return v > 0 ? v : MIN0; };
   let MIN = MIN0;
-  function compactRect() {
+  // the page's zoom (the inner super zoomed out, super/loop.js): the compact project super is laid out as the bubbles
+  // are, unzoomed, and drawn scaled toward the page's centre with them
+  const zoomOf = () => { const sb = O().siteBox ? O().siteBox() : null; return sb ? { f: sb.fit || 1, px: sb.px, py: sb.py } : { f: 1, px: 0, py: 0 }; };
+  const toScreen = (x, y) => { const z = zoomOf(); return [z.px + (x - z.px) * z.f, z.py + (y - z.py) * z.f]; };
+  const toLayout = (x, y) => { const z = zoomOf(); return [z.px + (x - z.px) / z.f, z.py + (y - z.py) / z.f]; };
+  function compactLayout() {
     MIN = MINv();
     const vw = window.innerWidth, vh = window.innerHeight;
     const x = state.x != null ? state.x * vw : 0.126 * vw, y = state.y != null ? state.y * vh : 0.70 * vh;
     const B = room();                                              // it lives inside the inner super, the second super
     return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w: MIN, h: MIN };
   }
+  function compactRect() {
+    const c = compactLayout(), f = zoomOf().f, [x, y] = toScreen(c.x, c.y);
+    return { x, y, w: c.w * f, h: c.h * f };
+  }
   // where the compact super may sit: inside the inner super, clear of its curved corners (the page when there is none)
   function room() {
-    const vw = window.innerWidth, vh = window.innerHeight, f = fullRect();
+    const vw = window.innerWidth, vh = window.innerHeight, f = fullRect(true);
     const x0 = Math.max(4, f.x), y0 = Math.max(4, f.y), x1 = Math.min(vw - MIN - 4, f.x + f.w - MIN), y1 = Math.min(vh - MIN - 4, f.y + f.h - MIN);
     return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : { x0: 4, y0: 4, x1: vw - MIN - 4, y1: vh - MIN - 4 };
   }
-  function fullRect() {
+  function fullRect(unzoomed) {
     const sb = O().siteBox ? O().siteBox() : null, vw = window.innerWidth, vh = window.innerHeight;
     if (!sb) return { x: vw * 0.06, y: vh * 0.1, w: vw * 0.88, h: vh * 0.8 };
-    const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, m = 0.06;
+    const f = unzoomed ? 1 : (sb.fit || 1), cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, m = 0.06;
     return { x: cx - a * (1 - m), y: cy - b * (1 - m), w: 2 * a * (1 - m), h: 2 * b * (1 - m) };
   }
   const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -332,9 +341,10 @@
   // nothing overlaps unless it is inside a super: dropped on the title, Live, the inner super's ring area
   // edges or a window, the compact project super moves to the nearest free spot
   function settleFree() {
-    const vw = window.innerWidth, vh = window.innerHeight, c = compactRect();
+    if (el && el.matches(":hover")) return;                           // the super under the pointer never moves
+    const vw = window.innerWidth, vh = window.innerHeight, c = compactLayout(), f = zoomOf().f;
     const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => x.getBoundingClientRect());
-    const free = (x, y) => blocks.every(b => x + MIN + 8 <= b.left || b.right + 8 <= x || y + MIN + 8 <= b.top || b.bottom + 8 <= y);
+    const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(b => x + m + 8 <= b.left || b.right + 8 <= x || y + m + 8 <= b.top || b.bottom + 8 <= y); };
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
@@ -346,7 +356,7 @@
   // it steps aside gliding, never at once (owner, 2026-10-12: supers do not move suddenly); its wires follow it
   function glideTo(fx, fy) {
     const done = () => { save(state); document.dispatchEvent(new CustomEvent("se:frame")); };
-    if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(); state.x = r.left / window.innerWidth; state.y = r.top / window.innerHeight; }
+    if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(), [lx, ly] = toLayout(r.left, r.top); state.x = lx / window.innerWidth; state.y = ly / window.innerHeight; }
     if (!window.SeMotion) { state.x = fx; state.y = fy; place(); done(); return; }
     const s = { x: state.x, y: state.y };
     window.SeMotion.tween(s, { x: fx, y: fy }, { duration: 380, easing: "easeOutCubic", update: () => { state.x = s.x; state.y = s.y; place(); document.dispatchEvent(new CustomEvent("se:frame")); }, complete: done });
@@ -362,7 +372,8 @@
     const move = ev => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       moved = true;
-      state.x = (ev.clientX - dx) / window.innerWidth; state.y = (ev.clientY - dy) / window.innerHeight;
+      const [lx, ly] = toLayout(ev.clientX - dx, ev.clientY - dy);     // where it goes, unzoomed (the page may be zoomed out)
+      state.x = lx / window.innerWidth; state.y = ly / window.innerHeight;
       place();
       document.dispatchEvent(new CustomEvent("se:frame:first")); document.dispatchEvent(new CustomEvent("se:frame"));   // its ports and wires follow it, as a bubble's do
     };

@@ -465,7 +465,11 @@
   }
   const vw = () => window.innerWidth - dockWidth();
   const hit = (a, b) => a.x < b.x + b.w && a.x + a.w > b.x && a.y < b.y + b.h && a.y + a.h > b.y;
-  const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => hit(r, p)) &&
+  // a holder (a Super AI ■ grown into a super that holds supers) is in the way only of what straddles its edge:
+  // a bubble wholly inside it stays there (owner, 2026-10-12: "i want to be able to move things inside new super")
+  const within = (r, p) => r.x >= p.x && r.y >= p.y && r.x + r.w <= p.x + p.w && r.y + r.h <= p.y + p.h;
+  const blocks = (r, p) => hit(r, p) && !(p.inner && within(r, p.inner));
+  const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => blocks(r, p)) &&
     (!merged() || insideLoop(r));          // superellipse look: inside the loop
   function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
 
@@ -494,7 +498,9 @@
       const b = p.getBoundingClientRect();
       if (!b.width || !b.height) return;
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
-      out.push(grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g));
+      const o = grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g);
+      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.06; o.inner = { x: tl.x + k, y: tl.y + k, w: br.x - tl.x - 2 * k, h: br.y - tl.y - 2 * k }; }
+      out.push(o);
     });
     return out;
   }
@@ -537,7 +543,15 @@
     const pri = it => { const i = prio.indexOf(it.key); return i < 0 ? 1e6 + it.order : i; };
     //    First every pill whose own spot is free settles there; then the ones
     //    that were sat on look for the nearest spot nobody is using.
-    const settled = vis.filter(it => it.custom && it !== dragging).sort((a, b) => pri(a) - pri(b));
+    // 0. the super under the pointer never moves (owner, 2026-10-12): it stays where it is drawn (growing, about its
+    //    centre), and the others go round it
+    const pinned = merged() ? vis.find(it => it !== dragging && it.lastAt && it.bubble.matches(":hover")) : null;
+    if (pinned) {
+      const c = { x: pinned.lastAt.x + pinned.lastAt.w / 2, y: pinned.lastAt.y + pinned.lastAt.h / 2 };
+      pinned.at = { x: c.x - pinned.w / 2, y: c.y - pinned.h / 2, w: pinned.w, h: pinned.h };
+      placed.push(grow(pinned.at, g / 2));
+    }
+    const settled = vis.filter(it => it.custom && it !== dragging && it !== pinned).sort((a, b) => pri(a) - pri(b));
     const bumped = [];
     // the pill you just dropped gives way only to fixed things (mark, π box, title)
     if (settlePushes && settled.length && settled[0].key === prio[0]) {
@@ -555,7 +569,7 @@
       it.at = r; it.pushed = !!r; if (r) placed.push(grow(r, g / 2));
     });
     // 2. the rest go round the mark on widening rings, most used first
-    const auto = vis.filter(it => !it.custom && it !== dragging)
+    const auto = vis.filter(it => !it.custom && it !== dragging && it !== pinned)
       .sort((a, b) => (b.rank || 0) - (a.rank || 0) || a.order - b.order);
     const ax = small ? 1.2 : 1.75;                 // pills are wide: rings are wider than tall
     const step = (small ? 26 : 36);
@@ -642,6 +656,7 @@
       // the translate puts the unscaled box where its scaled box lands on r
       // translate first, then the size as a scale about its centre: sizing keeps the centre, the layout the box
       it.bubble.style.transform = "translate(" + (r.x - ((it.w0 || r.w) - r.w) / 2).toFixed(1) + "px," + (r.y - ((it.h0 || r.h) - r.h) / 2).toFixed(1) + "px) scale(var(--se-scale, 1))";
+      it.lastAt = { x: r.x, y: r.y, w: r.w, h: r.h };                 // where it is drawn (the super under the pointer stays there)
     });
     drawRings();
   }
@@ -707,6 +722,7 @@
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)) + it.w / 2;
       const y = Math.min(H - it.h, Math.max(0, L.y - oy)) + it.h / 2;
       it.custom = { fx: +((x - lx) / W).toFixed(4), fy: +((y - ly) / H).toFixed(4) };
+      it.lastAt = { x: x - it.w / 2, y: y - it.h / 2, w: it.w, h: it.h };   // drawn where dropped: the super under the pointer stays there, not where it came from
       store("orbit:at2:" + it.key, it.custom);
       prio = [it.key, ...prio.filter(k => k !== it.key)];
       store("orbit:prio", prio);
@@ -1512,17 +1528,28 @@
       out.append("π = 3." + lead + tail.slice(0, -1));
       const b = document.createElement("b"); b.textContent = tail.slice(-1); out.append(b);
       cnt.textContent = (digits.length - 1).toLocaleString() + " decimals" + (still ? ", paused" : ACT_WORDS[actLevel]);
-      const tp = $(".om-page-pi textPath");
-      if (tp) {                                                   // the same digits, small, running along the main loop
-        const LIM = document.documentElement.classList.contains("shape-se") ? 28 : 240;   // the superellipse look: a short line on the right side, never round a corner
+      const se = document.documentElement.classList.contains("shape-se");
+      // the same digits, small: along the main loop, or, in the superellipse look, along the title's wire
+      // (super/wire.js .sl-pi; owner, 2026-10-12: "move this inside this wire"), as many as the wire has room for
+      const tp = $(se ? ".sl-pi textPath" : ".om-page-pi textPath");
+      if (tp) {
+        let LIM = 240, tagged = true;
+        if (se) {
+          const len = +($(".sl-pi") || {}).dataset?.run || 0;          // the wire's straight stretch from the title, never round its bend
+          const fit = Math.floor(len / 7.6);                   // 11 px mono, a little spacing: about 7.6 px a character
+          const tag = cnt.textContent.length + 5;
+          tagged = fit - tag >= 12;
+          LIM = Math.max(4, Math.min(60, fit - 5 - (tagged ? tag : 0)));
+        }
         const run = after.length <= LIM ? after : after.slice(-LIM);
         tp.textContent = "π 3." + (after.length > LIM ? "…" : "") + run.slice(0, -1);
         const last = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); last.setAttribute("class", "om-pi-new"); last.textContent = run.slice(-1); tp.appendChild(last);
-        const tag = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); tag.setAttribute("class", "om-pi-count"); tag.textContent = "  · " + cnt.textContent; tp.appendChild(tag);
+        if (tagged) { const tag = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); tag.setAttribute("class", "om-pi-count"); tag.textContent = "  · " + cnt.textContent; tp.appendChild(tag); }
         tp.closest("text").classList.toggle("is-still", !!still);
       }
     };
     showPi = show;
+    window.OrbitPi = () => { if (!pending) { pending = true; requestAnimationFrame(show); } };
     try {
       const w = new Worker("pi-worker.js?v=4");
       piWorker = w;
@@ -1858,7 +1885,14 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { resetView: () => L.resetView(), viewChanged: () => L.viewChanged(), fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), prioritize, scrollSiteN, _items: () => items.filter(i => !i.bubble.hidden).map(i => ({ key: i.key, w: i.w, h: i.h, w0: i.w0, at: i.at, custom: i.custom, pushed: i.pushed })), _geom: () => ({ W, H, lx, ly, R, site: siteBox() }), siteN: siteNv, zoomPage, moveSite, winCap: p => L.winCap(p), zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout };
+    window.PiOrbit = { resetView: () => L.resetView(), viewChanged: () => L.viewChanged(), fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), prioritize, scrollSiteN, _items: () => items.filter(i => !i.bubble.hidden).map(i => ({ key: i.key, w: i.w, h: i.h, w0: i.w0, at: i.at, custom: i.custom, pushed: i.pushed })), _geom: () => ({ W, H, lx, ly, R, site: siteBox() }), siteN: siteNv, zoomPage, moveSite, winCap: p => L.winCap(p), zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout,
+      // the bubbles wholly inside a screen rect (a holder's inside), and moving them by a screen offset (with the holder)
+      bubblesIn: (r, k = 0) => items.filter(i => !i.bubble.hidden && i !== dragging).filter(i => { const b = i.bubble.getBoundingClientRect(); return b.width && b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k; }).map(i => i.key),
+      moveBubbles: (keys, dx, dy) => {
+        const a = toLayout(0, 0), b = toLayout(dx, dy), lx2 = b.x - a.x, ly2 = b.y - a.y;
+        keys.forEach(key => { const it = items.find(i => i.key === key); if (!it || !it.lastAt) return; it.at = { x: it.lastAt.x + lx2, y: it.lastAt.y + ly2, w: it.w, h: it.h }; it.lastAt = Object.assign({}, it.at); keep(it); });
+        layoutSoon();
+      } };
     document.dispatchEvent(new CustomEvent("orbit:ready"));   // pien.js and numbers.js start here
   }
 

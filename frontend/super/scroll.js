@@ -89,6 +89,7 @@
   // The 0 key, or a click on the title super once the view has changed, brings back the first view.
   // pick: what the gesture acts on: "site" (the view), an element (a node, a window, a bubble, a zoom box,
   // or with Alt a thing); null leaves it to the browser (content that scrolls)
+  const PRESS = "button, a[href], summary, [role=button], [role=tab], label:has(> input[type=checkbox]), label:has(> input[type=radio]), input[type=checkbox], input[type=radio], input[type=submit], input[type=button]";
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
@@ -103,6 +104,10 @@
     // Alt + scroll zooms the content about the pointer
     const panel = t && t.closest(".orbit-panel");
     const zb = t && t.closest("[data-zoombox]");
+    // a scroll in on a button opens it, anywhere in the app (owner, 2026-10-12: "scroll means opens a button"): buttons,
+    // links, tabs and toggles inside windows press with a few steps in; a scroll out goes on to the window
+    const btn = t && panel && !alt && !pinch && t.closest(PRESS);
+    if (btn && panel.contains(btn)) return btn;
     if (panel && alt && zb && zb._zoom) return zb;
     if (panel) return panel;
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }
@@ -128,8 +133,22 @@
     frameAsked = false;
     pending.forEach(({ dy, direct, x, y, alt }, what) => {
       if (what === "nothing") return;
+      // a scroll out over a button is the window's (it zooms out, or shrinks); only a scroll in presses the button
+      // (only a window's own buttons: a super is role=button too, and a scroll on it sizes it)
+      const press = w => w !== "site" && w.matches && w.matches(PRESS) && !w.classList.contains("ob-member") && !w.classList.contains("lv-node") && !!w.closest(".orbit-panel");
+      if (press(what) && dy > 0) what = what.closest(".orbit-panel") || what;
       if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
       else if (!what.isConnected) return;
+      else if (press(what)) {   // a button: a few steps in press it, once per gesture
+        {
+          what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; what._pressed = false; }, 500);
+          if (what._acc < -70 && !what._pressed) {
+            what._pressed = true;
+            what.classList.add("se-pressing"); setTimeout(() => what.classList.remove("se-pressing"), 420);
+            what.click();
+          }
+        }
+      }
       else if (what.classList.contains("ob-member") && dy > 0) {        // a scroll out on a pill shrinks its bubble, as anywhere on it
         const bub = what.closest(".orbit-bubble.is-group"); if (bub && window.SeBubble) window.SeBubble.zoom(bub, dy);
       }
@@ -259,4 +278,14 @@
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", restore); else restore();
   // super/hover.js shows the zone by the pointer's shape: the band where a scroll changes n, or a surface a scroll sizes
   window.SeZoom = { zoneAt, sizeThing, THING };
+})();
+// a window opening while the view is zoomed out (the start is, owner 2026-10-12) brings the view back to 100 %,
+// gliding, so the window is readable and its buttons can be pressed where they are drawn
+(function () {
+  let had = 0;
+  document.addEventListener("se:windows", () => {
+    const O = window.PiOrbit || {}, n = document.querySelectorAll(".orbit-panel:not(.leaving)").length;
+    if (n > had && O.zoom && O.zoomPage) { const z = O.zoom(); if (z < 0.98) O.zoomPage(1 / z, false); }
+    had = n;
+  });
 })();

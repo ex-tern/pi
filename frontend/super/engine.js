@@ -70,6 +70,11 @@ const PANE_VS = `uniform vec2 uSize; varying vec2 vL; void main() { vL = positio
 const PANE_FS = `
 uniform vec2 uRes; uniform float uTime; uniform vec2 uHalf; uniform float uN; uniform float uFill; uniform vec3 uEdge;
 uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uDpr; varying vec2 vL; ${LIGHT}
+// its neighbours (owner, 2026-10-12: "improve the glass effect to reflect off each other"): up to NB nearby panes,
+// as (centre relative to this one, half size) in px; each shows in this pane's glass near the edge facing it
+#define NB 6
+uniform vec4 uNb[NB]; uniform int uNbN;
+float boxd(vec2 p, vec2 h) { float r = min(h.x, h.y) * 0.42; vec2 q = abs(p) - h + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
 float sdf(vec2 p) {                                   // the superellipse's distance in px (first order, from its gradient)
   // normalised by the larger coordinate, so a large n on a small pane never overflows (which drew a coloured box)
   vec2 q = max(abs(p) / max(uHalf, vec2(1.0)), vec2(1e-4));
@@ -100,6 +105,30 @@ void main() {
     vec3 glass = mix(behind * 1.10 + 0.06, vec3(1.0), uFill);
     glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
     OVER(glass, inside * (0.42 + 0.48 * uFill));
+    // the others, reflected: each neighbour's light glows into the glass along the edge facing it, and its edge
+    // shows as a faint mirror image in the rim (the point mirrored across this pane's edge, read in its shape)
+    if (uNbN > 0) {
+      vec2 gx = vec2(1.5, 0.0), gy = vec2(0.0, 1.5);
+      vec2 nrm = normalize(vec2(sdf(vL + gx) - sdf(vL - gx), sdf(vL + gy) - sdf(vL - gy)) + 1e-5);
+      float depth = max(-d, 0.0), band = 1.0 - smoothstep(0.0, 52.0, depth);
+      vec2 mir = vL + nrm * 7.0 * depth;                                    // where this point sees in the edge's curved mirror (compressed, as a convex glass shows it)
+      float ga = 0.0, ghost = 0.0, rimW = min(34.0, 0.22 * min(uHalf.x, uHalf.y));   // a small super keeps its middle clear
+      vec3 rc = mix(light(uv, uTime) * 1.15 + 0.08, vec3(1.0), 0.55);     // a neighbour's frosted light, brighter than this pane's
+      for (int i = 0; i < NB; i++) {
+        if (i >= uNbN) break;
+        vec4 nb = uNb[i];
+        float dn = boxd(vL - nb.xy, nb.zw);                                 // how far the neighbour is from this point
+        vec2 dir = normalize(nb.xy - vL + 1e-5);
+        float face = smoothstep(0.15, 0.9, dot(nrm, dir));                 // only the edge that faces it
+        float w = exp(-max(dn, 0.0) / 90.0) * face * band;
+        ga += w;
+        float dm = boxd(mir - nb.xy, nb.zw);                               // the neighbour's edge, seen in the mirror
+        ghost += (1.0 - smoothstep(3.0, 9.0, abs(dm))) * face * smoothstep(1.5, 4.0, depth) * (1.0 - smoothstep(rimW * 0.4, rimW, depth));   // the neighbour's edge, a soft line in the rim
+      }
+      ga = min(ga, 1.0);
+      if (ga > 0.0) OVER(rc, ga * 0.55 * inside);
+      OVER(mix(uEdge, rc, 0.45), min(ghost, 1.0) * 0.28 * inside);
+    }
     // the bevel: a bright inner line all round, strongest along the top
     float rim = (1.0 - smoothstep(0.6, 2.2, -d)) * inside;
     OVER(vec3(1.0), rim * mix(0.85, 0.30, ny));
@@ -221,7 +250,8 @@ function paneMesh(key) {
   let m = panes.get(key);
   if (!m) {
     const u = { uRes, uTime, uSize: { value: new THREE.Vector2(1, 1) }, uHalf: { value: new THREE.Vector2(1, 1) }, uN: { value: Math.PI }, uFill: { value: 0.4 },
-      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uDpr: { value: 1 } };
+      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uDpr: { value: 1 },
+      uNb: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) }, uNbN: { value: 0 } };
     m = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: PANE_FS, uniforms: u, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, premultipliedAlpha: true }));
     m.frustumCulled = false; m._sheen = 0;
     scene.add(m); panes.set(key, m);
@@ -256,6 +286,7 @@ const KINDS = [
 ];
 function drawPanes() {
   const ids = new WeakMap(); let k = 0;
+  const all = [];                                                   // every pane drawn this frame: each reflects its neighbours
   for (const K of KINDS) {
     document.querySelectorAll(K.sel).forEach(el => {
       const r = el.getBoundingClientRect();
@@ -270,9 +301,28 @@ function drawPanes() {
       const sel = el.classList.contains("se-sel"), hov = el.classList.contains("se-on") || el.matches(":hover");
       const edge = sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink;
       const op = +cs.opacity;
-      setPane(key, r.left + r.width / 2, r.top + r.height / 2, r.width / 2 - bw / 2, r.height / 2 - bw / 2, nOf(el),
+      const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
+      setPane(key, cx, cy, a, b, nOf(el),
         { fill: holder ? 0 : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: holder ? 0 : K.shadow * op, sheen: sel || hov, order: K.order });
+      if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder });
     });
+  }
+  // the nearest few within reach, nearest first (a holder's glass reflects nothing, but its edge shows in others)
+  const REACH = 150;
+  for (const p of all) {
+    const u = p.m.material.uniforms; let n = 0;
+    if (!p.holder) {
+      const near = [];
+      for (const q of all) {
+        if (q === p) continue;
+        const gx = Math.max(0, Math.abs(q.cx - p.cx) - q.a - p.a), gy = Math.max(0, Math.abs(q.cy - p.cy) - q.b - p.b), gap = Math.hypot(gx, gy);
+        const nested = Math.abs(q.cx - p.cx) + q.a <= p.a && Math.abs(q.cy - p.cy) + q.b <= p.b;   // inside it: seen through the glass, not in it
+        if (gap < REACH && !nested) near.push({ q, gap });
+      }
+      near.sort((x, y) => x.gap - y.gap);
+      for (const { q } of near.slice(0, 6)) u.uNb.value[n++].set(q.cx - p.cx, q.cy - p.cy, q.a, q.b);
+    }
+    u.uNbN.value = n;
   }
 }
 // the main super and the inner super: rings (the inner one a whisper of glass)
@@ -350,13 +400,13 @@ function drawWires() {
     const bed = g.querySelector(".wire-bed"); if (!bed) return;
     const key = g._seKey || (g._seKey = "w" + (++wk));
     const sel = g.classList.contains("is-sel"), hov = g.matches(":hover"), live = g.classList.contains("live");
-    setWire(key, bed, { w: 1.5, color: sel ? tokens.cobalt : hov ? tokens.hint : tokens.graphite, flow: hov || live, order: 4 });
+    setWire(key, bed, { w: 2.2, color: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, alpha: 0.82, flow: hov || live, order: 4 });   // more visible (owner, 2026-10-12)
   });
   document.querySelectorAll(".sl-layer .wire-temp").forEach(p => { const key = p._seKey || (p._seKey = "t" + (++wk)); setWire(key, p, { w: 1.5, color: tokens.cobalt, flow: true, order: 5 }); });
   document.querySelectorAll(".om-site .om-lattice").forEach(p => {
     if (!p.getClientRects().length) return;
     const key = p._seKey || (p._seKey = "l" + (++wk));
-    setWire(key, p, { w: 1.5, color: tokens.hair, flow: false, order: 3 });
+    setWire(key, p, { w: 1.6, color: tokens.graphite, alpha: 0.75, flow: false, order: 3 });
   });
 }
 

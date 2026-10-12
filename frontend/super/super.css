@@ -373,15 +373,15 @@ html.shape-se .orbit-panel * { overscroll-behavior: none; }
 /* the title is a simple super (super/logo.js): a ■ at n = π with its four ports, "pi tech lab" in mono inside */
 html.shape-se .orbit-title .se-titlesuper {
   position: relative; display: grid; place-items: center; box-sizing: border-box;
-  width: calc(108px * var(--se-title-k, 1)); height: calc(30px * var(--se-title-k, 1));   /* one line, low: the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
+  width: calc(164px * var(--se-title-k, 1)); height: calc(46px * var(--se-title-k, 1));   /* bigger (owner, 2026-10-12); one line, low: the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
   background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 1.6515));
-  font: 500 calc(12px * var(--se-title-k, 1))/1 "Geist Mono", ui-monospace, monospace; color: var(--ink);
+  font: 500 calc(18px * var(--se-title-k, 1))/1 "Geist Mono", ui-monospace, monospace; color: var(--ink);
   text-align: center; text-transform: lowercase; letter-spacing: 0; padding: 0 8%;
   white-space: normal; overflow-wrap: normal; user-select: none; -webkit-user-select: none;
 }
 html.shape-se .orbit-title .sts-text { display: block; white-space: nowrap; }
 @supports not (corner-shape: round) { html.shape-se .orbit-title .se-titlesuper { border-radius: 32%; } }
-@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(92px * var(--se-title-k, 1)); height: calc(26px * var(--se-title-k, 1)); font-size: calc(11px * var(--se-title-k, 1)); } }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(128px * var(--se-title-k, 1)); height: calc(36px * var(--se-title-k, 1)); font-size: calc(14px * var(--se-title-k, 1)); } }
 html.shape-se .orbit-title .sts-p { position: absolute; width: 9px; height: 9px; background: var(--ink); clip-path: var(--se-sparkle); pointer-events: none; }
 html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
@@ -501,6 +501,11 @@ html.shape-se .se-port-bottom:not(.se-port-owned) .se-port-name { bottom: 100%; 
 html.shape-se.sl-dragging .se-port .se-port-name, html.shape-se.lv-dragging .se-port .se-port-name { opacity: 1; }
 /* the π line along the main super: readable, and only where the gap between the supers has room for it */
 html.shape-se .om-page-pi { font-size: 11px; opacity: 0.8; }
+/* the π line runs along the title's wire, not the main loop (super/wire.js .sl-pi) */
+html.shape-se .om-page > .om-page-pi { display: none; }
+.sl-pi { display: none; position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
+html.shape-se.orbit-on .sl-pi { display: block; }
+.sl-pi.is-off { display: none !important; }
 @media (max-width: 700px) { html.shape-se .om-page-pi { display: none; } }
 html.shape-se .se-port.is-covered { opacity: 0; pointer-events: none; }
 /* a focused Super AI super shows its focus by its cobalt edge alone (no second ring) */
@@ -547,3 +552,12 @@ html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { displ
 html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { border-radius: 999px !important; }
 html.shape-se .orbit-panel :is(.stat-card, .tr-tile, .perf-card, .card, .rs-card, .leaderboard, .table-scroll, .status-box, .ok-box, .warning-box, .insight-box) { border-radius: 22px; }
 html.shape-se .orbit-panel :is(.pill, .badge, .chip, .tag, .rank, .stage-tag, .linked-badge) { border-radius: 999px; }
+/* a button pressed by a scroll in (super/scroll.js) shows it was pressed */
+html.shape-se .se-pressing { outline: 2px solid var(--cobalt) !important; outline-offset: 2px; transition: outline-color 0.4s ease; }
+
+/* lines and wires more visible (owner, 2026-10-12): wires in ink, a little heavier; the lattice and the drawings' wires
+   in graphite instead of hairline grey */
+html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed, html.shape-se .lv-wires .wire-bed { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; }
+html.shape-se .om-lattice { stroke: color-mix(in srgb, var(--graphite) 75%, transparent); stroke-width: 1.6; }
+html.shape-se .ob-mini .obm-wire { opacity: 0.95; stroke: var(--graphite); }
+html.shape-se .orbit-bubble > .ob-links path { opacity: 0.9; stroke-width: 1.3; }
