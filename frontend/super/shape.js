@@ -182,6 +182,7 @@
     const dx = (a.x + a.w / 2) - (b.x + b.w / 2), dy = (a.y + a.h / 2) - (b.y + b.h / 2);
     const k = Math.max(0.08, Math.min(1, Math.max(a.w / b.w, a.h / b.h)));
     const d = Math.round(520 * Math.min(1.6, slow()));
+    panel.classList.add("se-opening");                                 // growing: nobody holds it yet (super/hold.js)
     panel.style.transition = "none";
     panel.style.transformOrigin = "50% 50%";
     panel.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px) scale(" + k.toFixed(3) + ")";
@@ -197,7 +198,7 @@
     if (window.SeMotion) { const o = { v: Math.log(N0) }; window.SeMotion.tween(o, { v: Math.log(N1) }, { duration: nd, easing: "easeInOutSine", update: () => setN(Math.exp(o.v)) }); }
     else setN(N1);
     clearTimeout(panel._seOpenT);
-    panel._seOpenT = setTimeout(() => { panel.style.transition = ""; panel.style.transformOrigin = ""; document.dispatchEvent(new CustomEvent("se:frame")); }, d + 40);
+    panel._seOpenT = setTimeout(() => { panel.style.transition = ""; panel.style.transformOrigin = ""; panel.classList.remove("se-opening"); document.dispatchEvent(new CustomEvent("se:frame")); }, d + 40);
     const tick = () => { document.dispatchEvent(new CustomEvent("se:frame")); if (panel.style.transition) requestAnimationFrame(tick); };   // its ports and wires follow it
     requestAnimationFrame(tick);
   }

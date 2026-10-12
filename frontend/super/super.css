@@ -600,3 +600,17 @@ html.shape-se .orbit-bubble[hidden] { display: none !important; }   /* a bubble 
 html.shape-se .se-lockhost { position: fixed; z-index: 965; width: 14px; height: 14px; transform: translate(-50%, 0); pointer-events: none; }
 html.shape-se .se-lockhost > .se-lock { left: 0; top: 0; transform: none; pointer-events: auto; }
 html:not(.shape-se) .se-lockhost { display: none; }
+
+/* the confirmation before a super is deleted (super/delete.js): a square that deletes it, a sparkle that keeps it */
+.se-confirm { position: fixed; z-index: 2100; display: flex; gap: 10px; align-items: flex-end; }
+.se-cf { position: relative; display: grid; place-items: center; width: 58px; height: 58px; padding: 0; border: 0; background: none; cursor: pointer; font: 500 11px/1 var(--font-mono, ui-monospace, monospace); color: var(--ink); }
+.se-cf::before { content: ""; position: absolute; inset: 0; background: var(--paper); box-shadow: 0 10px 22px -10px rgba(25, 25, 25, 0.45); }
+.se-cf-del::before { border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(3.585); }   /* a square: n = 12 */
+.se-cf-keep::before { background: var(--ink); clip-path: var(--se-sparkle, polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%)); }   /* a sparkle */
+.se-cf-keep::after { content: ""; position: absolute; inset: 3px; background: var(--paper); clip-path: var(--se-sparkle, polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%)); }
+.se-cf span { position: relative; z-index: 1; }
+.se-cf-keep span { font-size: 10px; }
+.se-cf:hover::before, .se-cf:focus-visible::before { box-shadow: 0 0 0 2px var(--cobalt), 0 10px 22px -10px rgba(25, 25, 25, 0.45); }
+.se-cf-keep:hover::before, .se-cf-keep:focus-visible::before { background: var(--cobalt); }
+.se-cf:focus-visible { outline: none; }
+html.shape-se .se-deleting { outline: 2px dashed color-mix(in srgb, var(--ink) 60%, transparent); outline-offset: 4px; }

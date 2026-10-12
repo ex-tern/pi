@@ -478,7 +478,7 @@
   function keepInside(it) {
     const want = it.custom ? { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2 } : it.lastAt ? { x: it.lastAt.x, y: it.lastAt.y } : { x: lx - it.w / 2, y: ly - it.h / 2 };
     if (!merged()) return { x: Math.min(W - it.w - 6, Math.max(6, want.x)), y: Math.min(H - it.h - 6, Math.max(6, want.y)), w: it.w, h: it.h };
-    const s = siteBox(), cy = H / 2, m = 0.9;                                     // inside the inner super's box, clear of its corners
+    const s = siteBox(), cy = H / 2, m = 0.98;                                    // inside the inner super's box
     const x0 = s.cx - s.a * m, x1 = s.cx + s.a * m - it.w, y0 = cy - s.b * m, y1 = cy + s.b * m - it.h;
     return { x: Math.min(Math.max(x0, x1), Math.max(x0, want.x)), y: Math.min(Math.max(y0, y1), Math.max(y0, want.y)), w: it.w, h: it.h };
   }
@@ -567,7 +567,12 @@
       const at = { x: c.x - pinned.w / 2, y: c.y - pinned.h / 2, w: pinned.w, h: pinned.h };
       // ...unless, grown where it is, it would cover a super, a window or the title (owner, 2026-10-12: "bug, super
       // disappears": an opening bubble covered run): then it makes room like any other bubble
-      cur = pinned; if (freeAt(at, placed)) { pinned.at = at; placed.push(pillRect(pinned, at, g)); } else pinned = null; cur = null;
+      // only a super that cannot make room counts here (a Super AI super, a window, the title): a holder it sits in, the
+      // project super and the inner super's edge do not move it (owner, 2026-10-12: "lab jumps when trying to open it")
+      cur = pinned;
+      const fixedOnly = placed.filter(p => !p.inner && !p.lockEl);
+      if (!fixedOnly.some(p => blocks(at, p))) { pinned.at = at; placed.push(pillRect(pinned, at, g)); } else pinned = null;
+      cur = null;
     }
     const settled = vis.filter(it => it.custom && it !== dragging && it !== pinned).sort((a, b) => pri(a) - pri(b));
     const bumped = [];

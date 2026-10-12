@@ -479,8 +479,8 @@
     }
     // the room the layout may use: inside the site's super at its usual n (π), so the frame fits the page
     function insideLoop(r) {
-      const s = siteBox(), cy = ctx.H() / 2, n = Math.PI;
-      for (const x of [r.x - 6, r.x + r.w + 6]) for (const y of [r.y - 6, r.y + r.h + 6])
+      const s = siteBox(), cy = ctx.H() / 2, n = s.n || Math.PI;      // the inner super's own n: near-box corners hold supers near its edge (owner, 2026-10-12)
+      for (const x of [r.x - 2, r.x + r.w + 2]) for (const y of [r.y - 2, r.y + r.h + 2])
         if (seNorm(Math.abs(x - s.cx) / s.a, Math.abs(y - cy) / s.b, n) > 1) return false;
       return true;
     }

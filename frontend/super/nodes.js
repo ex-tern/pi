@@ -638,7 +638,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -692,6 +692,7 @@
       return inp;
     };
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
+    n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;   // the window it was dropped on (its layer)
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -968,6 +969,17 @@
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
+      // where it is dropped decides its layer (owner, 2026-10-12: "dragging and dropping into a super determines its
+      // layer"): dropped wholly on a window it lies on that window (and moves with it), dropped anywhere else it
+      // lies where it is (super/hold.js reads data-layer)
+      if (n && ev.type === "pointerup") {
+        const b = n.el.getBoundingClientRect();
+        const win = [...document.querySelectorAll(".orbit-panel:not(.leaving)")].filter(p => { const r = p.getBoundingClientRect(); return b.left >= r.left && b.right <= r.right && b.top >= r.top && b.bottom <= r.bottom; })
+          .sort((a, c) => (+c.style.zIndex || 0) - (+a.style.zIndex || 0))[0];
+        const key = win && O().keyOf ? O().keyOf(win) : null;
+        if (key) n.el.dataset.layer = "win:" + key; else delete n.el.dataset.layer;
+        n.layer = key ? "win:" + key : undefined;
+      }
       if (n.st.from && locked(n.st.from) && n.st.from.el.isConnected && !within(n.st.from, n)) { keepIn(n.st.from, n); n.st.from = null; persist(); tick(); say("It stays: its holder is locked"); return; }
       n.st.from = null;
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
@@ -1229,7 +1241,7 @@
     // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
     if (dy > 0 && !auto && cur <= 36 && n.id !== "site-box") {
       n.st.over = (n.st.over || 0) + dy; clearTimeout(n.st.overT); n.st.overT = setTimeout(() => { n.st.over = 0; }, 500);
-      if (n.st.over > 160 && !n.st.closing) closeNode(n);
+      if (n.st.over > 160 && !n.st.closing) { n.st.over = 0; if (window.SeDelete) window.SeDelete.ask(n.el, cx, cy); else closeNode(n); }   // ask first (owner, 2026-10-12)
       return;
     }
     const d = Math.round(Math.max(36, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
@@ -1484,6 +1496,18 @@
       if (!h) return;
       drag(e, h.n.el, null);
     }, true);
+    // two layers: under the windows, and on them for the supers a window holds (not moved while one is dragged:
+    // moving an element would drop its pointer capture)
+    const top = document.createElement("div"); top.className = "lv-canvas-top"; document.body.appendChild(top);
+    function layers() {
+      if (!html.classList.contains("shape-se") || dragging) return;
+      nodes.forEach(n => {
+        const h = window.SeHold && window.SeHold.hostOf ? window.SeHold.hostOf(n.el) : null;
+        const want = h && h.classList.contains("orbit-panel") ? top : canvas;   // dropped on a window: on it
+        if (n.el.parentElement !== want) { const f = n.el.contains(document.activeElement) ? document.activeElement : null; want.appendChild(n.el); if (f) f.focus({ preventScroll: true }); }
+      });
+    }
+    setInterval(layers, 400);
     let down = null; const held = new Set();
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
     document.addEventListener("dblclick", e => {
@@ -1593,6 +1617,8 @@
     // super/scroll.js: a scroll on a node sizes it
     window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
+                       // super/delete.js: deleted after a confirmation (a holder with what it holds; never the central super)
+                       close: el => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; closeNode(n); return true; },
                        // super/maximize.js: a super's whole box in layout px (it fills the inner super, and back)
                        rectOf: el => { const n = nodes.find(x => x.el === el); return n ? { x: n.fx * window.innerWidth, y: n.fy * window.innerHeight, w: n.size || DOT_BASE, h: (n.size || DOT_BASE) * (n.aspect || 1), aspect: n.aspect || 0 } : null; },
                        setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(36, w); h = Math.max(36, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },

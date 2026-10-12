@@ -28,6 +28,11 @@
 
 /* --- the block diagram: nodes dragged out onto the page, and their wires --- */
 .lv-canvas { position: fixed; inset: 0; z-index: 960; pointer-events: none; }   /* above windows and the mark, under dialogs */
+/* the superellipse look: the supers lie under the windows (owner, 2026-10-12: "this is a bug": run showed through a
+   window), and those a window holds lie on it, in a layer of their own above the windows (super/nodes.js layers) */
+html.shape-se .lv-canvas { z-index: 11; }   /* above the stage (bubbles), under the windows */
+.lv-canvas-top { position: fixed; inset: 0; z-index: 955; pointer-events: none; }
+html:not(.shape-se) .lv-canvas-top { display: none; }
 .lv-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
 .lv-node {
   position: fixed; pointer-events: auto; width: 46px; height: 32px; touch-action: none;

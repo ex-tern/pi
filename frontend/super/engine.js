@@ -293,6 +293,16 @@ function heightOf(el, order) {
   el._seH = { t: now, v };
   return v;
 }
+// how deep a super lies inside others (what it was dropped into: super/hold.js), looked at a few times a second;
+// a super is drawn above the one holding it
+function depthOf(el) {
+  const now = performance.now();
+  if (el._seD && now - el._seD.t < 300) return el._seD.v;
+  let d = 0, e = el;
+  for (let i = 0; i < 6 && window.SeHold && window.SeHold.hostOf; i++) { const h = window.SeHold.hostOf(e); if (!h) break; d++; e = h; }
+  el._seD = { t: now, v: d };
+  return d;
+}
 function drawPanes() {
   const ids = new WeakMap(); let k = 0;
   const all = [];                                                   // every pane drawn this frame: each reflects its neighbours
@@ -312,7 +322,7 @@ function drawPanes() {
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       setPane(key, cx, cy, a, b, nOf(el),
-        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: holder ? 3 : K.order });   // a holder (the third super) is glass too, under what it holds
+        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * depthOf(el) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
     });
   }

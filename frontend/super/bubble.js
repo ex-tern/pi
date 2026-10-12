@@ -103,14 +103,23 @@
     const compactSide = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE;
     if (el._sbT == null) el._sbT = isCompact(el) ? 0 : 1;
     if (!el._sbNat || (el._sbT === 0 || el._sbT === 1)) el._sbNat = natural(el);
+    // open and scrolled on in: a few steps more fill the inner super (super/maximize.js); filling it, a scroll out gives it back
+    if (window.SeMax && window.SeMax.isMax(el)) { if (dy > 0) window.SeMax.restore(el); return; }
+    if (dy < 0 && el._sbT === 1 && window.SeMax) {
+      el._sbMax = (el._sbMax || 0) - dy; clearTimeout(el._sbMaxT); el._sbMaxT = setTimeout(() => { el._sbMax = 0; }, 600);
+      if (el._sbMax > 160) { el._sbMax = 0; window.SeMax.maximize(el); }
+      return;
+    }
     const tTo = Math.max(0, Math.min(1, (el._sbTo != null ? el._sbTo : el._sbT) - dy * 0.004));
     // the same logic as every super (owner, 2026-10-12: "make all supers consistent ... same logic"): compact and
     // scrolled on out, it is too small and closes, fading away (gone until the app is reset)
     if (dy > 0 && el._sbT === 0 && tTo === 0) {
       el._sbOver = (el._sbOver || 0) + dy; clearTimeout(el._sbOverT); el._sbOverT = setTimeout(() => { el._sbOver = 0; }, 500);
       if (el._sbOver > 160 && !el.classList.contains("se-closing")) {
-        el.classList.add("se-closing");
-        setTimeout(() => { el.classList.remove("se-closing"); if (window.PiOrbit && window.PiOrbit.gone) window.PiOrbit.gone(el.dataset.key); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
+        el._sbOver = 0;
+        const r = el.getBoundingClientRect();
+        if (window.SeDelete) window.SeDelete.ask(el, r.left + r.width / 2, r.top + r.height / 2);   // ask first (owner, 2026-10-12)
+        else { el.classList.add("se-closing"); setTimeout(() => { el.classList.remove("se-closing"); if (window.PiOrbit && window.PiOrbit.gone) window.PiOrbit.gone(el.dataset.key); }, 700); }
       }
       return;
     }

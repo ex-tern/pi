@@ -72,3 +72,8 @@ html.se-gl .wire-term { fill: transparent !important; stroke: transparent !impor
 html.se-boot body > * { opacity: 0 !important; transition: none !important; }
 html.se-unveil body > * { transition: opacity 0.9s ease !important; }
 html.se-boot body::before, html.se-unveil body::before { display: block !important; }
+
+/* a window covers what lies under it (owner, 2026-10-12: "explore is always on top": with the engine every page
+   element is see-through and its glass is drawn under all of them, so a bubble under a window showed through it):
+   in the engine look a window keeps a paper ground of its own, inside its edge (the engine's edge and shadow show) */
+html.se-gl body .orbit-panel.orbit-panel.orbit-panel { background: var(--paper) !important; background-clip: padding-box !important; }

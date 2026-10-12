@@ -75,7 +75,7 @@
   function fullRect(unzoomed) {
     const sb = O().siteBox ? O().siteBox() : null, vw = window.innerWidth, vh = window.innerHeight;
     if (!sb) return { x: vw * 0.06, y: vh * 0.1, w: vw * 0.88, h: vh * 0.8 };
-    const f = unzoomed ? 1 : (sb.fit || 1), cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, m = 0.06;
+    const f = unzoomed ? 1 : (sb.fit || 1), cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f, b = sb.b * f, m = 0.015;
     return { x: cx - a * (1 - m), y: cy - b * (1 - m), w: 2 * a * (1 - m), h: 2 * b * (1 - m) };
   }
   const ease = k => k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2;
@@ -105,7 +105,7 @@
   let overAcc = 0, overT = 0;
   function closeSoon(dy) {
     overAcc += dy; clearTimeout(overT); overT = setTimeout(() => { overAcc = 0; }, 500);
-    if (overAcc > 160) { overAcc = 0; goAway(); }
+    if (overAcc > 160) { overAcc = 0; const r = el.getBoundingClientRect(); if (window.SeDelete) window.SeDelete.ask(el, r.left + r.width / 2, r.top + r.height / 2); else goAway(); }   // ask first (owner, 2026-10-12)
   }
   function goAway() {
     if (!el || el.classList.contains("se-closing")) return;
@@ -427,6 +427,7 @@
   }
   window.SeProject = { open: () => setT(1), close: () => setT(0), ask,
     // moved with a holder it sits in (super/nodes.js): by a screen offset, compact only
+    remove: () => goAway(),                                            // super/delete.js: deleted after a confirmation
     // Shift + drag (super/shiftsize.js): its compact width and height, in layout px
     resize: (w, h) => { state.w = Math.round(Math.max(60, w)); state.h = Math.round(Math.max(60, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
     moveBy: (dx, dy) => {

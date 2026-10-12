@@ -102,6 +102,8 @@
     const now = performance.now(); if (now - noteAt < 250) return; noteAt = now;
     if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "locked", "unlock it to change its size or shape");
   }
+  const holderAt = (x, y) => [...document.querySelectorAll(".lv-node.is-holder")].map(el => ({ el, r: el.getBoundingClientRect() }))
+    .filter(o => x >= o.r.left && x <= o.r.right && y >= o.r.top && y <= o.r.bottom).sort((a, b) => a.r.width * a.r.height - b.r.width * b.r.height).map(o => o.el)[0] || null;
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
@@ -131,8 +133,12 @@
     if (bubble && window.SeBubble) return bubble;
     // a super filling the inner super (super/maximize.js) takes the scroll on its bare space
     const pt = t && t.__pt;
-    const big = [...document.querySelectorAll(".lv-node.se-max, .orbit-panel.se-max")].find(el => { const r = el.getBoundingClientRect(); return pt && pt[0] >= r.left && pt[0] <= r.right && pt[1] >= r.top && pt[1] <= r.bottom; });
+    const big = [...document.querySelectorAll(".lv-node.se-max, .orbit-panel.se-max, .orbit-bubble.se-max")].find(el => { const r = el.getBoundingClientRect(); return pt && pt[0] >= r.left && pt[0] <= r.right && pt[1] >= r.top && pt[1] <= r.bottom; });
     if (big) return big;
+    // bare space inside a holder (the third super) is the holder's (owner, 2026-10-12: "3rd super says its locked even
+    // though its not": a scroll there went to the second super, which said so when locked)
+    const hold = pt && holderAt(pt[0], pt[1]);
+    if (hold) return hold;
     return "site";
   }
   // one gesture stays on what it started on, so a thing that grows under the pointer keeps being sized
@@ -153,6 +159,9 @@
       // (only a window's own buttons: a super is role=button too, and a scroll on it sizes it)
       const press = w => w !== "site" && w.matches && w.matches(PRESS) && !w.classList.contains("ob-member") && !w.classList.contains("lv-node") && !!w.closest(".orbit-panel");
       if (press(what) && dy > 0) what = what.closest(".orbit-panel") || what;
+      // a bubble filling the inner super: a scroll out anywhere on it (its pills too) gives it back its size
+      const mxb = what !== "site" && what.closest && what.closest(".orbit-bubble.se-max");
+      if (mxb && dy > 0 && window.SeMax) { window.SeMax.restore(mxb); return; }
       if (what === "site") { const sl = window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null; if (sl && locked(sl)) lockedNote(sl, x, y); else if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // the second super locked: its size (the zoom) is kept
       else if (!what.isConnected) return;
       else if (press(what)) {   // a button: a few steps in press it, once per gesture
@@ -189,7 +198,7 @@
         const kNow = z ? (z.state.kTo != null ? z.state.kTo : z.state.k) : 1, smallest = what.offsetWidth <= 264 || what.offsetHeight <= 144, whole = !(z && kNow > z.state.fitK * 1.001);
         if (dy > 0 && smallest && whole) {
           what._over = (what._over || 0) + dy; clearTimeout(what._overT); what._overT = setTimeout(() => { what._over = 0; }, 900);
-          if (what._over > 160 && O().keyOf && O().close) { what._over = 0; O().close(O().keyOf(what)); }
+          if (what._over > 160 && O().keyOf && O().close) { what._over = 0; if (window.SeDelete) window.SeDelete.ask(what, x, y); else O().close(O().keyOf(what)); }   // ask first (owner, 2026-10-12)
           return;
         }
         // as big as the layout lets, a few steps more fill the inner super (super/maximize.js); filling it, a scroll out
@@ -233,6 +242,7 @@
       const fresh = gesture && now - gesture.t < 500 ? gesture.what : null;
       const recentEl = fresh && fresh.classList && fresh.isConnected ? fresh : null;
       let node = recentEl && recentEl.classList.contains("lv-node") ? recentEl : recentEl ? null : (hit && hit.closest ? hit.closest(".lv-node") : null);
+      if (!node && !fresh && hit && hit.closest && !hit.closest(".orbit-bubble, .orbit-panel, .se-project, .orbit-title")) node = holderAt(x, y);   // bare space in a holder: the holder's n
       if (!node && !recentEl && fresh && fresh.dataset && fresh.dataset.id)
         node = document.querySelector('.lv-node[data-id="' + fresh.dataset.id + '"]');   // the node was remade (it changed function): the same id
       if (node && locked(node)) { gesture = { what: node, t: now }; lockedNote(node, x, y); return; }   // locked: its n is kept

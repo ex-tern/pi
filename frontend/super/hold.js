@@ -30,9 +30,13 @@
   }
   function hostOf(el) {
     if (!on() || !el || !el.getClientRects().length) return null;
+    if (el.classList.contains("se-opening")) return null;              // a window still growing out of its pill
     const b = rect(el); let best = null;
     for (const h of hosts()) {
       if (h.el === el || h.el.contains(el) || el.contains(h.el)) continue;
+      // a window holds a super only when it was dropped on it (its layer, nodes.js data-layer); any other super under a
+      // window lies under it and the window steps off it
+      if (h.el.classList.contains("orbit-panel") && el.classList.contains("lv-node") && el.dataset.layer !== "win:" + ((window.PiOrbit && window.PiOrbit.keyOf && window.PiOrbit.keyOf(h.el)) || "")) continue;
       if (b.width >= h.r.width && b.height >= h.r.height) continue;          // nothing holds what is as big as itself
       const k = margin(h.r), kt = topStrip(h.el);
       if (within(b, h.r, k, kt == null ? k : Math.max(k, kt))) best = h.el;   // hosts come biggest first: the last fit is the smallest
@@ -43,6 +47,7 @@
     if (!on() || !host || !host.getClientRects().length) return [];
     const r = rect(host), k = margin(r), kt = topStrip(host);
     return [...document.querySelectorAll(HELD)].filter(el => el !== host && !host.contains(el) && !el.contains(host) && el.getClientRects().length)
+      .filter(el => !el.classList.contains("se-opening"))              // a window still growing out of its pill is nobody's yet
       .filter(el => { const b = rect(el); return b.width < r.width && within(b, r, k, kt == null ? k : Math.max(k, kt)); })
       .filter(el => hostOf(el) === host);                                       // held by this one, not by a smaller host inside it
   }
