@@ -10,12 +10,12 @@
 html.shape-se body::before {
   content: ""; position: fixed; inset: -25%; z-index: 0; pointer-events: none;
   background:
-    radial-gradient(42% 38% at 20% 26%, rgba(226, 160, 104, 0.75), transparent 72%),
-    radial-gradient(38% 34% at 80% 72%, rgba(128, 156, 226, 0.6), transparent 72%),
-    radial-gradient(34% 30% at 72% 16%, rgba(240, 196, 150, 0.8), transparent 72%),
-    radial-gradient(40% 36% at 28% 84%, rgba(184, 170, 232, 0.55), transparent 72%),
-    radial-gradient(30% 30% at 52% 50%, rgba(250, 236, 220, 0.9), transparent 75%),
-    #efe9e2;
+    radial-gradient(46% 40% at 18% 22%, rgba(184, 102, 46, 0.85), transparent 72%),
+    radial-gradient(44% 40% at 82% 78%, rgba(133, 140, 112, 0.75), transparent 72%),
+    radial-gradient(36% 32% at 70% 18%, rgba(237, 178, 107, 0.8), transparent 72%),
+    radial-gradient(42% 38% at 26% 86%, rgba(153, 117, 102, 0.6), transparent 72%),
+    radial-gradient(40% 40% at 52% 48%, rgba(247, 230, 204, 0.85), transparent 75%),
+    #cca885;
   filter: blur(30px) saturate(1.15);
   animation: glass-drift 60s ease-in-out infinite alternate;
 }
@@ -26,19 +26,22 @@ html.shape-se body::before {
 }
 /* the main super, and the backdrop it covers the page with (orbit.css .orbit-mark-big), let that light through */
 html.shape-se.orbit-mark-big .orbit-center { background: transparent; }
-html.shape-se .om-page-loop { fill: rgba(255, 255, 255, 0.12); }
+html.shape-se .om-page-loop { fill: rgba(255, 255, 255, 0.06); }
+/* a soft vignette over the light, darker at the edges, as in the reference */
+html.shape-se body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse 75% 70% at 50% 48%, transparent 45%, rgba(60, 34, 16, 0.28) 100%); }
+html.se-gl body::after { display: none; }
 
 /* the panes */
 html.shape-se .lv-node:not(.is-holder), html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
 html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shape-se .se-project, html.shape-se .lv-palette {
-  background: rgba(255, 255, 255, 0.38);
-  -webkit-backdrop-filter: blur(18px) saturate(1.6) brightness(1.06);
-  backdrop-filter: blur(18px) saturate(1.6) brightness(1.06);
-  border-color: color-mix(in srgb, var(--ink) 78%, transparent);
-  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.25), 0 14px 34px -18px rgba(40, 30, 20, 0.35);
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.40), rgba(255, 255, 255, 0.26));
+  -webkit-backdrop-filter: blur(24px) saturate(1.5) brightness(1.08);
+  backdrop-filter: blur(24px) saturate(1.5) brightness(1.08);
+  border-color: color-mix(in srgb, var(--ink) 58%, transparent);
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 18px 40px -18px rgba(70, 36, 12, 0.45);
 }
 /* windows read their content: a little more paper behind the type */
-html.shape-se .orbit-panel { background: rgba(255, 255, 255, 0.62); }
+html.shape-se .orbit-panel { background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.66)); }
 /* the boxes inside a compact super's drawing are glass too */
 html.shape-se .ob-mini .obm-box { fill: rgba(255, 255, 255, 0.55); }
 

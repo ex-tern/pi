@@ -26,6 +26,14 @@
     const name = (el.querySelector(":scope > .ob-label") || {}).textContent || "";
     return drawing(name, [...el.querySelectorAll(".ob-member")].map(m => m.textContent.trim()), null, parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE);
   }
+  // a box with superellipse corners (n = π), as every corner on the page: an svg path in place of a rounded rect
+  function seBox(x, y, w, h, r, cls, title) {
+    r = Math.max(0.5, Math.min(r, w / 2, h / 2));
+    const e = 2 / Math.PI, K = 6, f = v => v.toFixed(2), pts = [];
+    const corner = (cx, cy, a0) => { for (let i = 0; i <= K; i++) { const t = a0 + (i / K) * Math.PI / 2, c = Math.cos(t), s = Math.sin(t); pts.push([cx + r * Math.sign(c) * Math.pow(Math.abs(c), e), cy + r * Math.sign(s) * Math.pow(Math.abs(s), e)]); } };
+    corner(x + w - r, y + h - r, 0); corner(x + r, y + h - r, Math.PI / 2); corner(x + r, y + r, Math.PI); corner(x + w - r, y + r, 1.5 * Math.PI);
+    return '<path class="' + cls + '" d="M' + pts.map(p => f(p[0]) + "," + f(p[1])).join("L") + 'Z">' + (title ? "<title>" + esc(title) + "</title>" : "") + "</path>";
+  }
   function drawing(name, members, cls, side) {
     const n = Math.max(1, members.length), gap = Math.min(4, 36 / n), bh = Math.min(8, (72 - (n - 1) * gap) / n), bw = 20, x1 = 68, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2 - 4;   // clear of the lock at the lower right
     // the name as large as its box lets (a compact bubble is drawn at --se-compact, 84 px or more: readable)
@@ -35,11 +43,11 @@
       const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2, yc = ly + lh / 2;
       s += '<path class="obm-wire" d="M' + x0 + ',' + yc + ' C' + mx + ',' + yc + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
     });
-    s += '<rect class="obm-box obm-name" x="' + lx + '" y="' + ly + '" width="' + lw + '" height="' + lh + '" rx="4"/>' +
+    s += seBox(lx, ly, lw, lh, 5, "obm-box obm-name") +
          '<text class="obm-text" x="' + (lx + lw / 2) + '" y="' + (ly + lh / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" style="font-size:' + fs.toFixed(1) + 'px">' + esc(label) + '</text>';
     members.forEach((m, i) => {
       const y = y0 + i * (bh + gap);
-      s += '<rect class="obm-box" x="' + x1 + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="2.5"><title>' + esc(m) + '</title></rect>';
+      s += seBox(x1, y, bw, bh, 3, "obm-box", m);
     });
     return s + "</svg>";
   }

@@ -541,3 +541,8 @@ html.shape-se .orbit-bubble > .ob-links path { fill: none; stroke: var(--graphit
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-links { display: none; }
 /* never smaller than readable, however tight the layout (the pills' room shrinks, not their words) */
 html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { font-size: max(12px, 1em); }
+
+/* every rounded corner on the page is a superellipse corner (owner, 2026-10-12: "make everything superellipses, not
+   round corners"): buttons, fields, cards, tables, badges, pills, inside windows too. Low specificity, so a super
+   that has its own n (Shift + scroll) keeps it */
+html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*)::after { corner-shape: superellipse(var(--se-k-window, 1.6515)); }

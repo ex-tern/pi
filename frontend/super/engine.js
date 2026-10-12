@@ -20,25 +20,50 @@ const O = () => window.PiOrbit || {};
 // ---------------------------------------------------------------- shaders
 // the light behind the glass: soft warm and cool glows drifting slowly (the same function lights the panes)
 const LIGHT = `
+// a deep warm light, as in the owner's reference: amber, honey and sage glows over a warm ground, darker at the edges
 vec3 light(vec2 uv, float t) {
-  vec3 c = vec3(0.937, 0.914, 0.886);
-  vec2 p1 = vec2(0.20 + 0.05 * sin(t * 0.21), 0.26 + 0.04 * cos(t * 0.17));
-  vec2 p2 = vec2(0.80 + 0.04 * cos(t * 0.19), 0.72 + 0.05 * sin(t * 0.23));
-  vec2 p3 = vec2(0.72 + 0.06 * sin(t * 0.13), 0.16 + 0.03 * cos(t * 0.29));
-  vec2 p4 = vec2(0.28 + 0.05 * cos(t * 0.11), 0.84 + 0.04 * sin(t * 0.27));
-  vec2 p5 = vec2(0.52 + 0.04 * sin(t * 0.07), 0.50 + 0.04 * cos(t * 0.09));
   float a = uRes.x / uRes.y;
   #define G(p, r) exp(-dot((uv - p) * vec2(a, 1.0), (uv - p) * vec2(a, 1.0)) / (r * r))
-  c = mix(c, vec3(0.886, 0.627, 0.408), 0.75 * G(p1, 0.42));
-  c = mix(c, vec3(0.502, 0.612, 0.886), 0.60 * G(p2, 0.40));
-  c = mix(c, vec3(0.941, 0.769, 0.588), 0.80 * G(p3, 0.34));
-  c = mix(c, vec3(0.722, 0.667, 0.910), 0.55 * G(p4, 0.40));
-  c = mix(c, vec3(0.980, 0.925, 0.863), 0.90 * G(p5, 0.30));
+  vec2 p1 = vec2(0.18 + 0.06 * sin(t * 0.050), 0.22 + 0.05 * cos(t * 0.043));
+  vec2 p2 = vec2(0.82 + 0.05 * cos(t * 0.047), 0.78 + 0.06 * sin(t * 0.058));
+  vec2 p3 = vec2(0.70 + 0.07 * sin(t * 0.033), 0.18 + 0.04 * cos(t * 0.071));
+  vec2 p4 = vec2(0.26 + 0.06 * cos(t * 0.029), 0.86 + 0.05 * sin(t * 0.066));
+  vec2 p5 = vec2(0.52 + 0.05 * sin(t * 0.019), 0.48 + 0.05 * cos(t * 0.023));
+  vec3 c = vec3(0.80, 0.66, 0.52);                                        // the warm ground
+  c = mix(c, vec3(0.72, 0.40, 0.18), 0.85 * G(p1, 0.46));                // amber
+  c = mix(c, vec3(0.52, 0.55, 0.44), 0.70 * G(p2, 0.44));                // sage
+  c = mix(c, vec3(0.93, 0.70, 0.42), 0.80 * G(p3, 0.36));                // honey
+  c = mix(c, vec3(0.60, 0.46, 0.40), 0.60 * G(p4, 0.42));                // umber
+  c = mix(c, vec3(0.97, 0.90, 0.80), 0.85 * G(p5, 0.40));                // the light in the middle
+  vec2 v = (uv - 0.5) * vec2(a, 1.0);
+  c *= 1.0 - 0.32 * smoothstep(0.25, 1.05, length(v));                    // a soft vignette
   return c;
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
-void main() { vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y; gl_FragColor = vec4(light(uv, uTime), 1.0); }`;
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+// embers: tiny glowing motes drifting slowly up through the light
+vec3 embers(vec2 px, float t) {
+  vec3 acc = vec3(0.0);
+  for (int L = 0; L < 3; L++) {
+    float sc = 90.0 + float(L) * 55.0, sp = 6.0 + float(L) * 4.0;
+    vec2 q = px / sc; q.y += t * sp / sc; q.x += sin(t * 0.07 + float(L)) * 0.3;
+    vec2 id = floor(q), f = fract(q) - 0.5;
+    float r = h21(id + float(L) * 17.0);
+    if (r > 0.42) continue;                                                 // most cells are empty
+    vec2 o = vec2(h21(id + 3.1), h21(id + 7.7)) - 0.5;
+    float dd = length((f - o * 0.7) * sc);
+    float tw = 0.55 + 0.45 * sin(t * (0.6 + r * 1.7) + r * 40.0);
+    acc += vec3(1.0, 0.55, 0.30) * exp(-dd * dd / 3.0) * 0.55 * tw + vec3(1.0, 0.8, 0.6) * exp(-dd / 6.0) * 0.06 * tw;
+  }
+  return acc;
+}
+void main() {
+  vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
+  vec3 c = light(uv, uTime) + embers(gl_FragCoord.xy, uTime);
+  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.022;        // a fine film grain
+  gl_FragColor = vec4(c, 1.0);
+}`;
 
 // a pane: a superellipse |x/a|^n + |y/b|^n = 1 drawn from its distance field: frosted fill, ink edge, sheen, shadow
 const PANE_VS = `uniform vec2 uSize; varying vec2 vL; void main() { vL = position.xy * uSize; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
@@ -60,32 +85,40 @@ void main() {
   float d = sdf(vL), aa = 0.75;
   vec4 acc = vec4(0.0);                                 // premultiplied: each layer goes over what is below it
   #define OVER(C_, A_) acc = vec4((C_) * (A_) + acc.rgb * (1.0 - (A_)), (A_) + acc.a * (1.0 - (A_)))
-  // the shadow under it, soft and a little below (outside the pane only)
+  // the shadow under it: wide, soft and warm, a little below (outside the pane only)
   if (uShadow > 0.0) {
-    float ds = sdf(vL - vec2(0.0, 7.0));
-    float sh = uShadow * 0.20 * exp(-max(ds, 0.0) / 9.0) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(12.0, 22.0, ds));   // fades out well inside its quad: no box edge
-    OVER(vec3(0.16, 0.12, 0.08), sh);
+    float ds = sdf(vL - vec2(0.0, 9.0));
+    float sh = uShadow * 0.26 * exp(-max(ds, 0.0) / 11.0) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(14.0, 24.0, ds));   // fades out well inside its quad: no box edge
+    OVER(vec3(0.22, 0.12, 0.05), sh);
   }
-  // the glass: the light behind it, brightened and whitened, a fine light rim along its top
+  // the glass: the light behind it, frosted (brightened, a touch whitened), lighter at the top, with a bright rim
   float inside = 1.0 - smoothstep(-aa, aa, d);
+  vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
+  float ny = clamp(vL.y / (2.0 * uHalf.y) + 0.5, 0.0, 1.0);              // 0 at the top, 1 at the bottom
   if (uFill > 0.0 && inside > 0.0) {
-    vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
     vec3 behind = light(uv, uTime);
-    vec3 glass = mix(behind * 1.06 + 0.04, vec3(1.0), uFill);
-    float rim = (1.0 - smoothstep(0.0, 2.5, -d)) * clamp(0.5 - vL.y / (2.0 * uHalf.y), 0.0, 1.0);
-    glass = mix(glass, vec3(1.0), rim * 0.85);
-    OVER(glass, inside * (0.55 + 0.45 * uFill));
+    vec3 glass = mix(behind * 1.10 + 0.06, vec3(1.0), uFill);
+    glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
+    OVER(glass, inside * (0.42 + 0.48 * uFill));
+    // the bevel: a bright inner line all round, strongest along the top
+    float rim = (1.0 - smoothstep(0.6, 2.2, -d)) * inside;
+    OVER(vec3(1.0), rim * mix(0.85, 0.30, ny));
   }
-  // the ink edge
+  // the prism: the edge splits the light a little, red outside, blue inside, always faint
+  float rr = 1.0 - smoothstep(0.0, 1.4, abs(d - 1.3)), bb = 1.0 - smoothstep(0.0, 1.4, abs(d + 1.6));
+  float lit = 0.5 + 0.5 * (-vL.x / uHalf.x - vL.y / uHalf.y) * 0.5;      // the light comes from the top left
+  OVER(vec3(1.0, 0.45, 0.30), rr * 0.18 * lit * step(0.0001, uFill));
+  OVER(vec3(0.35, 0.55, 1.0), bb * 0.16 * lit * step(0.0001, uFill));
+  // the edge: a fine line in the edge colour, a little see-through so the glass reads
   float e = 1.0 - smoothstep(uEdgeW * 0.5 - aa, uEdgeW * 0.5 + aa, abs(d));
-  OVER(uEdge, e);
+  OVER(uEdge, e * (uFill > 0.0 ? 0.62 : 0.85));
   // the sheen: an iridescent light running round the edge (hovered or selected)
   if (uSheen > 0.001) {
     float ang = atan(vL.y / uHalf.y, vL.x / uHalf.x) / 6.2831853 + 0.5;
     float head = fract(uTime * 0.12);
     float k = abs(fract(ang - head + 0.5) - 0.5);
-    float w = (1.0 - smoothstep(0.0, 0.22, k)) * (1.0 - smoothstep(uEdgeW * 0.5, uEdgeW * 0.5 + 2.0, abs(d))) * uSheen;
-    OVER(hue(ang * 1.5 - uTime * 0.05) * 0.9 + 0.1, w);
+    float w = (1.0 - smoothstep(0.0, 0.24, k)) * (1.0 - smoothstep(uEdgeW * 0.5, uEdgeW * 0.5 + 2.5, abs(d))) * uSheen;
+    OVER(hue(ang * 1.5 - uTime * 0.05) * 0.85 + 0.15, w);
   }
   gl_FragColor = acc;
 }`;
@@ -214,9 +247,9 @@ function nOf(el) {
   return Math.PI;
 }
 const KINDS = [
-  { sel: ".orbit-bubble.is-group:not([hidden])", fill: 0.38, order: 10, shadow: 1 },
-  { sel: ".se-project", fill: 0.38, order: 11, shadow: 1 },
-  { sel: ".orbit-panel:not(.leaving)", fill: 0.66, order: 13, shadow: 1 },
+  { sel: ".orbit-bubble.is-group:not([hidden])", fill: 0.30, order: 10, shadow: 1 },
+  { sel: ".se-project", fill: 0.30, order: 11, shadow: 1 },
+  { sel: ".orbit-panel:not(.leaving)", fill: 0.72, order: 13, shadow: 1 },
   { sel: ".lv-node", fill: 0.45, order: 14, shadow: 0.6 },
   { sel: ".orbit-title .se-titlesuper", fill: 0.45, order: 15, shadow: 0.6 },
   { sel: ".lv-palette", fill: 0.45, order: 15, shadow: 0.6 },
@@ -248,12 +281,12 @@ function drawLoops() {
   const top = (O().fit && O().fit().py != null && g) ? O().fit().py - g.cy : 0;
   if (g && g.a) {
     const sel = html.classList.contains("se-sel-loop"), hov = html.classList.contains("se-on-loop");
-    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 3, shadow: 0, sheen: sel, order: 1, margin: 6 });
+    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 2, shadow: 0, sheen: sel, order: 1, margin: 6 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = html.classList.contains("se-on-site"), busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.06, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 0, sheen: sel || busy, order: 2, margin: 6 });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.03, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 0, sheen: sel || busy, order: 2, margin: 6 });
   }
 }
 
