@@ -45,6 +45,15 @@
   function maximize(el, back) {                                      // back: the box to go back to (a Shift + drag's start)
     if (!el || isMax(el) || (window.SeLock && window.SeLock.isLocked(el))) return;
     const r = rectOf(el), to = site(isWin(el) || isBub(el)); if (!r || !to) return;
+    // filling the inner super would take in supers outside it: it does not (owner, 2026-10-12: "to encompass the connect
+    // automatically should not happen")
+    if (window.SeHold && window.SeHold.outsiders) {
+      const outs = window.SeHold.outsiders(el), scr = site(true);
+      if (scr && window.SeHold.wouldMeet({ left: scr.x, top: scr.y, right: scr.x + scr.w, bottom: scr.y + scr.h }, outs)) {
+        if (window.SeShape && window.SeShape.note) { const b = el.getBoundingClientRect(); window.SeShape.note(b.left + b.width / 2, b.top + b.height / 2, "stops here", "filling would take in supers outside it"); }
+        return;
+      }
+    }
     saved.set(el, back ? Object.assign({}, r, back) : r);
     el.classList.add("se-max");
     if (isWin(el)) { el.seSized = true; el.userSized = true; }       // the layout leaves a window you sized alone

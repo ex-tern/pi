@@ -23,7 +23,8 @@
   const rect = el => el.getBoundingClientRect();
   const margin = r => Math.min(r.width, r.height) * 0.03;
   const within = (b, r, k, kt) => b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + (kt == null ? k : kt) && b.bottom <= r.bottom - k;
-  const topStrip = h => h.classList.contains("is-holder") ? 46 : null;   // a holder's lock and name sit at its top
+  // a holder's lock and name sit at its top: a strip that zooms with the page (zoomed out, it is smaller on screen)
+  const topStrip = h => h.classList.contains("is-holder") ? 46 * Math.max(0.25, Math.min(1, (window.PiOrbit && window.PiOrbit.fit && window.PiOrbit.fit().f) || 1)) : null;
   function hosts() {
     return [...document.querySelectorAll(HOSTS)].filter(h => h.getClientRects().length && !h.classList.contains("is-dragging") && !h.classList.contains("dragging"))
       .map(h => ({ el: h, r: rect(h) })).filter(x => x.r.width > 40 && x.r.height > 40).sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
@@ -81,5 +82,31 @@
   }
   function end(host) { drags.delete(host); }
   function shift(host, dx, dy) { move(heldBy(host), dx, dy); }
-  window.SeHold = { hosts: () => hosts().map(h => h.el), hostOf, heldBy, begin, follow, end, shift, move };
+  // growing never takes in what was outside (owner, 2026-10-12: "to encompass the connect automatically should not
+  // happen"): the supers outside el (not held by it, not holding it, not lying across it now), and how far el may grow
+  // about its centre before it would touch one of them
+  function within2(host, el) { let h = hostOf(el), k = 0; while (h && k++ < 12) { if (h === host) return true; h = hostOf(h); } return false; }
+  const ALL = ".lv-node, .orbit-bubble.is-group:not([hidden]), .se-project, .orbit-panel:not(.leaving), .orbit-title .se-titlesuper";
+  const meets = (a, b, g) => a.left < b.right + g && a.right > b.left - g && a.top < b.bottom + g && a.bottom > b.top - g;
+  function outsiders(el) {
+    if (!el) return [];
+    const r = rect(el);
+    return [...document.querySelectorAll(ALL)].filter(o => o !== el && !el.contains(o) && !o.contains(el) && o.getClientRects().length)
+      .filter(o => !within2(el, o) && !within2(o, el))
+      .filter(o => { const b = rect(o); return !(b.left <= r.left && b.right >= r.right && b.top <= r.top && b.bottom >= r.bottom) && !meets(r, b, 0); });
+  }
+  // the largest factor el may grow by about its centre and still touch none of them (Infinity when nothing is in the way)
+  function growRoom(el, outs) {
+    const r = rect(el), cx = r.left + r.width / 2, cy = r.top + r.height / 2, G = 4;
+    let s = Infinity;
+    (outs || outsiders(el)).forEach(o => {
+      const b = rect(o), dx = Math.abs(b.left + b.width / 2 - cx), dy = Math.abs(b.top + b.height / 2 - cy);
+      const sx = (2 * dx - b.width - 2 * G) / r.width, sy = (2 * dy - b.height - 2 * G) / r.height;
+      s = Math.min(s, Math.max(sx, sy, 1));
+    });
+    return s;
+  }
+  // a box (screen px) that would cover or cut into one of them
+  const wouldMeet = (box, outs) => outs.some(o => meets(box, rect(o), 2));
+  window.SeHold = { hosts: () => hosts().map(h => h.el), hostOf, heldBy, begin, follow, end, shift, move, outsiders, growRoom, wouldMeet };
 })();

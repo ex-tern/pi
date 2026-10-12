@@ -54,14 +54,19 @@ window.SUPERAI_PROGRAM = {
   // A bubble with a source holds every window that source makes; members name windows from anywhere.
   // Five bubbles at the start: Lab, Library, Tools, Explore and Connect (owner, 2026-10-12). What was in About
   // reads in Library (the papers about the project), is looked at in Explore (the numbers) or links from Connect.
-  // at: where a bubble starts (superellipse look), as an offset from the page's centre in shares of the screen:
-  // the diagram reads left to right, Connect → Tools → Explore → Library, with Lab feeding Library from below
+  // at: where a bubble starts (superellipse look): inSite, its centre in shares of the inner super from its top left
+  // (the same on every screen), else fx, fy, an offset from the page's centre in shares of the screen. The start is
+  // the owner's own layout (2026-10-12, "this should be initial state of the program"): Connect on the left, wired into
+  // the third super; in it Tools → Explore → Library along the top (data), fed by its sync, and below them Lab → the
+  // project, fed by Explore's and Library's conditions. size: a compact bubble's start size, in shares of the compact
+  // square (none now: every bubble starts square). atPhone: where it starts on a phone (two columns: Connect on top,
+  // Tools and Explore, then Library and Lab).
   bubbles: [
-    { title: "Lab", source: "lab", at: { fx: 0.132, fy: 0.262 } },
-    { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.08, fy: -0.26 } },
-    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.344, fy: -0.26 } },
-    { title: "Explore", key: "explore", members: ["Live", "The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.132, fy: -0.26 } },
-    { title: "Connect", key: "connect", at: { fx: -0.3, fy: -0.02 }, members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
+    { title: "Lab", source: "lab", at: { fx: 0.094, fy: 0.168, inSite: [0.599, 0.698] }, atPhone: { inSite: [0.73, 0.56] } },
+    { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.073, fy: -0.190, inSite: [0.424, 0.277] }, atPhone: { inSite: [0.27, 0.34] } },
+    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.333, fy: -0.190, inSite: [0.849, 0.277] }, atPhone: { inSite: [0.27, 0.56] } },
+    { title: "Explore", key: "explore", members: ["Live", "The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.151, fy: -0.190, inSite: [0.659, 0.277] }, atPhone: { inSite: [0.73, 0.34] } },
+    { title: "Connect", key: "connect", at: { fx: -0.375, fy: -0.223, inSite: [0.106, 0.239] }, atPhone: { inSite: [0.5, 0.13] }, members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
                                                  "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
 
@@ -74,15 +79,13 @@ window.SUPERAI_PROGRAM = {
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
   // and condition, as every super's are; "bubble:Title" is a bubble (a super too).
   diagram: {
-    // The central super at the start, and beside it a locked "hold shift + scroll" hint (it said "use shift+scroll" until 2026-10-12) (owner, 2026-10-12: "add this to
-    // initial state"; as a hint it is never sent to the engines); a visitor makes more supers with a double click.
+    // The start is the owner's layout (2026-10-12: "this should be initial state of the app"): no central super and no
+    // hint, only the third super holding the bubbles (a visitor makes Super AI supers with a double click).
     supers: [
       // a third super (owner, 2026-10-12: "add a third super and add everything inside it except connect"): a holder
-      // inside the inner super holding every bubble but Connect, the project, run and the hint; at.inSite is its box
-      // in shares of the inner super [x0, y0, x1, y1]; desktop only (a phone stacks the bubbles instead)
-      { id: "hold", kind: "box", text: "super", hold: true, desktop: true, n: 12, at: { inSite: [0.285, 0.02, 0.985, 0.98] } },
-      { id: "site-box", kind: "engine", at: { center: true } },
-      { id: "shift", kind: "engine", hint: "hold shift + scroll", locked: true, at: { from: "site-box", dx: 150, dy: 0 } }
+      // inside the inner super holding every bubble but Connect, and the project; at.inSite is its box in shares of the
+      // inner super [x0, y0, x1, y1]; desktop only (a phone stacks the bubbles instead)
+      { id: "hold", kind: "box", text: "super", hold: true, desktop: true, n: 12, at: { inSite: [0.310, 0.055, 0.961, 0.945] } }
     ],
     // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition);
     // "main" is the main super (the loop round everything), "title" the title super (its edge is the wire's end).
@@ -90,14 +93,29 @@ window.SUPERAI_PROGRAM = {
     // sync, the title's output into the site's sync, the site's condition into the main super's, and the side wires.
     wires: [
       ["main.sync", "site.sync"],
-      ["site.sync", "site-box.sync"],
       ["title.output", "site.sync"],
       ["site.condition", "main.condition"],
       // the side wires: the main super's input into the site's, the site's output into the main super's
       ["main.input", "site.input"],
-      ["site.output", "main.output"]
+      ["site.output", "main.output"],
+      // the site's sync into Connect and the third super; the third super's into Tools, Explore and Library (control)
+      ["site.sync", "bubble:Connect.sync"],
+      ["site.sync", "hold.sync"],
+      ["hold.sync", "bubble:Tools.sync"],
+      ["hold.sync", "bubble:Explore.sync"],
+      ["hold.sync", "bubble:Library.sync"],
+      // data: Connect into the third super, Tools → Explore → Library, Lab → the project
+      ["bubble:Connect.output", "hold.input"],
+      ["bubble:Tools.output", "bubble:Explore.input"],
+      ["bubble:Explore.output", "bubble:Library.input"],
+      ["bubble:Lab.output", "project.input"],
+      // Explore's condition into Lab, Library's into the project (control)
+      ["bubble:Explore.condition", "bubble:Lab.sync"],
+      ["bubble:Library.condition", "project.sync"]
     ]
   },
+  // where the project super starts: its top left in shares of the inner super (desktop); it starts locked (super/lock.js)
+  projectAt: { inSite: [0.746, 0.566] },
 
   // ---- Live: what the site is doing, a super inside the inner super ------------------------------------
   // live.js reads it: where its data comes from, how often, and the functions below that write its lines

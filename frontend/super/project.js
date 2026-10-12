@@ -57,7 +57,10 @@
   function compactLayout() {
     MIN = MINv();
     const vw = window.innerWidth, vh = window.innerHeight;
-    const ph = vw < 700, x = state.x != null ? state.x * vw : (ph ? 0.126 : 0.775) * vw, y = state.y != null ? state.y * vh : (ph ? 0.70 : 0.651) * vh;   // desktop: inside the third super, beside Lab
+    // where it starts: the program's projectAt.inSite (its top left in shares of the inner super, desktop), else as before
+    const pa = (((window.SuperAI || {}).program || {}).projectAt || {}).inSite, sb0 = O().siteBox ? O().siteBox() : null;
+    const ph = vw < 700, startX = !ph && pa && sb0 && sb0.a ? sb0.cx - sb0.a + pa[0] * 2 * sb0.a : (ph ? 0.126 : 0.775) * vw, startY = !ph && pa && sb0 && sb0.b ? sb0.cy - sb0.b + pa[1] * 2 * sb0.b : (ph ? 0.70 : 0.651) * vh;
+    const x = state.x != null ? state.x * vw : startX, y = state.y != null ? state.y * vh : startY;   // desktop: inside the third super, beside Lab
     const B = room();                                              // it lives inside the inner super, the second super
     const w = state.w > 40 ? state.w : MIN, h = state.h > 40 ? state.h : MIN;   // its own size once Shift + drag gave it one (super/shiftsize.js)
     return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w, h };
@@ -408,7 +411,7 @@
       el._pjDrag = false;
       if (window.SeHold) window.SeHold.end(el);
       if (!moved) return;
-      if (ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y)) { goAway(); return; }   // dropped outside the inner super: gone on purpose
+      if (ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y)) { if (window.SeSave && window.SeSave.isSaved(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(ev2x, ev2y, "saved", "unsave it to delete it"); } else { goAway(); return; } }   // dropped outside the inner super: gone on purpose
       settleFree(); save(state);
       document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves
     };

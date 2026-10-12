@@ -306,8 +306,16 @@
     return "M" + f(p[0]) + "," + f(p[1]) + "C" + f(p[0]) + "," + f(p[1] + da * c) + " " + f(q[0]) + "," + f(q[1] + db * c) + " " + f(q[0]) + "," + f(q[1]);
   }
   function curve(p, q, a, b) {
-    const titled = (a && a.h === "title") || (b && b.h === "title");   // the title's wire keeps its straight stretch for the π digits
-    if (!titled && (kindOf(a) === "ctl" || kindOf(b) === "ctl")) return ctlCurve(p, q, a, b);
+    // the title's wire into a sync is curvy too (owner, 2026-10-12: "because this line is connected to sync should be
+    // curvy"): level out of the title's side, then one smooth bend into the port from above or below; the π digits ride it
+    const ta = a && a.h === "title", tb = b && b.h === "title";
+    if ((ta && kindOf(b) === "ctl") || (tb && kindOf(a) === "ctl")) {
+      const f = v => v.toFixed(1), dx = q[0] - p[0], dy = q[1] - p[1];
+      if (ta) { const k = Math.max(30, Math.abs(dy) * 0.9) * (dy >= 0 ? 1 : -1); return "M" + f(p[0]) + "," + f(p[1]) + "C" + f(p[0] + dx * 0.62) + "," + f(p[1]) + " " + f(q[0]) + "," + f(q[1] - k) + " " + f(q[0]) + "," + f(q[1]); }
+      const k = Math.max(30, Math.abs(dy) * 0.9) * (dy >= 0 ? -1 : 1);
+      return "M" + f(p[0]) + "," + f(p[1]) + "C" + f(p[0]) + "," + f(p[1] - k) + " " + f(q[0] - dx * 0.62) + "," + f(q[1]) + " " + f(q[0]) + "," + f(q[1]);
+    }
+    if (kindOf(a) === "ctl" || kindOf(b) === "ctl") return ctlCurve(p, q, a, b);
     // side to side (input, output): never curvy (owner, 2026-10-12: "side to side shouldnt be curvy"): out level, one
     // straight run across, in level, with small superellipse corners, as a flow language routes it
     if ((kindOf(a) === "data" || kindOf(b) === "data") && se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], true, null);

@@ -290,7 +290,7 @@
       it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
       it.gone = merged() && !!load("orbit:gone:" + it.key);
       // a bubble starts where the program puts it (pitechlab.super.js bubbles: at), in the superellipse look
-      if (!it.custom && it.group && merged()) { const pb = PROGRAM.bubbles.find(b => b.title === it.title); if (pb && pb.at) it.custom = { fx: +pb.at.fx || 0, fy: +pb.at.fy || 0 }; }
+      if (!it.custom && it.group && merged()) { const pb0 = PROGRAM.bubbles.find(b => b.title === it.title), pb = pb0 && window.innerWidth < 700 && pb0.atPhone ? Object.assign({}, pb0, { at: pb0.atPhone }) : pb0; if (pb && pb.at) it.custom = pb.at.inSite ? { fx: +pb.at.fx || 0, fy: +pb.at.fy || 0, inSite: pb.at.inSite.slice(0, 2) } : { fx: +pb.at.fx || 0, fy: +pb.at.fy || 0 }; }
       store("orbit:pos:" + it.key); store("orbit:at:" + it.key);   // older formats
       wireDrag(it);
       if (rich) b.addEventListener("keydown", e => { if ((e.key === "Enter" || e.key === " ") && e.target === b) { e.preventDefault(); openItem(it); } });
@@ -551,6 +551,10 @@
   // Place every visible pill without overlap. Returns how many found no room.
   function placePills(vis, toKeep) {
     const g = GAP();
+    // a start given in shares of the inner super (the program's at.inSite: its centre, from the inner super's top left)
+    // becomes an offset from the mark once the inner super is laid out, so it lands the same on every screen
+    { const sb = siteBox();
+      if (sb && sb.a > 0 && W > 0) vis.forEach(it => { const c = it.custom; if (c && c.inSite) { it.custom = { fx: +((sb.cx - sb.a + c.inSite[0] * 2 * sb.a - lx) / W).toFixed(4), fy: +((sb.cy - sb.b + c.inSite[1] * 2 * sb.b - top - ly) / H).toFixed(4) }; } }); }
     const placed = obstacles();
     vis.forEach(it => { it.at = null; });
     // 1. Every pill that has a place keeps it. Only a pill whose place is taken
@@ -745,7 +749,9 @@
       if (!moved) return;                 // a click: handled by the click event
       // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
       // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
-      if (merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY)) {
+      const savedB = !!(window.SeSave && window.SeSave.isSaved(b));       // a saved bubble is never gone (super/save.js): it comes back inside
+      if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY) && window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "saved", "unsave it to delete it");
+      if (!savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY)) {
         it.gone = true; store("orbit:gone:" + it.key, 1); dragging = null; settlePushes = true;
         b.dataset.justDragged = "1"; setTimeout(() => delete b.dataset.justDragged, 0);
         layout();

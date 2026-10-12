@@ -20,29 +20,39 @@ const O = () => window.PiOrbit || {};
 // ---------------------------------------------------------------- shaders
 // the light behind the glass: soft warm and cool glows drifting slowly (the same function lights the panes)
 const LIGHT = `
+uniform float uNight;                                                     // 0 by day, 1 by night (the visitor's own clock)
 // sunshine through glass (owner, 2026-10-12: "make background so sunshines like this glasses", a photo of an evening
 // sky): a cool grey-blue overcast above, a warm peach glow along a low horizon, a low sun to the right of the middle
 // whose golden light rakes across the page in soft slanting rays, a light vignette; the panes show it through their
 // frost (the same function lights them), so the sun shines in the glass
 // where the sun is, in the page's uv (0,0 top left): low, to the right of the middle, drifting very slowly
-vec2 sunAt(float t) { return vec2(0.68 + 0.01 * sin(t * 0.02), 0.74 + 0.006 * sin(t * 0.03) - 0.035); }
+vec2 sunAt(float t) { return mix(vec2(0.68 + 0.01 * sin(t * 0.02), 0.74 + 0.006 * sin(t * 0.03) - 0.035), vec2(0.74 + 0.006 * sin(t * 0.015), 0.20), uNight); }   // by night, the moon high on the right
+// the light's own colour on the glass: gold by day, a cool silver by night
+vec3 tint(vec3 warm) { return mix(warm, vec3(0.78, 0.85, 1.0) * (0.55 + 0.45 * dot(warm, vec3(0.333))), uNight); }
 vec3 light(vec2 uv, float t) {
   float a = uRes.x / uRes.y;
   vec2 v = (uv - 0.5) * vec2(a, 1.0);
   float y = uv.y;                                                          // 0 at the top, 1 at the bottom
-  vec3 sky = mix(vec3(0.80, 0.83, 0.87), vec3(0.91, 0.90, 0.89), smoothstep(0.0, 0.62, y));
+  // by day (less bright, owner, 2026-10-12: "make it less brighter"): a grey-blue overcast, a soft peach horizon
+  vec3 sky = mix(vec3(0.77, 0.80, 0.84), vec3(0.87, 0.86, 0.85), smoothstep(0.0, 0.62, y));
   float hz = 0.74 + 0.006 * sin(t * 0.03);                                 // the horizon, low on the page
   float band = exp(-pow((y - hz) / 0.075, 2.0));
-  vec3 c = mix(sky, vec3(0.99, 0.87, 0.72), 0.85 * band);                  // the peach glow along it
-  c = mix(c, vec3(0.95, 0.89, 0.79), smoothstep(hz, 1.0, y) * 0.9);        // warm ground light below it
-  // the low sun, drifting very slowly, and its glow
+  vec3 c = mix(sky, vec3(0.95, 0.84, 0.71), 0.60 * band);                  // the peach glow along it
+  c = mix(c, vec3(0.90, 0.85, 0.77), smoothstep(hz, 1.0, y) * 0.9);        // warm ground light below it
+  // by night: a deep blue-grey sky, a faint cool band where the horizon is, a darker ground
+  vec3 nsky = mix(vec3(0.17, 0.20, 0.27), vec3(0.25, 0.28, 0.35), smoothstep(0.0, 0.70, y));
+  nsky = mix(nsky, vec3(0.33, 0.36, 0.44), 0.45 * band);
+  nsky = mix(nsky, vec3(0.20, 0.21, 0.25), smoothstep(hz, 1.0, y) * 0.8);
+  c = mix(c, nsky, uNight);
+  // the low sun (by night the moon, high), drifting very slowly, and its glow
   vec2 sp = (sunAt(t) - 0.5) * vec2(a, 1.0);
   vec2 d = v - sp; float r = length(d);
-  c += vec3(1.0, 0.80, 0.52) * (0.22 * exp(-r * r / 0.012) + 0.16 * exp(-r / 0.32));
-  // rays fanning out of it, slanting across the page, breathing slowly
+  c += mix(vec3(1.0, 0.80, 0.52) * (0.12 * exp(-r * r / 0.012) + 0.09 * exp(-r / 0.32)),
+           vec3(0.86, 0.90, 1.0) * (0.85 * (1.0 - smoothstep(0.022, 0.026, r)) + 0.16 * exp(-r * r / 0.01) + 0.07 * exp(-r / 0.30)), uNight);
+  // rays fanning out of it, slanting across the page, breathing slowly (fainter, and fainter still by moonlight)
   float ang = atan(d.y, d.x);
   float rays = 0.5 + 0.5 * sin(ang * 23.0 + t * 0.06) * sin(ang * 9.0 - t * 0.045);
-  c += vec3(1.0, 0.84, 0.60) * 0.085 * pow(rays, 3.0) * exp(-r / 0.55) * smoothstep(0.03, 0.2, r);
+  c += tint(vec3(1.0, 0.84, 0.60)) * mix(0.05, 0.016, uNight) * pow(rays, 3.0) * exp(-r / 0.55) * smoothstep(0.03, 0.2, r);
   // a light vignette toward the edges ("add light vignette")
   c *= 1.0 - 0.10 * smoothstep(0.38, 1.05, length(v));
   return min(c, vec3(1.0));
@@ -75,9 +85,12 @@ void main() {
   float cl = 0.5 * vn(q) + 0.3 * vn(q * 2.1 + 3.7) + 0.2 * vn(q * 4.3 - 1.9);
   float sky = 1.0 - smoothstep(0.55, 0.76, uv.y);
   float mass = smoothstep(0.36, 0.70, cl) * sky;
-  vec3 cloud = mix(vec3(0.70, 0.73, 0.78), vec3(0.97, 0.88, 0.76), smoothstep(0.35, 0.72, uv.y));
+  vec3 cloud = mix(mix(vec3(0.68, 0.71, 0.76), vec3(0.92, 0.84, 0.74), smoothstep(0.35, 0.72, uv.y)), vec3(0.28, 0.31, 0.38), uNight);   // by night, dark clouds
   c = mix(c, cloud, 0.68 * mass);
-  c += vec3(1.0, 1.0, 0.98) * 0.10 * smoothstep(0.30, 0.10, abs(cl - 0.42)) * sky * (1.0 - mass);   // bright gaps
+  c += mix(vec3(1.0, 1.0, 0.98) * 0.07, vec3(0.70, 0.78, 0.95) * 0.06, uNight) * smoothstep(0.30, 0.10, abs(cl - 0.42)) * sky * (1.0 - mass);   // bright gaps (silver by moonlight)
+  // stars by night, where no cloud is
+  { vec2 g = gl_FragCoord.xy / 3.0; float st = step(0.9975, h21(floor(g))) * (0.6 + 0.4 * sin(uTime * 0.7 + h21(floor(g) + 5.0) * 30.0));
+    c += vec3(0.85, 0.9, 1.0) * st * 0.55 * uNight * sky * (1.0 - mass); }
   c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;
   gl_FragColor = vec4(c, 1.0);
 }`;
@@ -124,12 +137,12 @@ void main() {
   vec2 toSunPx = (sunAt(uTime) - uv) * uRes;
   float sunD = length(toSunPx) / uRes.y;
   vec2 toSun = toSunPx / max(length(toSunPx), 1e-3);
-  float sunK = 0.45 + 0.55 * exp(-sunD / 0.55);                            // nearer the sun, stronger
+  float sunK = (0.45 + 0.55 * exp(-sunD / 0.55)) * mix(0.62, 0.45, uNight);   // nearer the sun, stronger; softer overall (owner: "make it less brighter")
   vec2 nrm = normalize(vec2(sdf(vL + vec2(1.5, 0.0)) - sdf(vL - vec2(1.5, 0.0)), sdf(vL + vec2(0.0, 1.5)) - sdf(vL - vec2(0.0, 1.5))) + 1e-5);
   float facing = max(dot(nrm, toSun), 0.0), away = max(-dot(nrm, toSun), 0.0);
   if (uFill > 0.0 && inside > 0.0) {
     vec3 behind = light(uv, uTime);
-    vec3 glass = mix(behind * 0.985, vec3(1.0), uFill);
+    vec3 glass = mix(behind * 0.985, vec3(1.0), uFill + (1.0 - uFill) * 0.42 * uNight);   // by night the frost is lit by the moon: light enough to read on
     glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
     OVER(glass, inside * (0.42 + 0.48 * uFill));
     // the others, reflected: each neighbour's light glows into the glass along the edge facing it, and its edge
@@ -161,17 +174,17 @@ void main() {
     vec2 fromSun = -toSunPx;
     float ang = atan(fromSun.y, fromSun.x);
     float rays = 0.5 + 0.5 * sin(ang * 23.0 + uTime * 0.06) * sin(ang * 9.0 - uTime * 0.045);
-    OVER(vec3(1.0, 0.86, 0.60), inside * 0.16 * pow(rays, 4.0) * sunK);
+    OVER(tint(vec3(1.0, 0.86, 0.60)), inside * 0.16 * pow(rays, 4.0) * sunK);
     // a warm wash over the side facing the sun, fading across the pane
     float side = clamp(dot(vL / max(uHalf, vec2(1.0)), toSun) * 0.5 + 0.5, 0.0, 1.0);
-    OVER(vec3(1.0, 0.88, 0.66), inside * 0.14 * side * side * sunK);
+    OVER(tint(vec3(1.0, 0.88, 0.66)), inside * 0.14 * side * side * sunK);
     // the light gathered at the far inner edge, as a lens focuses it (a soft caustic)
     float depthIn = max(-d, 0.0);
-    OVER(vec3(1.0, 0.82, 0.52), inside * 0.30 * pow(away, 3.0) * (1.0 - smoothstep(0.0, 16.0, depthIn)) * smoothstep(0.5, 3.0, depthIn) * sunK);
+    OVER(tint(vec3(1.0, 0.82, 0.52)), inside * 0.30 * pow(away, 3.0) * (1.0 - smoothstep(0.0, 16.0, depthIn)) * smoothstep(0.5, 3.0, depthIn) * sunK);
     // the gold rim where the sun strikes the edge, and a bright glint where it catches square on
     float band = 1.0 - smoothstep(1.0, 8.0, depthIn);
-    OVER(vec3(1.0, 0.74, 0.36), inside * band * 0.85 * pow(facing, 1.6) * sunK);
-    OVER(vec3(1.0, 0.97, 0.86), inside * (1.0 - smoothstep(0.5, 4.0, depthIn)) * pow(facing, 14.0) * sunK);
+    OVER(tint(vec3(1.0, 0.74, 0.36)), inside * band * 0.85 * pow(facing, 1.6) * sunK);
+    OVER(tint(vec3(1.0, 0.97, 0.86)), inside * (1.0 - smoothstep(0.5, 4.0, depthIn)) * pow(facing, 14.0) * sunK);
   }
   // the prism: the edge splits the light a little, red outside, blue inside, always faint
   float rr = 1.0 - smoothstep(0.0, 1.4, abs(d - 1.3)), bb = 1.0 - smoothstep(0.0, 1.4, abs(d + 1.6));
@@ -179,10 +192,10 @@ void main() {
   OVER(vec3(1.0, 0.45, 0.30), rr * 0.18 * lit * step(0.0001, uFill));
   OVER(vec3(0.35, 0.55, 1.0), bb * 0.16 * lit * step(0.0001, uFill));
   // the sun spilling past the lit edge, a soft gold halo just outside it
-  if (uFill > 0.0) OVER(vec3(1.0, 0.78, 0.42), step(0.0, d) * (1.0 - smoothstep(0.0, 9.0, d)) * pow(facing, 2.0) * 0.40 * sunK);
+  if (uFill > 0.0) OVER(tint(vec3(1.0, 0.78, 0.42)), step(0.0, d) * (1.0 - smoothstep(0.0, 9.0, d)) * pow(facing, 2.0) * 0.40 * sunK);
   // the edge: a fine line in the edge colour, a little see-through so the glass reads
   float e = 1.0 - smoothstep(uEdgeW * 0.5 - aa, uEdgeW * 0.5 + aa, abs(d));
-  OVER(mix(uEdge, vec3(0.62, 0.40, 0.12), 0.55 * pow(facing, 2.0) * sunK * step(0.0001, uFill)), e * (uFill > 0.0 ? 0.92 : 0.95));   // a dark edge on paper, warmed to bronze where the sun strikes it
+  OVER(mix(uEdge, tint(vec3(0.62, 0.40, 0.12)), 0.55 * pow(facing, 2.0) * sunK * step(0.0001, uFill)), e * (uFill > 0.0 ? 0.92 : 0.95));   // a dark edge on paper, warmed to bronze where the sun strikes it
   // the sheen: an iridescent light running round the edge (hovered or selected)
   if (uSheen > 0.001) {
     float ang = atan(vL.y / uHalf.y, vL.x / uHalf.x) / 6.2831853 + 0.5;
@@ -214,7 +227,8 @@ void main() { vec2 q = abs(vU); float s = pow(q.x, 0.62) + pow(q.y, 0.62); float
 // ---------------------------------------------------------------- the scene
 let slowCheck = true, frameTimes = [];
 let renderer, scene, camera, bg, sparks, raf = 0, W = 0, H = 0, dpr = 1, t0 = performance.now(), failed = false;
-const uRes = { value: new THREE.Vector2(1, 1) }, uTime = { value: 0 };
+const uRes = { value: new THREE.Vector2(1, 1) }, uTime = { value: 0 }, uNight = { value: 0 };
+document.addEventListener("se:sky", () => { uNight._t = -99; });           // dark mode switched, or the hour turned: look again now
 const panes = new Map(), wires = new Map();
 const quad = new THREE.PlaneGeometry(1, 1);
 let tokens = { ink: new THREE.Color("#191919"), cobalt: new THREE.Color("#2f40e8"), hint: new THREE.Color("#8f97d8"), graphite: new THREE.Color("#6e6e6a"), hair: new THREE.Color("#c9c9c4") }, tokensAt = 0;
@@ -256,7 +270,7 @@ function start() {
   document.body.prepend(cv);
   scene = new THREE.Scene();
   camera = new THREE.OrthographicCamera(0, 1, 0, 1, -100, 100);
-  bg = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: BG_VS, fragmentShader: BG_FS, uniforms: { uRes, uTime }, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
+  bg = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: BG_VS, fragmentShader: BG_FS, uniforms: { uRes, uTime, uNight }, depthTest: false, depthWrite: false, side: THREE.DoubleSide }));
   bg.renderOrder = 0; scene.add(bg);
   const sg = new THREE.PlaneGeometry(1, 1);
   sg.setAttribute("aColor", new THREE.InstancedBufferAttribute(new Float32Array(600 * 3), 3));
@@ -291,7 +305,7 @@ const PANE_M = 40;                                       // room round a pane fo
 function paneMesh(key) {
   let m = panes.get(key);
   if (!m) {
-    const u = { uRes, uTime, uSize: { value: new THREE.Vector2(1, 1) }, uHalf: { value: new THREE.Vector2(1, 1) }, uN: { value: Math.PI }, uFill: { value: 0.4 },
+    const u = { uRes, uTime, uNight, uSize: { value: new THREE.Vector2(1, 1) }, uHalf: { value: new THREE.Vector2(1, 1) }, uN: { value: Math.PI }, uFill: { value: 0.4 },
       uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uLift: { value: 0.5 }, uDpr: { value: 1 },
       uNb: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) }, uNbN: { value: 0 } };
     m = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: PANE_FS, uniforms: u, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, premultipliedAlpha: true }));
@@ -526,6 +540,7 @@ function frame() {
   try {
     if (performance.now() - tokensAt > 3000) readTokens();
     uTime.value = (performance.now() - t0) / 1000;
+    if (!(uTime.value - (uNight._t || -99) < 30)) { uNight._t = uTime.value; uNight.value = window.SeSky ? window.SeSky.night() : 0; }   // the sky by the visitor's clock, looked at every 30 s
     drawLoops(); drawWires(); drawPanes(); drawSparks();
     sweep(panes); sweep(wires);
     const t1 = performance.now();

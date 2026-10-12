@@ -12,7 +12,17 @@
 <!-- The look is decided before the first paint: the orbit layout is always on (orbit.js builds it), and
      the superellipse look on se.<domain> / super.<domain> or with ?shape=se (channel.js confirms it later
      from /api/build). Without this the classic page showed for a moment on every load. -->
-<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se")){h.classList.add("se-boot");try{var S="3";if(localStorage.getItem("se:start")!==S){Object.keys(localStorage).filter(function(k){return /^(lv:|orbit:|se:)/.test(k)}).forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("se:start",S)}}catch(e){}}})(document.documentElement);</script>
+<script>(function(h){
+  // sunshine by day, moonshine by night, by the visitor's own clock and time zone (owner, 2026-10-12): SeSky.night() is
+  // 0 by day, 1 by night, gliding at dawn (6:00 to 7:30) and dusk (18:30 to 20:00); ?sky=day or ?sky=night to try one
+  var m=/[?&]sky=(day|night)\b/.exec(location.search);
+  // and the system's dark mode (owner, 2026-10-12: "timezone and darkmode of the system"): dark mode is always night
+  var dm=window.matchMedia?matchMedia("(prefers-color-scheme: dark)"):null;
+  function night(){if(m)return m[1]==="night"?1:0;if(dm&&dm.matches)return 1;var d=new Date(),x=d.getHours()+d.getMinutes()/60,s=function(a,b){var t=Math.min(1,Math.max(0,(x-a)/(b-a)));return t*t*(3-2*t)};return x<12?1-s(6,7.5):s(18.5,20)}
+  function mark(){var n=night();h.style.setProperty("--night",n.toFixed(3));h.classList.toggle("se-night",n>0.5);document.dispatchEvent(new CustomEvent("se:sky"))}
+  window.SeSky={night:night};mark();setInterval(mark,60000);if(dm&&dm.addEventListener)dm.addEventListener("change",mark);
+})(document.documentElement);</script>
+<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se")){try{document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(function(l){l.href="super/icon.svg"})}catch(e){}h.classList.add("se-boot");try{var S="5";if(localStorage.getItem("se:start")!==S){Object.keys(localStorage).filter(function(k){return /^(lv:|orbit:|se:)/.test(k)}).forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("se:start",S)}}catch(e){}}})(document.documentElement);</script>
 <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=96">
 <link rel="stylesheet" href="theme.css?v=1">
@@ -22,12 +32,12 @@
 <link rel="stylesheet" href="facemace.css?v=1">
 <link rel="stylesheet" href="medicine/view.css?v=2">
 <link rel="stylesheet" href="live.css?v=3">
-<link rel="stylesheet" href="super/super.css?v=86">
+<link rel="stylesheet" href="super/super.css?v=87">
 <link rel="stylesheet" href="super/nodes.css?v=17">
 <link rel="stylesheet" href="traffic.css?v=2">
 <link rel="stylesheet" href="superprompt.css?v=1">
 <link rel="stylesheet" href="super/project.css?v=10">
-<link rel="stylesheet" href="super/glass.css?v=13">
+<link rel="stylesheet" href="super/glass.css?v=14">
 <script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
 <script src="https://cdnjs.cloudflare.com/ajax/libs/animejs/3.2.1/anime.min.js"></script>
@@ -1071,13 +1081,13 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="lab.js?v=90"></script>
 <script src="channel.js?v=2"></script>
 <script src="super/loop.js?v=28"></script>
-<script src="super/pitechlab.super.js?v=106"></script>
+<script src="super/pitechlab.super.js?v=109"></script>
 <script src="super/runtime.js?v=5"></script>
 <script src="super/superai-rs.js?v=5"></script>
 <script src="super/zoombox.js?v=9"></script>
 <script src="super/legible.js?v=9"></script>
 <script src="super/squircle.js?v=7"></script>
-<script src="orbit.js?v=117"></script>
+<script src="orbit.js?v=121"></script>
 <script src="pien.js?v=10"></script>
 <script src="numbers.js?v=3"></script>
 <script src="capabilities.js?v=13"></script>
@@ -1093,29 +1103,30 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="medicine.js?v=3"></script>
 <script src="live.js?v=4"></script>
 <script src="super/bubble.js?v=14"></script>
-<script src="super/lock.js?v=10"></script>
+<script src="super/lock.js?v=12"></script>
 <script src="super/chain.js?v=1"></script>
+<script src="super/save.js?v=1"></script>
 <script src="traffic.js?v=2"></script>
 <!-- the superellipse superlattice (super.pitechlab.com), one concern per file: see DESIGN.md -->
 <script src="super/logo.js?v=5"></script>
 <script src="super/motion.js?v=3"></script>
 <script src="super/select.js?v=10"></script>
 <script src="super/shape.js?v=11"></script>
-<script src="super/nodes.js?v=146"></script>
-<script src="super/wire.js?v=23"></script>
+<script src="super/nodes.js?v=148"></script>
+<script src="super/wire.js?v=25"></script>
 <script src="super/move.js?v=3"></script>
 <script src="super/site.js?v=18"></script>
 <script src="super/scroll.js?v=41"></script>
 <script src="super/hover.js?v=9"></script>
 <script src="superprompt.js?v=1"></script>
-<script src="super/project.js?v=26"></script>
-<script type="module" src="super/engine.js?v=27"></script>
+<script src="super/project.js?v=28"></script>
+<script type="module" src="super/engine.js?v=29"></script>
 <script src="super/boot.js?v=2"></script>
 <script src="super/shapehud.js?v=5"></script>
-<script src="super/shiftsize.js?v=6"></script>
-<script src="super/hold.js?v=6"></script>
-<script src="super/maximize.js?v=3"></script>
-<script src="super/delete.js?v=2"></script>
+<script src="super/shiftsize.js?v=8"></script>
+<script src="super/hold.js?v=8"></script>
+<script src="super/maximize.js?v=4"></script>
+<script src="super/delete.js?v=3"></script>
 <script src="arcade.js?v=93"></script>
 </body>
 </html>

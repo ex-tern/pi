@@ -641,3 +641,15 @@ html.shape-se .sl-data .wire-bed, html.shape-se .sl-wire.sl-data .wire-bed { str
 html.shape-se .sl-data .wire-term { fill: var(--wt); }
 html.shape-se .sl-data[data-type="list"] .wire-bed { stroke-width: 5.4; }
 html.shape-se .om-site .om-lattice { stroke-width: 3.6; }
+
+/* the save icon (super/save.js): beside the chain, the same pen; saved, the disk is inked in. The delete/keep
+   confirmation is gone (owner, 2026-10-12: "remove these instead add a save icon next to the lock") */
+html.shape-se .se-save { left: calc(50% + 37px); }
+html.shape-se .lv-node:not(.is-holder) > .se-save { left: calc(50% + 25px); }
+html.shape-se .orbit-title .se-titlesuper > .se-save { left: calc(50% + 22px); }
+html.shape-se .se-save .sv-body, html.shape-se .se-save .sv-label, html.shape-se .se-save .sv-slot { fill: none; stroke: var(--ink); stroke-width: 1.1; stroke-linejoin: round; }
+html.shape-se .se-save .lk-body, html.shape-se .se-save .lk-shackle { display: none; }
+html.shape-se .is-saved > .se-save { opacity: 1; }
+html.shape-se .is-saved > .se-save .sv-body { fill: var(--ink); }
+html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save .sv-slot { stroke: var(--paper); }
+html.shape-se .is-locked:not(.is-saved) > .se-save { opacity: 0.35; }

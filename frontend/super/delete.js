@@ -1,7 +1,6 @@
-// super/delete.js: a double click on any super deletes it, unless it is locked, after a confirmation (owner,
-// 2026-10-12: "any super can be deleted by double click if it is not locked. ask for a confirmation before deleting
-// by showing a square or sparkle supers"). Beside the super two small supers appear: a square that deletes it and a
-// sparkle that keeps it (Escape, or a press anywhere else, keeps it too).
+// super/delete.js: a double click on any super deletes it at once, unless it is locked or saved (owner, 2026-10-12:
+// "any super can be deleted by double click if it is not locked"; the confirmation, a square "delete" and a sparkle
+// "keep", gave way to the save icon beside the lock: "remove these instead add a save icon next to the lock").
 //
 // A Super AI super or a holder (with what it holds) fades away with its wires; a bubble or the project super is gone
 // until the app is reset; a window closes. The central super, the title, the main and second supers are not deleted.
@@ -32,23 +31,15 @@
     else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.remove) window.SeProject.remove(); }
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Deleted " + nameOf(el);
   }
-  let box = null, target = null;
-  function close() { if (box) box.remove(); box = null; if (target) target.classList.remove("se-deleting"); target = null; }
+  // no confirmation any more (owner, 2026-10-12: "remove these instead add a save icon next to the lock"): an unsaved,
+  // unlocked super is deleted at once; a saved one (super/save.js) or a locked one stays, and says why
   function ask(el, x, y) {
-    close();
-    target = el; el.classList.add("se-deleting");
-    box = document.createElement("div");
-    box.className = "se-confirm"; box.setAttribute("role", "dialog"); box.setAttribute("aria-label", "Delete " + nameOf(el) + "?");
-    box.innerHTML = '<button type="button" class="se-cf se-cf-del" aria-label="Delete it"><span>delete</span></button>' +
-                    '<button type="button" class="se-cf se-cf-keep" aria-label="Keep it"><span>keep</span></button>';
-    document.body.appendChild(box);
-    const W = window.innerWidth, H = window.innerHeight, w = box.offsetWidth || 150, h = box.offsetHeight || 70;
-    box.style.left = Math.min(W - w - 8, Math.max(8, x + 12)) + "px";
-    box.style.top = Math.min(H - h - 8, Math.max(8, y - h - 12)) + "px";
-    box.querySelector(".se-cf-del").addEventListener("click", e => { e.stopPropagation(); const t = target; close(); if (t) remove(t); });
-    box.querySelector(".se-cf-keep").addEventListener("click", e => { e.stopPropagation(); close(); });
-    setTimeout(() => box && box.querySelector(".se-cf-keep").focus({ preventScroll: true }), 30);
+    if (!el) return;
+    if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "locked", "unlock it to delete it"); return; }
+    if (window.SeSave && window.SeSave.isSaved(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "saved", "unsave it to delete it"); return; }
+    remove(el);
   }
+  const close = () => {};
   let pressT = null;                                                   // where the press was (a holder captures presses on its bare space)
   document.addEventListener("pointerdown", e => { pressT = e.target; }, true);
   document.addEventListener("dblclick", e => {
@@ -56,10 +47,7 @@
     const t = (e.target.classList && e.target.classList.contains("is-holder") && pressT && pressT.closest && !pressT.closest(".lv-node")) ? pressT : e.target;
     const el = superAt(t); if (!el) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to delete it"); return; }
     ask(el, e.clientX, e.clientY);
   }, true);
-  document.addEventListener("pointerdown", e => { if (box && !box.contains(e.target)) close(); }, true);
-  document.addEventListener("keydown", e => { if (box && e.key === "Escape") { e.preventDefault(); close(); } }, true);
   window.SeDelete = { ask, close };
 })();

@@ -38,7 +38,9 @@
     // to resize doesnt work properly": it always grew to the right and down, whichever side you took)
     const r = el.getBoundingClientRect(), sx = e.clientX >= r.left + r.width / 2 ? 1 : -1, sy = e.clientY >= r.top + r.height / 2 ? 1 : -1;
     const node0 = el.classList.contains("lv-node") && window.LabView && window.LabView.rectOf ? window.LabView.rectOf(el) : null;
-    drag = { el, x0: e.clientX, y0: e.clientY, w0: node0 ? node0.w : el.offsetWidth, h0: node0 ? node0.h : el.offsetHeight, f, id: e.pointerId, sx, sy, node0, left0: el.offsetLeft, top0: el.offsetTop };
+    const outs = window.SeHold && window.SeHold.outsiders ? window.SeHold.outsiders(el) : [];   // what it may not grow over
+    drag = { outs, el, x0: e.clientX, y0: e.clientY, w0: node0 ? node0.w : el.offsetWidth, h0: node0 ? node0.h : el.offsetHeight, f, id: e.pointerId, sx, sy, node0, left0: el.offsetLeft, top0: el.offsetTop };
+    drag.good = { x: node0 ? node0.x : 0, y: node0 ? node0.y : 0, w: drag.w0, h: drag.h0, sw: el.style.width, sh: el.style.height, sl: el.style.left, st: el.style.top };   // where it may go back to
     html.classList.add("se-shift-sizing");
     try { el.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
   }, true);
@@ -68,6 +70,16 @@
     } else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.resize) window.SeProject.resize(w, h); }
     else if (el.classList.contains("se-titlesuper")) { el.style.width = Math.round(w) + "px"; el.style.height = Math.round(h) + "px"; }
     else sizeBubble(el, w, h);
+    // it never grows over a super outside it (owner, 2026-10-12): a step that would is taken back
+    const nb = el.getBoundingClientRect();
+    if (drag.outs.length && window.SeHold.wouldMeet({ left: nb.left, top: nb.top, right: nb.right, bottom: nb.bottom }, drag.outs) && drag.good) {
+      const g = drag.good;
+      if (el.classList.contains("lv-node") && window.LabView.setRect && drag.node0) window.LabView.setRect(el, g.x, g.y, g.w, g.h);
+      else { el.style.width = g.sw; el.style.height = g.sh; el.style.left = g.sl; el.style.top = g.st; if (el.classList.contains("se-project") && window.SeProject && window.SeProject.resize) window.SeProject.resize(g.w, g.h); }
+      if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "stops here", "it grows over no super outside it");
+      return;
+    }
+    drag.good = { x: window.LabView && window.LabView.rectOf && el.classList.contains("lv-node") ? window.LabView.rectOf(el).x : 0, y: window.LabView && window.LabView.rectOf && el.classList.contains("lv-node") ? window.LabView.rectOf(el).y : 0, w, h, sw: el.style.width, sh: el.style.height, sl: el.style.left, st: el.style.top };
     if (window.SeShape) window.SeShape.size && window.SeShape.size(e.clientX, e.clientY, Math.round(w), Math.round(h));
     document.dispatchEvent(new CustomEvent("se:frame"));
   }, true);
@@ -99,7 +111,17 @@
       b._sqState = state;
       const v = load(keyOf(b) + (compact ? "" : ":open"));
       if (v) sizeBubble(b, v.w, v.h);
-      else if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); }
+      else {
+        if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); }
+        // the program's start size for a compact bubble (bubbles: size { kw, kh }, shares of the compact square)
+        const t = (b.querySelector(":scope > .ob-label") || {}).textContent, pb = compact && t && ((((window.SuperAI || {}).program || {}).bubbles) || []).find(x => x.title === t.trim());
+        if (pb && pb.size && pb.size.kw && window.innerWidth >= 700) {
+          // shares of the compact square, tied to it (--se-compact), so it follows the square's size as that settles
+          b.style.width = "calc(var(--se-compact, 104px) * var(--pill-fit, 1) * " + (+pb.size.kw) + ")";
+          b.style.height = "calc(var(--se-compact, 104px) * var(--pill-fit, 1) * " + (+(pb.size.kh || 1)) + ")";
+          b.classList.add("se-sized");
+        }
+      }
     });
   }
   document.addEventListener("orbit:ready", () => { restore(); if (O().layout) O().layout(); });

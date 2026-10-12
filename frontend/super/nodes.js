@@ -806,7 +806,7 @@
     const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
     const who = e => String(e).slice(0, String(e).lastIndexOf("."));
-    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "main" || who(e) === "title" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
+    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "main" || who(e) === "title" || who(e) === "project" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
     const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(known)) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
@@ -849,6 +849,7 @@
     if (w === "site") return { h: "port:" + port, el: 1 };
     if (w === "main") return { h: "port:main/" + port, el: 1 };
     if (w === "title") return { h: "title", el: 1 };
+    if (w === "project") return document.querySelector(".se-project") ? { h: "port:project/" + port, el: 1 } : null;   // the project super's ports (super/site.js)
     if (w.startsWith("bubble:")) {
       const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === w.slice(7));
       return b ? { h: "port:bubble:" + b.dataset.key + "/" + port, el: 1 } : null;
@@ -1144,11 +1145,12 @@
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
-        if (n.id === "site-box") {                                      // the central super comes back to the middle
+        const savedN = !!(window.SeSave && window.SeSave.isSaved(n.el));  // a saved super is never deleted (super/save.js): it comes back too
+        if (n.id === "site-box" || savedN) {                            // the central super comes back to the middle
           n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
           if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
-          persist(); tick(); say("run stays inside the site"); return;
+          persist(); tick(); say(savedN ? "Saved: it stays inside the site (unsave it to delete it)" : "run stays inside the site"); return;
         }
         const crew = n.st.crew ? n.st.crew.map(c => c.m) : [];
         n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
@@ -1398,6 +1400,7 @@
     const cur = n.st.sizeTo || n.size || DOT_BASE, max = sbx && sbx.a ? Math.min(2 * sbx.a, 2 * sbx.b / (n.aspect || 1)) - 8 : Math.min(window.innerWidth, window.innerHeight / (n.aspect || 1)) - 20;
     if (window.SeMax && window.SeMax.isMax(n.el)) { if (dy > 0) { window.SeMax.restore(n.el); n.st.restT = performance.now(); } return; }   // filling the inner super: a scroll out gives it back its size
     if (performance.now() - (n.st.restT || 0) < 700) return;           // the rest of that gesture lets the glide back finish
+    if (dy < 0 && cur < max - 1 && window.SeHold && window.SeHold.growRoom && window.SeHold.growRoom(n.el) <= 1.002) { if (window.SeShape && window.SeShape.note) window.SeShape.note(cx, cy, "stops here", "it grows over no super outside it"); return; }
     if (dy < 0 && cur >= max - 1 && window.SeMax) { n.st.maxAcc = (n.st.maxAcc || 0) - dy; clearTimeout(n.st.maxT); n.st.maxT = setTimeout(() => { n.st.maxAcc = 0; }, 500); if (n.st.maxAcc > 120) { n.st.maxAcc = 0; window.SeMax.maximize(n.el); } return; }
     // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
     if (dy > 0 && !auto && cur <= MIN_SIDE && n.id !== "site-box") {
@@ -1405,7 +1408,11 @@
       if (n.st.over > 160 && !n.st.closing) { n.st.over = 0; if (window.SeDelete) window.SeDelete.ask(n.el, cx, cy); else closeNode(n); }   // ask first (owner, 2026-10-12)
       return;
     }
-    const d = Math.round(Math.max(MIN_SIDE, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
+    let d = Math.round(Math.max(MIN_SIDE, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
+    if (d > cur && window.SeHold && window.SeHold.growRoom) {         // but never over a super outside it: it stops there (owner, 2026-10-12)
+      const room = window.SeHold.growRoom(n.el);
+      if (room < Infinity) d = Math.min(d, Math.max(cur, Math.floor(cur * room)));
+    }
     if (d === cur) return;
     n.st.sizeTo = d;
     const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s * (n.aspect || 1) / 2) / window.innerHeight; place(n); };
@@ -1497,7 +1504,10 @@
   function connectedToRun(n) {
     if (n.id === "site-box") return true;
     const run = nodes.find(x => x.id === "site-box");
-    if (!run) return false;
+    if (!run) {                                                       // no central super (the start since 2026-10-12): wired into the diagram, or held by a super, is connected
+      const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
+      return L.some(l => [l.a, l.b].some(an => an && an.h && (an.h === me || an.h.startsWith("port:" + me + "/")))) || n.inputs.length > 0 || nodes.some(m => m.inputs.some(r => r.node === n.id)) || !!holderOf(n);
+    }
     if (isHolder(run) && within(run, n)) return true;
     const SL = window.SuperLink, links = SL && SL.links ? SL.links() : [];
     const idOf = an => { const m = an && an.h && /^(?:port:)?node:([^/]+)/.exec(an.h); return m ? m[1] : null; };
@@ -1716,7 +1726,10 @@
     // into its input, "run" when nothing is (owner, 2026-10-12); its ports are the site's: input and sync in, output and condition
     const id = "site-box";
     const central = nodes.find(x => x.id === id);
-    const fresh = (!saved || !central) && se();
+    // the start has no central super since 2026-10-12 (the owner's layout: the bubbles wired in the third super); only
+    // a program that has one lays the diagram out again when it is missing
+    const progRun = !!((((window.SuperAI || {}).program || {}).diagram || {}).supers || []).find(x => x.id === id);
+    const fresh = (!saved || (progRun && !central)) && se();
     if (fresh) layoutProgram();                                     // a first visit (or a diagram kept from the round look, without the central super): the program's diagram (super/pitechlab.super.js)
     else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role
