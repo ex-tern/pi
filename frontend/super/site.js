@@ -318,6 +318,10 @@
   const SUPERS = ".orbit-panel, .lv-palette, .op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus";
   function clipWindows() {
     if (!on() || hasCorner || !SM()) return;
+    if (document.documentElement.classList.contains("se-sq")) {          // super/squircle.js paints the shapes: no clip, no drawn outline
+      document.querySelectorAll(SUPERS).forEach(p => { if (p.dataset.seClip) { p.style.clipPath = ""; delete p.dataset.seClip; const o = p.querySelector(":scope > .op-outline"); if (o) o.remove(); } });
+      return;
+    }
     document.querySelectorAll(SUPERS).forEach(p => {
       const w = p.offsetWidth, h = p.offsetHeight, key = w + "x" + h + "@" + (p.dataset.seN || "");
       if (!w || p.dataset.seClip === key) return;

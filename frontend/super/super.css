@@ -184,11 +184,7 @@ html.shape-se .orbit-nread { display: none; }
    bubble an ellipse and every star a grey dot. Near-superellipse radii instead, and the pill
    stars cut with the same sparkle polygon the dots use (they stay stars beside their names). */
 @supports not (corner-shape: round) {
-  html.shape-se .orbit-bubble, html.shape-se .btn, html.shape-se .dl-btn, html.shape-se .ob-chat button,
-  html.shape-se .nf-go, html.shape-se .nf-mute, html.shape-se .nf-reset, html.shape-se .nf-alt, html.shape-se .nf-diff button { border-radius: 1.45em; }
-  html.shape-se .orbit-bubble.is-group { border-radius: 2.2em; }
-  html.shape-se .lv-fn { border-radius: 30%; }
-  html.shape-se .lv-node.lv-dot { border-radius: 50%; }
+  /* (the superellipse shapes themselves are painted by super/squircle.js in these browsers) */
   html.shape-se .ob-member::before, html.shape-se .ob-member:focus-visible::before {
     width: var(--star); height: var(--star); border: 0; border-radius: 0;
     clip-path: var(--se-sparkle); background: var(--graphite);
@@ -231,12 +227,6 @@ html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, 
 }
 html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
 html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
-@supports not (corner-shape: round) {
-  html.shape-se .lv-palette,
-  html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { border: 0; position: relative; }
-  html.shape-se .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
-  html.shape-se .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
-}
 
 /* ---- one shape language throughout: inside windows too --------------------------------------
    Every rounded corner in the superellipse look is a superellipse corner (n = π); pressable and
@@ -546,3 +536,7 @@ html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se
    round corners"): buttons, fields, cards, tables, badges, pills, inside windows too. Low specificity, so a super
    that has its own n (Shift + scroll) keeps it */
 html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*)::after { corner-shape: superellipse(var(--se-k-window, 1.6515)); }
+/* open bubbles: each pill is a box of its own (not drawn by ::before), so every browser can give it superellipse corners
+   (super/squircle.js paints them where corner-shape is unknown) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 0.9em !important; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { display: none; }
