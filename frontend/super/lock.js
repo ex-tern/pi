@@ -14,7 +14,7 @@
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
-  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper";
+  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper, .orbit-bubble.is-group > .ob-label, .ob-member[data-key]";   // what is inside an open bubble too
 
   function nameOf(el) {
     if (!el || !el.classList) return null;
@@ -23,6 +23,8 @@
     if (el.classList.contains("orbit-panel")) { const k = O().keyOf ? O().keyOf(el) : null; return k ? "win:" + k : null; }
     if (el.classList.contains("se-project")) return "project";
     if (el.classList.contains("se-titlesuper")) return "title";
+    if (el.classList.contains("ob-member")) return el.dataset.key ? "pill:" + el.dataset.key : null;
+    if (el.classList.contains("ob-label")) { const b = el.closest(".orbit-bubble"); return b && b.dataset.key ? "name:" + b.dataset.key : null; }
     if (el.dataset && el.dataset.loop) return el.dataset.loop;        // the main and second supers (their lock hosts, below)
     return null;
   }
@@ -50,8 +52,8 @@
   function badge(el) {
     if (el.querySelector(":scope > .se-lock:not(.se-chain):not(.se-save)")) return;
     const name = nameOf(el); if (!name) return;
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "se-lock"; b.setAttribute("aria-pressed", "false");
+    const b = document.createElement(el.tagName === "BUTTON" ? "span" : "button");   // inside a pill (a button) a span that acts as one
+    if (b.tagName === "SPAN") { b.setAttribute("role", "button"); b.tabIndex = 0; } else b.type = "button"; b.className = "se-lock"; b.setAttribute("aria-pressed", "false");
     b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path class="lk-shackle" d="M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/></svg>';
     // nothing is clickable, only zoomable (owner, 2026-10-12): a scroll in on the lock locks the super, a scroll out
     // unlocks it; a press on it does nothing (the keyboard still toggles it: Enter or Space)

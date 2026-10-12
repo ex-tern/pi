@@ -10,7 +10,7 @@
   "use strict";
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
-  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper";
+  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper, .orbit-bubble.is-group > .ob-label, .ob-member[data-key]";   // what is inside an open bubble too
   const nameOf = el => (window.SeLock && window.SeLock.nameOf(el)) || null;
   // every super of the start begins saved (owner, 2026-10-12: "all supers in initial state should have active lock and
   // save on"): the title, the bubbles, the third super and the project; unsaved, "0" is kept
@@ -32,8 +32,8 @@
   function badge(el) {
     if (el.querySelector(":scope > .se-save")) return;
     const name = nameOf(el); if (!name || el.classList.contains("se-lockhost")) return;
-    const b = document.createElement("button");
-    b.type = "button"; b.className = "se-lock se-save";
+    const b = document.createElement(el.tagName === "BUTTON" ? "span" : "button");   // inside a pill (a button) a span that acts as one
+    if (b.tagName === "SPAN") { b.setAttribute("role", "button"); b.tabIndex = 0; } else b.type = "button"; b.className = "se-lock se-save";
     b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path class="sv-body" d="M2,1.5 H8.6 L10.5,3.4 V10.5 H2 Z"/><path class="sv-label" d="M3.6,1.5 V4 H7.6 V1.5"/><rect class="sv-slot" x="3.6" y="6.6" width="5.3" height="3.9" rx="0.6"/></svg>';
     b.addEventListener("pointerdown", e => { e.stopPropagation(); e.preventDefault(); }, true);
     b.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); set(el, !isSaved(el)); });

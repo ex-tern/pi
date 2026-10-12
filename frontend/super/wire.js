@@ -355,9 +355,10 @@
       // a control wire (sync, condition) or a data wire (input, output, or one joining supers): data wires are thicker and
       // coloured by the type of what they carry (super/nodes.js typeOfLink)
       const ctl = kindOf(l.a) === "ctl" || kindOf(l.b) === "ctl";
-      const dataW = !ctl && [l.a, l.b].some(an => an && an.h && /^(node:|port:)/.test(an.h));
+      const innerW = [l.a, l.b].every(an => an && an.h && /^port:(name|pill):/.test(an.h));   // inside an open bubble: its name into its pills
+      const dataW = !ctl && !innerW && [l.a, l.b].some(an => an && an.h && /^(node:|port:)/.test(an.h));
       const ty = dataW && window.LabView && window.LabView.typeOfLink ? window.LabView.typeOfLink(l.a, l.b) : "none";
-      s += '<g class="wire sl-wire' + (ctl ? " sl-ctl" : dataW ? " sl-data" : "") + (i === selected ? " is-sel" : "") + '"' + (dataW ? ' data-type="' + ty + '"' : "") + clip + '><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + (isPort(l.a) ? "" : term(p2)) + (isPort(l.b) ? "" : term(q)) +
+      s += '<g class="wire sl-wire' + (ctl ? " sl-ctl" : dataW ? " sl-data" : innerW ? " sl-inner" : "") + (i === selected ? " is-sel" : "") + '"' + (dataW ? ' data-type="' + ty + '"' : "") + clip + '><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + (isPort(l.a) ? "" : term(p2)) + (isPort(l.b) ? "" : term(q)) +
            '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': double-click to delete</title></path></g>';
     });
     if (drag) {

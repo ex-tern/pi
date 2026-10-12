@@ -183,7 +183,9 @@
       }
       else if (what.classList.contains("ob-member")) {                  // a pill: a few steps in open its window
         what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
-        if (what._acc < -60) { what._acc = 0; if (O().openKey) O().openKey(what.dataset.key); }
+        if (what._acc < -60) { what._acc = 0;
+          if (window.SeInner && window.SeInner.isCut(what.dataset.key)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "cut", "wire its name's output into it to open it"); }   // its wire was cut (super/inner.js)
+          else if (O().openKey) O().openKey(what.dataset.key); }
       }
       else if (sizes(what) && locked(sizes(what)) && !what.classList.contains("orbit-bubble")) lockedNote(sizes(what), x, y);   // locked: its size is kept (a bubble still opens and compacts: the start's supers are locked)
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);

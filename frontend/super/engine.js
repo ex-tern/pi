@@ -129,7 +129,11 @@ void main() {
   vec2 nrm = normalize(vec2(sdf(vL + vec2(1.5, 0.0)) - sdf(vL - vec2(1.5, 0.0)), sdf(vL + vec2(0.0, 1.5)) - sdf(vL - vec2(0.0, 1.5))) + 1e-5);
   float facing = max(dot(nrm, toSun), 0.0), away = max(-dot(nrm, toSun), 0.0);
   if (uFill > 0.0 && inside > 0.0) {
-    vec3 behind = light(uv, uTime);
+    // lensing (owner, 2026-10-12: "add a lensing effect to the supers"): the glass bends what is behind it, magnifying a
+    // little through its middle and refracting strongly near its edge, along the edge's normal
+    float lensRim = 1.0 - smoothstep(0.0, 26.0, max(-d, 0.0));
+    vec2 lensUv = uv - (vL / uRes) * 0.10 - (nrm * lensRim * 14.0) / uRes;
+    vec3 behind = light(lensUv, uTime);
     vec3 glass = mix(behind * 0.985, vec3(1.0), uFill + (1.0 - uFill) * 0.42 * uNight);   // by night the frost is lit by the moon: light enough to read on
     glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
     OVER(glass, inside * (0.42 + 0.48 * uFill));
@@ -331,6 +335,9 @@ const KINDS = [
   { sel: ".lv-node", fill: 0.45, order: 14, shadow: 0.6 },
   { sel: ".orbit-title .se-titlesuper", fill: 0.45, order: 15, shadow: 0.6 },
   { sel: ".lv-palette", fill: 0.45, order: 15, shadow: 0.6 },
+  // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
+  // its name box and its window pills are glass panes, drawn above their bubble
+  { sel: ".orbit-bubble.is-group:not(.is-compact):not(.is-growing) > .ob-label, .orbit-bubble.is-group:not(.is-compact):not(.is-growing) .ob-member", fill: 0.6, order: 10, shadow: 0.35, inner: true },
 ];
 // a super's height in the page: the z-index of the nearest stacked box round it, then its kind's order, then how
 // deep it sits inside other supers (what a super holds lies on it)
@@ -365,7 +372,7 @@ function drawPanes() {
       if (cs.visibility === "hidden" || +cs.opacity < 0.02 || cs.display === "none") return;
       const bw = parseFloat(cs.borderTopWidth) || 0;
       const holder = el.classList.contains("is-holder");
-      if (!bw && !holder) return;                                  // a super that draws itself (an svg shape): left to the page
+      if (!bw && !holder && !K.inner) return;                      // a super that draws itself (an svg shape): left to the page
       const key = el._seKey || (el._seKey = "p" + (++k) + Math.random().toString(36).slice(2, 6));
       ids.set(el, key);
       const sel = el.classList.contains("se-sel"), hov = false;   // only a selected super lights up (owner, 2026-10-12: "only when selecting a super makes it light up"), never a hovered one
@@ -376,7 +383,7 @@ function drawPanes() {
       // shape glides to the port sparkles' astroid
       const side = Math.min(r.width, r.height), sp = Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
       setPane(key, cx, cy, a, b, sp > 0 ? nn + (0.62 - nn) * sp * sp * (3 - 2 * sp) : nn,
-        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * depthOf(el) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
+        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || (K.inner ? 1.2 : 1.5)), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * (K.inner ? depthOf(el.closest(".orbit-bubble")) + 1 : depthOf(el)) + (K.inner ? 1 : 0) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
     });
   }
@@ -483,8 +490,8 @@ function drawWires() {
     const key = g._seKey || (g._seKey = "w" + (++wk));
     const sel = g.classList.contains("is-sel"), hov = g.matches(":hover"), live = g.classList.contains("live");
     // a data wire is thicker and coloured by its type (owner, 2026-10-12: "input output wire thicker and color data type specific")
-    const data = g.classList.contains("sl-data"), tc = data ? TYPE_COLOR[g.dataset.type] || tokens.ink : tokens.ink;
-    setWire(key, bed, { w: data ? (g.dataset.type === "list" ? 5.6 : 3.8) : 2.2, color: sel ? tokens.cobalt : hov ? (data ? tc.clone().lerp(tokens.hint, 0.35) : tokens.hint) : tc, alpha: data ? 0.9 : 0.82, flow: hov || live, order: 4 });
+    const data = g.classList.contains("sl-data"), inner = g.classList.contains("sl-inner"), tc = data ? TYPE_COLOR[g.dataset.type] || tokens.ink : tokens.ink;
+    setWire(key, bed, { w: inner ? 1.4 : data ? (g.dataset.type === "list" ? 5.6 : 3.8) : 2.2, color: sel ? tokens.cobalt : hov ? (data ? tc.clone().lerp(tokens.hint, 0.35) : tokens.hint) : tc, alpha: data ? 0.9 : 0.82, flow: hov || live, order: 4 });
   });
   document.querySelectorAll(".sl-layer .wire-temp").forEach(p => { const key = p._seKey || (p._seKey = "t" + (++wk)); setWire(key, p, { w: 1.5, color: tokens.cobalt, flow: true, order: 5 }); });
   document.querySelectorAll(".om-site .om-lattice").forEach(p => {
@@ -504,7 +511,7 @@ function drawSparks() {
     _m.makeScale(s, s, 1); _m.setPosition(x, y, 0); sparks.setMatrixAt(i, _m);
     col.setXYZ(i, c.r, c.g, c.b); i++;
   };
-  document.querySelectorAll(".se-port:not(.is-covered) .se-port-dot, .orbit-title .sts-p").forEach(d => {
+  document.querySelectorAll(".se-port:not(.is-covered):not(.is-tiny) .se-port-dot, .orbit-title .sts-p").forEach(d => {
     const p = d.closest(".se-port");
     if (p && (getComputedStyle(p).opacity < 0.05 || p.style.display === "none")) return;
     const r = d.getBoundingClientRect(); if (!r.width) return;

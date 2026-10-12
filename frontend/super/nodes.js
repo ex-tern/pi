@@ -793,12 +793,12 @@
     // two kinds by the mouse (owner, 2026-10-12: "double left click makes display complete square, double right click
     // makes a prompt sparkle supers"): a Display, a complete square (n = 24) that shows what is wired into it; a
     // prompt, a Super AI super (role "engine", asking every engine) drawn as a sparkle (n = 0.62); both keep their shape
-    const display = kind === "display", nn = display ? 24 : kind === "prompt" ? 0.62 : +Math.PI.toFixed(3);
+    const display = kind === "display" || kind === "square", nn = display ? 24 : kind === "prompt" ? 0.62 : +Math.PI.toFixed(3);
     if (display) ai = false;
     const m = make({ id, fn: kind ? "box" : fnOfN(nn), role: ai ? "engine" : undefined, manual: !!kind, auto: !!kind, size: ENGINE_BASE, fx: (L.x - ENGINE_BASE / 2) / window.innerWidth, fy: (L.y - ENGINE_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
     persist(); tick();
-    say(display ? "Display made: wire something into it and it shows it" : ai ? "Prompt made: type a question and press Enter, and every engine answers"
+    say(kind === "square" ? "A super made: wire its output into another super's input, and it is a prompt and that one shows its answer" : display ? "Display made: wire something into it and it shows it" : ai ? "Prompt made: type a question and press Enter, and every engine answers"
            : BY[m.fn].name + " made: a super with four ports; hold shift + scroll to change its shape, type into it, wire it");
     if (ai && window.SeSelect && window.SeSelect.select) window.SeSelect.select(m.el);
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
@@ -962,25 +962,25 @@
   // a super made by a double click is a prompt (a Super AI super, a sparkle) unless a prompt's output is wired into
   // it: then it is a Display (a complete square showing what comes in); cut that wire and an empty Display is a prompt again
   function autoKinds() {
+    // a super made by a double click (owner, 2026-10-12: "double click creates a prompt and it's square, empty square. If
+    // it's connected to another prompt input, it becomes a prompt. And the second super becomes the display of the
+    // result"): unwired it is an empty square; its output wired into another super's input makes it a prompt (a Super AI
+    // super, a sparkle) and that one its Display (a complete square showing the answer)
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
     const idOf = h => { const m = h && (/^port:node:([^/]+)\/(\w+)$/.exec(h) || /^node:(.+)$/.exec(h)); return m ? { id: m[1], port: m[2] || "body" } : null; };
-    const fed = new Set();                                               // supers a prompt's output flows into
+    const src = new Set(), dst = new Set();
     L.forEach(l => {
       const a = idOf(l.a && l.a.h), b = idOf(l.b && l.b.h); if (!a || !b || a.id === b.id) return;
-      const A = nodes.find(x => x.id === a.id), B = nodes.find(x => x.id === b.id); if (!A || !B) return;
-      const prompt = x => x.role === "engine" && x.id !== "site-box";
-      if (a.port === "output" && (b.port === "input" || b.port === "body") && prompt(A)) fed.add(B.id);
-      else if (b.port === "output" && (a.port === "input" || a.port === "body") && prompt(B)) fed.add(A.id);
+      if (a.port === "output" && (b.port === "input" || b.port === "body")) { src.add(a.id); dst.add(b.id); }
+      else if (b.port === "output" && (a.port === "input" || a.port === "body")) { src.add(b.id); dst.add(a.id); }
     });
-    nodes.forEach(n => n.inputs.forEach(r => { const A = r.node && nodes.find(x => x.id === r.node); if (A && A.role === "engine" && A.id !== "site-box") fed.add(n.id); }));
     let changed = false;
     nodes.forEach(n => {
       if (!n.auto || n.id === "site-box" || isHolder(n)) return;
-      if (fed.has(n.id) && n.role === "engine") {                        // a prompt fed by a prompt: a Display
-        n.role = null; n.answer = ""; n.prompt = ""; n.n = 24; shape(n); changed = true; say("Display: it shows what the prompt wired into it says");
-      } else if (!fed.has(n.id) && !n.role && !(n.str || "").trim() && n.n >= 20) {   // a Display cut off, empty: a prompt again
-        n.role = "engine"; n.n = 0.62; shape(n); changed = true;
-      }
+      const want = dst.has(n.id) ? "display" : src.has(n.id) ? "prompt" : "square";
+      const is = n.role === "engine" ? "prompt" : "square";              // a Display and a square are both a plain ■ (n = 24)
+      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = 0.62; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
+      else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = 24; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
     });
     if (changed) { persist(); tick(); }
   }
@@ -1744,7 +1744,7 @@
     document.addEventListener("dblclick", e => {
       if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
-      makeHere(e, "prompt");
+      makeHere(e, "square");
     });
 
     setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
@@ -1854,8 +1854,11 @@
     // wired supers group (regroup): checked after every wire change and now and then (wires dropped on a super's
     // body go by its inputs), once the layout has settled
     let rgT = 0;
-    document.addEventListener("superlink:change", () => { clearTimeout(rgT); rgT = setTimeout(regroup, 250); });
-    setTimeout(() => { regroup(); setInterval(regroup, 900); }, 2500);
+    // (no regroup on wire changes: grouping is switched off)
+    // grouping wired supers is switched off (owner, 2026-10-12: "remove the grouping"); groups made before let go of
+    // their supers once (the group holders go, the supers stay where they are)
+    setTimeout(() => { nodes.filter(n => n.grp).forEach(remove); }, 2500);
+    void regroup;
     document.addEventListener("se:obstacle", () => { nodes.forEach(n => clear(n)); persist(); });   // something moved onto the nodes: they step off it
     // typing with nothing focused goes into the selected super (a prompt is written straight into it)
     document.addEventListener("keydown", e => {

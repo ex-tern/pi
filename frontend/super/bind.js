@@ -125,6 +125,22 @@
       // a bubble that is opening, open or filling the inner super is its own (owner, 2026-10-12: "fix this bug": its
       // pills spilled out while its size was held to its share); compact again, it takes its share back
       const busy = el => el.classList.contains("orbit-bubble") && (!el.classList.contains("is-compact") || el.classList.contains("is-growing") || el.classList.contains("se-max"));
+      // a member bubble opened in it (owner, 2026-10-12: "this is a bug": it spilled out of a small holder): an unlocked
+      // holder grows to take it, its other members keeping their sizes (only their places spread with it)
+      const lockedH = !!(window.SeLock && window.SeLock.isLocked(h));
+      if (!lockedH && window.LabView && window.LabView.rectOf && window.LabView.setRect) {
+        const open = ms.filter(el => busy(el) && !el.classList.contains("se-max"));
+        if (open.length) {
+          const pad = 10, U = { l: r.left, t: r.top, r: r.right, b: r.bottom };
+          open.forEach(el => { const b = el.getBoundingClientRect(); U.l = Math.min(U.l, b.left - pad); U.t = Math.min(U.t, b.top - pad - (i.t - r.top)); U.r = Math.max(U.r, b.right + pad); U.b = Math.max(U.b, b.bottom + pad); });
+          if (U.l < r.left - 1 || U.t < r.top - 1 || U.r > r.right + 1 || U.b > r.bottom + 1) {
+            const L = window.LabView.rectOf(h), k = sc, nw = (U.r - U.l) / k, nh = (U.b - U.t) / k;
+            window.LabView.setRect(h, L.x + (U.l - r.left) / k, L.y + (U.t - r.top) / k, nw, nh);
+            st.w = nw; st.h = nh;                                         // a growth for it, not a resize: nothing scales
+            return;
+          }
+        }
+      }
       ms.forEach(el => {                                                 // sizes: to their share while the holder changes; else the share follows them (sized by you)
         if (el.classList.contains("orbit-panel") || held.has(el) || busy(el)) return;
         const a = st.at.get(el); if (!a) return;

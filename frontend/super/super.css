@@ -546,7 +546,7 @@ html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*
 html.shape-se :is(.orbit-bubble, .orbit-panel, .se-project, .orbit-title, .lv-palette, .live-dock, .lv-node) * { --se-k-window: 1.65149; }
 /* open bubbles: each pill is a box of its own (not drawn by ::before), so every browser can give it superellipse corners
    (super/squircle.js paints them where corner-shape is unknown) */
-html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 0.9em !important; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 46px 0.32em 0.9em !important; }   /* room on the right for its lock and save */
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { display: none; }
 
 /* corners that read as superellipses (owner, 2026-10-12: "corners should be superellipses"): a small radius drawn as a
@@ -661,3 +661,20 @@ html.shape-se .se-sparkle > :not(.se-port) { visibility: hidden !important; }
 html.shape-se:not(.se-gl) .se-sparkle { clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%); }
 
 /* a Display and a prompt start empty: no placeholder words (owner, 2026-10-12) */
+
+/* what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it";
+   super/inner.js): the engine draws its glass, so its own chrome steps back; the soft curves are real wires now; its lock
+   and save sit at its right end; a cut pill dims (its window opens once it is wired again) */
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label { border-color: transparent; background: transparent; }
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { border-color: transparent !important; background: transparent !important; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-links { display: none; }
+html.shape-se .ob-member > .se-lock, html.shape-se .ob-label > .se-lock { top: 50%; left: auto; right: 24px; transform: translateY(-50%); width: 10px; height: 10px; }
+html.shape-se .ob-member > .se-save, html.shape-se .ob-label > .se-save { right: 9px; left: auto; }
+html.shape-se .ob-member > .se-lock svg, html.shape-se .ob-label > .se-lock svg { width: 9px; height: 9px; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label { padding-right: 46px !important; }
+html.shape-se .orbit-bubble.is-group.is-compact .ob-member > .se-lock, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label > .se-lock { display: none; }
+html.shape-se .ob-member.is-cut { opacity: 0.45; }
+/* a super shrunk to a sparkle shows no ports */
+html.shape-se .se-port.is-tiny { opacity: 0; pointer-events: none; }
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-members .ob-member { background: transparent !important; border-color: transparent !important; }   /* the engine draws its glass */
+html.shape-se .sl-inner .wire-bed, html.shape-se .sl-wire.sl-inner .wire-bed { stroke: var(--graphite); stroke-width: 1.3; }   /* inside a bubble: fine wires */

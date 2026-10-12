@@ -114,6 +114,19 @@
         const set = ensurePorts(owner, (bb.querySelector(".ob-name, .ob-title, b") || bb).textContent.trim().slice(0, 40) || "the bubble");
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
       });
+      // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
+      // its name box (name:<bubble>) and each window pill (pill:<key>) have four ports
+      document.querySelectorAll(".orbit-bubble.is-group[data-key]:not(.is-compact):not(.is-growing)").forEach(bb => {
+        if (bb.hidden || !bb.getClientRects().length) return;
+        const lab = bb.querySelector(":scope > .ob-label");
+        if (lab && lab.getClientRects().length) { const r = lab.getBoundingClientRect(); if (r.width) { const owner = "name:" + bb.dataset.key; seen.add(owner); placeAt(ensurePorts(owner, (lab.textContent || "").trim() || "the name"), r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2); } }
+        bb.querySelectorAll(".ob-members .ob-member[data-key]").forEach(m => {
+          if (!m.getClientRects().length) return;
+          const r = m.getBoundingClientRect(); if (!r.width) return;
+          const owner = "pill:" + m.dataset.key; seen.add(owner);
+          placeAt(ensurePorts(owner, (m.textContent || "").trim().slice(0, 40) || "the pill"), r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
+        });
+      });
       const pj = document.querySelector(".se-project");                     // the project super has four ports too
       if (pj && pj.getClientRects().length) {
         const r = pj.getBoundingClientRect(); seen.add("project");
@@ -128,6 +141,11 @@
       });
     }
     Object.keys(owned).forEach(o => { if (!seen.has(o)) dropPorts(o); });
+    // a super shrunk to a sparkle shows no ports of its own (they piled into a tangle of stars)
+    Object.keys(owned).forEach(o => {
+      const el = o.startsWith("node:") || o.startsWith("bubble:") || o === "project" ? ownerEl(o) : null, tiny = !!(el && el.classList.contains("se-sparkle"));
+      PORTS.forEach(([p]) => { const pe = owned[o][p]; if (pe && pe.classList.contains("is-tiny") !== tiny) pe.classList.toggle("is-tiny", tiny); });
+    });
     // a port under a window that is not its own is covered: it does not show through (owner, 2026-10-12: graphics)
     const wins = [...document.querySelectorAll(".orbit-panel")].map(p => ({ p, r: p.getBoundingClientRect() })).filter(w => w.r.width);
     Object.keys(owned).forEach(o => {
@@ -274,6 +292,7 @@
       if (owner === "project") { const open = !!document.querySelector(".se-project.is-open"), t = "Pi Tech Lab in SuperAI" + (open ? ", open" : ""); return { num: open ? 1 : 0, isNum: true, bool: open, str: t, text: t }; }
       if (owner.startsWith("win:")) return winValue(owner.slice(4), port);
       if (owner.startsWith("bubble:")) return bubbleValue(owner.slice(7), port);
+      if (owner.startsWith("pill:") || owner.startsWith("name:")) { const t = owner.startsWith("pill:") ? ((O().info && O().info(owner.slice(5))) || {}).title || "" : (((document.querySelector('.orbit-bubble[data-key="' + CSS.escape(owner.slice(5)) + '"] > .ob-label') || {}).textContent) || "").trim(); return { num: t.length, bool: !!t, str: t, text: t }; }   // an inner super: its words
       if (owner === "main") return port === "input" ? { num: mainInput.length, bool: !!mainInput, str: mainInput, text: mainInput } : value(port);   // the page's terminals: its output, clock and condition are the site's
       const LV = window.LabView; return LV && LV.loopPort ? LV.loopPort(owner.slice(5), port) : { num: 0, bool: false, str: "", text: "" };
     }
@@ -343,8 +362,8 @@
   // the title's badge) changes that one's n and nothing else's: --se-k-window (log₂ n) is set on the
   // element, so its corners (and, inside a window, the buttons and cards that inherit it) follow;
   // named supers keep their n per browser as se:n:<name>.
-  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .lv-palette, .orbit-bubble, .orbit-title, .se-project";
-  const nameOfSuper = el => el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette" : el.classList.contains("se-project") ? "project"
+  const SHAPES = ".op-body .card, .rs-card, .perf-card, .perf-next, .buddy-corpus, .stat-card, .tr-tile, .orbit-panel, .lv-palette, .orbit-bubble:not(.is-compact) .ob-member, .orbit-bubble:not(.is-compact) > .ob-label, .orbit-bubble, .orbit-title, .se-project";
+  const nameOfSuper = el => el.classList.contains("ob-member") ? (el.dataset.key ? "pill:" + el.dataset.key : null) : el.classList.contains("ob-label") ? ((el.closest(".orbit-bubble") || {}).dataset ? "name:" + el.closest(".orbit-bubble").dataset.key : null) : el.classList.contains("orbit-title") ? "title" : el.classList.contains("lv-palette") ? "palette" : el.classList.contains("se-project") ? "project"
     : el.classList.contains("orbit-bubble") ? (el.dataset.key ? "bubble:" + el.dataset.key : null)
     : el.classList.contains("orbit-panel") ? (el.item && el.item.key ? "window:" + el.item.key : null) : null;
   const loadN = name => { try { return +localStorage.getItem("se:n:" + name) || 0; } catch (_) { return 0; } };
