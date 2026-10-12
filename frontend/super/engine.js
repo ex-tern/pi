@@ -263,6 +263,7 @@ function setPane(key, cx, cy, a, b, n, o) {
   u.uFill.value = o.fill; u.uEdge.value.copy(o.edge); u.uEdgeW.value = o.edgeW; u.uShadow.value = o.shadow || 0;
   m._sheen += ((o.sheen ? 1 : 0) - m._sheen) * 0.08;            // the sheen fades in and out slowly
   u.uSheen.value = m._sheen; m.renderOrder = o.order;
+  if (o.lift != null) u.uLift.value = o.lift;                     // a fixed height (the main and second supers lie lowest)
 }
 // a super's n from its CSS corner shape: superellipse(k) is n = 2^k; round is n = 2
 function nOf(el) {
@@ -311,7 +312,7 @@ function drawPanes() {
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       setPane(key, cx, cy, a, b, nOf(el),
-        { fill: holder ? 0 : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: holder ? 0 : K.shadow * op, sheen: sel || hov, order: K.order });
+        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: holder ? 3 : K.order });   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
     });
   }
@@ -323,7 +324,7 @@ function drawPanes() {
   const REACH = 150;
   for (const p of all) {
     const u = p.m.material.uniforms; let n = 0;
-    if (!p.holder) {
+    {                                                                   // every super reflects its neighbours, a holder too
       const near = [];
       for (const q of all) {
         if (q === p) continue;
@@ -343,12 +344,14 @@ function drawLoops() {
   const top = (O().fit && O().fit().py != null && g) ? O().fit().py - g.cy : 0;
   if (g && g.a) {
     const sel = html.classList.contains("se-sel-loop"), hov = html.classList.contains("se-on-loop");
-    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 2, shadow: 0, sheen: sel, order: 1, margin: 6 });
+    // the main, second and third supers are supers like any other (owner, 2026-10-12: "all supers have the same
+    // effect including main, second and third supers"): glass, a bevel, a shadow, the sheen when hovered or selected
+    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = html.classList.contains("se-on-site"), busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.03, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 0, sheen: sel || busy, order: 2, margin: 6 });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
   }
 }
 

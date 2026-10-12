@@ -212,9 +212,14 @@
     document.body.appendChild(g);
     const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
     const k = Math.max(0.08, Math.min(1, Math.max(b.w / a.w, b.h / a.h)));
-    const d = Math.round(460 * Math.min(1.6, slow()));
+    const d = Math.round(900 * Math.min(1.6, slow()));                 // slowly (owner, 2026-10-12)
+    // its shape shrinks from the window's n (12) to n → 0 as it folds away ("opened super shrinks from n=12 to n=0 slowly")
+    const n0 = +panel.dataset.seN || 12, n1 = 0.3;
+    const setK = n => { g.style.cornerShape = "superellipse(" + Math.log2(n).toFixed(4) + ")"; };
+    setK(n0);
+    { const t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / d), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; setK(Math.exp(Math.log(n0) + (Math.log(n1) - Math.log(n0)) * e)); if (k < 1 && g.isConnected) requestAnimationFrame(step); }; requestAnimationFrame(step); }
     void g.offsetWidth;
-    g.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + d + "ms ease";
+    g.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + d + "ms cubic-bezier(0.6, 0, 0.9, 0.4)";
     g.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px) scale(" + k.toFixed(3) + ")";
     g.style.opacity = "0";
     setTimeout(() => g.remove(), d + 60);
