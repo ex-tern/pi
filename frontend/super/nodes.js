@@ -334,6 +334,12 @@
           if (n.id !== "site-box" && n.prompt && !t && !n.st.go && !connectedToRun(n)) r.text = typed || n.prompt;   // waits for a wire to run: it shows its question
           break;
         }
+        // a Display (a double-click super fed by a prompt) shows the Super AI's answer to that prompt, never its question
+        // (owner, 2026-10-12: "make the display show the result of the prompt using the super AI")
+        if (n.auto && !n.role) {
+          const P = promptInto(n);
+          if (P) { const t = P.answer || (P.st.go ? "thinking…" : ""); r = { num: t.length, bool: !!t, str: t, text: t }; break; }
+        }
         const v = ins[ins.length - 1];
         const body = n.role === "loop" || (isHolder(n) && !n.field) ? bodyOut(n) : null;   // a loop or a holder gives what is inside it: its body's result
         if (body) { const v = evalNode(body); r = Object.assign({}, v, { bool: !n.paused }); }
@@ -961,6 +967,17 @@
   }
   // a super made by a double click is a prompt (a Super AI super, a sparkle) unless a prompt's output is wired into
   // it: then it is a Display (a complete square showing what comes in); cut that wire and an empty Display is a prompt again
+  function promptInto(n) {                                            // the prompt whose output is wired into n's input
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
+    for (const l of L) {
+      const ends = [[l.a, l.b], [l.b, l.a]];
+      for (const [o, i] of ends) {
+        const mo = o && o.h && /^port:node:([^/]+)\/output$/.exec(o.h), mi = i && i.h && (i.h === "port:node:" + n.id + "/input" || i.h === "node:" + n.id);
+        if (mo && mi) { const P = nodes.find(x => x.id === mo[1]); if (P && P.role === "engine") return P; }
+      }
+    }
+    return null;
+  }
   function autoKinds() {
     // a super made by a double click (owner, 2026-10-12: "double click creates a prompt and it's square, empty square. If
     // it's connected to another prompt input, it becomes a prompt. And the second super becomes the display of the
@@ -979,7 +996,7 @@
       if (!n.auto || n.id === "site-box" || isHolder(n)) return;
       const want = dst.has(n.id) ? "display" : src.has(n.id) ? "prompt" : "square";
       const is = n.role === "engine" ? "prompt" : "square";              // a Display and a square are both a plain ■ (n = 24)
-      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = 0.62; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
+      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = 24; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
       else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = 24; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
     });
     if (changed) { persist(); tick(); }

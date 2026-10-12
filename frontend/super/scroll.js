@@ -178,6 +178,7 @@
           }
         }
       }
+      else if (what.classList.contains("ob-member") && dy > 0 && locked(what.closest(".orbit-bubble"))) lockedNote(what.closest(".orbit-bubble"), x, y);
       else if (what.classList.contains("ob-member") && dy > 0) {        // a scroll out on a pill shrinks its bubble, as anywhere on it
         const bub = what.closest(".orbit-bubble.is-group"); if (bub && window.SeBubble) window.SeBubble.zoom(bub, dy);
       }
@@ -187,7 +188,7 @@
           if (window.SeInner && window.SeInner.isCut(what.dataset.key)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "cut", "wire its name's output into it to open it"); }   // its wire was cut (super/inner.js)
           else if (O().openKey) O().openKey(what.dataset.key); }
       }
-      else if (sizes(what) && locked(sizes(what)) && !what.classList.contains("orbit-bubble")) lockedNote(sizes(what), x, y);   // locked: its size is kept (a bubble still opens and compacts: the start's supers are locked)
+      else if (sizes(what) && locked(sizes(what))) lockedNote(sizes(what), x, y);   // locked: its size is kept; a locked bubble does not grow either (owner, 2026-10-12: "connect super is locked but it still grows, this is a bug")
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
