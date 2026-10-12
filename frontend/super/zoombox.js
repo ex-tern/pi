@@ -52,6 +52,28 @@
       if (z.fitK < rk) { grow(rk); z.fitK = rk; }                     // too small to read whole: the window grows (then this fits again); meanwhile the content stays readable and moves by dragging
       if (!keep || !z.user || z.k < z.fitK) { z.k = z.fitK; z.tx = 0; z.ty = 0; z.user = false; }
       apply();
+      fitHeight();
+    }
+    // a window is no taller than its content (owner, 2026-10-12: "fix all ui": no empty half-window), up to the
+    // uniform height it opened at; it glides there. A window you sized, or one grown to be readable, is left alone
+    function fitHeight() {
+      const p = box.closest(".orbit-panel");
+      if (!p || p.seSized || p.seRead || p._seGrowing || p._seFitting || z.user || p.classList.contains("leaving")) return;
+      if (window.innerWidth < 700) return;                              // a phone's window takes most of the inner super anyway (and the layout holds it there)
+      if (p._seH0 == null) p._seH0 = p.offsetHeight;
+      const bw = box.clientWidth, extraH = p.offsetHeight - box.clientHeight;
+      const w0 = content.style.width; content.style.width = bw + "px"; const ch = content.offsetHeight; content.style.width = w0;
+      // never below the least the layout keeps a window at (a phone keeps a window readable: super/loop.js keepWindowsIn), or the two would undo each other
+      const sb = window.PiOrbit && window.PiOrbit.siteBox ? window.PiOrbit.siteBox() : null;
+      const least = window.innerWidth < 700 && sb ? Math.floor(sb.b * (sb.fit || 1) * 0.6) + 2 : 170;
+      const target = Math.round(Math.min(p._seH0, Math.max(least, ch + extraH + 4)));
+      if (Math.abs(target - p.offsetHeight) < 16) return;
+      const r = p.getBoundingClientRect(), cy = r.top + r.height / 2;
+      const put = h => { p.style.height = Math.round(h) + "px"; p.style.top = Math.round(cy - h / 2) + "px"; };
+      p._seFitting = true;
+      const done = () => { p._seFitting = false; const O = window.PiOrbit; if (p.item && O && O.saveWin) O.saveWin(p.item, p); };
+      if (window.SeMotion) { const s = { h: r.height }; window.SeMotion.tween(s, { h: target }, { duration: 300, easing: "easeOutCubic", update: () => put(s.h), complete: done }); }
+      else { put(target); done(); }
     }
     // the window around the box grows until the content, laid out at its narrowest, fits at the readable scale
     function grow(kMin) {
@@ -65,7 +87,8 @@
       if (h <= p.offsetHeight + 1) return;
       p.seRead = true; p._seGrowing = true;
       const r = p.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      const put = s => { p.style.width = Math.round(s.w) + "px"; p.style.height = Math.round(s.h) + "px"; p.style.left = Math.round(cx - s.w / 2) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
+      void cx; void w;                                                   // only its height changes: where it is stays the layout's (a glide may be moving it)
+      const put = s => { p.style.height = Math.round(s.h) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
       const done = () => { p._seGrowing = false; if (p.item && O.saveWin) O.saveWin(p.item, p); refit(); };
       if (window.SeMotion) { const s = { w: r.width, h: r.height }; window.SeMotion.tween(s, { w, h }, { duration: 260, easing: "easeOutCubic", update: () => put(s), complete: done }); }
       else { put({ w, h }); done(); }

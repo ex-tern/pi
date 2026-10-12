@@ -142,6 +142,27 @@
     if (O().layout) O().layout();
     return true;
   }
+  // open, a bubble looks like its drawing grown up (owner, 2026-10-12: "picture 1 should look like picture 2 after
+  // expanding"): its name in a box on the left, wired by soft curves to one box per window on the right
+  function links(el) {
+    if (isCompact(el)) { const old = el.querySelector(":scope > .ob-links"); if (old) old.remove(); return; }
+    const label = el.querySelector(":scope > .ob-label"), ms = [...el.querySelectorAll(".ob-members .ob-member")].filter(m => m.getClientRects().length);
+    if (!label || !ms.length) return;
+    let svg = el.querySelector(":scope > .ob-links");
+    if (!svg) { svg = document.createElementNS("http://www.w3.org/2000/svg", "svg"); svg.setAttribute("class", "ob-links"); svg.setAttribute("aria-hidden", "true"); el.prepend(svg); }
+    const R = el.getBoundingClientRect(), k = R.width / (el.offsetWidth || 1) || 1;
+    const at = r => ({ l: (r.left - R.left) / k, t: (r.top - R.top) / k, w: r.width / k, h: r.height / k });
+    const L = at(label.getBoundingClientRect()), x0 = L.l + L.w, y0 = L.t + L.h / 2;
+    let d = "";
+    ms.forEach(m => { const M = at(m.getBoundingClientRect()), x1 = M.l, y1 = M.t + M.h / 2, mx = (x0 + x1) / 2; d += "M" + x0.toFixed(1) + "," + y0.toFixed(1) + "C" + mx.toFixed(1) + "," + y0.toFixed(1) + " " + mx.toFixed(1) + "," + y1.toFixed(1) + " " + x1.toFixed(1) + "," + y1.toFixed(1); });
+    const W = el.offsetWidth, H = el.offsetHeight, vb = "0 0 " + W + " " + H;
+    if (svg.getAttribute("viewBox") !== vb) svg.setAttribute("viewBox", vb);
+    let path = svg.firstChild; if (!path) { path = document.createElementNS("http://www.w3.org/2000/svg", "path"); svg.appendChild(path); }
+    if (path.getAttribute("d") !== d) path.setAttribute("d", d);
+  }
+  const linkAll = () => { if (on()) document.querySelectorAll(".orbit-bubble.is-group[data-key]").forEach(links); };
+  setInterval(linkAll, 300);
+  document.addEventListener("se:frame", linkAll);
   // on a phone a window takes most of the inner super: an open bubble compacts when one opens, so nothing is squeezed
   // past readable (a scroll opens it again)
   document.addEventListener("se:windows", () => {

@@ -24,6 +24,7 @@
     const els = [];
     if (ownText(root)) els.push(root);
     root.querySelectorAll("*").forEach(e => { if (ownText(e) && !e.closest(SKIP)) els.push(e); });
+    els.forEach(e => { if (!e._seLift) e._seFs = null; });            // type sizes are read again (the layout may have changed them)
     const fresh = { els, at: performance.now(), key: c ? c.key : "" };
     cache.set(root, fresh);
     return fresh;
@@ -42,7 +43,7 @@
       if (!root.getClientRects().length) return;
       const c = textEls(root);
       const s = scaleOf(root);
-      const key = s.toFixed(3) + ":" + c.els.length;
+      const key = s.toFixed(3) + ":" + c.els.length + ":" + c.at.toFixed(0);
       if (key === c.key) return;
       c.key = key;
       for (const e of c.els) {

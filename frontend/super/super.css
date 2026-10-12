@@ -513,3 +513,31 @@ html.shape-se.sl-dragging .se-port .se-port-name, html.shape-se.lv-dragging .se-
 html.shape-se .om-page-pi { font-size: 11px; opacity: 0.8; }
 @media (max-width: 700px) { html.shape-se .om-page-pi { display: none; } }
 html.shape-se .se-port.is-covered { opacity: 0; pointer-events: none; }
+/* a focused Super AI super shows its focus by its cobalt edge alone (no second ring) */
+html.shape-se .lv-fn:focus-visible { outline: none; }
+
+/* ---- an open bubble is its drawing grown up (owner, 2026-10-12): the name in a box on the left, wired by soft
+   curves (super/bubble.js links) to one box per window in a column on the right ---------------------------------- */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) {
+  display: flex; flex-direction: row; align-items: center; gap: max(2.6em, 30px); padding: max(1.5em, 20px) max(3em, 42px) max(2.1em, 30px) max(2em, 26px); max-width: none; width: max-content;
+}
+@media (max-width: 700px) { html.shape-se .orbit-bubble.is-group:not(.is-compact) { gap: 24px; padding: 18px 34px 28px 20px; } }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-dot { display: none; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label {
+  position: relative; z-index: 1; flex: none; padding: 0.42em 1.05em; white-space: nowrap;
+  font: 500 1em/1.2 "Geist Mono", ui-monospace, monospace; letter-spacing: 0;
+  border: 1.5px solid var(--ink); border-radius: 0.55em; corner-shape: superellipse(var(--se-k-window, 1.6515));
+  background: var(--paper);
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-members {
+  position: relative; z-index: 1; display: inline-flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0.42em; max-width: none;
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member {
+  --se-t: 1 !important; --se-k: var(--se-k-window, 1.6515) !important; justify-content: flex-start; text-align: left; white-space: nowrap;
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { border-color: color-mix(in srgb, var(--graphite) 70%, transparent); background: var(--paper); border-radius: 0.5em; }
+html.shape-se .orbit-bubble > .ob-links { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: visible; }
+html.shape-se .orbit-bubble > .ob-links path { fill: none; stroke: var(--graphite); stroke-width: 1; opacity: 0.6; }
+html.shape-se .orbit-bubble.is-group.is-compact > .ob-links { display: none; }
+/* never smaller than readable, however tight the layout (the pills' room shrinks, not their words) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { font-size: max(12px, 1em); }

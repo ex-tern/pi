@@ -46,9 +46,13 @@ const PANE_FS = `
 uniform vec2 uRes; uniform float uTime; uniform vec2 uHalf; uniform float uN; uniform float uFill; uniform vec3 uEdge;
 uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uDpr; varying vec2 vL; ${LIGHT}
 float sdf(vec2 p) {                                   // the superellipse's distance in px (first order, from its gradient)
-  vec2 q = max(abs(p) / uHalf, vec2(1e-4));
-  float s = pow(q.x, uN) + pow(q.y, uN), f = pow(s, 1.0 / uN);
-  vec2 g = pow(s, 1.0 / uN - 1.0) * pow(q, vec2(uN - 1.0)) / uHalf;
+  // normalised by the larger coordinate, so a large n on a small pane never overflows (which drew a coloured box)
+  vec2 q = max(abs(p) / max(uHalf, vec2(1.0)), vec2(1e-4));
+  float m = max(q.x, q.y);
+  vec2 u = q / m;                                     // both in (0, 1]
+  float s = pow(u.x, uN) + pow(u.y, uN);              // in [1, 2]
+  float f = m * pow(s, 1.0 / uN);
+  vec2 g = pow(s, 1.0 / uN - 1.0) * pow(u, vec2(uN - 1.0)) / max(uHalf, vec2(1.0));
   return (f - 1.0) / max(length(g), 1e-4);
 }
 vec3 hue(float h) { return clamp(abs(mod(h * 6.0 + vec3(0.0, 4.0, 2.0), 6.0) - 3.0) - 1.0, 0.0, 1.0); }
@@ -193,7 +197,7 @@ function paneMesh(key) {
   return m;
 }
 function setPane(key, cx, cy, a, b, n, o) {
-  if (!(a > 1 && b > 1)) return;
+  if (!(a > 5 && b > 5) || !isFinite(a + b + cx + cy + n)) return;   // too small to be a pane (or not a number): nothing drawn
   const m = paneMesh(key), u = m.material.uniforms, M = o.margin != null ? o.margin : PANE_M;
   m.position.set(cx, cy, 0); m.scale.set(2 * (a + M), 2 * (b + M), 1);
   u.uSize.value.set(2 * (a + M), 2 * (b + M)); u.uHalf.value.set(a, b); u.uN.value = Math.max(1.2, Math.min(60, n));

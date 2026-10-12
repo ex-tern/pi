@@ -432,7 +432,8 @@
     drawLoop();
     document.documentElement.classList.toggle("orbit-mark-big", se || (!merged() && r > capR()));   // behind the pills
     document.documentElement.classList.toggle("orbit-mark-tiny", !merged() && r < 40);    // too small to hold the counter
-    const core = $(".orbit-core"), svg = core.querySelector(".orbit-mark");
+    const core = $(".orbit-core"); if (!core) return;                  // (briefly absent while the program rebuilds the page)
+    const svg = core.querySelector(".orbit-mark");
     if (se) {
       // the loop is the page: stretched over the whole stage, everything inside it
       core.style.width = window.innerWidth + "px"; core.style.height = H + "px";   // the whole screen, the Live panel inside it too
@@ -447,6 +448,7 @@
     const nr = $(".orbit-nread");
     if (nr) { nr.style.left = lx + "px"; nr.style.top = ly - 34 + "px"; }
     const pi = $(".orbit-pi");
+    if (!pi) return;                                                    // (briefly absent while the counter is rebuilt)
     pi.style.setProperty("--pi-scale", piScale);
     // merged into the loop: as wide as the loop allows at that height
     pi.style.setProperty("--in-loop-w", Math.round(r * 1.5) + "px");
@@ -606,9 +608,8 @@
     W = window.innerWidth - dockW; H = window.innerHeight - top;
     small = W < 700;
     R = idleR();
-    const pi = $(".orbit-pi");
-    pi.style.setProperty("--pi-scale", piScale);
-    if (pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight };
+    const pi = $(".orbit-pi");                                         // (briefly absent while the counter is rebuilt)
+    if (pi) { pi.style.setProperty("--pi-scale", piScale); if (pi.offsetWidth) piBox = { w: pi.offsetWidth, h: pi.offsetHeight }; }
     if (!draggingLogo) {
       if (logoAt) { lx = logoAt.fx * W; ly = logoAt.fy * H; }
       else { lx = W / 2; ly = H / 2 - (small ? 20 : 10); }
@@ -1513,8 +1514,9 @@
       cnt.textContent = (digits.length - 1).toLocaleString() + " decimals" + (still ? ", paused" : ACT_WORDS[actLevel]);
       const tp = $(".om-page-pi textPath");
       if (tp) {                                                   // the same digits, small, running along the main loop
-        const run = after.length <= 240 ? after : after.slice(-240);
-        tp.textContent = "π 3." + (after.length > 240 ? "…" : "") + run.slice(0, -1);
+        const LIM = document.documentElement.classList.contains("shape-se") ? 28 : 240;   // the superellipse look: a short line on the right side, never round a corner
+        const run = after.length <= LIM ? after : after.slice(-LIM);
+        tp.textContent = "π 3." + (after.length > LIM ? "…" : "") + run.slice(0, -1);
         const last = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); last.setAttribute("class", "om-pi-new"); last.textContent = run.slice(-1); tp.appendChild(last);
         const tag = document.createElementNS("http://www.w3.org/2000/svg", "tspan"); tag.setAttribute("class", "om-pi-count"); tag.textContent = "  · " + cnt.textContent; tp.appendChild(tag);
         tp.closest("text").classList.toggle("is-still", !!still);

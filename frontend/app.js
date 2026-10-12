@@ -780,7 +780,7 @@ async function loadChainStatus() {
     // has not been given a signing key, so the badge now says which of the
     // three it is instead of leaving the colour to be guessed at.
     if (!chainState.connected) {
-      text.textContent = `${chainState.chain_name} unreachable`;
+      text.textContent = `${chainState.chain_name || "The chain"} unreachable`;
     } else if (chainState.minting_enabled) {
       text.textContent = `${chainState.chain_name} · block ${chainState.block_number ?? "—"} · minting live`;
     } else {

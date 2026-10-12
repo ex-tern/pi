@@ -130,6 +130,9 @@
       if (what === "nothing") return;
       if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
       else if (!what.isConnected) return;
+      else if (what.classList.contains("ob-member") && dy > 0) {        // a scroll out on a pill shrinks its bubble, as anywhere on it
+        const bub = what.closest(".orbit-bubble.is-group"); if (bub && window.SeBubble) window.SeBubble.zoom(bub, dy);
+      }
       else if (what.classList.contains("ob-member")) {                  // a pill: a few steps in open its window
         what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
         if (what._acc < -60) { what._acc = 0; if (O().openKey) O().openKey(what.dataset.key); }

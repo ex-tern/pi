@@ -75,3 +75,8 @@
 .pj-ed-text:focus { border-color: var(--cobalt, #2f40e8); }
 .pj-ed-errors { font: 11.5px/1.4 var(--font-mono, ui-monospace, monospace); color: var(--danger, #b3261e); min-height: 1.4em; }
 .pj-ed-row { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }   /* the keys, not buttons: nothing here is clickable, only zoomable */
+
+/* the program editor sits inside the super's π corners, like a window's content (owner, 2026-10-12: "fix all ui");
+   the margin round it is where a scroll out closes it */
+html.shape-se .se-project .pj-editor { padding: 9% 10%; }
+html.shape-se .se-project.is-open { corner-shape: superellipse(var(--pj-k, 1.6515)); }

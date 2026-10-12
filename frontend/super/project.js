@@ -79,12 +79,15 @@
     const show = Math.max(0, Math.min(1, (t - 0.25) / 0.35));
     el.style.setProperty("--pj-show", show.toFixed(3));
     el.style.setProperty("--pj-map", Math.max(0, Math.min(1, (t - 0.04) / 0.22)).toFixed(3));   // the map comes in as the bubble drawing goes
+    // opening, its corners square up a little (n from π to 8), so the map and the program are never cut by them
+    const sq = Math.max(0, Math.min(1, (t - 0.4) / 0.5)), sqk = sq * sq * (3 - 2 * sq);
+    el.style.setProperty("--pj-k", (1.6515 + (3 - 1.6515) * sqk).toFixed(4));
     el.classList.toggle("is-open", show > 0.02);
     el.classList.toggle("is-mini", t < 0.12);
     el.classList.toggle("is-full", t > 0.98);
     if (t < 0.6 && el.classList.contains("is-editing")) { el.querySelector(".pj-editor").hidden = true; el.classList.remove("is-editing"); }
     // the drawing fits the box, centred
-    const pad = 0.05, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);
+    const pad = 0.1, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);   // clear of the π corners (a superellipse at n = π needs about 10 %)
     map.style.transform = "translate(" + ((r.w - W * s) / 2).toFixed(1) + "px," + ((r.h - H * s) / 2).toFixed(1) + "px) scale(" + s.toFixed(4) + ")";
     if (!probed) probeAll();
   }

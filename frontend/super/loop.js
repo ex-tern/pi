@@ -257,7 +257,9 @@
           }
           if (!any) break;
         }
-        clean = !rs.some((r, i) => nodes.some(nd => overlap(r, nd)) || rs.some((q, j) => j > i && overlap(r, q)));
+        // only windows crowding each other make them smaller: a super a window cannot step off (the central super on a
+        // phone) is covered rather than fought over, or the window would shrink and grow back for ever
+        clean = !rs.some((r, i) => rs.some((q, j) => j > i && overlap(r, q)));
         if (!clean) {                                                         // no room: all of them a little smaller
           const next = rs.map((r, i) => { const m = minOf(wins[i]); const w = Math.max(m.w, Math.floor(r.width * 0.9)), h = Math.max(m.h, Math.floor(r.height * 0.9));
             return { left: r.left + (r.width - w) / 2, top: r.top + (r.height - h) / 2, width: w, height: h }; });
@@ -348,8 +350,9 @@
     function sweepPx(deg) {
       const tp = EL.tp || (EL.tp = $(".om-page-pi textPath"));
       if (tp) {                                                      // the π line creeps round the loop, slowly (an eighth of the sweep)
-        const off = ((((deg / 8) % 360) + 360) % 360 / 720 * 100).toFixed(1) + "%";
-        if (off !== sweepPx.last) { sweepPx.last = off; tp.setAttribute("startOffset", off); }   // a tenth of a percent at a time: a few times a second, not every frame
+        // locked (the superellipse look), it stays centred on the right side, upright, never round a corner
+        const off = locked() ? "50%" : ((((deg / 8) % 360) + 360) % 360 / 720 * 100).toFixed(1) + "%";
+        if (off !== sweepPx.last) { sweepPx.last = off; tp.setAttribute("startOffset", off); tp.setAttribute("text-anchor", locked() ? "middle" : "start"); }   // a tenth of a percent at a time: a few times a second, not every frame
       }
       const line = EL.r || (EL.r = $(".om-page-r"));
       if (!line) return;
