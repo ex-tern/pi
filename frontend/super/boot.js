@@ -18,6 +18,7 @@
     return s;
   }
   function unveil() {
+    if (window.SeLegible) window.SeLegible.check();                  // text too small to read is a box before anything shows
     html.classList.add("se-unveil");
     html.classList.remove("se-boot");
     setTimeout(() => html.classList.remove("se-unveil"), 1100);

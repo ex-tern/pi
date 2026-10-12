@@ -21,14 +21,20 @@
   const cache = new WeakMap();                                       // root -> { els, at, key }
 
   const ownText = e => { for (const c of e.childNodes) if (c.nodeType === 3 && c.nodeValue.trim()) return true; return false; };
+  // words added inside a root (a bubble's drawing redrawn, a super's text changed) are looked at at once, not after
+  // the cache runs out (owner, 2026-10-12: "words appear for a second then disappear")
+  let epoch = 0;
+  new MutationObserver(ms => {
+    for (const m of ms) { const t = m.target.nodeType === 1 ? m.target : m.target.parentElement; if (t && t.closest && t.closest(ROOTS)) { epoch++; soon(); return; } }
+  }).observe(document.documentElement, { childList: true, subtree: true, characterData: true });
   function textEls(root) {
     const c = cache.get(root);
-    if (c && performance.now() - c.at < 2500) return c;
+    if (c && c.epoch === epoch && performance.now() - c.at < 2500) return c;
     const els = [];
     if (ownText(root)) els.push(root);
     root.querySelectorAll("*").forEach(e => { if (ownText(e) && !e.closest(SKIP)) els.push(e); });
     els.forEach(e => { if (!e._seLift) e._seFs = null; });            // type sizes are read again (the layout may have changed them)
-    const fresh = { els, at: performance.now(), key: c ? c.key : "" };
+    const fresh = { els, at: performance.now(), key: c ? c.key : "", epoch };
     cache.set(root, fresh);
     return fresh;
   }
@@ -64,7 +70,7 @@
     });
   }
   let asked = false;
-  const soon = () => { if (asked) return; asked = true; requestAnimationFrame(() => { asked = false; check(); }); };
+  function soon() { if (asked) return; asked = true; requestAnimationFrame(() => { asked = false; check(); }); }
   setInterval(() => { if (document.visibilityState === "visible") check(); }, 300);
   document.addEventListener("wheel", () => setTimeout(soon, 60), { passive: true, capture: true });
   document.addEventListener("se:frame", soon);
