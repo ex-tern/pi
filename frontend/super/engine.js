@@ -46,7 +46,8 @@ vec3 embers(vec2 px, float t) {
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
-  vec3 c = light(uv, uTime);                                              // flat paper: no glows, embers or grain
+  vec3 c = light(uv, uTime);                                              // flat paper, with its grain (owner, 2026-10-12: "keep the grains")
+  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -78,8 +79,8 @@ void main() {
   // the shadow under it: wide, soft and warm, a little below (outside the pane only)
   if (uShadow > 0.0) {
     float ds = sdf(vL - vec2(0.0, 9.0));
-    float sh = uShadow * 0.26 * exp(-max(ds, 0.0) / 11.0) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(14.0, 24.0, ds));   // fades out well inside its quad: no box edge
-    OVER(vec3(0.22, 0.12, 0.05), sh);
+    float sh = uShadow * 0.40 * exp(-max(ds, 0.0) / 12.0) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(14.0, 24.0, ds));   // darker on paper (owner, 2026-10-12): fades out well inside its quad
+    OVER(vec3(0.10, 0.10, 0.10), sh);
   }
   // the glass: the light behind it, frosted (brightened, a touch whitened), lighter at the top, with a bright rim
   float inside = 1.0 - smoothstep(-aa, aa, d);
@@ -125,7 +126,7 @@ void main() {
   OVER(vec3(0.35, 0.55, 1.0), bb * 0.16 * lit * step(0.0001, uFill));
   // the edge: a fine line in the edge colour, a little see-through so the glass reads
   float e = 1.0 - smoothstep(uEdgeW * 0.5 - aa, uEdgeW * 0.5 + aa, abs(d));
-  OVER(uEdge, e * (uFill > 0.0 ? 0.62 : 0.85));
+  OVER(uEdge, e * (uFill > 0.0 ? 0.92 : 0.95));                          // a dark edge on paper
   // the sheen: an iridescent light running round the edge (hovered or selected)
   if (uSheen > 0.001) {
     float ang = atan(vL.y / uHalf.y, vL.x / uHalf.x) / 6.2831853 + 0.5;
