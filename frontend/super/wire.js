@@ -308,6 +308,9 @@
   function curve(p, q, a, b) {
     const titled = (a && a.h === "title") || (b && b.h === "title");   // the title's wire keeps its straight stretch for the π digits
     if (!titled && (kindOf(a) === "ctl" || kindOf(b) === "ctl")) return ctlCurve(p, q, a, b);
+    // side to side (input, output): never curvy (owner, 2026-10-12: "side to side shouldnt be curvy"): out level, one
+    // straight run across, in level, with small superellipse corners, as a flow language routes it
+    if ((kindOf(a) === "data" || kindOf(b) === "data") && se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], true, null);
     const hz = Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]);
     const into = hz && vPort(b) && !vPort(a) ? "v" : hz && vPort(a) && !vPort(b) ? "v0" : null;
     if (se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], hz, into);
