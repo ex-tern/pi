@@ -59,7 +59,8 @@
     const vw = window.innerWidth, vh = window.innerHeight;
     const ph = vw < 700, x = state.x != null ? state.x * vw : (ph ? 0.126 : 0.775) * vw, y = state.y != null ? state.y * vh : (ph ? 0.70 : 0.651) * vh;   // desktop: inside the third super, beside Lab
     const B = room();                                              // it lives inside the inner super, the second super
-    return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w: MIN, h: MIN };
+    const w = state.w > 40 ? state.w : MIN, h = state.h > 40 ? state.h : MIN;   // its own size once Shift + drag gave it one (super/shiftsize.js)
+    return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w, h };
   }
   function compactRect() {
     const c = compactLayout(), f = zoomOf().f, [x, y] = toScreen(c.x, c.y);
@@ -99,6 +100,17 @@
     const pad = 0.1, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);   // clear of the π corners (a superellipse at n = π needs about 10 %)
     map.style.transform = "translate(" + ((r.w - W * s) / 2).toFixed(1) + "px," + ((r.h - H * s) / 2).toFixed(1) + "px) scale(" + s.toFixed(4) + ")";
     if (!probed) probeAll();
+  }
+  // closed for good (too small, or dropped outside the inner super) until the app is reset, as a bubble is
+  let overAcc = 0, overT = 0;
+  function closeSoon(dy) {
+    overAcc += dy; clearTimeout(overT); overT = setTimeout(() => { overAcc = 0; }, 500);
+    if (overAcc > 160) { overAcc = 0; goAway(); }
+  }
+  function goAway() {
+    if (!el || el.classList.contains("se-closing")) return;
+    el.classList.add("se-closing");
+    setTimeout(() => { el.classList.remove("se-closing"); el.hidden = true; try { localStorage.setItem("se:gone:project", "1"); } catch (_) { /* private mode */ } document.dispatchEvent(new CustomEvent("se:obstacle")); document.dispatchEvent(new CustomEvent("se:frame")); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
   }
   function setT(v, commit) {
     tTo = Math.max(0, Math.min(1, v));
@@ -143,6 +155,7 @@
     wiresSvg = map.querySelector(".pj-wires");
     drawWires();
     document.body.appendChild(el);
+    try { if (localStorage.getItem("se:gone:project") === "1") el.hidden = true; } catch (_) { /* private mode */ }   // put away until the app is reset
     wire();
     place();
     setTimeout(settleFree, 1500);                                    // never on top of something to begin with
@@ -286,6 +299,7 @@
       const editing = el.classList.contains("is-editing");
       if (dy < 0 && tTo >= 1) { progAcc += dy; clearTimeout(progT); progT = setTimeout(() => { progAcc = 0; }, 500); if (progAcc < -120 && !editing) { progAcc = 0; showProgram(true); } return; }
       if (dy > 0 && editing) { showProgram(false); return; }
+      if (dy > 0 && tTo <= 0 && t <= 0.001) { closeSoon(dy); return; }   // compact and scrolled on out: too small, it closes (the same logic as every super)
       setT(tTo - dy * k);
     }, { capture: true, passive: false });
     // presses inside it are its own: the page does not select, wire or drag through it
@@ -386,11 +400,13 @@
       if (window.SeHold) window.SeHold.follow(el);
       document.dispatchEvent(new CustomEvent("se:frame:first")); document.dispatchEvent(new CustomEvent("se:frame"));   // its ports and wires follow it, as a bubble's do
     };
-    const up = () => {
+    const up = ev => {
+      const ev2x = ev ? ev.clientX : -1, ev2y = ev ? ev.clientY : -1;
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
       el._pjDrag = false;
       if (window.SeHold) window.SeHold.end(el);
       if (!moved) return;
+      if (ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y)) { goAway(); return; }   // dropped outside the inner super: gone on purpose
       settleFree(); save(state);
       document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves
     };
@@ -409,6 +425,8 @@
   }
   window.SeProject = { open: () => setT(1), close: () => setT(0), ask,
     // moved with a holder it sits in (super/nodes.js): by a screen offset, compact only
+    // Shift + drag (super/shiftsize.js): its compact width and height, in layout px
+    resize: (w, h) => { state.w = Math.round(Math.max(60, w)); state.h = Math.round(Math.max(60, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
     moveBy: (dx, dy) => {
       if (!el || el.classList.contains("is-open")) return;
       if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(), [lx, ly] = toLayout(r.left, r.top); state.x = lx / window.innerWidth; state.y = ly / window.innerHeight; }

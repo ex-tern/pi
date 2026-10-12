@@ -95,7 +95,7 @@
   // a locked super keeps its size and its n (owner, 2026-10-12: "locking a super also locks resizing and n value
   // change"): a scroll or Shift + scroll on it says so instead (its pills still open their windows, a window's content
   // still zooms)
-  const locked = el => !!(window.SeLock && el && el.classList && window.SeLock.isLocked(el));
+  const locked = el => !!(window.SeLock && el && el.classList && (window.SeLock.isLocked(el) || (el.classList.contains("orbit-title") && window.SeLock.isLocked(el.querySelector(".se-titlesuper")))));
   const sizes = w => w && w.classList ? (w.classList.contains("lv-node") || w.classList.contains("orbit-bubble") ? w : null) : null;
   let noteAt = 0;
   function lockedNote(el, x, y) {

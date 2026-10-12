@@ -104,6 +104,16 @@
     if (el._sbT == null) el._sbT = isCompact(el) ? 0 : 1;
     if (!el._sbNat || (el._sbT === 0 || el._sbT === 1)) el._sbNat = natural(el);
     const tTo = Math.max(0, Math.min(1, (el._sbTo != null ? el._sbTo : el._sbT) - dy * 0.004));
+    // the same logic as every super (owner, 2026-10-12: "make all supers consistent ... same logic"): compact and
+    // scrolled on out, it is too small and closes, fading away (gone until the app is reset)
+    if (dy > 0 && el._sbT === 0 && tTo === 0) {
+      el._sbOver = (el._sbOver || 0) + dy; clearTimeout(el._sbOverT); el._sbOverT = setTimeout(() => { el._sbOver = 0; }, 500);
+      if (el._sbOver > 160 && !el.classList.contains("se-closing")) {
+        el.classList.add("se-closing");
+        setTimeout(() => { el.classList.remove("se-closing"); if (window.PiOrbit && window.PiOrbit.gone) window.PiOrbit.gone(el.dataset.key); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
+      }
+      return;
+    }
     if (tTo === (el._sbTo != null ? el._sbTo : el._sbT)) return;
     el._sbTo = tTo;
     // every step glides (owner, 2026-10-12: no sudden movement): the steps of one gesture become one motion

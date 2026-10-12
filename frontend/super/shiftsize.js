@@ -7,7 +7,7 @@
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
-  const SEL = ".lv-node, .orbit-panel, .orbit-bubble.is-group.is-compact";
+  const SEL = ".lv-node, .orbit-panel, .orbit-bubble.is-group.is-compact, .se-project:not(.is-open), .orbit-title .se-titlesuper";   // every super
   const fit = () => (O().fit ? O().fit().f : 1) || 1;
   const keyOf = el => el.dataset.key || "";
   function load(k) { try { return JSON.parse(localStorage.getItem("se:size:" + k) || "null"); } catch (_) { return null; } }
@@ -29,7 +29,7 @@
       return;
     }
     e.preventDefault(); e.stopImmediatePropagation();
-    const f = el.classList.contains("orbit-panel") ? 1 : fit();          // nodes and bubbles are sized in layout px
+    const f = el.classList.contains("orbit-panel") || el.classList.contains("se-titlesuper") ? 1 : fit();   // nodes, bubbles and the project are sized in layout px
     drag = { el, x0: e.clientX, y0: e.clientY, w0: el.offsetWidth, h0: el.offsetHeight, f, id: e.pointerId };
     html.classList.add("se-shift-sizing");
     try { el.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
@@ -42,7 +42,9 @@
     else if (el.classList.contains("orbit-panel")) {
       el.style.width = Math.round(Math.max(200, w)) + "px"; el.style.height = Math.round(Math.max(120, h)) + "px";
       el.userSized = true; el.seSized = true;
-    } else sizeBubble(el, w, h);
+    } else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.resize) window.SeProject.resize(w, h); }
+    else if (el.classList.contains("se-titlesuper")) { el.style.width = Math.round(w) + "px"; el.style.height = Math.round(h) + "px"; }
+    else sizeBubble(el, w, h);
     if (window.SeShape) window.SeShape.size && window.SeShape.size(e.clientX, e.clientY, Math.round(w), Math.round(h));
     document.dispatchEvent(new CustomEvent("se:frame"));
   }, true);
@@ -51,6 +53,7 @@
     e.preventDefault(); e.stopImmediatePropagation();
     const el = drag.el; drag = null; html.classList.remove("se-shift-sizing");
     if (el.classList.contains("orbit-bubble")) { const k = keyOf(el); if (k) save(k, { w: el.offsetWidth, h: el.offsetHeight }); }
+    if (el.classList.contains("se-titlesuper")) save("title", { w: el.offsetWidth, h: el.offsetHeight });
     if (O().layout) O().layout();
     document.dispatchEvent(new CustomEvent("se:obstacle"));
   };
@@ -59,6 +62,8 @@
   // a bubble sized by hand keeps its size (compact only: open, it is as big as its pills)
   function restore() {
     if (!on()) return;
+    const ts = document.querySelector(".orbit-title .se-titlesuper"), tv = load("title");
+    if (ts && tv && !ts.style.width) { ts.style.width = tv.w + "px"; ts.style.height = tv.h + "px"; }
     document.querySelectorAll(".orbit-bubble.is-group[data-key]").forEach(b => {
       const v = load(keyOf(b));
       const compact = b.classList.contains("is-compact");

@@ -14,7 +14,7 @@
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
-  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project";
+  const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper";
 
   function nameOf(el) {
     if (!el || !el.classList) return null;
@@ -22,6 +22,7 @@
     if (el.classList.contains("orbit-bubble")) return el.dataset.key ? "bubble:" + el.dataset.key : null;
     if (el.classList.contains("orbit-panel")) { const k = O().keyOf ? O().keyOf(el) : null; return k ? "win:" + k : null; }
     if (el.classList.contains("se-project")) return "project";
+    if (el.classList.contains("se-titlesuper")) return "title";
     return null;
   }
   const load = name => { try { return localStorage.getItem("se:lock:" + name) === "1"; } catch (_) { return false; } };
