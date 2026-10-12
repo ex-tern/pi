@@ -90,6 +90,8 @@
   // pick: what the gesture acts on: "site" (the view), an element (a node, a window, a bubble, a zoom box,
   // or with Alt a thing); null leaves it to the browser (content that scrolls)
   const PRESS = "button, a[href], summary, [role=button], [role=tab], label:has(> input[type=checkbox]), label:has(> input[type=radio]), input[type=checkbox], input[type=radio], input[type=submit], input[type=button]";
+  // a pinch (or Ctrl + scroll) does what a scroll does, on the same things (owner, 2026-10-12: "zooming and scrolling
+  // does the same thing as scrolling"); only its deltas are scaled (they are small)
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
@@ -106,17 +108,17 @@
     const zb = t && t.closest("[data-zoombox]");
     // a scroll in on a button opens it, anywhere in the app (owner, 2026-10-12: "scroll means opens a button"): buttons,
     // links, tabs and toggles inside windows press with a few steps in; a scroll out goes on to the window
-    const btn = t && panel && !alt && !pinch && t.closest(PRESS);
+    const btn = t && panel && !alt && t.closest(PRESS);
     if (btn && panel.contains(btn)) return btn;
     if (panel && alt && zb && zb._zoom) return zb;
     if (panel) return panel;
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }
     // a pill in an open bubble expands into its window by a scroll in on it (every super scrolls to expand)
     const pill = t && t.closest(".ob-member");
-    if (pill && pill.dataset.key && !pinch && !alt) return pill;
+    if (pill && pill.dataset.key && !alt) return pill;
     // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it, gradually
     const bubble = t && t.closest(".orbit-bubble.is-group");
-    if (bubble && window.SeBubble && !pinch) return bubble;
+    if (bubble && window.SeBubble) return bubble;
     return "site";
   }
   // one gesture stays on what it started on, so a thing that grows under the pointer keeps being sized
