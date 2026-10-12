@@ -756,7 +756,7 @@
     if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
     persist(); tick();
     say(ai ? "Super AI made: type a question and press Enter, and every engine answers; press it to see each answer"
-           : BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
+           : BY[m.fn].name + " made: a super with four ports; hold shift + scroll to change its shape, type into it, wire it");
     if (ai && window.SeSelect && window.SeSelect.select) window.SeSelect.select(m.el);
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
     return m;
@@ -803,7 +803,7 @@
              str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, hold: !!s.hold, aspect: s.aspect || undefined, manual: !!s.n, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: s.n || Math.PI });   // s.n: its own shape, kept
     });
     wireUp(prog.wires || []);
-    save("lv:start-wired", 1); save("lv:side-wired", 1);
+    save("lv:start-wired", 1); save("lv:side-wired", 1); save("lv:intro-gone", 1);   // today's start: nothing of the old intro to clear (else the hint super, id shift, went at the next load)
     persist();
   }
   // A program's wire end ("super.port") as a SuperLink anchor: "site.port" is the inner super's port, "main.port"
@@ -1211,14 +1211,17 @@
   }
   function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight / (n.aspect || 1)) - 20;
+    const sbx = O().siteBox ? O().siteBox() : null;                 // as big as the inner super lets (then it fills it: super/maximize.js)
+    const cur = n.st.sizeTo || n.size || DOT_BASE, max = sbx && sbx.a ? Math.min(2 * sbx.a, 2 * sbx.b / (n.aspect || 1)) - 8 : Math.min(window.innerWidth, window.innerHeight / (n.aspect || 1)) - 20;
+    if (window.SeMax && window.SeMax.isMax(n.el)) { if (dy > 0) window.SeMax.restore(n.el); return; }   // filling the inner super: a scroll out gives it back its size
+    if (dy < 0 && cur >= max - 1 && window.SeMax) { n.st.maxAcc = (n.st.maxAcc || 0) - dy; clearTimeout(n.st.maxT); n.st.maxT = setTimeout(() => { n.st.maxAcc = 0; }, 500); if (n.st.maxAcc > 120) { n.st.maxAcc = 0; window.SeMax.maximize(n.el); } return; }
     // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
     if (dy > 0 && !auto && cur <= 36 && n.id !== "site-box") {
       n.st.over = (n.st.over || 0) + dy; clearTimeout(n.st.overT); n.st.overT = setTimeout(() => { n.st.over = 0; }, 500);
       if (n.st.over > 160 && !n.st.closing) closeNode(n);
       return;
     }
-    const d = Math.round(Math.max(36, Math.min(n.fn === "dot" || n.fn === "box" ? max : 240, cur * Math.exp(-dy * 0.0015))));
+    const d = Math.round(Math.max(36, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
     if (d === cur) return;
     n.st.sizeTo = d;
     const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s * (n.aspect || 1) / 2) / window.innerHeight; place(n); };
@@ -1463,7 +1466,7 @@
     // the first supers of earlier visits (Connect wires to begin, use shift+scroll, open, close, run) are gone
     // from the start (owner, 2026-10-12): a kept diagram loses them too, unless something was typed into them
     if (saved && !restore("lv:intro-gone")) {
-      const intro = { start: "", shift: "", open: "open", close: "close", run: "run" };
+      const intro = { start: "", open: "open", close: "close", run: "run" };   // (shift is today's hint super: kept)
       saved = saved.filter(n => !(n && n.id in intro && ((n.str || "").trim() === intro[n.id] || !(n.str || "").trim())));
       save("lv:nodes", saved); save("lv:intro-gone", 1);
       if (window.SuperLink && window.SuperLink.forget) Object.keys(intro).forEach(id => window.SuperLink.forget("node:" + id));
@@ -1495,6 +1498,19 @@
     // the side wires (owner, 2026-10-12: "side wires dont work"): the site's input and output to the main super's are
     // real wires now (selectable, deletable, flowing), not drawn lattice lines; a kept diagram gets them once
     if (se() && !restore("lv:side-wired")) { save("lv:side-wired", 1); wireUp([["main.input", "site.input"], ["site.output", "main.output"]]); }
+    // the hint super went at a second load for a while (the old intro clean-up): it comes back once
+    if (se() && window.innerWidth >= 700 && !nodes.find(x => x.id === "shift") && !restore("lv:shift-back")) {
+      save("lv:shift-back", 1);
+      const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram, sp = prog && (prog.supers || []).find(x => x.id === "shift"), c = nodes.find(x => x.id === "site-box");
+      if (sp && c) {
+        try { if (localStorage.getItem("se:lock:node:shift") == null) localStorage.setItem("se:lock:node:shift", "1"); } catch (_) { /* private mode */ }
+        const m = make({ id: "shift", fn: "box", role: "engine", hint: sp.hint, fx: c.fx + 150 / window.innerWidth, fy: c.fy, inputs: [], n: Math.PI });
+        if (m) { clear(m); persist(); }
+      }
+    } else if (!restore("lv:shift-back")) save("lv:shift-back", 1);
+    // the program's hints are the program's (a kept diagram shows today's words: "hold shift + scroll")
+    { const prog = window.SuperAI && window.SuperAI.program && window.SuperAI.program.diagram;
+      ((prog && prog.supers) || []).forEach(sp => { const n = sp.hint && nodes.find(x => x.id === sp.id); if (n && n.hint !== sp.hint) { n.hint = sp.hint; persist(); } }); }
     setInterval(tick, 250);
     document.addEventListener("se:frame", () => {              // super/motion.js: while something moves, every frame
       const f = O().fit ? O().fit().f : 1;
@@ -1523,6 +1539,9 @@
     // super/scroll.js: a scroll on a node sizes it
     window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
+                       // super/maximize.js: a super's whole box in layout px (it fills the inner super, and back)
+                       rectOf: el => { const n = nodes.find(x => x.el === el); return n ? { x: n.fx * window.innerWidth, y: n.fy * window.innerHeight, w: n.size || DOT_BASE, h: (n.size || DOT_BASE) * (n.aspect || 1), aspect: n.aspect || 0 } : null; },
+                       setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(36, w); h = Math.max(36, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },
                        // super/hold.js: supers held by another super move with it, by a screen offset
                        moveNodes: (ids, dx, dy) => { const a = toLayout(0, 0), b = toLayout(dx, dy), fx = (b.x - a.x) / window.innerWidth, fy = (b.y - a.y) / window.innerHeight; nodes.forEach(n => { if (ids.includes(n.id)) { n.fx += fx; n.fy += fy; place(n); } }); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); },
                        // Shift + drag (super/shiftsize.js): its width and height, in layout px; a rectangle keeps its aspect

@@ -129,6 +129,10 @@
     // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it, gradually
     const bubble = t && t.closest(".orbit-bubble.is-group");
     if (bubble && window.SeBubble) return bubble;
+    // a super filling the inner super (super/maximize.js) takes the scroll on its bare space
+    const pt = t && t.__pt;
+    const big = [...document.querySelectorAll(".lv-node.se-max, .orbit-panel.se-max")].find(el => { const r = el.getBoundingClientRect(); return pt && pt[0] >= r.left && pt[0] <= r.right && pt[1] >= r.top && pt[1] <= r.bottom; });
+    if (big) return big;
     return "site";
   }
   // one gesture stays on what it started on, so a thing that grows under the pointer keeps being sized
@@ -188,6 +192,18 @@
           if (what._over > 160 && O().keyOf && O().close) { what._over = 0; O().close(O().keyOf(what)); }
           return;
         }
+        // as big as the layout lets, a few steps more fill the inner super (super/maximize.js); filling it, a scroll out
+        // (its content all in view) gives it back its size
+        const SM = window.SeMax;
+        if (SM && SM.isMax(what)) { if (dy > 0 && !(z && kNow > z.state.fitK * 1.001)) { SM.restore(what); return; } if (z) z.zoomAt(x, y, dy); return; }
+        if (SM && dy < 0) {                                           // full, or no longer growing for a while: fill the inner super
+          const now = performance.now();
+          if (!what._g || now - what._g.t > 700) what._g = { w: what.offsetWidth, h: what.offsetHeight, acc: 0 };
+          what._g.t = now; what._g.acc -= dy;
+          const stuck = what._g.acc > 600 && what.offsetWidth - what._g.w < 4 && what.offsetHeight - what._g.h < 4;
+          if ((full && what._g.acc > 120) || stuck) { what._g = null; SM.maximize(what); return; }
+          if (what._g.acc > 600) what._g = { w: what.offsetWidth, h: what.offsetHeight, acc: 0, t: now };   // still growing: look again
+        }
         if (z) z.zoomAt(x, y, dy);
         if (window.SeSite && ((dy < 0 && !full) || (dy > 0 && !(z && kNow > z.state.fitK * 1.001)))) window.SeSite.sizeWindow(what, dy);
       }
@@ -234,6 +250,7 @@
     const pinch = e.ctrlKey;
     if (!pinch && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;          // sideways: super/nodes.js guards the swipe
     const fresh = gesture && now - gesture.t < 400 && gesture.pinch === pinch && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
+    if (hit) hit.__pt = [x, y];
     const target = fresh ? gesture.what : pick(hit, pinch, e.altKey);
     if (target === null) { gesture = null; return; }                         // content that scrolls keeps scrolling
     gesture = { what: target, t: now, pinch };

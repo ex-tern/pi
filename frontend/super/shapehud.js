@@ -56,10 +56,10 @@
     if (!hud) {
       hud = document.createElement("div");
       hud.className = "se-shapehud"; hud.setAttribute("aria-live", "polite");
-      hud.innerHTML = '<span class="sh-key">shift + scroll</span><svg viewBox="0 0 40 40" aria-hidden="true"><path d=""/></svg><span class="sh-n"></span><span class="sh-name"></span>';
+      hud.innerHTML = '<span class="sh-key">hold shift + scroll</span><svg viewBox="0 0 40 40" aria-hidden="true"><path d=""/></svg><span class="sh-n"></span><span class="sh-name"></span>';
       document.body.appendChild(hud);
     }
-    hud.querySelector(".sh-key").textContent = "shift + scroll";
+    hud.querySelector(".sh-key").textContent = "hold shift + scroll";
     hud.querySelector("path").setAttribute("d", atZero(n) ? "M20,5L20,35M5,20L35,20" : atInf(n) ? "M5,5H35V35H5Z" : path(n, 15));
     hud.querySelector(".sh-n").textContent = atZero(n) ? "n → 0" : atInf(n) ? "n → ∞" : "n = " + (n >= 100 ? Math.round(n) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
     hud.querySelector(".sh-name").textContent = nameOf(n);
@@ -77,7 +77,7 @@
   function size(x, y, w, h) {
     show(x, y, Math.PI);
     hud.querySelector("path").setAttribute("d", "M" + (20 - 15 * Math.min(1, w / Math.max(w, h))) + "," + (20 - 15 * Math.min(1, h / Math.max(w, h))) + "h" + (30 * Math.min(1, w / Math.max(w, h))) + "v" + (30 * Math.min(1, h / Math.max(w, h))) + "h" + (-30 * Math.min(1, w / Math.max(w, h))) + "Z");
-    hud.querySelector(".sh-key").textContent = "shift + drag";
+    hud.querySelector(".sh-key").textContent = "hold shift + drag";
     hud.querySelector(".sh-n").textContent = w + " × " + h;
     hud.querySelector(".sh-name").textContent = "width × height";
     hud.classList.remove("at-detent");

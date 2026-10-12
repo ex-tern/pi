@@ -74,7 +74,7 @@ window.SUPERAI_PROGRAM = {
   // A wire: "super.port" to "super.port"; "site" is the inner super, whose ports are input, output, sync
   // and condition, as every super's are; "bubble:Title" is a bubble (a super too).
   diagram: {
-    // The central super at the start, and beside it a locked "use shift+scroll" hint (owner, 2026-10-12: "add this to
+    // The central super at the start, and beside it a locked "hold shift + scroll" hint (it said "use shift+scroll" until 2026-10-12) (owner, 2026-10-12: "add this to
     // initial state"; as a hint it is never sent to the engines); a visitor makes more supers with a double click.
     supers: [
       // a third super (owner, 2026-10-12: "add a third super and add everything inside it except connect"): a holder
@@ -82,7 +82,7 @@ window.SUPERAI_PROGRAM = {
       // in shares of the inner super [x0, y0, x1, y1]; desktop only (a phone stacks the bubbles instead)
       { id: "hold", kind: "box", text: "super", hold: true, desktop: true, n: 12, at: { inSite: [0.285, 0.02, 0.985, 0.98] } },
       { id: "site-box", kind: "engine", at: { center: true } },
-      { id: "shift", kind: "engine", hint: "use shift+scroll", locked: true, at: { from: "site-box", dx: 150, dy: 0 } }
+      { id: "shift", kind: "engine", hint: "hold shift + scroll", locked: true, at: { from: "site-box", dx: 150, dy: 0 } }
     ],
     // "bubble:Title" is one of the bubbles above (its ports are a super's: input, output, sync, condition);
     // "main" is the main super (the loop round everything), "title" the title super (its edge is the wire's end).
