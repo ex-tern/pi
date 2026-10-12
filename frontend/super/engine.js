@@ -24,6 +24,8 @@ const LIGHT = `
 // sky): a cool grey-blue overcast above, a warm peach glow along a low horizon, a low sun to the right of the middle
 // whose golden light rakes across the page in soft slanting rays, a light vignette; the panes show it through their
 // frost (the same function lights them), so the sun shines in the glass
+// where the sun is, in the page's uv (0,0 top left): low, to the right of the middle, drifting very slowly
+vec2 sunAt(float t) { return vec2(0.68 + 0.01 * sin(t * 0.02), 0.74 + 0.006 * sin(t * 0.03) - 0.035); }
 vec3 light(vec2 uv, float t) {
   float a = uRes.x / uRes.y;
   vec2 v = (uv - 0.5) * vec2(a, 1.0);
@@ -34,7 +36,7 @@ vec3 light(vec2 uv, float t) {
   vec3 c = mix(sky, vec3(0.99, 0.87, 0.72), 0.85 * band);                  // the peach glow along it
   c = mix(c, vec3(0.95, 0.89, 0.79), smoothstep(hz, 1.0, y) * 0.9);        // warm ground light below it
   // the low sun, drifting very slowly, and its glow
-  vec2 sp = (vec2(0.68 + 0.01 * sin(t * 0.02), hz - 0.035) - 0.5) * vec2(a, 1.0);
+  vec2 sp = (sunAt(t) - 0.5) * vec2(a, 1.0);
   vec2 d = v - sp; float r = length(d);
   c += vec3(1.0, 0.80, 0.52) * (0.22 * exp(-r * r / 0.012) + 0.16 * exp(-r / 0.32));
   // rays fanning out of it, slanting across the page, breathing slowly
@@ -117,6 +119,14 @@ void main() {
   float inside = 1.0 - smoothstep(-aa, aa, d);
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
   float ny = clamp(vL.y / (2.0 * uHalf.y) + 0.5, 0.0, 1.0);              // 0 at the top, 1 at the bottom
+  // the sun on the glass (owner, 2026-10-12: "make the sun rays hit the glass"): which way the sun is from here, how
+  // strongly it reaches this pane, and the outward normal of the pane's edge
+  vec2 toSunPx = (sunAt(uTime) - uv) * uRes;
+  float sunD = length(toSunPx) / uRes.y;
+  vec2 toSun = toSunPx / max(length(toSunPx), 1e-3);
+  float sunK = 0.45 + 0.55 * exp(-sunD / 0.55);                            // nearer the sun, stronger
+  vec2 nrm = normalize(vec2(sdf(vL + vec2(1.5, 0.0)) - sdf(vL - vec2(1.5, 0.0)), sdf(vL + vec2(0.0, 1.5)) - sdf(vL - vec2(0.0, 1.5))) + 1e-5);
+  float facing = max(dot(nrm, toSun), 0.0), away = max(-dot(nrm, toSun), 0.0);
   if (uFill > 0.0 && inside > 0.0) {
     vec3 behind = light(uv, uTime);
     vec3 glass = mix(behind * 0.985, vec3(1.0), uFill);
@@ -125,8 +135,6 @@ void main() {
     // the others, reflected: each neighbour's light glows into the glass along the edge facing it, and its edge
     // shows as a faint mirror image in the rim (the point mirrored across this pane's edge, read in its shape)
     if (uNbN > 0) {
-      vec2 gx = vec2(1.5, 0.0), gy = vec2(0.0, 1.5);
-      vec2 nrm = normalize(vec2(sdf(vL + gx) - sdf(vL - gx), sdf(vL + gy) - sdf(vL - gy)) + 1e-5);
       float depth = max(-d, 0.0), band = 1.0 - smoothstep(0.0, 52.0, depth);
       vec2 mir = vL + nrm * 7.0 * depth;                                    // where this point sees in the edge's curved mirror (compressed, as a convex glass shows it)
       float ga = 0.0, ghost = 0.0, rimW = min(34.0, 0.22 * min(uHalf.x, uHalf.y));   // a small super keeps its middle clear
@@ -149,15 +157,32 @@ void main() {
     // the bevel: a bright inner line all round, strongest along the top
     float rim = (1.0 - smoothstep(0.6, 2.2, -d)) * inside;
     OVER(vec3(1.0), rim * mix(0.85, 0.30, ny));
+    // the sun hitting it: rays crossing the glass, slanting from the sun, slowly breathing
+    vec2 fromSun = -toSunPx;
+    float ang = atan(fromSun.y, fromSun.x);
+    float rays = 0.5 + 0.5 * sin(ang * 23.0 + uTime * 0.06) * sin(ang * 9.0 - uTime * 0.045);
+    OVER(vec3(1.0, 0.86, 0.60), inside * 0.16 * pow(rays, 4.0) * sunK);
+    // a warm wash over the side facing the sun, fading across the pane
+    float side = clamp(dot(vL / max(uHalf, vec2(1.0)), toSun) * 0.5 + 0.5, 0.0, 1.0);
+    OVER(vec3(1.0, 0.88, 0.66), inside * 0.14 * side * side * sunK);
+    // the light gathered at the far inner edge, as a lens focuses it (a soft caustic)
+    float depthIn = max(-d, 0.0);
+    OVER(vec3(1.0, 0.82, 0.52), inside * 0.30 * pow(away, 3.0) * (1.0 - smoothstep(0.0, 16.0, depthIn)) * smoothstep(0.5, 3.0, depthIn) * sunK);
+    // the gold rim where the sun strikes the edge, and a bright glint where it catches square on
+    float band = 1.0 - smoothstep(1.0, 8.0, depthIn);
+    OVER(vec3(1.0, 0.74, 0.36), inside * band * 0.85 * pow(facing, 1.6) * sunK);
+    OVER(vec3(1.0, 0.97, 0.86), inside * (1.0 - smoothstep(0.5, 4.0, depthIn)) * pow(facing, 14.0) * sunK);
   }
   // the prism: the edge splits the light a little, red outside, blue inside, always faint
   float rr = 1.0 - smoothstep(0.0, 1.4, abs(d - 1.3)), bb = 1.0 - smoothstep(0.0, 1.4, abs(d + 1.6));
-  float lit = 0.5 + 0.5 * (-vL.x / uHalf.x - vL.y / uHalf.y) * 0.5;      // the light comes from the top left
+  float lit = 0.35 + 1.4 * facing * sunK;                                  // the light comes from the sun: the edge facing it splits it most
   OVER(vec3(1.0, 0.45, 0.30), rr * 0.18 * lit * step(0.0001, uFill));
   OVER(vec3(0.35, 0.55, 1.0), bb * 0.16 * lit * step(0.0001, uFill));
+  // the sun spilling past the lit edge, a soft gold halo just outside it
+  if (uFill > 0.0) OVER(vec3(1.0, 0.78, 0.42), step(0.0, d) * (1.0 - smoothstep(0.0, 9.0, d)) * pow(facing, 2.0) * 0.40 * sunK);
   // the edge: a fine line in the edge colour, a little see-through so the glass reads
   float e = 1.0 - smoothstep(uEdgeW * 0.5 - aa, uEdgeW * 0.5 + aa, abs(d));
-  OVER(uEdge, e * (uFill > 0.0 ? 0.92 : 0.95));                          // a dark edge on paper
+  OVER(mix(uEdge, vec3(0.62, 0.40, 0.12), 0.55 * pow(facing, 2.0) * sunK * step(0.0001, uFill)), e * (uFill > 0.0 ? 0.92 : 0.95));   // a dark edge on paper, warmed to bronze where the sun strikes it
   // the sheen: an iridescent light running round the edge (hovered or selected)
   if (uSheen > 0.001) {
     float ang = atan(vL.y / uHalf.y, vL.x / uHalf.x) / 6.2831853 + 0.5;
