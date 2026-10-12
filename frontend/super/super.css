@@ -477,10 +477,8 @@ html.shape-se .is-locked > .se-lock { cursor: pointer; }
    the text back once a scroll makes it readable */
 html.shape-se .se-glyph:not(svg *) {
   color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;
-  background: color-mix(in srgb, var(--ink) 9%, var(--paper)); border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
-}
+}   /* not shown at all, no box in its place (owner, 2026-10-12: "dont use censoring, simply dont show the word") */
 html.shape-se svg .se-glyph { fill: transparent !important; }
-html.shape-se .lv-node .lv-glyph.se-glyph { width: fit-content !important; max-width: 80%; margin-inline: auto; }   /* a box the size of its words, not a bar across the super */
 
 /* slow motion (owner, 2026-10-12: no sudden movement, everything stable and slow): the bubbles' layout and windows
    pushed aside glide slowly; tweens are slowed in super/motion.js (SLOW) */
