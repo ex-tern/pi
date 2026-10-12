@@ -481,7 +481,7 @@ pub fn engine(typed: &str, ins: &[Value], attached: Option<Op>, hint: &str) -> V
     let is_num = |v: &Value| v.num().is_some() && !matches!(v, Value::Bool(_));
     let op_ins: Vec<&Value> = ins.iter().filter(|v| op_of(&v.text()).is_some() && !is_num(v)).collect();
     let typed_op = op_of(typed);
-    let op = typed_op.or_else(|| op_ins.first().and_then(|v| op_of(&v.text()))).or(if typed.is_empty() { attached } else { None });
+    let op = typed_op.or_else(|| op_ins.first().and_then(|v| op_of(&v.text()))).or(attached);   // an attached operator works whatever the label says
     let nums: Vec<&Value> = ins.iter().filter(|v| !op_ins.contains(v)).collect();
     if let Some(op) = op {
         if !nums.is_empty() && nums.iter().all(|v| is_num(v)) {
@@ -489,7 +489,10 @@ pub fn engine(typed: &str, ins: &[Value], attached: Option<Op>, hint: &str) -> V
         }
     }
     let verb = verb_of(typed);
-    if typed.is_empty() && !ins.is_empty() && ins.iter().all(is_num) {
+    // only numbers wired in and nothing to compute: it shows them; a word typed into it is its label ("math",
+    // "show result"), not a question, unless it ends with "?"
+    let label = !typed.is_empty() && verb.is_none() && !typed.trim_end().ends_with('?');
+    if (typed.is_empty() || label) && !ins.is_empty() && ins.iter().all(is_num) {
         return if ins.len() == 1 { Value::Num(ins[0].num().unwrap()) } else { Value::List(ins.to_vec()) };
     }
     if let Some(v) = verb {

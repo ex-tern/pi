@@ -141,9 +141,24 @@
     const sink = h => isSink(h && h.startsWith("node:") && nodes.find(m => "node:" + m.id === h));
     const meSink = isSink(n);
     const inPort = "port:" + me + "/input";                      // the node's own input port (super/site.js): what is wired to it feeds the node
+    // a Super AI super takes what is wired to any of its ports as an input (owner, 2026-10-12: which sparkle a
+    // wire lands on is incidental when it is drawn by hand), except an operator super, which is its operation
+    // (attachedOp), and the output of another Super AI super wired into *its* input (that flows the other way)
+    const anyPort = n.role === "engine" ? "port:" + me + "/" : null;
+    const otherPort = an => an && an.h && /^port:node:([^/]+)\/(\w+)$/.exec(an.h);
+    const feeds = an => { const m = otherPort(an); if (!m) return true; const o = nodes.find(x => x.id === m[1]); return !(o && opOf((o.str || "").trim())) && m[2] !== "input"; };
     L.forEach(l => {
       if (l.a && l.a.h === inPort && l.b && !(l.b.h && l.b.h === me) && !sinkPort(l.b)) { out.push(l.b); return; }
       if (l.b && l.b.h === inPort && l.a && !(l.a.h && l.a.h === me) && !sinkPort(l.a)) { out.push(l.a); return; }
+      if (anyPort) {
+        // a wire from another super's sync or condition sparkle carries that super's result, as its output does
+        const asOut = an => { const m = otherPort(an); return m && (m[2] === "sync" || m[2] === "condition") ? { h: "port:node:" + m[1] + "/output", el: 1 } : an; };
+        // data flows from an output; between other sparkles, the way the wire was drawn (from its first end to its second)
+        const mineA = l.a && l.a.h && l.a.h.startsWith(anyPort), src = mineA ? l.b : l.b && l.b.h && l.b.h.startsWith(anyPort) ? l.a : null;
+        const fromOut = src && otherPort(src) && otherPort(src)[2] === "output";
+        const lattice = src && src.h && src.h.startsWith("port:") && !src.h.startsWith("port:node:");   // the site's and the main super's ports: the lattice, not data (the central super's sync is π's clock)
+        if (src && !lattice && (!mineA || fromOut) && !(src.h && (src.h === me || src.h.startsWith(anyPort))) && feeds(src)) { const o = asOut(src); if (!sinkPort(o)) { out.push(o); return; } }
+      }
       const ah = l.a && l.a.h, bh = l.b && l.b.h;
       const other = ah === me ? bh : bh === me ? ah : null;
       if (other && other !== me && other.startsWith("node:") && meSink !== sink(other)) { if (meSink) out.push(ah === me ? l.b : l.a); return; }
@@ -232,13 +247,13 @@
           // an operator super joined to this one, by a wire into it or by any of its ports (above, below,
           // beside): its operation works on this super's numbers (3 and 5 wired in, + attached: 8)
           const opIns = all.filter(v => opOf(strOf(v)) && !Number.isFinite(numOf(v)));
-          let op = opOf(typed) || (opIns.length ? opOf(strOf(opIns[0])) : null) || (!typed ? attachedOp(n) : null);
+          let op = opOf(typed) || (opIns.length ? opOf(strOf(opIns[0])) : null) || attachedOp(n);   // an operator super attached at any port is its operation, whatever its label says
           const nums = all.filter(v => !opIns.includes(v));
           // the language's own engine (rust/superai, WebAssembly) decides what is computable and computes it;
           // the JavaScript below does the same until it has loaded
           const RS = window.SuperAI && window.SuperAI.rs;
           if (RS && RS.ready && !verb) {
-            const out = RS.engine(typed, all.map(v => { const x = numOf(v); return Number.isFinite(x) ? x : strOf(v); }), !typed ? attachedOp(n) : null, "");
+            const out = RS.engine(typed, all.map(v => { const x = numOf(v); return Number.isFinite(x) ? x : strOf(v); }), attachedOp(n), "");
             if (out && out.kind === "bool") { n.prompt = ""; n.answer = ""; r = { num: out.value ? 1 : 0, isNum: true, bool: !!out.value, str: out.text, text: out.text }; break; }   // "<", "=", "and" …
             if (out && (out.kind === "number" || out.kind === "list")) {
               n.prompt = ""; n.answer = "";
@@ -263,7 +278,10 @@
             n.prompt = ""; n.answer = "";
             r = Object.assign(N(val), { str: N(val).text, text: typed, expr: all.map(v => v.expr ? "(" + v.expr + ")" : strOf(v)).join(" " + sym + " ") }); break;
           }
-          if (!typed && !verb && all.length && all.every(v => Number.isFinite(numOf(v)))) {
+          // only numbers wired in and nothing to compute: it shows them (a word typed into it is its label, not a
+          // question, unless it ends with "?"; "math", "show result": the number)
+          const label = !!typed && !verb && !/\?\s*$/.test(typed);
+          if ((!typed || label) && !verb && all.length && all.every(v => Number.isFinite(numOf(v)))) {
             const text = all.map(v => N(numOf(v)).text).join(", "); n.prompt = ""; n.answer = "";   // simply the number (how it was made goes with questions)
             r = Object.assign(N(all.length === 1 ? numOf(all[0]) : all.reduce((a, v) => a + numOf(v), 0)), { str: text, text }); break;
           }
@@ -1437,7 +1455,7 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     // super/scroll.js: a scroll on a node sizes it
-    window.LabView = { loopPort, unrun, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+    window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {

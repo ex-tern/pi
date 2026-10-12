@@ -50,6 +50,10 @@ fn engine_computes_what_is_computable() {
     assert_eq!(engine("open", &[], None, ""), Value::Verb("open".into()));
     assert_eq!(engine("", &[Value::Text("run".into())], None, ""), Value::Verb("run".into()));
     assert_eq!(engine("why?", &[Value::Num(1.0)], None, ""), Value::Ask("why? (wired in: 1)".into()));
+    // a label with numbers: the number; with an operator attached: the result ("math" with 4, 3 and + attached: 7)
+    assert_eq!(engine("math", &[Value::Num(4.0), Value::Num(3.0)], op_of("+"), ""), Value::Num(7.0));
+    assert_eq!(engine("show result", &[Value::Num(7.0)], None, ""), Value::Num(7.0));
+    assert_eq!(engine("is it prime?", &[Value::Num(7.0)], None, ""), Value::Ask("is it prime? (wired in: 7)".into()));
     assert_eq!(engine("", &[], None, "Connect wires to begin"), Value::Text("Connect wires to begin".into()));
 }
 
