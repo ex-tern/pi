@@ -794,7 +794,7 @@
              str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, hold: !!s.hold, aspect: s.aspect || undefined, manual: !!s.n, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: s.n || Math.PI });   // s.n: its own shape, kept
     });
     wireUp(prog.wires || []);
-    save("lv:start-wired", 1);
+    save("lv:start-wired", 1); save("lv:side-wired", 1);
     persist();
   }
   // A program's wire end ("super.port") as a SuperLink anchor: "site.port" is the inner super's port, "main.port"
@@ -1479,6 +1479,9 @@
       };
       wire();
     }
+    // the side wires (owner, 2026-10-12: "side wires dont work"): the site's input and output to the main super's are
+    // real wires now (selectable, deletable, flowing), not drawn lattice lines; a kept diagram gets them once
+    if (se() && !restore("lv:side-wired")) { save("lv:side-wired", 1); wireUp([["main.input", "site.input"], ["site.output", "main.output"]]); }
     setInterval(tick, 250);
     document.addEventListener("se:frame", () => {              // super/motion.js: while something moves, every frame
       const f = O().fit ? O().fit().f : 1;

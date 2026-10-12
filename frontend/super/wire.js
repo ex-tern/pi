@@ -153,6 +153,12 @@
     const r = endRect(an);
     if (!r) return null;
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+    // a port: the wire runs right into its sparkle (owner, 2026-10-12: "side wires dont work": short wires between
+    // two ports stopped a few px short of both, and looked broken)
+    if (an.h && an.h.startsWith("port:")) {
+      const pe = hostEl(an.h), dot = pe && (pe.querySelector(".se-port-dot") || pe);
+      if (dot && dot.getClientRects().length) { const d = dot.getBoundingClientRect(); return [d.left + d.width / 2, d.top + d.height / 2]; }
+    }
     if (!toward) return [cx, cy];
     // out of the side facing the other end, or the bottom/top for something straight above or below
     const dx = toward[0] - cx, dy = toward[1] - cy;

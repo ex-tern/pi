@@ -258,7 +258,7 @@
       // not visible"): the site's input and output run to the main super's input and output; its sync and
       // condition are wired to the main super's by the start's own wires (main.sync -> site.sync, site.condition
       // -> main.condition), so they draw no loose sweeps of their own
-      const mp = (side === "left" || side === "right") ? mainPort(p) : null;
+      const mp = null;   // the side wires are real wires now (the program's diagram); the lattice draws nothing of its own
       if (mp) {
         const PX = mp[0] - sr.left, PY = mp[1] - sr.top, c = (PX - X) * 0.5;     // into the main super's port, on its edge
         lattice[p].setAttribute("d", "M" + f(X) + "," + f(Y) + "C" + f(X + c) + "," + f(Y) + " " + f(PX - c) + "," + f(PY) + " " + f(PX) + "," + f(PY));
