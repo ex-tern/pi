@@ -617,3 +617,13 @@ html.shape-se .se-deleting { outline: 2px dashed color-mix(in srgb, var(--ink) 6
 /* any size if unlocked (owner, 2026-10-12): a window you size may be as small as 24 px; one you have not sized keeps its
    readable minimum (super/loop.js) */
 html.shape-se .orbit-panel { min-width: 24px; min-height: 24px; }
+/* the chain (super/chain.js): beside the lock, the same pen; chained, its links are inked in */
+html.shape-se .se-chain { left: calc(50% + 19px); }
+html.shape-se .lv-node:not(.is-holder) > .se-chain { left: calc(50% + 13px); }
+html.shape-se .orbit-title .se-titlesuper > .se-chain { left: calc(50% + 11px); }
+html.shape-se .se-chain .ch-link { fill: none; stroke: var(--ink); stroke-width: 1.1; }
+html.shape-se .se-chain .lk-body, html.shape-se .se-chain .lk-shackle { display: none; }
+html.shape-se .is-chained > .se-chain { opacity: 1; }
+html.shape-se .is-chained > .se-chain .ch-link { stroke-width: 1.4; }
+html.shape-se .is-locked:not(.is-chained) > .se-chain { opacity: 0.35; }
+html.se-chain-dragging, html.se-chain-dragging * { user-select: none !important; cursor: grabbing !important; }
