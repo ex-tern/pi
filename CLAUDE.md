@@ -89,6 +89,8 @@ The title super is selectable like any super (select.js). A holder growing to ta
 
 **Every super closes the same way** (owner, 2026-10-12: "closing a super should animate like n goes to zero and vanishes", "makes them uniform"; super/delete.js vanish): deleted (a double click, or scrolled on out at its smallest), any super, a holder too, glides its n to 0.3 (a star) while it shrinks into its centre and fades, then goes at once (LabView.close(el, true)).
 
+**An open bubble behaves like the third super** (owner, 2026-10-12: "all of these should behave like 3rd super"; bubble.js fit, --in-z): sized by hand or held to a share by its holder, its name box and pills re-form to its box, scaled together (CSS zoom), never squashed.
+
 **Production**: `SCHOLARPI_SHAPE=superellipse` stamps the look into index.html as it is served (backend/shape.py), so a first visit lays out the superellipse site before the first paint.
 
 `SITE_PASSWORD=…` puts a password on the whole deployment (backend/gate.py: every page, API call and static file answers with a small password page or 401 until the visitor has typed it once; a signed HttpOnly cookie, an HMAC of the password with SESSION_SECRET, keeps them in for a month; changing the password logs everyone out; /api/health, /robots.txt and /api/gate stay open). Unset, nothing changes; never set it on production.

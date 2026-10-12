@@ -678,3 +678,8 @@ html.shape-se .ob-member.is-cut { opacity: 0.45; }
 html.shape-se .se-port.is-tiny { opacity: 0; pointer-events: none; }
 html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-members .ob-member { background: transparent !important; border-color: transparent !important; }   /* the engine draws its glass */
 html.shape-se .sl-inner .wire-bed, html.shape-se .sl-wire.sl-inner .wire-bed { stroke: var(--graphite); stroke-width: 1.3; }   /* inside a bubble: fine wires */
+
+/* an open bubble sized by hand re-forms what is inside it to its box, scaled as a whole (super/bubble.js fit) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-members { zoom: var(--in-z, 1); flex-shrink: 0; }
+html.shape-se .orbit-bubble.is-group.se-sized:not(.is-compact) { width: auto; justify-content: center; overflow: visible; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { flex-shrink: 0; }

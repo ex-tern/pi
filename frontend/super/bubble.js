@@ -194,7 +194,21 @@
     let path = svg.firstChild; if (!path) { path = document.createElementNS("http://www.w3.org/2000/svg", "path"); svg.appendChild(path); }
     if (path.getAttribute("d") !== d) path.setAttribute("d", d);
   }
-  const linkAll = () => { if (on()) document.querySelectorAll(".orbit-bubble.is-group[data-key]").forEach(links); };
+  // an open bubble behaves like the third super (owner, 2026-10-12: "all of these should behave like 3rd super"): sized
+  // by hand, or held to a share by its holder, what is inside it re-forms to its box, scaled as a whole (never squashed)
+  function fit(el) {
+    if (isCompact(el) || el.classList.contains("is-growing")) { if (el.style.getPropertyValue("--in-z")) el.style.removeProperty("--in-z"); return; }
+    const label = el.querySelector(":scope > .ob-label"), mem = el.querySelector(":scope > .ob-members"); if (!label || !mem) return;
+    const z = parseFloat(el.style.getPropertyValue("--in-z")) || 1, k = el.getBoundingClientRect().width / (el.offsetWidth || 1) || 1;
+    const a = label.getBoundingClientRect(), b = mem.getBoundingClientRect();
+    const natW = (Math.max(a.right, b.right) - Math.min(a.left, b.left)) / k / z, natH = (Math.max(a.bottom, b.bottom) - Math.min(a.top, b.top)) / k / z;
+    if (!el.classList.contains("se-sized")) { if (z !== 1) el.style.removeProperty("--in-z"); return; }   // its own size: as laid out
+    const cs = getComputedStyle(el), padW = parseFloat(cs.paddingLeft) + parseFloat(cs.paddingRight), padH = parseFloat(cs.paddingTop) + parseFloat(cs.paddingBottom);
+    const gap = parseFloat(cs.columnGap) || 0;
+    const nz = Math.max(0.2, Math.min(2, (el.offsetWidth - padW) / (natW + gap * (1 - 1 / z) + 1), (el.offsetHeight - padH) / (natH + 1)));
+    if (Math.abs(nz - z) > 0.01) el.style.setProperty("--in-z", nz.toFixed(3));
+  }
+  const linkAll = () => { if (on()) document.querySelectorAll(".orbit-bubble.is-group[data-key]").forEach(el => { fit(el); links(el); }); };
   setInterval(linkAll, 300);
   document.addEventListener("se:frame", linkAll);
   // on a phone a window takes most of the inner super: an open bubble compacts when one opens, so nothing is squeezed
