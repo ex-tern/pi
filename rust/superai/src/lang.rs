@@ -325,7 +325,7 @@ pub fn read(j: &Json) -> Result<Program, Vec<String>> {
                 let t = e.str().unwrap_or("");
                 match end_of(t) {
                     None => bad.push(format!("wire end {} must be \"super.port\" (input, output, sync or condition)", t)),
-                    Some(end) if !ids.contains(&end.id) && !end.id.starts_with("bubble:") => bad.push(format!("wire end {}: no super called {}", t, end.id)),
+                    Some(end) if !ids.contains(&end.id) && !end.id.starts_with("bubble:") && !["main", "site", "title", "project", "run"].contains(&end.id.as_str()) => bad.push(format!("wire end {}: no super called {}", t, end.id)),
                     Some(end) => ends.push(end),
                 }
             }

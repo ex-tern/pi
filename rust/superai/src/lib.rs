@@ -6,6 +6,7 @@
 //!   {"op":"validate", "program": P}                    is P a well-formed SuperAI program?
 //!   {"op":"run", "program": F, "inputs": {..}, "answers": {..}}   run supers and wires F
 //!   {"op":"call", "program": P, "function": name, "inputs": {..}}  run one of P's functions
+//!   {"op":"assemble", "source": text}                  SuperAI assembly (asm.rs) to a program
 //!   {"op":"engine", "typed": t, "ins": [..], "attached": op}       what one Super AI super gives
 //!
 //! and answers JSON. See lang.rs for the language itself.
@@ -16,6 +17,8 @@ extern crate alloc;
 pub mod json;
 pub mod lang;
 pub mod math;
+pub mod vm;
+pub mod asm;
 
 #[cfg(target_arch = "wasm32")]
 mod wasm;
@@ -48,6 +51,7 @@ pub fn validate(p: &Json) -> Vec<String> {
         None => bad.push("diagram must be an object".into()),
     }
     for (name, f) in p.get("functions").map(Json::obj).unwrap_or(&[]) {
+        if f.get("code").is_some() { if !matches!(f.get("code"), Some(Json::Arr(_))) { bad.push(format!("function {}: code must be a list", name)); } continue; }
         match lang::read(f) {
             Err(b) => bad.extend(b.into_iter().map(|e| format!("function {}: {}", name, e))),
             Ok(prog) => {
@@ -91,6 +95,13 @@ pub fn handle(text: &str) -> String {
         "call" => {
             let name = req.s("function").unwrap_or("");
             match program.get("functions").and_then(|f| f.get(name)) {
+                Some(f) if f.get("code").is_some() => {
+                    let ins: alloc::collections::BTreeMap<String, Value> = pairs_values(req.get("inputs")).into_iter().collect();
+                    match vm::run(f, &ins, program.get("functions").unwrap_or(&empty)) {
+                        Ok(v) => obj(vec![("ok", Json::Bool(true)), ("outputs", obj(vec![("out", v.to_json())]))]),
+                        Err(e) => errors(vec![e]),
+                    }
+                }
                 Some(f) => run_json(f, &req),
                 None => errors(vec![format!("no function called {}", name)]),
             }
@@ -101,6 +112,10 @@ pub fn handle(text: &str) -> String {
             let v = lang::engine(req.s("typed").unwrap_or(""), &ins, attached, req.s("hint").unwrap_or(""));
             obj(vec![("ok", Json::Bool(true)), ("value", v.to_json())])
         }
+        "assemble" => match asm::assemble(req.s("source").unwrap_or("")) {
+            Ok(p) => obj(vec![("ok", Json::Bool(true)), ("program", p)]),
+            Err(b) => errors(b),
+        },
         "version" => obj(vec![("ok", Json::Bool(true)), ("language", Json::Str("SuperAI 1".into())), ("engine", Json::Str(env!("CARGO_PKG_VERSION").into()))]),
         other => errors(vec![format!("unknown op {:?}", other)]),
     };

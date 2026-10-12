@@ -331,7 +331,13 @@
     };
     const run = () => {
       let p;
-      try { p = JSON.parse(text.value); } catch (e) { errs.textContent = "Not valid JSON: " + e.message; return; }
+      // JSON, or SuperAI assembly (super/pitechlab.sasm's form), assembled by the Rust engine
+      if (!/^\s*\{/.test(text.value)) {
+        const rs = window.SuperAI && window.SuperAI.rs, r = rs && rs.ready && rs.handle({ op: "assemble", source: text.value });
+        if (!r) { errs.textContent = "The engine is still loading"; return; }
+        if (!r.ok) { errs.textContent = (r.errors || []).slice(0, 6).join(" · "); return; }
+        p = r.program;
+      } else try { p = JSON.parse(text.value); } catch (e) { errs.textContent = "Not valid JSON: " + e.message; return; }
       const bad = window.SuperAI.save(p);
       if (bad.length) { errs.textContent = bad.slice(0, 6).join(" · ") + (bad.length > 6 ? " · and " + (bad.length - 6) + " more" : ""); return; }
       // a program that changes the starting diagram starts it afresh
