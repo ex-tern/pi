@@ -192,7 +192,15 @@
     return nodes.filter(m => m !== loop && (() => { const b = m.el.getBoundingClientRect(); return Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) + Math.max(b.width, b.height) / 2 <= R + 4; })());
   }
   const locked = m => !!(window.SeLock && m && window.SeLock.isLocked(m.el));   // super/lock.js: a locked super is grouped into no other
-  const holderOf = m => (locked(m) ? null : nodes.filter(h => h !== m && isHolder(h) && within(h, m)).sort((a, b) => (a.size || 0) - (b.size || 0))[0] || null);
+  // the super holding m: a holder (a node), or any other super (a bubble, a window, the project; super/hold.js:
+  // every super holds supers), as { el, dom: true }
+  const holderOf = m => {
+    if (locked(m)) return null;
+    const h = nodes.filter(h => h !== m && isHolder(h) && within(h, m)).sort((a, b) => (a.size || 0) - (b.size || 0))[0];
+    if (h) return h;
+    const el = window.SeHold && window.SeHold.hostOf ? window.SeHold.hostOf(m.el) : null;
+    return el && !el.classList.contains("lv-node") ? { el, dom: true } : null;
+  };
   // a locked holder keeps what it holds: a super dragged out of it comes back inside
   function keepIn(h, m) {
     const r = h.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.08;
@@ -745,7 +753,8 @@
     const L = toLayout(x, y);
     // ai: a Super AI super, the same as the central one (role "engine"), asking every engine, the lab's and outside
     const m = make({ id, fn: fnOfN(nn), role: ai ? "engine" : undefined, fx: (L.x - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerWidth, fy: (L.y - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerHeight, inputs: [], n: nn });
-    clear(m); persist(); tick();
+    if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
+    persist(); tick();
     say(ai ? "Super AI made: type a question and press Enter, and every engine answers; press it to see each answer"
            : BY[m.fn].name + " made: a super with four ports; shift + scroll to change its shape, type into it, wire it");
     if (ai && window.SeSelect && window.SeSelect.select) window.SeSelect.select(m.el);
@@ -918,10 +927,7 @@
         if (n) n.st.from = holderOf(n);                                     // the holder it came out of (a locked one takes it back)
         if (n && isHolder(n)) {
           n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
-          const O = window.PiOrbit, r = n.el.getBoundingClientRect();     // the bubbles it holds too
-          n.st.bubbles = O && O.bubblesIn ? O.bubblesIn(r, r.width * 0.03) : [];
-          n.st.proj = !!(window.SeProject && window.SeProject.inRect && window.SeProject.inRect(r, r.width * 0.03));   // the project super too
-          n.st.at = [r.left, r.top];
+          if (window.SeHold) window.SeHold.begin(n.el, { nodes: false });   // the bubbles, windows and the project it holds too (super/hold.js)
         }
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
@@ -932,12 +938,7 @@
       n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
       if (n.st.crew) n.st.crew.forEach(c => { c.m.fx += n.fx - fx0; c.m.fy += n.fy - fy0; place(c.m); });
-      if (n.st.at && ((n.st.bubbles && n.st.bubbles.length) || n.st.proj)) {
-        const r = n.el.getBoundingClientRect(), ddx = r.left - n.st.at[0], ddy = r.top - n.st.at[1];
-        if (n.st.bubbles.length) window.PiOrbit.moveBubbles(n.st.bubbles, ddx, ddy);
-        if (n.st.proj) window.SeProject.moveBy(ddx, ddy);
-        n.st.at = [r.left, r.top];
-      }
+      if (n.st.crew && window.SeHold) window.SeHold.follow(n.el);
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
@@ -962,18 +963,18 @@
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
         if (n.id === "site-box") {                                      // the central super comes back to the middle
-          n.st.crew = null; n.st.bubbles = null;
+          n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
           if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
           persist(); tick(); say("run stays inside the site"); return;
         }
         const crew = n.st.crew ? n.st.crew.map(c => c.m) : [];
-        n.st.crew = null; n.st.bubbles = null;
+        n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
         crew.forEach(remove); remove(n);
         say((BY[n.fn].name) + " deleted: dropped outside the site" + (crew.length ? ", with what it held" : ""));
         return;
       }
-      if (n.st.crew) { n.st.crew = null; n.st.bubbles = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
+      if (n.st.crew) { n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el); persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
       // a locked super goes into no other super (super/lock.js): dropped on a holder, it sits beside it, unwired
       if (locked(n)) {
         const h = nodes.filter(x => x !== n && isHolder(x)).find(x => { const r = x.el.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; });
@@ -1201,7 +1202,7 @@
   // every node's size is one number (--lv-s); a value, a field or an answer still makes it grow around them
   function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); if (n.aspect) n.el.style.setProperty("--lv-h", Math.round(d * n.aspect) + "px"); else n.el.style.removeProperty("--lv-h"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
-  let zoomed = null, suppressRing = false;
+  let zoomed = null, suppressRing = false, moveT = 0;
   function closeNode(n) {
     n.st.closing = true;
     const crew = isHolder(n) ? inside(n) : [];
@@ -1426,13 +1427,25 @@
     // a single click selects the super (super/select.js); what happened is announced to screen readers
     out = document.createElement("output"); out.className = "lv-out"; out.setAttribute("aria-live", "polite");
     document.body.appendChild(out);
-    let down = null;
+    let down = null; const held = new Set();
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
     document.addEventListener("dblclick", e => {
       if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
       // a double click on bare space makes a prompt Super AI super, windows open or not (owner, 2026-10-12)
       const t = e.target;
+      // inside a bubble, on a window's blank margin or on the compact project super it makes one there too (every
+      // super holds supers, super/hold.js); never on a pill, a word, a control or a window's content
+      const inHost = t.closest && (t.closest(".orbit-bubble.is-group") || (t.classList.contains("orbit-panel") ? t : null) || t.closest(".se-project:not(.is-open)"));
+      if (inHost && !t.closest(".ob-member, .ob-chat, .ob-label, .se-port, .se-lock, input, button, a, select, textarea, .wire-hit")) {
+        e.preventDefault(); e.stopPropagation();
+        // wholly inside the host, so it is held by it: its centre kept clear of the host's edge by half a super
+        const hr = inHost.getBoundingClientRect(), half = (e.shiftKey ? DOT_BASE : ENGINE_BASE) / 2 + 6, k = Math.min(hr.width, hr.height) * 0.03 + half;
+        const cx = Math.max(hr.left + k, Math.min(hr.right - k, e.clientX)), cy = Math.max(hr.top + k, Math.min(hr.bottom - k, e.clientY));
+        const m = spawnAt(cx, cy, !e.shiftKey);
+        if (m) { held.add(m.id); say("A super made inside " + ((inHost.querySelector(":scope > .ob-label") || {}).textContent || "the super").trim()); }
+        return;
+      }
       if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return;
       if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return;
       if (window.PiOrbit && window.PiOrbit.inLoop && !window.PiOrbit.inLoop(e.clientX, e.clientY)) return;   // outside the super: nothing
@@ -1510,6 +1523,8 @@
     // super/scroll.js: a scroll on a node sizes it
     window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
+                       // super/hold.js: supers held by another super move with it, by a screen offset
+                       moveNodes: (ids, dx, dy) => { const a = toLayout(0, 0), b = toLayout(dx, dy), fx = (b.x - a.x) / window.innerWidth, fy = (b.y - a.y) / window.innerHeight; nodes.forEach(n => { if (ids.includes(n.id)) { n.fx += fx; n.fy += fy; place(n); } }); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); },
                        // Shift + drag (super/shiftsize.js): its width and height, in layout px; a rectangle keeps its aspect
                        resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(36, Math.round(w)); h = Math.max(36, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };

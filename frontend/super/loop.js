@@ -227,8 +227,9 @@
       const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
-      const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging")).map(n => n.getBoundingClientRect())
-        .map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height }));
+      const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging"))
+        .filter(n => !(window.SeHold && window.SeHold.hostOf(n) && window.SeHold.hostOf(n).classList.contains("orbit-panel")))   // held by a window: it goes with it (super/hold.js)
+        .map(n => n.getBoundingClientRect()).map(r => ({ left: r.left, top: r.top, width: r.width, height: r.height }));
       let rs = wins.map(p => { const r = p.getBoundingClientRect(); return { left: r.left, top: r.top, width: r.width, height: r.height }; });
       if (rs.some(r => !r.width)) return;
       const overlap = (a, b) => a.left < b.left + b.width + GAP && b.left < a.left + a.width + GAP && a.top < b.top + b.height + GAP && b.top < a.top + a.height + GAP;

@@ -508,6 +508,8 @@
     // nothing overlaps: nodes, the Live panel when open and the title are in the way too
     if (merged()) document.querySelectorAll(".orbit-panel, .lv-node, .live-dock.open .live-body, .se-project:not(.is-open)").forEach(p => {
       if (p.classList.contains("leaving") || p.classList.contains("is-dragging")) return;
+      // a super held by a bubble, a window or the project (super/hold.js) is not in anything's way: it goes with its host
+      if (p.classList.contains("lv-node") && window.SeHold) { const h = window.SeHold.hostOf(p); if (h && !h.classList.contains("lv-node")) return; }
       const b = p.getBoundingClientRect();
       if (!b.width || !b.height) return;
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
@@ -677,6 +679,8 @@
       // the translate puts the unscaled box where its scaled box lands on r
       // translate first, then the size as a scale about its centre: sizing keeps the centre, the layout the box
       it.bubble.style.transform = "translate(" + (r.x - ((it.w0 || r.w) - r.w) / 2).toFixed(1) + "px," + (r.y - ((it.h0 || r.h) - r.h) / 2).toFixed(1) + "px) scale(var(--se-scale, 1))";
+      // laid out elsewhere: what it holds goes with it (super/hold.js), in screen px
+      if (it.lastAt && window.SeHold && (Math.abs(r.x - it.lastAt.x) > 0.5 || Math.abs(r.y - it.lastAt.y) > 0.5)) { const f = L.pageFit() || 1; window.SeHold.shift(it.bubble, (r.x - it.lastAt.x) * f, (r.y - it.lastAt.y) * f); }
       it.lastAt = { x: r.x, y: r.y, w: r.w, h: r.h };                 // where it is drawn (the super under the pointer stays there)
     });
     drawRings();
@@ -720,15 +724,18 @@
     b.addEventListener("pointermove", e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
+      if (!moved && window.SeHold) window.SeHold.begin(b);              // what it holds comes along (super/hold.js)
       moved = true; dragging = it; b.classList.add("dragging");
       const L = toLayout(e.clientX, e.clientY);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)), y = Math.min(H - it.h, Math.max(0, L.y - oy));
       b.style.transform = "translate(" + (x - ((it.w0 || it.w) - it.w) / 2) + "px," + (y - ((it.h0 || it.h) - it.h) / 2) + "px) scale(var(--se-scale, 1))";   // a sized bubble: its scaled box lands on (x, y)
+      if (window.SeHold) window.SeHold.follow(b);
     });
     const end = e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
       b.releasePointerCapture(e.pointerId);
       b.classList.remove("dragging");
+      if (window.SeHold) window.SeHold.end(b);
       if (!moved) return;                 // a click: handled by the click event
       // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
       // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
@@ -802,6 +809,7 @@
     let closeT = 0;
     core.addEventListener("click", e => {
       if (core.dataset.justDragged) return;
+      if (merged()) return;                                              // the superellipse look: nothing is clickable; a click on the main super closes nothing (windows close by a scroll out, or outside the inner super)
       clearTimeout(closeT);
       if (e.detail > 1) return;
       closeT = setTimeout(() => {
@@ -1217,6 +1225,7 @@
         if (e.button !== 0 || e.defaultPrevented) return;
         if (only) e.preventDefault();                                   // from the margin: no text selection on the way
         drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
+        if (window.SeHold) window.SeHold.begin(p);                       // what the window holds comes along (super/hold.js)
         el.setPointerCapture(e.pointerId);
       });
       el.addEventListener("pointermove", e => {
@@ -1224,11 +1233,13 @@
         p.style.left = Math.min(window.innerWidth - 60, Math.max(-p.offsetWidth + 60, px + e.clientX - sx)) + "px";
         p.style.top = Math.min(window.innerHeight - 40, Math.max(top, py + e.clientY - sy)) + "px";
         p.classList.toggle("leaving", atEdge(e));
+        if (window.SeHold) window.SeHold.follow(p);
       });
       el.addEventListener("pointerup", e => {
         const outside = merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY);   // dropped outside the inner super: closed on purpose
         if (drag && (atEdge(e) || outside)) { drag = false; p.classList.remove("leaving"); store("orbit:win:" + it.key); closeItem(it); return; }
         if (drag) { p.userMoved = true; saveWin(it, p); }
+        if (window.SeHold) window.SeHold.end(p);
         drag = false;
       });
     };

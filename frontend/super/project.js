@@ -267,6 +267,11 @@
     let progAcc = 0, progT = 0;
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
+      if (window.SeLock && el && window.SeLock.isLocked(el) && !e.target.closest(".pj-editor, .se-lock")) {   // locked: its size is kept
+        e.preventDefault(); e.stopImmediatePropagation();
+        if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to change its size or shape");
+        return;
+      }
       if (e.target.closest(".pj-editor")) {                              // the program scrolls; at its top, a scroll out closes it
         e.stopImmediatePropagation();
         const ta = el.querySelector(".pj-ed-text");
@@ -373,15 +378,18 @@
     let moved = false;
     const move = ev => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
+      if (!moved && window.SeHold) window.SeHold.begin(el);                // what it holds comes along (super/hold.js)
       moved = true;
       const [lx, ly] = toLayout(ev.clientX - dx, ev.clientY - dy);     // where it goes, unzoomed (the page may be zoomed out)
       state.x = lx / window.innerWidth; state.y = ly / window.innerHeight;
       place();
+      if (window.SeHold) window.SeHold.follow(el);
       document.dispatchEvent(new CustomEvent("se:frame:first")); document.dispatchEvent(new CustomEvent("se:frame"));   // its ports and wires follow it, as a bubble's do
     };
     const up = () => {
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
       el._pjDrag = false;
+      if (window.SeHold) window.SeHold.end(el);
       if (!moved) return;
       settleFree(); save(state);
       document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves

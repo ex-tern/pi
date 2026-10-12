@@ -171,25 +171,46 @@
     return g;
   }
 
-  // a window opens: it grows out of the button that opened it
+  // a window opens: it grows out of the button that opened it, smoothly (owner, 2026-10-12: "smoothing the animation").
+  // The window itself is moved and scaled from the button to its place (its own glass, its own content), so wherever
+  // it settles (the layout may still move it), it never lands somewhere a stand-in did not
+  const SMOOTH = "cubic-bezier(0.22, 0.8, 0.24, 1)";
+  const slow = () => (window.SeMotion && window.SeMotion.SLOW) || 1;
   function open(panel, from) {
     if (!on() || reduce.matches || !panel || !usable(from)) return;
-    const a = { rect: rectOf(from), r: radiusOf(from), n: +from.dataset.seN || gamma };
-    const b = { rect: rectOf(panel), r: radiusOf(panel), n: pi };
-    panel.classList.add("se-arriving");
-    run(a, b, () => {
-      panel.classList.remove("se-arriving");
-      panel.classList.add("se-arrived");
-      setTimeout(() => panel.classList.remove("se-arrived"), 260);
-    });
+    const a = rectOf(from), b = rectOf(panel); if (!b.w || !b.h) return;
+    const dx = (a.x + a.w / 2) - (b.x + b.w / 2), dy = (a.y + a.h / 2) - (b.y + b.h / 2);
+    const k = Math.max(0.08, Math.min(1, Math.max(a.w / b.w, a.h / b.h)));
+    const d = Math.round(520 * Math.min(1.6, slow()));
+    panel.style.transition = "none";
+    panel.style.transformOrigin = "50% 50%";
+    panel.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px) scale(" + k.toFixed(3) + ")";
+    panel.style.opacity = "0";
+    void panel.offsetWidth;
+    panel.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + Math.round(d * 0.6) + "ms ease";
+    panel.style.transform = ""; panel.style.opacity = "";
+    clearTimeout(panel._seOpenT);
+    panel._seOpenT = setTimeout(() => { panel.style.transition = ""; panel.style.transformOrigin = ""; document.dispatchEvent(new CustomEvent("se:frame")); }, d + 40);
+    const tick = () => { document.dispatchEvent(new CustomEvent("se:frame")); if (panel.style.transition) requestAnimationFrame(tick); };   // its ports and wires follow it
+    requestAnimationFrame(tick);
   }
-  // a window closes: it folds back into its button (call before removing it)
+  // a window closes: a pane in its place folds smoothly back into its button (the window itself is gone at once)
   function close(panel, to) {
     if (!on() || reduce.matches || !panel || !panel.isConnected) return;
-    const a = { rect: rectOf(panel), r: radiusOf(panel), n: pi };
-    if (!usable(to)) return;
-    const b = { rect: rectOf(to), r: radiusOf(to), n: +to.dataset.seN || gamma };
-    run(a, b);
+    const a = rectOf(panel); if (!usable(to) || !a.w) return;
+    const b = rectOf(to);
+    const g = document.createElement("div");
+    g.className = "se-fold"; g.setAttribute("aria-hidden", "true");
+    g.style.left = a.x + "px"; g.style.top = a.y + "px"; g.style.width = a.w + "px"; g.style.height = a.h + "px";
+    document.body.appendChild(g);
+    const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+    const k = Math.max(0.08, Math.min(1, Math.max(b.w / a.w, b.h / a.h)));
+    const d = Math.round(460 * Math.min(1.6, slow()));
+    void g.offsetWidth;
+    g.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + d + "ms ease";
+    g.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px) scale(" + k.toFixed(3) + ")";
+    g.style.opacity = "0";
+    setTimeout(() => g.remove(), d + 60);
   }
 
   // a wire: straight runs with two superellipse corners (n = π), out of one side and into the other

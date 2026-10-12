@@ -92,6 +92,16 @@
   const PRESS = "button, a[href], summary, [role=button], [role=tab], label:has(> input[type=checkbox]), label:has(> input[type=radio]), input[type=checkbox], input[type=radio], input[type=submit], input[type=button]";
   // a pinch (or Ctrl + scroll) does what a scroll does, on the same things (owner, 2026-10-12: "zooming and scrolling
   // does the same thing as scrolling"); only its deltas are scaled (they are small)
+  // a locked super keeps its size and its n (owner, 2026-10-12: "locking a super also locks resizing and n value
+  // change"): a scroll or Shift + scroll on it says so instead (its pills still open their windows, a window's content
+  // still zooms)
+  const locked = el => !!(window.SeLock && el && el.classList && window.SeLock.isLocked(el));
+  const sizes = w => w && w.classList ? (w.classList.contains("lv-node") || w.classList.contains("orbit-bubble") ? w : null) : null;
+  let noteAt = 0;
+  function lockedNote(el, x, y) {
+    const now = performance.now(); if (now - noteAt < 250) return; noteAt = now;
+    if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "locked", "unlock it to change its size or shape");
+  }
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
@@ -158,6 +168,7 @@
         what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
         if (what._acc < -60) { what._acc = 0; if (O().openKey) O().openKey(what.dataset.key); }
       }
+      else if (sizes(what) && locked(sizes(what))) lockedNote(sizes(what), x, y);   // locked: its size is kept
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
@@ -165,6 +176,7 @@
         // the window grows (or shrinks) with the scroll; as big as the inner super lets, the scroll goes on into
         // its content (zoomed about the pointer), and scrolling back zooms the content out before the window shrinks
         const zb = what.querySelector("[data-zoombox]"), z = zb && zb._zoom, sb = O().siteBox ? O().siteBox() : null;
+        if (locked(what)) { if (z) z.zoomAt(x, y, dy); else lockedNote(what, x, y); return; }   // locked: the window keeps its size, its content still zooms
         const maxW = sb ? 2 * sb.a * (sb.fit || 1) * 0.92 : window.innerWidth - 16, maxH = sb ? 2 * sb.b * (sb.fit || 1) * 0.85 : window.innerHeight - 16;
         // the content zooms with every step (bigger type, owner, 2026-10-12: "bigger, not just the window"), and the
         // window grows with it while the inner super has room; scrolling back zooms the content out, then shrinks
@@ -207,9 +219,11 @@
       let node = recentEl && recentEl.classList.contains("lv-node") ? recentEl : recentEl ? null : (hit && hit.closest ? hit.closest(".lv-node") : null);
       if (!node && !recentEl && fresh && fresh.dataset && fresh.dataset.id)
         node = document.querySelector('.lv-node[data-id="' + fresh.dataset.id + '"]');   // the node was remade (it changed function): the same id
+      if (node && locked(node)) { gesture = { what: node, t: now }; lockedNote(node, x, y); return; }   // locked: its n is kept
       if (node && window.LabView && window.LabView.shapeNode) { gesture = { what: node, t: now }; window.LabView.shapeNode(node, dy); return; }
       const S = window.SeSite || {};
       const sup = recentEl && !recentEl.classList.contains("lv-node") ? recentEl : (!fresh && hit && hit.closest && S.SHAPES ? hit.closest(S.SHAPES) : null);
+      if (sup && locked(sup)) { gesture = { what: sup, t: now }; lockedNote(sup, x, y); return; }
       if (sup && S.shapeEl) { gesture = { what: sup, t: now }; S.shapeEl(sup, dy); return; }
       const what = fresh === "site" || fresh === "shape" ? fresh : (S.inSite && S.inSite(x, y) ? "site" : "shape");
       gesture = { what, t: now };

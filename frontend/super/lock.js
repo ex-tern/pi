@@ -60,6 +60,8 @@
   window.addEventListener("wheel", e => {
     const b = e.target && e.target.closest && e.target.closest(".se-lock");
     if (!b || e.shiftKey || !on()) return;
+    const pr = b.parentElement.getBoundingClientRect();
+    if (pr.width < 70 || pr.height < 70) return;                     // a small super: a scroll sizes it (the lock is clicked instead)
     e.preventDefault(); e.stopImmediatePropagation();
     const el = b.parentElement;
     acc += e.deltaY || e.deltaX; clearTimeout(accT); accT = setTimeout(() => { acc = 0; }, 400);

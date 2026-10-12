@@ -22,22 +22,8 @@ const O = () => window.PiOrbit || {};
 const LIGHT = `
 // a deep warm light, as in the owner's reference: amber, honey and sage glows over a warm ground, darker at the edges
 vec3 light(vec2 uv, float t) {
-  float a = uRes.x / uRes.y;
-  #define G(p, r) exp(-dot((uv - p) * vec2(a, 1.0), (uv - p) * vec2(a, 1.0)) / (r * r))
-  vec2 p1 = vec2(0.18 + 0.06 * sin(t * 0.050), 0.22 + 0.05 * cos(t * 0.043));
-  vec2 p2 = vec2(0.82 + 0.05 * cos(t * 0.047), 0.78 + 0.06 * sin(t * 0.058));
-  vec2 p3 = vec2(0.70 + 0.07 * sin(t * 0.033), 0.18 + 0.04 * cos(t * 0.071));
-  vec2 p4 = vec2(0.26 + 0.06 * cos(t * 0.029), 0.86 + 0.05 * sin(t * 0.066));
-  vec2 p5 = vec2(0.52 + 0.05 * sin(t * 0.019), 0.48 + 0.05 * cos(t * 0.023));
-  vec3 c = vec3(0.80, 0.66, 0.52);                                        // the warm ground
-  c = mix(c, vec3(0.72, 0.40, 0.18), 0.85 * G(p1, 0.46));                // amber
-  c = mix(c, vec3(0.52, 0.55, 0.44), 0.70 * G(p2, 0.44));                // sage
-  c = mix(c, vec3(0.93, 0.70, 0.42), 0.80 * G(p3, 0.36));                // honey
-  c = mix(c, vec3(0.60, 0.46, 0.40), 0.60 * G(p4, 0.42));                // umber
-  c = mix(c, vec3(0.97, 0.90, 0.80), 0.85 * G(p5, 0.40));                // the light in the middle
-  vec2 v = (uv - 0.5) * vec2(a, 1.0);
-  c *= 1.0 - 0.32 * smoothstep(0.25, 1.05, length(v));                    // a soft vignette
-  return c;
+  // the page's paper, flat (owner, 2026-10-12: "remove the gradient background color"); the glass reads against it
+  return vec3(0.965, 0.965, 0.957);
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
@@ -60,8 +46,7 @@ vec3 embers(vec2 px, float t) {
 }
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
-  vec3 c = light(uv, uTime) + embers(gl_FragCoord.xy, uTime);
-  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.022;        // a fine film grain
+  vec3 c = light(uv, uTime);                                              // flat paper: no glows, embers or grain
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -102,7 +87,7 @@ void main() {
   float ny = clamp(vL.y / (2.0 * uHalf.y) + 0.5, 0.0, 1.0);              // 0 at the top, 1 at the bottom
   if (uFill > 0.0 && inside > 0.0) {
     vec3 behind = light(uv, uTime);
-    vec3 glass = mix(behind * 1.10 + 0.06, vec3(1.0), uFill);
+    vec3 glass = mix(behind * 0.985, vec3(1.0), uFill);
     glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
     OVER(glass, inside * (0.42 + 0.48 * uFill));
     // the others, reflected: each neighbour's light glows into the glass along the edge facing it, and its edge

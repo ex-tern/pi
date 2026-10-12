@@ -41,6 +41,7 @@
     document.querySelectorAll(ROOTS).forEach(root => {
       if (root.parentElement && root.parentElement.closest(ROOTS)) return;   // an inner root: its outer root covers it
       if (!root.getClientRects().length) return;
+      const pn = root.closest(".orbit-panel"); if (pn && pn.style.transform) return;   // a window still growing out of its button
       const c = textEls(root);
       const s = scaleOf(root);
       const key = s.toFixed(3) + ":" + c.els.length + ":" + c.at.toFixed(0);

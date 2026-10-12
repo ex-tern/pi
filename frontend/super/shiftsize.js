@@ -23,6 +23,11 @@
     if (!t || t.closest("input, textarea, select, [contenteditable], .se-port, .se-lock, .wire-hit")) return;
     const el = t.closest(SEL); if (!el) return;
     if (el.classList.contains("is-holder") && !t.closest(".lv-edge")) return;
+    if (window.SeLock && window.SeLock.isLocked(el)) {                // locked: its size is kept
+      e.preventDefault(); e.stopImmediatePropagation();
+      if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to change its size or shape");
+      return;
+    }
     e.preventDefault(); e.stopImmediatePropagation();
     const f = el.classList.contains("orbit-panel") ? 1 : fit();          // nodes and bubbles are sized in layout px
     drag = { el, x0: e.clientX, y0: e.clientY, w0: el.offsetWidth, h0: el.offsetHeight, f, id: e.pointerId };

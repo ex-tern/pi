@@ -82,5 +82,14 @@
     hud.querySelector(".sh-name").textContent = "width × height";
     hud.classList.remove("at-detent");
   }
-  window.SeShape = { step, show, at: n => show(px, py, n), size, nameOf, DETENTS };
+  // a note in the same place (a locked super: its size and n are kept)
+  function note(x, y, what, why) {
+    show(x, y, Math.PI);
+    hud.querySelector(".sh-key").textContent = what;
+    hud.querySelector("path").setAttribute("d", "M13,19V14a7,7 0 0 1 14,0V19M10,19H30V33H10Z");
+    hud.querySelector(".sh-n").textContent = "";
+    hud.querySelector(".sh-name").textContent = why;
+    hud.classList.remove("at-detent");
+  }
+  window.SeShape = { step, show, at: n => show(px, py, n), size, note, nameOf, DETENTS };
 })();
