@@ -106,7 +106,10 @@
     if (panel && alt && zb && zb._zoom) return zb;
     if (panel) return panel;
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }
-    // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it
+    // a pill in an open bubble expands into its window by a scroll in on it (every super scrolls to expand)
+    const pill = t && t.closest(".ob-member");
+    if (pill && pill.dataset.key && !pinch && !alt) return pill;
+    // a bubble is an expandable super (super/bubble.js): a scroll on it opens or compacts it, gradually
     const bubble = t && t.closest(".orbit-bubble.is-group");
     if (bubble && window.SeBubble && !pinch) return bubble;
     return "site";
@@ -127,6 +130,10 @@
       if (what === "nothing") return;
       if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
       else if (!what.isConnected) return;
+      else if (what.classList.contains("ob-member")) {                  // a pill: a few steps in open its window
+        what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
+        if (what._acc < -60) { what._acc = 0; if (O().openKey) O().openKey(what.dataset.key); }
+      }
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }

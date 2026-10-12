@@ -1,11 +1,11 @@
 // super/bubble.js: the bubbles (Lab, Library, Tools, Explore, Connect) are expandable supers, like the project
 // super (super/project.js). Compact, a bubble is a 104 px squircle with its four ports and a small drawing of
 // what it holds: its name as a box on the left, wired to one small box per window on the right. A scroll or a
-// pinch on it (super/scroll.js) zooms it open: it grows into the bubble with its name and pills, which can be
-// wired and opened; zooming out compacts it again. The state is kept per bubble as se:bubble:<key>; the site
+// pinch on it (super/scroll.js) opens it gradually: it grows step by step into the bubble with its name and pills,
+// which can be wired and opened; scrolling back compacts it again. The state is kept per bubble as se:bubble:<key>; the site
 // starts with every bubble compact (owner, 2026-10-12).
 //
-//   SeBubble.zoom(el, dy)      a scroll step on a bubble: in (dy < 0) opens it, out compacts it
+//   SeBubble.zoom(el, dy)      a scroll step on a bubble: in (dy < 0) grows it toward open, out toward compact
 //   SeBubble.open(el, open)    set it
 //   SeBubble.isCompact(el)
 (function () {
@@ -60,7 +60,7 @@
   }
   function setOpen(el, open, animate) {
     if (!el || isCompact(el) === !open) return;
-    save(el, open ? "open" : "compact");
+    save(el, open ? "open" : "compact"); el._sbT = open ? 1 : 0;
     const r0 = el.getBoundingClientRect();
     const k = parseFloat(el.style.getPropertyValue("--se-scale")) || 1;   // its size (super/scroll.js), a scale: measured sizes are scaled
     el.classList.toggle("is-compact", !open);
@@ -79,12 +79,37 @@
     });
     relayout(el);
   }
-  // a scroll on it: a few steps in open it, a few steps out compact it (one gesture at a time, super/scroll.js)
+  // a scroll on it opens it gradually, as the project super does (owner, 2026-10-12: every super scrolls to
+  // expand): each step grows it a little from its compact square toward its open size, the drawing giving way to
+  // its name and pills; scrolling back shrinks it the same way. Fully open or fully compact, it settles.
+  const natural = el => {                                            // its open size, measured once per opening
+    const was = el.classList.contains("is-compact"), w0 = el.style.width, h0 = el.style.height;
+    el.classList.remove("is-compact", "is-growing"); el.style.width = ""; el.style.height = "";
+    const r = { w: el.offsetWidth, h: el.offsetHeight };
+    if (was) el.classList.add("is-compact");
+    el.style.width = w0; el.style.height = h0;
+    return r;
+  };
   function zoom(el, dy) {
-    el._sbAcc = (el._sbAcc || 0) + dy;
-    clearTimeout(el._sbAccT); el._sbAccT = setTimeout(() => { el._sbAcc = 0; }, 500);
-    if (el._sbAcc < -60 && isCompact(el)) { el._sbAcc = 0; setOpen(el, true, true); }
-    else if (el._sbAcc > 60 && !isCompact(el)) { el._sbAcc = 0; setOpen(el, false, true); }
+    const compactSide = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE;
+    if (el._sbT == null) el._sbT = isCompact(el) ? 0 : 1;
+    if (!el._sbNat || (el._sbT === 0 || el._sbT === 1)) el._sbNat = natural(el);
+    const t = Math.max(0, Math.min(1, el._sbT - dy * 0.004));
+    if (t === el._sbT) return;
+    el._sbT = t;
+    const n = el._sbNat, w = compactSide + (n.w - compactSide) * t, h = compactSide + (n.h - compactSide) * t;
+    if (t >= 1) {                                                    // open
+      el.classList.remove("is-compact", "is-growing"); el.style.width = ""; el.style.height = ""; el.style.removeProperty("--sb-t");
+      save(el, "open"); relayout(el); return;
+    }
+    if (t <= 0) {                                                    // compact
+      el.classList.remove("is-growing"); el.classList.add("is-compact"); el.style.width = ""; el.style.height = ""; el.style.removeProperty("--sb-t");
+      redraw(el); save(el, "compact"); relayout(el); return;
+    }
+    if (!el.classList.contains("is-growing")) { el.classList.remove("is-compact"); el.classList.add("is-growing"); redraw(el); }
+    el.style.width = w.toFixed(1) + "px"; el.style.height = h.toFixed(1) + "px";
+    el.style.setProperty("--sb-t", t.toFixed(3));
+    clearTimeout(el._sbLay); el._sbLay = setTimeout(() => relayout(el), 120);   // the others make room once it settles a little
   }
 
   function start() {
