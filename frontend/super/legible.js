@@ -11,7 +11,7 @@
   "use strict";
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
-  const MIN = 9;
+  const MIN = 11;
   // what is scaled on the page: a window's zoomed content, the project's map, the supers, the title
   const ROOTS = ".se-zoomed, .pj-map, .orbit-bubble.is-group, .lv-node, .orbit-title";
   const SKIP = "input, textarea, select, [contenteditable], script, style, .se-port, .se-lock";
@@ -48,7 +48,11 @@
       for (const e of c.els) {
         let px;
         if (e instanceof SVGElement) { const r = e.getBoundingClientRect(); px = r.height / 1.2; }
-        else px = sizeOf(e) * s;
+        else {
+          // type set smaller than readable at full size (a chart's axis, a footnote) is lifted to readable, once
+          if (sizeOf(e) < MIN && !e._seLift && root.classList.contains("se-zoomed")) { e._seLift = true; e.style.fontSize = MIN + "px"; e._seFs = MIN; }
+          px = sizeOf(e) * s;
+        }
         const tiny = px > 0 && px < MIN && !(typing && e.contains(typing));
         if (e.classList.contains("se-glyph") !== tiny) e.classList.toggle("se-glyph", tiny);
       }
@@ -59,5 +63,13 @@
   setInterval(() => { if (document.visibilityState === "visible") check(); }, 300);
   document.addEventListener("wheel", () => setTimeout(soon, 60), { passive: true, capture: true });
   document.addEventListener("se:frame", soon);
-  window.SeLegible = { MIN, check };
+  // the smallest type in a piece of content at full size (after lifting): what the readable floor is measured from
+  function minFont(root) {
+    if (!root) return 14;
+    const c = textEls(root);
+    let m = Infinity;
+    for (const e of c.els) if (!(e instanceof SVGElement)) { if (sizeOf(e) < MIN && root.classList.contains("se-zoomed")) { e._seLift = true; e.style.fontSize = MIN + "px"; e._seFs = MIN; } m = Math.min(m, sizeOf(e)); }
+    return m === Infinity ? 14 : m;
+  }
+  window.SeLegible = { MIN, check, minFont };
 })();

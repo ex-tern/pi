@@ -348,8 +348,12 @@
     const s = { x: state.x, y: state.y };
     window.SeMotion.tween(s, { x: fx, y: fy }, { duration: 380, easing: "easeOutCubic", update: () => { state.x = s.x; state.y = s.y; place(); document.dispatchEvent(new CustomEvent("se:frame")); }, complete: done });
   }
+  // a window or a super arriving on the compact project super: it steps off, gliding (orbit.js's layout tick says when
+  // the windows changed, as "se:windows")
+  document.addEventListener("se:windows", () => { if (el && !el.classList.contains("is-open") && !el._pjDrag) settleFree(); });
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it
+    el._pjDrag = true;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
     let moved = false;
     const move = ev => {
@@ -361,6 +365,7 @@
     };
     const up = () => {
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
+      el._pjDrag = false;
       if (!moved) return;
       settleFree(); save(state);
       document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves

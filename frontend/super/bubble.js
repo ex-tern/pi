@@ -60,7 +60,7 @@
   }
   function setOpen(el, open, animate) {
     if (!el || isCompact(el) === !open) return;
-    save(el, open ? "open" : "compact"); el._sbT = open ? 1 : 0;
+    save(el, open ? "open" : "compact"); el._sbT = open ? 1 : 0; el._sbTo = null;
     const r0 = el.getBoundingClientRect();
     const k = parseFloat(el.style.getPropertyValue("--se-scale")) || 1;   // its size (super/scroll.js), a scale: measured sizes are scaled
     el.classList.toggle("is-compact", !open);
@@ -94,15 +94,25 @@
     const compactSide = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE;
     if (el._sbT == null) el._sbT = isCompact(el) ? 0 : 1;
     if (!el._sbNat || (el._sbT === 0 || el._sbT === 1)) el._sbNat = natural(el);
-    const t = Math.max(0, Math.min(1, el._sbT - dy * 0.004));
+    const tTo = Math.max(0, Math.min(1, (el._sbTo != null ? el._sbTo : el._sbT) - dy * 0.004));
+    if (tTo === (el._sbTo != null ? el._sbTo : el._sbT)) return;
+    el._sbTo = tTo;
+    // every step glides (owner, 2026-10-12: no sudden movement): the steps of one gesture become one motion
+    if (window.SeMotion) { const s = { v: el._sbT }; window.SeMotion.glide("bubble:t:" + (el.dataset.key || ""), s, "v", tTo, 160, () => { at(el, s.v, compactSide); }); return; }
+    at(el, tTo, compactSide);
+  }
+  function at(el, t, compactSide) {
     if (t === el._sbT) return;
     el._sbT = t;
+    if (el._sbTo != null && Math.abs(t - el._sbTo) < 0.001) el._sbTo = null;
     const n = el._sbNat, w = compactSide + (n.w - compactSide) * t, h = compactSide + (n.h - compactSide) * t;
-    if (t >= 1) {                                                    // open
+    if (t >= 0.999) {                                                // open
+      el._sbT = 1; el._sbTo = null;
       el.classList.remove("is-compact", "is-growing"); el.style.width = ""; el.style.height = ""; el.style.removeProperty("--sb-t");
       save(el, "open"); relayout(el); return;
     }
-    if (t <= 0) {                                                    // compact
+    if (t <= 0.001) {                                                // compact
+      el._sbT = 0; el._sbTo = null;
       el.classList.remove("is-growing"); el.classList.add("is-compact"); el.style.width = ""; el.style.height = ""; el.style.removeProperty("--sb-t");
       redraw(el); save(el, "compact"); relayout(el); return;
     }

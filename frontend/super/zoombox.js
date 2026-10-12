@@ -13,6 +13,10 @@
   "use strict";
   if (window.SeZoomBox) return;
   const MAX = 4;                                                  // up to four times its natural size (owner, 2026-10-12: readable in a big window)
+  // everything always fully readable (owner, 2026-10-12): the content is never fitted smaller than this scale (its
+  // type stays at or above super/legible.js's readable size); a window too small for that grows instead, as far
+  // as the inner super lets (super/loop.js winCap)
+  const readK = content => { const L = window.SeLegible; return L ? Math.min(1, L.MIN / L.minFont(content)) : 11 / 14; };
 
   function attach(box, content, opts) {
     if (!box || !content || box._zoom) return box && box._zoom;
@@ -26,6 +30,7 @@
       const sw = cw * z.k, sh = ch * z.k;
       z.tx = sw <= bw ? (bw - sw) / 2 : Math.min(0, Math.max(bw - sw, z.tx));      // never past its edges
       z.ty = sh <= bh ? 0 : Math.min(0, Math.max(bh - sh, z.ty));
+      box.classList.toggle("is-overflowing", sw > bw + 1 || sh > bh + 1);                 // more below or beside: it moves by dragging
       content.style.transform = "translate(" + z.tx.toFixed(1) + "px," + z.ty.toFixed(1) + "px) scale(" + z.k.toFixed(4) + ")";
       box.classList.toggle("is-zoomed", z.k > z.fitK * 1.02);
     }
@@ -43,19 +48,59 @@
         k = nk; w = bw / Math.max(0.35, k);                         // never laid out absurdly wide
       }
       z.w = Math.round(w); z.fitK = Math.min(1, bh / (content.offsetHeight || 1), bw / z.w);
+      const rk = readK(content);
+      if (z.fitK < rk) { grow(rk); z.fitK = rk; }                     // too small to read whole: the window grows (then this fits again); meanwhile the content stays readable and moves by dragging
       if (!keep || !z.user || z.k < z.fitK) { z.k = z.fitK; z.tx = 0; z.ty = 0; z.user = false; }
       apply();
     }
+    // the window around the box grows until the content, laid out at its narrowest, fits at the readable scale
+    function grow(kMin) {
+      const p = box.closest(".orbit-panel"), O = window.PiOrbit;
+      if (!p || !O || !O.winCap || p._seGrowing || p.seSized) return;   // a window you sized yourself stays the size you gave it (its content moves by dragging)
+      const cap = O.winCap(Object.assign({}, p, { seRead: true })), bw = box.clientWidth, bh = box.clientHeight;
+      const extraW = p.offsetWidth - bw, extraH = p.offsetHeight - bh;
+      content.style.width = Math.round(bw / kMin) + "px";
+      const needH = content.offsetHeight * kMin + extraH;
+      const h = Math.min(cap.h, Math.ceil(needH)), w = Math.min(cap.w, p.offsetWidth); void extraW;   // laid out wider and scaled, it fills the width: only the height grows
+      if (h <= p.offsetHeight + 1) return;
+      p.seRead = true; p._seGrowing = true;
+      const r = p.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
+      const put = s => { p.style.width = Math.round(s.w) + "px"; p.style.height = Math.round(s.h) + "px"; p.style.left = Math.round(cx - s.w / 2) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
+      const done = () => { p._seGrowing = false; if (p.item && O.saveWin) O.saveWin(p.item, p); refit(); };
+      if (window.SeMotion) { const s = { w: r.width, h: r.height }; window.SeMotion.tween(s, { w, h }, { duration: 260, easing: "easeOutCubic", update: () => put(s), complete: done }); }
+      else { put({ w, h }); done(); }
+    }
     function zoomAt(x, y, dy) {
       const r = box.getBoundingClientRect(), px = x - r.left, py = y - r.top;
-      const k1 = Math.max(z.fitK, Math.min(opts.max || MAX, z.k * Math.exp(-dy * 0.0015)));
-      if (k1 === z.k) return false;
-      z.tx = px - (px - z.tx) * (k1 / z.k);                          // the point under the pointer stays put
-      z.ty = py - (py - z.ty) * (k1 / z.k);
-      z.k = k1; z.user = k1 > z.fitK * 1.001;
-      apply();
+      const k1 = Math.max(z.fitK, Math.min(opts.max || MAX, (z.kTo != null ? z.kTo : z.k) * Math.exp(-dy * 0.0015)));
+      if (k1 === (z.kTo != null ? z.kTo : z.k)) return false;
+      z.kTo = k1;
+      const tx = px - (px - z.tx) * (k1 / z.k), ty = py - (py - z.ty) * (k1 / z.k);   // the point under the pointer stays put
+      z.user = k1 > z.fitK * 1.001;
+      // it glides there (owner, 2026-10-12: no sudden movement); scroll steps become one motion
+      if (window.SeMotion) { const s = { k: z.k, tx: z.tx, ty: z.ty }; window.SeMotion.glide("zoombox:" + (box.id || box.dataset.zb || (box.dataset.zb = Math.random().toString(36).slice(2))), s, "k", k1, 160, () => { const t = (s.k - z.k) / ((k1 - z.k) || 1); z.tx += (tx - z.tx) * t; z.ty += (ty - z.ty) * t; z.k = s.k; if (Math.abs(z.k - k1) < 1e-6) z.kTo = null; apply(); }); }
+      else { z.tx = tx; z.ty = ty; z.k = k1; apply(); }
       return true;
     }
+    // bigger than the box (zoomed in, or at the readable floor), the content moves by dragging it: a press that
+    // moves more than 6 px pans, a click is still a click (links, buttons)
+    let pan = null;
+    box.addEventListener("pointerdown", e => {
+      if (e.button !== 0) return;
+      const bw = box.clientWidth, bh = box.clientHeight, sw = (z.w || content.offsetWidth) * z.k, sh = content.offsetHeight * z.k;
+      if (sw <= bw + 1 && sh <= bh + 1) return;
+      if (e.target.closest && e.target.closest("input, textarea, select, [contenteditable], canvas, iframe")) return;
+      pan = { x: e.clientX, y: e.clientY, tx: z.tx, ty: z.ty, id: e.pointerId, on: false };
+    }, true);
+    box.addEventListener("pointermove", e => {
+      if (!pan || e.pointerId !== pan.id) return;
+      const dx = e.clientX - pan.x, dy = e.clientY - pan.y;
+      if (!pan.on) { if (Math.hypot(dx, dy) < 6) return; pan.on = true; box.classList.add("is-panning"); try { box.setPointerCapture(pan.id); } catch (_) { /* fine */ } }
+      z.tx = pan.tx + dx; z.ty = pan.ty + dy; z.user = true; apply(); e.preventDefault();
+    }, true);
+    const endPan = e => { if (pan && (!e || e.pointerId === pan.id)) { if (pan.on) { box.classList.remove("is-panning"); box._panned = performance.now(); } pan = null; } };
+    box.addEventListener("pointerup", endPan, true); box.addEventListener("pointercancel", endPan, true);
+    box.addEventListener("click", e => { if (box._panned && performance.now() - box._panned < 300) { e.stopPropagation(); e.preventDefault(); } }, true);
     let fitT = 0;
     const refit = () => { cancelAnimationFrame(fitT); fitT = requestAnimationFrame(() => fit(true)); };
     if (window.ResizeObserver) {
