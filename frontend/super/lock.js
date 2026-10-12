@@ -26,8 +26,10 @@
     if (el.dataset && el.dataset.loop) return el.dataset.loop;        // the main and second supers (their lock hosts, below)
     return null;
   }
-  const load = name => { try { return localStorage.getItem("se:lock:" + name) === "1"; } catch (_) { return false; } };
-  const save = (name, v) => { try { if (v) localStorage.setItem("se:lock:" + name, "1"); else localStorage.removeItem("se:lock:" + name); } catch (_) { /* private mode */ } };
+  // the main super starts locked (owner, 2026-10-12: "main super should be locked as default"); unlocked, it says so ("0")
+  const LOCKED_AT_START = { main: true };
+  const load = name => { try { const v = localStorage.getItem("se:lock:" + name); return v == null ? !!LOCKED_AT_START[name] : v === "1"; } catch (_) { return !!LOCKED_AT_START[name]; } };
+  const save = (name, v) => { try { if (v) localStorage.setItem("se:lock:" + name, "1"); else if (LOCKED_AT_START[name]) localStorage.setItem("se:lock:" + name, "0"); else localStorage.removeItem("se:lock:" + name); } catch (_) { /* private mode */ } };
   const isLocked = el => !!(el && el.classList && el.classList.contains("is-locked"));
 
   function set(el, locked) {
