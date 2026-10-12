@@ -1232,19 +1232,21 @@
     [n, ...crew].forEach(m => m.el.classList.add("lv-closing"));
     setTimeout(() => { crew.forEach(remove); remove(n); say((BY[n.fn].name) + " closed: it got too small" + (crew.length ? ", with what it held" : "")); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
   }
+  const MIN_SIDE = 16;                                               // any size if unlocked (owner, 2026-10-12): the smallest a super gets before it asks to go
   function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const sbx = O().siteBox ? O().siteBox() : null;                 // as big as the inner super lets (then it fills it: super/maximize.js)
     const cur = n.st.sizeTo || n.size || DOT_BASE, max = sbx && sbx.a ? Math.min(2 * sbx.a, 2 * sbx.b / (n.aspect || 1)) - 8 : Math.min(window.innerWidth, window.innerHeight / (n.aspect || 1)) - 20;
-    if (window.SeMax && window.SeMax.isMax(n.el)) { if (dy > 0) window.SeMax.restore(n.el); return; }   // filling the inner super: a scroll out gives it back its size
+    if (window.SeMax && window.SeMax.isMax(n.el)) { if (dy > 0) { window.SeMax.restore(n.el); n.st.restT = performance.now(); } return; }   // filling the inner super: a scroll out gives it back its size
+    if (performance.now() - (n.st.restT || 0) < 700) return;           // the rest of that gesture lets the glide back finish
     if (dy < 0 && cur >= max - 1 && window.SeMax) { n.st.maxAcc = (n.st.maxAcc || 0) - dy; clearTimeout(n.st.maxT); n.st.maxT = setTimeout(() => { n.st.maxAcc = 0; }, 500); if (n.st.maxAcc > 120) { n.st.maxAcc = 0; window.SeMax.maximize(n.el); } return; }
     // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
-    if (dy > 0 && !auto && cur <= 36 && n.id !== "site-box") {
+    if (dy > 0 && !auto && cur <= MIN_SIDE && n.id !== "site-box") {
       n.st.over = (n.st.over || 0) + dy; clearTimeout(n.st.overT); n.st.overT = setTimeout(() => { n.st.over = 0; }, 500);
       if (n.st.over > 160 && !n.st.closing) { n.st.over = 0; if (window.SeDelete) window.SeDelete.ask(n.el, cx, cy); else closeNode(n); }   // ask first (owner, 2026-10-12)
       return;
     }
-    const d = Math.round(Math.max(36, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
+    const d = Math.round(Math.max(MIN_SIDE, Math.min(max, cur * Math.exp(-dy * 0.0015))));   // every super grows as far as any (owner, 2026-10-12)
     if (d === cur) return;
     n.st.sizeTo = d;
     const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s * (n.aspect || 1) / 2) / window.innerHeight; place(n); };
@@ -1513,8 +1515,9 @@
     document.addEventListener("dblclick", e => {
       if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
-      // a double click on bare space makes a prompt Super AI super, windows open or not (owner, 2026-10-12)
-      const t = e.target;
+      // a double click on bare space makes a prompt Super AI super, windows open or not (owner, 2026-10-12); a press on a
+      // holder's bare space is captured by the holder (its drag), so the press's own target says where it was
+      const t = (e.target.classList && e.target.classList.contains("is-holder") && down[2] && down[2].closest && !down[2].closest(".lv-node")) ? down[2] : e.target;
       // inside a bubble, on a window's blank margin or on the compact project super it makes one there too (every
       // super holds supers, super/hold.js); never on a pill, a word, a control or a window's content
       const inHost = t.closest && (t.closest(".orbit-bubble.is-group") || (t.classList.contains("orbit-panel") ? t : null) || t.closest(".se-project:not(.is-open)"));
@@ -1621,11 +1624,11 @@
                        close: el => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; closeNode(n); return true; },
                        // super/maximize.js: a super's whole box in layout px (it fills the inner super, and back)
                        rectOf: el => { const n = nodes.find(x => x.el === el); return n ? { x: n.fx * window.innerWidth, y: n.fy * window.innerHeight, w: n.size || DOT_BASE, h: (n.size || DOT_BASE) * (n.aspect || 1), aspect: n.aspect || 0 } : null; },
-                       setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(36, w); h = Math.max(36, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },
+                       setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(16, w); h = Math.max(16, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },
                        // super/hold.js: supers held by another super move with it, by a screen offset
                        moveNodes: (ids, dx, dy) => { const a = toLayout(0, 0), b = toLayout(dx, dy), fx = (b.x - a.x) / window.innerWidth, fy = (b.y - a.y) / window.innerHeight; nodes.forEach(n => { if (ids.includes(n.id)) { n.fx += fx; n.fy += fy; place(n); } }); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); },
                        // Shift + drag (super/shiftsize.js): its width and height, in layout px; a rectangle keeps its aspect
-                       resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(36, Math.round(w)); h = Math.max(36, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
+                       resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(16, Math.round(w)); h = Math.max(16, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {
       const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });

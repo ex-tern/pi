@@ -614,3 +614,6 @@ html:not(.shape-se) .se-lockhost { display: none; }
 .se-cf-keep:hover::before, .se-cf-keep:focus-visible::before { background: var(--cobalt); }
 .se-cf:focus-visible { outline: none; }
 html.shape-se .se-deleting { outline: 2px dashed color-mix(in srgb, var(--ink) 60%, transparent); outline-offset: 4px; }
+/* any size if unlocked (owner, 2026-10-12): a window you size may be as small as 24 px; one you have not sized keeps its
+   readable minimum (super/loop.js) */
+html.shape-se .orbit-panel { min-width: 24px; min-height: 24px; }

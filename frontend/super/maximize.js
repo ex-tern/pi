@@ -42,10 +42,10 @@
     if (window.SeMotion) window.SeMotion.tween(s, { k: 1 }, { duration: 520, easing: "easeInOutCubic", update: step, complete: () => { s.k = 1; step(); if (done) done(); } });
     else { s.k = 1; step(); if (done) done(); }
   }
-  function maximize(el) {
+  function maximize(el, back) {                                      // back: the box to go back to (a Shift + drag's start)
     if (!el || isMax(el) || (window.SeLock && window.SeLock.isLocked(el))) return;
     const r = rectOf(el), to = site(isWin(el) || isBub(el)); if (!r || !to) return;
-    saved.set(el, r);
+    saved.set(el, back ? Object.assign({}, r, back) : r);
     el.classList.add("se-max");
     if (isWin(el)) { el.seSized = true; el.userSized = true; }       // the layout leaves a window you sized alone
     glide(el, r, to, () => { document.dispatchEvent(new CustomEvent("se:obstacle")); if (O().layout) O().layout(); });

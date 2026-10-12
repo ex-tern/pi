@@ -45,14 +45,22 @@
   window.addEventListener("pointermove", e => {
     if (!drag || e.pointerId !== drag.id) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    const w = Math.max(40, drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f), h = Math.max(40, drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f), el = drag.el;
+    // any size if unlocked (owner, 2026-10-12: "any super can get any size if its unlocked"): from 16 px to the whole
+    // inner super, no more (the largest fills the second super)
+    const sb = O().siteBox ? O().siteBox() : null, sf = sb && sb.a ? (sb.fit || 1) : 1;
+    const capW = sb && sb.a ? 2 * sb.a * sf / drag.f : Infinity, capH = sb && sb.b ? 2 * sb.b * sf / drag.f : Infinity;
+    drag.full = drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f >= capW - 1 && drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f >= capH - 1;
+    const w = Math.min(capW, Math.max(16, drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f)), h = Math.min(capH, Math.max(16, drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f)), el = drag.el;
     if (el.classList.contains("lv-node")) {
       const n0 = drag.node0;
-      if (n0 && window.LabView.setRect) window.LabView.setRect(el, drag.sx < 0 ? n0.x + n0.w - w : n0.x, drag.sy < 0 ? n0.y + n0.h - h : n0.y, w, h);   // the far edge stays put
+      // the far edge stays put, and the super stays within the inner super (as big as it, it fills it)
+      let x = drag.sx < 0 ? (n0 ? n0.x + n0.w - w : 0) : (n0 ? n0.x : 0), y = drag.sy < 0 ? (n0 ? n0.y + n0.h - h : 0) : (n0 ? n0.y : 0);
+      if (n0 && sb && sb.a) { x = Math.max(sb.cx - sb.a, Math.min(sb.cx + sb.a - w, x)); y = Math.max(sb.cy - sb.b, Math.min(sb.cy + sb.b - h, y)); }
+      if (n0 && window.LabView.setRect) window.LabView.setRect(el, x, y, w, h);
       else if (window.LabView && window.LabView.resize) window.LabView.resize(el, w, h);
     }
     else if (el.classList.contains("orbit-panel")) {
-      const W = Math.round(Math.max(200, w)), H = Math.round(Math.max(120, h));
+      const W = Math.round(Math.max(24, w)), H = Math.round(Math.max(24, h));
       el.style.width = W + "px"; el.style.height = H + "px";
       if (drag.sx < 0) el.style.left = (drag.left0 + drag.w0 - W) + "px";
       if (drag.sy < 0) el.style.top = (drag.top0 + drag.h0 - H) + "px";
@@ -66,7 +74,12 @@
   const end = e => {
     if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    const el = drag.el; drag = null; html.classList.remove("se-shift-sizing");
+    const el = drag.el, d0 = drag; drag = null; html.classList.remove("se-shift-sizing");
+    // dragged out to the whole inner super, a super fills it (super/maximize.js); a scroll out gives back its size before
+    if (d0.full && window.SeMax && (el.classList.contains("lv-node") || el.classList.contains("orbit-panel"))) {
+      const back = d0.node0 ? { x: d0.node0.x, y: d0.node0.y, w: d0.node0.w, h: d0.node0.h } : { x: d0.left0, y: d0.top0, w: d0.w0, h: d0.h0 };
+      setTimeout(() => window.SeMax.maximize(el, back), 30);
+    }
     if (el.classList.contains("orbit-bubble")) { const k = keyOf(el); if (k) save(k + (el.classList.contains("is-compact") ? "" : ":open"), { w: el.offsetWidth, h: el.offsetHeight }); }
     if (el.classList.contains("se-titlesuper")) save("title", { w: el.offsetWidth, h: el.offsetHeight });
     if (O().layout) O().layout();

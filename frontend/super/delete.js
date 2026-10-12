@@ -49,9 +49,12 @@
     box.querySelector(".se-cf-keep").addEventListener("click", e => { e.stopPropagation(); close(); });
     setTimeout(() => box && box.querySelector(".se-cf-keep").focus({ preventScroll: true }), 30);
   }
+  let pressT = null;                                                   // where the press was (a holder captures presses on its bare space)
+  document.addEventListener("pointerdown", e => { pressT = e.target; }, true);
   document.addEventListener("dblclick", e => {
     if (!on() || e.button) return;
-    const el = superAt(e.target); if (!el) return;
+    const t = (e.target.classList && e.target.classList.contains("is-holder") && pressT && pressT.closest && !pressT.closest(".lv-node")) ? pressT : e.target;
+    const el = superAt(t); if (!el) return;
     e.preventDefault(); e.stopImmediatePropagation();
     if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to delete it"); return; }
     ask(el, e.clientX, e.clientY);

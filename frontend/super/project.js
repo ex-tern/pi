@@ -429,7 +429,7 @@
     // moved with a holder it sits in (super/nodes.js): by a screen offset, compact only
     remove: () => goAway(),                                            // super/delete.js: deleted after a confirmation
     // Shift + drag (super/shiftsize.js): its compact width and height, in layout px
-    resize: (w, h) => { state.w = Math.round(Math.max(60, w)); state.h = Math.round(Math.max(60, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
+    resize: (w, h) => { state.w = Math.round(Math.max(16, w)); state.h = Math.round(Math.max(16, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
     moveBy: (dx, dy) => {
       if (!el || el.classList.contains("is-open")) return;
       if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(), [lx, ly] = toLayout(r.left, r.top); state.x = lx / window.innerWidth; state.y = ly / window.innerHeight; }

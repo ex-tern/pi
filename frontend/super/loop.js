@@ -193,7 +193,7 @@
         const r = p.getBoundingClientRect();
         // no more than about half the inner super, so the bubbles keep their room; on a phone there is no room
         // to share, so a window may take most of it (and never shrinks below a readable size)
-        const sm = window.innerWidth < 700, cap = winCap(p), wCap = cap.w, hCap = cap.h, minW = sm ? Math.floor(a * 1.5) : 200, minH = sm ? Math.floor(b * 0.6) : 120;
+        const sm = window.innerWidth < 700, cap = winCap(p), wCap = cap.w, hCap = cap.h, minW = p.seSized ? 24 : sm ? Math.floor(a * 1.5) : 200, minH = p.seSized ? 24 : sm ? Math.floor(b * 0.6) : 120;   // a window you sized may be any size
         if (!r.width || (fits(r.left, r.top, r.width, r.height) && r.width <= wCap + 1 && r.height <= hCap + 1)) return;
         let w = r.width, h = r.height;
         const k = Math.min(1, wCap / w, hCap / h);
@@ -217,6 +217,7 @@
     // may take most of it
     function winCap(p) {
       const sb = siteBox(), f = sb.fit || 1, a = sb.a * f, b = sb.b * f, big = window.innerWidth < 700 || (p && (p.seSized || p.seRead));
+      if (p && p.seSized) return { w: Math.floor(a * 2), h: Math.floor(b * 2) };   // sized by you: as big as the inner super
       return { w: Math.floor(big ? a * 1.84 : a * 1.1), h: Math.floor(big ? b * 1.7 : b * 1.3) };
     }
     // nothing overlaps: windows push each other apart along the shorter way, step away from the nodes,
@@ -225,7 +226,7 @@
     function separateWindows(fits) {
       const sm = window.innerWidth < 700, sbm = siteBox(), fm = sbm.fit || 1;
       const GAP = 3, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
-      const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
+      const minOf = p => (p.seSized ? { w: Math.floor(p.offsetWidth), h: Math.floor(p.offsetHeight) } : { w: MIN_W, h: MIN_H });   // a window you sized keeps its size, small or big
       const lockedWin = p => !!(window.SeLock && window.SeLock.isLocked(p));
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
