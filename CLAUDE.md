@@ -24,7 +24,7 @@ ScholarPi runs as two copies of this repository:
    - the π circle as the only ornament
 
    Change it deliberately, not by accident.
-6. **The base image comes from `public.ecr.aws`, not Docker Hub.** Railway builds hit Docker Hub's pull limit ("429 Too Many Requests" at "load metadata for docker.io/library/python"), which fails the build in seconds. Keep the `FROM` on the ECR mirror.
+6. **Python and Rust only; no Docker, no Java** (owner, 2026-10-13). Railway builds with Nixpacks (`railway.toml`, `nixpacks.toml`: the Python provider installs `requirements.txt`, the build phase fetches the pinned HAL-OS commit and runs `scripts/build_hal.py`, the start command is gunicorn with `backend/gunicorn.conf.py`, which chdirs into `backend/` itself). The Dockerfile, docker-compose, the entrypoint script, the Java client and the Solidity/ZK artifacts (`.sol`, `.zok`, keys, `abi.json`) are gone; `backend/ledger.py` carries the contract ABIs it needs inline. The browser still runs JavaScript (the front end's modules) and the SuperAI engine compiled from Rust to WebAssembly.
 7. **`app.js` is large and load-bearing.** Prefer small, separate modules (`lab.js`, `orbit.js` and `channel.js` are the pattern) over growing it.
 
 ## Layout

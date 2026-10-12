@@ -367,7 +367,7 @@ html.shape-se .orbit-panel * { overscroll-behavior: none; }
 /* the title is a simple super (super/logo.js): a ■ at n = π with its four ports, "pi tech lab" in mono inside */
 html.shape-se .orbit-title .se-titlesuper {
   position: relative; display: grid; place-items: center; box-sizing: border-box;
-  width: calc(208px * var(--se-title-k, 1)); height: calc(46px * var(--se-title-k, 1));   /* bigger (owner, 2026-10-12); one line, low, with room for its lock and save at the right end; the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
+  width: calc(156px * var(--se-title-k, 1) + 52px); height: calc(46px * var(--se-title-k, 1));   /* its icons keep their size whatever its scale */   /* bigger (owner, 2026-10-12); one line, low, with room for its lock and save at the right end; the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
   background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 1.6515));
   font: 500 calc(18px * var(--se-title-k, 1))/1 "Geist Mono", ui-monospace, monospace; color: var(--ink);
   text-align: center; text-transform: lowercase; letter-spacing: 0; padding: 0 52px 0 10px;
@@ -375,7 +375,7 @@ html.shape-se .orbit-title .se-titlesuper {
 }
 html.shape-se .orbit-title .sts-text { display: block; white-space: nowrap; }
 @supports not (corner-shape: round) { html.shape-se .orbit-title .se-titlesuper { border-radius: 32%; } }
-@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(128px * var(--se-title-k, 1)); height: calc(36px * var(--se-title-k, 1)); font-size: calc(14px * var(--se-title-k, 1)); } }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(84px * var(--se-title-k, 1) + 52px); height: calc(36px * var(--se-title-k, 1)); font-size: calc(14px * var(--se-title-k, 1)); } }
 html.shape-se .orbit-title .sts-p { position: absolute; width: 9px; height: 9px; background: var(--ink); clip-path: var(--se-sparkle); pointer-events: none; }
 html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }

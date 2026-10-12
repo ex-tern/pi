@@ -1,24 +1,9 @@
-# Railway build configuration.
-#
-# Back on the Dockerfile. The Nixpacks switch was made to sidestep a volume
-# permission error, but that error is now fixed properly by
-# docker-entrypoint.sh, which takes ownership of the mount at container start
-# and then drops privileges. Meanwhile the Docker image is known to boot on
-# this platform — the earlier logs show gunicorn listening — whereas the
-# Nixpacks build has not yet served a request.
-#
-# Debugging one unknown at a time: keep the builder that has worked, and fix
-# the remaining application faults against it. To try Nixpacks again, set
-# builder = "NIXPACKS" and add:
-#     startCommand = "gunicorn api:app -c backend/gunicorn.conf.py"
-# (no `cd` — Railway runs this without a shell, so shell builtins fail).
-
+# Railway build configuration: Nixpacks, Python only (owner, 2026-10-13: "no docker"); see nixpacks.toml.
 [build]
-builder = "DOCKERFILE"
+builder = "NIXPACKS"
 
 [deploy]
-# No startCommand: the image's ENTRYPOINT + CMD handle it, so there is one
-# definition of how this app starts rather than two that can drift.
+# No startCommand: nixpacks.toml's [start] is the one definition of how this app starts.
 healthcheckPath = "/api/health"
 healthcheckTimeout = 300
 restartPolicyType = "ON_FAILURE"

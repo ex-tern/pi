@@ -68,25 +68,9 @@ Add keys to `backend/.env` any time — no code changes needed. See
 
 ## 2. Production deployment
 
-### Option A — Docker (recommended)
+### Bare metal / VM (systemd + nginx)
 
-```bash
-cp backend/.env.example backend/.env    # fill in your keys
-docker compose up -d --build
-```
-
-This builds a slim, non-root production image, runs it behind **gunicorn +
-uvicorn workers**, persists the SQLite DB / model weights / logs in a named
-volume (`scholarpi_data`), and exposes a container `HEALTHCHECK` hitting
-`/api/health`. Put a TLS-terminating reverse proxy in front of it — see
-`deploy/nginx.conf.example`.
-
-```bash
-docker compose logs -f          # tail logs
-docker compose down             # stop (data volume persists)
-```
-
-### Option B — Bare metal / VM (systemd + nginx)
+Python and Rust only: there is no Docker image, by design.
 
 1. `cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
 2. `cp .env.example .env` and fill it in; set `ENVIRONMENT=production`
@@ -139,14 +123,14 @@ docker compose down             # stop (data volume persists)
   `/api/openapi.json`) are disabled in production.
 - **Real logging.** Previously the app called `logging.info(...)` with no
   handler ever configured, so nothing was written anywhere. Logging is now
-  configured at startup: stdout (for `docker logs`/`journalctl`) plus a
+  configured at startup: stdout (for `journalctl`) plus a
   rotating file at `$SCHOLARPI_DATA_DIR/logs/scholarpi.log`.
 - **`/api/health`** endpoint (checks DB connectivity) for load balancers,
   container orchestrators, and uptime monitors.
 - **WAL-mode SQLite** so reads aren't blocked by an in-flight write —
   matters once more than one request can be in flight (multi-worker
   gunicorn), not just single-user local dev.
-- **Runs as non-root** in the Docker image; `deploy/scholarpi.service`
+- `deploy/scholarpi.service`
   includes basic systemd sandboxing (`ProtectSystem=strict`,
   `NoNewPrivileges=true`).
 - **Pinned, trimmed dependencies** (`requirements.txt`) — compatible-release
@@ -165,7 +149,7 @@ docker compose down             # stop (data volume persists)
   migrate `database.py` to Postgres — the SQL is plain enough that this is
   a contained, mechanical change, not a rewrite.
 - **On-chain minting requires a matching deployed contract.** The Solidity
-  contract in `ScholarPi_PiQ.sol` expects a true Groth16 zk-SNARK proof
+  contract (kept outside this repository since 2026-10-13: Python and Rust only here) expects a true Groth16 zk-SNARK proof
   (`Verifier.Proof`) tied to a ZoKrates circuit; `ledger.py` currently
   submits a simplified HMAC-based "proof" against a 4-argument ABI. This
   only matters if you deploy your own contract — otherwise the app runs
