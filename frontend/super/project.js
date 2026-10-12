@@ -283,11 +283,7 @@
     let progAcc = 0, progT = 0;
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
-      if (window.SeLock && el && window.SeLock.isLocked(el) && !e.target.closest(".pj-editor, .se-lock")) {   // locked: its size is kept
-        e.preventDefault(); e.stopImmediatePropagation();
-        if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to change its size or shape");
-        return;
-      }
+      // locked, it still opens and compacts (the start's supers are locked, owner 2026-10-12); the lock keeps its place, size and n
       if (e.target.closest(".pj-editor")) {                              // the program scrolls; at its top, a scroll out closes it
         e.stopImmediatePropagation();
         const ta = el.querySelector(".pj-ed-text");

@@ -12,8 +12,11 @@
   const on = () => html.classList.contains("shape-se");
   const SUPERS = ".lv-node[data-id], .orbit-bubble.is-group[data-key], .orbit-panel, .se-project, .orbit-title .se-titlesuper";
   const nameOf = el => (window.SeLock && window.SeLock.nameOf(el)) || null;
-  const load = n => { try { return localStorage.getItem("se:save:" + n) === "1"; } catch (_) { return false; } };
-  const store = (n, v) => { try { if (v) localStorage.setItem("se:save:" + n, "1"); else localStorage.removeItem("se:save:" + n); } catch (_) { /* private mode */ } };
+  // every super of the start begins saved (owner, 2026-10-12: "all supers in initial state should have active lock and
+  // save on"): the title, the bubbles, the third super and the project; unsaved, "0" is kept
+  const atStart = n => n === "title" || n === "project" || n === "node:hold" || /^bubble:/.test(n);
+  const load = n => { try { const v = localStorage.getItem("se:save:" + n); return v == null ? atStart(n) : v === "1"; } catch (_) { return atStart(n); } };
+  const store = (n, v) => { try { if (v) localStorage.setItem("se:save:" + n, "1"); else if (atStart(n)) localStorage.setItem("se:save:" + n, "0"); else localStorage.removeItem("se:save:" + n); } catch (_) { /* private mode */ } };
   const isSaved = el => !!(el && el.classList && el.classList.contains("is-saved"));
   const label = v => v ? "Saved: it cannot be deleted. Click to unsave" : "Not saved: a double click deletes it. Click to save";
 

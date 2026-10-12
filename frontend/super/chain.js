@@ -109,7 +109,9 @@
   window.addEventListener("pointerup", end, true);
   window.addEventListener("pointercancel", end, true);
 
-  function sweep() { if (on()) document.querySelectorAll(SUPERS).forEach(badge); }
+  // no chain icon on any super any more (owner, 2026-10-12: "delete the chain icon from all supers"); a group made by
+  // wiring (super/nodes.js regroup) is still chained, so its supers still move as one
+  function sweep() { if (on()) document.querySelectorAll(".se-chain").forEach(b => b.remove()); void badge; }
   function start() { sweep(); new MutationObserver(sweep).observe(document.body, { childList: true, subtree: true }); }
   window.SeChain = { isChained, set, groupOf };
   if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);

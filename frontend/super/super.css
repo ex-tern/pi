@@ -648,3 +648,9 @@ html.shape-se .is-saved > .se-save .sv-body { fill: var(--ink); }
 html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save .sv-slot { stroke: var(--paper); }
 html.shape-se .is-locked:not(.is-saved) > .se-save { opacity: 0.35; }
 
+
+/* the chain icon is gone (owner, 2026-10-12): the save icon takes its place beside the lock */
+html.shape-se .se-chain { display: none !important; }
+html.shape-se .se-save { left: calc(50% + 19px); }
+html.shape-se .lv-node:not(.is-holder) > .se-save { left: calc(50% + 13px); }
+html.shape-se .orbit-title .se-titlesuper > .se-save { left: calc(50% + 11px); }

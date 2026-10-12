@@ -185,7 +185,7 @@
         what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
         if (what._acc < -60) { what._acc = 0; if (O().openKey) O().openKey(what.dataset.key); }
       }
-      else if (sizes(what) && locked(sizes(what))) lockedNote(sizes(what), x, y);   // locked: its size is kept
+      else if (sizes(what) && locked(sizes(what)) && !what.classList.contains("orbit-bubble")) lockedNote(sizes(what), x, y);   // locked: its size is kept (a bubble still opens and compacts: the start's supers are locked)
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }

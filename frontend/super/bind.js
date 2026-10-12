@@ -122,14 +122,17 @@
         ms.forEach(el => { const a = st.at.get(el); if (a && kw !== kh) a[2] *= Math.min(kw, kh) / kw; });   // the smaller of the two: a square stays a square
         st.sizedAt = performance.now();
       }
-      ms.forEach(el => {                                                 // sizes: to their share while the holder changes; else the share follows them (a bubble opened, sized by you)
-        if (el.classList.contains("orbit-panel") || held.has(el)) return;
+      // a bubble that is opening, open or filling the inner super is its own (owner, 2026-10-12: "fix this bug": its
+      // pills spilled out while its size was held to its share); compact again, it takes its share back
+      const busy = el => el.classList.contains("orbit-bubble") && (!el.classList.contains("is-compact") || el.classList.contains("is-growing") || el.classList.contains("se-max"));
+      ms.forEach(el => {                                                 // sizes: to their share while the holder changes; else the share follows them (sized by you)
+        if (el.classList.contains("orbit-panel") || held.has(el) || busy(el)) return;
         const a = st.at.get(el); if (!a) return;
         if (performance.now() - (st.sizedAt || 0) < 1500) sizeTo(el, a[2] * r.width);
         else a[2] = el.getBoundingClientRect().width / r.width;
       });
       ms.forEach(el => {
-        if (held.has(el) || el.classList.contains("is-dragging") || el.classList.contains("dragging") || el.classList.contains("se-opening")) return;
+        if (held.has(el) || busy(el) || el.classList.contains("is-dragging") || el.classList.contains("dragging") || el.classList.contains("se-opening")) return;
         const a = st.at.get(el); putAt(el, r.left + a[0] * r.width, r.top + a[1] * r.height);
       });
     });
