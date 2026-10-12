@@ -31,3 +31,15 @@ jobs:
           GROQ_API_KEY: ""
           OR_API_KEY: ""
           GEMINI_API_KEY: ""
+
+  rust:
+    # the Rust side of the site: the SuperAI language and the constants (π, e, φ, γ), both built to WebAssembly
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: SuperAI
+        working-directory: rust/superai
+        run: cargo test -q
+      - name: Numbers
+        working-directory: rust/numbers
+        run: cargo test -q

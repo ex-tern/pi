@@ -1418,17 +1418,19 @@
         d = curve(pc[0], y1, qc[0], y2, false);
         t1 = [pc[0], y1]; t2 = [qc[0], y2];
       }
+      if (/NaN|Infinity/.test(d)) return;     // an end not laid out yet (a bubble mid-layout): drawn on the next frame
       const live = isLive(A) || isLive(B) || (a === "Tools" && b === "Explore" && actLevel !== "quiet");
       html += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
               wireTerm(t1, "wire-term") + wireTerm(t2, "wire-term") +
               '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(a) + " – " + esc(b) + ': double-click to delete</title></path></g>';
     });
     // the loop's own edge: drag from it to wire the loop to a bubble
-    if (pageLoop() && L.loopD()) html += '<path class="loop-hit" transform="translate(0,' + (top - sr0.top) + ')" d="' + L.loopD() + '"><title>Drag from the loop onto a bubble to connect them</title></path>';
+    if (pageLoop() && L.loopD() && !/NaN|Infinity/.test(L.loopD())) html += '<path class="loop-hit" transform="translate(0,' + (top - sr0.top) + ')" d="' + L.loopD() + '"><title>Drag from the loop onto a bubble to connect them</title></path>';
     // a handle on every bubble to draw a new wire from
     items.forEach(it => {
       if (!it.bubble || it.bubble.hidden || it.groupOf || !it.bubble.offsetParent) return;
       const [x, y] = handleAt(it);
+      if (!isFinite(x) || !isFinite(y)) return;
       html += '<g class="wire-handle" data-t="' + esc(it.title) + '"><circle class="wh-hit" cx="' + x + '" cy="' + y + '" r="11"/>' +
               wireTerm([x, y], "wh-dot") + '<title>Drag onto another bubble to connect ' + esc(it.title) + '</title></g>';
     });
@@ -1601,7 +1603,7 @@
     showPi = show;
     window.OrbitPi = () => { if (!pending) { pending = true; requestAnimationFrame(show); } };
     try {
-      const w = new Worker("pi-worker.js?v=4");
+      const w = new Worker("pi-worker.js?v=5");
       piWorker = w;
       watchActivity();
       w.onmessage = e => {

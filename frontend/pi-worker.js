@@ -1,41 +1,30 @@
-// pi-worker.js — digits of π, forever, in the background.
+// pi-worker.js: digits of π, forever, in the background. The digits are computed exactly in Rust
+// (rust/numbers, Machin's formula, built to numbers.wasm; owner, 2026-10-13: "write the whole project in py and
+// rust only"): 1 000 at first, and four times as many each time the page is about to run out, so it simply keeps
+// going while the page stays open. This file only loads it and paces the digits out, so the number visibly grows
+// instead of racing ahead.
 //
-// Gibbons' unbounded spigot (2006): exact integer arithmetic with BigInt, so
-// every digit it emits is final. It never needs to know in advance how many
-// digits are wanted; it simply keeps going while the page stays open, and
-// each digit costs a little more than the last. Paced so the number visibly
-// grows instead of racing ahead.
-//
-// The pace follows what the site is processing ({pace: ms}, sent by orbit.js
-// from /api/activity): slow while it is quiet, fast while papers are being
-// assessed. The schedule corrects its own drift, and a {sync: true, delay}
-// message restarts it.
-// {pause: true} stops it where it is; {resume: true} carries on.
-let q = 1n, r = 0n, t = 1n, k = 1n, n = 3n, l = 3n;
-let count = 0;
-let PACE_MS = 60;       // set by the page from what the site is processing ({pace})
+// The pace follows what the site is processing ({pace: ms}, sent by orbit.js from /api/activity): slow while it
+// is quiet, fast while papers are being assessed. The schedule corrects its own drift, and a {sync: true, delay}
+// message restarts it. {pause: true} stops it where it is; {resume: true} carries on.
+let digits = "", count = 0, ask = null, wanted = 1000, working = false;
+let PACE_MS = 60;
 let due = 0, timer = 0;
 
-function next() {
-  for (;;) {
-    if (4n * q + r - t < n * t) {
-      const d = n;
-      const nr = 10n * (r - n * t);
-      n = (10n * (3n * q + r)) / t - 10n * n;
-      q *= 10n;
-      r = nr;
-      return Number(d);
-    }
-    const nr = (2n * q + r) * l;
-    const nn = (q * (7n * k) + 2n + r * l) / (t * l);
-    q *= k; t *= l; l += 2n; k += 1n; n = nn; r = nr;
-  }
+const enc = new TextEncoder(), dec = new TextDecoder();
+function more() {                                   // the next batch, before the current one runs out
+  if (!ask || working || wanted > 200000) return;
+  working = true;
+  const s = ask("pi " + wanted);
+  digits = s.replace(".", "");                      // "31415…": the 3, then the decimals, as the spigot gave them
+  wanted *= 4; working = false;
 }
-
 function tick() {
-  const d = next();
+  if (count >= digits.length) { more(); if (count >= digits.length) { timer = setTimeout(tick, 200); return; } }
+  const d = +digits[count];
   count++;
   postMessage({ digit: d, count });
+  if (digits.length - count < 200) setTimeout(more, 0);
   due += PACE_MS;
   const now = performance.now();
   if (due < now - 4 * PACE_MS) due = now;          // fell far behind (tab asleep): skip, don't burst
@@ -50,12 +39,7 @@ onmessage = e => {
     return;
   }
   if (e.data && e.data.pause) { clearTimeout(timer); timer = 0; return; }
-  if (e.data && e.data.resume) {
-    clearTimeout(timer);
-    due = performance.now();
-    timer = setTimeout(tick, 0);
-    return;
-  }
+  if (e.data && e.data.resume) { clearTimeout(timer); due = performance.now(); timer = setTimeout(tick, 0); return; }
   if (e.data && e.data.sync) {
     clearTimeout(timer);
     due = performance.now() + (+e.data.delay || 0);
@@ -63,5 +47,19 @@ onmessage = e => {
   }
 };
 
-due = performance.now();
-tick();
+(async () => {
+  const { instance } = await WebAssembly.instantiateStreaming(fetch("numbers.wasm?v=1"), {}).catch(async () =>
+    WebAssembly.instantiate(await (await fetch("numbers.wasm?v=1")).arrayBuffer(), {}));
+  const x = instance.exports;
+  ask = req => {
+    const b = enc.encode(req), p = x.nb_alloc(b.length);
+    new Uint8Array(x.memory.buffer, p, b.length).set(b);
+    x.nb_handle(p, b.length);
+    const s = dec.decode(new Uint8Array(x.memory.buffer, x.nb_out_ptr(), x.nb_out_len()));
+    x.nb_free_out(); x.nb_free(p, b.length);
+    return s;
+  };
+  more();
+  due = performance.now();
+  tick();
+})();

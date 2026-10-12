@@ -36,7 +36,7 @@
   function startWorker() {
     if (worker) return;
     try {
-      worker = new Worker("consts-worker.js?v=2");
+      worker = new Worker("consts-worker.js?v=3");
       worker.onmessage = e => { if ((e.data.digits || "").length > (have[e.data.key] || "").length) have[e.data.key] = e.data.digits; };
       if (window.PiOrbit.still && window.PiOrbit.still()) worker.postMessage({ pause: true });
     } catch (_) { /* no workers: π alone still grows */ }

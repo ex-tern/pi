@@ -712,3 +712,31 @@ html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-locked > .se-loc
 html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-body { fill: var(--sky-ink); }
 html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-label, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-slot { stroke: #262b36; }
 html.shape-se.se-night .lv-node.is-holder .lv-glyph { user-select: none; -webkit-user-select: none; }
+
+/* ==== universal rules: every super looks the same (owner, 2026-10-13: "make ui look similar everywhere, uniform,
+   universal rules"). One edge, one name style, one selection, one icon set, whatever the kind of super. ==== */
+html.shape-se {
+  --u-edge: 1.5px;            /* every super's edge */
+  --u-edge-locked: 2.5px;     /* a locked super's edge */
+  --u-sel: 2px;               /* a selected super's edge (cobalt) */
+  --u-name: 500 13px/1.2 "Geist Mono", ui-monospace, monospace;   /* every super's name */
+}
+/* 1. the edge */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node:not(.is-holder), .lv-node.is-holder, .orbit-title .se-titlesuper) { border-width: var(--u-edge); border-style: solid; }
+html.shape-se .se-project { border-width: calc(var(--u-edge) * var(--pj-z, 1)); }
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node, .orbit-title .se-titlesuper).is-locked { border-width: var(--u-edge-locked); }
+html.shape-se .se-project.is-locked { border-width: calc(var(--u-edge-locked) * var(--pj-z, 1)); }
+/* 2. the selection */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: var(--cobalt); border-width: max(var(--u-sel), var(--u-edge)); }
+/* 3. the name: a bubble's name box, its pills, the project's name, a holder's name and what a Super AI super says
+   are all set in the one name style; a holder's name sits in a box like a bubble's name */
+html.shape-se :is(.orbit-bubble.is-group:not(.is-compact) > .ob-label, .orbit-bubble.is-group:not(.is-compact) .ob-member, .lv-node.is-holder > .lv-glyph, .se-project .pj-name) { font: var(--u-name); letter-spacing: 0; text-transform: none; }
+html.shape-se .lv-node.lv-box.is-holder > .lv-glyph {
+  left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: 76%; top: max(4%, 30px);
+  padding: 0.32em 0.9em; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent); border-radius: 0.5em;
+  background: var(--paper); color: var(--ink); font-size: 13px !important; white-space: nowrap; text-overflow: ellipsis;
+}
+html.shape-se.se-night .lv-node.lv-box.is-holder > .lv-glyph { color: var(--ink); }   /* on its paper box, dark ink day and night */
+html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; font-weight: 500; }   /* a compact bubble's drawn name too */
+/* a double click on a super never selects its name as text */
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node.is-holder > .lv-glyph, .orbit-title .se-titlesuper, .se-project .pj-face) { -webkit-user-select: none; user-select: none; }
