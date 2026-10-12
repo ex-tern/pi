@@ -263,7 +263,7 @@ function setPane(key, cx, cy, a, b, n, o) {
   if (!(a > 5 && b > 5) || !isFinite(a + b + cx + cy + n)) return;   // too small to be a pane (or not a number): nothing drawn
   const m = paneMesh(key), u = m.material.uniforms, M = o.margin != null ? o.margin : PANE_M;
   m.position.set(cx, cy, 0); m.scale.set(2 * (a + M), 2 * (b + M), 1);
-  u.uSize.value.set(2 * (a + M), 2 * (b + M)); u.uHalf.value.set(a, b); u.uN.value = Math.max(1.2, Math.min(60, n));
+  u.uSize.value.set(2 * (a + M), 2 * (b + M)); u.uHalf.value.set(a, b); u.uN.value = Math.max(0.3, Math.min(60, n));   // a star too: the pane is the shape the super has
   u.uFill.value = o.fill; u.uEdge.value.copy(o.edge); u.uEdgeW.value = o.edgeW; u.uShadow.value = o.shadow || 0;
   m._sheen += ((o.sheen ? 1 : 0) - m._sheen) * 0.08;            // the sheen fades in and out slowly
   u.uSheen.value = m._sheen; m.renderOrder = o.order;

@@ -398,7 +398,7 @@ html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { st
    opens it into the bubble with its pills, a scroll out compacts it again. */
 html.shape-se .orbit-bubble.is-group.is-compact {
   width: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); height: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); min-width: 0; max-width: none; padding: 0;   /* square always; smaller together when there is no room (orbit.js --pill-fit) */ box-sizing: border-box; display: block; overflow: hidden;
-  border-radius: 50%; corner-shape: superellipse(var(--se-k, 1.6515)); border: 1.5px solid var(--ink); background: var(--paper);
+  border-radius: 50%; corner-shape: superellipse(var(--se-k-window, 1.6515)); border: 1.5px solid var(--ink); background: var(--paper);   /* its own n (Shift + scroll) */
 }
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-dot, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label,
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-members, html.shape-se .orbit-bubble.is-group.is-compact > .ob-peek { display: none; }
@@ -450,10 +450,10 @@ html.shape-se .wire:hover .wire-bed, html.shape-se .sl-wire:hover .wire-bed { st
 @media (prefers-reduced-motion: reduce) { html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow { animation: none; } }
 
 /* ---- the lock on every super (super/lock.js) ------------------------------------------------------------
-   a small padlock at the lower right, faint until it is locked (ink); locked, the super's edge is drawn a little
-   heavier */
+   a small padlock at the top centre, just inside the edge under the sync sparkle (owner, 2026-10-12: "move the lock
+   button to top center of supers"), faint until it is locked (ink); locked, the super's edge is drawn a little heavier */
 html.shape-se .se-lock {
-  position: absolute; right: 9%; bottom: 7%; width: 14px; height: 14px; padding: 0; margin: 0; border: 0; background: transparent;
+  position: absolute; left: 50%; top: 9px; right: auto; bottom: auto; transform: translateX(-50%); width: 14px; height: 14px; padding: 0; margin: 0; border: 0; background: transparent;
   cursor: zoom-in; z-index: 5; opacity: 0.35; transition: opacity 0.15s ease; pointer-events: auto; line-height: 0;   /* a scroll locks it, not a click */
 }
 html.shape-se .se-lock svg { width: 12px; height: 12px; display: block; }
@@ -463,11 +463,11 @@ html.shape-se .se-lock:hover, html.shape-se .is-locked > .se-lock { opacity: 1; 
 html.shape-se .is-locked > .se-lock .lk-body { fill: var(--ink); }
 html.shape-se .se-lock:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; border-radius: 4px; }
 html.shape-se .lv-node.is-locked, html.shape-se .orbit-bubble.is-locked, html.shape-se .orbit-panel.is-locked, html.shape-se .se-project.is-locked { border-width: 2.5px; }
-html.shape-se .lv-node:not(.is-holder) .se-lock { right: 4px; bottom: 2px; width: 10px; height: 10px; }   /* a small super: a smaller lock, in its corner */
+html.shape-se .lv-node:not(.is-holder) .se-lock { top: 5px; width: 10px; height: 10px; }   /* a small super: a smaller lock */
 html.shape-se .lv-node:not(.is-holder) .se-lock svg { width: 9px; height: 9px; }
-html.shape-se .orbit-bubble.is-compact > .se-lock { right: 10px; bottom: 8px; }
-html.shape-se .orbit-panel > .se-lock { right: 7%; bottom: 5%; }
-html.shape-se .se-project.is-open > .se-lock { right: 16px; bottom: 12px; }
+html.shape-se .orbit-bubble.is-compact > .se-lock { top: 8px; }
+html.shape-se .orbit-panel > .se-lock { top: 8px; }
+html.shape-se .se-project.is-open > .se-lock { top: 10px; }
 html.shape-se .is-locked > .se-lock { cursor: zoom-out; }
 
 /* text smaller than readable is a super (super/legible.js, owner 2026-10-12): a paper box in the shape language,
@@ -543,6 +543,9 @@ html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se
    round corners"): buttons, fields, cards, tables, badges, pills, inside windows too. Low specificity, so a super
    that has its own n (Shift + scroll) keeps it */
 html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*)::after { corner-shape: superellipse(var(--se-k-window, 1.6515)); }
+/* a super's own n (Shift + scroll, set on it as --se-k-window) is its own: what is inside it keeps n = π
+   (owner, 2026-10-12: "this is a bug": a bubble scrolled to a star turned its pills, links and label into stars) */
+html.shape-se :is(.orbit-bubble, .orbit-panel, .se-project, .orbit-title, .lv-palette, .live-dock, .lv-node) * { --se-k-window: 1.65149; }
 /* open bubbles: each pill is a box of its own (not drawn by ::before), so every browser can give it superellipse corners
    (super/squircle.js paints them where corner-shape is unknown) */
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 0.9em !important; }
@@ -576,3 +579,4 @@ html.shape-se .se-shapehud { display: flex; }
 .se-shapehud.at-detent path { stroke: var(--cobalt); }
 .se-shapehud.at-detent .sh-n { color: var(--cobalt); }
 .se-shapehud .sh-name { color: var(--graphite); font-weight: 400; }
+.se-shapehud .sh-key { font-size: 10.5px; letter-spacing: 0.04em; color: var(--graphite); padding-right: 8px; margin-right: 0; border-right: 1px solid color-mix(in srgb, var(--ink) 25%, transparent); }

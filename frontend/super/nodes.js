@@ -444,7 +444,7 @@
       const frozen = n.fn === "box" && (n.stopped || n.held);
       if (!frozen && n.text !== r.text) {
         n.text = r.text; n.changed = now;
-        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : r.text;   // holds its value inside
+        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : isHolder(n) && n.str ? n.str : r.text;   // a holder shows its own name   // holds its value inside
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
       }
@@ -1507,6 +1507,8 @@
     // super/scroll.js: a scroll on a node sizes it
     window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
+                       // Shift + drag (super/shiftsize.js): its width and height, in layout px; a rectangle keeps its aspect
+                       resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(36, Math.round(w)); h = Math.max(36, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {
       const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });

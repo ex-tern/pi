@@ -475,6 +475,13 @@
   const blocks = (r, p) => hit(r, p) && !(p.inner && within(r, p.inner)) && !(cur && p.lockEl && merged() && !isLocked(cur.bubble) && !isLocked(p.lockEl));
   const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => blocks(r, p)) &&
     (!merged() || insideLoop(r));          // superellipse look: inside the loop
+  function keepInside(it) {
+    const want = it.custom ? { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2 } : it.lastAt ? { x: it.lastAt.x, y: it.lastAt.y } : { x: lx - it.w / 2, y: ly - it.h / 2 };
+    if (!merged()) return { x: Math.min(W - it.w - 6, Math.max(6, want.x)), y: Math.min(H - it.h - 6, Math.max(6, want.y)), w: it.w, h: it.h };
+    const s = siteBox(), cy = H / 2, m = 0.9;                                     // inside the inner super's box, clear of its corners
+    const x0 = s.cx - s.a * m, x1 = s.cx + s.a * m - it.w, y0 = cy - s.b * m, y1 = cy + s.b * m - it.h;
+    return { x: Math.min(Math.max(x0, x1), Math.max(x0, want.x)), y: Math.min(Math.max(y0, y1), Math.max(y0, want.y)), w: it.w, h: it.h };
+  }
   function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
   function pillRect(it, r, g) { const o = grow(r, g / 2); o.lockEl = it.bubble; return o; }   // a placed bubble: in the way unless both are unlocked
 
@@ -506,7 +513,7 @@
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
       const o = grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g);
       if (p.classList.contains("se-project")) o.lockEl = p;          // the project super merges with an unlocked bubble too
-      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03; o.inner = { x: tl.x + k, y: tl.y + k, w: br.x - tl.x - 2 * k, h: br.y - tl.y - 2 * k }; }
+      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03, kt = Math.max(k, 46); o.inner = { x: tl.x + k, y: tl.y + kt, w: br.x - tl.x - 2 * k, h: br.y - tl.y - k - kt }; }   // clear of its lock and name at the top
       out.push(o);
     });
     return out;
@@ -663,7 +670,9 @@
     settlePushes = false;
     vis.forEach(it => {
       if (it === dragging) return;
-      const r = it.at || { x: Math.min(W - it.w - 6, Math.max(6, lx - it.w / 2)), y: Math.min(H - it.h - 6, ly + R + piBox.h + 20), w: it.w, h: it.h };
+      // no free spot anywhere: it stays where it was meant to be (overlapping, never pushed out of the inner super:
+      // owner, 2026-10-12: "how can a super be outside second super and not die")
+      const r = it.at || keepInside(it);
       // a bubble sized by scrolling (super/scroll.js: CSS scale about its centre) is laid out at its sized box:
       // the translate puts the unscaled box where its scaled box lands on r
       // translate first, then the size as a scale about its centre: sizing keeps the centre, the layout the box

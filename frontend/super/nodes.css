@@ -225,7 +225,7 @@ html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: 
 .lv-node.is-holder > .lv-edge-l { top: 0; bottom: 0; left: -6px; width: 14px; }
 .lv-node.is-holder > .lv-edge-r { top: 0; bottom: 0; right: -6px; width: 14px; }
 .lv-node.lv-box.is-holder .lv-glyph, .lv-node.lv-box.is-holder.is-wrap .lv-glyph {
-  display: block; position: absolute; left: 12%; right: 12%; top: 5%; width: auto; height: auto; max-height: 17%; overflow: hidden;
+  display: block; position: absolute; left: 12%; right: 12%; top: max(5%, 26px); width: auto; height: auto; max-height: 17%; overflow: hidden;
   padding: 0; text-align: center; font-size: 11px !important; line-height: 1.3; pointer-events: none; }
 
 /* a super zoomed into (super/nodes.js textZoom): its text is clipped to its shape */
