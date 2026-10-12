@@ -1177,9 +1177,21 @@
   function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
   let zoomed = null, suppressRing = false;
+  function closeNode(n) {
+    n.st.closing = true;
+    const crew = isHolder(n) ? inside(n) : [];
+    [n, ...crew].forEach(m => m.el.classList.add("lv-closing"));
+    setTimeout(() => { crew.forEach(remove); remove(n); say((BY[n.fn].name) + " closed: it got too small" + (crew.length ? ", with what it held" : "")); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
+  }
   function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
+    // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
+    if (dy > 0 && !auto && cur <= 36 && n.id !== "site-box") {
+      n.st.over = (n.st.over || 0) + dy; clearTimeout(n.st.overT); n.st.overT = setTimeout(() => { n.st.over = 0; }, 500);
+      if (n.st.over > 160 && !n.st.closing) closeNode(n);
+      return;
+    }
     const d = Math.round(Math.max(36, Math.min(n.fn === "dot" || n.fn === "box" ? max : 240, cur * Math.exp(-dy * 0.0015))));
     if (d === cur) return;
     n.st.sizeTo = d;

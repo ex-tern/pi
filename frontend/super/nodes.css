@@ -243,3 +243,6 @@ html:not(.shape-se) .lv-node.is-wrap .lv-sp-l { left: -6.5px; top: calc(50% - 5.
 html:not(.shape-se) .lv-node.is-wrap .lv-sp-r { right: -6.5px; top: calc(50% - 5.5px); }
 html:not(.shape-se) .lv-node.is-wrap .lv-sp-t { top: -6.5px; left: calc(50% - 5.5px); }
 html:not(.shape-se) .lv-node.is-wrap .lv-sp-b { bottom: -6.5px; left: calc(50% - 5.5px); }
+
+/* a super scrolled smaller than its smallest closes: it fades and shrinks away slowly (super/nodes.js closeNode) */
+html.shape-se .lv-node.lv-closing { opacity: 0; transform: scale(0.6); transition: opacity 1.5s ease, transform 1.5s ease; pointer-events: none; }

@@ -145,6 +145,13 @@
         // the content zooms with every step (bigger type, owner, 2026-10-12: "bigger, not just the window"), and the
         // window grows with it while the inner super has room; scrolling back zooms the content out, then shrinks
         const full = what.offsetWidth >= maxW * 0.97 || what.offsetHeight >= maxH * 0.97;
+        // too small, it closes (owner, 2026-10-12): at its smallest, with its content all in view, a scroll on out closes it
+        const smallest = what.offsetWidth <= 264 || what.offsetHeight <= 144, whole = !(z && z.state.k > z.state.fitK * 1.001);
+        if (dy > 0 && smallest && whole) {
+          what._over = (what._over || 0) + dy; clearTimeout(what._overT); what._overT = setTimeout(() => { what._over = 0; }, 500);
+          if (what._over > 160 && O().keyOf && O().close) { what._over = 0; O().close(O().keyOf(what)); }
+          return;
+        }
         if (z) z.zoomAt(x, y, dy);
         if (window.SeSite && ((dy < 0 && !full) || (dy > 0 && !(z && z.state.k > z.state.fitK * 1.001)))) window.SeSite.sizeWindow(what, dy);
       }
