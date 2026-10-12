@@ -196,7 +196,7 @@ window.SUPERAI_PROGRAM = {
    "atPhone": {
     "inSite": [
      0.5,
-     0.13
+     0.17
     ]
    },
    "members": [

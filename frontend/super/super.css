@@ -375,7 +375,7 @@ html.shape-se .orbit-title .se-titlesuper {
 }
 html.shape-se .orbit-title .sts-text { display: block; white-space: nowrap; }
 @supports not (corner-shape: round) { html.shape-se .orbit-title .se-titlesuper { border-radius: 32%; } }
-@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(84px * var(--se-title-k, 1) + 52px); height: calc(36px * var(--se-title-k, 1)); font-size: calc(14px * var(--se-title-k, 1)); } }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(104px * var(--se-title-k, 1) + 52px); height: calc(36px * var(--se-title-k, 1)); font-size: calc(13px * var(--se-title-k, 1)); } }
 html.shape-se .orbit-title .sts-p { position: absolute; width: 9px; height: 9px; background: var(--ink); clip-path: var(--se-sparkle); pointer-events: none; }
 html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
