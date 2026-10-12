@@ -6,7 +6,7 @@
 ; SuperAI.program. The signs:
 ;
 ;   ◇ a source (a part of index.html whose cards become windows)   ◯ a bubble   ⊕ windows merged into one
-;   ■ a super   ⊙ an input or output   ⟶ a wire   connectors: ▷ output ◁ input △ sync ▽ condition   ▭ a section of the map   ▣ a super on the map
+;   ■ square ● dot ◆ diamond ✦ sparkle ▣ holder: a super   ⊙ an input or output   ⟶ a wire   connectors: ▷ output ◁ input △ sync ▽ condition   ▭ a section of the map   ▣ a super on the map
 ;   graph … end   a graph function     fn … end   a stack-machine function (Turing complete, vm.rs)
 ;   .key value    a value               ; a comment
 ;
@@ -59,7 +59,7 @@
 
 ; the start: the supers and wires a first visit begins with
 diagram
-  ■ hold box "super" hold desktop n=12 at.inSite=0.31,0.055,0.961,0.945
+  ▣ hold box "super" desktop n=12 at.inSite=0.31,0.055,0.961,0.945
   ⟶ main△ site△
   ⟶ title▷ site△
   ⟶ site▽ main▽

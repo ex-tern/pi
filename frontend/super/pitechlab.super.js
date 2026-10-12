@@ -220,8 +220,8 @@ window.SUPERAI_PROGRAM = {
     "id": "hold",
     "kind": "box",
     "text": "super",
-    "hold": true,
     "desktop": true,
+    "hold": true,
     "n": 12,
     "at": {
      "inSite": [

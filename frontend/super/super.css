@@ -683,3 +683,16 @@ html.shape-se .sl-inner .wire-bed, html.shape-se .sl-wire.sl-inner .wire-bed { s
 html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-members { zoom: var(--in-z, 1); flex-shrink: 0; }
 html.shape-se .orbit-bubble.is-group.se-sized:not(.is-compact) { width: auto; justify-content: center; overflow: visible; }
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { flex-shrink: 0; }
+
+/* ---- every super's graphical sign (super/sign.js): ■ ● ◆ ✦ ▣, left of the lock, as SuperAI writes it ---- */
+html.shape-se .se-sign {
+  position: absolute; top: 8px; left: calc(50% - 26px); width: 14px; height: 14px; line-height: 14px; text-align: center;
+  font: 12px/14px "Geist Mono", "Geist", system-ui, sans-serif; color: var(--ink); opacity: 0.55; pointer-events: none; z-index: 5; user-select: none;
+}
+html.shape-se .se-sel > .se-sign { color: var(--cobalt); opacity: 1; }
+html.shape-se .lv-node:not(.is-holder) > .se-sign { top: 3px; left: calc(50% - 19px); font-size: 10px; }
+html.shape-se .orbit-title .se-titlesuper > .se-sign { top: 2px; left: calc(50% - 20px); font-size: 9px; }
+html.shape-se .ob-member > .se-sign, html.shape-se .orbit-bubble.is-group > .ob-label > .se-sign { top: 50%; left: 6px; transform: translateY(-50%); font-size: 10px; }
+html.shape-se .se-sparkle > .se-sign, html.shape-se .is-tiny > .se-sign { display: none; }
+html.shape-se .orbit-bubble.is-compact .se-sign:not(.orbit-bubble > .se-sign), html.shape-se .orbit-bubble.is-growing .ob-label > .se-sign, html.shape-se .orbit-bubble.is-growing .ob-member > .se-sign { display: none; }
+html.shape-se .se-sign::before { content: attr(data-g); }

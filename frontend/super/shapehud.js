@@ -62,7 +62,7 @@
     hud.querySelector(".sh-key").textContent = "hold shift + scroll";
     hud.querySelector("path").setAttribute("d", atZero(n) ? "M20,5L20,35M5,20L35,20" : atInf(n) ? "M5,5H35V35H5Z" : path(n, 15));
     hud.querySelector(".sh-n").textContent = atZero(n) ? "n → 0" : atInf(n) ? "n → ∞" : "n = " + (n >= 100 ? Math.round(n) : n >= 10 ? n.toFixed(1) : n.toFixed(2));
-    hud.querySelector(".sh-name").textContent = nameOf(n);
+    hud.querySelector(".sh-name").textContent = (window.SeSign ? window.SeSign.of(n) + " " : "") + nameOf(n);
     hud.classList.toggle("at-detent", DETENTS.some(k => Math.abs(n - k) < 1e-9));
     const W = window.innerWidth, H = window.innerHeight, w = hud.offsetWidth || 170, h = hud.offsetHeight || 48;
     hud.style.left = Math.min(W - w - 8, Math.max(8, x + 18)) + "px";

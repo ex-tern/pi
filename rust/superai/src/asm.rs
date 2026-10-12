@@ -8,6 +8,7 @@
 //!   ◯ "Lab" source=lab at.fx=0.09 at.inSite=0.6,0.7   a bubble (quoted: title)
 //!   ⊕ journal "Leaderboards" parts="a","b"       a merge (bare: source, quoted: title)
 //!   connectors: ▷ output, ◁ input, △ sync, ▽ condition, as in `⟶ a▷ b◁` or `⟶ site△ hold△` (or a.output b.input)
+//!   super signs: ■ square, ● dot, ◆ diamond, ✦ sparkle, ⊙ input or output, ▣ holder (in a diagram: hold), ⟶ wire
 //!   diagram … end                     the start: ■ ✦ ● ⊙ supers (first word id, bare word kind, quoted text), ⟶ a.port b.port
 //!   graph name … end                  a graph function: supers and wires, data flowing from outputs into inputs
 //!   fn name p1 p2 … end               a code function for the stack machine (vm.rs): `op arg` lines and `label:` lines
@@ -135,10 +136,10 @@ fn attrs(o: &mut Json, toks: &[String]) -> Result<Vec<String>, String> {
 #[derive(PartialEq, Clone, Copy)]
 enum Ctx { Top, Diagram, Graph, Map, Code }
 
-const SUPER_SIGNS: [&str; 5] = ["■", "✦", "●", "⊙", "▣"];
+const SUPER_SIGNS: [&str; 6] = ["■", "✦", "●", "◆", "⊙", "▣"];
 
 /// One sign line into an object: the positional words go to the keys a sign gives them.
-fn sign_obj(sign: &str, rest: &[String]) -> Result<Json, String> {
+fn sign_obj(sign: &str, rest: &[String], map: bool) -> Result<Json, String> {
     let mut o = obj();
     let mut pos: Vec<String> = Vec::new();
     // positional words come first; attributes after, so key order follows the line
@@ -153,7 +154,7 @@ fn sign_obj(sign: &str, rest: &[String]) -> Result<Json, String> {
             "▭" => if quoted(p) { ("label", value(p)?) } else { return Err(format!("▭ takes a quoted label, not {}", p)) },
             "⊕" => if quoted(p) { ("title", value(p)?) } else { ("source", value(p)?) },
             _ if first && !quoted(p) => ("id", Json::Str(p.clone())),
-            "▣" if quoted(p) => ("label", value(p)?),
+            "▣" if map && quoted(p) => ("label", value(p)?),
             _ if quoted(p) => ("text", value(p)?),
             _ if o.get("kind").is_some() => (p.as_str(), Json::Bool(true)),   // later bare words are flags
             _ => ("kind", value(p)?),
@@ -161,6 +162,7 @@ fn sign_obj(sign: &str, rest: &[String]) -> Result<Json, String> {
         first = false;
         set(&mut o, k, v);
     }
+    if sign == "▣" && !map { set(&mut o, "hold", Json::Bool(true)); }   // ▣ outside the map is a holder
     for t in &rest[i..] {
         let left = attrs(&mut o, core::slice::from_ref(t))?;
         for flag in left { set(&mut o, &flag, Json::Bool(true)); }
@@ -276,15 +278,15 @@ pub fn assemble(src: &str) -> Result<Json, Vec<String>> {
                     set(host_of(&mut p, ctx, &name), key, v);
                 }
                 s if SUPER_SIGNS.contains(&s) || ["◇", "◯", "▭", "⊕"].contains(&s) => {
-                    let o = sign_obj(s, rest)?;
+                    let o = sign_obj(s, rest, ctx == Ctx::Map)?;
                     let list = match (ctx, s) {
                         (Ctx::Top, "◇") => entry(&mut p, "sources", arr),
                         (Ctx::Top, "◯") => entry(&mut p, "bubbles", arr),
                         (Ctx::Top, "⊕") => entry(&mut p, "merges", arr),
                         (Ctx::Map, "▭") => entry(entry(&mut p, "project", obj), "sections", arr),
                         (Ctx::Map, "▣") => entry(entry(&mut p, "project", obj), "supers", arr),
-                        (Ctx::Diagram, s) if s != "▣" && SUPER_SIGNS.contains(&s) => entry(entry(&mut p, "diagram", obj), "supers", arr),
-                        (Ctx::Graph, s) if s != "▣" && SUPER_SIGNS.contains(&s) => entry(entry(entry(&mut p, "functions", obj), &name, obj), "supers", arr),
+                        (Ctx::Diagram, s) if SUPER_SIGNS.contains(&s) => entry(entry(&mut p, "diagram", obj), "supers", arr),
+                        (Ctx::Graph, s) if SUPER_SIGNS.contains(&s) => entry(entry(entry(&mut p, "functions", obj), &name, obj), "supers", arr),
                         _ => return Err(format!("{} does not belong here", s)),
                     };
                     push(list, o);

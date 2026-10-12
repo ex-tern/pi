@@ -85,7 +85,8 @@ input { width: 140px; }
           <tr><td>if L / ifnot L</td><td>jump when the top is true / false</td></tr>
           <tr><td>ask sim</td><td>send the top to an LLM, put its answer on top</td></tr>
           <tr><td>say</td><td>the answer of the program</td></tr>
-          <tr><td>⊙ ■ ⟶</td><td>an input or output, a super, a wire</td></tr>
+          <tr><td>■ ● ◆ ✦ ▣</td><td>a super: square, dot, diamond, sparkle, holder</td></tr>
+          <tr><td>⊙ ⟶</td><td>an input or output, a wire</td></tr>
           <tr><td>▷ ◁ △ ▽</td><td>the connectors: output, input, sync, condition</td></tr>
           <tr><td>; text</td><td>a note for people</td></tr>
         </table>
@@ -194,7 +195,7 @@ fn fun n
   say
 end` },
 ];
-const SIGNS = [["⟶", "a wire"], ["▷", "output"], ["◁", "input"], ["△", "sync"], ["▽", "condition"], ["■", "a super"], ["⊙", "an input or output"], ["✦", "ask (same as ask)"]];
+const SIGNS = [["⟶", "a wire"], ["▷", "output"], ["◁", "input"], ["△", "sync"], ["▽", "condition"], ["■", "a square super"], ["●", "a dot super"], ["◆", "a diamond super"], ["▣", "a holder super"], ["⊙", "an input or output"], ["✦", "ask (same as ask)"]];
 
 const $ = id => document.getElementById(id);
 const code = $("code"), fnSel = $("fn"), out = $("out"), log = $("log"), runB = $("run");
@@ -271,6 +272,6 @@ code.addEventListener("keydown", e => { if ((e.metaKey || e.ctrlKey) && e.key ==
 document.addEventListener("superai:ready", () => { runB.disabled = false; runB.textContent = "Run (Ctrl + Enter)"; assemble(); });
 showLesson(0);
 </script>
-<script src="../super/superai-rs.js?v=6"></script>
+<script src="../super/superai-rs.js?v=7"></script>
 </body>
 </html>
