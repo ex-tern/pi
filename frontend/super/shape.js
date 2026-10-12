@@ -189,6 +189,13 @@
     void panel.offsetWidth;
     panel.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + Math.round(d * 0.6) + "ms ease";
     panel.style.transform = ""; panel.style.opacity = "";
+    // and its shape grows from n → 0 (a cross) to n = 12 (nearly a box), slowly (owner, 2026-10-12: "when zooming on a
+    // button new super grows from n=0 to n=12 slowly"); the window keeps n = 12 (its own n, as Shift + scroll gives)
+    const N0 = 0.3, N1 = 12, nd = 900;   // super/motion.js stretches it (SLOW)
+    const setN = n => { panel.style.setProperty("--se-k-window", Math.log2(n).toFixed(4)); panel.style.setProperty("--se-k-panel", Math.log2(n).toFixed(4)); panel.dataset.seN = n.toFixed(4); };
+    setN(N0);
+    if (window.SeMotion) { const o = { v: Math.log(N0) }; window.SeMotion.tween(o, { v: Math.log(N1) }, { duration: nd, easing: "easeInOutSine", update: () => setN(Math.exp(o.v)) }); }
+    else setN(N1);
     clearTimeout(panel._seOpenT);
     panel._seOpenT = setTimeout(() => { panel.style.transition = ""; panel.style.transformOrigin = ""; document.dispatchEvent(new CustomEvent("se:frame")); }, d + 40);
     const tick = () => { document.dispatchEvent(new CustomEvent("se:frame")); if (panel.style.transition) requestAnimationFrame(tick); };   // its ports and wires follow it

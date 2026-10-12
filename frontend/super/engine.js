@@ -63,7 +63,7 @@ void main() {
 const PANE_VS = `uniform vec2 uSize; varying vec2 vL; void main() { vL = position.xy * uSize; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const PANE_FS = `
 uniform vec2 uRes; uniform float uTime; uniform vec2 uHalf; uniform float uN; uniform float uFill; uniform vec3 uEdge;
-uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uDpr; varying vec2 vL; ${LIGHT}
+uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uLift; uniform float uDpr; varying vec2 vL; ${LIGHT}
 // its neighbours (owner, 2026-10-12: "improve the glass effect to reflect off each other"): up to NB nearby panes,
 // as (centre relative to this one, half size) in px; each shows in this pane's glass near the edge facing it
 #define NB 6
@@ -86,8 +86,10 @@ void main() {
   #define OVER(C_, A_) acc = vec4((C_) * (A_) + acc.rgb * (1.0 - (A_)), (A_) + acc.a * (1.0 - (A_)))
   // the shadow under it: wide, soft and warm, a little below (outside the pane only)
   if (uShadow > 0.0) {
-    float ds = sdf(vL - vec2(0.0, 9.0));
-    float sh = uShadow * 0.40 * exp(-max(ds, 0.0) / 12.0) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(14.0, 24.0, ds));   // darker on paper (owner, 2026-10-12): fades out well inside its quad
+    // a super on top casts a bigger, softer, farther shadow; one underneath a small close one (owner, 2026-10-12)
+    float off = 3.0 + 15.0 * uLift, fall = 5.0 + 13.0 * uLift, cap = 36.0 - off;
+    float ds = sdf(vL - vec2(0.0, off));
+    float sh = uShadow * (0.26 + 0.22 * uLift) * exp(-max(ds, 0.0) / fall) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(cap * 0.55, cap, ds));   // fades out well inside its quad
     OVER(vec3(0.10, 0.10, 0.10), sh);
   }
   // the glass: the light behind it, frosted (brightened, a touch whitened), lighter at the top, with a bright rim
@@ -239,12 +241,12 @@ function stop() {
 }
 
 // ---------------------------------------------------------------- panes
-const PANE_M = 28;                                       // room round a pane for its shadow and sheen
+const PANE_M = 40;                                       // room round a pane for its shadow and sheen
 function paneMesh(key) {
   let m = panes.get(key);
   if (!m) {
     const u = { uRes, uTime, uSize: { value: new THREE.Vector2(1, 1) }, uHalf: { value: new THREE.Vector2(1, 1) }, uN: { value: Math.PI }, uFill: { value: 0.4 },
-      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uDpr: { value: 1 },
+      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uLift: { value: 0.5 }, uDpr: { value: 1 },
       uNb: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) }, uNbN: { value: 0 } };
     m = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: PANE_FS, uniforms: u, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, premultipliedAlpha: true }));
     m.frustumCulled = false; m._sheen = 0;
@@ -278,6 +280,18 @@ const KINDS = [
   { sel: ".orbit-title .se-titlesuper", fill: 0.45, order: 15, shadow: 0.6 },
   { sel: ".lv-palette", fill: 0.45, order: 15, shadow: 0.6 },
 ];
+// a super's height in the page: the z-index of the nearest stacked box round it, then its kind's order, then how
+// deep it sits inside other supers (what a super holds lies on it)
+function heightOf(el, order) {
+  const now = performance.now();
+  if (el._seH && now - el._seH.t < 300) return el._seH.v;          // looked at a few times a second, not every frame
+  let z = 0;
+  for (let e = el; e && e !== document.body; e = e.parentElement) { const v = getComputedStyle(e).zIndex; if (v !== "auto") { z = +v || 0; break; } }
+  const held = window.SeHold && window.SeHold.hostOf ? (window.SeHold.hostOf(el) ? 1 : 0) : 0;
+  const v = z * 1000 + held * 100 + order;
+  el._seH = { t: now, v };
+  return v;
+}
 function drawPanes() {
   const ids = new WeakMap(); let k = 0;
   const all = [];                                                   // every pane drawn this frame: each reflects its neighbours
@@ -298,9 +312,13 @@ function drawPanes() {
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       setPane(key, cx, cy, a, b, nOf(el),
         { fill: holder ? 0 : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: holder ? 0 : K.shadow * op, sheen: sel || hov, order: K.order });
-      if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder });
+      if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
     });
   }
+  // how high each super lies: its rank from the bottom (the page's stacking: z-index, then kind, then page order),
+  // 0 for the lowest, 1 for the one on top; the shadow grows with it
+  const byH = all.slice().sort((p, q) => p.h - q.h || p.i - q.i);
+  byH.forEach((p, j) => { const u = p.m.material.uniforms, want = byH.length > 1 ? j / (byH.length - 1) : 0.5; u.uLift.value += (want - u.uLift.value) * 0.15; });   // eased: a super raised casts its shadow gradually
   // the nearest few within reach, nearest first (a holder's glass reflects nothing, but its edge shows in others)
   const REACH = 150;
   for (const p of all) {
