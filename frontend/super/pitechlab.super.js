@@ -802,6 +802,31 @@ window.SUPERAI_PROGRAM = {
      "out.input"
     ]
    ]
+  },
+  "explain": {
+   "params": [
+    "topic"
+   ],
+   "code": [
+    [
+     "push",
+     "Explain in one short sentence for a newcomer: "
+    ],
+    [
+     "in",
+     "topic"
+    ],
+    [
+     "cat"
+    ],
+    [
+     "ask",
+     "sim"
+    ],
+    [
+     "out"
+    ]
+   ]
   }
  },
  "project": {

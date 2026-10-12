@@ -11,6 +11,8 @@
 //!   diagram … end                     the start: ■ ✦ ● ⊙ supers (first word id, bare word kind, quoted text), ⟶ a.port b.port
 //!   graph name … end                  a graph function: supers and wires, data flowing from outputs into inputs
 //!   fn name p1 p2 … end               a code function for the stack machine (vm.rs): `op arg` lines and `label:` lines
+//!   (simple words: say = out, get = load, set = store, goto = jmp, if = jnz, ifnot = jz, give = ret, stop = halt;
+//!    `ask engine` prompts an LLM with the text on top and gives its answer)
 //!   map … end                         the project map: ▭ "section" x= y= w= h=, ▣ id "Label" kind= …, ⟶ a b, .key …
 //!
 //! Values: numbers, "quoted text", bare words (text), null/true/false, JSON in [ ] or { }, and comma lists (`1,2` or `0.5,`).
@@ -195,7 +197,7 @@ pub fn assemble(src: &str) -> Result<Json, Vec<String>> {
                                 let jump = matches!(op.as_str(), "jmp" | "jz" | "jnz");
                                 if jump {
                                     match labels.iter().find(|(k, _)| *k == a) { Some((_, i)) => ins.push(Json::Num(*i as f64)), None => return Err(format!("line {}: no label {}", l, a)) }
-                                } else if matches!(op.as_str(), "in" | "load" | "store" | "call") {
+                                } else if matches!(op.as_str(), "in" | "load" | "store" | "call" | "ask" | "✦") {
                                     ins.push(Json::Str(a));
                                 } else { ins.push(value(&a)?); }
                             }
@@ -214,7 +216,9 @@ pub fn assemble(src: &str) -> Result<Json, Vec<String>> {
             if ctx == Ctx::Code {
                 if let Some(l) = head.strip_suffix(':') { if rest.is_empty() { labels.push((l.to_string(), code.len())); return Ok(()); } }
                 if rest.len() > 1 { return Err(format!("{} takes one argument", head)); }
-                code.push((ln, head.to_string(), rest.first().cloned()));
+                // simple words for the same instructions
+                let op = match head { "say" => "out", "get" => "load", "set" => "store", "goto" => "jmp", "if" => "jnz", "ifnot" => "jz", "stop" => "halt", "give" => "ret", h => h };
+                code.push((ln, op.to_string(), rest.first().cloned()));
                 return Ok(());
             }
             match head {

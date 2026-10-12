@@ -261,3 +261,12 @@ fn connectors_as_signs() {
     assert!(call_out(&p, "gate", r#"{"input":7,"condition":true}"#).contains(r#""value":7"#));
     assert!(call_out(&p, "gate", r#"{"input":7,"condition":false}"#).contains(r#""value":0"#));
 }
+
+#[test]
+fn asks_an_llm() {
+    let p = crate::asm::assemble("fn hi name\n  push \"say hello to \"\n  in name\n  cat\n  ask llama\n  say\nend\n").unwrap();
+    let r = call_out(&p, "hi", r#"{"name":"Ada"}"#);
+    assert!(r.contains(r#""engine":"llama","prompt":"say hello to Ada""#), "{}", r);
+    let req = format!(r#"{{"op":"call","function":"hi","inputs":{{"name":"Ada"}},"answers":{{"llama:say hello to Ada":"Hello, Ada!"}},"program":{}}}"#, crate::json::to_string(&p));
+    assert!(crate::handle(&req).contains("Hello, Ada!"), "{}", crate::handle(&req));
+}

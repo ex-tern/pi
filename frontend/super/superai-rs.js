@@ -40,7 +40,27 @@
     return o ? o.text : null;
   };
 
-  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=7") || "super/superai.wasm?v=5";
+  // SuperAI.ask(name, inputs, program?): runs a function whose code prompts LLMs (`ask engine`): each question goes to
+  // the engine (/api/super/one: the lab's sim, rib, pid, pien, or an outside model), and the run goes on with the answer
+  S.ask = async (name, inputs, program) => {
+    const fns = (program || S.program || {}).functions || {}, answers = {};
+    for (let i = 0; i < 24; i++) {
+      const r = handle({ op: "call", program: { functions: fns }, function: name, inputs: inputs || {}, answers });
+      if (!r || !r.ok) return { error: (r && r.errors || ["the engine is not ready"]).join(" · ") };
+      const q = (r.asks || [])[0];
+      if (!q) { const o = r.outputs && r.outputs.out; return { text: o ? o.text : "", value: o ? o.value : null }; }
+      let text;
+      try {
+        const res = await fetch("/api/super/one", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ engine: q.engine, prompt: q.prompt }) });
+        const j = await res.json().catch(() => ({}));
+        text = res.ok && j.text != null ? String(j.text) : "(" + q.engine + " gave no answer)";
+      } catch (_) { text = "(" + q.engine + " could not be reached)"; }
+      answers[q.key] = text;
+    }
+    return { error: "too many questions in one run" };
+  };
+
+  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=8") || "super/superai.wasm?v=5";
   fetch(src).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => WebAssembly.instantiate(b, {}))
     .then(({ instance }) => {

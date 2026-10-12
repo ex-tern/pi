@@ -9,6 +9,11 @@
 ;   ■ a super   ⊙ an input or output   ⟶ a wire   connectors: ▷ output ◁ input △ sync ▽ condition   ▭ a section of the map   ▣ a super on the map
 ;   graph … end   a graph function     fn … end   a stack-machine function (Turing complete, vm.rs)
 ;   .key value    a value               ; a comment
+;
+; In a fn, one simple word per line works on a stack of values:
+;   push 5   in name   get x   set x   add sub mul div cat   if L   ifnot L   goto L   L:   say   stop
+;   ask sim  sends the text on top to an LLM (sim, rib, pid, pien, llama, mistral, qwen, gemini, deepseek)
+;            and puts its answer on top. ◁ △ ▽ read what is wired into input, sync, condition; ▷ is output.
 
 .language "SuperAI 1"
 .name "Pi Tech Lab"
@@ -266,4 +271,13 @@ map
   ⟶ b-Tools manuscript
   ⟶ explorer b-Explore
   ⟶ ledger live
+end
+
+; a function in plain words that prompts an LLM: SuperAI.ask("explain", {topic: "piX"})
+fn explain topic
+  push "Explain in one short sentence for a newcomer: "
+  in topic
+  cat
+  ask sim            ; the lab's own assistant answers (or llama, mistral, qwen, gemini, deepseek)
+  say
 end

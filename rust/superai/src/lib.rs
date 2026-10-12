@@ -97,8 +97,14 @@ pub fn handle(text: &str) -> String {
             match program.get("functions").and_then(|f| f.get(name)) {
                 Some(f) if f.get("code").is_some() => {
                     let ins: alloc::collections::BTreeMap<String, Value> = pairs_values(req.get("inputs")).into_iter().collect();
-                    match vm::run(f, &ins, program.get("functions").unwrap_or(&empty)) {
+                    let ans: alloc::collections::BTreeMap<String, String> = pairs_text(req.get("answers")).into_iter().collect();
+                    match vm::run(f, &ins, program.get("functions").unwrap_or(&empty), &ans) {
                         Ok(v) => obj(vec![("ok", Json::Bool(true)), ("outputs", obj(vec![("out", v.to_json())]))]),
+                        Err(e) if e.starts_with(vm::ASK) => {
+                            let (engine, q) = e[vm::ASK.len()..].split_once('\u{1f}').unwrap_or(("sim", ""));
+                            obj(vec![("ok", Json::Bool(true)), ("outputs", obj(vec![])), ("asks", Json::Arr(vec![obj(vec![
+                                ("engine", Json::Str(engine.into())), ("prompt", Json::Str(q.into())), ("key", Json::Str(vm::answer_key(engine, q)))])]))])
+                        }
                         Err(e) => errors(vec![e]),
                     }
                 }

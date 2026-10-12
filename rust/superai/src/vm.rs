@@ -15,6 +15,7 @@
 //!   call f        call function f of the same program, its parameters popped (last one on top), its result pushed
 //!   ret           return the top of the stack (or nothing)  out         pop and give it as the output, keep going
 //!   input sync condition (◁ △ ▽)   push what is wired into that connector      output (▷)  as out
+//!   ask e (✦)   pop a question, push what LLM engine e answers (sim, rib, pid, pien, llama, mistral, …)
 //!   halt          stop; the output is the last `out`, else the top of the stack
 //!
 //! Registers and memory are unbounded (a map from names and from numbers), jumps are conditional: with them it can
@@ -28,6 +29,11 @@ use alloc::vec;
 use alloc::vec::Vec;
 
 const BUDGET: usize = 1_000_000;
+/// The engine `ask` uses when it names none: the lab's own assistant.
+pub const DEFAULT_ENGINE: &str = "sim";
+/// An error that starts with this is a question for an engine, not a failure.
+pub const ASK: &str = "\u{0}ask:";
+pub fn answer_key(engine: &str, q: &str) -> String { format!("{}:{}", engine, q) }
 
 fn lit(j: &Json) -> Value {
     match j {
@@ -48,12 +54,12 @@ fn bin(name: &str) -> Option<&'static str> {
 }
 
 /// Runs code function `f` with `inputs`; `funcs` are the program's functions (for `call`).
-pub fn run(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json) -> Result<Value, String> {
+pub fn run(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json, answers: &BTreeMap<String, String>) -> Result<Value, String> {
     let mut steps = 0usize;
-    exec(f, inputs, funcs, &mut steps, 0)
+    exec(f, inputs, funcs, answers, &mut steps, 0)
 }
 
-fn exec(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json, steps: &mut usize, depth: usize) -> Result<Value, String> {
+fn exec(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json, answers: &BTreeMap<String, String>, steps: &mut usize, depth: usize) -> Result<Value, String> {
     if depth > 200 { return Err("calls nested too deep".into()); }
     let code = f.get("code").map(Json::arr).unwrap_or(&[]);
     let mut st: Vec<Value> = Vec::new();
@@ -77,6 +83,17 @@ fn exec(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json, steps: &mut us
                 let k = match op { "◁" => "input", "△" => "sync", "▽" => "condition", k => k };
                 st.push(inputs.get(k).cloned().unwrap_or(Value::Held));
             }
+            // prompting an LLM is an instruction: `ask engine` pops the question and pushes the engine's answer.
+            // The machine cannot wait, so a question not yet answered stops the run with it (ASK); the page asks the
+            // engine (/api/super/one) and runs again with the answer, keyed "engine:question" (answer_key)
+            "ask" | "✦" => {
+                let engine = arg.and_then(Json::str).unwrap_or(DEFAULT_ENGINE);
+                let q = pop(&mut st).text();
+                match answers.get(&answer_key(engine, &q)) {
+                    Some(a) => st.push(Value::Text(a.clone())),
+                    None => return Err(format!("{}{}\u{1f}{}", ASK, engine, q)),
+                }
+            }
             "output" | "▷" => { out = Some(pop(&mut st)); }
             "in" => { let k = arg.and_then(Json::str).unwrap_or(""); st.push(inputs.get(k).cloned().unwrap_or(Value::Held)); }
             "load" => { let k = arg.and_then(Json::str).unwrap_or(""); st.push(reg.get(k).cloned().unwrap_or(Value::Held)); }
@@ -98,7 +115,7 @@ fn exec(f: &Json, inputs: &BTreeMap<String, Value>, funcs: &Json, steps: &mut us
                 let ps: Vec<String> = g.get("params").map(Json::arr).unwrap_or(&[]).iter().filter_map(|p| p.str().map(|s| s.to_string())).collect();
                 let mut args = BTreeMap::new();
                 for p in ps.iter().rev() { let v = pop(&mut st); args.insert(p.clone(), v); }
-                let r = if g.get("code").is_some() { exec(g, &args, funcs, steps, depth + 1)? } else { Value::Held };
+                let r = if g.get("code").is_some() { exec(g, &args, funcs, answers, steps, depth + 1)? } else { Value::Held };
                 st.push(r);
             }
             "ret" => return Ok(st.pop().or(out).unwrap_or(Value::Held)),
