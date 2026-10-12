@@ -1080,7 +1080,7 @@
     if (toCentre) {
       p.classList.add("gliding");
       centre(p);
-      clearTimeout(p.glide); p.glide = setTimeout(() => { p.classList.remove("gliding"); if (p.item) saveWin(p.item, p); }, 420);
+      clearTimeout(p.glide); p.glide = setTimeout(() => { p.classList.remove("gliding"); if (p.item) saveWin(p.item, p); }, 950);
     }
     rememberOpen();
   }

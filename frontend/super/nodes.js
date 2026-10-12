@@ -636,7 +636,7 @@
   function place(n) {
     const w = n.el.offsetWidth || 44, h = n.el.offsetHeight || 32;
     const x = Math.max(4, Math.min(window.innerWidth - w - 4, n.fx * window.innerWidth));
-    const y = Math.max(4, Math.min(window.innerHeight - h - 22, n.fy * window.innerHeight));
+    const y = Math.max(4, Math.min(window.innerHeight - h - 22, (n._gy != null ? n._gy : n.fy) * window.innerHeight));
     const F = O().fit ? O().fit() : null, f = F ? F.f || 1 : 1;
     if (F && f !== 1) {
       n.el.style.left = (F.px + (x - F.px) * f).toFixed(1) + "px"; n.el.style.top = (F.py + (y - F.py) * f).toFixed(1) + "px";
@@ -866,6 +866,16 @@
   function clear(n) {
     if (n.role === "loop" || isHolder(n) || holderOf(n)) return;         // a loop or a holder holds things, and what is inside stays
     if (n.id === "site-box") return;                                      // the central super is the diagram's centre: it stays (Live opens over it)
+    n._gy = null; const fy0 = n.fy;
+    stepOff(n);
+    // it glides to where it steps off to, never jumps (owner, 2026-10-12: no sudden movement); its wires follow
+    if (n.fy !== fy0 && window.SeMotion) {
+      const s = { v: fy0 };                                             // n.fy is already where it goes (saved as such); only the drawing glides
+      n._gy = fy0; place(n);
+      window.SeMotion.tween(s, { v: n.fy }, { duration: 360, easing: "easeOutCubic", update: () => { n._gy = s.v; place(n); document.dispatchEvent(new CustomEvent("se:frame")); }, complete: () => { n._gy = null; place(n); document.dispatchEvent(new CustomEvent("se:frame")); } });
+    }
+  }
+  function stepOff(n) {
     for (let k = 0; k < 8; k++) {
       const a = n.el.getBoundingClientRect();
       const over = b => a.left < b.right && b.left < a.right && a.top < b.bottom && b.top < a.bottom;

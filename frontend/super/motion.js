@@ -18,6 +18,7 @@
   // pointer is down, a tween runs or a scroll just happened they would lag what they join (the stutter),
   // so "se:frame" is dispatched on the document once per animation frame for as long as that lasts.
   let running = 0, pointer = 0, hot = 0, pumping = false;
+  const SLOW = 2.2;
   const se = () => document.documentElement.classList.contains("shape-se");
   function frame(now) {
     document.dispatchEvent(new CustomEvent("se:frame:first"));   // what places things (super/site.js's ports) goes first
@@ -34,13 +35,15 @@
   document.addEventListener("transitionrun", e => {
     const t = e.target;
     if (!t || !t.closest || !t.closest(".orbit-panel, .orbit-bubble, .orbit-bubbles, .lv-node, .live-dock, .orbit-title")) return;
-    hot = Math.max(hot, performance.now() + 700); pump();
+    hot = Math.max(hot, performance.now() + 1400); pump();
   }, true);
   window.addEventListener("resize", mark);
 
   function tween(obj, to, opt) {
     opt = opt || {};
-    const duration = reduce.matches ? 0 : (opt.duration == null ? 400 : opt.duration);
+    // everything moves slowly and steadily in the superellipse look (owner, 2026-10-12: "no sudden movement, everything
+    // stable and slow motion"): every tween takes SLOW times as long
+    const duration = reduce.matches ? 0 : (opt.duration == null ? 400 : opt.duration) * (se() ? SLOW : 1);
     const easing = opt.easing || "easeInOutCubic";
     let open = true;
     const done = () => { if (open) { open = false; running = Math.max(0, running - 1); mark(); } };
@@ -70,5 +73,5 @@
     live[key] = tween(obj, to, { duration: duration == null ? 160 : duration, easing: "easeOutCubic", update, complete: () => { delete live[key]; } });
     return live[key];
   }
-  window.SeMotion = { tween, glide, has: () => !!window.anime, busy: () => running > 0 || pointer > 0 || performance.now() < hot, wake: mark };
+  window.SeMotion = { SLOW, tween, glide, has: () => !!window.anime, busy: () => running > 0 || pointer > 0 || performance.now() < hot, wake: mark };
 })();

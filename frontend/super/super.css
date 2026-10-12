@@ -407,7 +407,7 @@ html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { st
    Compact: a 104 px squircle with a small drawing of the bubble's name wired to its windows; a scroll on it
    opens it into the bubble with its pills, a scroll out compacts it again. */
 html.shape-se .orbit-bubble.is-group.is-compact {
-  width: var(--se-compact, 104px); height: var(--se-compact, 104px); min-width: 0; padding: 0; box-sizing: border-box; display: block; overflow: hidden;
+  width: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); height: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); min-width: 0; max-width: none; padding: 0;   /* square always; smaller together when there is no room (orbit.js --pill-fit) */ box-sizing: border-box; display: block; overflow: hidden;
   border-radius: 50%; corner-shape: superellipse(var(--se-k, 1.6515)); border: 1.5px solid var(--ink); background: var(--paper);
 }
 html.shape-se .orbit-bubble.is-group.is-compact > .ob-dot, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label,
@@ -479,3 +479,17 @@ html.shape-se .orbit-bubble.is-compact > .se-lock { right: 10px; bottom: 8px; }
 html.shape-se .orbit-panel > .se-lock { right: 7%; bottom: 5%; }
 html.shape-se .se-project.is-open > .se-lock { right: 16px; bottom: 12px; }
 html.shape-se .is-locked > .se-lock { cursor: zoom-out; }
+
+/* text smaller than readable is a super (super/legible.js, owner 2026-10-12): a paper box in the shape language,
+   the text back once a scroll makes it readable */
+html.shape-se .se-glyph:not(svg *) {
+  color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;
+  background: color-mix(in srgb, var(--ink) 9%, var(--paper)); border-radius: 3px; box-decoration-break: clone; -webkit-box-decoration-break: clone;
+}
+html.shape-se svg .se-glyph { fill: transparent !important; }
+
+/* slow motion (owner, 2026-10-12: no sudden movement, everything stable and slow): the bubbles' layout and windows
+   pushed aside glide slowly; tweens are slowed in super/motion.js (SLOW) */
+html.shape-se.orbit-ready .orbit-bubble { transition: border-color 0.2s ease, background 0.2s ease, transform 1s cubic-bezier(.25, .6, .25, 1); }
+html.shape-se .orbit-panel.gliding { transition: left 0.9s cubic-bezier(.25, .6, .25, 1), top 0.9s cubic-bezier(.25, .6, .25, 1); }
+html.shape-se .orbit-panel { transition: opacity 0.5s ease, transform 0.5s ease; }

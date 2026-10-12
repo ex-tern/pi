@@ -263,7 +263,7 @@
         const r = rs[i], cur = p.getBoundingClientRect();
         if (Math.abs(r.left - cur.left) < 1 && Math.abs(r.top - cur.top) < 1 && Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) return;
         if (Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) {   // only moved: it glides there (supers never jump)
-          p.classList.add("gliding"); clearTimeout(p._glideT); p._glideT = setTimeout(() => p.classList.remove("gliding"), 420);
+          p.classList.add("gliding"); clearTimeout(p._glideT); p._glideT = setTimeout(() => p.classList.remove("gliding"), 950);
         }
         p.style.left = Math.round(r.left) + "px"; p.style.top = Math.round(r.top) + "px";
         p.style.width = Math.round(r.width) + "px"; p.style.height = Math.round(r.height) + "px";
