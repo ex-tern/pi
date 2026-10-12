@@ -44,15 +44,8 @@ vec3 light(vec2 uv, float t) {
   nsky = mix(nsky, vec3(0.33, 0.36, 0.44), 0.45 * band);
   nsky = mix(nsky, vec3(0.20, 0.21, 0.25), smoothstep(hz, 1.0, y) * 0.8);
   c = mix(c, nsky, uNight);
-  // the low sun (by night the moon, high), drifting very slowly, and its glow
-  vec2 sp = (sunAt(t) - 0.5) * vec2(a, 1.0);
-  vec2 d = v - sp; float r = length(d);
-  c += mix(vec3(1.0, 0.80, 0.52) * (0.12 * exp(-r * r / 0.012) + 0.09 * exp(-r / 0.32)),
-           vec3(0.86, 0.90, 1.0) * (0.85 * (1.0 - smoothstep(0.022, 0.026, r)) + 0.16 * exp(-r * r / 0.01) + 0.07 * exp(-r / 0.30)), uNight);
-  // rays fanning out of it, slanting across the page, breathing slowly (fainter, and fainter still by moonlight)
-  float ang = atan(d.y, d.x);
-  float rays = 0.5 + 0.5 * sin(ang * 23.0 + t * 0.06) * sin(ang * 9.0 - t * 0.045);
-  c += tint(vec3(1.0, 0.84, 0.60)) * mix(0.05, 0.016, uNight) * pow(rays, 3.0) * exp(-r / 0.55) * smoothstep(0.03, 0.2, r);
+  // the sun and the moon are not drawn in the sky (owner, 2026-10-12: "delete the moon but keep its effects on glass
+  // effect of supers", "do the same to sun"): their light is seen only on the glass (PANE_FS, from sunAt)
   // a light vignette toward the edges ("add light vignette")
   c *= 1.0 - 0.10 * smoothstep(0.38, 1.05, length(v));
   return min(c, vec3(1.0));
@@ -174,7 +167,9 @@ void main() {
     vec2 fromSun = -toSunPx;
     float ang = atan(fromSun.y, fromSun.x);
     float rays = 0.5 + 0.5 * sin(ang * 23.0 + uTime * 0.06) * sin(ang * 9.0 - uTime * 0.045);
-    OVER(tint(vec3(1.0, 0.86, 0.60)), inside * 0.16 * pow(rays, 4.0) * sunK);
+    // a pane as big as the page (the main super) shows no rays of its own, so no burst stands where the sun or moon would be
+    float rayK = 1.0 - smoothstep(260.0, 520.0, min(uHalf.x, uHalf.y));
+    OVER(tint(vec3(1.0, 0.86, 0.60)), inside * 0.16 * pow(rays, 4.0) * sunK * rayK);
     // a warm wash over the side facing the sun, fading across the pane
     float side = clamp(dot(vL / max(uHalf, vec2(1.0)), toSun) * 0.5 + 0.5, 0.0, 1.0);
     OVER(tint(vec3(1.0, 0.88, 0.66)), inside * 0.14 * side * side * sunK);
