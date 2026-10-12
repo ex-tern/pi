@@ -22,8 +22,11 @@ const O = () => window.PiOrbit || {};
 const LIGHT = `
 // a deep warm light, as in the owner's reference: amber, honey and sage glows over a warm ground, darker at the edges
 vec3 light(vec2 uv, float t) {
-  // the page's paper, flat (owner, 2026-10-12: "remove the gradient background color"); the glass reads against it
-  return vec3(0.965, 0.965, 0.957);
+  // the page's paper, flat (owner, 2026-10-12: "remove the gradient background color"), with a light vignette
+  // toward its edges ("add light vignette")
+  float a = uRes.x / uRes.y;
+  vec2 v = (uv - 0.5) * vec2(a, 1.0);
+  return vec3(0.965, 0.965, 0.957) * (1.0 - 0.10 * smoothstep(0.35, 1.0, length(v)));
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
