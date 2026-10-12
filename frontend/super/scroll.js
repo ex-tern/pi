@@ -273,8 +273,16 @@
     if (!pinch && Math.abs(e.deltaX) > Math.abs(e.deltaY)) return;          // sideways: super/nodes.js guards the swipe
     const fresh = gesture && now - gesture.t < 400 && gesture.pinch === pinch && gesture.what && (typeof gesture.what === "string" || gesture.what.isConnected);
     if (hit) hit.__pt = [x, y];
-    const target = fresh ? gesture.what : pick(hit, pinch, e.altKey);
+    let target = fresh ? gesture.what : pick(hit, pinch, e.altKey);
     if (target === null) { gesture = null; return; }                         // content that scrolls keeps scrolling
+    // a super opens, grows or shrinks by a scroll only once it is selected (owner, 2026-10-13: "hovering and zooming
+    // shouldn't open a super; selecting and zooming should"): on an unselected super the scroll is the page's, and a
+    // note says to click it first (a window's own buttons and its content still take a scroll once the window is selected)
+    if (!fresh && target !== "site" && target.closest && !target.closest(".se-sel")) {
+      const sup = target.closest(".orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title, .ob-member, .ob-label") || target;
+      if (!sup._seNoteT || now - sup._seNoteT > 1500) { sup._seNoteT = now; if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "click it first", "select a super, then scroll to open or size it"); }
+      target = "site";
+    }
     gesture = { what: target, t: now, pinch };
     e.preventDefault(); e.stopImmediatePropagation();
     const dy = e.deltaY * unit * (pinch ? 4 : 1);                           // a pinch reports small deltas

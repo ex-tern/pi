@@ -211,8 +211,10 @@
   const keepsHold = n => n.id === "hold" || !!n.grp || !!n.keepHold;
   const isHolder = n => n && n.fn === "box" && !!n.hold && ((n.size || 0) >= HOLD_AT || keepsHold(n)) && n.role !== "stop";   // sized up by you, not grown to show an answer
   function within(holder, m) {                                         // m sits inside the holder (clear of its curved corners)
-    const r = holder.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.06;
-    return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k;
+    const r = holder.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.06, e = 3;
+    const inside = b.left >= r.left + e && b.right <= r.right - e && b.top >= r.top + e && b.bottom <= r.bottom - e;
+    const corner = (b.left < r.left + k || b.right > r.right - k) && (b.top < r.top + k || b.bottom > r.bottom - k);   // only the curved corners are out of bounds, not a band along every side
+    return inside && !corner;
   }
   function inside(loop) {
     if (isHolder(loop)) return nodes.filter(m => m !== loop && within(loop, m) && !(isHolder(m) && within(m, loop)));   // a locked super stays in the layer it is in: it moves with its holder
@@ -486,7 +488,9 @@
       const frozen = n.fn === "box" && (n.stopped || n.held);
       if (!frozen && n.text !== r.text) {
         n.text = r.text; n.changed = now;
-        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : isHolder(n) && n.str ? n.str : r.text;   // a holder shows its own name   // holds its value inside
+        // a prompt with a Display wired from its output keeps showing its question: the Display shows the answer (owner, 2026-10-12)
+        const asks = n.role === "engine" && n.auto && n.str && nodes.some(x => x !== n && promptInto(x) === n);
+        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : isHolder(n) && n.str ? n.str : asks ? n.str : r.text;   // a holder shows its own name   // holds its value inside
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
       }
@@ -539,8 +543,10 @@
       }
       if (n.fn === "ask") n.el.classList.toggle("is-asking", !!(n.str || n.answer || r.text || n.st.go || n.el.contains(document.activeElement) && document.activeElement.tagName === "INPUT"));
       if (n.fn === "box" || n.fn === "ask") {
-        const long = n.role !== "engine" && !isHolder(n) && (String(n.text || "").length > 28 || /\n/.test(n.text || ""));   // a holder keeps its shape: its text stays in its label strip
+        const long = n.role !== "engine" && !isHolder(n) && (String(n.text || "").length > 12 || /\n/.test(n.text || ""));   // more than a word or two wraps, readable, instead of being cut (a Display showing an answer)   // a holder keeps its shape: its text stays in its label strip
         n.el.classList.toggle("is-long", long);
+        // a Display (made by a double click) with an answer to show grows to a readable size, once (it keeps the size you give it after)
+        if (long && n.auto && !n.manual && (n.size || DOT_BASE) < 150 && html.classList.contains("shape-se")) { sizeDot(n, 150); shape(n); place(n); persist(); }
         if (n.changed === now) clear(n);                                 // its text changed size: step out of the way
       }
       if (n.fn === "box" || n.fn === "dot") {
@@ -1127,8 +1133,9 @@
       const fixed = !hit && [...document.querySelectorAll(".se-project:not(.is-open), .orbit-title, .live-tab, .live-dock.open .live-body")].find(el => el.getClientRects().length && over(el.getBoundingClientRect()));
       if (!hit && !fixed) return;
       const b = hit ? hit.el.getBoundingClientRect() : fixed.getBoundingClientRect();
-      n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 4) / window.innerHeight; place(n);   // just clear of it: supers almost touch
-      if (b.bottom + 4 + a.height > window.innerHeight - 22) return;
+      const sb = O().siteBox ? O().siteBox() : null, floor = sb ? sb.cy + sb.b * (sb.fit || 1) - 6 : window.innerHeight - 22;   // never out of the inner super
+      if (b.bottom + 4 + a.height > floor) return;                       // no room below: it stays where it was put
+      n.fy = (b.bottom + 4) / window.innerHeight; place(n);               // just clear of it: supers almost touch
     }
   }
 

@@ -687,3 +687,28 @@ html.shape-se .se-project { border-width: calc(1.5px * var(--pj-z, 1)); }
 html.shape-se .se-project.is-locked { border-width: calc(2.5px * var(--pj-z, 1)); }
 html.shape-se .se-port-owned { transform: translate(-50%, -50%) scale(var(--port-s, 1)); }
 /* inside an open bubble a pill's first letter stays clear of its input sparkle */
+/* a Super AI super keeps its square whatever it shows: a long answer wraps inside it, under its lock and save, and
+   scrolls when it is longer than that (owner, 2026-10-13: uniform throughout) */
+html.shape-se .lv-node.lv-box.is-long { width: var(--lv-s, 84px); height: var(--lv-h, var(--lv-s, 84px)); max-width: none; min-height: 0; padding: 30px 10px 10px; box-sizing: border-box; }
+html.shape-se .lv-node.lv-box.is-long .lv-glyph { max-height: 100%; height: 100%; }
+
+/* ---- night: what is drawn straight on the dark sky is light ink (owner, 2026-10-13: "in dark mode text is unreadable") ----
+   the loops' edges and their lock hosts, the wires that carry no type yet, the lattice's sparkles, the π digits, a
+   holder's name and its lock and save; the panes stay light frost with dark ink on them */
+html.shape-se.se-night { --sky-ink: #e4e7ef; }
+html.shape-se.se-night .om-page-loop, html.shape-se.se-night .om-site-loop { stroke: var(--sky-ink); }
+html.shape-se.se-night.se-sel-site .om-site-loop, html.shape-se.se-night.se-sel-loop .om-page-loop { stroke: var(--cobalt); }
+html.shape-se.se-night .wire-bed, html.shape-se.se-night .sl-wire .wire-bed, html.shape-se.se-night .lv-wires .wire-bed { stroke: color-mix(in srgb, var(--sky-ink) 82%, transparent); }
+html.shape-se.se-night .sl-data { --wt: var(--sky-ink); }
+html.shape-se.se-night .sl-data[data-type="int"] { --wt: #7ea1e8; } html.shape-se.se-night .sl-data[data-type="number"] { --wt: #e49a5c; } html.shape-se.se-night .sl-data[data-type="text"] { --wt: #e07fb3; } html.shape-se.se-night .sl-data[data-type="bool"] { --wt: #7fc27b; } html.shape-se.se-night .sl-data[data-type="list"] { --wt: #ab93e0; } html.shape-se.se-night .sl-data[data-type="ai"] { --wt: #5fc3c7; }   /* the type colours lifted for the dark sky */
+html.shape-se.se-night .sl-pi .om-page-pi, html.shape-se.se-night .sl-pi .om-page-pi .om-pi-count, html.shape-se.se-night .sl-pi .om-page-pi .om-pi-new { fill: var(--sky-ink); }
+html.shape-se.se-night .se-port:not(.se-port-owned) .se-port-dot { background: var(--sky-ink); }
+html.shape-se.se-night .se-port:not(.se-port-owned) .se-port-name { color: var(--sky-ink); }
+html.shape-se.se-night .lv-node.lv-box.is-holder .lv-glyph { color: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-shackle, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-body,
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-body, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-label, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-slot { stroke: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-locked > .se-lock .lk-body, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-body { fill: transparent; }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-locked > .se-lock .lk-body { fill: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-body { fill: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-label, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-slot { stroke: #262b36; }
+html.shape-se.se-night .lv-node.is-holder .lv-glyph { user-select: none; -webkit-user-select: none; }

@@ -226,6 +226,10 @@ const uRes = { value: new THREE.Vector2(1, 1) }, uTime = { value: 0 }, uNight = 
 document.addEventListener("se:sky", () => { uNight._t = -99; });           // dark mode switched, or the hour turned: look again now
 const panes = new Map(), wires = new Map();
 const quad = new THREE.PlaneGeometry(1, 1);
+// by night, what is drawn straight on the sky (the loops' edges, wires, the lattice's sparkles) is light ink, so it reads
+// on the dark sky (owner, 2026-10-13: "in dark mode text is unreadable"); the panes' own edges stay dark on their frost
+const SKY_INK = new THREE.Color("#e4e7ef");
+const skyInk = () => uNight.value > 0.5 ? SKY_INK : tokens.ink;
 let tokens = { ink: new THREE.Color("#191919"), cobalt: new THREE.Color("#2f40e8"), hint: new THREE.Color("#8f97d8"), graphite: new THREE.Color("#6e6e6a"), hair: new THREE.Color("#c9c9c4") }, tokensAt = 0;
 
 function readTokens() {
@@ -417,12 +421,12 @@ function drawLoops() {
     const sel = html.classList.contains("se-sel-loop"), hov = false;   // selected only
     // the main, second and third supers are supers like any other (owner, 2026-10-12: "all supers have the same
     // effect including main, second and third supers"): glass, a bevel, a shadow, the sheen when hovered or selected
-    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
+    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : hov ? tokens.hint : skyInk(), edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = false, busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : skyInk(), edgeW: sel ? 2.5 : 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
   }
 }
 
@@ -482,7 +486,9 @@ function setWire(key, path, o) {
 }
 // the data types' colours, as a flow language (LabVIEW) draws them, muted to sit with ink on paper: a whole number blue, a
 // decimal orange, text pink, true/false green, a list violet and heavier, an AI answer teal
-const TYPE_COLOR = { int: new THREE.Color("#2a5aa8"), number: new THREE.Color("#c0661c"), text: new THREE.Color("#b2457d"), bool: new THREE.Color("#3d7c3a"), list: new THREE.Color("#6b4fa2"), ai: new THREE.Color("#1f7a7e") };
+const TYPE_COLOR_DAY = { int: new THREE.Color("#2a5aa8"), number: new THREE.Color("#c0661c"), text: new THREE.Color("#b2457d"), bool: new THREE.Color("#3d7c3a"), list: new THREE.Color("#6b4fa2"), ai: new THREE.Color("#1f7a7e") };
+const TYPE_COLOR_NIGHT = { int: new THREE.Color("#7ea1e8"), number: new THREE.Color("#e49a5c"), text: new THREE.Color("#e07fb3"), bool: new THREE.Color("#7fc27b"), list: new THREE.Color("#ab93e0"), ai: new THREE.Color("#5fc3c7") };   // lifted for the dark sky
+const TYPE_COLOR = new Proxy({}, { get: (_, k) => (uNight.value > 0.5 ? TYPE_COLOR_NIGHT : TYPE_COLOR_DAY)[k] });
 let wk = 0;
 function drawWires() {
   document.querySelectorAll(WIRE_SEL).forEach(g => {
@@ -490,14 +496,14 @@ function drawWires() {
     const key = g._seKey || (g._seKey = "w" + (++wk));
     const sel = g.classList.contains("is-sel"), hov = g.matches(":hover"), live = g.classList.contains("live");
     // a data wire is thicker and coloured by its type (owner, 2026-10-12: "input output wire thicker and color data type specific")
-    const data = g.classList.contains("sl-data"), inner = g.classList.contains("sl-inner"), tc = data ? TYPE_COLOR[g.dataset.type] || tokens.ink : tokens.ink;
+    const data = g.classList.contains("sl-data"), inner = g.classList.contains("sl-inner"), tc = data ? TYPE_COLOR[g.dataset.type] || skyInk() : skyInk();
     setWire(key, bed, { w: inner ? 1.4 : data ? (g.dataset.type === "list" ? 5.6 : 3.8) : 2.2, color: sel ? tokens.cobalt : hov ? (data ? tc.clone().lerp(tokens.hint, 0.35) : tokens.hint) : tc, alpha: data ? 0.9 : 0.82, flow: hov || live, order: 4 });
   });
   document.querySelectorAll(".sl-layer .wire-temp").forEach(p => { const key = p._seKey || (p._seKey = "t" + (++wk)); setWire(key, p, { w: 1.5, color: tokens.cobalt, flow: true, order: 5 }); });
   document.querySelectorAll(".om-site .om-lattice").forEach(p => {
     if (!p.getClientRects().length) return;
     const key = p._seKey || (p._seKey = "l" + (++wk));
-    setWire(key, p, { w: 3.8, color: tokens.ink, alpha: 0.86, flow: false, order: 3 });   // the side wires join input and output: data wires, thick; drawn as the wires are (owner, 2026-10-12: "the wires are not real wires and not visible")
+    setWire(key, p, { w: 3.8, color: skyInk(), alpha: 0.86, flow: false, order: 3 });   // the side wires join input and output: data wires, thick; drawn as the wires are (owner, 2026-10-12: "the wires are not real wires and not visible")
   });
 }
 
@@ -515,12 +521,12 @@ function drawSparks() {
     const p = d.closest(".se-port");
     if (p && (getComputedStyle(p).opacity < 0.05 || p.style.display === "none")) return;
     const r = d.getBoundingClientRect(); if (!r.width) return;
-    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(4, r.width) + 1, tokens.ink);   // a small super's sparkles are small (site.js --port-s)
+    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(4, r.width) + 1, p && p.classList.contains("se-port-owned") ? tokens.ink : skyInk());   // a small super's sparkles are small (site.js --port-s)
   });
   document.querySelectorAll(".sl-layer .wire-term, .lv-wires .wire-term, .orbit-wires .wire-term").forEach(t => {
     const r = t.getBoundingClientRect(); if (!r.width) return;
     const sel = t.closest(".is-sel");
-    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(9, r.width), sel ? tokens.cobalt : tokens.ink);
+    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(9, r.width), sel ? tokens.cobalt : skyInk());
   });
   sparks.count = i;
   sparks.instanceMatrix.needsUpdate = true; col.needsUpdate = true;
