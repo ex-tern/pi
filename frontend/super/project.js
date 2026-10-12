@@ -43,6 +43,7 @@
   const SECTIONS = PR.sections || [];
 
   // ------------------------------------------------------------ the super on the page
+  let showProgram = () => {};
   let el = null, map = null, wiresSvg = null, state = load() || {}, t = +state.t || 0, tTo = t;
   // the compact super's side: the same as a compact bubble's (super/loop.js compactSide, --se-compact)
   const MIN0 = 104;
@@ -103,12 +104,10 @@
 
       '<div class="pj-face" aria-hidden="true"></div>' +
       '<div class="pj-map" aria-hidden="false"></div>' +
-      '<button type="button" class="pj-prog-btn">Program</button>' +
       '<div class="pj-editor" hidden><div class="pj-ed-head"><strong>Pi Tech Lab in SuperAI</strong><span class="pj-ed-state"></span></div>' +
       '<textarea class="pj-ed-text" spellcheck="false" aria-label="The SuperAI program the site runs"></textarea>' +
       '<div class="pj-ed-errors" role="alert"></div>' +
-      '<div class="pj-ed-row"><button type="button" class="pj-ed-run">Run</button><button type="button" class="pj-ed-reset">Back to shipped</button>' +
-      '<button type="button" class="pj-ed-dl">Download</button><button type="button" class="pj-ed-close">Close</button></div></div>';
+      '<div class="pj-ed-row">⌘ or Ctrl + Enter runs it · ⌘ or Ctrl + S downloads it · ⌘ or Ctrl + Shift + Backspace goes back to the shipped program · zoom out to close</div></div>';
     map = el.querySelector(".pj-map");
     // compact, it is drawn as a bubble is (super/bubble.js drawing): its name's box wired to one box per part of it
     const face = () => {
@@ -121,7 +120,7 @@
     let inner = '<svg class="pj-wires" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"></svg>';
     SECTIONS.forEach(s => { inner += '<div class="pj-sec" style="left:' + s.x + "px;top:" + s.y + "px;width:" + s.w + "px;height:" + s.h + 'px"><span>' + esc(s.label) + "</span></div>"; });
     P.forEach(n => {
-      const tag = (n.opens || n.live) && !n.input ? "button" : "div";
+      const tag = "div";                                               // nothing in the map is clickable: only zoomable (owner, 2026-10-12)
       inner += "<" + tag + ' class="pj-node pj-' + n.kind + (n.id === ANS_ID() ? " pj-answer" : "") + '" data-id="' + n.id + '"' + (tag === "button" ? ' type="button"' : "") +
         ' style="left:' + n.x + "px;top:" + n.y + "px;width:" + n.w + "px;height:" + n.h + 'px">' +
         '<b>' + esc(n.label) + "</b>" +
@@ -253,12 +252,23 @@
   function wire() {
     // zoom on it: open or compact it. Taken before the page's own scroll handlers (super/scroll.js)
     // Shift + scroll changes its n (super/scroll.js, SeSite.shapeEl), so it is left alone here
+    let progAcc = 0, progT = 0;
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
-      if (e.target.closest(".pj-editor")) { e.stopImmediatePropagation(); return; }   // the program scrolls; it does not zoom
+      if (e.target.closest(".pj-editor")) {                              // the program scrolls; at its top, a scroll out closes it
+        e.stopImmediatePropagation();
+        const ta = el.querySelector(".pj-ed-text");
+        if ((e.deltaY || 0) > 0 && (!ta || ta.scrollTop <= 0 || ta.scrollTop + ta.clientHeight >= ta.scrollHeight - 1) && !e.target.closest(".pj-ed-text")) { e.preventDefault(); showProgram(false); }
+        return;
+      }
       e.preventDefault(); e.stopImmediatePropagation();
-      // it opens gradually with the scroll (owner, 2026-10-12): every step grows it a little toward the whole map
+      // it opens gradually with the scroll (owner, 2026-10-12): every step grows it a little toward the whole map;
+      // scrolled on past the whole map, the program the site runs shows (nothing to click: only zoom), and the
+      // first steps back hide it again
       const dy = e.deltaY || e.deltaX, k = e.ctrlKey ? 0.012 : 0.0016;            // a pinch reports small deltas
+      const editing = el.classList.contains("is-editing");
+      if (dy < 0 && tTo >= 1) { progAcc += dy; clearTimeout(progT); progT = setTimeout(() => { progAcc = 0; }, 500); if (progAcc < -120 && !editing) { progAcc = 0; showProgram(true); } return; }
+      if (dy > 0 && editing) { showProgram(false); return; }
       setT(tTo - dy * k);
     }, { capture: true, passive: false });
     // presses inside it are its own: the page does not select, wire or drag through it
@@ -276,26 +286,16 @@
     }, true);
     window.addEventListener("dblclick", e => { if (inside(e)) { e.stopImmediatePropagation(); } }, true);
     ["click", "keydown"].forEach(ty => el.addEventListener(ty, e => e.stopPropagation()));
-    map.addEventListener("click", e => {
-      const n = e.target.closest(".pj-node"); if (!n || e.target.closest(".pj-field")) return;
-      const spec = BY[n.dataset.id]; if (!spec) return;
-      if (spec.input) { map.querySelector(".pj-field").focus(); return; }
-      if (spec.live && window.PiLive && window.PiLive.open) { setT(0); window.PiLive.open(); return; }
-      if (spec.opens && String(spec.opens).startsWith("@source:") && O().open) { const k = spec.opens.slice(8); setT(0); setTimeout(() => O().open(k), 220); return; }
-      if (spec.opens && O().openTitle) { setT(0); setTimeout(() => O().openTitle(spec.opens), 220); }
-    });
     const input = map.querySelector(".pj-field");
     input.addEventListener("keydown", e => { if (e.key === "Enter" && input.value.trim()) { e.preventDefault(); ask(input.value.trim()); } });
     // the program itself: read it, edit it, run it (it is kept in this browser and the site rebuilds from it)
     const ed = el.querySelector(".pj-editor"), text = el.querySelector(".pj-ed-text"), errs = el.querySelector(".pj-ed-errors");
     const stateLine = () => { el.querySelector(".pj-ed-state").textContent = window.SuperAI.edited ? "running: your edited copy" : "running: the shipped program"; };
-    const show = on => {
+    const show = showProgram = on => {
       ed.hidden = !on; el.classList.toggle("is-editing", on);
       if (on) { text.value = pretty(window.SuperAI.program); errs.textContent = ""; stateLine(); setTimeout(() => { text.focus({ preventScroll: true }); text.setSelectionRange(0, 0); text.scrollTop = 0; }, 0); }
     };
-    el.querySelector(".pj-prog-btn").addEventListener("click", () => { if (t < 0.6) setT(1); show(ed.hidden); });
-    el.querySelector(".pj-ed-close").addEventListener("click", () => show(false));
-    el.querySelector(".pj-ed-run").addEventListener("click", () => {
+    const run = () => {
       let p;
       try { p = JSON.parse(text.value); } catch (e) { errs.textContent = "Not valid JSON: " + e.message; return; }
       const bad = window.SuperAI.save(p);
@@ -304,19 +304,21 @@
       if (JSON.stringify(p.diagram) !== JSON.stringify(window.SuperAI.program.diagram)) { try { localStorage.removeItem("lv:nodes"); localStorage.removeItem("orbit:textwires"); } catch (_) { /* private mode */ } }
       errs.textContent = "Running it…";
       setTimeout(() => location.reload(), 150);
-    });
-    el.querySelector(".pj-ed-reset").addEventListener("click", () => {
+    };
+    const backToShipped = () => {
       if (!window.SuperAI.edited) { text.value = pretty(window.SuperAI.shipped); errs.textContent = "This is the shipped program."; return; }
       window.SuperAI.reset(); errs.textContent = "Back to the shipped program…"; setTimeout(() => location.reload(), 150);
-    });
-    el.querySelector(".pj-ed-dl").addEventListener("click", () => {
+    };
+    const download = () => {
       const a = document.createElement("a");
       a.href = URL.createObjectURL(new Blob([text.value], { type: "application/json" }));
       a.download = "pitechlab.super.json"; document.body.appendChild(a); a.click();
       setTimeout(() => { URL.revokeObjectURL(a.href); a.remove(); }, 1000);
-    });
+    };
     text.addEventListener("keydown", e => {
-      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); el.querySelector(".pj-ed-run").click(); }
+      if ((e.metaKey || e.ctrlKey) && e.key === "Enter") { e.preventDefault(); run(); }
+      if ((e.metaKey || e.ctrlKey) && (e.key === "s" || e.key === "S")) { e.preventDefault(); download(); }
+      if ((e.metaKey || e.ctrlKey) && e.shiftKey && e.key === "Backspace") { e.preventDefault(); backToShipped(); }
       if (e.key === "Tab") { e.preventDefault(); const a = text.selectionStart; text.setRangeText("  ", a, text.selectionEnd, "end"); }
       if (e.key === "Escape") show(false);
     });
@@ -328,7 +330,7 @@
   // edges or a window, the compact project super moves to the nearest free spot
   function settleFree() {
     const vw = window.innerWidth, vh = window.innerHeight, c = compactRect();
-    const blocks = [...document.querySelectorAll(".orbit-title, .live-tab, .live-dock.open .live-body, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => x.getBoundingClientRect());
+    const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => x.getBoundingClientRect());
     const free = (x, y) => blocks.every(b => x + MIN + 8 <= b.left || b.right + 8 <= x || y + MIN + 8 <= b.top || b.bottom + 8 <= y);
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
@@ -347,6 +349,7 @@
       moved = true;
       state.x = (ev.clientX - dx) / window.innerWidth; state.y = (ev.clientY - dy) / window.innerHeight;
       place();
+      document.dispatchEvent(new CustomEvent("se:frame:first")); document.dispatchEvent(new CustomEvent("se:frame"));   // its ports and wires follow it, as a bubble's do
     };
     const up = () => {
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);

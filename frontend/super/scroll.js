@@ -209,20 +209,20 @@
   // ---- the way back: the title super is the Reset view button (and the 0 key) ------------------------
   // When the view has changed (PiOrbit.viewChanged), a click on the title super (not a drag) brings back the
   // first view (PiOrbit.resetView). Nothing is written on it (owner, 2026-10-11).
-  let titleHooked = null, down = null;
+  let titleHooked = null;
   function hookTitle() {
     const t = document.querySelector(".orbit-title");
     const sup = t && t.querySelector(".se-titlesuper");
     if (!sup || titleHooked === sup) return sup;
     titleHooked = sup;
-    // on the window, before anything else (selecting, wiring) can take the press
-    window.addEventListener("pointerdown", e => { down = sup.contains(e.target) ? [e.clientX, e.clientY] : null; }, true);
-    window.addEventListener("pointerup", e => {
-      if (!down || !sup.contains(e.target) || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 5) { down = null; return; }   // a drag moved it: not a click
-      down = null;
+    // nothing is clickable, only zoomable (owner, 2026-10-12): a scroll on the title super, once the view has
+    // changed, brings back the first view (before the page's own scroll handlers take it)
+    window.addEventListener("wheel", e => {
+      if (!on() || e.shiftKey || e.altKey || !sup.contains(e.target)) return;
       if (!(O().viewChanged && O().viewChanged())) return;
+      e.preventDefault(); e.stopImmediatePropagation();
       if (O().resetView) O().resetView();
-    }, true);
+    }, { capture: true, passive: false });
     return sup;
   }
   setInterval(() => {

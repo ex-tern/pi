@@ -1032,6 +1032,9 @@
     });
     n.el.addEventListener("click", () => {
       if (n.el.dataset.dragged) return;
+      // the superellipse look has no clickable objects, only zoomable ones (owner, 2026-10-12): a click selects the
+      // super and lets you type into it; it presses nothing (stop, pause, ask go by wires and Enter)
+      if (se()) { if (n.field) n.field.focus(); else n.el.focus({ preventScroll: true }); return; }
       used(n);
       n.el.classList.remove("fired"); void n.el.offsetWidth; n.el.classList.add("fired");
       const wired = n.inputs.length + linkIns(n).length > 0;

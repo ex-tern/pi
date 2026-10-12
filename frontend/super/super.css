@@ -400,7 +400,7 @@ html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }
 /* the title super is the Reset view button (super/scroll.js): nothing is written on it; once the view has changed a click on it resets */
-html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: pointer; }
+html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: zoom-out; }   /* a scroll on it resets the view: nothing is clickable */
 /* a bubble wire or a node wire selected by a click (orbit.js, super/nodes.js): cobalt, Delete removes it */
 html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
 
@@ -462,7 +462,7 @@ html.shape-se .wire:hover .wire-bed, html.shape-se .sl-wire:hover .wire-bed { st
    heavier */
 html.shape-se .se-lock {
   position: absolute; right: 9%; bottom: 7%; width: 14px; height: 14px; padding: 0; margin: 0; border: 0; background: transparent;
-  cursor: pointer; z-index: 5; opacity: 0.35; transition: opacity 0.15s ease; pointer-events: auto; line-height: 0;
+  cursor: zoom-in; z-index: 5; opacity: 0.35; transition: opacity 0.15s ease; pointer-events: auto; line-height: 0;   /* a scroll locks it, not a click */
 }
 html.shape-se .se-lock svg { width: 12px; height: 12px; display: block; }
 html.shape-se .se-lock .lk-shackle { fill: none; stroke: var(--ink); stroke-width: 1.3; stroke-linecap: round; }
@@ -476,3 +476,4 @@ html.shape-se .lv-node:not(.is-holder) .se-lock svg { width: 9px; height: 9px; }
 html.shape-se .orbit-bubble.is-compact > .se-lock { right: 10px; bottom: 8px; }
 html.shape-se .orbit-panel > .se-lock { right: 7%; bottom: 5%; }
 html.shape-se .se-project.is-open > .se-lock { right: 16px; bottom: 12px; }
+html.shape-se .is-locked > .se-lock { cursor: zoom-out; }

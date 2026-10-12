@@ -6,7 +6,7 @@
   border-radius: 50%;
   corner-shape: superellipse(var(--se-k-window, 1.6515));   /* n = π like every super; Shift + scroll gives it its own (super/site.js) */
   overflow: hidden; touch-action: none; overscroll-behavior: contain;
-  cursor: grab;
+  cursor: default;                                          /* the same as a bubble: nothing to grab, only zoom */
 }
 .se-project.is-open { cursor: default; z-index: 975; }   /* open, it is in front of the page's supers, their ports and wires */
 .se-project.is-full { box-shadow: 0 10px 40px rgba(25, 25, 25, 0.08); }
@@ -44,9 +44,6 @@
   border: 1.5px solid var(--ink, #191919); border-radius: 30%; corner-shape: superellipse(1.65);
   font: 500 12px/1.15 var(--font, system-ui); text-align: center; overflow: hidden;
 }
-button.pj-node { cursor: pointer; }
-button.pj-node:hover { border-color: var(--cobalt, #2f40e8); }
-button.pj-node:focus-visible { outline: 2px solid var(--cobalt, #2f40e8); outline-offset: 2px; }
 .pj-node b { font-weight: 500; white-space: nowrap; }
 .pj-val { font: 9.5px/1.25 var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); max-width: 100%;
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -66,11 +63,6 @@ button.pj-node:focus-visible { outline: 2px solid var(--cobalt, #2f40e8); outlin
 @media (prefers-reduced-motion: reduce) { .pj-wire.is-live { animation: none; } }
 
 /* the program: read, edit and run it (super/project.js) */
-.pj-prog-btn { position: absolute; right: 14px; top: 12px; z-index: 2; opacity: var(--pj-show, 0); pointer-events: none;
-  font: 500 12px var(--font, system-ui); color: var(--ink, #191919); background: var(--surface, #fff);
-  border: 1px solid var(--hair-strong, #c9c9c4); border-radius: 999px; padding: 4px 12px; cursor: pointer; }
-.se-project.is-open .pj-prog-btn { pointer-events: auto; }
-.pj-prog-btn:hover, .se-project.is-editing .pj-prog-btn { border-color: var(--cobalt, #2f40e8); color: var(--cobalt, #2f40e8); }
 .pj-editor { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 14px;
   background: var(--surface, #fff); box-sizing: border-box; }
 .pj-editor[hidden] { display: none; }
@@ -82,8 +74,4 @@ button.pj-node:focus-visible { outline: 2px solid var(--cobalt, #2f40e8); outlin
   border: 1px solid var(--hair, #dcdcd8); border-radius: 12px; outline: none; tab-size: 2; white-space: pre; overflow: auto; }
 .pj-ed-text:focus { border-color: var(--cobalt, #2f40e8); }
 .pj-ed-errors { font: 11.5px/1.4 var(--font-mono, ui-monospace, monospace); color: var(--danger, #b3261e); min-height: 1.4em; }
-.pj-ed-row { display: flex; gap: 8px; flex-wrap: wrap; }
-.pj-ed-row button { font: 500 12.5px var(--font, system-ui); border: 1px solid var(--hair-strong, #c9c9c4); background: var(--surface, #fff);
-  color: var(--ink, #191919); border-radius: 999px; padding: 6px 14px; cursor: pointer; }
-.pj-ed-row .pj-ed-run { background: var(--cobalt, #2f40e8); border-color: var(--cobalt, #2f40e8); color: #fff; }
-.pj-ed-row button:hover { border-color: var(--cobalt, #2f40e8); }
+.pj-ed-row { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }   /* the keys, not buttons: nothing here is clickable, only zoomable */
