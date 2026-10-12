@@ -115,7 +115,26 @@
       const r = h.getBoundingClientRect(), sc = parseFloat(h.style.scale) || 1, w = r.width / sc, hh = r.height / sc, i = inner(r);
       let st = state.get(h);
       if (!st) { st = { w, h: hh, at: new Map() }; state.set(h, st); }
-      ms.forEach(el => { if (!st.at.has(el)) st.at.set(el, shareOf(el, r, i)); });   // a new member: where it is now
+      // a new member (owner, 2026-10-12: "this should put connect inside the third super"): where it is if it is inside
+      // already; else it takes the other members' size when it is bigger, and the first free spot inside
+      ms.forEach(el => {
+        if (st.at.has(el)) return;
+        const b = el.getBoundingClientRect(), inside = b.left >= i.l && b.right <= i.r && b.top >= i.t && b.bottom <= i.b;
+        if (inside || st.at.size === 0) { st.at.set(el, shareOf(el, r, i)); return; }
+        const others = ms.filter(o => o !== el && st.at.has(o)).map(o => o.getBoundingClientRect());
+        const typ = others.length ? others.reduce((m, o) => m + o.width, 0) / others.length : r.width * 0.25;
+        let w = b.width, hgt = b.height;
+        if (w > typ * 1.05 || w > (i.r - i.l) * 0.5) { const k = Math.min(typ, (i.r - i.l) * 0.5) / w; w *= k; hgt *= k; }
+        let best = null;
+        for (let gy = 0; gy < 6 && !best; gy++) for (let gx = 0; gx < 8 && !best; gx++) {
+          const cx = i.l + w / 2 + (i.r - i.l - w) * gx / 7, cy = i.t + hgt / 2 + (i.b - i.t - hgt) * gy / 5;
+          const box = { left: cx - w / 2 - 4, right: cx + w / 2 + 4, top: cy - hgt / 2 - 4, bottom: cy + hgt / 2 + 4 };
+          if (!others.some(o => o.left < box.right && o.right > box.left && o.top < box.bottom && o.bottom > box.top)) best = [cx, cy];
+        }
+        if (!best) best = [i.l + (i.r - i.l) / 2, i.t + (i.b - i.t) / 2];
+        st.at.set(el, [(best[0] - r.left) / r.width, (best[1] - r.top) / r.height, w / r.width]);
+        st.sizedAt = performance.now();                                   // its size goes to its share now
+      });
       const resized = Math.abs(w - st.w) > 1 || Math.abs(hh - st.h) > 1;
       if (resized) {                                                     // resized: the members scale with it, to their share of it
         const kw = w / st.w, kh = hh / st.h; st.w = w; st.h = hh;
