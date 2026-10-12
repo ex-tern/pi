@@ -116,6 +116,13 @@
     }
     if (tTo === (el._sbTo != null ? el._sbTo : el._sbT)) return;
     el._sbTo = tTo;
+    // a bubble never rests half grown (owner, 2026-10-12: "i cant see explore": half way its drawing had faded out and
+    // its pills not yet in): when the scroll stops, it glides on to open or back to compact, whichever is nearer
+    clearTimeout(el._sbSettle);
+    el._sbSettle = setTimeout(() => {
+      const now = el._sbTo != null ? el._sbTo : el._sbT;
+      if (now > 0.001 && now < 0.999) zoom(el, now >= 0.5 ? -(1 - now) / 0.004 : now / 0.004);
+    }, 450);
     // every step glides (owner, 2026-10-12: no sudden movement): the steps of one gesture become one motion
     if (window.SeMotion) { const s = { v: el._sbT }; window.SeMotion.glide("bubble:t:" + (el.dataset.key || ""), s, "v", tTo, 160, () => { at(el, s.v, compactSide); }); return; }
     at(el, tTo, compactSide);

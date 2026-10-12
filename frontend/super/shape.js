@@ -205,24 +205,30 @@
   function close(panel, to) {
     if (!on() || reduce.matches || !panel || !panel.isConnected) return;
     const a = rectOf(panel); if (!usable(to) || !a.w) return;
-    const b = rectOf(to);
     const g = document.createElement("div");
     g.className = "se-fold"; g.setAttribute("aria-hidden", "true");
     g.style.left = a.x + "px"; g.style.top = a.y + "px"; g.style.width = a.w + "px"; g.style.height = a.h + "px";
     document.body.appendChild(g);
-    const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
-    const k = Math.max(0.08, Math.min(1, Math.max(b.w / a.w, b.h / a.h)));
     const d = Math.round(900 * Math.min(1.6, slow()));                 // slowly (owner, 2026-10-12)
-    // its shape shrinks from the window's n (12) to n → 0 as it folds away ("opened super shrinks from n=12 to n=0 slowly")
-    const n0 = +panel.dataset.seN || 12, n1 = 0.3;
-    const setK = n => { g.style.cornerShape = "superellipse(" + Math.log2(n).toFixed(4) + ")"; };
-    setK(n0);
-    { const t0 = performance.now(); const step = now => { const k = Math.min(1, (now - t0) / d), e = k < 0.5 ? 2 * k * k : 1 - Math.pow(-2 * k + 2, 2) / 2; setK(Math.exp(Math.log(n0) + (Math.log(n1) - Math.log(n0)) * e)); if (k < 1 && g.isConnected) requestAnimationFrame(step); }; requestAnimationFrame(step); }
-    void g.offsetWidth;
-    g.style.transition = "transform " + d + "ms " + SMOOTH + ", opacity " + d + "ms cubic-bezier(0.6, 0, 0.9, 0.4)";
-    g.style.transform = "translate(" + dx.toFixed(1) + "px," + dy.toFixed(1) + "px) scale(" + k.toFixed(3) + ")";
-    g.style.opacity = "0";
-    setTimeout(() => g.remove(), d + 60);
+    // its shape shrinks from the window's n (12) to n → 0 as it folds away ("opened super shrinks from n=12 to n=0 slowly"),
+    // and it aims at its own pill wherever that is now, frame by frame (owner: "closing support pi should aim at its own
+    // place": the view or the bubble may move while it folds)
+    const n0 = +panel.dataset.seN || 12, n1 = 0.3, t0 = performance.now();
+    const ease = k => 1 - Math.pow(1 - k, 3);
+    const step = now => {
+      if (!g.isConnected) return;
+      const k = Math.min(1, (now - t0) / d), e = ease(k);
+      const b = usable(to) ? rectOf(to) : null;
+      if (b) {
+        const dx = (b.x + b.w / 2) - (a.x + a.w / 2), dy = (b.y + b.h / 2) - (a.y + a.h / 2);
+        const sc = Math.max(0.04, Math.min(1, Math.max(b.w / a.w, b.h / a.h)));
+        g.style.transform = "translate(" + (dx * e).toFixed(1) + "px," + (dy * e).toFixed(1) + "px) scale(" + (1 + (sc - 1) * e).toFixed(4) + ")";
+      }
+      g.style.opacity = String(1 - Math.pow(k, 2.2));
+      g.style.cornerShape = "superellipse(" + Math.log2(Math.exp(Math.log(n0) + (Math.log(n1) - Math.log(n0)) * e)).toFixed(4) + ")";
+      if (k < 1) requestAnimationFrame(step); else g.remove();
+    };
+    requestAnimationFrame(step);
   }
 
   // a wire: straight runs with two superellipse corners (n = π), out of one side and into the other

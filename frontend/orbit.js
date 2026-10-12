@@ -1145,7 +1145,13 @@
   function buttonOf(it) {
     const own = it.bubble;
     if (own && !own.hidden && own.getClientRects().length && own.getBoundingClientRect().width > 0) return own;
-    return it.groupOf ? it.groupOf.bubble : own;
+    // its own pill in the open bubble it belongs to (what it opened from and folds back into), else that bubble
+    if (it.groupOf) {
+      const pill = [...it.groupOf.bubble.querySelectorAll(".ob-member[data-key]")].find(m => m.dataset.key === it.key);
+      if (pill && pill.getClientRects().length && pill.getBoundingClientRect().width > 4) return pill;
+      return it.groupOf.bubble;
+    }
+    return own;
   }
   function closeItem(it) {
     if (!it.panel) return;

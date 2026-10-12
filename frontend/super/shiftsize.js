@@ -7,7 +7,11 @@
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
-  const SEL = ".lv-node, .orbit-panel, .orbit-bubble.is-group.is-compact, .se-project:not(.is-open), .orbit-title .se-titlesuper";   // every super
+  const SEL = ".lv-node, .orbit-panel, .orbit-bubble.is-group, .se-project:not(.is-open), .orbit-title .se-titlesuper";   // every super, a bubble open or compact
+  const BARE = ".orbit-stage, .orbit-bubbles, .om-page, .om-site, .lv-canvas, .se-gl-canvas, .orbit-rings";
+  // the smallest holder under a point (a press on its bare space reaches the page, not the holder)
+  const holderAt = (x, y) => [...document.querySelectorAll(".lv-node.is-holder")].map(el => ({ el, r: el.getBoundingClientRect() }))
+    .filter(o => x >= o.r.left && x <= o.r.right && y >= o.r.top && y <= o.r.bottom).sort((a, b) => a.r.width * a.r.height - b.r.width * b.r.height).map(o => o.el)[0] || null;
   const fit = () => (O().fit ? O().fit().f : 1) || 1;
   const keyOf = el => el.dataset.key || "";
   function load(k) { try { return JSON.parse(localStorage.getItem("se:size:" + k) || "null"); } catch (_) { return null; } }
@@ -21,8 +25,8 @@
     if (!on() || !e.shiftKey || e.button !== 0) return;
     const t = e.target && e.target.closest ? e.target : null;
     if (!t || t.closest("input, textarea, select, [contenteditable], .se-port, .se-lock, .wire-hit")) return;
-    const el = t.closest(SEL); if (!el) return;
-    if (el.classList.contains("is-holder") && !t.closest(".lv-edge")) return;
+    const bare = t === document.body || t === document.documentElement || (t.matches && t.matches(BARE));
+    const el = t.closest(SEL) || (bare ? holderAt(e.clientX, e.clientY) : null); if (!el) return;
     if (window.SeLock && window.SeLock.isLocked(el)) {                // locked: its size is kept
       e.preventDefault(); e.stopImmediatePropagation();
       if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to change its size or shape");
@@ -30,17 +34,28 @@
     }
     e.preventDefault(); e.stopImmediatePropagation();
     const f = el.classList.contains("orbit-panel") || el.classList.contains("se-titlesuper") ? 1 : fit();   // nodes, bubbles and the project are sized in layout px
-    drag = { el, x0: e.clientX, y0: e.clientY, w0: el.offsetWidth, h0: el.offsetHeight, f, id: e.pointerId };
+    // the edge nearest the press follows the pointer, the opposite one stays where it is (owner, 2026-10-12: "shift+mouse
+    // to resize doesnt work properly": it always grew to the right and down, whichever side you took)
+    const r = el.getBoundingClientRect(), sx = e.clientX >= r.left + r.width / 2 ? 1 : -1, sy = e.clientY >= r.top + r.height / 2 ? 1 : -1;
+    const node0 = el.classList.contains("lv-node") && window.LabView && window.LabView.rectOf ? window.LabView.rectOf(el) : null;
+    drag = { el, x0: e.clientX, y0: e.clientY, w0: node0 ? node0.w : el.offsetWidth, h0: node0 ? node0.h : el.offsetHeight, f, id: e.pointerId, sx, sy, node0, left0: el.offsetLeft, top0: el.offsetTop };
     html.classList.add("se-shift-sizing");
     try { el.setPointerCapture(e.pointerId); } catch (_) { /* fine */ }
   }, true);
   window.addEventListener("pointermove", e => {
     if (!drag || e.pointerId !== drag.id) return;
     e.preventDefault(); e.stopImmediatePropagation();
-    const w = Math.max(40, drag.w0 + (e.clientX - drag.x0) / drag.f), h = Math.max(40, drag.h0 + (e.clientY - drag.y0) / drag.f), el = drag.el;
-    if (el.classList.contains("lv-node")) { if (window.LabView && window.LabView.resize) window.LabView.resize(el, w, h); }
+    const w = Math.max(40, drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f), h = Math.max(40, drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f), el = drag.el;
+    if (el.classList.contains("lv-node")) {
+      const n0 = drag.node0;
+      if (n0 && window.LabView.setRect) window.LabView.setRect(el, drag.sx < 0 ? n0.x + n0.w - w : n0.x, drag.sy < 0 ? n0.y + n0.h - h : n0.y, w, h);   // the far edge stays put
+      else if (window.LabView && window.LabView.resize) window.LabView.resize(el, w, h);
+    }
     else if (el.classList.contains("orbit-panel")) {
-      el.style.width = Math.round(Math.max(200, w)) + "px"; el.style.height = Math.round(Math.max(120, h)) + "px";
+      const W = Math.round(Math.max(200, w)), H = Math.round(Math.max(120, h));
+      el.style.width = W + "px"; el.style.height = H + "px";
+      if (drag.sx < 0) el.style.left = (drag.left0 + drag.w0 - W) + "px";
+      if (drag.sy < 0) el.style.top = (drag.top0 + drag.h0 - H) + "px";
       el.userSized = true; el.seSized = true;
     } else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.resize) window.SeProject.resize(w, h); }
     else if (el.classList.contains("se-titlesuper")) { el.style.width = Math.round(w) + "px"; el.style.height = Math.round(h) + "px"; }
@@ -52,7 +67,7 @@
     if (!drag || (e.pointerId !== undefined && e.pointerId !== drag.id)) return;
     e.preventDefault(); e.stopImmediatePropagation();
     const el = drag.el; drag = null; html.classList.remove("se-shift-sizing");
-    if (el.classList.contains("orbit-bubble")) { const k = keyOf(el); if (k) save(k, { w: el.offsetWidth, h: el.offsetHeight }); }
+    if (el.classList.contains("orbit-bubble")) { const k = keyOf(el); if (k) save(k + (el.classList.contains("is-compact") ? "" : ":open"), { w: el.offsetWidth, h: el.offsetHeight }); }
     if (el.classList.contains("se-titlesuper")) save("title", { w: el.offsetWidth, h: el.offsetHeight });
     if (O().layout) O().layout();
     document.dispatchEvent(new CustomEvent("se:obstacle"));
@@ -65,10 +80,13 @@
     const ts = document.querySelector(".orbit-title .se-titlesuper"), tv = load("title");
     if (ts && tv && !ts.style.width) { ts.style.width = tv.w + "px"; ts.style.height = tv.h + "px"; }
     document.querySelectorAll(".orbit-bubble.is-group[data-key]").forEach(b => {
-      const v = load(keyOf(b));
-      const compact = b.classList.contains("is-compact");
-      if (v && compact && !b.classList.contains("se-sized")) sizeBubble(b, v.w, v.h);
-      if (!compact && b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); }
+      if (b.classList.contains("is-growing") || (drag && drag.el === b)) return;   // growing: its size is the growth's
+      const compact = b.classList.contains("is-compact"), state = compact ? "c" : "o";
+      if (b._sqState === state) return;                               // sized for this state already
+      b._sqState = state;
+      const v = load(keyOf(b) + (compact ? "" : ":open"));
+      if (v) sizeBubble(b, v.w, v.h);
+      else if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); }
     });
   }
   document.addEventListener("orbit:ready", () => { restore(); if (O().layout) O().layout(); });
