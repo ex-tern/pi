@@ -210,8 +210,8 @@ Everything the page remembers lives in `localStorage` under short prefixed keys 
 | exp.pitechlab.com | `experimental` | Evolves constantly; separate data; `SCHOLARPI_CHANNEL=experimental` shows the banner and sets noindex. |
 | super.pitechlab.com (se.) | `super` | The superellipse superlattice, deployed alone from its branch. |
 
-Each is a Railway environment built from the `Dockerfile` (base image from `public.ecr.aws`, never
-Docker Hub) and started by `docker-entrypoint.sh` with gunicorn. `run.sh` / `run.bat` run it locally at
+Each is a Railway environment built by Nixpacks (`nixpacks.toml`: Python only, no Docker) and started
+with gunicorn. `run.py` runs it locally at
 http://localhost:8000.
 
 ## 8. Working on it

@@ -31,11 +31,10 @@ The video and both projects remain his.
 ## 1. Local development
 
 ```bash
-./run.sh          # macOS / Linux
-run.bat           # Windows
+python run.py     # macOS, Linux or Windows (python run.py --lab: with HAL-OS and private projects)
 ```
 
-Either script creates a virtualenv, installs dependencies, copies
+It creates a virtualenv, installs dependencies, copies
 `backend/.env.example` → `backend/.env` on first run, and starts the server
 with auto-reload. Open **http://localhost:8000**.
 
