@@ -61,8 +61,8 @@
     const pa = (((window.SuperAI || {}).program || {}).projectAt || {}).inSite, sb0 = O().siteBox ? O().siteBox() : null;
     const ph = vw < 700, startX = !ph && pa && sb0 && sb0.a ? sb0.cx - sb0.a + pa[0] * 2 * sb0.a : (ph ? 0.126 : 0.775) * vw, startY = !ph && pa && sb0 && sb0.b ? sb0.cy - sb0.b + pa[1] * 2 * sb0.b : (ph ? 0.70 : 0.651) * vh;
     const x = state.x != null ? state.x * vw : startX, y = state.y != null ? state.y * vh : startY;   // desktop: inside the third super, beside Lab
-    const B = room();                                              // it lives inside the inner super, the second super
-    const w = state.w >= 16 ? state.w : MIN, h = state.h >= 16 ? state.h : MIN;   // any size if unlocked (16 px up)   // its own size once Shift + drag gave it one (super/shiftsize.js)
+    const w = state.w >= 10 ? state.w : MIN, h = state.h >= 10 ? state.h : MIN;   // any size if unlocked (down to a sparkle)
+    const B = room(w, h);                                          // it lives inside the inner super, the second super (by its own size)   // its own size once Shift + drag gave it one (super/shiftsize.js)
     return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w, h };
   }
   function compactRect() {
@@ -70,10 +70,10 @@
     return { x, y, w: c.w * f, h: c.h * f };
   }
   // where the compact super may sit: inside the inner super, clear of its curved corners (the page when there is none)
-  function room() {
-    const vw = window.innerWidth, vh = window.innerHeight, f = fullRect(true);
-    const x0 = Math.max(4, f.x), y0 = Math.max(4, f.y), x1 = Math.min(vw - MIN - 4, f.x + f.w - MIN), y1 = Math.min(vh - MIN - 4, f.y + f.h - MIN);
-    return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : { x0: 4, y0: 4, x1: vw - MIN - 4, y1: vh - MIN - 4 };
+  function room(w, h) {
+    const vw = window.innerWidth, vh = window.innerHeight, f = fullRect(true), W = w || MIN, H = h || MIN;
+    const x0 = Math.max(4, f.x), y0 = Math.max(4, f.y), x1 = Math.min(vw - W - 4, f.x + f.w - W), y1 = Math.min(vh - H - 4, f.y + f.h - H);
+    return x1 > x0 && y1 > y0 ? { x0, y0, x1, y1 } : { x0: 4, y0: 4, x1: vw - W - 4, y1: vh - H - 4 };
   }
   function fullRect(unzoomed) {
     const sb = O().siteBox ? O().siteBox() : null, vw = window.innerWidth, vh = window.innerHeight;
@@ -363,13 +363,13 @@
     if (el && window.SeLock && window.SeLock.isLocked(el)) return;    // nor a locked one
     const vw = window.innerWidth, vh = window.innerHeight, c = compactLayout(), f = zoomOf().f;
     const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => ({ r: x.getBoundingClientRect(), hold: x.classList.contains("is-holder") }));
-    const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(({ r: b, hold }) => {
+    const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = Math.max(c.w, c.h) * f; return blocks.every(({ r: b, hold }) => {
       if (hold) { const k = b.width * 0.03; if (x >= b.left + k && y >= b.top + k && x + m <= b.right - k && y + m <= b.bottom - k) return true; }   // wholly inside a holder: held, not in the way
       return x + m + 3 <= b.left || b.right + 3 <= x || y + m + 3 <= b.top || b.bottom + 3 <= y; }); };
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
-      const B = room();
+      const B = room(c.w, c.h);
       if (x < B.x0 || y < B.y0 || x > B.x1 || y > B.y1 || !free(x, y)) continue;
       glideTo(x / vw, y / vh); return;
     }
@@ -428,7 +428,7 @@
     // moved with a holder it sits in (super/nodes.js): by a screen offset, compact only
     remove: () => goAway(),                                            // super/delete.js: deleted after a confirmation
     // Shift + drag (super/shiftsize.js): its compact width and height, in layout px
-    resize: (w, h) => { state.w = Math.round(Math.max(16, w)); state.h = Math.round(Math.max(16, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
+    resize: (w, h) => { state.w = Math.round(Math.max(10, w)); state.h = Math.round(Math.max(10, h)); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); },
     moveBy: (dx, dy) => {
       if (!el || el.classList.contains("is-open")) return;
       if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(), [lx, ly] = toLayout(r.left, r.top); state.x = lx / window.innerWidth; state.y = ly / window.innerHeight; }

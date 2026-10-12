@@ -654,3 +654,10 @@ html.shape-se .se-chain { display: none !important; }
 html.shape-se .se-save { left: calc(50% + 19px); }
 html.shape-se .lv-node:not(.is-holder) > .se-save { left: calc(50% + 13px); }
 html.shape-se .orbit-title .se-titlesuper > .se-save { left: calc(50% + 11px); }
+
+/* at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"; super/bind.js se-sparkle):
+   what it shows hides, and without the engine its box is cut to the port sparkle's four points */
+html.shape-se .se-sparkle > :not(.se-port) { visibility: hidden !important; }
+html.shape-se:not(.se-gl) .se-sparkle { clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%); }
+
+/* a Display and a prompt start empty: no placeholder words (owner, 2026-10-12) */

@@ -372,7 +372,10 @@ function drawPanes() {
       const edge = sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink;
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
-      setPane(key, cx, cy, a, b, nOf(el),
+      // at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"): under about 30 px its
+      // shape glides to the port sparkles' astroid
+      const side = Math.min(r.width, r.height), sp = Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
+      setPane(key, cx, cy, a, b, sp > 0 ? nn + (0.62 - nn) * sp * sp * (3 - 2 * sp) : nn,
         { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || 1.5), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * depthOf(el) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
     });

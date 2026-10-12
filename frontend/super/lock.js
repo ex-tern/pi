@@ -29,7 +29,7 @@
   // the main super starts locked (owner, 2026-10-12: "main super should be locked as default"); unlocked, it says so ("0")
   // every super of the start begins locked (owner, 2026-10-12: "all supers in initial state should have active lock and
   // save on"): the main and second supers, the title, the bubbles, the third super and the project; unlocked, "0" is kept
-  const START = { main: 1, site: 1, title: 1, project: 1, "node:hold": 1 };
+  const START = { main: 1, title: 1, project: 1, "node:hold": 1 };   // the second super starts unlocked (owner, 2026-10-12: "default set second super loop is unlocked")
   const atStart = name => !!START[name] || /^bubble:/.test(name);
   const LOCKED_AT_START = new Proxy({}, { get: (_, name) => atStart(String(name)) });
   const load = name => { try { const v = localStorage.getItem("se:lock:" + name); return v == null ? atStart(name) : v === "1"; } catch (_) { return atStart(name); } };

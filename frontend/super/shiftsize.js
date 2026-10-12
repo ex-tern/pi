@@ -52,7 +52,7 @@
     const sb = O().siteBox ? O().siteBox() : null, sf = sb && sb.a ? (sb.fit || 1) : 1;
     const capW = sb && sb.a ? 2 * sb.a * sf / drag.f : Infinity, capH = sb && sb.b ? 2 * sb.b * sf / drag.f : Infinity;
     drag.full = drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f >= capW - 1 && drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f >= capH - 1;
-    const w = Math.min(capW, Math.max(16, drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f)), h = Math.min(capH, Math.max(16, drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f)), el = drag.el;
+    const w = Math.min(capW, Math.max(10, drag.w0 + drag.sx * (e.clientX - drag.x0) / drag.f)), h = Math.min(capH, Math.max(10, drag.h0 + drag.sy * (e.clientY - drag.y0) / drag.f)), el = drag.el;
     if (el.classList.contains("lv-node")) {
       const n0 = drag.node0;
       // the far edge stays put, and the super stays within the inner super (as big as it, it fills it)

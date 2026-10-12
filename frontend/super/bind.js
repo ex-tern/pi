@@ -155,5 +155,16 @@
   setInterval(enforce, 500);
   // bound to a holder: then it is never dropped out of the site either (orbit.js, nodes.js, project.js treat it as saved)
   const isBound = el => !!el && [...document.querySelectorAll(".lv-node.is-holder")].some(h => members(h).includes(el));
+  // at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"): under 22 px it is marked
+  // se-sparkle, its icons and words hide, and without the engine it is cut to the sparkle's shape (super.css)
+  function sparkles() {
+    if (!on()) return;
+    document.querySelectorAll(".lv-node, .orbit-bubble.is-group, .se-project, .orbit-panel").forEach(el => {
+      if (!el.getClientRects().length) return;
+      const r = el.getBoundingClientRect(); el.classList.toggle("se-sparkle", Math.min(r.width, r.height) < 22);
+    });
+  }
+  document.addEventListener("se:frame", () => requestAnimationFrame(sparkles));
+  setInterval(sparkles, 400);
   window.SeBind = { members, need, enforce, isBound };
 })();

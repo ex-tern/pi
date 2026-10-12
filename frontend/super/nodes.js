@@ -324,7 +324,7 @@
           n.prompt = verb ? "" : (typed ? (wired.length ? typed + " (wired in: " + wired.join("; ") + ")" : typed) : wired.join(" ")).trim();
           if (!typed && VERBS[n.prompt.toLowerCase()]) n.prompt = "";       // a verb wired in (the "run" super) is an instruction, not a question
           const t = n.answer || "";
-          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || (n.id === "site-box" ? "run" : "prompt"));   // the central super says run; a new Super AI super says prompt (owner, 2026-10-12)
+          const idle = n.held ? "held" : n.paused ? "paused" : (n.hint || (n.id === "site-box" ? "run" : ""));   // the central super says run; a new prompt says nothing until typed into (owner, 2026-10-12: "dont write prompt place holder")
           r = { num: t.length, bool: !n.held, str: t || typed || idle, text: t || (n.st.go ? "thinking…" : typed ? typed : n.prompt ? "thinking…" : idle) };
           // a Super AI super: the prompt is typed straight into it and the answer shows in it, wrapped (fitText)
           r.text = n.st.go ? "thinking…" : t || typed || idle;          // every engine super, the central one too
@@ -664,7 +664,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined, auto: n.auto || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -719,7 +719,9 @@
     };
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
     n.grp = !!spec.grp; if (n.grp) el.classList.add("lv-group");   // a group super round wired supers (regroup)
-    n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;   // the window it was dropped on (its layer)
+    n.auto = !!spec.auto;                                              // made by a double click: a prompt or a Display by its wiring (autoKinds)
+    n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;
+    if (n.hint && !n.role) el.dataset.hint = n.hint;                  // a Display shows "display" until something is wired in (super.css)   // the window it was dropped on (its layer)
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -782,14 +784,18 @@
     clearTimeout(n.st.pt); n.st.pt = setTimeout(persist, 300);
   }
   // a click on bare page (no window open) makes a node there, in a random super shape
-  function spawnAt(x, y, ai) {
-    const nn = +Math.PI.toFixed(3), id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);   // a click makes a super: a ■ at n = π, like everything else
+  function spawnAt(x, y, ai, kind) {
+    const id = "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5);
     const L = toLayout(x, y);
-    // ai: a Super AI super, the same as the central one (role "engine"), asking every engine, the lab's and outside
-    const m = make({ id, fn: fnOfN(nn), role: ai ? "engine" : undefined, fx: (L.x - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerWidth, fy: (L.y - (ai ? ENGINE_BASE : DOT_BASE) / 2) / window.innerHeight, inputs: [], n: nn });
+    // two kinds by the mouse (owner, 2026-10-12: "double left click makes display complete square, double right click
+    // makes a prompt sparkle supers"): a Display, a complete square (n = 24) that shows what is wired into it; a
+    // prompt, a Super AI super (role "engine", asking every engine) drawn as a sparkle (n = 0.62); both keep their shape
+    const display = kind === "display", nn = display ? 24 : kind === "prompt" ? 0.62 : +Math.PI.toFixed(3);
+    if (display) ai = false;
+    const m = make({ id, fn: kind ? "box" : fnOfN(nn), role: ai ? "engine" : undefined, manual: !!kind, auto: !!kind, size: ENGINE_BASE, fx: (L.x - ENGINE_BASE / 2) / window.innerWidth, fy: (L.y - ENGINE_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
     persist(); tick();
-    say(ai ? "Super AI made: type a question and press Enter, and every engine answers; press it to see each answer"
+    say(display ? "Display made: wire something into it and it shows it" : ai ? "Prompt made: type a question and press Enter, and every engine answers"
            : BY[m.fn].name + " made: a super with four ports; hold shift + scroll to change its shape, type into it, wire it");
     if (ai && window.SeSelect && window.SeSelect.select) window.SeSelect.select(m.el);
     setTimeout(() => m.el.focus({ preventScroll: true }), 60);
@@ -950,6 +956,32 @@
     window.LabView.moveNodes([g.id, ...members.map(m => m.id)], dx, dy);
     say("Grouped " + members.length + " wired supers inside " + (P.node ? (P.node.str || BY[P.node.fn].name) : ((P.el.querySelector(":scope > .ob-label, .op-title") || {}).textContent || "the super")).trim());
   }
+  // a super made by a double click is a prompt (a Super AI super, a sparkle) unless a prompt's output is wired into
+  // it: then it is a Display (a complete square showing what comes in); cut that wire and an empty Display is a prompt again
+  function autoKinds() {
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
+    const idOf = h => { const m = h && (/^port:node:([^/]+)\/(\w+)$/.exec(h) || /^node:(.+)$/.exec(h)); return m ? { id: m[1], port: m[2] || "body" } : null; };
+    const fed = new Set();                                               // supers a prompt's output flows into
+    L.forEach(l => {
+      const a = idOf(l.a && l.a.h), b = idOf(l.b && l.b.h); if (!a || !b || a.id === b.id) return;
+      const A = nodes.find(x => x.id === a.id), B = nodes.find(x => x.id === b.id); if (!A || !B) return;
+      const prompt = x => x.role === "engine" && x.id !== "site-box";
+      if (a.port === "output" && (b.port === "input" || b.port === "body") && prompt(A)) fed.add(B.id);
+      else if (b.port === "output" && (a.port === "input" || a.port === "body") && prompt(B)) fed.add(A.id);
+    });
+    nodes.forEach(n => n.inputs.forEach(r => { const A = r.node && nodes.find(x => x.id === r.node); if (A && A.role === "engine" && A.id !== "site-box") fed.add(n.id); }));
+    let changed = false;
+    nodes.forEach(n => {
+      if (!n.auto || n.id === "site-box" || isHolder(n)) return;
+      if (fed.has(n.id) && n.role === "engine") {                        // a prompt fed by a prompt: a Display
+        n.role = null; n.answer = ""; n.prompt = ""; n.n = 24; shape(n); changed = true; say("Display: it shows what the prompt wired into it says");
+      } else if (!fed.has(n.id) && !n.role && !(n.str || "").trim() && n.n >= 20) {   // a Display cut off, empty: a prompt again
+        n.role = "engine"; n.n = 0.62; shape(n); changed = true;
+      }
+    });
+    if (changed) { persist(); tick(); }
+  }
+  document.addEventListener("superlink:change", () => setTimeout(autoKinds, 60));
   let groupSig = null;
   function regroup(force) {
     if (!html.classList.contains("shape-se") || !nodes.length) return;
@@ -1277,7 +1309,7 @@
       if (e.target.closest && e.target.closest("input")) return;
       if (isHolder(n)) {                                                  // a holder: inside, a new super; on its label strip at the top, removed
         const r = n.el.getBoundingClientRect();
-        if (e.clientY - r.top > Math.max(34, r.height * 0.16)) { e.preventDefault(); e.stopPropagation(); const m = spawnAt(e.clientX, e.clientY, !e.shiftKey); if (m) say("A super made inside " + (n.str || "the super")); return; }
+        if (false && e.clientY - r.top > Math.max(34, r.height * 0.16)) { e.preventDefault(); e.stopPropagation(); const m = spawnAt(e.clientX, e.clientY, false, "display"); if (m) say("A super made inside " + (n.str || "the super")); return; }   // switched off (owner, 2026-10-12)
       }
       e.preventDefault(); e.stopPropagation(); remove(n); say(BY[n.fn].name + " deleted");
     });
@@ -1393,7 +1425,7 @@
     [n, ...crew].forEach(m => m.el.classList.add("lv-closing"));
     setTimeout(() => { crew.forEach(remove); remove(n); say((BY[n.fn].name) + " closed: it got too small" + (crew.length ? ", with what it held" : "")); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
   }
-  const MIN_SIDE = 16;                                               // any size if unlocked (owner, 2026-10-12): the smallest a super gets before it asks to go
+  const MIN_SIDE = 10;                                               // a sparkle's size (owner, 2026-10-12: "minimum size can be a sparkle")                                               // any size if unlocked (owner, 2026-10-12): the smallest a super gets before it asks to go
   function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     const sbx = O().siteBox ? O().siteBox() : null;                 // as big as the inner super lets (then it fills it: super/maximize.js)
@@ -1681,28 +1713,34 @@
     setInterval(layers, 400);
     let down = null; const held = new Set();
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
-    document.addEventListener("dblclick", e => {
-      if (!html.classList.contains("shape-se") || e.button) return;
-      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
-      // a double click on bare space makes a prompt Super AI super, windows open or not (owner, 2026-10-12); a press on a
-      // holder's bare space is captured by the holder (its drag), so the press's own target says where it was
-      const t = (e.target.classList && e.target.classList.contains("is-holder") && down[2] && down[2].closest && !down[2].closest(".lv-node")) ? down[2] : e.target;
+    // a double click on bare space makes a super there (owner, 2026-10-12): a double left click a Display (a complete
+    // square), a double right click a prompt (a sparkle); windows open or not. A press on a holder's bare space is
+    // captured by the holder (its drag), so the press's own target says where it was
+    function makeHere(e, kind) {
+      const t = (e.target.classList && e.target.classList.contains("is-holder") && down && down[2] && down[2].closest && !down[2].closest(".lv-node")) ? down[2] : e.target;
       // inside a bubble, on a window's blank margin or on the compact project super it makes one there too (every
       // super holds supers, super/hold.js); never on a pill, a word, a control or a window's content
       const inHost = t.closest && (t.closest(".orbit-bubble.is-group") || (t.classList.contains("orbit-panel") ? t : null) || t.closest(".se-project:not(.is-open)"));
       if (inHost && !t.closest(".ob-member, .ob-chat, .ob-label, .se-port, .se-lock, input, button, a, select, textarea, .wire-hit")) {
         e.preventDefault(); e.stopPropagation();
-        // wholly inside the host, so it is held by it: its centre kept clear of the host's edge by half a super
-        const hr = inHost.getBoundingClientRect(), half = (e.shiftKey ? DOT_BASE : ENGINE_BASE) / 2 + 6, k = Math.min(hr.width, hr.height) * 0.03 + half;
+        const hr = inHost.getBoundingClientRect(), half = ENGINE_BASE / 2 + 6, k = Math.min(hr.width, hr.height) * 0.03 + half;
         const cx = Math.max(hr.left + k, Math.min(hr.right - k, e.clientX)), cy = Math.max(hr.top + k, Math.min(hr.bottom - k, e.clientY));
-        const m = spawnAt(cx, cy, !e.shiftKey);
+        const m = spawnAt(cx, cy, kind === "prompt", kind);
         if (m) { held.add(m.id); say("A super made inside " + ((inHost.querySelector(":scope > .ob-label") || {}).textContent || "the super").trim()); }
-        return;
+        return true;
       }
-      if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return;
-      if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return;
-      if (window.PiOrbit && window.PiOrbit.inLoop && !window.PiOrbit.inLoop(e.clientX, e.clientY)) return;   // outside the super: nothing
-      spawnAt(e.clientX, e.clientY, !e.shiftKey);
+      if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return false;
+      if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return false;
+      if (window.PiOrbit && window.PiOrbit.inLoop && !window.PiOrbit.inLoop(e.clientX, e.clientY)) return false;   // outside the super: nothing
+      spawnAt(e.clientX, e.clientY, kind === "prompt", kind); return true;
+    }
+    // a double click on bare space makes a prompt (owner, 2026-10-12: "just double clicking creates either display or a
+    // prompt, depending on the connecting input to output. If input is a prompt, the output will show a display"): what
+    // it becomes follows its wiring (autoKinds); a double right click does nothing special any more
+    document.addEventListener("dblclick", e => {
+      if (!html.classList.contains("shape-se") || e.button) return;
+      if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
+      makeHere(e, "prompt");
     });
 
     setTimeout(() => { if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); }, 300);   // the pills make room for it
@@ -1796,11 +1834,11 @@
                        close: el => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; closeNode(n); return true; },
                        // super/maximize.js: a super's whole box in layout px (it fills the inner super, and back)
                        rectOf: el => { const n = nodes.find(x => x.el === el); return n ? { x: n.fx * window.innerWidth, y: n.fy * window.innerHeight, w: n.size || DOT_BASE, h: (n.size || DOT_BASE) * (n.aspect || 1), aspect: n.aspect || 0 } : null; },
-                       setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(16, w); h = Math.max(16, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },
+                       setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(10, w); h = Math.max(10, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },
                        // super/hold.js: supers held by another super move with it, by a screen offset
                        moveNodes: (ids, dx, dy) => { const a = toLayout(0, 0), b = toLayout(dx, dy), fx = (b.x - a.x) / window.innerWidth, fy = (b.y - a.y) / window.innerHeight; nodes.forEach(n => { if (ids.includes(n.id)) { n.fx += fx; n.fy += fy; place(n); } }); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); },
                        // Shift + drag (super/shiftsize.js): its width and height, in layout px; a rectangle keeps its aspect
-                       resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(16, Math.round(w)); h = Math.max(16, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
+                       resize: (el, w, h) => { const n = nodes.find(x => x.el === el); if (!n) return false; w = Math.max(10, Math.round(w)); h = Math.max(10, Math.round(h)); n.aspect = Math.abs(h / w - 1) < 0.02 ? 0 : h / w; sizeDot(n, w); clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick(); drawWires(); return true; },
                        loopAt: (x, y) => { const n = nodes.find(m => { if (m.role !== "loop") return false; const r = m.el.getBoundingClientRect(); return Math.abs(Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2)) - r.width / 2) < 14; }); return n ? n.el : null; } };
     document.addEventListener("dblclick", e => {
       const n = nodes.find(x => { if (x.role !== "loop") return false; const r = x.el.getBoundingClientRect(), d = Math.hypot(e.clientX - (r.left + r.width / 2), e.clientY - (r.top + r.height / 2)); const k = d - r.width / 2; return k >= -10 && k <= 4; });
