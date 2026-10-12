@@ -24,9 +24,24 @@
     : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim()
     : el.classList.contains("orbit-panel") ? ((el.querySelector(".op-title") || {}).textContent || "the window").trim()
     : "the project";
-  function remove(el) {
-    if (el.classList.contains("lv-node")) { if (window.LabView && window.LabView.close) window.LabView.close(el); }
-    else if (el.classList.contains("orbit-bubble")) { el.classList.add("se-closing"); setTimeout(() => { el.classList.remove("se-closing"); if (O().gone) O().gone(el.dataset.key); }, 700); }
+  // every super closes the same way (owner, 2026-10-12: "closing a super should animate like n goes to zero and
+  // vanishes", "makes them uniform"): its n glides to 0.3 (a star), it shrinks into its centre and fades, then it goes
+  function vanish(el, done) {
+    if (el._vanishing) return; el._vanishing = true;
+    const t0 = performance.now(), T = 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1), n0 = Math.PI, n1 = 0.3;
+    el.style.pointerEvents = "none"; el.style.transformOrigin = "50% 50%";
+    const step = now => {
+      const t = Math.min(1, (now - t0) / T), e = t * t * (3 - 2 * t), k = Math.log2(n0 + (n1 - n0) * e).toFixed(4);
+      el.style.setProperty("--lv-k", k); el.style.setProperty("--se-k-window", k); el.style.setProperty("--se-k", k);
+      el.style.scale = String(1 - 0.92 * e); el.style.opacity = String(1 - e);
+      if (t < 1) requestAnimationFrame(step); else done();
+    };
+    requestAnimationFrame(step);
+  }
+  function remove(el) { vanish(el, () => removeNow(el)); }
+  function removeNow(el) {
+    if (el.classList.contains("lv-node")) { if (window.LabView && window.LabView.close) window.LabView.close(el, true); }
+    else if (el.classList.contains("orbit-bubble")) { if (O().gone) O().gone(el.dataset.key); }   // it has vanished already
     else if (el.classList.contains("orbit-panel")) { const k = O().keyOf ? O().keyOf(el) : null; if (k && O().close) O().close(k); }
     else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.remove) window.SeProject.remove(); }
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Deleted " + nameOf(el);
