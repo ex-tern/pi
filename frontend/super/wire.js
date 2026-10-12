@@ -335,7 +335,24 @@
     // a wire passes behind the supers it does not join (owner, 2026-10-12: "fix the graphics"): each wire is clipped
     // out of every super except those its ends are in (a holder is see-through: wires inside it show)
     const covers = se() ? [...document.querySelectorAll(".orbit-bubble.is-group:not([hidden]), .orbit-panel, .se-project, .lv-node:not(.is-holder)")]
-      .filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect()).filter(r => r.width > 8 && r.height > 8) : [];
+      .filter(e => e.getClientRects().length).map(e => { const r = e.getBoundingClientRect(); r.el = e; r.win = e.classList.contains("orbit-panel"); return r; }).filter(r => r.width > 8 && r.height > 8) : [];
+    // the super a wire end belongs to (a port's owner, a word's host): a window covers every wire but its own, even
+    // one whose end lies under it (a bubble the window opened over): windows are opaque paper
+    const ownerOf = an => {
+      if (!an || an.loop || !an.h) return null;
+      if (an.h.startsWith("port:")) {
+        const pe = hostEl(an.h), o = pe && pe.dataset.owner;
+        if (!o) return null;
+        if (o.startsWith("win:")) return O().elOf ? O().elOf(o.slice(4)) : null;
+        if (o.startsWith("bubble:")) return [...document.querySelectorAll(".orbit-bubble[data-key]")].find(b => b.dataset.key === o.slice(7)) || null;
+        if (o.startsWith("node:")) return document.querySelector('.lv-node[data-id="' + CSS.escape(o.slice(5)) + '"]');
+        if (o.startsWith("pill:")) return [...document.querySelectorAll(".ob-member[data-key]")].find(m => m.dataset.key === o.slice(5)) || null;
+        if (o.startsWith("name:")) { const b = [...document.querySelectorAll(".orbit-bubble[data-key]")].find(b => b.dataset.key === o.slice(5)); return b ? b.querySelector(".ob-label") : null; }
+        if (o === "project") return document.querySelector(".se-project");
+        return null;
+      }
+      return hostEl(an.h);
+    };
     const rr = (r, k) => { const x = r.left + 3, y = r.top + 3, w = r.width - 6, h = r.height - 6, c = Math.min(w, h) * k; return "M" + (x + c) + "," + y + "H" + (x + w - c) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + c) + "V" + (y + h - c) + "Q" + (x + w) + "," + (y + h) + " " + (x + w - c) + "," + (y + h) + "H" + (x + c) + "Q" + x + "," + (y + h) + " " + x + "," + (y + h - c) + "V" + (y + c) + "Q" + x + "," + y + " " + (x + c) + "," + y + "Z"; };
     const inR = (r, pt) => pt && pt[0] >= r.left - 4 && pt[0] <= r.right + 4 && pt[1] >= r.top - 4 && pt[1] <= r.bottom + 4;
     let piD = "", piRun = 0;
@@ -348,7 +365,9 @@
       const d = curve(p2, q, l.a, l.b);
       // the π line runs along the title's wire (owner, 2026-10-12: "move this inside this wire"), left to right
       if (se() && isTitleSync(l)) { piD = p2[0] <= q[0] ? d : curve(q, p2, l.b, l.a); piRun = Math.abs(q[0] - p2[0]) - 40; }   // its straight stretch, before the bend
-      const cut = covers.filter(r => !inR(r, p2) && !inR(r, q));
+      const oa = ownerOf(l.a), ob = ownerOf(l.b);
+      const own = (r, o) => !!(o && (r.el === o || r.el.contains(o)));
+      const cut = covers.filter(r => r.win ? !(own(r, oa) || own(r, ob)) : !inR(r, p2) && !inR(r, q));
       let clip = "";
       if (cut.length) { defs += '<clipPath id="slc' + i + '"><path clip-rule="evenodd" d="M-9999,-9999H99999V99999H-9999Z' + cut.map(r => rr(r, 0.3)).join("") + '"/></clipPath>'; clip = ' clip-path="url(#slc' + i + ')"'; }
       const isPort = an => an && an.h && an.h.startsWith("port:");

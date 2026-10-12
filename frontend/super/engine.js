@@ -384,7 +384,7 @@ function drawPanes() {
       const side = Math.min(r.width, r.height), sp = Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
       setPane(key, cx, cy, a, b, sp > 0 ? nn + (0.62 - nn) * sp * sp * (3 - 2 * sp) : nn,
         { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || (K.inner ? 1.2 : 1.5)), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * (K.inner ? depthOf(el.closest(".orbit-bubble")) + 1 : depthOf(el)) + (K.inner ? 1 : 0) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
-      if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, h: heightOf(el, K.order), i: all.length });
+      if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, inner: !!K.inner, h: heightOf(el, K.order), i: all.length });
     });
   }
   // how high each super lies: its rank from the bottom (the page's stacking: z-index, then kind, then page order),
@@ -398,7 +398,7 @@ function drawPanes() {
     {                                                                   // every super reflects its neighbours, a holder too
       const near = [];
       for (const q of all) {
-        if (q === p) continue;
+        if (q === p || q.inner) continue;                           // what is inside a bubble (its pills) is seen in the bubble, not mirrored in every rim
         const gx = Math.max(0, Math.abs(q.cx - p.cx) - q.a - p.a), gy = Math.max(0, Math.abs(q.cy - p.cy) - q.b - p.b), gap = Math.hypot(gx, gy);
         const nested = Math.abs(q.cx - p.cx) + q.a <= p.a && Math.abs(q.cy - p.cy) + q.b <= p.b;   // inside it: seen through the glass, not in it
         if (gap < REACH && !nested) near.push({ q, gap });
@@ -515,7 +515,7 @@ function drawSparks() {
     const p = d.closest(".se-port");
     if (p && (getComputedStyle(p).opacity < 0.05 || p.style.display === "none")) return;
     const r = d.getBoundingClientRect(); if (!r.width) return;
-    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(9, r.width) + 1, tokens.ink);
+    add(r.left + r.width / 2, r.top + r.height / 2, Math.max(4, r.width) + 1, tokens.ink);   // a small super's sparkles are small (site.js --port-s)
   });
   document.querySelectorAll(".sl-layer .wire-term, .lv-wires .wire-term, .orbit-wires .wire-term").forEach(t => {
     const r = t.getBoundingClientRect(); if (!r.width) return;

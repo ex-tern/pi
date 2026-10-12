@@ -111,7 +111,7 @@
         if (bb.hidden || !bb.getClientRects().length) return;
         const r = bb.getBoundingClientRect(); if (!r.width) return;
         const owner = "bubble:" + bb.dataset.key; seen.add(owner);
-        const set = ensurePorts(owner, (bb.querySelector(".ob-name, .ob-title, b") || bb).textContent.trim().slice(0, 40) || "the bubble");
+        const set = ensurePorts(owner, (bb.dataset.key || "").split(":").pop().replace(/ group$/, "").trim() || "the bubble");   // "Connect", not the bubble's whole text
         placeAt(set, r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
       });
       // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
@@ -168,7 +168,10 @@
   }
   function placeAt(set, cx, cy, a, b) {
     const pts = { input: [cx - a, cy], output: [cx + a, cy], sync: [cx, cy - b], condition: [cx, cy + b] };
-    PORTS.forEach(([p]) => { const [x, y] = pts[p], el = set[p]; const l = x + "px", t = y + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; });
+    // a small super on screen (a pill in a bubble open at the zoomed-out start) has small sparkles: under 60 px they
+    // shrink with it (down to 0.35), so a column of pills is not a tangle of full-size stars
+    const sc = Math.min(1, Math.max(0.35, Math.min(2 * a, 2 * b) / 60)).toFixed(2);
+    PORTS.forEach(([p]) => { const [x, y] = pts[p], el = set[p]; const l = x + "px", t = y + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; if (el.style.getPropertyValue("--port-s") !== sc) el.style.setProperty("--port-s", sc); });
   }
   const bubbleEl = key => [...document.querySelectorAll('.orbit-bubble[data-key]')].find(b => b.dataset.key === key) || null;
   const ownerEl = owner => owner === "project" ? document.querySelector(".se-project") : owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)

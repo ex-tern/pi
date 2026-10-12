@@ -32,8 +32,9 @@ html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shap
   border-color: color-mix(in srgb, var(--ink) 92%, transparent);        /* dark edges and shadows on paper (owner, 2026-10-12) */
   box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 14px 30px -12px rgba(25, 25, 25, 0.45);
 }
-/* windows read their content: a little more paper behind the type */
-html.shape-se .orbit-panel { background: linear-gradient(180deg, rgba(255, 255, 255, 0.78), rgba(255, 255, 255, 0.66)); }
+/* windows are opaque paper, as the engine draws them (owner, 2026-10-13: uniform throughout): what is under a window
+   never shows through its content */
+html.shape-se .orbit-panel { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
 /* the boxes inside a compact super's drawing are glass too */
 html.shape-se .ob-mini .obm-box { fill: rgba(255, 255, 255, 0.55); }
 

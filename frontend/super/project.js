@@ -91,6 +91,8 @@
     // the program is always drawn: small, it is the miniature of itself; zoomed in, it can be read and used
     const show = Math.max(0, Math.min(1, (t - 0.25) / 0.35));
     el.style.setProperty("--pj-show", show.toFixed(3));
+    // compact, it is drawn at the page's zoom like a compact bubble, so its sign, lock and save shrink with it (super.css --pj-z)
+    el.style.setProperty("--pj-z", (k < 0.5 ? zoomOf().f + (1 - zoomOf().f) * k * 2 : 1).toFixed(3));
     el.style.setProperty("--pj-map", Math.max(0, Math.min(1, (t - 0.04) / 0.22)).toFixed(3));   // the map comes in as the bubble drawing goes
     // opening, its corners square up a little (n from π to 8), so the map and the program are never cut by them
     const sq = Math.max(0, Math.min(1, (t - 0.4) / 0.5)), sqk = sq * sq * (3 - 2 * sq);

@@ -1,6 +1,6 @@
 /* The project in SuperAI (super/project.js): one super that opens, by zooming, into the whole project as a diagram. */
 .se-project {
-  position: fixed; z-index: 957; box-sizing: border-box;
+  position: fixed; z-index: 12; box-sizing: border-box;      /* compact, it lies with the bubbles, under windows (a window opened over it covers it) */
   background: var(--surface, #fff); color: var(--ink, #191919);
   border: 1.5px solid var(--ink, #191919);
   border-radius: 50%;

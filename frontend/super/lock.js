@@ -39,12 +39,14 @@
   void LOCKED_AT_START;
   const isLocked = el => !!(el && el.classList && el.classList.contains("is-locked"));
 
+  const SHACKLE = { closed: "M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5", open: "M8.5,5.5 V4 a2.5,2.5 0 0 0 -5,0 V1.4" };   // open: the left leg lifted clear of the body
+  const shackle = (b, locked) => { const p = b && b.querySelector(".lk-shackle"); if (p) p.setAttribute("d", locked ? SHACKLE.closed : SHACKLE.open); };
   function set(el, locked) {
     const name = nameOf(el); if (!name) return;
     el.classList.toggle("is-locked", !!locked);
     save(name, !!locked);
     const b = el.querySelector(":scope > .se-lock:not(.se-chain):not(.se-save)");
-    if (b) { b.setAttribute("aria-pressed", String(!!locked)); b.setAttribute("aria-label", locked ? "Locked: what is inside stays inside, and it goes into no other super. Scroll out on it to unlock" : "Unlocked. Scroll in on it to lock"); }
+    if (b) { shackle(b, !!locked); b.setAttribute("aria-pressed", String(!!locked)); b.setAttribute("aria-label", locked ? "Locked: what is inside stays inside, and it goes into no other super. Scroll out on it to unlock" : "Unlocked. Scroll in on it to lock"); }
     const out = document.querySelector(".lv-out"); if (out) out.textContent = (locked ? "Locked " : "Unlocked ") + name.replace(/^(node|bubble|win):/, "");
     document.dispatchEvent(new CustomEvent("se:lock", { detail: { el, locked: !!locked } }));
   }
@@ -54,7 +56,8 @@
     const name = nameOf(el); if (!name) return;
     const b = document.createElement(el.tagName === "BUTTON" ? "span" : "button");   // inside a pill (a button) a span that acts as one
     if (b.tagName === "SPAN") { b.setAttribute("role", "button"); b.tabIndex = 0; } else b.type = "button"; b.className = "se-lock"; b.setAttribute("aria-pressed", "false");
-    b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path class="lk-shackle" d="M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/></svg>';
+    // the padlock: closed when locked, its shackle swung open when unlocked (owner, 2026-10-13: "opened lock icon when opened")
+    b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path class="lk-shackle" d="' + SHACKLE.closed + '"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/></svg>';
     // nothing is clickable, only zoomable (owner, 2026-10-12): a scroll in on the lock locks the super, a scroll out
     // unlocks it; a press on it does nothing (the keyboard still toggles it: Enter or Space)
     // a click toggles it too (owner, 2026-10-12: "lock doesnt work": a press on the lock is what everyone tries first)
@@ -64,6 +67,7 @@
 
     el.appendChild(b);
     if (load(name)) { el.classList.add("is-locked"); b.setAttribute("aria-pressed", "true"); }
+    shackle(b, load(name));
     b.setAttribute("aria-label", isLocked(el) ? "Locked: what is inside stays inside, and it goes into no other super. Scroll out on it to unlock" : "Unlocked. Scroll in on it to lock");
   }
   // the scroll on a lock is taken before anything else (the page's zoom, a super's size): on the window, captured
@@ -71,6 +75,7 @@
   window.addEventListener("wheel", e => {
     const b = e.target && e.target.closest && e.target.closest(".se-lock:not(.se-chain):not(.se-save)");
     if (!b || e.shiftKey || !on()) return;
+    if (window.SeScroll && window.SeScroll.gesturing(e.timeStamp)) return;   // a scroll gesture already sizing something goes on (super/scroll.js)
     const pr = b.parentElement.getBoundingClientRect();
     if (pr.width < 70 || pr.height < 70) return;                     // a small super: a scroll sizes it (the lock is clicked instead)
     e.preventDefault(); e.stopImmediatePropagation();

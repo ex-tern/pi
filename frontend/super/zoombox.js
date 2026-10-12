@@ -49,7 +49,11 @@
       }
       z.w = Math.round(w); z.fitK = Math.min(1, bh / (content.offsetHeight || 1), bw / z.w);
       const rk = readK(content);
-      if (z.fitK < rk) { grow(rk); z.fitK = rk; }                     // too small to read whole: the window grows (then this fits again); meanwhile the content stays readable and moves by dragging
+      if (z.fitK < rk) {                                              // too small to read whole: the window grows (then this fits again); meanwhile the content stays readable and moves by dragging
+        grow(rk); z.fitK = rk;
+        // laid out at the width the readable scale fills, so it overflows only downward (the top left, its title, in view), never sideways
+        z.w = Math.max(120, Math.round(bw / rk)); content.style.width = z.w + "px";
+      }
       if (!keep || !z.user || z.k < z.fitK) { z.k = z.fitK; z.tx = 0; z.ty = 0; z.user = false; }
       apply();
       fitHeight();

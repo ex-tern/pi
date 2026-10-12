@@ -37,7 +37,7 @@
   function drawing(name, members, cls, side) {
     const n = Math.max(1, members.length), gap = Math.min(4, 36 / n), bh = Math.min(8, (72 - (n - 1) * gap) / n), bw = 20, x1 = 68, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2 - 4;   // clear of the lock at the lower right
     // the name as large as its box lets (a compact bubble is drawn at --se-compact, 84 px or more: readable)
-    const px = (side || SIDE) / SIDE, label = name.trim().slice(0, 10), lx = 6, lw = 54, fs = Math.min(13 / px, lw * 0.92 / (0.62 * Math.max(4, label.length))), lh = fs + 8, ly = SIDE / 2 - lh / 2 - 4;   // about 13 px on screen, as large as its box lets
+    const px = (side || SIDE) / SIDE, label = name.trim().slice(0, 10), lx = 6, lw = 54, fs = Math.min(15 / px, lw * 0.92 / (0.62 * Math.max(4, label.length))), lh = fs + 8, ly = SIDE / 2 - lh / 2 - 4;   // about 15 px on screen (still readable when the layout makes the bubbles a little smaller), as large as its box lets
     let s = '<svg class="' + (cls || "ob-mini") + '" viewBox="0 0 ' + SIDE + ' ' + SIDE + '" aria-hidden="true">';
     members.forEach((m, i) => {
       const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2, yc = ly + lh / 2;

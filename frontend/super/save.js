@@ -46,6 +46,7 @@
   window.addEventListener("wheel", e => {
     const b = e.target && e.target.closest && e.target.closest(".se-save");
     if (!b || e.shiftKey || !on()) return;
+    if (window.SeScroll && window.SeScroll.gesturing(e.timeStamp)) return;   // a scroll gesture already sizing something goes on (super/scroll.js)
     e.preventDefault(); e.stopImmediatePropagation();
     const el = b.parentElement;
     acc += e.deltaY || e.deltaX; clearTimeout(accT); accT = setTimeout(() => { acc = 0; }, 400);

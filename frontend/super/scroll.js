@@ -143,6 +143,9 @@
   }
   // one gesture stays on what it started on, so a thing that grows under the pointer keeps being sized
   let gesture = null;
+  // a scroll gesture under way (started under 400 ms ago, on anything): the lock, save and chain icons leave such a
+  // wheel alone, so a bubble growing under the pointer is not locked by the icon that slid under it (super/lock.js)
+  window.SeScroll = { gesturing: now => !!(gesture && (now || performance.now()) - gesture.t < 400) };
   const pending = new Map();
   let frameAsked = false, settleT = 0;
   function queue(target, dy, direct, x, y, alt) {
@@ -186,7 +189,7 @@
         what._acc = (what._acc || 0) + dy; clearTimeout(what._accT); what._accT = setTimeout(() => { what._acc = 0; }, 500);
         if (what._acc < -60) { what._acc = 0;
           if (window.SeInner && window.SeInner.isCut(what.dataset.key)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "cut", "wire its name's output into it to open it"); }   // its wire was cut (super/inner.js)
-          else if (O().openKey) O().openKey(what.dataset.key); }
+          else if (O().openKey) { O().openKey(what.dataset.key); gesture = { what: "nothing", t: (gesture ? gesture.t : performance.now()) + 700, pinch: !!(gesture && gesture.pinch) }; } }   // the window is open: the rest of this gesture does not go on to zoom its content
       }
       else if (sizes(what) && locked(sizes(what))) lockedNote(sizes(what), x, y);   // locked: its size is kept; a locked bubble does not grow either (owner, 2026-10-12: "connect super is locked but it still grows, this is a bug")
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
