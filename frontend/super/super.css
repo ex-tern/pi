@@ -627,3 +627,17 @@ html.shape-se .is-chained > .se-chain { opacity: 1; }
 html.shape-se .is-chained > .se-chain .ch-link { stroke-width: 1.4; }
 html.shape-se .is-locked:not(.is-chained) > .se-chain { opacity: 0.35; }
 html.se-chain-dragging, html.se-chain-dragging * { user-select: none !important; cursor: grabbing !important; }
+
+/* data wires (input, output, or joining supers) are thicker and coloured by the type they carry; control wires (sync,
+   condition) stay fine graphite curves (owner, 2026-10-12: "input output wire thicker and color data type specific") */
+html.shape-se .sl-data { --wt: var(--ink); }
+html.shape-se .sl-data[data-type="int"] { --wt: #2a5aa8; }
+html.shape-se .sl-data[data-type="number"] { --wt: #c0661c; }
+html.shape-se .sl-data[data-type="text"] { --wt: #b2457d; }
+html.shape-se .sl-data[data-type="bool"] { --wt: #3d7c3a; }
+html.shape-se .sl-data[data-type="list"] { --wt: #6b4fa2; }
+html.shape-se .sl-data[data-type="ai"] { --wt: #1f7a7e; }
+html.shape-se .sl-data .wire-bed, html.shape-se .sl-wire.sl-data .wire-bed { stroke: var(--wt); stroke-width: 3.6; }
+html.shape-se .sl-data .wire-term { fill: var(--wt); }
+html.shape-se .sl-data[data-type="list"] .wire-bed { stroke-width: 5.4; }
+html.shape-se .om-site .om-lattice { stroke-width: 3.6; }

@@ -28,7 +28,12 @@
     try { localStorage.setItem(KEY, JSON.stringify(links)); } catch (_) { /* private mode */ }
     document.dispatchEvent(new CustomEvent("superlink:change"));      // the diagram (super/nodes.js) recomputes at once
   };
-  let links = load().filter(l => l && l.a && l.b);
+  // sync and condition are one kind of connector, input and output another (owner, 2026-10-12: "connectors sync and
+  // condition are same curvy wires and same thing and cannot connect to input/output"): a wire joins two of a kind,
+  // or a port and something that is not a port (a super's body, a word); never a sync or condition to an input or output
+  const kindOf = an => { const h = an && an.h; if (!h || !h.startsWith("port:")) return null; const m = /(?:^port:|\/)(sync|condition|input|output)$/.exec(h); return m ? (m[1] === "sync" || m[1] === "condition" ? "ctl" : "data") : null; };
+  const clash = (a, b) => { const ka = kindOf(a), kb = kindOf(b); return !!(ka && kb && ka !== kb); };
+  let links = load().filter(l => l && l.a && l.b && !clash(l.a, l.b));
   // at first, one wire: the title (the site's name) into the site's input port; the bubbles start unconnected
   let fresh = false;
   try { fresh = localStorage.getItem(KEY) === null; } catch (_) { /* private mode */ }
@@ -286,7 +291,23 @@
   const term = ([x, y]) => se() ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 4.5, 4.5) + '"/>' : '<rect class="wire-term" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
   // a port on a top or bottom edge (sync, condition) takes its wire vertically
   const vPort = an => { if (!an || !an.h || !an.h.startsWith("port:")) return false; const e = hostEl(an.h); return !!(e && (e.classList.contains("se-port-top") || e.classList.contains("se-port-bottom"))); };
+  // a wire at a sync or condition port: one smooth curve, leaving and arriving straight up or down (owner, 2026-10-12:
+  // "sync and condition are same curvy wires"): out of a super's top port upward, its bottom port downward; the site's
+  // and the main super's ports (the lattice) and ends that are not ports, toward the other end
+  const outDir = (an, me, other) => {
+    if (vPort(an) && /^port:(node|bubble|win|project)/.test(an.h)) { const e = hostEl(an.h); return e && e.classList.contains("se-port-top") ? -1 : 1; }
+    return (other[1] - me[1]) >= 0 ? 1 : -1;
+  };
+  function ctlCurve(p, q, a, b) {
+    const f = v => v.toFixed(1), da = outDir(a, p, q), db = outDir(b, q, p);
+    const dx = Math.abs(q[0] - p[0]), dy = Math.abs(q[1] - p[1]);
+    let c = Math.max(28, dy * 0.45 + dx * 0.2);
+    if (da * (q[1] - p[1]) < 0 || db * (p[1] - q[1]) < 0) c = Math.max(c, 70);   // leaving away from the other end: a wider loop
+    return "M" + f(p[0]) + "," + f(p[1]) + "C" + f(p[0]) + "," + f(p[1] + da * c) + " " + f(q[0]) + "," + f(q[1] + db * c) + " " + f(q[0]) + "," + f(q[1]);
+  }
   function curve(p, q, a, b) {
+    const titled = (a && a.h === "title") || (b && b.h === "title");   // the title's wire keeps its straight stretch for the π digits
+    if (!titled && (kindOf(a) === "ctl" || kindOf(b) === "ctl")) return ctlCurve(p, q, a, b);
     const hz = Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]);
     const into = hz && vPort(b) && !vPort(a) ? "v" : hz && vPort(a) && !vPort(b) ? "v0" : null;
     if (se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], hz, into);
@@ -320,12 +341,17 @@
       let clip = "";
       if (cut.length) { defs += '<clipPath id="slc' + i + '"><path clip-rule="evenodd" d="M-9999,-9999H99999V99999H-9999Z' + cut.map(r => rr(r, 0.3)).join("") + '"/></clipPath>'; clip = ' clip-path="url(#slc' + i + ')"'; }
       const isPort = an => an && an.h && an.h.startsWith("port:");
-      s += '<g class="wire sl-wire' + (i === selected ? " is-sel" : "") + '"' + clip + '><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + (isPort(l.a) ? "" : term(p2)) + (isPort(l.b) ? "" : term(q)) +
+      // a control wire (sync, condition) or a data wire (input, output, or one joining supers): data wires are thicker and
+      // coloured by the type of what they carry (super/nodes.js typeOfLink)
+      const ctl = kindOf(l.a) === "ctl" || kindOf(l.b) === "ctl";
+      const dataW = !ctl && [l.a, l.b].some(an => an && an.h && /^(node:|port:)/.test(an.h));
+      const ty = dataW && window.LabView && window.LabView.typeOfLink ? window.LabView.typeOfLink(l.a, l.b) : "none";
+      s += '<g class="wire sl-wire' + (ctl ? " sl-ctl" : dataW ? " sl-data" : "") + (i === selected ? " is-sel" : "") + '"' + (dataW ? ' data-type="' + ty + '"' : "") + clip + '><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + (isPort(l.a) ? "" : term(p2)) + (isPort(l.b) ? "" : term(q)) +
            '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': double-click to delete</title></path></g>';
     });
     if (drag) {
       if (drag.overRect) s += '<rect class="sl-hover" x="' + (drag.overRect.left - 2) + '" y="' + (drag.overRect.top - 1) + '" width="' + (drag.overRect.width + 4) + '" height="' + (drag.overRect.height + 2) + '" rx="3"/>';
-      s += '<path class="wire-temp" d="' + curve(drag.p, drag.q) + '"/>';
+      s += '<path class="wire-temp" d="' + (kindOf(drag.from) === "ctl" ? ctlCurve(drag.p, drag.q, drag.from, { h: "" }) : curve(drag.p, drag.q)) + '"/>';
     }
     if (defs) s = "<defs>" + defs + "</defs>" + s;
     if (se()) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
@@ -345,11 +371,13 @@
   const SNAP_PORT = 26, SNAP_THING = 18;
   function nearPort(x, y, except) {
     let best = null;
+    const fromKind = except ? kindOf({ h: except }) : null;
     document.querySelectorAll(".se-port").forEach(p => {
       if (!p.getClientRects().length) return;
       const dot = p.querySelector(".se-port-dot") || p, r = dot.getBoundingClientRect();
       const d = Math.hypot(x - (r.left + r.width / 2), y - (r.top + r.height / 2));
       const key = "port:" + (p.dataset.pid || p.dataset.port);
+      if (fromKind && clash({ h: except }, { h: key })) return;          // not a port of the other kind
       if (d <= SNAP_PORT && key !== except && (!best || d < best.d)) best = { d, p, key };
     });
     return best && { anchor: { h: best.key, el: 1 }, rect: best.p.getBoundingClientRect() };
@@ -497,8 +525,13 @@
         if (!drag) return;                                                     // it was a click: leave it alone
         eatClick = true; setTimeout(() => { eatClick = false; }, 350);         // the click that ends a wire (it comes a moment later) does nothing
         html.classList.remove("wire-target", "sl-dragging");
-        const o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, from.h) : null;
+        let o = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, from.h) : null;
         drag = null;
+        const near = ev.type === "pointerup" ? nearPort(ev.clientX, ev.clientY, null) : null;   // dropped on a port of the other kind: no, even though its super's body is under it
+        if (o && (clash(from, o.anchor) || (near && clash(from, near.anchor)))) {                                      // a sync or condition to an input or output: no
+          o = null;
+          if (window.SeShape && window.SeShape.note) window.SeShape.note(ev.clientX, ev.clientY, "not joined", "sync and condition join only sync or condition; input and output only input or output");
+        }
         if (o && JSON.stringify(o.anchor) !== JSON.stringify(from) &&
             !links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([from, o.anchor]) || JSON.stringify([l.a, l.b]) === JSON.stringify([o.anchor, from]))) {
           links.push({ a: from, b: o.anchor }); save();
@@ -529,6 +562,7 @@
   // super/nodes.js: a node dropped on a number is wired here; a removed node takes its wires along
   // (onlyIn: just the wires coming into it)
   function add(a, b) {
+    if (clash(a, b)) return;
     if (links.some(l => JSON.stringify([l.a, l.b]) === JSON.stringify([a, b]))) return;
     links.push({ a, b }); save(); lastHtml = ""; draw();
   }

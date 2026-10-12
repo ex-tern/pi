@@ -133,6 +133,31 @@
     if (an.h && an.h.startsWith("k:")) return valueOf({ key: an.h.slice(2) });
     const t = an.h ? an.h.replace(/^[a-z#]+:?/, "") : ""; return { num: 0, bool: !!t, str: t };
   }
+  // the type of data a wire carries (owner, 2026-10-12: "input output wire thicker and color data type specific"),
+  // read from what its source shows now: "number", "bool", "text", "list", "ai" (a Super AI super's answer) or "none"
+  function typeOfText(t, n) {
+    if (n && n.role === "engine" && (n.answer || n.prompt || n.el.classList.contains("is-running"))) return "ai";
+    const v = String(t == null ? "" : t).trim();
+    if (!v) return "none";
+    if (/^(true|false)$/i.test(v)) return "bool";
+    if (/^[-+−]?\d+$/.test(v)) return "int";                              // a whole number (blue, as in LabVIEW)
+    if (!Number.isNaN(numOf(v)) && /^[-+−]?[\d.,'’\s]+(e[-+]?\d+)?%?$/i.test(v)) return "number";   // a decimal (orange)
+    if (/^\[.*\]$/.test(v) || (v.split(/,\s+/).length > 2 && v.length < 200)) return "list";
+    return "text";
+  }
+  function typeOfAnchor(an) {
+    if (!an) return "none";
+    const id = an.h && (/^node:(.+)$/.exec(an.h) || /^port:node:([^/]+)\//.exec(an.h));
+    if (id) { const n = nodes.find(x => x.id === id[1]); return n ? typeOfText(n.text, n) : "none"; }
+    try { const v = valueOfAnchor(an); if (v.isNum) return Number.isInteger(v.num) ? "int" : "number"; return typeOfText(v.text != null ? v.text : v.str); } catch (_) { return "none"; }
+  }
+  // a wire's type: from the end the data comes out of (an output port, else the end it was drawn from), else the other
+  function typeOfLink(a, b) {
+    const out = an => !!(an && an.h && /\/output$/.test(an.h)), inn = an => !!(an && an.h && /\/input$/.test(an.h));
+    const [src, dst] = out(b) || (inn(a) && !inn(b)) ? [b, a] : [a, b];
+    const t = typeOfAnchor(src);
+    return t !== "none" ? t : typeOfAnchor(dst);
+  }
   // wires (super/wire.js) that end on this node (and don't come from it), oldest first
   function linkIns(n) {
     const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
@@ -625,7 +650,8 @@
           : "M" + sx + "," + cy + "C" + (sx + sg * c) + "," + cy + " " + (tx - c) + "," + ty + " " + tx + "," + ty;
         const src2 = ref.node && nodes.find(x => x.id === ref.node);
         const live = now - (n.changed || 0) < 1200 || (src2 && now - (src2.changed || 0) < 1200) || n.el.classList.contains("is-running");
-        s += '<g class="wire' + (live ? " live" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
+        const wty = src2 ? typeOfText(src2.text, src2) : typeOfAnchor(ref.port ? { h: "port:" + ref.port } : ref.core || ref.pi ? { h: "pi" } : null);
+        s += '<g class="wire sl-data' + (live ? " live" : "") + '" data-type="' + wty + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' +
              term(sx, cy, "wire-term") + term(tx, ty, "wire-term") +
              '<path class="wire-hit" data-node="' + n.id + '" data-i="' + idx + '" d="' + d + '"><title>Click to disconnect</title></path></g>';
       });
@@ -878,6 +904,12 @@
     const H = Math.max(W * 0.5, (b - t) + 2 * GPAD + 2 * k + GTOP);
     return { x: (l + r) / 2 - W / 2, y: t - GPAD - k - GTOP, w: W, h: H };
   }
+  function inSite(B) {                                                  // a screen box kept within the inner super (never past its edge)
+    const sb = O().siteBox ? O().siteBox() : null; if (!sb || !sb.a) return B;
+    const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f - 6, b = sb.b * f - 6;
+    const w = Math.min(B.w, 2 * a), h = Math.min(B.h, 2 * b);
+    return { x: Math.max(cx - a, Math.min(cx + a - w, B.x)), y: Math.max(cy - b, Math.min(cy + b - h, B.y)), w, h };
+  }
   function setBox(n, B) {                                               // a screen box to a node's layout place and size
     const F = O().fit ? O().fit() : null, f = (F && F.f) || 1, L = toLayout(B.x, B.y);
     n.aspect = Math.abs(B.h / B.w - 1) < 0.01 ? 0 : B.h / B.w; n.st.sizeTo = null; sizeDot(n, Math.round(B.w / f));
@@ -902,14 +934,14 @@
       if (locked(P.node)) return;
       const pr = P.el.getBoundingClientRect(), W = Math.max(pr.width, (gr.width + 24) / 0.86), H = Math.max(pr.height, gr.height + 2 * W * 0.07 + GTOP + 12);
       if (P.node.fn !== "box") return;
-      P.node.hold = true; setBox(P.node, { x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H });
+      P.node.hold = true; setBox(P.node, inSite({ x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H }));
     }
     const pr = P.el.getBoundingClientRect(), k = Math.min(pr.width, pr.height) * 0.07, top = P.node ? GTOP : (P.win ? 8 : 12);
     const inside = gr.left >= pr.left + k && gr.right <= pr.right - k && gr.top >= pr.top + top && gr.bottom <= pr.bottom - k;
     if (inside) return;
     if (P.node && (gr.width > pr.width - 2 * k || gr.height > pr.height - top - k)) {   // a holder too small for it grows
       const W = Math.max(pr.width, gr.width / 0.86 + 8), H = Math.max(pr.height, gr.height + top + 2 * k + 8);
-      setBox(P.node, { x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H });
+      setBox(P.node, inSite({ x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H }));
     }
     const p2 = P.el.getBoundingClientRect();
     const dx = (p2.left + p2.width / 2) - (gr.left + gr.width / 2), dy = (p2.top + top / 2 + p2.height / 2) - (gr.top + gr.height / 2);
@@ -924,10 +956,19 @@
     const holders = nodes.filter(n => n.grp);
     const holderFor = (members, used) => holders.find(h => !used.has(h) && h.mem && members.some(m => h.mem.includes(m.id)))
       || holders.find(h => !used.has(h) && members.some(m => within(h, m)));
+    // its members inside its frame: a frame kept within the inner super may have left some outside (made at its edge)
+    const pullIn = (g, members) => {
+      const r = g.el.getBoundingClientRect(), rs = members.map(m => m.el.getBoundingClientRect()), k = r.width * 0.07 + 2;
+      const l = Math.min(...rs.map(x => x.left)), t = Math.min(...rs.map(x => x.top)), R = Math.max(...rs.map(x => x.right)), Bt = Math.max(...rs.map(x => x.bottom));
+      const dx = l < r.left + k ? r.left + k - l : R > r.right - k ? r.right - k - R : 0;
+      const dy = t < r.top + k + GTOP ? r.top + k + GTOP - t : Bt > r.bottom - k ? r.bottom - k - Bt : 0;
+      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) window.LabView.moveNodes(members.map(m => m.id), dx, dy);
+    };
     const fit = (g, members) => {                                        // it grows to take its members wherever they went, never shrinks under you
-      const B = groupBox(members), r = g.el.getBoundingClientRect();
+      const B = inSite(groupBox(members)), r = g.el.getBoundingClientRect();
       const l = Math.min(r.left, B.x), t = Math.min(r.top, B.y), R = Math.max(r.right, B.x + B.w), Bt = Math.max(r.bottom, B.y + B.h);
-      if (l < r.left - 4 || t < r.top - 4 || R > r.right + 4 || Bt > r.bottom + 4) setBox(g, { x: l, y: t, w: R - l, h: Bt - t });
+      if (l < r.left - 4 || t < r.top - 4 || R > r.right + 4 || Bt > r.bottom + 4) setBox(g, inSite({ x: l, y: t, w: R - l, h: Bt - t }));
+      pullIn(g, members);
     };
     if (!force && G.sig === groupSig) {                                  // nothing rewired: the groups only keep round their supers
       const used = new Set();
@@ -946,7 +987,7 @@
         g.grp = true; g.el.classList.add("lv-group");
         canvas.insertBefore(g.el, canvas.firstChild);                  // under what it holds
         nodes = [g, ...nodes.filter(x => x !== g)];
-        setBox(g, B);
+        setBox(g, inSite(B)); pullIn(g, members);
         if (window.SeChain) window.SeChain.set(g.el, true);             // one group: a drag on any of them moves them all
         say("Grouped " + members.length + " wired supers");
       } else fit(g, members);
@@ -1736,7 +1777,7 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     // super/scroll.js: a scroll on a node sizes it
-    window.LabView = { loopPort, unrun, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+    window.LabView = { loopPort, unrun, typeOfLink, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        // super/delete.js: deleted after a confirmation (a holder with what it holds; never the central super)
                        close: el => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; closeNode(n); return true; },

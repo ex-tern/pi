@@ -465,19 +465,24 @@ function setWire(key, path, o) {
   m._flow += ((o.flow ? 1 : 0) - m._flow) * 0.12; u.uFlow.value = m._flow;
   m.renderOrder = o.order;
 }
+// the data types' colours, as a flow language (LabVIEW) draws them, muted to sit with ink on paper: a whole number blue, a
+// decimal orange, text pink, true/false green, a list violet and heavier, an AI answer teal
+const TYPE_COLOR = { int: new THREE.Color("#2a5aa8"), number: new THREE.Color("#c0661c"), text: new THREE.Color("#b2457d"), bool: new THREE.Color("#3d7c3a"), list: new THREE.Color("#6b4fa2"), ai: new THREE.Color("#1f7a7e") };
 let wk = 0;
 function drawWires() {
   document.querySelectorAll(WIRE_SEL).forEach(g => {
     const bed = g.querySelector(".wire-bed"); if (!bed) return;
     const key = g._seKey || (g._seKey = "w" + (++wk));
     const sel = g.classList.contains("is-sel"), hov = g.matches(":hover"), live = g.classList.contains("live");
-    setWire(key, bed, { w: 2.2, color: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, alpha: 0.82, flow: hov || live, order: 4 });   // more visible (owner, 2026-10-12)
+    // a data wire is thicker and coloured by its type (owner, 2026-10-12: "input output wire thicker and color data type specific")
+    const data = g.classList.contains("sl-data"), tc = data ? TYPE_COLOR[g.dataset.type] || tokens.ink : tokens.ink;
+    setWire(key, bed, { w: data ? (g.dataset.type === "list" ? 5.6 : 3.8) : 2.2, color: sel ? tokens.cobalt : hov ? (data ? tc.clone().lerp(tokens.hint, 0.35) : tokens.hint) : tc, alpha: data ? 0.9 : 0.82, flow: hov || live, order: 4 });
   });
   document.querySelectorAll(".sl-layer .wire-temp").forEach(p => { const key = p._seKey || (p._seKey = "t" + (++wk)); setWire(key, p, { w: 1.5, color: tokens.cobalt, flow: true, order: 5 }); });
   document.querySelectorAll(".om-site .om-lattice").forEach(p => {
     if (!p.getClientRects().length) return;
     const key = p._seKey || (p._seKey = "l" + (++wk));
-    setWire(key, p, { w: 2.2, color: tokens.ink, alpha: 0.82, flow: false, order: 3 });   // drawn as the wires are (owner, 2026-10-12: "the wires are not real wires and not visible")
+    setWire(key, p, { w: 3.8, color: tokens.ink, alpha: 0.86, flow: false, order: 3 });   // the side wires join input and output: data wires, thick; drawn as the wires are (owner, 2026-10-12: "the wires are not real wires and not visible")
   });
 }
 
