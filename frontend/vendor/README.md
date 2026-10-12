@@ -29,3 +29,10 @@ Mermaid (architecture diagrams) can be vendored the same way if needed:
 
     curl -Lo "frontend/vendor/mermaid.min.js" \
       https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js
+
+## three.js (the superellipse look's graphics engine)
+
+`vendor/three/` holds three.js r185 (0.185.1, MIT, see `vendor/three/LICENSE`): `three.module.min.js` and
+`three.core.min.js`, copied unchanged from the `build/` folder of https://github.com/mrdoob/three.js at tag
+`r185`. `frontend/super/engine.js` imports it to draw every super, wire, port and the glass light with WebGL.
+To update, copy the same two files from a newer tag and bump `?v=` on `super/engine.js` in `index.html`.
