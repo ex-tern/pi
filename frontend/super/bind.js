@@ -133,6 +133,9 @@
         if (open.length) {
           const pad = 10, U = { l: r.left, t: r.top, r: r.right, b: r.bottom };
           open.forEach(el => { const b = el.getBoundingClientRect(); U.l = Math.min(U.l, b.left - pad); U.t = Math.min(U.t, b.top - pad - (i.t - r.top)); U.r = Math.max(U.r, b.right + pad); U.b = Math.max(U.b, b.bottom + pad); });
+          // never over a super outside it (owner, 2026-10-12: "3rd super shouldnt eat the connect super when gets bigger")
+          const outs = window.SeHold.outsiders ? window.SeHold.outsiders(h) : [];
+          if (outs.length && window.SeHold.wouldMeet({ left: U.l, top: U.t, right: U.r, bottom: U.b }, outs)) return;
           if (U.l < r.left - 1 || U.t < r.top - 1 || U.r > r.right + 1 || U.b > r.bottom + 1) {
             const L = window.LabView.rectOf(h), k = sc, nw = (U.r - U.l) / k, nh = (U.b - U.t) / k;
             window.LabView.setRect(h, L.x + (U.l - r.left) / k, L.y + (U.t - r.top) / k, nw, nh);

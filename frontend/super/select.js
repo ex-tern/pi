@@ -72,7 +72,8 @@
       if ((h = t.closest(".orbit-panel"))) return { on: h };
       if ((h = t.closest(".orbit-bubble"))) return { on: h };
       if ((h = t.closest(".lv-node, .se-project"))) return { on: h };
-      if (t.closest(".orbit-title, .lv-palette")) return { inside: "loop" };
+      if ((h = t.closest(".orbit-title"))) return { on: h.querySelector(".se-titlesuper") || h };   // the title is a selectable super (owner, 2026-10-12)
+      if (t.closest(".lv-palette")) return { inside: "loop" };
     }
     return { on: loopHolding(x, y) || (inSite(x, y) ? "site" : "loop") };
   }

@@ -97,7 +97,7 @@
   }
   // the largest factor el may grow by about its centre and still touch none of them (Infinity when nothing is in the way)
   function growRoom(el, outs) {
-    const r = rect(el), cx = r.left + r.width / 2, cy = r.top + r.height / 2, G = 4;
+    const r = rect(el), cx = r.left + r.width / 2, cy = r.top + r.height / 2, G = 16;   // well clear, so the layout never pushes the outside super (into it)
     let s = Infinity;
     (outs || outsiders(el)).forEach(o => {
       const b = rect(o), dx = Math.abs(b.left + b.width / 2 - cx), dy = Math.abs(b.top + b.height / 2 - cy);
@@ -107,6 +107,6 @@
     return s;
   }
   // a box (screen px) that would cover or cut into one of them
-  const wouldMeet = (box, outs) => outs.some(o => meets(box, rect(o), 2));
+  const wouldMeet = (box, outs) => outs.some(o => meets(box, rect(o), 14));
   window.SeHold = { hosts: () => hosts().map(h => h.el), hostOf, heldBy, begin, follow, end, shift, move, outsiders, growRoom, wouldMeet };
 })();
