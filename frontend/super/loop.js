@@ -290,7 +290,11 @@
       // zoom at about 1 and the inner super could not grow (owner, 2026-10-11)
       const needS = needAt(n, true), needO = needAt(n, false);
       const roomS = needS > 0 ? cap / needS * 0.985 : zoomV(), roomO = needO > 0 ? cap / needO * 0.985 : 1;
-      fitTo(Math.max(0.005, Math.min(zoomV(), roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
+      // locked (the superellipse look): no fit at all. The layout already keeps everything inside the inner super, and a
+      // fit that follows the bubbles' size fed back into their layout (open bubbles, readable words) and the whole page
+      // pulsed (owner, 2026-10-12: "the graphics jerks like this")
+      if (locked()) fitTo(1, 1, cx, cy);
+      else fitTo(Math.max(0.005, Math.min(zoomV(), roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
       const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
       loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
       if (key === loopKey) return;

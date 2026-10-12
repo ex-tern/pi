@@ -43,11 +43,11 @@
       const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2, yc = ly + lh / 2;
       s += '<path class="obm-wire" d="M' + x0 + ',' + yc + ' C' + mx + ',' + yc + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
     });
-    s += seBox(lx, ly, lw, lh, 5, "obm-box obm-name") +
+    s += seBox(lx, ly, lw, lh, lh / 2, "obm-box obm-name") +
          '<text class="obm-text" x="' + (lx + lw / 2) + '" y="' + (ly + lh / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" style="font-size:' + fs.toFixed(1) + 'px">' + esc(label) + '</text>';
     members.forEach((m, i) => {
       const y = y0 + i * (bh + gap);
-      s += seBox(x1, y, bw, bh, 3, "obm-box", m);
+      s += seBox(x1, y, bw, bh, bh / 2, "obm-box", m);
     });
     return s + "</svg>";
   }

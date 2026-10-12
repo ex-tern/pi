@@ -396,7 +396,7 @@ function frame() {
   raf = 0;
   if (!renderer) return;
   if (!on()) { stop(); return; }
-  if (!busy() && (++tick % 4)) { loop(); return; }
+  if (!busy() && (++tick % 2)) { loop(); return; }                  // calm: 30 frames a second, so the drifting light and embers stay smooth
   try {
     if (performance.now() - tokensAt > 3000) readTokens();
     uTime.value = (performance.now() - t0) / 1000;

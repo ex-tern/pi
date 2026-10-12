@@ -54,15 +54,18 @@
   function radius(v, w, h) {
     const parts = String(v).split(" ");
     const one = (s, L) => s.endsWith("%") ? parseFloat(s) / 100 * L : parseFloat(s) || 0;
-    return [one(parts[0], w), one(parts[1] || parts[0], h)];
+    let rx = one(parts[0], w), ry = one(parts[1] || parts[0], h);
+    const f = Math.min(1, rx > 0 ? w / (2 * rx) : 1, ry > 0 ? h / (2 * ry) : 1);   // as CSS does: radii too big for the box shrink together
+    return [rx * f, ry * f];
   }
   // read every element's own colours with our painting off (one style pass for all), then paint them again
-  function sweep() {
-    if (!on()) return;
-    const els = [];
-    document.querySelectorAll(ROOT).forEach(r => { els.push(r); r.querySelectorAll("*").forEach(e => { if (!(e instanceof SVGElement)) els.push(e); }); });
-    html.classList.add("se-sq-read");                                   // no transitions while the colours are read and painted again
-    els.forEach(el => el.classList.remove("se-sq-on"));
+  // paint the given elements: read each one's own colours with our painting off (its transitions off too, so the
+  // colours read are its own, not halfway), then paint it again. Only elements that changed are touched: a class
+  // change, a new element, a new size (owner, 2026-10-12: "graphics should be smoother": no sweeps of the whole page)
+  function paint(list) {
+    if (!on() || !list.length) return;
+    const els = list.filter(el => el.isConnected && el.closest(ROOT) && !(el instanceof SVGElement));
+    els.forEach(el => { el.classList.add("se-sq-read"); el.classList.remove("se-sq-on"); });
     const nat = els.map(el => {
       if (!el.getClientRects().length) return null;
       const cs = getComputedStyle(el);
@@ -84,15 +87,36 @@
         const svg = "<svg xmlns='http://www.w3.org/2000/svg' width='" + n.w + "' height='" + n.h + "' viewBox='0 0 " + n.w + " " + n.h + "'>" + defs + under +
           "<path d='" + d + "' fill='" + (grad ? "url(#g)" : fill ? norm(n.bg) : "none") + "' stroke='" + (stroke ? norm(n.bc) : "none") + "' stroke-width='" + (stroke ? n.bw : 0) + "'/></svg>";
         el.style.setProperty("--se-sq", 'url("data:image/svg+xml,' + encodeURIComponent(svg) + '")');
-        // its own corner, rounded less: the painted superellipse is drawn whole inside it (and a frosted backdrop
-        // follows it closely); 0.6 of the radius keeps every point of the n = π corner inside the clip
+        // its own corner, rounded less: the painted superellipse is drawn whole inside it; 0.6 of the radius keeps every
+        // point of the n = π corner inside the clip
         el.style.setProperty("--se-sq-r", (rx * 0.6).toFixed(1) + "px " + (ry * 0.6).toFixed(1) + "px");
       }
       el.classList.add("se-sq-on");
+      if (!el._sqRo && window.ResizeObserver) { el._sqRo = true; ro.observe(el); }
     });
-    void document.body.offsetWidth;                                     // the painted styles take effect before transitions return
-    html.classList.remove("se-sq-read");
+    void document.body.offsetWidth;                                     // painted before transitions return
+    els.forEach(el => el.classList.remove("se-sq-read"));
   }
+  const dirty = new Set();
+  let asked = false;
+  const flush = () => { asked = false; const list = [...dirty]; dirty.clear(); paint(list); };
+  const mark = el => { if (el && el.nodeType === 1) { dirty.add(el); if (!asked) { asked = true; requestAnimationFrame(flush); } } };
+  const ro = window.ResizeObserver ? new ResizeObserver(es => es.forEach(e => mark(e.target))) : { observe() {} };
+  function sweep() {                                                   // everything, once (the start, a new look)
+    if (!on()) return;
+    document.querySelectorAll(ROOT).forEach(r => { mark(r); r.querySelectorAll("*").forEach(mark); });
+  }
+  const OURS = new Set(["se-sq-on", "se-sq-read"]);
+  new MutationObserver(ms => {
+    if (!on()) return;
+    for (const m of ms) {
+      if (m.type === "childList") { m.addedNodes.forEach(n => { if (n.nodeType === 1 && n.closest && n.closest(ROOT)) { mark(n); n.querySelectorAll && n.querySelectorAll("*").forEach(mark); } }); continue; }
+      const el = m.target; if (!el.closest || !el.closest(ROOT)) continue;
+      const before = new Set(String(m.oldValue || "").split(/\s+/).filter(c => c && !OURS.has(c)));
+      const now = [...el.classList].filter(c => !OURS.has(c));
+      if (now.length !== before.size || now.some(c => !before.has(c))) mark(el);   // a real change of state, not our own painting
+    }
+  }).observe(document.documentElement, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"], attributeOldValue: true });
   const style = document.createElement("style");
   style.textContent =
     "html.se-sq.shape-se .se-sq-on { background-color: transparent !important; border-color: transparent !important;" +
@@ -100,15 +124,15 @@
     " background-origin: border-box !important; background-clip: border-box !important; border-radius: var(--se-sq-r, 0) !important; }" +
     " html.se-sq.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node, .orbit-title .se-titlesuper).se-sq-on::before { display: none !important; }" +
     // a shadow that follows the painted superellipse (a box shadow would follow the clip, a rounded box)
-    " html.se-sq-read *, html.se-sq-read *::before, html.se-sq-read *::after { transition: none !important; }" +
+    " .se-sq-read, .se-sq-read::before, .se-sq-read::after { transition: none !important; }" +
     " html.se-sq.shape-se .se-sq-on { box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }" +
     " html.se-sq.shape-se :is(.orbit-bubble.is-group, .se-project, .lv-node, .orbit-title .se-titlesuper).se-sq-on { filter: drop-shadow(0 8px 14px rgba(70, 36, 12, 0.20)) !important; }";
   document.head.appendChild(style);
   let t = 0;
   const soon = () => { clearTimeout(t); t = setTimeout(sweep, 120); };
-  setInterval(() => { if (document.visibilityState === "visible") sweep(); }, 900);   // new windows, hovers and sizes, within a second
   window.addEventListener("resize", soon);
-  document.addEventListener("se:windows", soon);
+  let wasOn = on();
+  new MutationObserver(() => { if (on() !== wasOn) { wasOn = on(); if (wasOn) soon(); } }).observe(html, { attributes: true, attributeFilter: ["class"] });   // the look turned on later
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", soon); else soon();
   window.SeSquircle = { sweep, boxPath };
 })();

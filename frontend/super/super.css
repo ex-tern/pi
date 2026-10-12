@@ -240,7 +240,7 @@ html.shape-se .orbit-panel .status-reward, html.shape-se .orbit-panel .status-re
 html.shape-se .orbit-panel .subtab-btn, html.shape-se .orbit-panel .tag-input, html.shape-se .orbit-panel .btn-like,
 html.shape-se .orbit-panel input:not([type=checkbox]):not([type=radio]):not([type=range]), html.shape-se .orbit-panel select, html.shape-se .orbit-panel textarea,
 html.shape-se .modal button, html.shape-se .modal input {
-  border-radius: 50%; padding-inline: 1.1em;
+  border-radius: 999px; padding-inline: 1.1em;   /* straight sides, superellipse ends (owner, 2026-10-12: corners are superellipses) */
 }
 html.shape-se .orbit-panel textarea { border-radius: 2.2em; padding: 0.9em 1.3em; }
 html.shape-se .orbit-panel .result-card, html.shape-se .orbit-panel .llm-card, html.shape-se .orbit-panel .opt-card, html.shape-se .orbit-panel .referral-card,
@@ -540,3 +540,10 @@ html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*
    (super/squircle.js paints them where corner-shape is unknown) */
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 0.9em !important; }
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { display: none; }
+
+/* corners that read as superellipses (owner, 2026-10-12: "corners should be superellipses"): a small radius drawn as a
+   superellipse still looks round, so the boxes have radii large enough for the shape to show: pills and labels have
+   superellipse ends, cards and stat tiles a generous superellipse corner */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { border-radius: 999px !important; }
+html.shape-se .orbit-panel :is(.stat-card, .tr-tile, .perf-card, .card, .rs-card, .leaderboard, .table-scroll, .status-box, .ok-box, .warning-box, .insight-box) { border-radius: 22px; }
+html.shape-se .orbit-panel :is(.pill, .badge, .chip, .tag, .rank, .stage-tag, .linked-badge) { border-radius: 999px; }
