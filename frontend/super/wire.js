@@ -425,7 +425,7 @@
     piSvg = document.createElementNS("http://www.w3.org/2000/svg", "svg");
     piSvg.setAttribute("class", "sl-pi is-off");
     piSvg.setAttribute("aria-hidden", "true");
-    piSvg.innerHTML = '<path id="slPiPath" class="om-page-pipath" d=""/><text class="om-page-pi" dy="-6"><textPath href="#slPiPath" startOffset="16"></textPath></text>';
+    piSvg.innerHTML = '<path id="slPiPath" class="om-page-pipath" d=""/><text class="om-page-pi" dy="-8"><textPath href="#slPiPath" startOffset="16"></textPath></text>';
     document.body.appendChild(piSvg);
     const removeWire = i => { if (i < 0 || i >= links.length) return; const gone = links.splice(i, 1)[0]; selected = -1; save(); lastHtml = ""; draw(); unact(gone); };
     selectable(svg, w => removeWire(+w.dataset.i), w => { const i = +w.dataset.i; selected = selected === i ? -1 : i; return selected >= 0; });

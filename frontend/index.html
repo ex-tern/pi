@@ -12,7 +12,7 @@
 <!-- The look is decided before the first paint: the orbit layout is always on (orbit.js builds it), and
      the superellipse look on se.<domain> / super.<domain> or with ?shape=se (channel.js confirms it later
      from /api/build). Without this the classic page showed for a moment on every load. -->
-<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se"))h.classList.add("se-boot");})(document.documentElement);</script>
+<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se")){h.classList.add("se-boot");try{var S="3";if(localStorage.getItem("se:start")!==S){Object.keys(localStorage).filter(function(k){return /^(lv:|orbit:|se:)/.test(k)}).forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("se:start",S)}}catch(e){}}})(document.documentElement);</script>
 <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=96">
 <link rel="stylesheet" href="theme.css?v=1">
@@ -22,8 +22,8 @@
 <link rel="stylesheet" href="facemace.css?v=1">
 <link rel="stylesheet" href="medicine/view.css?v=2">
 <link rel="stylesheet" href="live.css?v=3">
-<link rel="stylesheet" href="super/super.css?v=62">
-<link rel="stylesheet" href="super/nodes.css?v=11">
+<link rel="stylesheet" href="super/super.css?v=65">
+<link rel="stylesheet" href="super/nodes.css?v=13">
 <link rel="stylesheet" href="traffic.css?v=2">
 <link rel="stylesheet" href="superprompt.css?v=1">
 <link rel="stylesheet" href="super/project.css?v=10">
@@ -1070,14 +1070,14 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="ribsuggest.js?v=2"></script>
 <script src="lab.js?v=90"></script>
 <script src="channel.js?v=2"></script>
-<script src="super/loop.js?v=22"></script>
-<script src="super/pitechlab.super.js?v=103"></script>
+<script src="super/loop.js?v=23"></script>
+<script src="super/pitechlab.super.js?v=104"></script>
 <script src="super/runtime.js?v=5"></script>
 <script src="super/superai-rs.js?v=5"></script>
 <script src="super/zoombox.js?v=9"></script>
 <script src="super/legible.js?v=6"></script>
 <script src="super/squircle.js?v=7"></script>
-<script src="orbit.js?v=102"></script>
+<script src="orbit.js?v=104"></script>
 <script src="pien.js?v=10"></script>
 <script src="numbers.js?v=3"></script>
 <script src="capabilities.js?v=13"></script>
@@ -1100,16 +1100,17 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="super/motion.js?v=3"></script>
 <script src="super/select.js?v=10"></script>
 <script src="super/shape.js?v=6"></script>
-<script src="super/nodes.js?v=118"></script>
-<script src="super/wire.js?v=19"></script>
+<script src="super/nodes.js?v=121"></script>
+<script src="super/wire.js?v=20"></script>
 <script src="super/move.js?v=3"></script>
-<script src="super/site.js?v=14"></script>
+<script src="super/site.js?v=17"></script>
 <script src="super/scroll.js?v=30"></script>
 <script src="super/hover.js?v=9"></script>
 <script src="superprompt.js?v=1"></script>
-<script src="super/project.js?v=16"></script>
+<script src="super/project.js?v=17"></script>
 <script type="module" src="super/engine.js?v=13"></script>
 <script src="super/boot.js?v=1"></script>
+<script src="super/shapehud.js?v=1"></script>
 <script src="arcade.js?v=93"></script>
 </body>
 </html>

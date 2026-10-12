@@ -624,7 +624,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, use: n.use || undefined, manual: n.manual || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -656,7 +656,10 @@
     const val = document.createElement("span"); val.className = "lv-val"; val.setAttribute("aria-hidden", "true");
     el.append(g, val);
     // four port sparkles drawn on the super itself, for the round look (in the superellipse look super/site.js places live ports)
-    el.insertAdjacentHTML("beforeend", '<i class="lv-sp lv-sp-l" aria-hidden="true"></i><i class="lv-sp lv-sp-r" aria-hidden="true"></i><i class="lv-sp lv-sp-t" aria-hidden="true"></i><i class="lv-sp lv-sp-b" aria-hidden="true"></i>');
+    el.insertAdjacentHTML("beforeend", '<i class="lv-sp lv-sp-l" aria-hidden="true"></i><i class="lv-sp lv-sp-r" aria-hidden="true"></i><i class="lv-sp lv-sp-t" aria-hidden="true"></i><i class="lv-sp lv-sp-b" aria-hidden="true"></i>' +
+      // a holder's grip: its edge (and its label), the only parts of it that take the pointer, so what it holds
+      // (bubbles, the project, other supers) stays reachable through it (super/nodes.css .lv-edge)
+      '<i class="lv-edge lv-edge-t" aria-hidden="true"></i><i class="lv-edge lv-edge-b" aria-hidden="true"></i><i class="lv-edge lv-edge-l" aria-hidden="true"></i><i class="lv-edge lv-edge-r" aria-hidden="true"></i>');
     const n = { id: spec.id, fn: f.k, fx: spec.fx, fy: spec.fy, inputs: (spec.inputs || []).slice(0, f.n), st: {}, el, val, text: "" };
     n.str = spec.str || "";
     n.n = +spec.n || nOfFn[f.k];
@@ -674,7 +677,7 @@
       });
       return inp;
     };
-    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual;
+    n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
     if (f.k === "box" || f.k === "dot") { if (!n.field) g.textContent = ""; }   // blank: the shape alone
     if (f.k === "ask") {
@@ -721,8 +724,10 @@
   // shift + scroll on a node: its n, and with it what it is (the same node, same id, same wires)
   function reshape(n, dy) {
     n.manual = true;                                                   // your n: it no longer follows size and use
-    const nn = Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
+    const S = window.SeShape;
+    const nn = S ? S.step("node:" + n.id, n.n, dy, 0.3, 12) : Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
     n.st.nTo = nn;
+    if (S) S.at(nn);
     const fn = fnOfN(nn);
     // a Super AI super or a holder keeps what it is (its role, hint, members, transparency): only its shape changes
     if (fn !== n.fn && n.role !== "engine" && !n.hold) {             // across a band: it becomes that function
@@ -770,6 +775,7 @@
     };
     const where = s => {
       const size = s.size ? Math.round(s.size * K) : s.kind === "engine" ? ENGINE_BASE : DOT_BASE, at = s.at || {};
+      if (at.inSite && sb) { const [x0, y0] = at.inSite; return [sb.cx - sb.a + x0 * 2 * sb.a, sb.cy - sb.b + y0 * 2 * sb.b]; }   // shares of the inner super, from its top-left
       if (at.center) return [(Wv - size) / 2, (Hv - size) / 2];
       if (at.from && done[at.from]) return [done[at.from][0] + (at.dx || 0) * K, done[at.from][1] + (at.dy || 0) * K];
       if (at.leftOf) { const p = portXY(String(at.leftOf).split(".")[1]); return [Math.max(4, p[0] - size - 10), p[1] + (at.dy || 0)]; }
@@ -777,11 +783,15 @@
       return [(at.fx || 0) * Wv, (at.fy || 0) * Hv];
     };
     (prog.supers || []).forEach(s => {
+      if (s.at && s.at.inSite && sb) {                                // sized as shares of the inner super: [x0, y0, x1, y1]
+        const [x0, y0, x1, y1] = s.at.inSite, w = (x1 - x0) * 2 * sb.a, h = (y1 - y0) * 2 * sb.b;
+        s = Object.assign({}, s, { size: Math.round(w / K), aspect: h / w });
+      }
       const xy = where(s); done[s.id] = xy;
       if (nodes.some(x => x.id === s.id)) return;                     // already on the page (a diagram kept from the round look)
       if (s.locked) { try { if (localStorage.getItem("se:lock:node:" + s.id) == null) localStorage.setItem("se:lock:node:" + s.id, "1"); } catch (_) { /* private mode */ } }   // starts locked (super/lock.js reads it)
       make({ id: s.id, fn: s.kind === "engine" || s.kind === "box" || !s.kind ? "box" : s.kind, role: s.kind === "engine" ? "engine" : undefined,
-             str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: Math.PI });
+             str: s.text || undefined, hint: s.hint || undefined, size: s.size ? Math.round(s.size * K) : undefined, hold: !!s.hold, aspect: s.aspect || undefined, manual: !!s.n, fx: xy[0] / Wv, fy: xy[1] / Hv, inputs: [], n: s.n || Math.PI });   // s.n: its own shape, kept
     });
     wireUp(prog.wires || []);
     save("lv:start-wired", 1);
@@ -909,7 +919,8 @@
         if (n && isHolder(n)) {
           n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
           const O = window.PiOrbit, r = n.el.getBoundingClientRect();     // the bubbles it holds too
-          n.st.bubbles = O && O.bubblesIn ? O.bubblesIn(r, r.width * 0.06) : [];
+          n.st.bubbles = O && O.bubblesIn ? O.bubblesIn(r, r.width * 0.03) : [];
+          n.st.proj = !!(window.SeProject && window.SeProject.inRect && window.SeProject.inRect(r, r.width * 0.03));   // the project super too
           n.st.at = [r.left, r.top];
         }
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
@@ -921,7 +932,12 @@
       n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
       if (n.st.crew) n.st.crew.forEach(c => { c.m.fx += n.fx - fx0; c.m.fy += n.fy - fy0; place(c.m); });
-      if (n.st.bubbles && n.st.bubbles.length) { const r = n.el.getBoundingClientRect(); window.PiOrbit.moveBubbles(n.st.bubbles, r.left - n.st.at[0], r.top - n.st.at[1]); n.st.at = [r.left, r.top]; }
+      if (n.st.at && ((n.st.bubbles && n.st.bubbles.length) || n.st.proj)) {
+        const r = n.el.getBoundingClientRect(), ddx = r.left - n.st.at[0], ddy = r.top - n.st.at[1];
+        if (n.st.bubbles.length) window.PiOrbit.moveBubbles(n.st.bubbles, ddx, ddy);
+        if (n.st.proj) window.SeProject.moveBy(ddx, ddy);
+        n.st.at = [r.left, r.top];
+      }
       const t = targetAt(ev.clientX, ev.clientY, n.el);
       document.querySelectorAll(".lv-hover").forEach(x => x.classList.remove("lv-hover"));
       if (t && t.el) t.el.classList.add("lv-hover");
@@ -1183,7 +1199,7 @@
   // ● zoomed past twice its size becomes a loop, a ring that counts
   const DOT_BASE = 56, LOOP_AT = 104;
   // every node's size is one number (--lv-s); a value, a field or an answer still makes it grow around them
-  function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); }
+  function sizeDot(n, d) { n.size = d; n.el.style.setProperty("--lv-s", d + "px"); if (n.aspect) n.el.style.setProperty("--lv-h", Math.round(d * n.aspect) + "px"); else n.el.style.removeProperty("--lv-h"); }
   // scrolling on a node sizes it, about its centre; a ● scrolled past twice its size becomes a loop
   let zoomed = null, suppressRing = false;
   function closeNode(n) {
@@ -1194,7 +1210,7 @@
   }
   function zoomNode(n, dy, auto) {
     const r = n.el.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-    const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight) - 20;
+    const cur = n.st.sizeTo || n.size || DOT_BASE, max = Math.min(window.innerWidth, window.innerHeight / (n.aspect || 1)) - 20;
     // too small, it closes (owner, 2026-10-12): scrolled on out at its smallest, it fades away, wires and all
     if (dy > 0 && !auto && cur <= 36 && n.id !== "site-box") {
       n.st.over = (n.st.over || 0) + dy; clearTimeout(n.st.overT); n.st.overT = setTimeout(() => { n.st.over = 0; }, 500);
@@ -1204,7 +1220,7 @@
     const d = Math.round(Math.max(36, Math.min(n.fn === "dot" || n.fn === "box" ? max : 240, cur * Math.exp(-dy * 0.0015))));
     if (d === cur) return;
     n.st.sizeTo = d;
-    const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s / 2) / window.innerHeight; place(n); };
+    const settle = () => { const L = toLayout(cx, cy), s = n.size || DOT_BASE; n.fx = (L.x - s / 2) / window.innerWidth; n.fy = (L.y - s * (n.aspect || 1) / 2) / window.innerHeight; place(n); };
     if (window.SeMotion) { const s = { v: n.size || DOT_BASE }; window.SeMotion.glide("node:" + n.id, s, "v", d, 160, () => { sizeDot(n, Math.round(s.v)); settle(); drawWires(); }); }
     else { sizeDot(n, d); settle(); }
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }

@@ -103,10 +103,9 @@
       // sync top, condition bottom (a little inside the display's edge, so they can be reached)
       const g = O().loop ? O().loop() : null;
       if (g && g.a) {
-        const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0, IN = 10;
         seen.add("main");
         const set = ensurePorts("main", "the main super");
-        placeAt(set, g.cx, g.cy + off, g.a - IN, g.b - IN);
+        PORTS.forEach(([p]) => { const xy = mainPort(p), el = set[p]; if (!xy) return; const l = xy[0] + "px", t = xy[1] + "px"; if (el.style.left !== l) el.style.left = l; if (el.style.top !== t) el.style.top = t; });
       }
       document.querySelectorAll(".orbit-bubble[data-key]").forEach(bb => {   // bubbles are supers too
         if (bb.hidden || !bb.getClientRects().length) return;
@@ -140,6 +139,14 @@
         if (el.classList.contains("is-covered") !== hid) el.classList.toggle("is-covered", hid);
       });
     });
+  }
+  // the main super's ports: on its edge, where its lattice wires end (owner, 2026-10-12: "side wires have bugs": they
+  // sat 10 px inside it, so the wires stopped short of the loop), never off the display
+  function mainPort(p) {
+    const g = O().loop ? O().loop() : null; if (!g || !g.a) return null;
+    const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0, cx = g.cx, cy = g.cy + off, W = window.innerWidth, H = window.innerHeight;
+    const cl = (v, m) => Math.max(3, Math.min(m - 3, v));
+    return p === "input" ? [cl(cx - g.a, W), cy] : p === "output" ? [cl(cx + g.a, W), cy] : p === "sync" ? [cx, cl(cy - g.b, H)] : [cx, cl(cy + g.b, H)];
   }
   function placeAt(set, cx, cy, a, b) {
     const pts = { input: [cx - a, cy], output: [cx + a, cy], sync: [cx, cy - b], condition: [cx, cy + b] };
@@ -251,11 +258,9 @@
       // not visible"): the site's input and output run to the main super's input and output; its sync and
       // condition are wired to the main super's by the start's own wires (main.sync -> site.sync, site.condition
       // -> main.condition), so they draw no loose sweeps of their own
-      const g = O().loop ? O().loop() : null;
-      if ((side === "left" || side === "right") && g && g.a) {
-        const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
-        const mx = g.cx + (side === "left" ? -1 : 1) * (g.a - 10), my = g.cy + off;     // the main super's port (site.js placeAt, IN = 10)
-        const PX = mx - sr.left, PY = my - sr.top, c = (PX - X) * 0.5;
+      const mp = (side === "left" || side === "right") ? mainPort(p) : null;
+      if (mp) {
+        const PX = mp[0] - sr.left, PY = mp[1] - sr.top, c = (PX - X) * 0.5;     // into the main super's port, on its edge
         lattice[p].setAttribute("d", "M" + f(X) + "," + f(Y) + "C" + f(X + c) + "," + f(Y) + " " + f(PX - c) + "," + f(PY) + " " + f(PX) + "," + f(PY));
       } else lattice[p].setAttribute("d", "");
     });
@@ -354,8 +359,11 @@
   }
   function shapeEl(el, dy) {
     const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || (SM() && SM().pi) || Math.PI;   // the badge starts at its own n
-    const nn = Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
+    const S = window.SeShape;
+    if (!el._seShapeId) el._seShapeId = ++shapeId;
+    const nn = S ? S.step("el:" + el._seShapeId, +el.dataset.seN || cur, dy, 0.3, 40) : Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
     el._seNTo = nn;
+    if (S) S.at(nn);
     if (!el._seShapeId) el._seShapeId = ++shapeId;
     const name = nameOfSuper(el);
     if (name) saveN(name, nn);

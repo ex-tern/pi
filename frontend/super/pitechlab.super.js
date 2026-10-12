@@ -57,10 +57,10 @@ window.SUPERAI_PROGRAM = {
   // at: where a bubble starts (superellipse look), as an offset from the page's centre in shares of the screen:
   // the diagram reads left to right, Connect → Tools → Explore → Library, with Lab feeding Library from below
   bubbles: [
-    { title: "Lab", source: "lab", at: { fx: 0.08, fy: 0.22 } },
-    { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.12, fy: -0.02 } },
-    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.3, fy: -0.02 } },
-    { title: "Explore", key: "explore", members: ["Live", "The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.1, fy: -0.02 } },
+    { title: "Lab", source: "lab", at: { fx: 0.132, fy: 0.262 } },
+    { title: "Tools", members: ["Assess Manuscripts [Pi]"], at: { fx: -0.08, fy: -0.26 } },
+    { title: "Library", key: "lib", members: ["RiBD", "The Global Map of Science", "Whitepaper", "Architecture", "Capabilities"], at: { fx: 0.344, fy: -0.26 } },
+    { title: "Explore", key: "explore", members: ["Live", "The journal", "Leaderboards", "Proof-of-Research Ledger Explorer", "Recent assessments", "Analytics", "Performance", "Minting Difficulty"], at: { fx: 0.132, fy: -0.26 } },
     { title: "Connect", key: "connect", at: { fx: -0.3, fy: -0.02 }, members: ["Your account", "Your assessments", "Research profile", "piQ held for you", "Assessment results", "Reset platform",
                                                  "Why sign in", "Invite a researcher", "Support Pi", "Contact us", "GitHub"] }
   ],
@@ -77,6 +77,10 @@ window.SUPERAI_PROGRAM = {
     // The central super at the start, and beside it a locked "use shift+scroll" hint (owner, 2026-10-12: "add this to
     // initial state"; as a hint it is never sent to the engines); a visitor makes more supers with a double click.
     supers: [
+      // a third super (owner, 2026-10-12: "add a third super and add everything inside it except connect"): a holder
+      // inside the inner super holding every bubble but Connect, the project, run and the hint; at.inSite is its box
+      // in shares of the inner super [x0, y0, x1, y1]; desktop only (a phone stacks the bubbles instead)
+      { id: "hold", kind: "box", text: "super", hold: true, desktop: true, n: 12, at: { inSite: [0.285, 0.02, 0.985, 0.98] } },
       { id: "site-box", kind: "engine", at: { center: true } },
       { id: "shift", kind: "engine", hint: "use shift+scroll", locked: true, at: { from: "site-box", dx: 150, dy: 0 } }
     ],

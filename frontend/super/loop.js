@@ -26,7 +26,9 @@
       if (!merged()) return;
       e.preventDefault(); e.stopImmediatePropagation();
       const dy = e.deltaY || e.deltaX;
-      const nn = Math.min(N_MAX, Math.max(N_MIN, (scrollN.to || loopN()) * Math.exp(-dy * 0.002)));
+      const S = window.SeShape;
+      const nn = S ? S.step("main", loopN(), dy, N_MIN, N_MAX) : Math.min(N_MAX, Math.max(N_MIN, (scrollN.to || loopN()) * Math.exp(-dy * 0.002)));
+      if (S) S.show(e.clientX, e.clientY, nn);
       scrollN.to = nn;                                                // n goes all the way to 0: the page shrinks toward the centre to stay inside
       if (window.SeMotion) { const s = { v: loopN() }; window.SeMotion.glide("page:n", s, "v", nn, 160, () => { markN = s.v; drawLoop(); }); }
       else { markN = nn; drawLoop(); }
@@ -415,7 +417,9 @@
       if (!merged()) return;
       e.preventDefault(); e.stopImmediatePropagation();
       const dy = e.deltaY || e.deltaX;
-      const nn = Math.min(N_MAX, Math.max(N_MIN, (scrollSiteN.to || siteNv()) * Math.exp(-dy * 0.002)));
+      const S = window.SeShape;
+      const nn = S ? S.step("site", siteNv(), dy, N_MIN, N_MAX) : Math.min(N_MAX, Math.max(N_MIN, (scrollSiteN.to || siteNv()) * Math.exp(-dy * 0.002)));
+      if (S) S.show(e.clientX, e.clientY, nn);
       scrollSiteN.to = nn;
       if (window.SeMotion) { const s = { v: siteNv() }; window.SeMotion.glide("site:n", s, "v", nn, 160, () => { siteN = s.v; }); }
       else siteN = nn;

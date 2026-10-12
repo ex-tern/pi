@@ -57,7 +57,7 @@
   function compactLayout() {
     MIN = MINv();
     const vw = window.innerWidth, vh = window.innerHeight;
-    const x = state.x != null ? state.x * vw : 0.126 * vw, y = state.y != null ? state.y * vh : 0.70 * vh;
+    const ph = vw < 700, x = state.x != null ? state.x * vw : (ph ? 0.126 : 0.775) * vw, y = state.y != null ? state.y * vh : (ph ? 0.70 : 0.651) * vh;   // desktop: inside the third super, beside Lab
     const B = room();                                              // it lives inside the inner super, the second super
     return { x: Math.max(B.x0, Math.min(B.x1, x)), y: Math.max(B.y0, Math.min(B.y1, y)), w: MIN, h: MIN };
   }
@@ -343,8 +343,10 @@
   function settleFree() {
     if (el && el.matches(":hover")) return;                           // the super under the pointer never moves
     const vw = window.innerWidth, vh = window.innerHeight, c = compactLayout(), f = zoomOf().f;
-    const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => x.getBoundingClientRect());
-    const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(b => x + m + 8 <= b.left || b.right + 8 <= x || y + m + 8 <= b.top || b.bottom + 8 <= y); };
+    const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => ({ r: x.getBoundingClientRect(), hold: x.classList.contains("is-holder") }));
+    const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(({ r: b, hold }) => {
+      if (hold) { const k = b.width * 0.03; if (x >= b.left + k && y >= b.top + k && x + m <= b.right - k && y + m <= b.bottom - k) return true; }   // wholly inside a holder: held, not in the way
+      return x + m + 8 <= b.left || b.right + 8 <= x || y + m + 8 <= b.top || b.bottom + 8 <= y; }); };
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
@@ -397,5 +399,12 @@
     const mo = new MutationObserver(() => { if (start()) mo.disconnect(); });
     mo.observe(html, { attributes: true, attributeFilter: ["class"] });
   }
-  window.SeProject = { open: () => setT(1), close: () => setT(0), ask, program: () => ({ supers: P.map(n => ({ id: n.id, label: n.label, kind: n.kind })), wires: WIRES.slice() }) };
+  window.SeProject = { open: () => setT(1), close: () => setT(0), ask,
+    // moved with a holder it sits in (super/nodes.js): by a screen offset, compact only
+    moveBy: (dx, dy) => {
+      if (!el || el.classList.contains("is-open")) return;
+      if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(), [lx, ly] = toLayout(r.left, r.top); state.x = lx / window.innerWidth; state.y = ly / window.innerHeight; }
+      const f = zoomOf().f || 1; state.x += dx / f / window.innerWidth; state.y += dy / f / window.innerHeight; place(); save(state);
+    },
+    inRect: (r, k) => { if (!el || el.classList.contains("is-open")) return false; const b = el.getBoundingClientRect(); return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k; }, program: () => ({ supers: P.map(n => ({ id: n.id, label: n.label, kind: n.kind })), wires: WIRES.slice() }) };
 })();

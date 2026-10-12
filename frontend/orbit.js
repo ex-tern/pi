@@ -499,7 +499,7 @@
       if (!b.width || !b.height) return;
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
       const o = grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g);
-      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.06; o.inner = { x: tl.x + k, y: tl.y + k, w: br.x - tl.x - 2 * k, h: br.y - tl.y - 2 * k }; }
+      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03; o.inner = { x: tl.x + k, y: tl.y + k, w: br.x - tl.x - 2 * k, h: br.y - tl.y - 2 * k }; }
       out.push(o);
     });
     return out;
@@ -545,11 +545,13 @@
     //    that were sat on look for the nearest spot nobody is using.
     // 0. the super under the pointer never moves (owner, 2026-10-12): it stays where it is drawn (growing, about its
     //    centre), and the others go round it
-    const pinned = merged() ? vis.find(it => it !== dragging && it.lastAt && it.bubble.matches(":hover")) : null;
+    let pinned = merged() ? vis.find(it => it !== dragging && it.lastAt && it.bubble.matches(":hover")) : null;
     if (pinned) {
       const c = { x: pinned.lastAt.x + pinned.lastAt.w / 2, y: pinned.lastAt.y + pinned.lastAt.h / 2 };
-      pinned.at = { x: c.x - pinned.w / 2, y: c.y - pinned.h / 2, w: pinned.w, h: pinned.h };
-      placed.push(grow(pinned.at, g / 2));
+      const at = { x: c.x - pinned.w / 2, y: c.y - pinned.h / 2, w: pinned.w, h: pinned.h };
+      // ...unless, grown where it is, it would cover a super, a window or the title (owner, 2026-10-12: "bug, super
+      // disappears": an opening bubble covered run): then it makes room like any other bubble
+      if (freeAt(at, placed)) { pinned.at = at; placed.push(grow(at, g / 2)); } else pinned = null;
     }
     const settled = vis.filter(it => it.custom && it !== dragging && it !== pinned).sort((a, b) => pri(a) - pri(b));
     const bumped = [];
@@ -1536,7 +1538,7 @@
         let LIM = 240, tagged = true;
         if (se) {
           const len = +($(".sl-pi") || {}).dataset?.run || 0;          // the wire's straight stretch from the title, never round its bend
-          const fit = Math.floor(len / 7.6);                   // 11 px mono, a little spacing: about 7.6 px a character
+          const fit = Math.floor(len / 8.6);                   
           const tag = cnt.textContent.length + 5;
           tagged = fit - tag >= 12;
           LIM = Math.max(4, Math.min(60, fit - 5 - (tagged ? tag : 0)));

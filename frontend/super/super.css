@@ -501,7 +501,9 @@ html.shape-se .se-port-bottom:not(.se-port-owned) .se-port-name { bottom: 100%; 
 html.shape-se.sl-dragging .se-port .se-port-name, html.shape-se.lv-dragging .se-port .se-port-name { opacity: 1; }
 /* the π line along the main super: readable, and only where the gap between the supers has room for it */
 html.shape-se .om-page-pi { font-size: 11px; opacity: 0.8; }
-/* the π line runs along the title's wire, not the main loop (super/wire.js .sl-pi) */
+/* the π line runs along the title's wire, not the main loop (super/wire.js .sl-pi): plain black, a size up
+   (owner, 2026-10-12: "make pi more readable", "make simple black") */
+html.shape-se .sl-pi .om-page-pi, html.shape-se .sl-pi .om-page-pi .om-pi-count, html.shape-se .sl-pi .om-page-pi .om-pi-new { font-size: 12.5px; font-weight: 500; opacity: 1; fill: #000; stroke: none; }
 html.shape-se .om-page > .om-page-pi { display: none; }
 .sl-pi { display: none; position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
 html.shape-se.orbit-on .sl-pi { display: block; }
@@ -561,3 +563,16 @@ html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed, html.shape-se .lv-wir
 html.shape-se .om-lattice { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; stroke-linecap: round; }
 html.shape-se .ob-mini .obm-wire { opacity: 0.95; stroke: var(--graphite); }
 html.shape-se .orbit-bubble > .ob-links path { opacity: 0.9; stroke-width: 1.3; }
+
+/* Shift + scroll's readout (super/shapehud.js): the shape, its n and its name, beside the pointer */
+.se-shapehud { position: fixed; z-index: 2000; display: none; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; pointer-events: none;
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; corner-shape: superellipse(1.65);
+  font: 500 12px/1.2 var(--font-mono, ui-monospace, monospace); color: var(--ink); opacity: 0; transition: opacity 0.35s ease;
+  box-shadow: 0 10px 24px -14px rgba(70, 36, 12, 0.5); }
+html.shape-se .se-shapehud { display: flex; }
+.se-shapehud.show { opacity: 1; }
+.se-shapehud svg { width: 30px; height: 30px; flex: none; }
+.se-shapehud path { fill: color-mix(in srgb, var(--paper) 70%, transparent); stroke: var(--ink); stroke-width: 1.6; }
+.se-shapehud.at-detent path { stroke: var(--cobalt); }
+.se-shapehud.at-detent .sh-n { color: var(--cobalt); }
+.se-shapehud .sh-name { color: var(--graphite); font-weight: 400; }

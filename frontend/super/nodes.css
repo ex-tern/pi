@@ -157,7 +157,7 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-box, html.shape-se .lv-node.lv-box,
 .lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
 .lv-node.lv-super, html.shape-se .lv-node.lv-super,
-.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: var(--lv-s, 56px); min-width: var(--lv-s, 56px); height: var(--lv-s, 56px); min-height: var(--lv-s, 56px); }
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: var(--lv-s, 56px); min-width: var(--lv-s, 56px); height: var(--lv-h, var(--lv-s, 56px)); min-height: var(--lv-h, var(--lv-s, 56px)); }
 .lv-node .lv-glyph svg { width: calc(var(--lv-s, 56px) * 0.5); height: calc(var(--lv-s, 56px) * 0.5); }
 .lv-node.lv-super .lv-glyph svg { width: 100%; height: 100%; }
 .lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), .lv-node.lv-box.has-val, .lv-node.lv-dot.has-val { width: auto; }
@@ -217,7 +217,13 @@ html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: 
 /* a holder (super/nodes.js): a ■ grown past 150 px holds supers; its label sits at the top, out of their way,
    and it lies under what it holds */
 .lv-node { z-index: 1; }
-.lv-node.lv-box.is-holder { z-index: 0; background: transparent !important; box-shadow: none; }   /* see-through: what is behind and under it shows */
+.lv-node.lv-box.is-holder { z-index: 0; background: transparent !important; box-shadow: none; pointer-events: none; }   /* see-through: what is behind and under it shows, and takes the pointer */
+.lv-edge { display: none; }
+.lv-node.is-holder > .lv-edge { display: block; position: absolute; pointer-events: auto; }
+.lv-node.is-holder > .lv-edge-t { left: 0; right: 0; top: -6px; height: max(22px, 6%); cursor: grab; }
+.lv-node.is-holder > .lv-edge-b { left: 0; right: 0; bottom: -6px; height: 14px; }
+.lv-node.is-holder > .lv-edge-l { top: 0; bottom: 0; left: -6px; width: 14px; }
+.lv-node.is-holder > .lv-edge-r { top: 0; bottom: 0; right: -6px; width: 14px; }
 .lv-node.lv-box.is-holder .lv-glyph, .lv-node.lv-box.is-holder.is-wrap .lv-glyph {
   display: block; position: absolute; left: 12%; right: 12%; top: 5%; width: auto; height: auto; max-height: 17%; overflow: hidden;
   padding: 0; text-align: center; font-size: 11px !important; line-height: 1.3; pointer-events: none; }
