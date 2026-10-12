@@ -1384,7 +1384,7 @@
     document.addEventListener("dblclick", e => {
       if (!html.classList.contains("shape-se") || e.button) return;
       if (!down || Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;             // a drag, not a click
-      if (document.querySelector(".orbit-panel")) return;                                      // windows open: the click closes them
+      // a double click on bare space makes a prompt Super AI super, windows open or not (owner, 2026-10-12)
       const t = e.target;
       if (t.closest && t.closest(".lv-node, .orbit-bubble, .orbit-panel, .orbit-title, .live-dock, .se-port, input, button, a, select, textarea, .wire-hit, .wire-handle")) return;
       if (window.LabView && window.LabView.loopAt && window.LabView.loopAt(e.clientX, e.clientY)) return;
