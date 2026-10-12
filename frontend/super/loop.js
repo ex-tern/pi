@@ -82,6 +82,17 @@
     const START_ZOOM = window.innerWidth < 700 ? 0.6 : 0.4;            // a phone a little closer: its screen is small
     let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? START_ZOOM : 1))), zoomT;
     let zoomTo = null;
+    // the main super's own zoom (owner, 2026-10-12: "if the main super is selected and locked, the second super gets
+    // zoomed in; if it's unlocked, its own gets zoomed in and out"): the main loop and everything in it scale together
+    // about the centre, from a quarter up to filling the screen; the title stays where it is (orbit:main:zoom)
+    let mainZ = Math.max(0.25, Math.min(1, +load("orbit:main:zoom") || 1)), mainT = 0;
+    function zoomMain(k, direct) {
+      const target = Math.max(0.25, Math.min(1, mainZ * k));
+      clearTimeout(mainT); mainT = setTimeout(() => store("orbit:main:zoom", +mainZ.toFixed(3)), 400);
+      const put = v => { mainZ = v; loopKey = ""; drawLoop(); document.dispatchEvent(new CustomEvent("se:frame")); };
+      if (direct || !window.SeMotion) put(target);
+      else { const s = { v: mainZ }; window.SeMotion.glide("main:zoom", s, "v", target, 160, () => put(s.v)); }
+    }
     // direct: set at once (a trackpad or a pinch, already smooth, coalesced per frame by super/scroll.js);
     // otherwise glide there (a mouse wheel's coarse steps)
     // the superellipse look locks the inner super in place (owner, 2026-10-12): no zoom, no offset; it is as big as
@@ -100,15 +111,15 @@
     const VIEW_N = 24;
     function resetView() {
       zoomTo = null; scrollN.to = null; scrollSiteN.to = null;
-      const from = { z: zoom, m: loopN(), s: siteNv(), x: siteOff.x, y: siteOff.y };
-      const z0 = locked() ? START_ZOOM : 1, to = { z: z0, m: VIEW_N, s: VIEW_N, x: 0, y: 0 };
-      const apply = v => { zoom = v.z; markN = v.m; siteN = v.s; siteOff = { x: v.x, y: v.y }; placeBubblesLayer(); loopKey = ""; drawLoop(); };
-      const done = () => { apply(to); store("orbit:zoom", z0); store("orbit:mark:n", VIEW_N); store("orbit:site:n", VIEW_N); store("orbit:site:offset", { x: 0, y: 0 }); if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
+      const from = { z: zoom, m: loopN(), s: siteNv(), x: siteOff.x, y: siteOff.y, mz: mainZ };
+      const z0 = locked() ? START_ZOOM : 1, to = { z: z0, m: VIEW_N, s: VIEW_N, x: 0, y: 0, mz: 1 };
+      const apply = v => { zoom = v.z; mainZ = v.mz; markN = v.m; siteN = v.s; siteOff = { x: v.x, y: v.y }; placeBubblesLayer(); loopKey = ""; drawLoop(); };
+      const done = () => { apply(to); store("orbit:zoom", z0); store("orbit:main:zoom", 1); store("orbit:mark:n", VIEW_N); store("orbit:site:n", VIEW_N); store("orbit:site:offset", { x: 0, y: 0 }); if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
       if (window.SeMotion) window.SeMotion.tween(from, to, { duration: 380, easing: "easeOutCubic", update: () => apply(from), complete: done });
       else done();
     }
     // how far the view is from that (super/scroll.js shows the way back when it is not)
-    const viewChanged = () => Math.abs((zoomTo == null ? zoomV() : Math.min(locked() ? 1 : 9, zoomTo)) - (locked() ? START_ZOOM : 1)) > 0.02 || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(offV().x, offV().y) > 4;
+    const viewChanged = () => Math.abs(mainZ - 1) > 0.02 || Math.abs((zoomTo == null ? zoomV() : Math.min(locked() ? 1 : 9, zoomTo)) - (locked() ? START_ZOOM : 1)) > 0.02 || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(offV().x, offV().y) > 4;
     // Smoothness: the page is measured (every element's box, and where each scaled element pivots) once per
     // layout tick, never inside an animation frame, so a frame that moves n or the zoom does arithmetic and
     // style writes only, with no layout forced in between.
@@ -308,9 +319,9 @@
       // locked (the superellipse look): no fit at all. The layout already keeps everything inside the inner super, and a
       // fit that follows the bubbles' size fed back into their layout (open bubbles, readable words) and the whole page
       // pulsed (owner, 2026-10-12: "the graphics jerks like this")
-      if (locked()) fitTo(zoomV(), 1, cx, cy);                      // only the zoom: never a fit that follows the bubbles
+      if (locked()) fitTo(zoomV() * mainZ, 1, cx, cy);              // only the zoom (and the main super's): never a fit that follows the bubbles
       else fitTo(Math.max(0.005, Math.min(zoomV(), roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
-      const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
+      const a = sc * A * mainZ, b = sc * B * mainZ, key = [Wv, Hv, n.toPrecision(6), sc, mainZ.toFixed(4)].join();
       loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
       if (key === loopKey) return;
       loopKey = key;
@@ -486,7 +497,7 @@
       return true;
     }
     return {
-      merged, loopN, scrollN, pageLoop, resetView, viewChanged, drawMini, miniSweep, seNorm, zoomPage, measure, fitTo, setFit, needAt,
+      merged, loopN, scrollN, pageLoop, resetView, viewChanged, drawMini, miniSweep, seNorm, zoomPage, zoomMain, mainZoom: () => mainZ, measure, fitTo, setFit, needAt,
       keepWindowsIn, drawLoop, loopPoint, nearLoop, sweepPx, seatEdges, scrollSiteN, siteNv, siteBox, moveSite, winCap,
       placeBubblesLayer, insideLoop, compactSide, siteMargins,
       pageFit: () => pageFit, loopG: () => loopG, loopD: () => loopD, siteOff: () => offV(), zoom: () => zoomV(),

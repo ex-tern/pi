@@ -283,13 +283,7 @@ html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }
 /* the super under the pointer (super/hover.js): a hint of cobalt on its edge, a glance, not a selection
    (a selection takes a click and shows the full cobalt edge below) */
 html.shape-se { --se-hint: color-mix(in srgb, var(--cobalt) 45%, var(--hair-strong)); }
-html.shape-se .orbit-bubble.se-on, html.shape-se .orbit-panel.se-on,
-html.shape-se .lv-palette.se-on, html.shape-se .op-body .card.se-on, html.shape-se .rs-card.se-on, html.shape-se .perf-card.se-on,
-html.shape-se .perf-next.se-on, html.shape-se .buddy-corpus.se-on, html.shape-se .stat-card.se-on, html.shape-se .tr-tile.se-on { border-color: var(--se-hint) !important; }
-html.shape-se .orbit-panel.se-on .op-outline path, html.shape-se .se-on > .op-outline path { stroke: var(--se-hint); }
-html.shape-se .lv-node.se-on { border-color: var(--se-hint) !important; }
-html.shape-se.se-on-site .om-site-loop { stroke: var(--se-hint); }
-html.shape-se.se-on-loop .om-page-loop { stroke: var(--se-hint); }
+/* (hover hints removed: only a selected super lights up, owner 2026-10-12) */
 /* the selected super (super/select.js): a cobalt edge that stays; only its inside answers */
 html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .orbit-bubble.se-sel.se-on, html.shape-se .orbit-panel.se-sel.se-on, html.shape-se .lv-node.se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2px; }   /* the super's own edge, never a ring round it: a square, a circle, a star are all supers alike */
 html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 3; }
@@ -387,7 +381,7 @@ html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
 html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
-html.shape-se .orbit-title.se-on .se-titlesuper { border-color: color-mix(in srgb, var(--ink) 70%, var(--cobalt)); }
+/* (hover hints removed: only a selected super lights up, owner 2026-10-12) */
 /* the title super is the Reset view button (super/scroll.js): nothing is written on it; once the view has changed a click on it resets */
 html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: default; }   /* a scroll on it resets the view: nothing is clickable */
 /* a bubble wire or a node wire selected by a click (orbit.js, super/nodes.js): cobalt, Delete removes it */
@@ -653,3 +647,4 @@ html.shape-se .is-saved > .se-save { opacity: 1; }
 html.shape-se .is-saved > .se-save .sv-body { fill: var(--ink); }
 html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save .sv-slot { stroke: var(--paper); }
 html.shape-se .is-locked:not(.is-saved) > .se-save { opacity: 0.35; }
+

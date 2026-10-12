@@ -24,7 +24,7 @@
   const margin = r => Math.min(r.width, r.height) * 0.03;
   const within = (b, r, k, kt) => b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + (kt == null ? k : kt) && b.bottom <= r.bottom - k;
   // a holder's lock and name sit at its top: a strip that zooms with the page (zoomed out, it is smaller on screen)
-  const topStrip = h => h.classList.contains("is-holder") ? 46 * Math.max(0.25, Math.min(1, (window.PiOrbit && window.PiOrbit.fit && window.PiOrbit.fit().f) || 1)) : null;
+  const topStrip = h => h.classList.contains("is-holder") ? Math.min(46 * Math.max(0.25, Math.min(1, (window.PiOrbit && window.PiOrbit.fit && window.PiOrbit.fit().f) || 1)), h.getBoundingClientRect().height * 0.065) : null;   // in proportion when it is small
   function hosts() {
     return [...document.querySelectorAll(HOSTS)].filter(h => h.getClientRects().length && !h.classList.contains("is-dragging") && !h.classList.contains("dragging"))
       .map(h => ({ el: h, r: rect(h) })).filter(x => x.r.width > 40 && x.r.height > 40).sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);

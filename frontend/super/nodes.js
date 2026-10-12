@@ -1145,7 +1145,7 @@
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
-        const savedN = !!(window.SeSave && window.SeSave.isSaved(n.el));  // a saved super is never deleted (super/save.js): it comes back too
+        const savedN = !!((window.SeSave && window.SeSave.isSaved(n.el)) || (window.SeBind && window.SeBind.isBound(n.el)));  // a saved super is never deleted (super/save.js): it comes back too
         if (n.id === "site-box" || savedN) {                            // the central super comes back to the middle
           n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;

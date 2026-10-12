@@ -425,7 +425,7 @@
   // The loop is created with what it needs from this layout; the functions are aliased here and the
   // live values are read through getters, so the rest of this file reads as before.
   const L = window.SuperLoop.create({ $, store, load, stage, H: () => H, top: () => top, vw: () => vw(), saveWin: (it, p) => saveWin(it, p) });
-  const { merged, loopN, scrollN, pageLoop, drawMini, miniSweep, seNorm, zoomPage, measure, keepWindowsIn, drawLoop, loopPoint, nearLoop,
+  const { merged, loopN, scrollN, pageLoop, drawMini, miniSweep, seNorm, zoomPage, zoomMain, mainZoom, measure, keepWindowsIn, drawLoop, loopPoint, nearLoop,
           sweepPx, seatEdges, scrollSiteN, siteNv, siteBox, moveSite, insideLoop } = L;
   function placeMark() {
     const r = shownR(), se = pageLoop();
@@ -515,7 +515,7 @@
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
       const o = grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g);
       if (p.classList.contains("se-project")) o.lockEl = p;          // the project super merges with an unlocked bubble too
-      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03, kt = Math.max(k, 46); o.inner = { x: tl.x + k, y: tl.y + kt, w: br.x - tl.x - 2 * k, h: br.y - tl.y - k - kt }; }   // clear of its lock and name at the top
+      if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03, kt = Math.max(k, Math.min(46, (br.y - tl.y) * 0.065)); o.inner = { x: tl.x + k, y: tl.y + kt, w: br.x - tl.x - 2 * k, h: br.y - tl.y - k - kt }; }   // clear of its lock and name at the top
       out.push(o);
     });
     return out;
@@ -749,7 +749,7 @@
       if (!moved) return;                 // a click: handled by the click event
       // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
       // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
-      const savedB = !!(window.SeSave && window.SeSave.isSaved(b));       // a saved bubble is never gone (super/save.js): it comes back inside
+      const savedB = !!((window.SeSave && window.SeSave.isSaved(b)) || (window.SeBind && window.SeBind.isBound(b)));   // saved, or synced into a holder (super/bind.js)       // a saved bubble is never gone (super/save.js): it comes back inside
       if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY) && window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "saved", "unsave it to delete it");
       if (!savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY)) {
         it.gone = true; store("orbit:gone:" + it.key, 1); dragging = null; settlePushes = true;
@@ -1935,11 +1935,19 @@
     setTimeout(pull, 500);
     setInterval(pull, 2500);
     window.addEventListener("storage", e => { if (e.key === "sp_token") pull(); });
-    window.PiOrbit = { resetView: () => L.resetView(), viewChanged: () => L.viewChanged(), fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), prioritize, scrollSiteN, _items: () => items.filter(i => !i.bubble.hidden).map(i => ({ key: i.key, w: i.w, h: i.h, w0: i.w0, at: i.at, custom: i.custom, pushed: i.pushed })), _geom: () => ({ W, H, lx, ly, R, site: siteBox() }), siteN: siteNv, zoomPage, moveSite, winCap: p => L.winCap(p), zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout,
+    window.PiOrbit = { resetView: () => L.resetView(), viewChanged: () => L.viewChanged(), fit: () => ({ f: L.pageFit(), px: window.innerWidth / 2, py: top + H / 2 }), scrollN: e => scrollN(e), prioritize, scrollSiteN, _items: () => items.filter(i => !i.bubble.hidden).map(i => ({ key: i.key, w: i.w, h: i.h, w0: i.w0, at: i.at, custom: i.custom, pushed: i.pushed })), _geom: () => ({ W, H, lx, ly, R, site: siteBox() }), siteN: siteNv, zoomPage, zoomMain, mainZoom, moveSite, winCap: p => L.winCap(p), zoom: L.zoom, saveWin, siteBox, inLoop: (x, y) => { const loopG = L.loopG(); if (!pageLoop() || !loopG.a) return true; const cy = top + loopG.cy; return seNorm(Math.abs(x - loopG.cx) / loopG.a, Math.abs(y - cy) / loopG.b, loopG.n) <= 1; }, loop: () => Object.assign({}, L.loopG()), loopPoint, nearLoop, still: () => still, setStill: on => setStill(!!on), setPeek, setContent, contentOf: t => { const it = items.find(i => i.title === t); return it ? it.content : null; }, addPill, openTitle, openKey, keyOfTitle: t => { const it = items.find(i => i.title === t); return it ? it.key : null; }, pillTitles: titles, addVirtual, piDigits: () => piDigits, store, load, visibleKeys: () => items.filter(i => !i.bubble.hidden).map(i => i.key), title: i => showTitle(i, false), titles: TITLES.length, aside: setAside, info: key => { const it = items.find(i => i.key === key); return it ? { title: it.title, use: Math.round(useOf(it)), open: !!it.panel } : null; }, elOf: key => { const it = items.find(i => i.key === key); return it ? (it.panel || buttonOf(it)) : null; }, keyOf: el => { const it = items.find(i => i.panel === el || i.bubble === el); return it ? it.key : null; }, open: key => { const it = items.find(x => x.section.key === key && visible(x)); if (it) openItem(it); }, close: key => { const it = items.find(i => i.key === key); if (it && it.panel) { closeItem(it); return true; } return false; }, layout,
       // a bubble closed for good (scrolled out past its smallest, as a super is: super/bubble.js), until the app is reset
       gone: key => { const it = items.find(i => i.key === key); if (!it || !merged()) return false; if (it.panel) closeItem(it); it.gone = true; store("orbit:gone:" + key, 1); layout(); return true; },
       // the bubbles wholly inside a screen rect (a holder's inside), and moving them by a screen offset (with the holder)
       bubblesIn: (r, k = 0) => items.filter(i => !i.bubble.hidden && i !== dragging).filter(i => { const b = i.bubble.getBoundingClientRect(); return b.width && b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k; }).map(i => i.key),
+      // a bubble placed by its centre on screen, its size read afresh (super/bind.js: a holder's members re-formed)
+      placeBubble: (key, sx, sy) => {
+        const it = items.find(i => i.key === key); if (!it || !it.lastAt) return;
+        it.w = it.bubble.offsetWidth || it.w; it.h = it.bubble.offsetHeight || it.h;
+        const r = it.bubble.getBoundingClientRect(), a = toLayout(0, 0), b = toLayout(sx - (r.left + r.width / 2), sy - (r.top + r.height / 2));   // by the offset from where it is now (its top left kept, its size new)
+        it.at = { x: it.lastAt.x + b.x - a.x, y: it.lastAt.y + b.y - a.y, w: it.w, h: it.h }; it.lastAt = Object.assign({}, it.at); keep(it);
+        layoutSoon();
+      },
       moveBubbles: (keys, dx, dy) => {
         const a = toLayout(0, 0), b = toLayout(dx, dy), lx2 = b.x - a.x, ly2 = b.y - a.y;
         keys.forEach(key => { const it = items.find(i => i.key === key); if (!it || !it.lastAt) return; it.at = { x: it.lastAt.x + lx2, y: it.lastAt.y + ly2, w: it.w, h: it.h }; it.lastAt = Object.assign({}, it.at); keep(it); });

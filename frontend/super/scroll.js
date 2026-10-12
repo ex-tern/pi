@@ -162,7 +162,11 @@
       // a bubble filling the inner super: a scroll out anywhere on it (its pills too) gives it back its size
       const mxb = what !== "site" && what.closest && what.closest(".orbit-bubble.se-max");
       if (mxb && dy > 0 && window.SeMax) { window.SeMax.restore(mxb); return; }
-      if (what === "site") { const sl = window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null; if (sl && locked(sl)) lockedNote(sl, x, y); else if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // the second super locked: its size (the zoom) is kept
+      // the main super selected (owner, 2026-10-12): locked, a scroll zooms the second super; unlocked, the main super itself
+      const mainSel = window.SeSelect && window.SeSelect.selected && window.SeSelect.selected() === "loop";
+      const ml = window.SeLock && window.SeLock.loop ? window.SeLock.loop("main") : null;
+      if (what === "site" && mainSel && ml && !locked(ml) && O().zoomMain) O().zoomMain(Math.exp(-dy * 0.0015), direct);
+      else if (what === "site") { const sl = window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null; if (sl && locked(sl)) lockedNote(sl, x, y); else if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // the second super locked: its size (the zoom) is kept
       else if (!what.isConnected) return;
       else if (press(what)) {   // a button: a few steps in press it, once per gesture
         {

@@ -34,15 +34,10 @@ vec3 light(vec2 uv, float t) {
   vec2 v = (uv - 0.5) * vec2(a, 1.0);
   float y = uv.y;                                                          // 0 at the top, 1 at the bottom
   // by day (less bright, owner, 2026-10-12: "make it less brighter"): a grey-blue overcast, a soft peach horizon
-  vec3 sky = mix(vec3(0.77, 0.80, 0.84), vec3(0.87, 0.86, 0.85), smoothstep(0.0, 0.62, y));
-  float hz = 0.74 + 0.006 * sin(t * 0.03);                                 // the horizon, low on the page
-  float band = exp(-pow((y - hz) / 0.075, 2.0));
-  vec3 c = mix(sky, vec3(0.95, 0.84, 0.71), 0.60 * band);                  // the peach glow along it
-  c = mix(c, vec3(0.90, 0.85, 0.77), smoothstep(hz, 1.0, y) * 0.9);        // warm ground light below it
-  // by night: a deep blue-grey sky, a faint cool band where the horizon is, a darker ground
-  vec3 nsky = mix(vec3(0.17, 0.20, 0.27), vec3(0.25, 0.28, 0.35), smoothstep(0.0, 0.70, y));
-  nsky = mix(nsky, vec3(0.33, 0.36, 0.44), 0.45 * band);
-  nsky = mix(nsky, vec3(0.20, 0.21, 0.25), smoothstep(hz, 1.0, y) * 0.8);
+  // no horizon (owner, 2026-10-12: "remove the bottom horizon... do the same for light version"): one soft sky top to
+  // bottom, a grey-blue overcast by day, a deep blue-grey by night
+  vec3 c = mix(vec3(0.77, 0.80, 0.84), vec3(0.89, 0.88, 0.87), smoothstep(0.0, 1.0, y));
+  vec3 nsky = mix(vec3(0.17, 0.20, 0.27), vec3(0.24, 0.27, 0.33), smoothstep(0.0, 1.0, y));
   c = mix(c, nsky, uNight);
   // the sun and the moon are not drawn in the sky (owner, 2026-10-12: "delete the moon but keep its effects on glass
   // effect of supers", "do the same to sun"): their light is seen only on the glass (PANE_FS, from sunAt)
@@ -168,7 +163,8 @@ void main() {
     float ang = atan(fromSun.y, fromSun.x);
     float rays = 0.5 + 0.5 * sin(ang * 23.0 + uTime * 0.06) * sin(ang * 9.0 - uTime * 0.045);
     // a pane as big as the page (the main super) shows no rays of its own, so no burst stands where the sun or moon would be
-    float rayK = 1.0 - smoothstep(260.0, 520.0, min(uHalf.x, uHalf.y));
+    // no rays in the background (owner, 2026-10-12): the big panes (the main and second supers, holders) show none, only small supers
+    float rayK = 1.0 - smoothstep(110.0, 180.0, min(uHalf.x, uHalf.y));
     OVER(tint(vec3(1.0, 0.86, 0.60)), inside * 0.16 * pow(rays, 4.0) * sunK * rayK);
     // a warm wash over the side facing the sun, fading across the pane
     float side = clamp(dot(vL / max(uHalf, vec2(1.0)), toSun) * 0.5 + 0.5, 0.0, 1.0);
@@ -372,7 +368,7 @@ function drawPanes() {
       if (!bw && !holder) return;                                  // a super that draws itself (an svg shape): left to the page
       const key = el._seKey || (el._seKey = "p" + (++k) + Math.random().toString(36).slice(2, 6));
       ids.set(el, key);
-      const sel = el.classList.contains("se-sel"), hov = el.classList.contains("se-on") || el.matches(":hover");
+      const sel = el.classList.contains("se-sel"), hov = false;   // only a selected super lights up (owner, 2026-10-12: "only when selecting a super makes it light up"), never a hovered one
       const edge = sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink;
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
@@ -408,14 +404,14 @@ function drawLoops() {
   const g = O().loop ? O().loop() : null, sb = O().siteBox ? O().siteBox() : null;
   const top = (O().fit && O().fit().py != null && g) ? O().fit().py - g.cy : 0;
   if (g && g.a) {
-    const sel = html.classList.contains("se-sel-loop"), hov = html.classList.contains("se-on-loop");
+    const sel = html.classList.contains("se-sel-loop"), hov = false;   // selected only
     // the main, second and third supers are supers like any other (owner, 2026-10-12: "all supers have the same
     // effect including main, second and third supers"): glass, a bevel, a shadow, the sheen when hovered or selected
     setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
-    const sel = html.classList.contains("se-sel-site"), hov = html.classList.contains("se-on-site"), busy = html.classList.contains("se-site-thinking");
+    const sel = html.classList.contains("se-sel-site"), hov = false, busy = html.classList.contains("se-site-thinking");
     setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : tokens.ink, edgeW: sel ? 2.5 : 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
   }
 }

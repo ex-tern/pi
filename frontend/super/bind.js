@@ -1,0 +1,156 @@
+// super/bind.js: supers synced to a holder stay inside it (owner, 2026-10-12: "these supers stay inside its loop no
+// matter how you resize it or zoom it, nothing gets out because they are synced together").
+//
+// A holder (a Super AI super grown into a holder, like the third super) binds every super its sync reaches by control
+// wires: a wire from its sync or condition into another super's sync makes that super its member, and so on down
+// (Explore's condition into Lab's sync binds Lab to the holder Explore is bound to); a member that is itself a holder
+// keeps its own. Members never leave: dragged out or pushed out they glide back in, and as the holder shrinks they
+// re-form into its new shape: each keeps its place in proportion and scales with it, as small as the holder goes.
+//
+//   SeBind.members(holder)    the elements bound to a holder
+//   SeBind.need(holder)       { w, h }: the room its members take now, or null
+//   SeBind.enforce()          move any member that is out back inside its holder
+(function () {
+  "use strict";
+  const html = document.documentElement;
+  const on = () => html.classList.contains("shape-se");
+  const ownerOf = h => {                                               // a port anchor's super, as "node:<id>", "bubble:<key>", "project", "win:<key>"
+    const m = h && /^port:(node:[^/]+|bubble:[^/]+|win:[^/]+|project)\/(\w+)$/.exec(h);
+    return m ? { owner: m[1], port: m[2] } : null;
+  };
+  function elOf(owner) {
+    if (owner.startsWith("node:")) return document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]');
+    if (owner.startsWith("bubble:")) return [...document.querySelectorAll('.orbit-bubble.is-group[data-key="' + CSS.escape(owner.slice(7)) + '"]')].find(e => e.getClientRects().length) || null;
+    if (owner === "project") return document.querySelector(".se-project");
+    if (owner.startsWith("win:")) return window.PiOrbit && window.PiOrbit.elOf ? window.PiOrbit.elOf(owner.slice(4)) : null;
+    return null;
+  }
+  // the control graph: parent owner -> child owners (a wire from a sync or condition into a sync)
+  function graph() {
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], kids = new Map();
+    L.forEach(l => {
+      const a = ownerOf(l.a && l.a.h), b = ownerOf(l.b && l.b.h);
+      if (!a || !b || a.owner === b.owner) return;
+      const ctl = p => p === "sync" || p === "condition";
+      if (!ctl(a.port) || !ctl(b.port)) return;
+      // into a sync: the other end is the parent; both syncs: the wire's start is the parent
+      let par = null, kid = null;
+      if (b.port === "sync") { par = a.owner; kid = b.owner; } else if (a.port === "sync") { par = b.owner; kid = a.owner; }
+      if (!par) return;
+      (kids.get(par) || kids.set(par, []).get(par)).push(kid);
+    });
+    return kids;
+  }
+  const isHolder = el => !!(el && el.classList.contains("lv-node") && el.classList.contains("is-holder"));
+  function members(holder) {
+    if (!on() || !isHolder(holder)) return [];
+    const kids = graph(), me = "node:" + holder.dataset.id, out = [], seen = new Set([me]), q = [me];
+    while (q.length) {
+      const o = q.shift();
+      (kids.get(o) || []).forEach(k => {
+        if (seen.has(k)) return; seen.add(k);
+        const el = elOf(k); if (!el || !el.getClientRects().length || el.contains(holder)) return;
+        out.push(el);
+        if (!isHolder(el)) q.push(k);                                   // a member holder keeps its own members
+      });
+    }
+    return out;
+  }
+  const fitK = () => Math.max(0.25, Math.min(1, (window.PiOrbit && window.PiOrbit.fit && window.PiOrbit.fit().f) || 1));
+  // the room inside a holder: a small margin, and its top strip (lock and name), both in proportion to it when it is small
+  function inner(r) { const k = Math.min(r.width, r.height) * 0.035 + Math.min(4, r.width * 0.02), top = Math.min(46 * fitK(), r.height * 0.065); return { l: r.left + k, t: r.top + Math.max(k, top), r: r.right - k, b: r.bottom - k, pad: 2 * k, top: Math.max(k, top) + k }; }
+  function need(holder) {
+    const ms = members(holder); if (!ms.length) return null;
+    const rs = ms.map(e => e.getBoundingClientRect());
+    const w = Math.max(...rs.map(b => b.right)) - Math.min(...rs.map(b => b.left)), h = Math.max(...rs.map(b => b.bottom)) - Math.min(...rs.map(b => b.top));
+    const r = holder.getBoundingClientRect(), i = inner(r);
+    return { w: w + i.pad + 4, h: h + i.top + 4 };
+  }
+  // the holder resized (owner, 2026-10-12: "the holder can shrink as small as it can... the members form into the new
+  // shape"): each member keeps its place in the holder as a share of it (across and down apart), and its size scales
+  // with the holder (by the smaller of the two, so a bubble stays a square). The place is kept as a share, so putting
+  // it there again is always the same answer: nothing drifts, whoever else moves things
+  const state = new WeakMap();                                           // holder -> { w, h (unzoomed), at: Map(member -> [sx, sy]) }
+  // a member's width on screen set to `sw` (its height in its own proportion): absolute, so many small steps of a
+  // resize never compound
+  function sizeTo(el, sw) {
+    const b = el.getBoundingClientRect(); if (!b.width || !sw) return;
+    const k = Math.max(0.05, sw / b.width); if (Math.abs(k - 1) < 0.01) return;
+    if (el.classList.contains("lv-node") && window.LabView && window.LabView.rectOf && window.LabView.setRect) {
+      const r = window.LabView.rectOf(el); if (r) window.LabView.setRect(el, r.x, r.y, r.w * k, r.h * k);
+    } else if (el.classList.contains("orbit-bubble")) {
+      const w = el.offsetWidth * k, h = el.offsetHeight * k;
+      el.style.width = w + "px"; el.style.height = h + "px"; el.classList.add("se-sized");
+      const key = el.dataset.key; if (key) try { localStorage.setItem("se:size:" + key + (el.classList.contains("is-compact") ? "" : ":open"), JSON.stringify({ w, h })); } catch (_) { /* private mode */ }
+    } else if (el.classList.contains("se-project") && window.SeProject && window.SeProject.resize) {
+      window.SeProject.resize(sw / fitK(), sw * (b.height / b.width) / fitK());   // its size is kept unzoomed (project.js draws it times the zoom)
+    }
+  }
+  const shareOf = (el, r, i) => {                                        // its centre and width in shares of the holder, kept within its room
+    const b = el.getBoundingClientRect();
+    const x = Math.max(i.l + b.width / 2, Math.min(i.r - b.width / 2, b.left + b.width / 2)), y = Math.max(i.t + b.height / 2, Math.min(i.b - b.height / 2, b.top + b.height / 2));
+    return [(x - r.left) / r.width, (y - r.top) / r.height, b.width / r.width];
+  };
+  function putAt(el, tx, ty) {
+    // a bubble glides to its new place: it is measured again only once that glide is over (else each correction is
+    // added to the last and they swing)
+    if (el._bindT && performance.now() - el._bindT < 900 * ((window.SeMotion && window.SeMotion.SLOW) || 1)) return;
+    const b = el.getBoundingClientRect(), dx = tx - (b.left + b.width / 2), dy = ty - (b.top + b.height / 2);
+    if (Math.abs(dx) < 1.5 && Math.abs(dy) < 1.5) return;
+    el._bindT = performance.now();
+    if (el.classList.contains("orbit-bubble") && el.dataset.key && window.PiOrbit && window.PiOrbit.placeBubble) window.PiOrbit.placeBubble(el.dataset.key, tx, ty);
+    else window.SeHold.move([el], dx, dy);
+  }
+  const held = new Set();                                                // members being dragged now: theirs, not ours
+  // nothing is checked while a load or reset is settling, nor for a moment after (positions are not final yet)
+  let busyAt = performance.now();
+  function enforce() {
+    if (!on() || !window.SeHold) return;
+    if (html.classList.contains("se-boot") || html.classList.contains("se-unveil")) { busyAt = performance.now(); return; }
+    if (performance.now() - busyAt < 2500) return;
+    if (html.classList.contains("se-chain-dragging")) return;
+    document.querySelectorAll(".lv-node.is-holder").forEach(h => {
+      if (h.classList.contains("is-dragging") || !h.getClientRects().length) return;
+      const ms = members(h); if (!ms.length) { state.delete(h); return; }
+      const r = h.getBoundingClientRect(), sc = parseFloat(h.style.scale) || 1, w = r.width / sc, hh = r.height / sc, i = inner(r);
+      let st = state.get(h);
+      if (!st) { st = { w, h: hh, at: new Map() }; state.set(h, st); }
+      ms.forEach(el => { if (!st.at.has(el)) st.at.set(el, shareOf(el, r, i)); });   // a new member: where it is now
+      const resized = Math.abs(w - st.w) > 1 || Math.abs(hh - st.h) > 1;
+      if (resized) {                                                     // resized: the members scale with it, to their share of it
+        const kw = w / st.w, kh = hh / st.h; st.w = w; st.h = hh;
+        ms.forEach(el => { const a = st.at.get(el); if (a && kw !== kh) a[2] *= Math.min(kw, kh) / kw; });   // the smaller of the two: a square stays a square
+        st.sizedAt = performance.now();
+      }
+      ms.forEach(el => {                                                 // sizes: to their share while the holder changes; else the share follows them (a bubble opened, sized by you)
+        if (el.classList.contains("orbit-panel") || held.has(el)) return;
+        const a = st.at.get(el); if (!a) return;
+        if (performance.now() - (st.sizedAt || 0) < 1500) sizeTo(el, a[2] * r.width);
+        else a[2] = el.getBoundingClientRect().width / r.width;
+      });
+      ms.forEach(el => {
+        if (held.has(el) || el.classList.contains("is-dragging") || el.classList.contains("dragging") || el.classList.contains("se-opening")) return;
+        const a = st.at.get(el); putAt(el, r.left + a[0] * r.width, r.top + a[1] * r.height);
+      });
+    });
+  }
+  // a member you move takes its new place (within its holder: dragged out, it comes back to the nearest place inside)
+  document.addEventListener("pointerdown", e => {
+    const el = e.target && e.target.closest && e.target.closest(".orbit-bubble.is-group, .lv-node, .se-project");
+    if (el && !el.classList.contains("is-holder")) held.add(el);
+  }, true);
+  document.addEventListener("pointerup", () => setTimeout(() => {
+    held.forEach(el => {
+      document.querySelectorAll(".lv-node.is-holder").forEach(h => { const st = state.get(h); if (st && st.at.has(el)) { const r = h.getBoundingClientRect(); st.at.set(el, shareOf(el, r, inner(r))); } });
+    });
+    held.clear(); enforce();
+  }, 120), true);
+  let raf = 0;
+  const soon = () => { if (!raf) raf = requestAnimationFrame(() => { raf = 0; enforce(); }); };
+  document.addEventListener("se:frame", soon);
+  document.addEventListener("superlink:change", soon);
+  setInterval(enforce, 500);
+  // bound to a holder: then it is never dropped out of the site either (orbit.js, nodes.js, project.js treat it as saved)
+  const isBound = el => !!el && [...document.querySelectorAll(".lv-node.is-holder")].some(h => members(h).includes(el));
+  window.SeBind = { members, need, enforce, isBound };
+})();

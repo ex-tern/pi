@@ -17,13 +17,18 @@
     document.querySelectorAll(SEL).forEach(e => { const r = e.getBoundingClientRect(); s += (r.left | 0) + "," + (r.top | 0) + "," + (r.width | 0) + "," + (r.height | 0) + ";"; });
     return s;
   }
+  let done = false;
   function unveil() {
-    if (window.SeLegible) window.SeLegible.check();                  // text too small to read is a box before anything shows
+    if (done) return; done = true;
+    try { if (window.SeLegible) window.SeLegible.check(); } catch (e) { console.error("legible check", e); }   // text too small to read is hidden before anything shows; a failure never keeps the page veiled
     html.classList.add("se-unveil");
     html.classList.remove("se-boot");
     setTimeout(() => html.classList.remove("se-unveil"), 1100);
   }
+  // whatever happens (frames paused in a background tab, an error elsewhere), the page shows (owner, 2026-10-12: a blank page)
+  setTimeout(unveil, MAX + 600);
   function frame() {
+    if (done) return;
     const now = performance.now();
     if (now - t0 > MAX) return unveil();
     if (ready && fonts && (!window.SeEngine || window.SeEngine.ready || now - t0 > 1200)) {
