@@ -1470,6 +1470,20 @@
     // a single click selects the super (super/select.js); what happened is announced to screen readers
     out = document.createElement("output"); out.className = "lv-out"; out.setAttribute("aria-live", "polite");
     document.body.appendChild(out);
+    // a holder moves from anywhere on it, not only by its top strip (owner, 2026-10-12: "a super should be movable
+    // anywhere not just at the top"): a press on its bare space (nothing it holds under the pointer) drags it; a
+    // double click there still makes a super inside it, a press on what it holds still reaches that
+    const BARE = ".orbit-stage, .orbit-bubbles, .om-page, .om-site, .lv-canvas, .se-gl-canvas, .orbit-rings";
+    document.addEventListener("pointerdown", e => {
+      if (!html.classList.contains("shape-se") || e.button !== 0 || e.shiftKey) return;
+      const t = e.target;
+      if (!(t === document.body || t === document.documentElement || (t.matches && t.matches(BARE)))) return;
+      const h = nodes.filter(n => isHolder(n)).map(n => ({ n, r: n.el.getBoundingClientRect() }))
+        .filter(x => e.clientX >= x.r.left && e.clientX <= x.r.right && e.clientY >= x.r.top && e.clientY <= x.r.bottom)
+        .sort((a, b) => a.r.width * a.r.height - b.r.width * b.r.height)[0];
+      if (!h) return;
+      drag(e, h.n.el, null);
+    }, true);
     let down = null; const held = new Set();
     document.addEventListener("pointerdown", e => { down = [e.clientX, e.clientY, e.target]; }, true);
     document.addEventListener("dblclick", e => {
