@@ -129,6 +129,17 @@
       });
     }
     Object.keys(owned).forEach(o => { if (!seen.has(o)) dropPorts(o); });
+    // a port under a window that is not its own is covered: it does not show through (owner, 2026-10-12: graphics)
+    const wins = [...document.querySelectorAll(".orbit-panel")].map(p => ({ p, r: p.getBoundingClientRect() })).filter(w => w.r.width);
+    Object.keys(owned).forEach(o => {
+      const own = o.startsWith("win:") ? ownerEl(o) : null;
+      PORTS.forEach(([p]) => {
+        const el = owned[o][p]; if (!el) return;
+        const x = parseFloat(el.style.left), y = parseFloat(el.style.top);
+        const hid = wins.some(w => w.p !== own && x > w.r.left + 2 && x < w.r.right - 2 && y > w.r.top + 2 && y < w.r.bottom - 2);
+        if (el.classList.contains("is-covered") !== hid) el.classList.toggle("is-covered", hid);
+      });
+    });
   }
   function placeAt(set, cx, cy, a, b) {
     const pts = { input: [cx - a, cy], output: [cx + a, cy], sync: [cx, cy - b], condition: [cx, cy + b] };

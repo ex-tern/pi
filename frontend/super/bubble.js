@@ -24,18 +24,19 @@
   // (super/project.js) is drawn the same way, so every compact super is the same species
   function mini(el) {
     const name = (el.querySelector(":scope > .ob-label") || {}).textContent || "";
-    return drawing(name, [...el.querySelectorAll(".ob-member")].map(m => m.textContent.trim()));
+    return drawing(name, [...el.querySelectorAll(".ob-member")].map(m => m.textContent.trim()), null, parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE);
   }
-  function drawing(name, members, cls) {
-    const n = Math.max(1, members.length), gap = 4, bh = 8, bw = 30, x1 = 60, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2;
-    const lx = 12, lw = 34, lh = 14, ly = SIDE / 2 - lh / 2;
+  function drawing(name, members, cls, side) {
+    const n = Math.max(1, members.length), gap = Math.min(4, 36 / n), bh = Math.min(8, (72 - (n - 1) * gap) / n), bw = 20, x1 = 68, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2 - 4;   // clear of the lock at the lower right
+    // the name as large as its box lets (a compact bubble is drawn at --se-compact, 84 px or more: readable)
+    const px = (side || SIDE) / SIDE, label = name.trim().slice(0, 10), lx = 6, lw = 54, fs = Math.min(13 / px, lw * 0.92 / (0.62 * Math.max(4, label.length))), lh = fs + 8, ly = SIDE / 2 - lh / 2 - 4;   // about 13 px on screen, as large as its box lets
     let s = '<svg class="' + (cls || "ob-mini") + '" viewBox="0 0 ' + SIDE + ' ' + SIDE + '" aria-hidden="true">';
     members.forEach((m, i) => {
-      const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2;
-      s += '<path class="obm-wire" d="M' + x0 + ',' + (SIDE / 2) + ' C' + mx + ',' + (SIDE / 2) + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
+      const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2, yc = ly + lh / 2;
+      s += '<path class="obm-wire" d="M' + x0 + ',' + yc + ' C' + mx + ',' + yc + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
     });
     s += '<rect class="obm-box obm-name" x="' + lx + '" y="' + ly + '" width="' + lw + '" height="' + lh + '" rx="4"/>' +
-         '<text class="obm-text" x="' + (lx + lw / 2) + '" y="' + (ly + lh / 2 + 2.6) + '" text-anchor="middle">' + esc(name.trim().slice(0, 9)) + '</text>';
+         '<text class="obm-text" x="' + (lx + lw / 2) + '" y="' + (ly + lh / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" style="font-size:' + fs.toFixed(1) + 'px">' + esc(label) + '</text>';
     members.forEach((m, i) => {
       const y = y0 + i * (bh + gap);
       s += '<rect class="obm-box" x="' + x1 + '" y="' + y + '" width="' + bw + '" height="' + bh + '" rx="2.5"><title>' + esc(m) + '</title></rect>';
@@ -141,6 +142,21 @@
     if (O().layout) O().layout();
     return true;
   }
+  // on a phone a window takes most of the inner super: an open bubble compacts when one opens, so nothing is squeezed
+  // past readable (a scroll opens it again)
+  document.addEventListener("se:windows", () => {
+    if (!on() || window.innerWidth >= 700 || !document.querySelector(".orbit-panel")) return;
+    document.querySelectorAll(".orbit-bubble.is-group[data-key]:not(.is-compact)").forEach(el => setOpen(el, false, true));
+  });
+  // the drawing is drawn for the compact side (its name about 13 px on screen): drawn again when that changes
+  let sideWas = 0;
+  setInterval(() => {
+    if (!on()) return;
+    const side = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || SIDE;
+    if (side === sideWas) return;
+    sideWas = side;
+    document.querySelectorAll(".orbit-bubble.is-group.is-compact, .orbit-bubble.is-group.is-growing").forEach(redraw);
+  }, 700);
   window.SeBubble = { zoom, open: (el, open) => setOpen(el, open, true), isCompact, start, drawing };
   const boot = () => { if (!start()) setTimeout(boot, 200); };
   if (window.PiOrbit) boot(); else document.addEventListener("orbit:ready", boot, { once: true });

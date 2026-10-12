@@ -1150,9 +1150,9 @@
     if (!target) return;
     if (!t || n.role === "loop") { target.style.fontSize = ""; return; }
     const size = n.size || 56, room = size * (n.fn === "dot" ? 0.74 : 0.82);
-    let fs = Math.max(5, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));
+    let fs = Math.max(11, Math.min(size * 0.3, room / (Math.max(1, t.length) * 0.62)));   // never under readable (11 px): a long word is cut with an ellipsis instead
     const wrap = n.role === "engine";                                   // an engine super (the central one too) wraps its words inside its shape
-    if (wrap) fs = Math.max(6, Math.min(Math.min(14, Math.max(10, size * 0.1)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
+    if (wrap) fs = Math.max(11, Math.min(Math.min(14, Math.max(11, size * 0.1)), Math.sqrt(room * room * 0.8 / (0.62 * 1.25 * Math.max(1, t.length)))));   // small mono type, as on the owner's screenshot
     n.el.classList.toggle("is-wrap", wrap);
     target.style.fontSize = fs.toFixed(1) + "px";
   }

@@ -196,8 +196,20 @@
   // (horizontal) or out of the bottom and into the top; nearly straight when the ends line up
   // The same rule as the main super's lattice: a wire out of a top or bottom (sync, condition) sweeps in
   // a curve; one out of a side (input, output) runs nearly straight, with small corners.
-  function wire(x1, y1, x2, y2, horizontal) {
+  function wire(x1, y1, x2, y2, horizontal, into) {
     const f = v => v.toFixed(1);
+    // into a top or bottom port (sync, condition) from the side: along, then one corner, then straight down (or up)
+    // into it, so it never runs along the super's edge; out of one the same way, mirrored
+    if (into === "v" || into === "v0") {
+      const end = into === "v", ax = end ? x1 : x2, ay = end ? y1 : y2, bx = end ? x2 : x1, by = end ? y2 : y1;
+      const sx = bx >= ax ? 1 : -1, sy = by >= ay ? 1 : -1, r = Math.min(Math.abs(bx - ax), Math.abs(by - ay), 16);
+      if (r < 1.5) return "M" + f(x1) + "," + f(y1) + "L" + f(x2) + "," + f(y2);
+      const e = 2 / pi, K = 10, pts = [[ax, ay]], cx = bx - r * sx, cy = ay + r * sy;
+      for (let i = 0; i <= K; i++) { const t = i / K * Math.PI / 2; pts.push([cx + r * sx * Math.pow(Math.sin(t), e), cy - r * sy * Math.pow(Math.cos(t), e)]); }
+      pts.push([bx, by]);
+      if (!end) pts.reverse();
+      return "M" + pts.map(q => f(q[0]) + "," + f(q[1])).join("L");
+    }
     if (!horizontal) {                                            // up or down: one smooth sweep
       const dy = y2 - y1;
       return "M" + f(x1) + "," + f(y1) + "C" + f(x1) + "," + f(y1 + dy * 0.55) + " " + f(x2) + "," + f(y2 - dy * 0.55) + " " + f(x2) + "," + f(y2);

@@ -278,9 +278,12 @@
   // ---- drawing ---------------------------------------------------------
   const se = () => html.classList.contains("shape-se") && window.SeMorph;
   const term = ([x, y]) => se() ? '<path class="wire-term" d="' + window.SeMorph.star(x, y, 4.5, 4.5) + '"/>' : '<rect class="wire-term" x="' + (x - 3) + '" y="' + (y - 3) + '" width="6" height="6"/>';
-  function curve(p, q) {
+  // a port on a top or bottom edge (sync, condition) takes its wire vertically
+  const vPort = an => { if (!an || !an.h || !an.h.startsWith("port:")) return false; const e = hostEl(an.h); return !!(e && (e.classList.contains("se-port-top") || e.classList.contains("se-port-bottom"))); };
+  function curve(p, q, a, b) {
     const hz = Math.abs(q[0] - p[0]) >= Math.abs(q[1] - p[1]);
-    if (se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], hz);
+    const into = hz && vPort(b) && !vPort(a) ? "v" : hz && vPort(a) && !vPort(b) ? "v0" : null;
+    if (se() && window.SeMorph.wire) return window.SeMorph.wire(p[0], p[1], q[0], q[1], hz, into);
     const c = Math.max(24, (hz ? Math.abs(q[0] - p[0]) : Math.abs(q[1] - p[1])) * 0.5);
     const sx = q[0] >= p[0] ? 1 : -1, sy = q[1] >= p[1] ? 1 : -1;
     return hz ? "M" + p[0] + "," + p[1] + "C" + (p[0] + sx * c) + "," + p[1] + " " + (q[0] - sx * c) + "," + q[1] + " " + q[0] + "," + q[1]
@@ -290,21 +293,32 @@
   const label = an => an.loop ? "the loop" : an.el ? an.h.replace(/^[a-z#]+:?/, "") : "“" + an.t + "”";
   function draw() {
     if (!svg) return;
-    let s = "";
+    let s = "", defs = "";
+    // a wire passes behind the supers it does not join (owner, 2026-10-12: "fix the graphics"): each wire is clipped
+    // out of every super except those its ends are in (a holder is see-through: wires inside it show)
+    const covers = se() ? [...document.querySelectorAll(".orbit-bubble.is-group:not([hidden]), .orbit-panel, .se-project, .lv-node:not(.is-holder)")]
+      .filter(e => e.getClientRects().length).map(e => e.getBoundingClientRect()).filter(r => r.width > 8 && r.height > 8) : [];
+    const rr = (r, k) => { const x = r.left + 3, y = r.top + 3, w = r.width - 6, h = r.height - 6, c = Math.min(w, h) * k; return "M" + (x + c) + "," + y + "H" + (x + w - c) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + c) + "V" + (y + h - c) + "Q" + (x + w) + "," + (y + h) + " " + (x + w - c) + "," + (y + h) + "H" + (x + c) + "Q" + x + "," + (y + h) + " " + x + "," + (y + h - c) + "V" + (y + c) + "Q" + x + "," + y + " " + (x + c) + "," + y + "Z"; };
+    const inR = (r, pt) => pt && pt[0] >= r.left - 4 && pt[0] <= r.right + 4 && pt[1] >= r.top - 4 && pt[1] <= r.bottom + 4;
     links.forEach((l, i) => {
       const ca = centreOf(l.a) || (l.a.loop ? null : undefined), cb = centreOf(l.b) || (l.b.loop ? null : undefined);
       if (ca === undefined || cb === undefined) return;
       const p = endPoint(l.a, cb || [innerWidth / 2, innerHeight / 2]), q = endPoint(l.b, p || ca);
       if (!p || !q) return;
       const p2 = l.a.loop ? endPoint(l.a, q) : p;
-      const d = curve(p2, q);
-      s += '<g class="wire sl-wire' + (i === selected ? " is-sel" : "") + '"><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + term(p2) + term(q) +
+      const d = curve(p2, q, l.a, l.b);
+      const cut = covers.filter(r => !inR(r, p2) && !inR(r, q));
+      let clip = "";
+      if (cut.length) { defs += '<clipPath id="slc' + i + '"><path clip-rule="evenodd" d="M-9999,-9999H99999V99999H-9999Z' + cut.map(r => rr(r, 0.3)).join("") + '"/></clipPath>'; clip = ' clip-path="url(#slc' + i + ')"'; }
+      const isPort = an => an && an.h && an.h.startsWith("port:");
+      s += '<g class="wire sl-wire' + (i === selected ? " is-sel" : "") + '"' + clip + '><path class="wire-bed" d="' + d + '"/><path class="wire-flow" d="' + d + '"/>' + (isPort(l.a) ? "" : term(p2)) + (isPort(l.b) ? "" : term(q)) +
            '<path class="wire-hit" data-i="' + i + '" d="' + d + '"><title>' + esc(label(l.a)) + " – " + esc(label(l.b)) + ': double-click to delete</title></path></g>';
     });
     if (drag) {
       if (drag.overRect) s += '<rect class="sl-hover" x="' + (drag.overRect.left - 2) + '" y="' + (drag.overRect.top - 1) + '" width="' + (drag.overRect.width + 4) + '" height="' + (drag.overRect.height + 2) + '" rx="3"/>';
       s += '<path class="wire-temp" d="' + curve(drag.p, drag.q) + '"/>';
     }
+    if (defs) s = "<defs>" + defs + "</defs>" + s;
     if (se()) s = s.replace(/<title>[\s\S]*?<\/title>/g, "");   // superellipse look: no tooltips on wires (a hover only lights)
     if (s !== lastHtml) { lastHtml = s; svg.innerHTML = s; }
   }

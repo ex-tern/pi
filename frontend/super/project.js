@@ -112,10 +112,10 @@
     // compact, it is drawn as a bubble is (super/bubble.js drawing): its name's box wired to one box per part of it
     const face = () => {
       const f = el.querySelector(".pj-face");
-      if (!f || f.dataset.done || !window.SeBubble || !window.SeBubble.drawing) return !!(f && f.dataset.done);
-      f.innerHTML = window.SeBubble.drawing("Project", SECTIONS.map(x => x.label), "ob-mini pj-mini"); f.dataset.done = "1"; return true;
+      if (!f || f.dataset.done === String(MINv()) || !window.SeBubble || !window.SeBubble.drawing) return !!(f && f.dataset.done);
+      f.innerHTML = window.SeBubble.drawing("Project", SECTIONS.map(x => x.label), "ob-mini pj-mini", MINv()); f.dataset.done = String(MINv()); return true;
     };
-    if (!face()) { const tryFace = setInterval(() => { if (face()) clearInterval(tryFace); }, 200); }
+    setInterval(face, 700);                                        // drawn again when the compact side changes (its name about 13 px on screen)
     map.style.width = W + "px"; map.style.height = H + "px";
     let inner = '<svg class="pj-wires" viewBox="0 0 ' + W + " " + H + '" width="' + W + '" height="' + H + '" aria-hidden="true"></svg>';
     SECTIONS.forEach(s => { inner += '<div class="pj-sec" style="left:' + s.x + "px;top:" + s.y + "px;width:" + s.w + "px;height:" + s.h + 'px"><span>' + esc(s.label) + "</span></div>"; });

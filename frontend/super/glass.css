@@ -1,0 +1,65 @@
+/* super/glass.css: the glass look (owner, 2026-10-12: "add this glass effect").
+   Every super is a pane of frosted glass over a soft light that drifts slowly behind the page: see-through paper,
+   blurred and brightened behind it, a fine light rim along its top, a soft shadow under it, and an iridescent
+   sheen that runs round its edge when it is hovered or selected. The ink edge, the superellipse, the ports and the
+   type stay as they are (super/super.css), so the shape language is the same; only the material changes. */
+
+@property --glass-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+/* the light behind the glass: a few warm and cool glows, blurred, drifting very slowly */
+html.shape-se body::before {
+  content: ""; position: fixed; inset: -25%; z-index: 0; pointer-events: none;
+  background:
+    radial-gradient(42% 38% at 20% 26%, rgba(226, 160, 104, 0.75), transparent 72%),
+    radial-gradient(38% 34% at 80% 72%, rgba(128, 156, 226, 0.6), transparent 72%),
+    radial-gradient(34% 30% at 72% 16%, rgba(240, 196, 150, 0.8), transparent 72%),
+    radial-gradient(40% 36% at 28% 84%, rgba(184, 170, 232, 0.55), transparent 72%),
+    radial-gradient(30% 30% at 52% 50%, rgba(250, 236, 220, 0.9), transparent 75%),
+    #efe9e2;
+  filter: blur(30px) saturate(1.15);
+  animation: glass-drift 60s ease-in-out infinite alternate;
+}
+@keyframes glass-drift {
+  0% { transform: translate3d(0, 0, 0) rotate(0deg) scale(1); }
+  50% { transform: translate3d(3%, -2%, 0) rotate(6deg) scale(1.05); }
+  100% { transform: translate3d(-3%, 2%, 0) rotate(-4deg) scale(1.02); }
+}
+/* the main super, and the backdrop it covers the page with (orbit.css .orbit-mark-big), let that light through */
+html.shape-se.orbit-mark-big .orbit-center { background: transparent; }
+html.shape-se .om-page-loop { fill: rgba(255, 255, 255, 0.12); }
+
+/* the panes */
+html.shape-se .lv-node:not(.is-holder), html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
+html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shape-se .se-project, html.shape-se .lv-palette {
+  background: rgba(255, 255, 255, 0.38);
+  -webkit-backdrop-filter: blur(18px) saturate(1.6) brightness(1.06);
+  backdrop-filter: blur(18px) saturate(1.6) brightness(1.06);
+  border-color: color-mix(in srgb, var(--ink) 78%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85), inset 0 -1px 0 rgba(255, 255, 255, 0.25), 0 14px 34px -18px rgba(40, 30, 20, 0.35);
+}
+/* windows read their content: a little more paper behind the type */
+html.shape-se .orbit-panel { background: rgba(255, 255, 255, 0.62); }
+/* the boxes inside a compact super's drawing are glass too */
+html.shape-se .ob-mini .obm-box { fill: rgba(255, 255, 255, 0.55); }
+
+/* the sheen: an iridescent light running round the edge, on the super under the pointer and the selected one */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper)::before {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit; corner-shape: inherit; padding: 1.5px;
+  background: conic-gradient(from var(--glass-a), transparent 0deg, rgba(255, 120, 120, 0.9) 30deg, rgba(255, 210, 120, 0.9) 60deg, rgba(120, 220, 170, 0.9) 90deg, rgba(110, 160, 255, 0.95) 120deg, rgba(200, 130, 255, 0.9) 150deg, transparent 190deg, transparent 360deg);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0; transition: opacity 0.9s ease;
+  animation: glass-sheen 6s linear infinite;
+}
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder)):is(:hover, .se-sel)::before,
+html.shape-se .orbit-title .se-titlesuper:hover::before { opacity: 1; }
+@keyframes glass-sheen { to { --glass-a: 360deg; } }
+
+@media (prefers-reduced-motion: reduce) {
+  html.shape-se body::before, html.shape-se :is(.orbit-bubble, .orbit-panel, .se-project, .lv-node, .orbit-title .se-titlesuper)::before { animation: none; }
+}
+/* browsers without backdrop blur: the panes stay paper */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.shape-se .lv-node:not(.is-holder), html.shape-se .orbit-bubble, html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shape-se .se-project { background: var(--paper); }
+}

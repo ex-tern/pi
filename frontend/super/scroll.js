@@ -148,7 +148,7 @@
         // too small, it closes (owner, 2026-10-12): at its smallest, with its content all in view, a scroll on out closes it
         const kNow = z ? (z.state.kTo != null ? z.state.kTo : z.state.k) : 1, smallest = what.offsetWidth <= 264 || what.offsetHeight <= 144, whole = !(z && kNow > z.state.fitK * 1.001);
         if (dy > 0 && smallest && whole) {
-          what._over = (what._over || 0) + dy; clearTimeout(what._overT); what._overT = setTimeout(() => { what._over = 0; }, 500);
+          what._over = (what._over || 0) + dy; clearTimeout(what._overT); what._overT = setTimeout(() => { what._over = 0; }, 900);
           if (what._over > 160 && O().keyOf && O().close) { what._over = 0; O().close(O().keyOf(what)); }
           return;
         }

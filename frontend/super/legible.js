@@ -13,8 +13,8 @@
   const on = () => html.classList.contains("shape-se");
   const MIN = 11;
   // what is scaled on the page: a window's zoomed content, the project's map, the supers, the title
-  const ROOTS = ".se-zoomed, .pj-map, .orbit-bubble.is-group, .lv-node, .orbit-title";
-  const SKIP = "input, textarea, select, [contenteditable], script, style, .se-port, .se-lock";
+  const ROOTS = ".se-zoomed, .pj-map, .orbit-bubble.is-group";   // the supers' own words (nodes, the title) are set readable
+  const SKIP = "input, textarea, select, [contenteditable], script, style, .se-port, .se-lock, .ob-mini";   // a compact super's drawing sets its name readable itself
   const cache = new WeakMap();                                       // root -> { els, at, key }
 
   const ownText = e => { for (const c of e.childNodes) if (c.nodeType === 3 && c.nodeValue.trim()) return true; return false; };

@@ -99,6 +99,6 @@
   // a selected super that goes away (a window closes, a loop is deleted): the main super again
   setInterval(() => { const el = elOf(sel); if (el && !el.isConnected) select("loop"); }, 500);
   document.addEventListener("dblclick", e => { if (on() && e.target.closest && e.target.closest(".wire-hit")) return; }, true);
-  select("site");                                             // the site (the inner super) is selected at first, as in the owner's screenshot
+  // nothing is selected at first: a calm start (owner, 2026-10-12: "make it look professional"); a click selects
   window.SeSelect = { selected: () => sel, select, containerOf, superAt, isSelected: s => s === sel };
 })();
