@@ -13,7 +13,8 @@ html.shape-se body::before { content: ""; position: fixed; inset: 0; z-index: 0;
 html.shape-se.orbit-mark-big .orbit-center { background: transparent; }
 html.shape-se .om-page-loop { fill: rgba(255, 255, 255, 0.06); }
 /* a soft vignette over the light, darker at the edges, as in the reference */
-html.shape-se body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: radial-gradient(ellipse 80% 75% at 50% 50%, transparent 50%, rgba(25, 25, 25, 0.10) 100%); }   /* a light vignette */
+html.shape-se body::after { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none;
+  background: radial-gradient(ellipse 45% 50% at 50% 50%, rgba(255, 255, 255, 0.7), transparent 70%), radial-gradient(ellipse 80% 75% at 50% 50%, transparent 50%, rgba(25, 25, 25, 0.10) 100%); }   /* a halo of light in the middle, a light vignette at the edges */
 html.se-gl body::after { display: none; }
 
 /* the panes */

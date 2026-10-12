@@ -26,7 +26,12 @@ vec3 light(vec2 uv, float t) {
   // toward its edges ("add light vignette")
   float a = uRes.x / uRes.y;
   vec2 v = (uv - 0.5) * vec2(a, 1.0);
-  return vec3(0.965, 0.965, 0.957) * (1.0 - 0.10 * smoothstep(0.35, 1.0, length(v)));
+  float r = length(v);
+  vec3 c = vec3(0.955, 0.955, 0.947) * (1.0 - 0.10 * smoothstep(0.35, 1.0, r));
+  // a soft halo of light behind the middle of the page, drifting very slowly ("add back ground halo")
+  vec2 hc = vec2(0.03 * sin(t * 0.05), 0.02 * cos(t * 0.04));
+  float halo = exp(-dot(v - hc, v - hc) / 0.16);
+  return mix(c, vec3(1.0), 0.55 * halo);
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
