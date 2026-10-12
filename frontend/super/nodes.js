@@ -897,8 +897,8 @@
       const fixed = !hit && [...document.querySelectorAll(".se-project:not(.is-open), .orbit-title, .live-tab, .live-dock.open .live-body")].find(el => el.getClientRects().length && over(el.getBoundingClientRect()));
       if (!hit && !fixed) return;
       const b = hit ? hit.el.getBoundingClientRect() : fixed.getBoundingClientRect();
-      n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 18) / window.innerHeight; place(n);
-      if (b.bottom + 18 + a.height > window.innerHeight - 22) return;
+      n.fy = Math.min(window.innerHeight - a.height - 22, b.bottom + 4) / window.innerHeight; place(n);   // just clear of it: supers almost touch
+      if (b.bottom + 4 + a.height > window.innerHeight - 22) return;
     }
   }
 

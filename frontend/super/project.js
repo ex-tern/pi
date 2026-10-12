@@ -346,7 +346,7 @@
     const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => ({ r: x.getBoundingClientRect(), hold: x.classList.contains("is-holder") }));
     const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(({ r: b, hold }) => {
       if (hold) { const k = b.width * 0.03; if (x >= b.left + k && y >= b.top + k && x + m <= b.right - k && y + m <= b.bottom - k) return true; }   // wholly inside a holder: held, not in the way
-      return x + m + 8 <= b.left || b.right + 8 <= x || y + m + 8 <= b.top || b.bottom + 8 <= y; }); };
+      return x + m + 3 <= b.left || b.right + 3 <= x || y + m + 3 <= b.top || b.bottom + 3 <= y; }); };
     if (free(c.x, c.y)) return;
     for (let d = 8; d < Math.max(vw, vh); d += 8) for (let a = 0; a < 16; a++) {
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);

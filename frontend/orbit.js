@@ -358,7 +358,7 @@
   let piAt = load("orbit:pi:at");        // {fx, fy}: the π box's centre, once you have moved it
   const PI_MIN = 0.6, PI_MAX = 2.6;
   let draggingLogo = false;
-  const GAP = () => (small ? 6 : 10);
+  const GAP = () => (small ? 2 : 3);   // supers almost touch (owner, 2026-10-12: "decrease the paddings between supers")
 
   // Scrolling sizes the mark from a dot (4 px) to one that covers the whole page.
   // Past capR() there is no room around it, so it centres and becomes the backdrop.
@@ -468,15 +468,21 @@
   // a holder (a Super AI ■ grown into a super that holds supers) is in the way only of what straddles its edge:
   // a bubble wholly inside it stays there (owner, 2026-10-12: "i want to be able to move things inside new super")
   const within = (r, p) => r.x >= p.x && r.y >= p.y && r.x + r.w <= p.x + p.w && r.y + r.h <= p.y + p.h;
-  const blocks = (r, p) => hit(r, p) && !(p.inner && within(r, p.inner));
+  // two unlocked supers may merge (owner, 2026-10-12: "if lock button is off they can even merge"): a bubble being
+  // placed (cur) and a bubble or the project already placed overlap freely when neither is locked
+  let cur = null;
+  const isLocked = el => !!(window.SeLock && el && window.SeLock.isLocked(el));
+  const blocks = (r, p) => hit(r, p) && !(p.inner && within(r, p.inner)) && !(cur && p.lockEl && merged() && !isLocked(cur.bubble) && !isLocked(p.lockEl));
   const freeAt = (r, placed) => r.x >= 6 && r.y >= 6 && r.x + r.w <= W - 6 && r.y + r.h <= H - 6 && !placed.some(p => blocks(r, p)) &&
     (!merged() || insideLoop(r));          // superellipse look: inside the loop
   function grow(r, g) { return { x: r.x - g, y: r.y - g, w: r.w + 2 * g, h: r.h + 2 * g }; }
+  function pillRect(it, r, g) { const o = grow(r, g / 2); o.lockEl = it.bubble; return o; }   // a placed bubble: in the way unless both are unlocked
 
   function obstacles() {
     const g = GAP();
     const out = [
-      grow((rr => ({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr }))(Math.min(R, capR())), g),   // a backdrop mark is not in the way
+      // the mark in the middle (the round look; in the superellipse look the central super, a node, is in the way instead)
+      merged() ? { x: -9999, y: -9999, w: 0, h: 0 } : grow((rr => ({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr }))(Math.min(R, capR())), g),
       grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
     ];
     out.push(grow(titleRect(), g));
@@ -499,6 +505,7 @@
       if (!b.width || !b.height) return;
       const tl = toLayout(b.left, b.top), br = toLayout(b.right, b.bottom);
       const o = grow({ x: tl.x, y: tl.y, w: br.x - tl.x, h: br.y - tl.y }, g);
+      if (p.classList.contains("se-project")) o.lockEl = p;          // the project super merges with an unlocked bubble too
       if (p.classList.contains("is-holder")) { const k = (br.x - tl.x) * 0.03; o.inner = { x: tl.x + k, y: tl.y + k, w: br.x - tl.x - 2 * k, h: br.y - tl.y - 2 * k }; }
       out.push(o);
     });
@@ -551,24 +558,26 @@
       const at = { x: c.x - pinned.w / 2, y: c.y - pinned.h / 2, w: pinned.w, h: pinned.h };
       // ...unless, grown where it is, it would cover a super, a window or the title (owner, 2026-10-12: "bug, super
       // disappears": an opening bubble covered run): then it makes room like any other bubble
-      if (freeAt(at, placed)) { pinned.at = at; placed.push(grow(at, g / 2)); } else pinned = null;
+      cur = pinned; if (freeAt(at, placed)) { pinned.at = at; placed.push(pillRect(pinned, at, g)); } else pinned = null; cur = null;
     }
     const settled = vis.filter(it => it.custom && it !== dragging && it !== pinned).sort((a, b) => pri(a) - pri(b));
     const bumped = [];
     // the pill you just dropped gives way only to fixed things (mark, π box, title)
     if (settlePushes && settled.length && settled[0].key === prio[0]) {
-      const it = settled.shift();
+      const it = settled.shift(); cur = it;
       const r = nearestFree(lx + it.custom.fx * W, ly + it.custom.fy * H, it.w, it.h, placed);
-      it.at = r; if (r) { placed.push(grow(r, g / 2)); toKeep.add(it); }
+      it.at = r; if (r) { placed.push(pillRect(it, r, g)); toKeep.add(it); }
     }
     settled.forEach(it => {
       const r = { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2, w: it.w, h: it.h };
-      if (freeAt(r, placed)) { it.at = r; it.pushed = false; placed.push(grow(r, g / 2)); }
+      cur = it;
+      if (freeAt(r, placed)) { it.at = r; it.pushed = false; placed.push(pillRect(it, r, g)); }
       else bumped.push(it);
     });
     bumped.forEach(it => {
+      cur = it;
       const r = nearestFree(lx + it.custom.fx * W, ly + it.custom.fy * H, it.w, it.h, placed);
-      it.at = r; it.pushed = !!r; if (r) placed.push(grow(r, g / 2));
+      it.at = r; it.pushed = !!r; if (r) placed.push(pillRect(it, r, g));
     });
     // 2. the rest go round the mark on widening rings, most used first
     const auto = vis.filter(it => !it.custom && it !== dragging && it !== pinned)
@@ -579,7 +588,7 @@
     let ang = -Math.PI / 2;
     usedRings = [];
     for (const it of auto) {
-      it.at = null;
+      it.at = null; cur = it;
       for (let k = 0; k < 80 && !it.at; k++) {
         const ry = r0 + k * step, rx = ry * ax;
         const n = Math.max(12, Math.round((Math.PI * (rx + ry)) / 9));
@@ -591,8 +600,9 @@
         if (it.at) { usedRings.ring = { r0, step, ax }; }
       }
       if (!it.at) it.at = nearestFree(lx, ly, it.w, it.h, placed);  // a very small screen: anywhere free
-      if (it.at) { placed.push(grow(it.at, g / 2)); toKeep.add(it); }  // from now on this is its place
+      if (it.at) { placed.push(pillRect(it, it.at, g)); toKeep.add(it); }  // from now on this is its place
     }
+    cur = null;
     // a push from a pill you dropped is for keeps; one from the screen edge or a
     // passing mark is not, so the pill returns when there is room again
     if (settlePushes) vis.forEach(it => { if (it.pushed && it.at) toKeep.add(it); });

@@ -223,7 +223,7 @@
     // inner super they all get a little smaller together, as the pills do, until there is
     function separateWindows(fits) {
       const sm = window.innerWidth < 700, sbm = siteBox(), fm = sbm.fit || 1;
-      const GAP = 10, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
+      const GAP = 3, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
       const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
