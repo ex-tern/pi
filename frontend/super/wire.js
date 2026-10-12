@@ -471,6 +471,18 @@
       window.addEventListener("pointermove", move, true); window.addEventListener("pointerup", end, true);
       window.addEventListener("pointercancel", end, true);
     }, true);
+    // inside a holder the holder's bare space lies over the wire layers (super/nodes.css), so a click or a double
+    // click there is handed to the wire under the point, if there is one: wiring inside a super is the same as
+    // outside (owner, 2026-10-12)
+    ["click", "dblclick"].forEach(type => document.addEventListener(type, e => {
+      if (!e.isTrusted || !document.elementsFromPoint) return;
+      const t = e.target;
+      if (!(t && t.classList && t.classList.contains("lv-node") && t.classList.contains("is-holder"))) return;
+      const hit = document.elementsFromPoint(e.clientX, e.clientY).find(el => el.classList && el.classList.contains("wire-hit"));
+      if (!hit) return;
+      e.stopImmediatePropagation(); e.preventDefault();
+      hit.dispatchEvent(new MouseEvent(type, { bubbles: true, cancelable: true, clientX: e.clientX, clientY: e.clientY }));
+    }, true));
     setInterval(() => { if (document.visibilityState === "visible") draw(); }, 250);
     document.addEventListener("se:frame", draw);                      // super/motion.js: while something moves, every frame
     window.addEventListener("resize", () => { lastHtml = ""; draw(); });

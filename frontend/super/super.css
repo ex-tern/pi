@@ -494,3 +494,23 @@ html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow {
 }
 html.shape-se .wire:hover .wire-bed, html.shape-se .sl-wire:hover .wire-bed { stroke: color-mix(in srgb, var(--cobalt) 25%, transparent); stroke-width: 3; }
 @media (prefers-reduced-motion: reduce) { html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow { animation: none; } }
+
+/* ---- the lock on every super (super/lock.js) ------------------------------------------------------------
+   a small padlock at the lower right, faint until it is locked (ink); locked, the super's edge is drawn a little
+   heavier */
+html.shape-se .se-lock {
+  position: absolute; right: 9%; bottom: 7%; width: 14px; height: 14px; padding: 0; margin: 0; border: 0; background: transparent;
+  cursor: pointer; z-index: 5; opacity: 0.35; transition: opacity 0.15s ease; pointer-events: auto; line-height: 0;
+}
+html.shape-se .se-lock svg { width: 12px; height: 12px; display: block; }
+html.shape-se .se-lock .lk-shackle { fill: none; stroke: var(--ink); stroke-width: 1.3; stroke-linecap: round; }
+html.shape-se .se-lock .lk-body { fill: var(--paper); stroke: var(--ink); stroke-width: 1.3; }
+html.shape-se .se-lock:hover, html.shape-se .is-locked > .se-lock { opacity: 1; }
+html.shape-se .is-locked > .se-lock .lk-body { fill: var(--ink); }
+html.shape-se .se-lock:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; border-radius: 4px; }
+html.shape-se .lv-node.is-locked, html.shape-se .orbit-bubble.is-locked, html.shape-se .orbit-panel.is-locked, html.shape-se .se-project.is-locked { border-width: 2.5px; }
+html.shape-se .lv-node:not(.is-holder) .se-lock { right: 4px; bottom: 2px; width: 10px; height: 10px; }   /* a small super: a smaller lock, in its corner */
+html.shape-se .lv-node:not(.is-holder) .se-lock svg { width: 9px; height: 9px; }
+html.shape-se .orbit-bubble.is-compact > .se-lock { right: 10px; bottom: 8px; }
+html.shape-se .orbit-panel > .se-lock { right: 7%; bottom: 5%; }
+html.shape-se .se-project.is-open > .se-lock { right: 16px; bottom: 12px; }

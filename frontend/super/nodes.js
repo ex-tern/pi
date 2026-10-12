@@ -171,11 +171,19 @@
     return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k;
   }
   function inside(loop) {
-    if (isHolder(loop)) return nodes.filter(m => m !== loop && within(loop, m) && !(isHolder(m) && within(m, loop)));
+    if (isHolder(loop)) return nodes.filter(m => m !== loop && !locked(m) && within(loop, m) && !(isHolder(m) && within(m, loop)));
     const r = loop.el.getBoundingClientRect(), R = r.width / 2, cx = r.left + R, cy = r.top + r.height / 2;
     return nodes.filter(m => m !== loop && (() => { const b = m.el.getBoundingClientRect(); return Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) + Math.max(b.width, b.height) / 2 <= R + 4; })());
   }
-  const holderOf = m => nodes.filter(h => h !== m && isHolder(h) && within(h, m)).sort((a, b) => (a.size || 0) - (b.size || 0))[0] || null;
+  const locked = m => !!(window.SeLock && m && window.SeLock.isLocked(m.el));   // super/lock.js: a locked super is grouped into no other
+  const holderOf = m => (locked(m) ? null : nodes.filter(h => h !== m && isHolder(h) && within(h, m)).sort((a, b) => (a.size || 0) - (b.size || 0))[0] || null);
+  // a locked holder keeps what it holds: a super dragged out of it comes back inside
+  function keepIn(h, m) {
+    const r = h.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.08;
+    const x = Math.min(r.right - k - b.width, Math.max(r.left + k, b.left)), y = Math.min(r.bottom - k - b.height, Math.max(r.top + k, b.top));
+    if (Math.abs(x - b.left) < 1 && Math.abs(y - b.top) < 1) return;
+    const L = toLayout(x, y); m.fx = L.x / window.innerWidth; m.fy = L.y / window.innerHeight; place(m);
+  }
   function bodyOut(loop) {
     const ins = inside(loop);
     if (!ins.length) return null;
@@ -861,6 +869,7 @@
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 6) return;
       if (!moved) {
         moved = true;
+        if (n) n.st.from = holderOf(n);                                     // the holder it came out of (a locked one takes it back)
         if (n && isHolder(n)) n.st.crew = inside(n).map(m => ({ m, fx: m.fx, fy: m.fy }));   // what it holds moves with it
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
@@ -889,6 +898,8 @@
       if (!moved) return;
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
+      if (n.st.from && locked(n.st.from) && n.st.from.el.isConnected && !within(n.st.from, n)) { keepIn(n.st.from, n); n.st.from = null; persist(); tick(); say("It stays: its holder is locked"); return; }
+      n.st.from = null;
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
@@ -905,6 +916,17 @@
         return;
       }
       if (n.st.crew) { n.st.crew = null; persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
+      // a locked super goes into no other super (super/lock.js): dropped on a holder, it sits beside it, unwired
+      if (locked(n)) {
+        const h = nodes.filter(x => x !== n && isHolder(x)).find(x => { const r = x.el.getBoundingClientRect(); return ev.clientX >= r.left && ev.clientX <= r.right && ev.clientY >= r.top && ev.clientY <= r.bottom; });
+        if (h) {
+          const r = h.el.getBoundingClientRect(), b = n.el.getBoundingClientRect();
+          const left = ev.clientX - r.left, right = r.right - ev.clientX, top = ev.clientY - r.top, bottom = r.bottom - ev.clientY, m = Math.min(left, right, top, bottom);
+          const x = m === left ? r.left - b.width - 12 : m === right ? r.right + 12 : b.left, y = m === top ? r.top - b.height - 12 : m === bottom ? r.bottom + 12 : b.top;
+          const L = toLayout(x, y); n.fx = L.x / window.innerWidth; n.fy = L.y / window.innerHeight; place(n); clear(n);
+          persist(); tick(); say("It is locked: it goes into no other super"); return;
+        }
+      }
       const t = ev.type === "pointerup" ? targetAt(ev.clientX, ev.clientY, n.el) : null;
       // a super dropped on another super (not a holder: that is where it goes in) wires its output into the
       // other's input and sits down beside it, wherever on it it lands (its words, its value, its body)
