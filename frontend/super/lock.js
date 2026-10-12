@@ -46,8 +46,9 @@
     b.innerHTML = '<svg viewBox="0 0 12 12" aria-hidden="true"><path class="lk-shackle" d="M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/></svg>';
     // nothing is clickable, only zoomable (owner, 2026-10-12): a scroll in on the lock locks the super, a scroll out
     // unlocks it; a press on it does nothing (the keyboard still toggles it: Enter or Space)
+    // a click toggles it too (owner, 2026-10-12: "lock doesnt work": a press on the lock is what everyone tries first)
     b.addEventListener("pointerdown", e => { e.stopPropagation(); e.preventDefault(); }, true);
-    b.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); if (e.detail === 0) set(el, !isLocked(el)); });
+    b.addEventListener("click", e => { e.stopPropagation(); e.preventDefault(); set(el, !isLocked(el)); });
     b.addEventListener("dblclick", e => { e.stopPropagation(); e.preventDefault(); });
 
     el.appendChild(b);
