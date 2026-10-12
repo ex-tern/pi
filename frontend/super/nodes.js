@@ -240,7 +240,7 @@
       case "box":                                      // ■ and ●: what their first use made them
       case "dot": {
         if (n.role === "engine") {                     // the central super: the AI engines' answer to what is wired into its input
-          const typed = (n.str || "").trim(), verb = VERBS[typed.toLowerCase()];   // a word typed into it: a verb acts on what is wired in, anything else is asked too
+          const typed = (n.str || "").trim(), verb = verbOf(typed);   // a verb typed into it ("open", "open explore") acts; anything else is asked
           const held = isHolder(n) ? bodyOut(n) : null;                    // a holder: what is inside it is part of its question
           const all = held ? ins.concat([evalNode(held)]) : ins;
           // what is computable is computed here, at once, and never sent to the engines:
@@ -459,20 +459,26 @@
       // a word typed into a super is what it does to what is wired into it: "open" (show) opens the window
       // or bubble wired in, "close" (hide) closes it, "pause" and "run" hold and release it, each time
       // the wiring changes (type "Open" into a ■, wire a bubble into it: its window opens)
-      if ((n.fn === "box" || n.fn === "dot") && n.str && VERBS[n.str.trim().toLowerCase()]) {
+      if ((n.fn === "box" || n.fn === "dot") && n.str && verbOf(n.str)) {
         // every wire touching the node, its body or any of its ports, whichever way it was drawn: what is
         // at the other end (a bubble, a window, or one of their ports) is what the verb acts on
         const me = "node:" + n.id, mine = h => h === me || (h && h.startsWith("port:" + me + "/"));
         const touching = (window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : []).map(l => mine(l.a && l.a.h) ? l.b : mine(l.b && l.b.h) ? l.a : null).filter(Boolean);
-        const w = JSON.stringify([n.inputs, touching]);
-        if (n.verbWiring !== undefined && w !== n.verbWiring && !n.held) {
-          const verb = VERBS[n.str.trim().toLowerCase()];
-          touching.concat(n.inputs).forEach(an => {
+        const V = verbOf(n.str), typing = n.role === "engine" && n.st && !n.st.commit && document.activeElement === n.el;
+        const w = JSON.stringify([n.inputs, touching, typing ? "" : n.str.trim().toLowerCase()]);
+        if (n.verbWiring !== undefined && w !== n.verbWiring && !n.held && !typing) {
+          const verb = V.verb;
+          // "open explore": the verb with the name of what it acts on (owner, 2026-10-12: "this prompt should expand the
+          // explore"): a bubble opens (expands) or compacts, a window opens or closes, wired or not
+          if (V.target) actOn(verb, V.target);
+          else touching.concat(n.inputs).forEach(an => {
             const h = an.h || "";
             const key = an.key ? an.key : h.startsWith("k:") ? h.slice(2) : h.startsWith("w:") && O().keyOfTitle ? O().keyOfTitle(h.slice(2))
               : /^port:(bubble|win):/.test(h) ? h.replace(/^port:(bubble|win):/, "").replace(/\/\w+$/, "") : null;
             if (!key) return;
             const own = key.replace(/ group$/, "");
+            const bub = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(b => b.dataset.key === key || b.dataset.key === own + " group");
+            if (bub && window.SeBubble && (verb === "open" || verb === "close")) { window.SeBubble.open(bub, verb === "open"); say((verb === "open" ? "Expanded " : "Compacted ") + ((bub.querySelector(":scope > .ob-label") || {}).textContent || "").trim()); return; }   // a bubble wired in expands or compacts
             if (verb === "open") { if (O().openKey && (O().openKey(own) || O().openKey(key))) say("Opened " + nameOf({ key: own })); }
             else if (verb === "close") { if (O().close && (O().close(own) || O().close(key))) say("Closed " + nameOf({ key: own })); }
             else if (verb === "pause" || verb === "run") { const el = O().elOf && O().elOf(own); if (el && el.classList.contains("orbit-panel")) el.classList.toggle("se-held", verb === "pause"); }
@@ -1404,7 +1410,36 @@
   }
   // asks by itself when what is wired into it changes (not when a wired value merely ticks, like π)
   function wiringOf(n) { return JSON.stringify([n.inputs, linkIns(n)]); }
-  const VERBS = { open: "open", show: "open", close: "close", hide: "close", pause: "pause", hold: "pause", stop: "pause", run: "run", go: "run", resume: "run" };
+  const VERBS = { open: "open", show: "open", expand: "open", close: "close", hide: "close", compact: "close", pause: "pause", hold: "pause", stop: "pause", run: "run", go: "run", resume: "run" };
+  // a verb, alone ("open": on what is wired in) or with what it acts on ("open explore", "close the journal")
+  function verbOf(text) {
+    const m = /^\s*([a-z]+)\b\s*(.*?)\s*$/i.exec(String(text || ""));
+    if (!m || !VERBS[m[1].toLowerCase()]) return null;
+    const target = m[2].replace(/^(the|a)\s+/i, "");
+    if (target && !findTarget(target)) return null;                    // "run the numbers again?" is a question, not an instruction
+    return { verb: VERBS[m[1].toLowerCase()], target };
+  }
+  // a bubble by its name, or a window by its title (whole name first, then the start of one)
+  function findTarget(name) {
+    const q = name.trim().toLowerCase(); if (!q) return null;
+    const bubs = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].filter(b => !b.hidden);
+    const nm = b => ((b.querySelector(":scope > .ob-label") || {}).textContent || "").trim().toLowerCase();
+    const b = bubs.find(x => nm(x) === q) || bubs.find(x => nm(x).startsWith(q));
+    if (b) return { bubble: b };
+    const titles = O().pillTitles ? O().pillTitles() : [];
+    const t = titles.find(x => x.toLowerCase() === q) || titles.find(x => x.toLowerCase().startsWith(q));
+    return t ? { title: t } : null;
+  }
+  function actOn(verb, name) {
+    const t = findTarget(name); if (!t) return;
+    if (t.bubble && window.SeBubble && (verb === "open" || verb === "close")) { window.SeBubble.open(t.bubble, verb === "open"); say((verb === "open" ? "Expanded " : "Compacted ") + ((t.bubble.querySelector(":scope > .ob-label") || {}).textContent || "").trim()); return; }
+    if (t.title) {
+      const key = O().keyOfTitle ? O().keyOfTitle(t.title) : null; if (!key) return;
+      if (verb === "open" && O().openTitle) { O().openTitle(t.title); say("Opened " + t.title); }
+      else if (verb === "close" && O().close) { O().close(key); say("Closed " + t.title); }
+      else if (verb === "pause" || verb === "run") { const el = O().elOf && O().elOf(key); if (el && el.classList.contains("orbit-panel")) el.classList.toggle("se-held", verb === "pause"); }
+    }
+  }
 
   // ---- the palette -----------------------------------------------------
   function build() {
