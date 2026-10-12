@@ -1429,7 +1429,7 @@
     if (document.visibilityState !== "visible") return;
     drawWires();
     const pal = $(".lv-palette"), live = $(".live-dock.open .live-body"), title = $(".orbit-title");
-    const k = [window.innerWidth, window.innerHeight, pal && pal.offsetWidth, live && live.offsetWidth, title && title.offsetWidth].join();
+    const k = [window.innerWidth, window.innerHeight, pal && pal.offsetWidth, live && live.offsetWidth, title && ["left", "top", "width", "height"].map(k => Math.round(title.getBoundingClientRect()[k])).join(" ")].join();   // the title's box as seen (it glides and scales): the inner super keeps clear of it
     if (k !== seatKey) { seatKey = k; seatEdges(); }               // the frame changed: re-seat the edges
     measure(); drawLoop(); keepWindowsIn();
     if (merged() && !L.pointerHeld()) {                                   // a window opened, closed, moved or sized: the bubbles make room

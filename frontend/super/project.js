@@ -337,8 +337,16 @@
       const x = c.x + d * Math.cos(a * Math.PI / 8), y = c.y + d * Math.sin(a * Math.PI / 8);
       const B = room();
       if (x < B.x0 || y < B.y0 || x > B.x1 || y > B.y1 || !free(x, y)) continue;
-      state.x = x / vw; state.y = y / vh; place(); return;
+      glideTo(x / vw, y / vh); return;
     }
+  }
+  // it steps aside gliding, never at once (owner, 2026-10-12: supers do not move suddenly); its wires follow it
+  function glideTo(fx, fy) {
+    const done = () => { save(state); document.dispatchEvent(new CustomEvent("se:frame")); };
+    if (state.x == null || state.y == null) { const r = el.getBoundingClientRect(); state.x = r.left / window.innerWidth; state.y = r.top / window.innerHeight; }
+    if (!window.SeMotion) { state.x = fx; state.y = fy; place(); done(); return; }
+    const s = { x: state.x, y: state.y };
+    window.SeMotion.tween(s, { x: fx, y: fy }, { duration: 380, easing: "easeOutCubic", update: () => { state.x = s.x; state.y = s.y; place(); document.dispatchEvent(new CustomEvent("se:frame")); }, complete: done });
   }
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it

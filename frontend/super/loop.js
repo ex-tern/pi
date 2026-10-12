@@ -79,7 +79,13 @@
     let zoomTo = null;
     // direct: set at once (a trackpad or a pinch, already smooth, coalesced per frame by super/scroll.js);
     // otherwise glide there (a mouse wheel's coarse steps)
+    // the superellipse look locks the inner super in place (owner, 2026-10-12): no zoom, no offset; it is as big as
+    // the main super lets (siteBox), so a scroll on bare space leaves it be
+    const locked = () => document.documentElement.classList.contains("shape-se");
+    const zoomV = () => locked() ? 1 : zoom;
+    const offV = () => locked() ? { x: 0, y: 0 } : siteOff;
     function zoomPage(k, direct) {
+      if (locked()) return;
       const target = Math.max(0.25, Math.min(3, (zoomTo == null ? zoom : zoomTo) * k));
       zoomTo = target;
       clearTimeout(zoomT); zoomT = setTimeout(() => { store("orbit:zoom", +target.toFixed(3)); zoomTo = null; }, 400);
@@ -98,7 +104,7 @@
       else done();
     }
     // how far the view is from that (super/scroll.js shows the way back when it is not)
-    const viewChanged = () => Math.abs((zoomTo == null ? zoom : zoomTo) - 1) > 0.02 || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(siteOff.x, siteOff.y) > 4;
+    const viewChanged = () => (!locked() && Math.abs((zoomTo == null ? zoom : zoomTo) - 1) > 0.02) || Math.abs(loopN() - VIEW_N) > 0.5 || Math.abs(siteNv() - VIEW_N) > 0.5 || Math.hypot(offV().x, offV().y) > 4;
     // Smoothness: the page is measured (every element's box, and where each scaled element pivots) once per
     // layout tick, never inside an animation frame, so a frame that moves n or the zoom does arithmetic and
     // style writes only, with no layout forced in between.
@@ -256,6 +262,9 @@
       wins.forEach((p, i) => {
         const r = rs[i], cur = p.getBoundingClientRect();
         if (Math.abs(r.left - cur.left) < 1 && Math.abs(r.top - cur.top) < 1 && Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) return;
+        if (Math.abs(r.width - cur.width) < 1 && Math.abs(r.height - cur.height) < 1) {   // only moved: it glides there (supers never jump)
+          p.classList.add("gliding"); clearTimeout(p._glideT); p._glideT = setTimeout(() => p.classList.remove("gliding"), 420);
+        }
         p.style.left = Math.round(r.left) + "px"; p.style.top = Math.round(r.top) + "px";
         p.style.width = Math.round(r.width) + "px"; p.style.height = Math.round(r.height) + "px";
         if (p.item) ctx.saveWin(p.item, p);
@@ -272,8 +281,8 @@
       // apart: the title and Live sit near the display's edge and are never zoomed, so counting them capped the
       // zoom at about 1 and the inner super could not grow (owner, 2026-10-11)
       const needS = needAt(n, true), needO = needAt(n, false);
-      const roomS = needS > 0 ? cap / needS * 0.985 : zoom, roomO = needO > 0 ? cap / needO * 0.985 : 1;
-      fitTo(Math.max(0.005, Math.min(zoom, roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
+      const roomS = needS > 0 ? cap / needS * 0.985 : zoomV(), roomO = needO > 0 ? cap / needO * 0.985 : 1;
+      fitTo(Math.max(0.005, Math.min(zoomV(), roomS)), Math.max(0.005, Math.min(1, roomO)), cx, cy);
       const a = sc * A, b = sc * B, key = [Wv, Hv, n.toPrecision(6), sc].join();
       loopG = { cx: Wv / 2, cy: Hv / 2, a, b, n };
       if (key === loopKey) return;
@@ -348,13 +357,12 @@
     // the compact supers' side (bubbles, the project super: --se-compact): the largest square of which ten fit in
     // the inner super (owner, 2026-10-12), on a grid of 5 × 2, 4 × 3, 3 × 4 or 2 × 5, with room between them
     function compactSide() {
-      const sb = siteBox(), f = sb.fit || 1, w = 2 * sb.a * f, h = 2 * sb.b * f;
+      const sb = siteBox(), f = locked() ? 1 : (sb.fit || 1), w = 2 * sb.a * f, h = 2 * sb.b * f;   // locked: never from the fit, which follows the bubbles (a loop)
       const best = [[5, 2], [4, 3], [3, 4], [2, 5]].reduce((m, [c, r]) => Math.max(m, Math.min(w / c, h / r)), 0);
       return Math.max(84, Math.min(280, Math.round(best * 0.82)));
     }
     function seatEdges() {
       if (!merged()) return;
-      document.documentElement.style.setProperty("--se-compact", compactSide() + "px");
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
       const fits = (l, t, r, b, n, m = 6) => [l - m, r + m].every(x => [t - m, b + m].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
@@ -366,6 +374,8 @@
         void fits; void tn; void TITLE_M;
         root.setProperty("--se-title-top", "14px");
       }
+      siteM = null;                                                    // the inner super's margins, measured again once the title is seated
+      document.documentElement.style.setProperty("--se-compact", compactSide() + "px");
       const pal = $(".lv-palette");
       if (pal && pal.offsetWidth) {
         const w = pal.offsetWidth, h = pal.offsetHeight;
@@ -395,12 +405,36 @@
       clearTimeout(scrollSiteN.t);
       scrollSiteN.t = setTimeout(() => { scrollSiteN.to = null; store("orbit:site:n", +siteN.toPrecision(5)); }, 900);
     }
+    // locked (the superellipse look): as big as possible, its edge just inside the main super's ports at the sides and
+    // just clear of the title super at the top (and as much at the bottom); seatEdges measures the title
+    let siteM = null;
+    function siteMargins() {
+      const w = ctx.vw(), H = ctx.H(), m0 = w < 700 ? 12 : 34, title = $(".orbit-title"), n = siteNv();
+      if (!title || !title.offsetWidth) return { mx: m0, my: Math.round(H * (1 - SITE_MY) / 2) };
+      // the largest inner super (by area) whose edge keeps clear of the title super in the top-left corner
+      const t = title.getBoundingClientRect(), cx = w / 2, cy = ctx.top() + H / 2;
+      const pts = [[t.right + 6, t.bottom + 6], [t.left - 6, t.bottom + 6], [t.right + 6, t.top - 6], [(t.left + t.right) / 2, t.bottom + 6], [t.right + 6, (t.top + t.bottom) / 2]];
+      const clear = (mx, my) => pts.every(([x, y]) => seNorm(Math.abs(x - cx) / (w / 2 - mx), Math.abs(y - cy) / (H / 2 - my), n) > 1);
+      let best = { mx: m0, my: Math.round(H * 0.2), area: 0 };
+      for (let mx = m0; mx < w * 0.2; mx += 2) for (let my = Math.min(40, m0 + 28); my < H * 0.2; my += 2) {
+        if (!clear(mx, my)) continue;
+        const area = (w / 2 - mx) * (H / 2 - my);
+        if (area > best.area) best = { mx, my, area };
+        break;                                                         // a larger my only shrinks it
+      }
+      return best;
+    }
     function siteBox() {
-      const w = ctx.vw();
-      return { cx: w / 2 + siteOff.x, cy: ctx.top() + ctx.H() / 2 + siteOff.y, a: SITE_MX * w / 2, b: SITE_MY * ctx.H() / 2, n: siteNv(), fit: pageFit, px: window.innerWidth / 2, py: ctx.top() + ctx.H() / 2, ox: siteOff.x, oy: siteOff.y };
+      const w = ctx.vw(), o = offV();
+      if (locked()) {
+        const k = siteNv().toPrecision(3) + "," + w + "," + ctx.H(); if (!siteM || siteM.k !== k) { siteM = siteMargins(); siteM.k = k; } const m = siteM;
+        return { cx: w / 2, cy: ctx.top() + ctx.H() / 2, a: w / 2 - m.mx, b: ctx.H() / 2 - m.my, n: siteNv(), fit: pageFit, px: window.innerWidth / 2, py: ctx.top() + ctx.H() / 2, ox: 0, oy: 0 };
+      }
+      return { cx: w / 2 + o.x, cy: ctx.top() + ctx.H() / 2 + o.y, a: SITE_MX * w / 2, b: SITE_MY * ctx.H() / 2, n: siteNv(), fit: pageFit, px: window.innerWidth / 2, py: ctx.top() + ctx.H() / 2, ox: o.x, oy: o.y };
     }
     // super/site.js: drag the inner super's ring and the bubbles (and so their wires) go with it
     function moveSite(x, y, commit) {
+      if (locked()) return "";
       siteOff = { x: Math.round(x), y: Math.round(y) };
       const t = "translate(" + siteOff.x + "px," + siteOff.y + "px)";
       placeBubblesLayer();   // the wires are drawn from where the bubbles are on screen, so they follow by themselves
@@ -411,7 +445,7 @@
     // super is inside the main super, zoomed about the page's centre), so bubbles and super stay together
     function placeBubblesLayer() {
       const bb = $(".orbit-bubbles", ctx.stage); if (!bb) return;
-      const f = pageFit || 1, t = (siteOff.x * f).toFixed(2) + "px " + (siteOff.y * f).toFixed(2) + "px";
+      const f = pageFit || 1, o = offV(), t = (o.x * f).toFixed(2) + "px " + (o.y * f).toFixed(2) + "px";
       if (bb.style.translate !== t) bb.style.translate = t;
     }
     // the room the layout may use: inside the site's super at its usual n (π), so the frame fits the page
@@ -424,8 +458,8 @@
     return {
       merged, loopN, scrollN, pageLoop, resetView, viewChanged, drawMini, miniSweep, seNorm, zoomPage, measure, fitTo, setFit, needAt,
       keepWindowsIn, drawLoop, loopPoint, nearLoop, sweepPx, seatEdges, scrollSiteN, siteNv, siteBox, moveSite,
-      placeBubblesLayer, insideLoop, compactSide,
-      pageFit: () => pageFit, loopG: () => loopG, loopD: () => loopD, siteOff: () => siteOff, zoom: () => zoom,
+      placeBubblesLayer, insideLoop, compactSide, siteMargins,
+      pageFit: () => pageFit, loopG: () => loopG, loopD: () => loopD, siteOff: () => offV(), zoom: () => zoomV(),
       pointerHeld: () => pointerHeld, siteN: () => siteN,
     };
   }
