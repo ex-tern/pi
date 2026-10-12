@@ -206,7 +206,10 @@
   // what sits inside a loop's ring, and which of it is the result: the node nothing else inside takes from
   // a holder: a ■ grown past HOLD_AT is a super that holds supers, as a loop's ring does (super/nodes.css .is-holder)
   const HOLD_AT = 150;
-  const isHolder = n => n && n.fn === "box" && !!n.hold && (n.size || 0) >= HOLD_AT && n.role !== "stop";   // sized up by you, not grown to show an answer
+  // a holder that holds supers synced into it (super/bind.js), the start's third super, or a group, holds at any size,
+  // down to a sparkle (owner, 2026-10-12: "this is a bug": shrunk under 150 px it let go of its members, which stayed big outside)
+  const keepsHold = n => n.id === "hold" || !!n.grp || !!n.keepHold;
+  const isHolder = n => n && n.fn === "box" && !!n.hold && ((n.size || 0) >= HOLD_AT || keepsHold(n)) && n.role !== "stop";   // sized up by you, not grown to show an answer
   function within(holder, m) {                                         // m sits inside the holder (clear of its curved corners)
     const r = holder.el.getBoundingClientRect(), b = m.el.getBoundingClientRect(), k = r.width * 0.06;
     return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k;
@@ -664,7 +667,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined, auto: n.auto || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined, auto: n.auto || undefined, keepHold: n.keepHold || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -719,7 +722,7 @@
     };
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
     n.grp = !!spec.grp; if (n.grp) el.classList.add("lv-group");   // a group super round wired supers (regroup)
-    n.auto = !!spec.auto;                                              // made by a double click: a prompt or a Display by its wiring (autoKinds)
+    n.auto = !!spec.auto; n.keepHold = !!spec.keepHold;                                              // made by a double click: a prompt or a Display by its wiring (autoKinds)
     n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;
     if (n.hint && !n.role) el.dataset.hint = n.hint;                  // a Display shows "display" until something is wired in (super.css)   // the window it was dropped on (its layer)
     if ((f.k === "box" || f.k === "dot") && (n.role === "text" || n.role === "int")) { n.field = field("lv-in", "", n.role === "int" ? "Integer" : "Text"); g.replaceWith(n.field); }
@@ -1451,7 +1454,8 @@
     if (window.SeMotion) { const s = { v: n.size || DOT_BASE }; window.SeMotion.glide("node:" + n.id, s, "v", d, 160, () => { sizeDot(n, Math.round(s.v)); settle(); drawWires(); }); }
     else { sizeDot(n, d); settle(); }
     if (n.fn === "dot" && d >= LOOP_AT && !n.role) { n.role = "loop"; n.i = 0; say("● is now a loop: it counts once a second (wire it to see the count); click its ring to pause"); }
-    if (n.fn === "box" && !auto && (cur < HOLD_AT) !== (d < HOLD_AT)) { n.hold = d >= HOLD_AT; say(d >= HOLD_AT ? "■ now holds supers: drop supers into it, or double-click inside it to make one" : "■ is small again: it holds nothing"); }
+    if (n.fn === "box" && !auto && n.hold && d < HOLD_AT && window.SeBind && window.SeBind.members(n.el).length) n.keepHold = true;   // its members stay with it
+    if (n.fn === "box" && !auto && !keepsHold(n) && (cur < HOLD_AT) !== (d < HOLD_AT)) { n.hold = d >= HOLD_AT; say(d >= HOLD_AT ? "■ now holds supers: drop supers into it, or double-click inside it to make one" : "■ is small again: it holds nothing"); }
     clearTimeout(n.st.zt); n.st.zt = setTimeout(persist, 300); tick();
   }
   // π, and everything that follows it, runs or stands still
