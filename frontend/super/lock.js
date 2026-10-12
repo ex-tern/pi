@@ -23,6 +23,7 @@
     if (el.classList.contains("orbit-panel")) { const k = O().keyOf ? O().keyOf(el) : null; return k ? "win:" + k : null; }
     if (el.classList.contains("se-project")) return "project";
     if (el.classList.contains("se-titlesuper")) return "title";
+    if (el.dataset && el.dataset.loop) return el.dataset.loop;        // the main and second supers (their lock hosts, below)
     return null;
   }
   const load = name => { try { return localStorage.getItem("se:lock:" + name) === "1"; } catch (_) { return false; } };
@@ -69,11 +70,38 @@
     if (acc < -30 && !isLocked(el)) { acc = 0; set(el, true); }
     else if (acc > 30 && isLocked(el)) { acc = 0; set(el, false); }
   }, { capture: true, passive: false });
-  function sweep() { if (on()) document.querySelectorAll(SUPERS).forEach(badge); }
+  // the main super and the second super lock too (owner, 2026-10-12): each has a lock host, a small box fixed at the
+  // top centre of its loop, holding its padlock; locked, its n and size are kept and what is in it stays in it
+  const hosts = {};
+  function loopHosts() {
+    if (!on()) return;
+    ["main", "site"].forEach(k => {
+      if (!hosts[k]) {
+        const h = document.createElement("div"); h.className = "se-lockhost se-lockhost-" + k; h.dataset.loop = k;
+        document.body.appendChild(h); hosts[k] = h; badge(h);
+      }
+    });
+    placeHosts();
+  }
+  function placeHosts() {
+    const g = O().loop ? O().loop() : null, sb = O().siteBox ? O().siteBox() : null;
+    if (hosts.main && g && g.a) {
+      const off = (O().fit && O().fit().py != null) ? O().fit().py - g.cy : 0;
+      hosts.main.style.left = (g.cx + 22) + "px"; hosts.main.style.top = (Math.max(3, g.cy + off - g.b) + 14) + "px";   // just beside the sync wire that runs down the middle
+    }
+    if (hosts.site && sb && sb.a) {
+      const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
+      hosts.site.style.left = (cx + 22) + "px"; hosts.site.style.top = (cy - sb.b * f + 12) + "px";
+    }
+  }
+  document.addEventListener("se:frame", placeHosts);
+  window.addEventListener("resize", () => setTimeout(placeHosts, 60));
+  setInterval(placeHosts, 500);
+  function sweep() { if (on()) { document.querySelectorAll(SUPERS).forEach(badge); loopHosts(); } }
   function start() {
     sweep();
     new MutationObserver(sweep).observe(document.body, { childList: true, subtree: true });
   }
-  window.SeLock = { isLocked, set, nameOf };
+  window.SeLock = { isLocked, set, nameOf, loop: k => hosts[k] || null };
   if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
 })();

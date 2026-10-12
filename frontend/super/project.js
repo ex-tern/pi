@@ -361,6 +361,7 @@
   // edges or a window, the compact project super moves to the nearest free spot
   function settleFree() {
     if (el && el.matches(":hover")) return;                           // the super under the pointer never moves
+    if (el && window.SeLock && window.SeLock.isLocked(el)) return;    // nor a locked one
     const vw = window.innerWidth, vh = window.innerHeight, c = compactLayout(), f = zoomOf().f;
     const blocks = [...document.querySelectorAll(".orbit-title, .orbit-panel, .lv-node")].filter(x => x.getClientRects().length).map(x => ({ r: x.getBoundingClientRect(), hold: x.classList.contains("is-holder") }));
     const free = (lx, ly) => { const [x, y] = toScreen(lx, ly), m = MIN * f; return blocks.every(({ r: b, hold }) => {
@@ -387,6 +388,7 @@
   document.addEventListener("se:windows", () => { if (el && !el.classList.contains("is-open") && !el._pjDrag) settleFree(); });
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it
+    if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
     el._pjDrag = true;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
     let moved = false;

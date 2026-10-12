@@ -4,7 +4,8 @@
 // project super and a holder all hold what sits wholly inside them: Super AI supers, compact bubbles, the project
 // super and windows. What is held moves with its host when the host is dragged or laid out elsewhere, is not in
 // the host's way, and a double click on a host's bare space makes a Super AI super inside it (super/nodes.js).
-// A locked thing is held by nothing (it goes into no other super); a locked host keeps what it holds inside.
+// A locked thing stays in the layer it is in: held by its host, it moves with it, and it is never dragged out
+// (owner, 2026-10-12: "locking a super also keeps it in place and in its layer of the super its in").
 //
 //   SeHold.hosts()                 every super that can hold, biggest first
 //   SeHold.hostOf(el)              the smallest host holding el wholly (inset by its margin), or null
@@ -28,7 +29,7 @@
       .map(h => ({ el: h, r: rect(h) })).filter(x => x.r.width > 40 && x.r.height > 40).sort((a, b) => b.r.width * b.r.height - a.r.width * a.r.height);
   }
   function hostOf(el) {
-    if (!on() || !el || locked(el) || !el.getClientRects().length) return null;
+    if (!on() || !el || !el.getClientRects().length) return null;
     const b = rect(el); let best = null;
     for (const h of hosts()) {
       if (h.el === el || h.el.contains(el) || el.contains(h.el)) continue;
@@ -41,7 +42,7 @@
   function heldBy(host) {
     if (!on() || !host || !host.getClientRects().length) return [];
     const r = rect(host), k = margin(r), kt = topStrip(host);
-    return [...document.querySelectorAll(HELD)].filter(el => el !== host && !host.contains(el) && !el.contains(host) && !locked(el) && el.getClientRects().length)
+    return [...document.querySelectorAll(HELD)].filter(el => el !== host && !host.contains(el) && !el.contains(host) && el.getClientRects().length)
       .filter(el => { const b = rect(el); return b.width < r.width && within(b, r, k, kt == null ? k : Math.max(k, kt)); })
       .filter(el => hostOf(el) === host);                                       // held by this one, not by a smaller host inside it
   }

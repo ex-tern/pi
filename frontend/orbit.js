@@ -580,7 +580,7 @@
     settled.forEach(it => {
       const r = { x: lx + it.custom.fx * W - it.w / 2, y: ly + it.custom.fy * H - it.h / 2, w: it.w, h: it.h };
       cur = it;
-      if (freeAt(r, placed)) { it.at = r; it.pushed = false; placed.push(pillRect(it, r, g)); }
+      if (freeAt(r, placed) || (merged() && isLocked(it.bubble))) { it.at = r; it.pushed = false; placed.push(pillRect(it, r, g)); }   // a locked bubble keeps its place, whatever is there
       else bumped.push(it);
     });
     bumped.forEach(it => {
@@ -717,6 +717,7 @@
     b.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       if (e.target.closest(".ob-chat, .ob-member")) return;   // typing or a member pill, not a drag
+      if (merged() && isLocked(b) && !e.target.closest(".se-lock")) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
       sx = e.clientX; sy = e.clientY; moved = false;
       const r = b.getBoundingClientRect(); ox = (e.clientX - r.left) / (L.pageFit() || 1); oy = (e.clientY - r.top) / (L.pageFit() || 1);
       b.setPointerCapture(e.pointerId);
@@ -1223,6 +1224,7 @@
       el.addEventListener("pointerdown", e => {
         if (only && e.target !== el) return;
         if (e.button !== 0 || e.defaultPrevented) return;
+        if (merged() && isLocked(p)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
         if (only) e.preventDefault();                                   // from the margin: no text selection on the way
         drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
         if (window.SeHold) window.SeHold.begin(p);                       // what the window holds comes along (super/hold.js)

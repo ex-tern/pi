@@ -187,7 +187,7 @@
     return b.left >= r.left + k && b.right <= r.right - k && b.top >= r.top + k && b.bottom <= r.bottom - k;
   }
   function inside(loop) {
-    if (isHolder(loop)) return nodes.filter(m => m !== loop && !locked(m) && within(loop, m) && !(isHolder(m) && within(m, loop)));
+    if (isHolder(loop)) return nodes.filter(m => m !== loop && within(loop, m) && !(isHolder(m) && within(m, loop)));   // a locked super stays in the layer it is in: it moves with its holder
     const r = loop.el.getBoundingClientRect(), R = r.width / 2, cx = r.left + R, cy = r.top + r.height / 2;
     return nodes.filter(m => m !== loop && (() => { const b = m.el.getBoundingClientRect(); return Math.hypot(b.left + b.width / 2 - cx, b.top + b.height / 2 - cy) + Math.max(b.width, b.height) / 2 <= R + 4; })());
   }
@@ -885,7 +885,9 @@
     clear(n);
   }
   // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
+  function lockNote(e) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); }
   function clear(n) {
+    if (locked(n)) return;                                               // locked: it keeps its place, nothing moves it off
     if (n.role === "loop" || isHolder(n) || holderOf(n)) return;         // a loop or a holder holds things, and what is inside stays
     if (n.id === "site-box") return;                                      // the central super is the diagram's centre: it stays (Live opens over it)
     n._gy = null; const fy0 = n.fy;
@@ -914,6 +916,9 @@
   // one drag, from the palette or of a node on the page
   function drag(e, startEl, spawn) {
     if (e.button !== undefined && e.button !== 0) return;
+    // a locked super keeps its place (owner, 2026-10-12: "locking a super also keeps it in place and in its layer"):
+    // it is not dragged (its words still wire, its lock still unlocks)
+    if (!spawn && startEl && window.SeLock && window.SeLock.isLocked(startEl)) { lockNote(e); return; }
     const x0 = e.clientX, y0 = e.clientY;
     let n = spawn ? null : nodes.find(x => x.el === startEl), moved = false, dx = 0, dy = 0;
     if (n) { const r = n.el.getBoundingClientRect(), f = toLayout(0, 0).f; dx = (x0 - r.left) / f; dy = (y0 - r.top) / f; }

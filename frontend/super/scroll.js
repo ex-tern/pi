@@ -153,7 +153,7 @@
       // (only a window's own buttons: a super is role=button too, and a scroll on it sizes it)
       const press = w => w !== "site" && w.matches && w.matches(PRESS) && !w.classList.contains("ob-member") && !w.classList.contains("lv-node") && !!w.closest(".orbit-panel");
       if (press(what) && dy > 0) what = what.closest(".orbit-panel") || what;
-      if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }
+      if (what === "site") { const sl = window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null; if (sl && locked(sl)) lockedNote(sl, x, y); else if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // the second super locked: its size (the zoom) is kept
       else if (!what.isConnected) return;
       else if (press(what)) {   // a button: a few steps in press it, once per gesture
         {
@@ -243,6 +243,8 @@
       if (sup && S.shapeEl) { gesture = { what: sup, t: now }; S.shapeEl(sup, dy); return; }
       const what = fresh === "site" || fresh === "shape" ? fresh : (S.inSite && S.inSite(x, y) ? "site" : "shape");
       gesture = { what, t: now };
+      const loopLock = window.SeLock && window.SeLock.loop ? window.SeLock.loop(what === "site" ? "site" : "main") : null;
+      if (loopLock && locked(loopLock)) { lockedNote(loopLock, x, y); return; }   // the main or second super locked: its n is kept
       if (what === "site") { if (O().scrollSiteN) O().scrollSiteN(e); }
       else if (O().scrollN) O().scrollN(e);
       return;

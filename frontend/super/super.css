@@ -593,3 +593,8 @@ html.shape-se .se-closing { opacity: 0 !important; transform-origin: 50% 50%; tr
 html.shape-se .orbit-title .se-titlesuper > .se-lock { top: 2px; width: 10px; height: 10px; }   /* a low super: a small lock, clear of its name */
 html.shape-se .orbit-title .se-titlesuper > .se-lock svg { width: 9px; height: 9px; }
 html.shape-se .orbit-bubble[hidden] { display: none !important; }   /* a bubble put away (gone) is gone, compact or not */
+
+/* the main and second supers' locks (super/lock.js): a lock host at the top centre of each loop */
+html.shape-se .se-lockhost { position: fixed; z-index: 965; width: 14px; height: 14px; transform: translate(-50%, 0); pointer-events: none; }
+html.shape-se .se-lockhost > .se-lock { left: 0; top: 0; transform: none; pointer-events: auto; }
+html:not(.shape-se) .se-lockhost { display: none; }

@@ -189,6 +189,7 @@
       const fits = (l, t, w, h) => [l - pad, l + w + pad].every(x => [t - pad, t + h + pad].every(y => seNorm(Math.abs(x - cx) / a, Math.abs(y - cy) / b, n) <= 1));
       document.querySelectorAll(".orbit-panel").forEach(p => {
         if (p.classList.contains("gliding") || p.classList.contains("leaving") || p.matches(":hover")) return;   // the window under the pointer stays where it is
+        if (window.SeLock && window.SeLock.isLocked(p)) return;            // and a locked one where it was put
         const r = p.getBoundingClientRect();
         // no more than about half the inner super, so the bubbles keep their room; on a phone there is no room
         // to share, so a window may take most of it (and never shrinks below a readable size)
@@ -225,6 +226,7 @@
       const sm = window.innerWidth < 700, sbm = siteBox(), fm = sbm.fit || 1;
       const GAP = 3, MIN_W = sm ? Math.floor(sbm.a * fm * 1.5) : 200, MIN_H = sm ? Math.floor(sbm.b * fm * 0.6) : 120;   // a phone's window stays readable
       const minOf = p => (p.seSized ? { w: Math.max(MIN_W, Math.floor(p.offsetWidth)), h: Math.max(MIN_H, Math.floor(p.offsetHeight)) } : { w: MIN_W, h: MIN_H });   // a window you sized is not shrunk to make room
+      const lockedWin = p => !!(window.SeLock && window.SeLock.isLocked(p));
       const wins = [...document.querySelectorAll(".orbit-panel")].filter(p => !p.classList.contains("gliding") && !p.classList.contains("leaving"));
       if (!wins.length) return;
       const nodes = [...document.querySelectorAll(".lv-node, .orbit-title, .se-project:not(.is-open)")].filter(n => !n.classList.contains("is-dragging"))
@@ -245,7 +247,8 @@
         for (let iter = 0; iter < 24; iter++) {
           let any = false;
           for (let i = 0; i < rs.length; i++) {
-            for (const nd of nodes) if (overlap(rs[i], nd)) {                 // off a node, as far as the inner super allows
+            const li = lockedWin(wins[i]);                                    // a locked window keeps its place (others step off it)
+            if (!li) for (const nd of nodes) if (overlap(rs[i], nd)) {        // off a node, as far as the inner super allows
               const way = push(rs[i], nd).find(d => ok(moved(rs[i], d, 1)));
               if (way) { rs[i] = moved(rs[i], way, 1); any = true; }
             }
@@ -253,6 +256,10 @@
               const ways = push(rs[i], rs[j]);
               let done = false;
               for (const d of ways) {                                         // half each, or all of it on the one that can
+                const lj = lockedWin(wins[j]);
+                if (li && lj) break;
+                if (lj) { const a1 = moved(rs[i], d, 1); if (ok(a1)) { rs[i] = a1; done = true; break; } continue; }
+                if (li) { const b1 = moved(rs[j], d, -1); if (ok(b1)) { rs[j] = b1; done = true; break; } continue; }
                 const a = moved(rs[i], d, 0.5), b = moved(rs[j], d, -0.5);
                 if (ok(a) && ok(b)) { rs[i] = a; rs[j] = b; done = true; break; }
                 const a1 = moved(rs[i], d, 1); if (ok(a1)) { rs[i] = a1; done = true; break; }
