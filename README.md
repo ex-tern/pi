@@ -1,4 +1,4 @@
-# ScholarPi · Pi Tech Lab
+# Piii Lab
 
 **ScholarPi** assesses research papers. A panel of AI models reviews a manuscript, and deterministic checks look at its references, reproducibility and integrity. It then scores the paper on eight open, science-aligned criteria (the **piX** index) and shows what holds it back. Each assessment is recorded on a Proof-of-Research ledger and earns **piQ**, a soulbound token minted on Sepolia.
 
