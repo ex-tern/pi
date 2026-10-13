@@ -8,7 +8,7 @@ Run with:  cd backend && pytest tests/ -v
 
 import pytest
 
-import database
+import api as database
 
 
 @pytest.fixture

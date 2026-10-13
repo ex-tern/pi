@@ -1,5 +1,5 @@
 """The site password (gate.py): off by default, a signed cookie once typed, the password never stored."""
-import gate
+import api as gate
 
 
 class _Req:
@@ -30,12 +30,12 @@ def test_the_right_password_gives_a_cookie_that_passes(monkeypatch):
     assert gate.check("wrong", "s") is None
     value = gate.check("open sesame", "s")
     assert value and "sesame" not in value and len(value) == 64
-    assert gate.passes(_Req("/", cookies={gate.COOKIE: value}), "s") is True
-    assert gate.passes(_Req("/", cookies={gate.COOKIE: value}), "other-secret") is False   # another secret: another cookie
+    assert gate.passes(_Req("/", cookies={gate.gate_COOKIE: value}), "s") is True
+    assert gate.passes(_Req("/", cookies={gate.gate_COOKIE: value}), "other-secret") is False   # another secret: another cookie
 
 
 def test_changing_the_password_logs_everyone_out(monkeypatch):
     monkeypatch.setenv("SITE_PASSWORD", "one")
     old = gate.check("one", "s")
     monkeypatch.setenv("SITE_PASSWORD", "two")
-    assert gate.passes(_Req("/", cookies={gate.COOKIE: old}), "s") is False
+    assert gate.passes(_Req("/", cookies={gate.gate_COOKIE: old}), "s") is False

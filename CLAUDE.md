@@ -14,7 +14,7 @@ ScholarPi runs as two copies of this repository:
 2. **Never push to `main`, and never merge into it, without the owner explicitly saying so in that conversation.** Promoting means merging `experimental` into `main` after the owner has looked at the experimental site.
 3. **Before every push, run:**
    - `cd backend && python -m pytest -q`: compare against the known baseline (12 failures that predate the Lab). Do not add new failures. (`tests/test_forecast.py` runs again since 2026-10-10: it now imports `pid_engine`, the forecasting module's current name.)
-   - `python scripts/build_hal.py --src ../HAL-OS`: refuses to build if `frontend/hal/wire.js` and HAL-OS disagree.
+   - `python scripts/tools.py build-hal --src ../HAL-OS`: refuses to build if `frontend/hal/wire.js` and HAL-OS disagree.
    - Load the site in a browser at desktop and 390 px width: no page errors, no horizontal scroll.
 4. **The repository is public.** Never commit secrets, `.env` files, or anything from private projects (those live on the server volume; see `backend/lab.py`).
 5. **Keep the design language** in `frontend/theme.css`:

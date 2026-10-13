@@ -140,12 +140,13 @@ delete it, wires and all. The diagram is kept in the browser (`lv:nodes`, `orbit
 
 ## 5. The engines
 
-Behind `/api` one FastAPI process runs everything. `backend/core.py` is the app and what every router
-shares (configuration, logging, the database, the gate, rate limits, the startup hook); `backend/routes/`
-holds one router per concern (meta, auth, piq, chain, status, identity, arcade, visits, profile,
-assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem, forecast,
-analytics, explorer); `backend/api.py` assembles them with the Lab, consent, layout, PiEn, recent, live,
-traffic and Super Neural Engine routers and the static frontend, and is what gunicorn runs (`api:app`).
+Behind `/api` one FastAPI process runs everything, and all of it is one file, `backend/api.py` (owner,
+2026-10-13: "all .py in one .py"): what were core (the app, configuration, logging, the database, the gate,
+rate limits, the startup hook), one router per concern (meta, auth, piq, chain, status, identity, arcade,
+visits, profile, assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem,
+forecast, analytics, explorer; `meta_router`, `auth_router`, ...), the Lab, consent, layout, PiEn,
+recent, live, traffic and Super Neural Engine routers and the static frontend follow one another under
+banners naming the module each was. gunicorn runs `api:app`.
 The engines behind the routes:
 
 - **Assessment.** `brain.py` orchestrates a paper's assessment: deterministic scoring (`rubric.py`,
@@ -211,13 +212,13 @@ Everything the page remembers lives in `localStorage` under short prefixed keys 
 | super.pitechlab.com (se.) | `super` | The superellipse superlattice, deployed alone from its branch. |
 
 Each is a Railway environment built by Nixpacks (`nixpacks.toml`: Python only, no Docker) and started
-with gunicorn. `run.py` runs it locally at
+with gunicorn. `python scripts/tools.py run` runs it locally at
 http://localhost:8000.
 
 ## 8. Working on it
 
 Before a push: `cd backend && python -m pytest -q` against the known baseline;
-`python scripts/build_hal.py --src ../HAL-OS` (refuses if HAL-OS and `frontend/hal/wire.js`
+`python scripts/tools.py build-hal --src ../HAL-OS` (refuses if HAL-OS and `frontend/hal/wire.js`
 disagree); load the site at desktop and 390 px widths with no page errors and no horizontal scroll.
 Work goes to `experimental` (or `super` for the super site); `main` only when the owner says so. The
 repository is public: no secrets, no `.env`, nothing from private projects. Credits that are not ours

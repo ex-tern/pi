@@ -16,7 +16,7 @@ import pytest
 os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import attribution
+import api as attribution
 
 
 # --------------------------------------------------------------------------

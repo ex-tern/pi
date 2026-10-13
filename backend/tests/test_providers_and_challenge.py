@@ -18,8 +18,8 @@ import pytest
 os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import challenge
-import providers
+import api as challenge
+import api as providers
 
 
 # --------------------------------------------------------------------------
@@ -181,7 +181,7 @@ def test_an_incorrect_nonce_is_rejected():
 def test_an_expired_challenge_is_rejected():
     c = challenge.issue_challenge("203.0.113.6")
     stale = c["issued_at"] - challenge.CHALLENGE_TTL_SECONDS - 60
-    sig = challenge._sign(f"{c['challenge']}:{stale}:{c['difficulty']}")
+    sig = challenge._challenge_sign(f"{c['challenge']}:{stale}:{c['difficulty']}")
     ok, why = challenge.verify_solution("203.0.113.6", c["challenge"], stale,
                                         c["difficulty"], sig, 0)
     assert not ok and "expired" in why.lower()

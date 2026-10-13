@@ -4,8 +4,8 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
-import auth
-import consent
+import api as auth
+import api as consent
 
 OWNER = "0x00000000000000000000000000000000000000aa"
 OTHER = "0x00000000000000000000000000000000000000bb"
@@ -13,7 +13,7 @@ OTHER = "0x00000000000000000000000000000000000000bb"
 
 def _require_owner(request: Request, wallet: str = ""):
     identity = auth.identity_from_request(request, wallet)
-    if auth.is_owner(identity):
+    if auth.auth_is_owner(identity):
         return identity
     raise HTTPException(status_code=403, detail="owner only")
 
@@ -23,7 +23,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "test-secret-for-consent")
     monkeypatch.setattr(auth, "OWNER_ID", OWNER)
     app = FastAPI()
-    app.include_router(consent.build_router(str(tmp_path), _require_owner))
+    app.include_router(consent.consent_build_router(str(tmp_path), _require_owner))
     return TestClient(app)
 
 

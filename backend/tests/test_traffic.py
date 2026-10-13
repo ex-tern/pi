@@ -3,7 +3,7 @@
 import sqlite3
 from datetime import date
 
-import traffic
+import api as traffic
 
 
 def conn_factory(path):

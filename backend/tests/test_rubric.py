@@ -18,7 +18,7 @@ import pytest
 os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import rubric
+import api as rubric
 
 ALL_SIGNALS = list(rubric.SIGNAL_CATALOGUE)
 
@@ -157,18 +157,18 @@ def test_manifest_is_json_serialisable():
 # Composite
 # --------------------------------------------------------------------------
 def test_uniform_scores_give_that_score():
-    scores = {k: 60.0 for k in rubric.CRITERIA_ORDER}
+    scores = {k: 60.0 for k in rubric.rubric_CRITERIA_ORDER}
     assert abs(rubric.compute_composite_score(scores) - 60.0) < 1e-6
 
 
 @pytest.mark.parametrize("bad_weights", [["x"] * 8, [1, 2], [0.0] * 8, None, []])
 def test_unusable_epoch_weights_fall_back_to_the_mean(bad_weights):
-    scores = {k: 60.0 for k in rubric.CRITERIA_ORDER}
+    scores = {k: 60.0 for k in rubric.rubric_CRITERIA_ORDER}
     assert abs(rubric.compute_composite_score(scores, bad_weights) - 60.0) < 1e-6
 
 
 def test_epoch_weighting_shifts_the_composite():
-    scores = {k: 60.0 for k in rubric.CRITERIA_ORDER}
+    scores = {k: 60.0 for k in rubric.rubric_CRITERIA_ORDER}
     scores["C1_Semantic_Originality"] = 100.0
     assert rubric.compute_composite_score(scores, [3, 1, 1, 1, 1, 1, 1, 1]) > \
            rubric.compute_composite_score(scores, [1] * 8)

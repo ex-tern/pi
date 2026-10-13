@@ -31,7 +31,7 @@ The video and both projects remain his.
 ## 1. Local development
 
 ```bash
-python run.py     # macOS, Linux or Windows (python run.py --lab: with HAL-OS and private projects)
+python scripts/tools.py run     # macOS, Linux or Windows (add --lab: with HAL-OS and private projects)
 ```
 
 It creates a virtualenv, installs dependencies, copies
@@ -191,7 +191,7 @@ every push/PR.
 | Architecture | "Architecture" tab, static description |
 | Defense strategy / criterion detail modals | Modal popups, backed by `/api/defense-strategy` |
 | Health check | `GET /api/health` |
-| Background cron worker | `python backend/cron.py --cron`, or `.github/workflows/cron.yml` |
+| Background cron worker | `python backend/api.py cron`, or `.github/workflows/cron.yml` |
 
 ## 6. First-run notes
 
@@ -208,9 +208,8 @@ every push/PR.
 Two licenses (see [LICENSE](LICENSE)):
 
 - **The science engines are open source** under the [GNU AGPL 3.0](LICENSES/AGPL-3.0-only.txt): the Pi-Index
-  rubric and the assessment pipeline (`backend/rubric.py`, `brain.py`, `providers.py`, `scientometrics.py`,
-  `attribution.py`, `security.py`, `extraction.py`, `integrations.py`, `http_client.py`, `diagnostics.py`,
-  `ledger.py`) and the constants in Rust (`rust/numbers/`). Use, study, change and share them; if you run a changed
+  rubric and the assessment pipeline, now all in `backend/api.py` (the whole server is one file, so that file as
+  a whole is AGPL-3.0-only) and the constants in Rust (`rust/numbers/`). Use, study, change and share them; if you run a changed
   version as a service, offer its users your source.
 - **The website and its design are proprietary**, all rights reserved
   ([Pi Tech Lab Proprietary License](LICENSES/LicenseRef-PiTechLab-Proprietary.txt)): the front end, its look, the

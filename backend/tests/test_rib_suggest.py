@@ -1,6 +1,6 @@
 """RiBD suggestions: one ledger paper and one scanned manuscript, by profile."""
 
-import rib_suggest as rs
+import api as rs
 
 PROFILE = {"field": "Neuroscience, Medicine", "goal": "stroke, glioblastoma",
            "idea": "Perfusion imaging separates tumour recurrence from necrosis."}

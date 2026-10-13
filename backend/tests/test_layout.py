@@ -4,8 +4,8 @@ import pytest
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.testclient import TestClient
 
-import auth
-import layout
+import api as auth
+import api as layout
 
 A = "0x00000000000000000000000000000000000000aa"
 B = "0x00000000000000000000000000000000000000bb"
@@ -22,7 +22,7 @@ def _require_identity(request: Request, wallet: str = "", orcid: str = ""):
 def client(tmp_path, monkeypatch):
     monkeypatch.setenv("SESSION_SECRET", "test-secret-for-layout")
     app = FastAPI()
-    app.include_router(layout.build_router(str(tmp_path), _require_identity))
+    app.include_router(layout.layout_build_router(str(tmp_path), _require_identity))
     return TestClient(app)
 
 

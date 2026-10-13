@@ -2,8 +2,8 @@
 
 import time
 
-import config
-import idle_worker as iw
+import api as config
+import api as iw
 
 
 def test_background_polling_is_not_busy():

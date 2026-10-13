@@ -5,7 +5,7 @@ import sqlite3
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import recent
+import api as recent
 
 
 def make(tmp_path):
@@ -22,7 +22,7 @@ def make(tmp_path):
     c.executemany("INSERT INTO papers_assessment VALUES (?,?,?,?,?,?,?,?)", rows)
     c.commit(); c.close()
     app = FastAPI()
-    app.include_router(recent.build_router(lambda: sqlite3.connect(path)))
+    app.include_router(recent.recent_build_router(lambda: sqlite3.connect(path)))
     return TestClient(app)
 
 

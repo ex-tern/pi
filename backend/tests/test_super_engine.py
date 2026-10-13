@@ -4,7 +4,7 @@ import sqlite3
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import super_engine
+import api as super_engine
 
 ROWS = [
     {"eval_hash": "a", "title": "Graph neural networks for protein folding", "author": "A", "fields": '["Biology"]',
@@ -19,9 +19,9 @@ def make(tmp_path, answer=None, rows=None, pid=None, limited=None):
     with sqlite3.connect(db) as c:
         c.execute("CREATE TABLE opens (card TEXT PRIMARY KEY, n INTEGER NOT NULL)")
         c.executemany("INSERT INTO opens VALUES (?, ?)", [("tools:Assess Manuscripts", 9), ("library:Neuro Frenzy", 4)])
-    import rib_suggest
+    import api as rib_suggest
     app = FastAPI()
-    app.include_router(super_engine.build_router(
+    app.include_router(super_engine.super_engine_build_router(
         answer=answer or (lambda p: {"response": "SciM says hello about " + p}),
         rows=rows or (lambda: ROWS), suggest=rib_suggest.suggest, hot=rib_suggest.hot_topics,
         pid_status=pid or (lambda: {"total_observations": 1200, "mean_abs_error": 0.1, "baseline_abs_error": 0.2}),
@@ -132,10 +132,10 @@ def make_box(tmp_path, ask=None, judge=None, ready=None):
     with sqlite3.connect(db) as c:
         c.execute("CREATE TABLE IF NOT EXISTS opens (card TEXT PRIMARY KEY, n INTEGER NOT NULL)")
         c.execute("INSERT OR IGNORE INTO opens VALUES ('tools:Assess Manuscripts', 9)")
-    import rib_suggest
+    import api as rib_suggest
     hits = []
     app = FastAPI()
-    app.include_router(super_engine.build_router(
+    app.include_router(super_engine.super_engine_build_router(
         answer=lambda p: {"response": "SciM on " + p, "source": "knowledge-base"},
         rows=lambda: ROWS, suggest=rib_suggest.suggest, hot=rib_suggest.hot_topics,
         pid_status=lambda: {"total_observations": 10}, pien_db=str(db), rate_limit=lambda r: None,

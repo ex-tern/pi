@@ -9,22 +9,16 @@ This repository holds two kinds of work, under two licenses.
    runs a changed version for users over a network must offer those users the source of their version (AGPL
    section 13).
 
-     backend/rubric.py          the Pi-Index scoring rubric
-     backend/brain.py           the assessment pipeline: the AI panel, the judge, the scoring
-     backend/providers.py       routing to the panel's models
-     backend/scientometrics.py  interdisciplinarity, reference integrity, authorship-assistance signal
-     backend/attribution.py     who a manuscript's credit belongs to
-     backend/security.py        prompt-injection and manipulation checks
-     backend/extraction.py      bibliographic extraction
-     backend/integrations.py    bibliographic lookups (OpenAlex, Crossref)
-     backend/http_client.py     the shared outbound HTTP client they use
-     backend/diagnostics.py     reception diagnostics
-     backend/ledger.py          the proof-of-research ledger's hashing and records
+     backend/api.py             the whole server in one file (owner, 2026-10-13): it holds the science
+                                engines (the Pi-Index scoring rubric, the assessment pipeline, routing to the
+                                panel's models, scientometrics, attribution, security checks, bibliographic
+                                extraction and lookups, the shared HTTP client, reception diagnostics, the
+                                proof-of-research ledger), and so the file as a whole, the platform code
+                                merged into it included, is AGPL-3.0-only
      rust/numbers/              the constants (pi, e, phi, gamma) in Rust, and frontend/numbers.wasm built from it
 
-   Each of these files carries an SPDX-License-Identifier: AGPL-3.0-only header.
-   Note: brain.py and ledger.py also import platform modules that stay proprietary (for example the database,
-   configuration, piQ emission and siM). The open files are licensed as listed; those modules are not.
+   Each of these carries an SPDX-License-Identifier: AGPL-3.0-only header. Inside backend/api.py, banners
+   name the module each part came from; the engines listed above were the open ones before the merge.
 
 2. Everything else, including the website and its design: proprietary, all rights reserved
    (LICENSES/LicenseRef-PiTechLab-Proprietary.txt). That is the front end and its look, the superellipse and

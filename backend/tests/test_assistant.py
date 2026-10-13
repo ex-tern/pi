@@ -18,7 +18,7 @@ import pytest
 os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import assistant
+import api as assistant
 
 
 @pytest.mark.parametrize("question,expected_terms", [
@@ -42,12 +42,12 @@ def test_core_concepts_are_answered_from_the_knowledge_base(question, expected_t
 
 def test_answers_are_built_from_the_live_rubric():
     """Knowledge cannot drift from code: the answer names the running version."""
-    import rubric
+    import api as rubric
     assert rubric.RUBRIC_VERSION in assistant.answer("What is piX?")["response"]
 
 
 def test_emission_answer_reflects_the_live_policy():
-    import emission
+    import api as emission
     response = assistant.answer("What is piQ?")["response"]
     assert f"{emission.HALVING_INTERVAL:,}" in response
 

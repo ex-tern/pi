@@ -8,7 +8,7 @@ anything in the browser.
 """
 import pytest
 
-import arcade
+import api as arcade
 
 
 IP = "203.0.113.5"

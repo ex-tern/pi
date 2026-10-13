@@ -2,7 +2,7 @@
 shape-se class stamped into its inline script, so a first visit lays out the superellipse site at once."""
 import os
 
-import shape
+import api as shape
 
 HERE = os.path.dirname(__file__)
 INDEX = os.path.join(HERE, "..", "..", "frontend", "index.html")

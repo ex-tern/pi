@@ -1,5 +1,5 @@
 """The visitor's privacy choices (cookies.py): reading pi_consent, and which requests a decline stops."""
-import cookies as ck
+import api as ck
 
 
 class Req:

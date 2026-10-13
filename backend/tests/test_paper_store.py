@@ -5,7 +5,7 @@ import os
 
 import pytest
 
-import paper_store
+import api as paper_store
 
 
 @pytest.fixture

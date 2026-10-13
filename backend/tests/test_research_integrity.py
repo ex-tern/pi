@@ -17,8 +17,8 @@ import pytest
 os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
-import security
-import scientometrics
+import api as security
+import api as scientometrics
 
 
 # --------------------------------------------------------------------------

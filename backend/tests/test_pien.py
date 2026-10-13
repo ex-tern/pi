@@ -4,13 +4,13 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import pien
+import api as pien
 
 
 @pytest.fixture
 def client(tmp_path):
     app = FastAPI()
-    app.include_router(pien.build_router(str(tmp_path)))
+    app.include_router(pien.pien_build_router(str(tmp_path)))
     return TestClient(app)
 
 

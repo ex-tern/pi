@@ -6,7 +6,7 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-import live
+import api as live
 
 
 @pytest.fixture
@@ -22,7 +22,7 @@ def client(tmp_path):
     ])
     c.commit(); c.close()
     app = FastAPI()
-    app.include_router(live.build_router(lambda: sqlite3.connect(db),
+    app.include_router(live.live_build_router(lambda: sqlite3.connect(db),
                                          lambda: {"enabled": True, "assessed_today": 1}))
     return TestClient(app)
 
@@ -41,11 +41,11 @@ def test_feed(client):
 
 
 def test_activity_levels():
-    import idle_worker as iw
+    import api as iw
     from fastapi import FastAPI
     from fastapi.testclient import TestClient
     app = FastAPI()
-    app.include_router(live.build_router(lambda: None, lambda: {}, iw.activity))
+    app.include_router(live.live_build_router(lambda: None, lambda: {}, iw.activity))
     c = TestClient(app)
     iw._INFLIGHT["n"] = 0; iw._STATE["running"] = False
     assert c.get("/api/activity").json()["level"] == "quiet"
