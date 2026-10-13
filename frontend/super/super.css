@@ -430,7 +430,7 @@ html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shap
 /* the same type inside supers: the diagram's mono for what a super says, Geist for what it reads */
 html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; }
 /* selected and hovered the same way everywhere: the edge takes cobalt */
-html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .se-project.se-sel { border-color: var(--cobalt); }
+html.shape-se:not(.se-gl) .orbit-bubble.se-sel, html.shape-se:not(.se-gl) .orbit-panel.se-sel, html.shape-se:not(.se-gl) .lv-node.se-sel, html.shape-se:not(.se-gl) .se-project.se-sel { border-color: var(--cobalt); }
 html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
 /* wires are drawn in ink like the supers they join (they were hairline grey and hard to see) */
 html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphite); stroke-width: 1.5; }
@@ -760,11 +760,16 @@ html.se-gl :is(.ob-member, .ob-label).se-sel::before, html.se-gl :is(.ob-member,
 /* the selected super is surrounded in blue, along its own edge (owner, 2026-10-13: "add blue surround for a super that
    is selected"); never a rectangle or a dotted line round it ("remove the blue corner rect", "remove the blue dotted
    line"): a square, a circle, a star keep their shape, only their edge turns cobalt (the engine draws the same) */
-html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel,
-html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2.5px !important; border-style: solid !important; }
-html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 2.5; }
-html.shape-se .ob-member.se-sel::before { border-color: var(--cobalt); border-width: 2px; }
-html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-loop .om-page-loop { stroke: var(--cobalt) !important; stroke-width: 2.5; }
+/* the page's own outlines only where the engine does not draw (owner, 2026-10-13: "remove the rectangle, just keep the
+   super"): with the engine (html.se-gl) the blue is the super's own superellipse edge alone (engine.js), and these
+   outlines, which are boxes and svg paths, stay hidden */
+html.shape-se:not(.se-gl) :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel,
+html.shape-se:not(.se-gl) :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2.5px !important; border-style: solid !important; }
+html.shape-se:not(.se-gl) .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 2.5; }
+html.shape-se:not(.se-gl) .ob-member.se-sel::before { border-color: var(--cobalt); border-width: 2px; }
+html.shape-se:not(.se-gl).se-sel-site .om-site-loop, html.shape-se:not(.se-gl).se-sel-loop .om-page-loop { stroke: var(--cobalt) !important; stroke-width: 2.5; }
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel.se-sel,
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: transparent !important; }
 html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: transparent !important; }
 html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper).se-sel::before { padding: 3px; }
 
