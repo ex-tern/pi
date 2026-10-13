@@ -22,7 +22,9 @@
   }
   let drag = null;
   window.addEventListener("pointerdown", e => {
-    if (!on() || !e.shiftKey || e.button !== 0) return;
+    // the middle button is Shift held (owner, 2026-10-13: "middle mouse button is like shift scroll for scaling"): a
+    // middle drag sizes as Shift + drag does, and with it held the wheel changes n (super/scroll.js midDown)
+    if (!on() || !((e.shiftKey && e.button === 0) || e.button === 1)) return;
     const t = e.target && e.target.closest ? e.target : null;
     if (!t || t.closest("input, textarea, select, [contenteditable], .se-port, .se-lock, .wire-hit")) return;
     const bare = t === document.body || t === document.documentElement || (t.matches && t.matches(BARE));

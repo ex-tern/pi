@@ -244,6 +244,9 @@
   window.addEventListener("mousedown", e => { if (e.button === 1 && on()) { midDown = true; e.preventDefault(); } }, true);
   window.addEventListener("auxclick", e => { if (e.button === 1 && on()) e.preventDefault(); }, true);
   window.addEventListener("mouseup", e => { if (e.button === 1) midEnd(); }, true);
+  // the pointer press too: a middle drag (super/shiftsize.js) cancels it, which keeps the mousedown from coming
+  window.addEventListener("pointerdown", e => { if (e.button === 1 && on()) midDown = true; }, true);
+  window.addEventListener("pointerup", e => { if (e.button === 1) midEnd(); }, true);
   window.addEventListener("blur", midEnd);
   document.addEventListener("wheel", e => {
     if (!on()) return;
@@ -253,7 +256,7 @@
     // a card, the Live panel or its tab, the palette, a bubble, the title; on bare space inside the inner
     // super, the inner super; anywhere else, the main super (browsers turn a shifted wheel into a sideways
     // delta, so it is read from either axis)
-    if ((e.shiftKey || midDown) && !e.ctrlKey) {
+    if ((e.shiftKey || midDown || (e.buttons & 4)) && !e.ctrlKey) {   // the middle button held is Shift held (its press may be taken by a middle drag, super/shiftsize.js)
       const dy = (e.deltaY || e.deltaX) * unit;
       e.preventDefault(); e.stopImmediatePropagation();
       const fresh = gesture && now - gesture.t < 500 ? gesture.what : null;

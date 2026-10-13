@@ -155,3 +155,5 @@ Status: the owner set `QUVI_PUBLIC=1` on **production** on 2026-10-09, so QuVI i
 - "Add some rainbow color shine to the reflected effect" (engine.js): a thin-film rainbow over every pane's bevel, its colours running along the edge and with the depth, drifting slowly; the glossy streak has a rainbow edge.
 - "The buttons are not clickable and make them bigger": wire.js no longer takes a press on the canvas's bars for a wire from the main super's edge (it ate their clicks); the controls and conditions are 36 px tall with 20 px icons (30 px and 16 px on phones).
 - The compact control: see above; the chain control: see above.
+
+**The middle mouse button is Shift held** (owner, 2026-10-13: "middle mouse button is like shift scroll for scaling"): held, the wheel changes a super's n as Shift + scroll does (super/scroll.js midDown, set from the pointer press too, and the wheel event's buttons), and a middle drag sizes a super's width and height as Shift + drag does (super/shiftsize.js). The browser's middle-click autoscroll and paste are off in the look.
