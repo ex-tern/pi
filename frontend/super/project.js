@@ -441,7 +441,7 @@
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
       el._pjDrag = false;
       // the rule (super/delete.js): wired to save, lock or chain, saved or locked, it stays; going, it leaves what it holds
-      const keepP = !!((window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(el)) || (window.SeSave && window.SeSave.isSaved(el)) || (window.SeBind && window.SeBind.isBound(el)));
+      const keepP = !!(window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(el));   // only the lock keeps it (super/delete.js)
       const goesP = moved && ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y);
       if (window.SeHold) { if (goesP && !keepP && window.SeHold.release) window.SeHold.release(el); else window.SeHold.end(el); }
       if (!moved) return;

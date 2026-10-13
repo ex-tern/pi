@@ -8,9 +8,11 @@
 // The rule (owner, 2026-10-13: "because the super was not connected to save icon and it was not connected to chain
 // icon ... and it was not connected to lock icon, I was able to remove it. And when I removed it, it didn't remove the
 // elements inside it. Make this a rule"; "this rule also applies the other way around"):
-//   - a super wired to the save, lock or chain control can not be removed, by any gesture (a double click, a scroll
-//     out at its smallest, a drop outside the second super); cut the wire first. Saved or locked, the same as before.
-//   - a super wired to none of them (and not saved or locked) can be removed;
+//   - since 13:05 the same day only the lock keeps a super (owner, 2026-10-13: "everything is movable or deletable
+//     unless it's connected to lock"): a super connected to the lock (wired to the lock control, or locked by it) can
+//     not be moved or removed by any gesture (a double click, a scroll out at its smallest, a drop outside the second
+//     super); cut the wire, or unlock it, first. Saved or chained, it moves and goes like any other (save keeps a
+//     state to reset to, super/restore.js; chain groups supers that move together);
 //   - removing a super never removes what it holds: the supers inside it stay where they are (a holder dropped
 //     outside the second super leaves them where they were when the drag began, super/hold.js release).
 //   SeDelete.keeps(el)  why el can not be removed ("wired", "saved", "locked") or "" when it can
@@ -58,25 +60,22 @@
   }
   // no confirmation any more (owner, 2026-10-12: "remove these instead add a save icon next to the lock"): an unsaved,
   // unlocked super is deleted at once; a saved one (super/save.js) or a locked one stays, and says why
-  // the controls a super is wired to, of the three that keep it (super/controls.js)
+  // only the lock keeps a super (super/controls.js: a super wired to the lock control is locked while the wire is there)
   function wiredKeep(el) {
     const C = window.SeControls; if (!C || !C.wiredTo || !el) return [];
-    return ["save", "lock", "chain"].filter(k => { try { return C.wiredTo("ctl:" + k).includes(el); } catch (_) { return false; } });
+    try { return C.wiredTo("ctl:lock").includes(el) ? ["lock"] : []; } catch (_) { return []; }
   }
   function keeps(el) {
     if (!el) return "";
     if (wiredKeep(el).length) return "wired";
     if (window.SeLock && window.SeLock.isLocked(el)) return "locked";
-    if ((window.SeSave && window.SeSave.isSaved(el)) || (window.SeBind && window.SeBind.isBound(el))) return "saved";
     return "";
   }
   // a note where it can not be removed (a locked one says nothing: owner, 2026-10-13)
   function why(el, x, y) {
     const k = keeps(el), N = window.SeShape && window.SeShape.note;
     if (!k || k === "locked" || !N) return k;
-    if (k === "wired") { const w = wiredKeep(el); if (w.length === 1 && w[0] === "lock") return k; N(x, y, "wired to " + w.join(" and "), "cut the wire to delete it"); }
-    else N(x, y, "saved", "unsave it to delete it");
-    return k;
+    return k;                                                             // the lock says it all: no note (owner, 2026-10-13)
   }
   function ask(el, x, y) {
     if (!el) return;

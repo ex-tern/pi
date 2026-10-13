@@ -1,7 +1,8 @@
 // super/save.js: a save icon beside every super's lock and chain (owner, 2026-10-12: "remove these instead add a save
 // icon next to the lock"; saved = can't be deleted).
 //
-// Saved (.is-saved, kept per browser as se:save:<name>), a super is never deleted: a double click on it, a scroll on
+// (Since 2026-10-13 only the lock keeps a super from being moved or removed, super/delete.js; saving keeps a state for
+// the reset control to bring back, super/restore.js. What follows is how it was:) Saved (.is-saved, kept per browser as se:save:<name>), a super is never deleted: a double click on it, a scroll on
 // out at its smallest or a drop outside the inner super leaves it, and a note says it is saved (super/delete.js).
 // Unsaved and unlocked, a double click deletes it at once. A click toggles it, a scroll in saves, a scroll out unsaves.
 //
@@ -18,7 +19,7 @@
   const load = n => { try { const v = localStorage.getItem("se:save:" + n); return v == null ? atStart(n) : v === "1"; } catch (_) { return atStart(n); } };
   const store = (n, v) => { try { if (v) localStorage.setItem("se:save:" + n, "1"); else if (atStart(n)) localStorage.setItem("se:save:" + n, "0"); else localStorage.removeItem("se:save:" + n); } catch (_) { /* private mode */ } };
   const isSaved = el => !!(el && el.classList && el.classList.contains("is-saved"));
-  const label = v => v ? "Saved: it cannot be deleted. Click to unsave" : "Not saved: a double click deletes it. Click to save";
+  const label = v => v ? "Saved: a reset brings this state back. Click to unsave" : "Not saved. Click to save this state";
 
   function set(el, v) {
     const name = nameOf(el); if (!name) return;

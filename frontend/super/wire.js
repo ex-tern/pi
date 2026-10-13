@@ -396,6 +396,14 @@
     const rr = (r, k) => { const x = r.left + 3, y = r.top + 3, w = r.width - 6, h = r.height - 6, c = Math.min(w, h) * k; return "M" + (x + c) + "," + y + "H" + (x + w - c) + "Q" + (x + w) + "," + y + " " + (x + w) + "," + (y + c) + "V" + (y + h - c) + "Q" + (x + w) + "," + (y + h) + " " + (x + w - c) + "," + (y + h) + "H" + (x + c) + "Q" + x + "," + (y + h) + " " + x + "," + (y + h - c) + "V" + (y + c) + "Q" + x + "," + y + " " + (x + c) + "," + y + "Z"; };
     const inR = (r, pt) => pt && pt[0] >= r.left - 4 && pt[0] <= r.right + 4 && pt[1] >= r.top - 4 && pt[1] <= r.bottom + 4;
     let piD = "", piRun = 0;
+    const shownPorts = {};
+    const portShown = pid => {
+      if (pid in shownPorts) return shownPorts[pid];
+      const el = document.querySelector('.se-port[data-pid="' + CSS.escape(pid) + '"]'), dot = el && el.querySelector(".se-port-dot");
+      let on = !!(el && dot && !el.classList.contains("is-covered") && !el.classList.contains("is-tiny") && el.style.display !== "none");
+      if (on) { const cs = getComputedStyle(el), r = dot.getBoundingClientRect(); on = cs.display !== "none" && cs.visibility !== "hidden" && +cs.opacity > 0.05 && r.width > 0; }
+      return (shownPorts[pid] = on);
+    };
     links.forEach((l, i) => {
       const ca = centreOf(l.a) || (l.a.loop ? null : undefined), cb = centreOf(l.b) || (l.b.loop ? null : undefined);
       if (ca === undefined || cb === undefined) return;
@@ -410,7 +418,10 @@
       const cut = covers.filter(r => r.win ? !(own(r, oa) || own(r, ob)) : !inR(r, p2) && !inR(r, q));
       let clip = "";
       if (cut.length) { defs += '<clipPath id="slc' + i + '"><path clip-rule="evenodd" d="M-9999,-9999H99999V99999H-9999Z' + cut.map(r => rr(r, 0.3)).join("") + '"/></clipPath>'; clip = ' clip-path="url(#slc' + i + ')"'; }
-      const isPort = an => an && an.h && an.h.startsWith("port:");
+      // every connection makes a sparkle (owner, 2026-10-13: "every connection makes a sparkle"): a wire's end on a super's
+      // edge or body has its own; at a port, the port's sparkle is the one, and where that is not showing (a small super's
+      // tiny ports, a port under a window, the second super's own ports) the wire draws it
+      const isPort = an => an && an.h && an.h.startsWith("port:") && portShown(an.h.slice(5));
       // a control wire (sync, condition) or a data wire (input, output, or one joining supers): data wires are thicker and
       // coloured by the type of what they carry (super/nodes.js typeOfLink)
       const ctl = kindOf(l.a) === "ctl" || kindOf(l.b) === "ctl";

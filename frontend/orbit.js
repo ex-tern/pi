@@ -756,7 +756,7 @@
       const [ex, ey] = window.SeWall ? window.SeWall.adjust(b, e.clientX, e.clientY) : [e.clientX, e.clientY];
       if (window.SeWall) window.SeWall.end(b);
       // a bubble that is going (dropped outside the second super) leaves what it holds where it was (super/delete.js)
-      const keepB0 = !!((window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(b)) || (window.SeSave && window.SeSave.isSaved(b)) || (window.SeBind && window.SeBind.isBound(b)));
+      const keepB0 = !!(window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(b));   // only the lock keeps it (super/delete.js)
       const goesB = moved && !keepB0 && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey);
       if (window.SeHold) { if (goesB && window.SeHold.release) window.SeHold.release(b); else window.SeHold.end(b); }
       if (!moved) return;                 // a click: handled by the click event

@@ -1201,12 +1201,12 @@
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(wx, wy)) {
         const keepN = window.SeDelete && window.SeDelete.keeps ? window.SeDelete.keeps(n.el) : "";
-        const savedN = !!(keepN || (window.SeSave && window.SeSave.isSaved(n.el)) || (window.SeBind && window.SeBind.isBound(n.el)));  // a saved, locked or wired super is never deleted (super/delete.js): it comes back too
+        const savedN = !!keepN;   // only a super connected to the lock stays (owner, 2026-10-13: "everything is movable or deletable unless it's connected to lock") (super/delete.js): it comes back too
         if (n.id === "site-box" || savedN) {                            // the central super comes back to the middle
           n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
           if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
-          persist(); tick(); say(!savedN ? "run stays inside the site" : keepN === "wired" ? "Wired to save, lock or chain: it stays inside the site (cut the wire to delete it)" : "Saved: it stays inside the site (unsave it to delete it)"); return;
+          persist(); tick(); say(!savedN ? "run stays inside the site" : keepN ? "Locked: it stays inside the site (unlock it, or cut its wire to the lock, to delete it)" : "Saved: it stays inside the site (unsave it to delete it)"); return;
         }
         // what it held stays, back where it was when the drag began (owner, 2026-10-13, super/delete.js)
         const crew = n.st.crew || [];
