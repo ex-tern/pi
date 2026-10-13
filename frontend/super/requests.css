@@ -1,5 +1,6 @@
 /* super/requests.css: the server request indicator (super/requests.js), bottom left: ink on paper, cobalt while a
    request is out, the one accent the design language allows (theme.css) */
+.se-req[hidden] { display: none !important; }
 .se-req { position: fixed; left: 12px; bottom: 12px; z-index: 2147483000; display: flex; align-items: center; gap: 8px;
   padding: 6px 12px 6px 10px; border: 1px solid color-mix(in srgb, var(--ink) 80%, transparent); border-radius: 14px; corner-shape: superellipse(1.6);
   background: color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
@@ -28,3 +29,7 @@
 .se-req-card li.k-ai .k, .se-req-card li.k-sent .k { color: var(--ink); font-weight: 600; }
 .se-req-card li.none { display: block; color: var(--graphite); }
 html.se-night .se-req, html.se-night .se-req-card { color: var(--ink); }
+/* everyone but the owner: only the way back to their privacy choices (super/consent.js) */
+.se-req.is-min { cursor: pointer; padding: 6px 12px; }
+.se-req.is-min .se-req-light, .se-req.is-min .se-req-card { display: none !important; }
+.se-req.is-min:hover { border-color: var(--cobalt); color: var(--cobalt); }
