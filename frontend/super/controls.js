@@ -59,9 +59,17 @@
     multiply: SVG('<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke-width="1.8"/>'),
     divide: SVG('<path d="M3 8h10" stroke-width="1.7"/><circle class="f" cx="8" cy="4.3" r="1.25"/><circle class="f" cx="8" cy="11.7" r="1.25"/>'),
     timer: SVG('<circle cx="8" cy="9" r="5.3" stroke-width="1.5"/><path d="M8 9V6.2M6.4 1.8h3.2M12.3 4.3l1-1" stroke-width="1.5"/>'),
+    up: SVG('<path d="M8 13.5V2.8" stroke-width="1.7"/><path d="M3.8 7L8 2.8 12.2 7" stroke-width="1.7"/>'),
+    down: SVG('<path d="M8 2.5v10.7" stroke-width="1.7"/><path d="M3.8 9L8 13.2 12.2 9" stroke-width="1.7"/>'),
+    left: SVG('<path d="M13.5 8H2.8" stroke-width="1.7"/><path d="M7 3.8L2.8 8 7 12.2" stroke-width="1.7"/>'),
+    right: SVG('<path d="M2.5 8h10.7" stroke-width="1.7"/><path d="M9 3.8L13.2 8 9 12.2" stroke-width="1.7"/>'),
   };
   const CONTROLS = ["save", "lock", "chain", "open", "compact", "stop", "reset"];
-  const CONDS = ["if", "then", "plus", "minus", "multiply", "divide", "timer"];
+  // the bottom bar: four arrows (owner, 2026-10-13: "add only top, down, left, right arrows to this section"; "each of
+  // these are smart buttons: using PiEn it decides what it does"); the conditions it held before (if, then, + − × ÷,
+  // the timer) are no longer on the bar: the same words still work typed into any super (super/define.js)
+  const ARROWS = ["left", "up", "down", "right"];
+  const CONDS = [];
   const HINT = { if: "> 5", then: "stop", plus: "0", minus: "0", multiply: "1", divide: "1", timer: "10s" };
   const OPS = { plus: (a, b) => a + b, minus: (a, b) => a - b, multiply: (a, b) => a * b, divide: (a, b) => b === 0 ? NaN : a / b };
   let top, bottom, cond = {};
@@ -315,7 +323,51 @@
   setTimeout(() => { if (window.SuperLink && window.SuperLink.links) resetSeen = new Set(resetEnds(window.SuperLink.links())); }, 4200);
 
   let armed = 0;
+  // ---- the arrows: smart buttons, PiEn decides (pien.js PiEN.rank) ------------------------------------
+  //   → ←  step through what PiEn would suggest next, best first: the card is selected (its blue edge) and named
+  //   ↓    goes in: opens the card the arrows point at, else PiEn's first pick
+  //   ↑    goes out: closes the window opened last, else folds the selected bubble
+  let ranked = [], at = -1, aim = null, rankedAt = 0;
+  const titleOf = k => ((O().info && O().info(k)) || {}).title || k.split(":").pop();
+  function ranking() {
+    const P = window.PiEN; let r = P && P.rank ? P.rank() : [];
+    if (!r.length) r = [...new Set([...document.querySelectorAll(".ob-member[data-key]")].map(e => e.dataset.key))].filter(k => !k.startsWith("links:") && !/ group$/.test(k)).map(key => ({ key, score: 0 }));
+    return r;
+  }
+  function showCard(key) {
+    const el = document.querySelector('.ob-member[data-key="' + CSS.escape(key) + '"]') || (O().elOf && O().elOf(key));
+    if (el && SS().select) SS().select(el);
+  }
+  function arrowGo(k) {
+    const now = performance.now();
+    if (k === "left" || k === "right") {
+      if (!ranked.length || now - rankedAt > 6000) { ranked = ranking(); at = k === "right" ? -1 : 0; }
+      rankedAt = now;
+      if (!ranked.length) { say("PiEn: nothing to suggest here yet"); return; }
+      at = (at + (k === "right" ? 1 : -1) + ranked.length) % ranked.length;
+      aim = ranked[at].key; showCard(aim);
+      say("PiEn: " + titleOf(aim) + (at === 0 ? " (its first pick)" : " (" + (at + 1) + " of " + ranked.length + ")") + ". ↓ opens it");
+      return;
+    }
+    if (k === "down") {
+      const key = aim || ((ranked = ranking())[0] || {}).key;
+      if (!key) { say("PiEn: nothing to open here yet"); return; }
+      const ok = O().openKey ? O().openKey(key) : (O().open ? (O().open(key), true) : false);
+      say(ok === false ? titleOf(key) + " cannot open here" : "Opened " + titleOf(key) + " (PiEn)");
+      aim = null; ranked = []; return;
+    }
+    if (k === "up") {
+      const wins = [...document.querySelectorAll(".orbit-panel:not(.leaving)")].filter(p => p.getClientRects().length)
+        .sort((a, b) => (+getComputedStyle(b).zIndex || 0) - (+getComputedStyle(a).zIndex || 0));
+      const key = wins.length && O().keyOf ? O().keyOf(wins[0]) : null;
+      if (key && O().close && O().close(key)) { say("Closed " + titleOf(key)); return; }
+      const s = SS().selected ? SS().selected() : null, b = s && s.closest ? s.closest(".orbit-bubble.is-group:not(.is-compact)") : null;
+      if (b && window.SeBubble) { window.SeBubble.open(b, false); say("Folded " + ((b.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim()); return; }
+      say("Nothing open to go out of");
+    }
+  }
   function press(k) {
+    if (ARROWS.includes(k)) { arrowGo(k); return; }
     if (k === "reset") {
       if (resetWired()) return;                                         // wired: what it is wired to goes back to its saved state
       const s = SS().selected ? SS().selected() : "";
@@ -350,7 +402,14 @@
     top.innerHTML = half(CONTROLS.slice(0, 3), "l") + half(CONTROLS.slice(3), "r");
     bottom = document.createElement("div"); bottom.className = "se-ctlbar se-ctl-bottom"; bottom.setAttribute("role", "toolbar"); bottom.setAttribute("aria-label", "conditions");
     const chip = k => '<label class="se-cond' + (OPS[k] ? " is-op" : "") + '" data-cond="' + k + '" title="' + k + '"><span class="se-cond-k">' + ICON[k] + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"><span class="se-cond-r" aria-live="polite"></span></label>';
-    bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + CONDS.slice(0, 3).map(chip).join("") + '</div><div class="se-ctl-half se-ctl-r">' + CONDS.slice(3).map(chip).join("") + "</div>";
+    const arrow = k => '<span class="se-ctl se-arrow se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + ' (PiEn decides)" role="button" tabindex="0" aria-label="' + ({ left: "previous suggestion", right: "next suggestion", up: "go out", down: "go in" })[k] + '">' + ICON[k] + "</span>";
+    bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + ARROWS.slice(0, 2).map(arrow).join("") + '</div><div class="se-ctl-half se-ctl-r">' + ARROWS.slice(2).map(arrow).join("") + "</div>";
+    bottom.setAttribute("aria-label", "arrows");
+    // smart buttons: pressed (a click, Enter) or opened by a wire, PiEn decides what each does (arrowGo below)
+    bottom.querySelectorAll(".se-arrow").forEach(a => {
+      a.addEventListener("click", e => { e.stopPropagation(); press(a.dataset.ctl); });
+      a.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); press(a.dataset.ctl); } });
+    });
     document.body.appendChild(top); document.body.appendChild(bottom);
     // the bars are the main canvas's own: a press, scroll or double click on them goes nowhere else
     [top, bottom].forEach(b => ["pointerdown", "dblclick", "wheel", "click", "keydown"].forEach(t => b.addEventListener(t, e => { e.stopPropagation(); }, { passive: t !== "click" && t !== "dblclick" && t !== "keydown" })));
@@ -363,7 +422,7 @@
       inp.addEventListener("change", () => commit(k, inp));
       inp.addEventListener("blur", () => commit(k, inp));
     });
-    if (cond.timer) setTimer();
+    if (cond.timer && CONDS.includes("timer")) setTimer();   // no timer on the bar any more: a stored one does not tick unseen
     place();
   }
   function fitInput(inp) { inp.size = Math.max(1, Math.min(18, (inp.value || "").length || 1)); inp.closest(".se-cond").classList.toggle("is-set", !!inp.value.trim()); }
@@ -470,13 +529,22 @@
   const isSuper = x => x && x !== "all" && x.classList && !x.classList.contains("se-ctl") && !x.classList.contains("se-cond");
   function elOfName(n) {
     if (n === "title") return document.querySelector(".orbit-title .se-titlesuper");
+    if ((n === "site" || n === "main") && window.SeLock && window.SeLock.loop) return window.SeLock.loop(n);   // the second and main supers' lock hosts
     if (n.startsWith("pill:")) return document.querySelector('.ob-member[data-key="' + CSS.escape(n.slice(5)) + '"]');
     return window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(n) : null;
   }
   let settled = false;
   function syncWired() {
     if (!settled || !window.SeLock) return;
-    const L = window.SeLock, now = wiredTo("ctl:lock").filter(isSuper), names = now.map(el => L.nameOf(el)).filter(Boolean);
+    const L = window.SeLock, now = wiredTo("ctl:lock").filter(isSuper);
+    // the second and main supers (owner, 2026-10-13: "at initial state the lock is wired but I can still move it, it's a
+    // bug"): a wire from the lock to one of their own ports locks that super through its lock host, as for any other
+    const ends = (window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : []).map(l => { const a = l.a && l.a.h, b = l.b && l.b.h; return a && a.startsWith("port:ctl:lock/") ? b : b && b.startsWith("port:ctl:lock/") ? a : null; }).filter(Boolean);
+    if (L.loop) {
+      if (ends.some(h => /^port:(input|output|sync|condition)$/.test(h))) { const h = L.loop("site"); if (h && !now.includes(h)) now.push(h); }
+      if (ends.some(h => /^port:main\//.test(h))) { const h = L.loop("main"); if (h && !now.includes(h)) now.push(h); }
+    }
+    const names = now.map(el => L.nameOf(el)).filter(Boolean);
     let prev = []; try { prev = JSON.parse(localStorage.getItem("se:lockwired") || "[]") || []; } catch (_) { prev = []; }
     now.forEach(el => { if (!L.isLocked(el)) L.set(el, true); });
     prev.filter(n => !names.includes(n)).forEach(n => { const el = elOfName(n); if (el && L.isLocked(el)) L.set(el, false); });

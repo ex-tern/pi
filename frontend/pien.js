@@ -82,6 +82,15 @@
   }
 
   const share = (row, k) => { const n = Object.values(row || {}).reduce((a, b) => a + b, 0); return n ? (row[k] || 0) / n : 0; };
+  // every card PiEN could suggest, best first (super/controls.js: the arrows ask it where to go): its own score, and
+  // with little to go on, how often each is opened, then the page's order
+  function rank() {
+    const from = mine.last && Date.now() - mine.at < GAP_MS ? mine.last : "";
+    // the cards: every pill in the bubbles (open or folded), not the bubbles themselves
+    const keys = [...new Set([...document.querySelectorAll(".ob-member[data-key]")].map(e => e.dataset.key))].filter(k => !k.startsWith("links:") && !/ group$/.test(k));
+    return keys.map((k, i) => ({ key: k, score: (k === from ? -1 : 0) + (from ? 3 * share(mine.t[from], k) + share(all.next[from], k) : 0) + 0.3 * share(mine.o, k) + 0.1 * share(all.opens, k) - i * 1e-6 }))
+      .sort((a, b) => b.score - a.score);
+  }
   function predict() {
     const from = mine.last && Date.now() - mine.at < GAP_MS ? mine.last : "";
     const cands = window.PiOrbit.visibleKeys().filter(k => k !== from && !k.startsWith("links:"));
@@ -174,6 +183,7 @@
   function attachPanel() { /* Performance now shows PiEN as one of its engine cards (performance.js) */ }
   // What the Performance window reads about PiEN.
   window.PiEN = {
+    rank: () => { try { return rank(); } catch (_) { return []; } }, pick: () => pick,
     stats: () => ({
       followed: mine.h || 0, offered: mine.s || 0,
       mine: Object.values(mine.o).reduce((a, b) => a + b, 0),
