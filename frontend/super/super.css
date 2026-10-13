@@ -770,22 +770,22 @@ html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:no
 /* the main canvas's controls (top) and conditions (bottom), super/controls.js: two halves either side of the main
    super's sync and condition ports; small glass supers, every one an icon (owner, 2026-10-13: "everything should be
    iconized, both controls and condition"); the padlock and the disk are the ones the supers carried */
-html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 26px; pointer-events: none; --ctl-gap: 40px; color: var(--ink); }
+html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 36px; pointer-events: none; --ctl-gap: 48px; color: var(--ink); }
 html.shape-se .se-ctl-bottom { transform: translateY(-100%); --ctl-gap: 22px; }
 html.shape-se .se-ctl-half.se-ctl-l { position: absolute; top: 0; right: var(--ctl-gap); }
 html.shape-se .se-ctl-half.se-ctl-r { position: absolute; top: 0; left: var(--ctl-gap); }
 html:not(.shape-se) .se-ctlbar, html.shape-se .se-ctlbar[hidden] { display: none; }
-html.shape-se .se-ctl-half { display: flex; gap: 4px; pointer-events: auto; }
+html.shape-se .se-ctl-half { display: flex; gap: 6px; pointer-events: auto; }
 html.shape-se .se-ctl, html.shape-se .se-cond {
-  display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 26px; padding: 0 6px; margin: 0;
+  display: inline-flex; align-items: center; justify-content: center; gap: 5px; min-width: 38px; height: 36px; padding: 0 8px; margin: 0;   /* bigger (owner, 2026-10-13: "make them bigger") */
   /* a super like every other (owner, 2026-10-13: "they should be same as other supers, not regular buttons"): the square
      at n = 1000, the ink edge, the frosted pane and its shadow; no button hover or press look */
   border: 1.5px solid var(--ink); border-radius: 4px; corner-shape: superellipse(9.96578);
   background: color-mix(in srgb, var(--paper, #fff) 62%, transparent); -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
-  color: inherit; font: 500 12px/1 var(--font, "Geist", system-ui, sans-serif); cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
+  color: inherit; font: 500 14px/1 var(--font, "Geist", system-ui, sans-serif); cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
   transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease;
 }
-html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 15px; height: 15px; flex: none; display: block; overflow: visible; }
+html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 20px; height: 20px; flex: none; display: block; overflow: visible; }
 html.shape-se .se-ctlbar svg path, html.shape-se .se-ctlbar svg rect, html.shape-se .se-ctlbar svg circle { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
 html.shape-se .se-ctlbar svg .f { fill: currentColor; stroke: none; }
 html.shape-se .se-ctl .lk-shackle, html.shape-se .se-ctl .lk-body { stroke-width: 1.3; }
@@ -816,7 +816,8 @@ html.shape-se.se-night .se-cond.is-set .se-cond-k { color: #9aa6ff; }
 html.shape-se.se-night .se-ctl.is-saved .sv-label, html.shape-se.se-night .se-ctl.is-saved .sv-slot { stroke: #1d2230; }
 @media (max-width: 699px) {
   html.shape-se .se-ctlbar { --ctl-gap: 26px; } html.shape-se .se-ctl-bottom { --ctl-gap: 14px; }
-  html.shape-se .se-ctl, html.shape-se .se-cond { min-width: 26px; padding: 0 5px; }
+  html.shape-se .se-ctl, html.shape-se .se-cond { min-width: 30px; height: 30px; padding: 0 5px; }
+  html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 16px; height: 16px; }
   html.shape-se .se-ctl-half { gap: 3px; }
 }
 /* no lock or save icon on the supers any more: they are the canvas's controls now (owner, 2026-10-13: "delete these

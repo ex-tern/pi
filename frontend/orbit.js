@@ -736,13 +736,15 @@
       sx = e.clientX; sy = e.clientY; moved = false;
       const r = b.getBoundingClientRect(); ox = (e.clientX - r.left) / (L.pageFit() || 1); oy = (e.clientY - r.top) / (L.pageFit() || 1);
       b.setPointerCapture(e.pointerId);
+      if (window.SeWall) window.SeWall.begin(b, e.clientX, e.clientY);   // the edge of the super it is in is a wall (super/wall.js)
     });
     b.addEventListener("pointermove", e => {
       if (!b.hasPointerCapture(e.pointerId)) return;
       if (!moved && Math.hypot(e.clientX - sx, e.clientY - sy) < 6) return;
       if (!moved && window.SeHold) window.SeHold.begin(b);              // what it holds comes along (super/hold.js)
       moved = true; dragging = it; b.classList.add("dragging");
-      const L = toLayout(e.clientX, e.clientY);
+      const [ex, ey] = window.SeWall ? window.SeWall.adjust(b, e.clientX, e.clientY) : [e.clientX, e.clientY];
+      const L = toLayout(ex, ey);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)), y = Math.min(H - it.h, Math.max(0, L.y - oy));
       b.style.transform = "translate(" + (x - ((it.w0 || it.w) - it.w) / 2) + "px," + (y - ((it.h0 || it.h) - it.h) / 2) + "px) scale(var(--se-scale, 1))";   // a sized bubble: its scaled box lands on (x, y)
       if (window.SeHold) window.SeHold.follow(b);
@@ -751,20 +753,22 @@
       if (!b.hasPointerCapture(e.pointerId)) return;
       b.releasePointerCapture(e.pointerId);
       b.classList.remove("dragging");
+      const [ex, ey] = window.SeWall ? window.SeWall.adjust(b, e.clientX, e.clientY) : [e.clientX, e.clientY];
+      if (window.SeWall) window.SeWall.end(b);
       if (window.SeHold) window.SeHold.end(b);
       if (!moved) return;                 // a click: handled by the click event
       // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
       // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
       const savedB = !!((window.SeSave && window.SeSave.isSaved(b)) || (window.SeBind && window.SeBind.isBound(b)));   // saved, or synced into a holder (super/bind.js)       // a saved bubble is never gone (super/save.js): it comes back inside
-      if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY) && window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "saved", "unsave it to delete it");
-      if (!savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(e.clientX, e.clientY)) {
+      if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey) && window.SeShape && window.SeShape.note) window.SeShape.note(ex, ey, "saved", "unsave it to delete it");
+      if (!savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey)) {
         it.gone = true; store("orbit:gone:" + it.key, 1); dragging = null; settlePushes = true;
         b.dataset.justDragged = "1"; setTimeout(() => delete b.dataset.justDragged, 0);
         layout();
         const out = document.querySelector(".lv-out"); if (out) out.textContent = "Gone: " + it.title + " was dropped outside the site";
         return;
       }
-      const L = toLayout(e.clientX, e.clientY);
+      const L = toLayout(ex, ey);
       const x = Math.min(W - it.w, Math.max(0, L.x - ox)) + it.w / 2;
       const y = Math.min(H - it.h, Math.max(0, L.y - oy)) + it.h / 2;
       it.custom = { fx: +((x - lx) / W).toFixed(4), fy: +((y - ly) / H).toFixed(4) };

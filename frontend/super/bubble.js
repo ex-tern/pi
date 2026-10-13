@@ -110,6 +110,16 @@
       if (el._sbMax > 160) { el._sbMax = 0; window.SeMax.maximize(el); }
       return;
     }
+    // compact, it sizes freely (owner, 2026-10-13: "any super can get smaller... very small, also very large, depending on
+    // the scroll"): a scroll out makes the square smaller, down to a sparkle (10 px); a scroll in brings it back up to
+    // its compact size first, then on it opens
+    if (el._sbT === 0 && (el._sbTo == null || el._sbTo === 0)) {
+      const cur = el.offsetWidth || compactSide;
+      const setSide = v => { const w = Math.round(v); el.style.width = w + "px"; el.style.height = w + "px"; el.classList.add("se-sized"); try { localStorage.setItem("se:size:" + el.dataset.key, JSON.stringify({ w, h: w })); } catch (_) { /* private mode */ } if (window.PiOrbit && window.PiOrbit.layout) window.PiOrbit.layout(); };
+      if (dy > 0 && cur > 10.5) { setSide(Math.max(10, cur * Math.exp(-dy * 0.0012))); return; }
+      if (dy < 0 && cur < compactSide - 0.5) { setSide(Math.min(compactSide, cur * Math.exp(-dy * 0.0012))); return; }
+      if (dy < 0 && el.classList.contains("se-sized") && Math.abs(cur - compactSide) <= 0.5) { el.style.width = ""; el.style.height = ""; el.classList.remove("se-sized"); try { localStorage.removeItem("se:size:" + el.dataset.key); } catch (_) { /* private mode */ } }
+    }
     const tTo = Math.max(0, Math.min(1, (el._sbTo != null ? el._sbTo : el._sbT) - dy * 0.004));
     // the same logic as every super (owner, 2026-10-12: "make all supers consistent ... same logic"): compact and
     // scrolled on out, it is too small and closes, fading away (gone until the app is reset)

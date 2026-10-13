@@ -1149,8 +1149,10 @@
         if (spawn) { n = make({ id: "n" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: spawn.k, fx: 0, fy: 0, inputs: [] }); dx = n.el.offsetWidth / 2; dy = n.el.offsetHeight / 2; }
         n.el.classList.add("is-dragging"); dragging = n;
         html.classList.add("lv-dragging");
+        if (!spawn && window.SeWall) window.SeWall.begin(n.el, x0, y0);   // the edge of the super it is in is a wall (super/wall.js)
       }
-      const L = toLayout(ev.clientX, ev.clientY);
+      const [wx, wy] = window.SeWall ? window.SeWall.adjust(n.el, ev.clientX, ev.clientY) : [ev.clientX, ev.clientY];
+      const L = toLayout(wx, wy);
       const fx0 = n.fx, fy0 = n.fy;
       n.fx = (L.x - dx) / window.innerWidth; n.fy = (L.y - dy) / window.innerHeight;
       place(n);
@@ -1172,6 +1174,8 @@
       html.classList.remove("lv-dragging");
       if (n && n.st.pinched) { n.st.pinched = false; n.el.classList.remove("is-dragging"); dragging = null; startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350); persist(); return; }
       if (!moved) return;
+      const [wx, wy] = window.SeWall ? window.SeWall.adjust(n.el, ev.clientX, ev.clientY) : [ev.clientX, ev.clientY];
+      if (window.SeWall) window.SeWall.end(n.el);
       startEl.dataset.dragged = "1"; setTimeout(() => { delete startEl.dataset.dragged; }, 350);
       n.el.classList.remove("is-dragging"); dragging = null;
       // where it is dropped decides its layer (owner, 2026-10-12: "dragging and dropping into a super determines its
@@ -1189,7 +1193,7 @@
       n.st.from = null;
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
-      if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev.clientX, ev.clientY)) {
+      if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(wx, wy)) {
         const savedN = !!((window.SeSave && window.SeSave.isSaved(n.el)) || (window.SeBind && window.SeBind.isBound(n.el)));  // a saved super is never deleted (super/save.js): it comes back too
         if (n.id === "site-box" || savedN) {                            // the central super comes back to the middle
           n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);

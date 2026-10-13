@@ -314,7 +314,14 @@
       const editing = el.classList.contains("is-editing");
       if (dy < 0 && tTo >= 1) { progAcc += dy; clearTimeout(progT); progT = setTimeout(() => { progAcc = 0; }, 500); if (progAcc < -120 && !editing) { progAcc = 0; showProgram(true); } return; }
       if (dy > 0 && editing) { showProgram(false); return; }
-      if (dy > 0 && tTo <= 0 && t <= 0.001) { closeSoon(dy); return; }   // compact and scrolled on out: too small, it closes (the same logic as every super)
+      // compact, it sizes freely (owner, 2026-10-13: "any super can get smaller... very small"): a scroll out shrinks it
+      // down to a sparkle, a scroll in brings it back to its compact size, then it opens
+      if (tTo <= 0 && t <= 0.001 && state.w && state.h) {
+        const base = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || 104, side = Math.max(state.w, state.h);
+        if (dy > 0 && side > 10.5) { const g = Math.max(10 / side, Math.exp(-dy * 0.0012)); state.w = Math.max(10, state.w * g); state.h = Math.max(10, state.h * g); place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); return; }
+        if (dy < 0 && side < base - 0.5) { const g = Math.min(base / side, Math.exp(-dy * 0.0012)); state.w *= g; state.h *= g; place(); save(state); document.dispatchEvent(new CustomEvent("se:frame")); return; }
+      }
+      if (dy > 0 && tTo <= 0 && t <= 0.001) { closeSoon(dy); return; }   // compact at a sparkle and scrolled on out: it closes (the same logic as every super)
       setT(tTo - dy * k);
     }, { capture: true, passive: false });
     // presses inside it are its own: the page does not select, wire or drag through it
@@ -415,19 +422,22 @@
     if (window.SeLock && window.SeLock.isLocked(el)) return;   // locked: it keeps its place
     el._pjDrag = true;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
+    if (window.SeWall) window.SeWall.begin(el, x0, y0);                 // the edge of the super it is in is a wall (super/wall.js)
     let moved = false;
     const move = ev => {
       if (!moved && Math.hypot(ev.clientX - x0, ev.clientY - y0) < 4) return;
       if (!moved && window.SeHold) window.SeHold.begin(el);                // what it holds comes along (super/hold.js)
       moved = true;
-      const [lx, ly] = toLayout(ev.clientX - dx, ev.clientY - dy);     // where it goes, unzoomed (the page may be zoomed out)
+      const [wx, wy] = window.SeWall ? window.SeWall.adjust(el, ev.clientX, ev.clientY) : [ev.clientX, ev.clientY];
+      const [lx, ly] = toLayout(wx - dx, wy - dy);     // where it goes, unzoomed (the page may be zoomed out)
       state.x = lx / window.innerWidth; state.y = ly / window.innerHeight;
       place();
       if (window.SeHold) window.SeHold.follow(el);
       document.dispatchEvent(new CustomEvent("se:frame:first")); document.dispatchEvent(new CustomEvent("se:frame"));   // its ports and wires follow it, as a bubble's do
     };
     const up = ev => {
-      const ev2x = ev ? ev.clientX : -1, ev2y = ev ? ev.clientY : -1;
+      const [ev2x, ev2y] = ev ? (window.SeWall ? window.SeWall.adjust(el, ev.clientX, ev.clientY) : [ev.clientX, ev.clientY]) : [-1, -1];
+      if (window.SeWall) window.SeWall.end(el);
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
       el._pjDrag = false;
       if (window.SeHold) window.SeHold.end(el);

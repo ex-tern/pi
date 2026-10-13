@@ -180,9 +180,14 @@ void main() {
     // highlight and a bright glint on the bevel follow the pointer, as a lamp held over glass would
     vec3 env = mix(sky(uv - nrm * 30.0 * uDpr / uRes, uTime), vec3(1.0), 0.55);
     OVER(env, inside * pow(1.0 - tb, 2.5) * 0.38);
+    // a rainbow shine in the reflection (owner, 2026-10-13: "add some rainbow color shine to the reflected effect"): a
+    // thin-film sheen over the bevel, its colours running along the edge and with the depth, drifting slowly
+    float film = fract(tb * 1.35 + dot(nrm, vec2(0.31, 0.19)) + (vL.x - vL.y) / (uHalf.x + uHalf.y) * 0.55 + uTime * 0.015);
+    OVER(mix(hue(film), vec3(1.0), 0.35), inside * pow(1.0 - tb, 1.6) * (1.0 - pow(1.0 - tb, 8.0)) * mix(0.30, 0.22, uNight));
     float bigK = 1.0 - 0.6 * smoothstep(140.0, 320.0, min(uHalf.x, uHalf.y));
     float sd2 = vL.x / max(uHalf.x, 1.0) * 0.55 + vL.y / max(uHalf.y, 1.0);
-    OVER(vec3(1.0), inside * smoothstep(-1.05, -0.88, sd2) * (1.0 - smoothstep(-0.70, -0.45, sd2)) * 0.13 * bigK * tb);
+    { float sb = smoothstep(-1.05, -0.88, sd2) * (1.0 - smoothstep(-0.70, -0.45, sd2));
+      OVER(mix(vec3(1.0), hue(fract((sd2 + 1.05) * 1.6 + uTime * 0.01)), 0.45), inside * sb * 0.15 * bigK * tb); }   // the glossy streak, with a rainbow edge
     vec2 cPx = uv * uRes / uDpr - vL, toM = uMouse - cPx - vL;
     float mr = 0.45 * min(uHalf.x, uHalf.y) + 30.0;
     vec2 hp = vL - clamp((uMouse - cPx) * 0.35, -uHalf, uHalf);

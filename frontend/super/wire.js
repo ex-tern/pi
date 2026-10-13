@@ -497,7 +497,7 @@
     if (svg) svg.style.visibility = "hidden";
     let top;
     try { top = document.elementFromPoint(x, y); } finally { if (svg) svg.style.visibility = v; }
-    if (top && top.closest && top.closest(".lv-palette, input, textarea, select, .wire-handle, .op-close, button.orbit-core, .ob-member, .ob-chat, a, .op-head button")) return null;   // a pill or a button keeps its own pointer
+    if (top && top.closest && top.closest(".lv-palette, input, textarea, select, .wire-handle, .op-close, button.orbit-core, .ob-member, .ob-chat, a, .op-head button, .se-ctlbar")) return null;   // a pill or a button keeps its own pointer
     const owner = top && top.closest && top.closest(THINGS);
     let best = null;
     const near = el => {
@@ -565,6 +565,7 @@
     }, true);
     document.addEventListener("pointerdown", e => {
       if (e.button !== 0 || drag) return;
+      if (e.target && e.target.closest && e.target.closest(".se-ctlbar")) return;   // the canvas's buttons press, they never start a wire (their ports do)
       let g = edgeAt(e.clientX, e.clientY);
       const port = e.target.closest && e.target.closest(".se-port");
       if (port) g = { anchor: { h: "port:" + (port.dataset.pid || port.dataset.port), el: 1 }, rect: port.getBoundingClientRect(), el: port };
