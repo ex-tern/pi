@@ -19,7 +19,7 @@
   // the AI routes (backend/routes): text sent to them reaches a model
   const AI = [
     [/^\/api\/super\/(one|ask|panel|weigh|engines)?/, "Super AI engines"],
-    [/^\/api\/assess/, "the assessment pipeline (several AI models)"],
+    [/^\/api\/assess(\/|$)/, "the assessment pipeline (several AI models)"],
     [/^\/api\/scilem\/chat/, "SciM, our assistant"],
     [/^\/api\/buddy\/suggest/, "RiBD, our research mentor"],
     [/^\/api\/assessments\/[^/]+\/review\/llm/, "an AI reviewer"],
@@ -34,12 +34,13 @@
     const size = typeof body === "string" ? new Blob([body]).size : body && body.size ? body.size : body && body.byteLength ? body.byteLength : body instanceof FormData ? -1 : 0;
     const e = { t: Date.now(), method: (method || "GET").toUpperCase(), host: u.host, path, ours, sent: size, kind: "read", to: "" };
     if (!ours) { e.kind = "other"; e.to = u.host; return e; }
-    const ai = AI.find(([re]) => re.test(path));
+    const writes = e.method !== "GET" && e.method !== "HEAD";
+    const ai = writes && AI.find(([re]) => re.test(path));                // reading a status or a list is a read, not a call to AI
     if (ai) {
       e.kind = "ai"; e.to = ai[1];
       // which engine: read from the request on this page only (it is what the page is about to send anyway)
       try { const j = typeof body === "string" ? JSON.parse(body) : null; const g = j && (j.engine || j.model); if (g) { const k = String(g).toLowerCase(); e.to = OUTSIDE.includes(k) ? g + " (an outside AI provider)" : (OWN[k] || g) + " (our own model)"; } } catch (_) { /* not JSON */ }
-    } else if (e.method !== "GET" && e.method !== "HEAD") { e.kind = "sent"; e.to = "our server"; }
+    } else if (writes) { e.kind = "sent"; e.to = "our server"; }
     return e;
   }
   function begin(e) { if (!e) return null; inflight++; log.unshift(e); if (log.length > MAX) log.length = MAX; paint(); return e; }
