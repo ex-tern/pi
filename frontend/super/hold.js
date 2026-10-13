@@ -72,7 +72,7 @@
     let held = heldBy(host);
     if (opts && opts.nodes === false) held = held.filter(e => !e.classList.contains("lv-node"));
     const r = rect(host);
-    drags.set(host, { held, x: r.left, y: r.top });
+    drags.set(host, { held, x: r.left, y: r.top, x0: r.left, y0: r.top });
   }
   function follow(host) {
     const d = drags.get(host); if (!d || !d.held.length) return;
@@ -81,6 +81,14 @@
     move(d.held, dx, dy);
   }
   function end(host) { drags.delete(host); }
+  // the host is going away (deleted by a drop outside the second super): what it held, carried along by the drag,
+  // goes back to where it was when the drag began and stays there (owner, 2026-10-13: removing a super never removes
+  // the supers inside it)
+  function release(host) {
+    const d = drags.get(host); drags.delete(host); if (!d || !d.held.length) return [];
+    move(d.held, d.x0 - d.x, d.y0 - d.y);
+    return d.held;
+  }
   function shift(host, dx, dy) { move(heldBy(host), dx, dy); }
   // growing never takes in what was outside (owner, 2026-10-12: "to encompass the connect automatically should not
   // happen"): the supers outside el (not held by it, not holding it, not lying across it now), and how far el may grow
@@ -108,5 +116,5 @@
   }
   // a box (screen px) that would cover or cut into one of them
   const wouldMeet = (box, outs) => outs.some(o => meets(box, rect(o), 14));
-  window.SeHold = { hosts: () => hosts().map(h => h.el), hostOf, heldBy, begin, follow, end, shift, move, outsiders, growRoom, wouldMeet };
+  window.SeHold = { hosts: () => hosts().map(h => h.el), hostOf, heldBy, begin, follow, end, release, shift, move, outsiders, growRoom, wouldMeet };
 })();

@@ -1194,17 +1194,20 @@
       // dropped outside the inner super, the second super, it is deleted on purpose (owner, 2026-10-12), wires and
       // all; a holder takes what it holds with it (never the central super, which comes back inside)
       if (ev.type === "pointerup" && se() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(wx, wy)) {
-        const savedN = !!((window.SeSave && window.SeSave.isSaved(n.el)) || (window.SeBind && window.SeBind.isBound(n.el)));  // a saved super is never deleted (super/save.js): it comes back too
+        const keepN = window.SeDelete && window.SeDelete.keeps ? window.SeDelete.keeps(n.el) : "";
+        const savedN = !!(keepN || (window.SeSave && window.SeSave.isSaved(n.el)) || (window.SeBind && window.SeBind.isBound(n.el)));  // a saved, locked or wired super is never deleted (super/delete.js): it comes back too
         if (n.id === "site-box" || savedN) {                            // the central super comes back to the middle
           n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
           const sb = O().siteBox ? O().siteBox() : null, f = sb ? (sb.fit || 1) : 1;
           if (sb) { const cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, L = toLayout(cx, cy), r = n.el.getBoundingClientRect(); n.fx = (L.x - r.width / 2) / window.innerWidth; n.fy = (L.y - r.height / 2) / window.innerHeight; place(n); }
-          persist(); tick(); say(savedN ? "Saved: it stays inside the site (unsave it to delete it)" : "run stays inside the site"); return;
+          persist(); tick(); say(!savedN ? "run stays inside the site" : keepN === "wired" ? "Wired to save, lock or chain: it stays inside the site (cut the wire to delete it)" : "Saved: it stays inside the site (unsave it to delete it)"); return;
         }
-        const crew = n.st.crew ? n.st.crew.map(c => c.m) : [];
-        n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el);
-        crew.forEach(remove); remove(n);
-        say((BY[n.fn].name) + " deleted: dropped outside the site" + (crew.length ? ", with what it held" : ""));
+        // what it held stays, back where it was when the drag began (owner, 2026-10-13, super/delete.js)
+        const crew = n.st.crew || [];
+        crew.forEach(c => { c.m.fx = c.fx; c.m.fy = c.fy; place(c.m); });
+        n.st.crew = null; if (window.SeHold) { if (window.SeHold.release) window.SeHold.release(n.el); else window.SeHold.end(n.el); }
+        remove(n); persist(); tick();
+        say((BY[n.fn].name) + " deleted: dropped outside the site" + (crew.length ? "; what it held stays" : ""));
         return;
       }
       if (n.st.crew) { n.st.crew = null; if (window.SeHold) window.SeHold.end(n.el); persist(); tick(); return; }    // a holder moved with what it holds: nothing to wire
@@ -1438,9 +1441,9 @@
   let zoomed = null, suppressRing = false, moveT = 0;
   function closeNode(n) {
     n.st.closing = true;
-    const crew = isHolder(n) ? inside(n) : [];
-    [n, ...crew].forEach(m => m.el.classList.add("lv-closing"));
-    setTimeout(() => { crew.forEach(remove); remove(n); say((BY[n.fn].name) + " closed: it got too small" + (crew.length ? ", with what it held" : "")); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
+    // what it holds stays (owner, 2026-10-13: removing a super never removes the supers inside it, super/delete.js)
+    n.el.classList.add("lv-closing");
+    setTimeout(() => { remove(n); say((BY[n.fn].name) + " closed: it got too small"); }, 700 * ((window.SeMotion && window.SeMotion.SLOW) || 1));
   }
   const MIN_SIDE = 10;                                               // a sparkle's size (owner, 2026-10-12: "minimum size can be a sparkle")                                               // any size if unlocked (owner, 2026-10-12): the smallest a super gets before it asks to go
   function zoomNode(n, dy, auto) {
@@ -1867,7 +1870,7 @@
       typeOfLink, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        // super/delete.js: deleted after a confirmation (a holder with what it holds; never the central super)
-                       close: (el, now) => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; if (now) { const crew = isHolder(n) ? inside(n) : []; crew.forEach(remove); remove(n); } else closeNode(n); return true; },   // now: it has vanished already (super/delete.js)
+                       close: (el, now) => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; if (now) remove(n); else closeNode(n); return true; },   /* what it held stays (super/delete.js, the rule) */   // now: it has vanished already (super/delete.js)
                        // super/maximize.js: a super's whole box in layout px (it fills the inner super, and back)
                        rectOf: el => { const n = nodes.find(x => x.el === el); return n ? { x: n.fx * window.innerWidth, y: n.fy * window.innerHeight, w: n.size || DOT_BASE, h: (n.size || DOT_BASE) * (n.aspect || 1), aspect: n.aspect || 0 } : null; },
                        setRect: (el, x, y, w, h) => { const n = nodes.find(m => m.el === el); if (!n) return false; w = Math.max(10, w); h = Math.max(10, h); n.aspect = Math.abs(h / w - 1) < 0.01 ? 0 : h / w; n.st.sizeTo = null; sizeDot(n, Math.round(w)); n.fx = x / window.innerWidth; n.fy = y / window.innerHeight; place(n); clearTimeout(moveT); moveT = setTimeout(persist, 300); drawWires(); return true; },

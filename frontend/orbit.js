@@ -755,12 +755,15 @@
       b.classList.remove("dragging");
       const [ex, ey] = window.SeWall ? window.SeWall.adjust(b, e.clientX, e.clientY) : [e.clientX, e.clientY];
       if (window.SeWall) window.SeWall.end(b);
-      if (window.SeHold) window.SeHold.end(b);
+      // a bubble that is going (dropped outside the second super) leaves what it holds where it was (super/delete.js)
+      const keepB0 = !!((window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(b)) || (window.SeSave && window.SeSave.isSaved(b)) || (window.SeBind && window.SeBind.isBound(b)));
+      const goesB = moved && !keepB0 && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey);
+      if (window.SeHold) { if (goesB && window.SeHold.release) window.SeHold.release(b); else window.SeHold.end(b); }
       if (!moved) return;                 // a click: handled by the click event
       // dropped outside the inner super, the second super, it is gone on purpose (owner, 2026-10-12): kept as
       // orbit:gone:<key> until the app is reset (the title's wire, super/wire.js resetApp)
-      const savedB = !!((window.SeSave && window.SeSave.isSaved(b)) || (window.SeBind && window.SeBind.isBound(b)));   // saved, or synced into a holder (super/bind.js)       // a saved bubble is never gone (super/save.js): it comes back inside
-      if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey) && window.SeShape && window.SeShape.note) window.SeShape.note(ex, ey, "saved", "unsave it to delete it");
+      const savedB = keepB0;   // saved, or synced into a holder (super/bind.js)       // a saved bubble is never gone (super/save.js): it comes back inside
+      if (savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey) && window.SeDelete && window.SeDelete.why) window.SeDelete.why(b, ex, ey);
       if (!savedB && merged() && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ex, ey)) {
         it.gone = true; store("orbit:gone:" + it.key, 1); dragging = null; settlePushes = true;
         b.dataset.justDragged = "1"; setTimeout(() => delete b.dataset.justDragged, 0);

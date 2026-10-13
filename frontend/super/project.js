@@ -440,9 +440,12 @@
       if (window.SeWall) window.SeWall.end(el);
       window.removeEventListener("pointermove", move, true); window.removeEventListener("pointerup", up, true);
       el._pjDrag = false;
-      if (window.SeHold) window.SeHold.end(el);
+      // the rule (super/delete.js): wired to save, lock or chain, saved or locked, it stays; going, it leaves what it holds
+      const keepP = !!((window.SeDelete && window.SeDelete.keeps && window.SeDelete.keeps(el)) || (window.SeSave && window.SeSave.isSaved(el)) || (window.SeBind && window.SeBind.isBound(el)));
+      const goesP = moved && ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y);
+      if (window.SeHold) { if (goesP && !keepP && window.SeHold.release) window.SeHold.release(el); else window.SeHold.end(el); }
       if (!moved) return;
-      if (ev2x >= 0 && window.SeSite && window.SeSite.inSite && !window.SeSite.inSite(ev2x, ev2y)) { if ((window.SeSave && window.SeSave.isSaved(el)) || (window.SeBind && window.SeBind.isBound(el))) { if (window.SeShape && window.SeShape.note) window.SeShape.note(ev2x, ev2y, "saved", "unsave it to delete it"); } else { goAway(); return; } }   // dropped outside the inner super: gone on purpose
+      if (goesP) { if (keepP) { if (window.SeDelete && window.SeDelete.why) window.SeDelete.why(el, ev2x, ev2y); } else { goAway(); return; } }   // dropped outside the inner super: gone on purpose
       settleFree(); save(state);
       document.dispatchEvent(new CustomEvent("se:obstacle"));           // the supers step off it; the bubbles make room by themselves
     };
