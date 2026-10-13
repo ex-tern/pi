@@ -288,9 +288,13 @@
   // the ends wired to the reset control, as wire ends (port:main/condition, title, node:..., k:...)
   function resetEnds(list) {
     const pre = "port:ctl:reset/";
-    return (list || []).map(l => { const a = l.a && l.a.h, b = l.b && l.b.h; return a && a.startsWith(pre) ? b : b && b.startsWith(pre) ? a : null; }).filter(Boolean);
+    const h = an => an ? (an.loop ? "loop" : an.h) : null;               // the main loop itself is a wire end with no name
+    return (list || []).map(l => { const a = h(l.a), b = h(l.b); return a && a.startsWith(pre) ? b : b && b.startsWith(pre) ? a : null; }).filter(Boolean);
   }
-  const pageEnd = h => h === "port:main/condition" || h === "title";     // the main loop's condition, or the logo
+  // the logo or the main loop (its edge, or any of its ports): wired to reset, the whole app starts again, as on a first
+  // visit (owner, 2026-10-13: "connecting the circular icon to logo or main loop, to reset the app")
+  const pageEnd = h => h === "title" || h === "loop" || /^port:main\//.test(h);
+  function resetApp() { if (window.SuperLink && window.SuperLink.reset) { window.SuperLink.reset(); return true; } return resetPage(); }
   function resetOne(el) {
     const R = window.SeRestore; if (!R || !el || el === "all") return false;
     if (R.has(el)) return R.restore(el);
@@ -302,14 +306,14 @@
     say("The page has no saved state yet: save the main super or the logo first"); return false;
   }
   function resetEnd(h) {
-    if (pageEnd(h)) return resetPage();
+    if (pageEnd(h)) return resetApp();
     const el = elOfAnchor(h);
     return el && el !== "all" && isSuper(el) ? resetOne(el) : false;
   }
   function resetWired() {
     const ends = resetEnds(window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : []);
     if (!ends.length) return false;
-    if (ends.some(pageEnd)) { resetPage(); return true; }               // the page comes first: it holds everything else
+    if (ends.some(pageEnd)) { resetApp(); return true; }                // the app comes first: it holds everything else
     ends.forEach(resetEnd); return true;
   }
   // making the wire is the reset (owner: "doing this resets the super"): only a wire made now, not one the page had
@@ -320,7 +324,7 @@
     const fresh = resetSeen ? ends.filter(h => !resetSeen.has(h)) : [];
     resetSeen = new Set(ends);
     if (!fresh.length) return;
-    if (fresh.some(pageEnd)) resetPage(); else fresh.forEach(resetEnd);
+    if (fresh.some(pageEnd)) resetApp(); else fresh.forEach(resetEnd);
   }, 120));
   setTimeout(() => { if (window.SuperLink && window.SuperLink.links) resetSeen = new Set(resetEnds(window.SuperLink.links())); }, 4200);
 
@@ -371,7 +375,7 @@
   function press(k) {
     if (ARROWS.includes(k)) { arrowGo(k); return; }
     if (k === "reset") {
-      if (resetWired()) return;                                         // wired: what it is wired to goes back to its saved state
+      if (resetWired()) return;                                         // wired: a super goes back to its saved state; the logo or main loop, the app starts again
       const s = SS().selected ? SS().selected() : "";
       if (s && typeof s !== "string" && window.SeRestore) { resetOne(s); return; }
       const b = top && top.querySelector(".se-ctl-reset");               // nothing: the app starts afresh, as on a first visit; a second press within 3 s
