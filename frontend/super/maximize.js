@@ -43,7 +43,7 @@
     else { s.k = 1; step(); if (done) done(); }
   }
   function maximize(el, back) {                                      // back: the box to go back to (a Shift + drag's start)
-    if (!el || isMax(el) || (window.SeLock && window.SeLock.isLocked(el))) return;
+    if (!el || isMax(el)) return;
     const r = rectOf(el), to = site(isWin(el) || isBub(el)); if (!r || !to) return;
     // filling the inner super would take in supers outside it: it does not (owner, 2026-10-12: "to encompass the connect
     // automatically should not happen")

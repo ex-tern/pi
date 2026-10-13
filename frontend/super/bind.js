@@ -163,6 +163,13 @@
           }
         }
       }
+      // the universal law of room (owner, 2026-10-13: "there should be always 30% empty area in every super"): what a
+      // super holds covers at most 70 % of it; more, and its members shrink together (their shares) until 30 % is free
+      {
+        const area = ms.filter(el => !busy(el) && !el.classList.contains("orbit-panel")).reduce((sum, el) => { const b = el.getBoundingClientRect(); return sum + b.width * b.height; }, 0);
+        const A = r.width * r.height;
+        if (A > 0 && area > 0.7 * A) { const k = Math.sqrt(0.7 * A / area) * 0.99; ms.forEach(el => { const a = st.at.get(el); if (a && !busy(el)) a[2] *= k; }); st.sizedAt = performance.now(); }
+      }
       ms.forEach(el => {                                                 // sizes: to their share while the holder changes; else the share follows them (sized by you)
         if (el.classList.contains("orbit-panel") || held.has(el) || busy(el)) return;
         const a = st.at.get(el); if (!a) return;

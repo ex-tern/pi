@@ -126,6 +126,7 @@
     if (panel && alt && zb && zb._zoom) return zb;
     if (panel) return panel;
     if (alt && t) { const th = t.closest(".orbit-bubble, .orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }
+    { const th = t && t.closest(".orbit-title, .lv-palette"); if (th && nameOf(th)) return th; }   // the title and the palette size by a plain scroll too
     // a pill in an open bubble expands into its window by a scroll in on it (every super scrolls to expand)
     const pill = t && t.closest(".ob-member");
     if (pill && pill.dataset.key && !alt) return pill;
@@ -170,7 +171,7 @@
       const mainSel = window.SeSelect && window.SeSelect.selected && window.SeSelect.selected() === "loop";
       const ml = window.SeLock && window.SeLock.loop ? window.SeLock.loop("main") : null;
       if (what === "site" && mainSel && ml && !locked(ml) && O().zoomMain) O().zoomMain(Math.exp(-dy * 0.0015), direct);
-      else if (what === "site") { const sl = window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null; if (sl && locked(sl)) lockedNote(sl, x, y); else if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // the second super locked: its size (the zoom) is kept
+      else if (what === "site") { if (O().zoomPage) O().zoomPage(Math.exp(-dy * 0.0015), direct); }   // a lock keeps place, never size (the universal scroll law)   // the second super locked: its size (the zoom) is kept
       else if (!what.isConnected) return;
       else if (press(what)) {   // a button: a few steps in press it, once per gesture
         {
@@ -182,7 +183,6 @@
           }
         }
       }
-      else if (what.classList.contains("ob-member") && dy > 0 && locked(what.closest(".orbit-bubble"))) lockedNote(what.closest(".orbit-bubble"), x, y);
       else if (what.classList.contains("ob-member") && dy > 0) {        // a scroll out on a pill shrinks its bubble, as anywhere on it
         const bub = what.closest(".orbit-bubble.is-group"); if (bub && window.SeBubble) window.SeBubble.zoom(bub, dy);
       }
@@ -192,7 +192,6 @@
           if (window.SeInner && window.SeInner.isCut(what.dataset.key)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "cut", "wire its name's output into it to open it"); }   // its wire was cut (super/inner.js)
           else if (O().openKey) { O().openKey(what.dataset.key); gesture = { what: "nothing", t: (gesture ? gesture.t : performance.now()) + 700, pinch: !!(gesture && gesture.pinch) }; } }   // the window is open: the rest of this gesture does not go on to zoom its content
       }
-      else if (sizes(what) && locked(sizes(what))) lockedNote(sizes(what), x, y);   // locked: its size is kept; a locked bubble does not grow either (owner, 2026-10-12: "connect super is locked but it still grows, this is a bug")
       else if (what.classList.contains("orbit-bubble") && !alt && window.SeBubble) window.SeBubble.zoom(what, dy);
       else if (what._zoom) what._zoom.zoomAt(x, y, dy);
       else if (what.classList.contains("lv-node")) { if (window.LabView) window.LabView.zoomNode(what, dy); }
@@ -200,7 +199,6 @@
         // the window grows (or shrinks) with the scroll; as big as the inner super lets, the scroll goes on into
         // its content (zoomed about the pointer), and scrolling back zooms the content out before the window shrinks
         const zb = what.querySelector("[data-zoombox]"), z = zb && zb._zoom, sb = O().siteBox ? O().siteBox() : null;
-        if (locked(what)) { if (z) z.zoomAt(x, y, dy); else lockedNote(what, x, y); return; }   // locked: the window keeps its size, its content still zooms
         const maxW = sb ? 2 * sb.a * (sb.fit || 1) * 0.92 : window.innerWidth - 16, maxH = sb ? 2 * sb.b * (sb.fit || 1) * 0.85 : window.innerHeight - 16;
         // the content zooms with every step (bigger type, owner, 2026-10-12: "bigger, not just the window"), and the
         // window grows with it while the inner super has room; scrolling back zooms the content out, then shrinks
@@ -279,10 +277,11 @@
     // a super opens, grows or shrinks by a scroll only once it is selected (owner, 2026-10-13: "hovering and zooming
     // shouldn't open a super; selecting and zooming should"): on an unselected super the scroll is the page's, and a
     // note says to click it first (a window's own buttons and its content still take a scroll once the window is selected)
-    if (!fresh && target !== "site" && target.closest && !target.closest(".se-sel")) {
-      const sup = target.closest(".orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title, .ob-member, .ob-label") || target;
-      if (!sup._seNoteT || now - sup._seNoteT > 1500) { sup._seNoteT = now; if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "click it first", "select a super, then scroll to open or size it"); }
-      target = "site";
+    // the universal law (owner, 2026-10-13: "scrolling in and out in any super should make it bigger and smaller always"):
+    // a scroll sizes the super under the pointer, selected or not, locked or not; it selects it too
+    if (!fresh && target !== "site" && target.closest && !target.closest(".se-sel") && window.SeSelect && window.SeSelect.select) {
+      const sup = target.closest(".orbit-bubble, .orbit-panel, .lv-node, .se-project, .ob-member, .ob-label") || (target.closest(".orbit-title") && target.closest(".orbit-title").querySelector(".se-titlesuper"));
+      if (sup) window.SeSelect.select(sup);
     }
     gesture = { what: target, t: now, pinch };
     e.preventDefault(); e.stopImmediatePropagation();
@@ -319,6 +318,7 @@
     // changed, brings back the first view (before the page's own scroll handlers take it)
     window.addEventListener("wheel", e => {
       if (!on() || e.shiftKey || e.altKey || !sup.contains(e.target)) return;
+      if (on()) return;                                               // a scroll sizes the title like any super (owner, 2026-10-13: "scrolling in and out in any super should make it bigger and smaller always"); the 0 key resets the view
       if (!(O().viewChanged && O().viewChanged())) return;
       e.preventDefault(); e.stopImmediatePropagation();
       if (O().resetView) O().resetView();

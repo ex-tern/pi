@@ -295,7 +295,7 @@
     let progAcc = 0, progT = 0;
     window.addEventListener("wheel", e => {
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
-      if (window.SeLock && el && window.SeLock.isLocked(el) && !e.target.closest(".pj-editor, .se-lock")) {   // locked: it does not grow or shrink (owner, 2026-10-12)
+      if (false) {   // a lock keeps its place, not its size (owner, 2026-10-13: "scrolling in and out in any super should make it bigger and smaller always")
         e.preventDefault(); e.stopImmediatePropagation();
         /* a locked super simply does nothing: no note (owner, 2026-10-13) */
         return;

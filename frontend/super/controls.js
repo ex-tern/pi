@@ -13,6 +13,8 @@
 //   save   saves it (a saved super is never deleted), or unsaves it when it is saved
 //   lock   locks it (it keeps its place, size and n), or unlocks it; a super wired to it is locked and stays locked
 //          while the wire is there (cut the wire and it unlocks)
+//   chain  chains it: it and everything it holds move as one group (super/chain.js), or unchains it; a super wired to
+//          it stays chained while the wire is there
 //   open   opens it: a bubble or the project grows open, a pill opens its window, a Super AI super asks (words typed
 //          into a plain super make it one), a held window comes back
 //   stop   stops it: asking stops, a window closes, a bubble or the project compacts; the timer stops too
@@ -39,6 +41,7 @@
   const ICON = {
     save: SVG('<path class="sv-body" d="M2,1.5 H8.6 L10.5,3.4 V10.5 H2 Z"/><path class="sv-label" d="M3.6,1.5 V4 H7.6 V1.5"/><rect class="sv-slot" x="3.6" y="6.6" width="5.3" height="3.9" rx="0.6"/>', "0 0 12 12"),
     lock: SVG('<path class="lk-shackle" d="' + SHACKLE.open + '"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/>', "0 0 12 12"),
+    chain: SVG('<rect class="ch-link" x="1.2" y="5.6" width="7.4" height="4.8" rx="2.4" stroke-width="1.5"/><rect class="ch-link" x="7.4" y="5.6" width="7.4" height="4.8" rx="2.4" stroke-width="1.5"/>'),
     open: SVG('<path d="M7 3H3v10h10V9" stroke-width="1.5"/><path d="M9 2.6h4.4V7M13.2 2.8L7.6 8.4" stroke-width="1.6"/>'),
     stop: SVG('<rect class="f" x="3.5" y="3.5" width="9" height="9"/>'),
     reset: SVG('<path d="M3.4 8a4.6 4.6 0 1 0 1.5-3.4" stroke-width="1.6"/><path class="f" d="M2.2 1.9v4.6h4.6z"/>'),
@@ -50,7 +53,7 @@
     divide: SVG('<path d="M3 8h10" stroke-width="1.7"/><circle class="f" cx="8" cy="4.3" r="1.25"/><circle class="f" cx="8" cy="11.7" r="1.25"/>'),
     timer: SVG('<circle cx="8" cy="9" r="5.3" stroke-width="1.5"/><path d="M8 9V6.2M6.4 1.8h3.2M12.3 4.3l1-1" stroke-width="1.5"/>'),
   };
-  const CONTROLS = ["save", "lock", "open", "stop", "reset"];
+  const CONTROLS = ["save", "lock", "chain", "open", "stop", "reset"];
   const CONDS = ["if", "then", "plus", "minus", "multiply", "divide", "timer"];
   const HINT = { if: "> 5", then: "stop", plus: "0", minus: "0", multiply: "1", divide: "1", timer: "10s" };
   const OPS = { plus: (a, b) => a + b, minus: (a, b) => a - b, multiply: (a, b) => a * b, divide: (a, b) => b === 0 ? NaN : a / b };
@@ -202,6 +205,10 @@
   const isLocked = el => { el = lockable(el); return !!(el && window.SeLock && window.SeLock.isLocked(el)); };
   const isSaved = el => !!(el && el !== "all" && window.SeSave && window.SeSave.isSaved(el));
   function toggle(k, el) {
+    if (k === "chain") {                                                  // the chain: it and what it holds move as one (super/chain.js)
+      if (!el || el === "all" || !window.SeChain || !(window.SeLock && window.SeLock.nameOf(el))) return null;
+      const now = window.SeChain.isChained(el); window.SeChain.set(el, !now); return (now ? "Unchained " : "Chained ") + nameOf(el);
+    }
     el = k === "lock" ? lockable(el) : el; if (!el || el === "all") return null;
     const A = k === "lock" ? window.SeLock : window.SeSave; if (!A) return null;
     if (window.SeLock && !window.SeLock.nameOf(el)) return null;           // not a super that keeps a lock or a save
@@ -213,7 +220,7 @@
   function targetsOf(k) {
     const s = SS().selected ? SS().selected() : "";
     // save and lock: the selected super (the wired ones are held saved or locked by their wire, super/controls.js syncWired)
-    if ((k === "lock" || k === "save") && s) {
+    if ((k === "lock" || k === "save" || k === "chain") && s) {
       if (typeof s !== "string") return [s];
       if (k === "lock" && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];
     }
@@ -238,7 +245,7 @@
       list.forEach(x => stopOne(x === "all" ? null : x)); say("Stopped " + (list.length > 1 ? list.length + " supers" : nameOf(list[0] === "all" ? null : list[0]))); return;
     }
     const held = list.filter(x => x && x !== "all" && wiredTo("ctl:" + k).includes(x));
-    if (held.length && held.length === list.length) { say(nameOf(held[0]) + " is wired to " + k + ": it stays " + (k === "lock" ? "locked" : "saved") + " while the wire is there"); return; }
+    if (held.length && held.length === list.length) { say(nameOf(held[0]) + " is wired to " + k + ": it stays " + (k === "lock" ? "locked" : k === "chain" ? "chained" : "saved") + " while the wire is there"); return; }
     const done = list.map(x => x && toggle(k, x)).filter(Boolean);
     say(done.length ? done.join(", ") : "Select a super (or wire it to " + k + ") first");
     mark();
@@ -249,7 +256,7 @@
     if (top || !on() || !document.body) return;
     top = document.createElement("div"); top.className = "se-ctlbar se-ctl-top"; top.setAttribute("role", "toolbar"); top.setAttribute("aria-label", "controls");
     const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<button type="button" class="se-ctl se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + '" aria-label="' + k + '">' + ICON[k] + "</button>").join("") + "</div>";
-    top.innerHTML = half(CONTROLS.slice(0, 2), "l") + half(CONTROLS.slice(2), "r");
+    top.innerHTML = half(CONTROLS.slice(0, 3), "l") + half(CONTROLS.slice(3), "r");
     bottom = document.createElement("div"); bottom.className = "se-ctlbar se-ctl-bottom"; bottom.setAttribute("role", "toolbar"); bottom.setAttribute("aria-label", "conditions");
     const chip = k => '<label class="se-cond' + (OPS[k] ? " is-op" : "") + '" data-cond="' + k + '" title="' + k + '"><span class="se-cond-k">' + ICON[k] + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"><span class="se-cond-r" aria-live="polite"></span></label>';
     bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + CONDS.slice(0, 3).map(chip).join("") + '</div><div class="se-ctl-half se-ctl-r">' + CONDS.slice(3).map(chip).join("") + "</div>";
@@ -293,6 +300,8 @@
     const locked = !!lk && isLocked(lk), saved = !!sv && isSaved(sv);
     if (L && L.classList.contains("is-locked") !== locked) { L.classList.toggle("is-locked", locked); L.querySelector(".lk-shackle").setAttribute("d", locked ? SHACKLE.closed : SHACKLE.open); L.setAttribute("aria-pressed", String(locked)); }
     if (Sv && Sv.classList.contains("is-saved") !== saved) { Sv.classList.toggle("is-saved", saved); Sv.setAttribute("aria-pressed", String(saved)); }
+    const ch = targetsOf("chain")[0], C = top.querySelector(".se-ctl-chain"), chained = !!(ch && ch !== "all" && window.SeChain && window.SeChain.isChained(ch));
+    if (C && C.classList.contains("is-chained") !== chained) { C.classList.toggle("is-chained", chained); C.setAttribute("aria-pressed", String(chained)); }
   }
   // either side of the main super's sync port (top) and condition port (bottom), just inside its edge
   function place() {
@@ -334,6 +343,14 @@
     prev.filter(n => !names.includes(n)).forEach(n => { const el = elOfName(n); if (el && L.isLocked(el)) L.set(el, false); });
     try { localStorage.setItem("se:lockwired", JSON.stringify(names)); } catch (_) { /* private mode */ }
     if (window.SeSave) wiredTo("ctl:save").filter(isSuper).forEach(el => { if (!window.SeSave.isSaved(el)) window.SeSave.set(el, true); });
+    // chained while wired to the chain control, unchained when the wire is cut (as the lock)
+    if (window.SeChain) {
+      const cw = wiredTo("ctl:chain").filter(isSuper), cn = cw.map(el => L.nameOf(el)).filter(Boolean);
+      let cp = []; try { cp = JSON.parse(localStorage.getItem("se:chainwired") || "[]") || []; } catch (_) { cp = []; }
+      cw.forEach(el => { if (!window.SeChain.isChained(el)) window.SeChain.set(el, true); });
+      cp.filter(n => !cn.includes(n)).forEach(n => { const el = elOfName(n); if (el && window.SeChain.isChained(el)) window.SeChain.set(el, false); });
+      try { localStorage.setItem("se:chainwired", JSON.stringify(cn)); } catch (_) { /* private mode */ }
+    }
     mark();
   }
   setTimeout(() => { settled = true; syncWired(); }, 4000);              // once the program's wires are on the page

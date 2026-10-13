@@ -226,7 +226,8 @@
     sideWas = side;
     document.querySelectorAll(".orbit-bubble.is-group.is-compact, .orbit-bubble.is-group.is-growing").forEach(redraw);
   }, 700);
-  window.SeBubble = { zoom, open: (el, open) => { if (open && window.SeLock && window.SeLock.isLocked(el)) return false; return setOpen(el, open, true); },   // a locked bubble does not grow (owner, 2026-10-12)
+  window.SeBubble = { zoom, open: (el, open) => setOpen(el, open, true),   // a lock keeps a bubble's place, not its size (owner, 2026-10-13: the universal scroll law)
+      // a locked bubble does not grow (owner, 2026-10-12)
   isCompact, start, drawing };
   const boot = () => { if (!start()) setTimeout(boot, 200); };
   if (window.PiOrbit) boot(); else document.addEventListener("orbit:ready", boot, { once: true });

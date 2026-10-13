@@ -792,6 +792,8 @@ html.shape-se .se-ctl .lk-shackle, html.shape-se .se-ctl .lk-body { stroke-width
 html.shape-se .se-ctl.is-locked .lk-body { fill: currentColor; }
 html.shape-se .se-ctl .sv-body, html.shape-se .se-ctl .sv-label, html.shape-se .se-ctl .sv-slot { stroke-width: 1.2; }
 html.shape-se .se-ctl.is-saved .sv-body { fill: currentColor; }
+html.shape-se .se-ctl.is-chained .ch-link { stroke-width: 2.2; }
+html.shape-se .se-ctl.is-chained { color: var(--cobalt); }
 html.shape-se .se-ctl.is-saved .sv-label, html.shape-se .se-ctl.is-saved .sv-slot { stroke: var(--paper, #fff); }
 html.shape-se .se-ctl.is-on { color: var(--cobalt); border-color: var(--cobalt); }
 html.shape-se .se-ctl:focus-visible, html.shape-se .se-cond:focus-within { outline: none !important; border-color: var(--cobalt); }
