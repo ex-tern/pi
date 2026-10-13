@@ -346,7 +346,7 @@ function paneMesh(key) {
   return m;
 }
 function setPane(key, cx, cy, a, b, n, o) {
-  if (!(a > 5 && b > 5) || !isFinite(a + b + cx + cy + n)) return;   // too small to be a pane (or not a number): nothing drawn
+  if (!(a > 2 && b > 2) || !isFinite(a + b + cx + cy + n)) return;   // thin pills in a small open bubble are panes too   // too small to be a pane (or not a number): nothing drawn
   const m = paneMesh(key), u = m.material.uniforms, M = o.margin != null ? o.margin : PANE_M;
   m.position.set(cx, cy, 0); m.scale.set(2 * (a + M), 2 * (b + M), 1);
   u.uSize.value.set(2 * (a + M), 2 * (b + M)); u.uHalf.value.set(a, b); u.uN.value = Math.max(0.3, Math.min(60, n));   // a star too: the pane is the shape the super has
@@ -376,7 +376,7 @@ const KINDS = [
   { sel: ".se-ctlbar:not([hidden]) .se-ctl, .se-ctlbar:not([hidden]) .se-cond", fill: 0.55, order: 40, shadow: 0.45, keep: true },
   // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
   // its name box and its window pills are glass panes, drawn above their bubble
-  { sel: ".orbit-bubble.is-group:not(.is-compact):not(.is-growing) > .ob-label, .orbit-bubble.is-group:not(.is-compact):not(.is-growing) .ob-member", fill: 0.6, order: 10, shadow: 0.35, inner: true },
+  { sel: ".orbit-bubble.is-group:not(.is-compact):not(.is-growing) > .ob-label, .orbit-bubble.is-group:not(.is-compact):not(.is-growing) .ob-member", fill: 0.6, order: 10, shadow: 0.35, inner: true, keep: true },   // a thin pill stays a box, never a sparkle
 ];
 // a super's height in the page: the z-index of the nearest stacked box round it, then its kind's order, then how
 // deep it sits inside other supers (what a super holds lies on it)

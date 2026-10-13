@@ -98,8 +98,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.094,
     "fy": 0.168,
     "inSite": [
-     0.582,
-     0.68
+     0.448,
+     0.708
     ]
    },
    "atPhone": {
@@ -118,8 +118,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.073,
     "fy": -0.19,
     "inSite": [
-     0.414,
-     0.372
+     0.452,
+     0.358
     ]
    },
    "atPhone": {
@@ -143,8 +143,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.333,
     "fy": -0.19,
     "inSite": [
-     0.75,
-     0.372
+     0.851,
+     0.325
     ]
    },
    "atPhone": {
@@ -171,8 +171,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.151,
     "fy": -0.19,
     "inSite": [
-     0.582,
-     0.372
+     0.762,
+     0.683
     ]
    },
    "atPhone": {
@@ -189,8 +189,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.375,
     "fy": -0.223,
     "inSite": [
-     0.24,
-     0.372
+     0.15,
+     0.247
     ]
    },
    "atPhone": {
@@ -224,10 +224,10 @@ window.SUPERAI_PROGRAM = {
     "n": 1000,
     "at": {
      "inSite": [
-      0.326,
-      0.159,
-      0.838,
-      0.841
+      0.323,
+      0.112,
+      0.951,
+      0.928
      ]
     }
    }
@@ -246,22 +246,6 @@ window.SUPERAI_PROGRAM = {
     "bubble:Connect.sync"
    ],
    [
-    "site.sync",
-    "hold.sync"
-   ],
-   [
-    "hold.sync",
-    "bubble:Tools.sync"
-   ],
-   [
-    "hold.sync",
-    "bubble:Explore.sync"
-   ],
-   [
-    "hold.sync",
-    "bubble:Library.sync"
-   ],
-   [
     "bubble:Connect.output",
     "hold.input"
    ],
@@ -278,67 +262,35 @@ window.SUPERAI_PROGRAM = {
     "project.input"
    ],
    [
-    "bubble:Explore.condition",
+    "bubble:Tools.condition",
     "bubble:Lab.sync"
    ],
    [
-    "bubble:Library.condition",
+    "bubble:Tools.condition",
+    "bubble:Explore.sync"
+   ],
+   [
+    "bubble:Explore.condition",
     "project.sync"
    ],
    [
     "ctl:save.condition",
-    "bubble:Tools.sync"
-   ],
-   [
-    "ctl:save.condition",
-    "bubble:Explore.sync"
+    "site.sync"
    ],
    [
     "ctl:lock.condition",
-    "bubble:Connect.sync"
-   ],
-   [
-    "ctl:lock.condition",
-    "hold.sync"
-   ],
-   [
-    "ctl:lock.condition",
-    "bubble:Tools.sync"
-   ],
-   [
-    "ctl:lock.condition",
-    "bubble:Explore.sync"
-   ],
-   [
-    "ctl:lock.condition",
-    "bubble:Library.sync"
-   ],
-   [
-    "bubble:Connect.condition",
-    "cond:if.sync"
-   ],
-   [
-    "bubble:Connect.condition",
-    "cond:then.sync"
-   ],
-   [
-    "bubble:Tools.condition",
-    "cond:then.sync"
+    "site.sync"
    ],
    [
     "site.condition",
-    "cond:timer.sync"
-   ],
-   [
-    "project.condition",
-    "cond:timer.sync"
+    "cond:then.sync"
    ]
   ]
  },
  "projectAt": {
   "inSite": [
-   0.668,
-   0.53
+   0.665,
+   0.315
   ]
  },
  "live": {

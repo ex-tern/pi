@@ -1,4 +1,4 @@
-// super/pack.js: lays out the start (owner, 2026-10-13: "the initial state of app is this picture"). The program's
+// super/pack.js: lays out the start (owner, 2026-10-13: "set this as the initial state of the web app"). The program's
 // at.inSite places the supers roughly; once the second super has stopped moving this sets them exactly, in shares of
 // the second super's middle, so the start lands the same on every screen shape: Connect on the left, the third super
 // beside it holding Tools, Explore and Library along its top and Lab and the project under Explore and Library, every
@@ -13,11 +13,17 @@
   document.addEventListener("pointerdown", touch, true);
   document.addEventListener("wheel", touch, { capture: true, passive: true });
   const O = () => window.PiOrbit || {};
-  // the start (owner, 2026-10-13: "the initial state of app is this picture"): every bubble and the project one square
-  // size; Connect on the left; beside it the third super holding Tools, Explore and Library along its top and Lab and
-  // the project under Explore and Library (the empty corner under Tools left free); all in proportion to the square's
-  // side S, measured from the owner's picture: GAP between squares, PAD inside the third super, TOP its lock strip
-  const GAP = 0.027, PAD = 0.125, TOP = 0.15;
+  // the start (owner, 2026-10-13: "set this as the initial state of the web app", a picture), in shares of the second
+  // super (x of its width, y of its height): Connect open at its top left; the third super on the right holding Tools,
+  // the project and Library along the top, Lab under Tools and Explore open beside it. Compact squares are a side of
+  // SQ (a share of the width); open bubbles a box [x0, y0, x1, y1]; squares by their centres
+  const SQ = 0.159;
+  const START = {
+    hold: [0.323, 0.112, 0.951, 0.928],
+    open: { connect: [0.022, 0.125, 0.278, 0.369], explore: [0.602, 0.529, 0.921, 0.837] },
+    squares: { tools: [0.452, 0.358], lib: [0.851, 0.325], lab: [0.448, 0.708] },
+    project: [0.665, 0.315],
+  };
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
     const sb = O().siteBox && O().siteBox(), F = O().fit ? O().fit() : null;
@@ -25,28 +31,34 @@
     const B = { connect: q('.orbit-bubble[data-key^="connect:"]'), tools: q('.orbit-bubble[data-key="assess:Tools group"]'), explore: q('.orbit-bubble[data-key^="explore:"]'),
       lib: q('.orbit-bubble[data-key^="lib:"]'), lab: q('.orbit-bubble[data-key^="lab:Lab"]') };
     const hold = q('.lv-node[data-id="hold"]'), proj = q(".se-project");
-    if (!sb || !sb.a || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || Object.values(B).some(b => !b || !b.classList.contains("is-compact"))) return false;
+    if (!sb || !sb.a || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || !window.SeBubble || Object.values(B).some(b => !b)) return false;
     if (window.SeBind && window.SeBind.settle) window.SeBind.settle();
-    // every bubble at the one compact size (sizes set before are dropped)
-    Object.values(B).forEach(b => { if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); } try { localStorage.removeItem("se:size:" + b.dataset.key); } catch (_) { /* private mode */ } });
-    let S = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || B.connect.offsetWidth;   // a compact bubble's side, in layout px
-    if (!(S > 20)) return false;
-    // the whole group fits the second super with a margin
-    const fitS = Math.min(1.9 * sb.a / (4 + 3 * GAP + 2 * PAD), 1.9 * sb.b / (2 + GAP + TOP + PAD));
-    if (S > fitS) S = fitS;
-    const g = GAP * S, P = PAD * S, T = TOP * S;
-    const W = 3 * S + 2 * g + 2 * P, H = T + 2 * S + g + P, total = S + g + W;
-    const x0 = sb.cx - total / 2, y0 = sb.cy - H / 2, hx = x0 + S + g;
-    window.LabView.setRect(hold, hx, y0, W, H);
+    const W2 = 2 * sb.a, H2 = 2 * sb.b, X = s => sb.cx - sb.a + s * W2, Y = s => sb.cy - sb.b + s * H2;
     const f = F.f || 1, sx = l => F.px + (l - F.px) * f, sy = l => F.py + (l - F.py) * f;   // layout to screen
-    const size = b => { if (Math.abs(b.offsetWidth - S) > 1) { const v = Math.round(S); b.style.width = v + "px"; b.style.height = v + "px"; b.classList.add("se-sized"); try { localStorage.setItem("se:size:" + b.dataset.key, JSON.stringify({ w: v, h: v })); } catch (_) { /* private mode */ } } };
-    const put = (b, lx, ly) => { size(b); (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx + S / 2), sy(ly + S / 2)); };
-    const r1 = y0 + T, r2 = r1 + S + g, c = i => hx + P + i * (S + g);
-    put(B.connect, x0, r1);
-    put(B.tools, c(0), r1); put(B.explore, c(1), r1); put(B.lib, c(2), r1); put(B.lab, c(1), r2);
+    const h = START.hold;
+    window.LabView.setRect(hold, X(h[0]), Y(h[1]), (h[2] - h[0]) * W2, (h[3] - h[1]) * H2);
+    const sizeAs = (b, w, hh, open) => {
+      const v = { w: Math.round(w), h: Math.round(hh) };
+      if (Math.abs(b.offsetWidth - v.w) > 1 || Math.abs(b.offsetHeight - v.h) > 1) { b.style.width = v.w + "px"; b.style.height = v.h + "px"; b.classList.add("se-sized"); }
+      try { localStorage.setItem("se:size:" + b.dataset.key + (open ? ":open" : ""), JSON.stringify(v)); } catch (_) { /* private mode */ }
+    };
+    const put = (b, lx, ly) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx), sy(ly));
+    const S = SQ * W2;
+    Object.entries(START.squares).forEach(([k, c]) => {
+      const b = B[k]; if (!b.classList.contains("is-compact")) window.SeBubble.open(b, false);
+      sizeAs(b, S, S, false); put(b, X(c[0]), Y(c[1]));
+    });
+    let settledOpen = true;
+    Object.entries(START.open).forEach(([k, r]) => {
+      const b = B[k];
+      if (b.classList.contains("is-compact")) { window.SeBubble.open(b, true); settledOpen = false; }
+      if (b.classList.contains("is-growing")) settledOpen = false;
+      sizeAs(b, (r[2] - r[0]) * W2, (r[3] - r[1]) * H2, true);
+      put(b, X((r[0] + r[2]) / 2), Y((r[1] + r[3]) / 2));
+    });
     if (window.SeProject.resize) window.SeProject.resize(S, S);
     // moved until it lands (its move is measured, not assumed: the project super may scale a move by the page's zoom)
-    const tx = sx(c(2)), ty = sy(r2);
+    const tx = sx(X(START.project[0]) - S / 2), ty = sy(Y(START.project[1]) - S / 2);
     let kx = 1, ky = 1;
     for (let k = 0; k < 4; k++) {
       const pr = proj.getBoundingClientRect(), dx = tx - pr.left, dy = ty - pr.top;
@@ -55,6 +67,7 @@
       const nr = proj.getBoundingClientRect(), mx = nr.left - pr.left, my = nr.top - pr.top;
       if (Math.abs(mx) > 0.5) kx *= dx / mx; if (Math.abs(my) > 0.5) ky *= dy / my;
     }
+    if (!settledOpen) setTimeout(() => { if (!done()) pack(); }, 1600);   // the open bubbles take their boxes once grown
     return true;
   }
   // as soon as the layout is there, before the page fades in (super/boot.js waits for it to settle)
