@@ -840,3 +840,16 @@ html.se-gl .se-ctlbar :is(.se-ctl, .se-cond):not(.is-on) { background: transpare
 /* the site (second super) has no drawn rectangle round it (owner, 2026-10-13): its edge is the glass alone */
 html.shape-se .om-site-loop { stroke: none; }
 html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-site.se-on-site .om-site-loop { stroke: none; }
+/* dark mode, one palette (owner, 2026-10-13: "improve the dark mode experience"): at night the paper and the ink swap
+   for the whole page, so every pane, box, card, notice and chip reads light on the blue-grey sky instead of a pale box
+   with dark text. Cobalt stays the one accent; on the dark sky its text and lines are lifted (#9aa6ff) to stay legible. */
+html.shape-se.se-night { color-scheme: dark; --paper: #1d2230; --surface: #232838; --ink: #e4e7ef; --graphite: #a3a9b7; --faint: #7c8394;
+  --hair: #353b4b; --hair-strong: #48506a; --cobalt-text: #9aa6ff; }
+html.shape-se.se-night .lv-node.lv-box.is-holder > .lv-glyph { color: var(--sky-ink); }
+html.shape-se.se-night .se-consent { background: rgba(8, 10, 16, 0.55); }
+html.shape-se.se-night .se-consent-card, html.shape-se.se-night .se-req-card { border-color: #48506a; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8); }
+html.shape-se.se-night .se-consent-btns button:not(.is-main), html.shape-se.se-night .se-req-choices { background: #2a3042; border-color: #5a6380; }
+html.shape-se.se-night .se-consent a, html.shape-se.se-night .se-req-card li em, html.shape-se.se-night .se-req-card li.k-blocked .k,
+html.shape-se.se-night .se-req.is-min:hover { color: var(--cobalt-text); }
+html.shape-se.se-night .se-req { background: color-mix(in srgb, var(--paper) 70%, transparent); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 6px 14px -8px rgba(0, 0, 0, 0.7); }
+html.shape-se.se-night ::selection { background: rgba(122, 140, 255, 0.4); color: #fff; }

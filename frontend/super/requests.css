@@ -33,7 +33,7 @@ html.se-gl .se-req { background: transparent !important; border-color: transpare
 .se-req-card li .k { color: var(--graphite); }
 .se-req-card li.k-ai .k, .se-req-card li.k-sent .k { color: var(--ink); font-weight: 600; }
 .se-req-card li.none { display: block; color: var(--graphite); }
-html.se-night .se-req, html.se-night .se-req-card { color: var(--ink); }
+html.se-night .se-req, html.se-night .se-req-card { color: var(--ink); }   /* the night palette: super.css, "dark mode, one palette" */
 /* everyone but the owner: only the way back to their privacy choices (super/consent.js) */
 .se-req.is-min { cursor: pointer; }
 .se-req.is-min .se-req-light, .se-req.is-min .se-req-card { display: none !important; }
