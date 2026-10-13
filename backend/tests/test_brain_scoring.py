@@ -119,4 +119,4 @@ def test_query_llm_json_reports_missing_key_without_network_call():
     provider, data = brain.request_model_assessment("llama", "some-model", "", "https://example.com", "prompt")
     assert provider == "llama"
     assert data["api_failed"] is True
-    assert "missing" in data["opinion"].lower()
+    assert "not configured" in data["opinion"].lower()

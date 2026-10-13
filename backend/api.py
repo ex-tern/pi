@@ -1249,11 +1249,28 @@ def provider_configuration() -> Dict:
             "meaningful."
         )
 
-    reachable_count = sum(1 for v in jurors.values() if v["reachable"])
+    # Jurors whose own routes are missing fall back to whatever model another provider offers, so several
+    # panel seats can be one model (with only GROQ_API_KEY, mistral, gemini and deepseek are all the same
+    # Groq model). The assessment counts those as one source (see the corroboration tiers); the operator
+    # view counts them the same way rather than promising a panel that is not there.
+    panel = {j: v for j, v in jurors.items() if j != "judge" and v["reachable"]}
+    distinct = {}
+    for j, v in panel.items():
+        distinct.setdefault(v["primary_model"], []).append(j)
+    reachable_count = len(distinct)
+    shared = {m: js for m, js in distinct.items() if len(js) > 1}
+    if shared:
+        advice.append(
+            "Some jurors have no route of their own and fall back to the same model, so they count as one "
+            "source, not several: " + "; ".join(f"{', '.join(js)} all run {m}" for m, js in shared.items())
+            + ". Add the missing provider keys (MISTRAL_API_KEY, GEMINI_API_KEY, DEEPSEEK_API_KEY or "
+            "OR_API_KEY) to give each its own model."
+        )
     return {
         "keys_configured": keys,
         "jurors": jurors,
         "reachable_jurors": reachable_count,
+        "panel_seats_reachable": len(panel),
         "expected_quality": ("High" if reachable_count >= 3 else
                              "Moderate" if reachable_count >= 1 else "Limited"),
         "advice": advice,
@@ -4209,10 +4226,16 @@ def fee_manifest(total_papers: int, base_fee: float = BASE_FEE) -> Dict:
         "marginal_paper_nets": round(marginal - fee, 6),
         "sustainable": marginal > fee,
         "note": (
-            f"The fee scales with the same halving factor as emission, so a paper that just "
-            f"clears the {floor_pix:.1f} piX threshold still nets "
-            f"{marginal - fee:+.4f} piQ. Without this, a flat fee would exceed emission entirely "
-            f"at high corpus sizes and the economy would stall."
+            (f"The fee scales with the same halving factor as emission, so a paper that just "
+             f"clears the {floor_pix:.1f} piX threshold still nets "
+             f"{marginal - fee:+.4f} piQ. Without this, a flat fee would exceed emission entirely "
+             f"at high corpus sizes and the economy would stall.")
+            if fee <= compute_processing_fee(total_papers, base_fee) + 1e-9 else
+            # the minimum fee holds it above the scaled fee: say so, rather than claim it scales
+            (f"The fee is held at its {MINIMUM_FEE:.2f} piQ minimum, above the scaled fee, so a paper that "
+             f"just clears the {floor_pix:.1f} piX threshold nets {marginal - fee:+.4f} piQ"
+             + ("." if marginal > fee else
+                "; at this corpus size a qualifying paper can cost more than it mints."))
         ),
     }
 
@@ -18065,7 +18088,7 @@ def on_startup():
     # Drains the settlement queue on a timer. Daemon thread, same as above, so
     # it cannot delay the healthcheck or hold the process open on shutdown.
     try:
-        start_auto_settlement()
+        admin_start_auto_settlement()     # (called by a name that did not exist since the routers were split out)
     except Exception as e:
         logging.warning("Automatic settlement could not start: %s", e)
 
@@ -19928,6 +19951,9 @@ def settlement_blockers() -> list:
     return blockers
 
 
+_SETTLE_LOCK = threading.Lock()        # the timer and the admin button never settle at the same time
+
+
 def settle_batch(limit: int = 10) -> dict:
     """Mint outstanding records, one transaction each. Returns what happened.
 
@@ -19935,6 +19961,11 @@ def settle_batch(limit: int = 10) -> dict:
     and can fail independently, and a partial batch that reverts as a unit
     would lose the successes with it.
     """
+    with _SETTLE_LOCK:
+        return _settle_batch(limit)
+
+
+def _settle_batch(limit: int) -> dict:
     settled, failed = [], []
     for paper in list_unsettled_mintable(limit=limit):
         try:
@@ -20009,10 +20040,24 @@ def _settlement_loop():
             _settle_state["reason"] = str(e)[:200]
 
 
+_SETTLE_PROCESS_LOCK = None
+
+
 def admin_start_auto_settlement():
+    global _SETTLE_PROCESS_LOCK
     if not ENABLE_AUTO_SETTLEMENT:
         logging.info("Automatic settlement is off (AUTO_SETTLE=0). "
                      "Unsettled records wait for the admin panel.")
+        return False
+    # One settlement loop per deployment, whatever WEB_CONCURRENCY is: the first worker takes an exclusive
+    # lock on a file and keeps it for its life; the others leave settlement to it (two loops could mint twice).
+    try:
+        import fcntl
+        fh = open(os.path.join(BASE_DIR, "auto-settlement.lock"), "w")
+        fcntl.flock(fh, fcntl.LOCK_EX | fcntl.LOCK_NB)
+        _SETTLE_PROCESS_LOCK = fh
+    except (ImportError, OSError):
+        logging.info("Automatic settlement runs in another worker.")
         return False
     threading.Thread(target=_settlement_loop, name="auto-settlement", daemon=True).start()
     logging.info("Automatic settlement on: up to %d records every %ds.",

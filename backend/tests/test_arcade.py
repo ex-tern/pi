@@ -19,7 +19,8 @@ def _session():
 
 
 def _optimal_run(field, gap_ms=arcade.MIN_EAT_INTERVAL_MS + 5):
-    """The run an ideal player produces: smallest field first, until victory."""
+    """The run an ideal player produces: smallest bubble first. A run is won by clearing the whole field
+    (not by reaching WIN_MASS), so it stops only when nothing left is edible."""
     mass = arcade.START_MASS
     run, t = [], 0
     for bubble in sorted(field, key=lambda b: b["mass"]):
@@ -28,8 +29,6 @@ def _optimal_run(field, gap_ms=arcade.MIN_EAT_INTERVAL_MS + 5):
         t += gap_ms
         run.append({"id": bubble["id"], "t": t})
         mass += bubble["mass"] * arcade.ABSORB_RATIO
-        if mass >= arcade.WIN_MASS:
-            break
     return run, t, mass
 
 
@@ -37,7 +36,8 @@ def _optimal_run(field, gap_ms=arcade.MIN_EAT_INTERVAL_MS + 5):
 
 def test_field_is_deterministic_for_a_seed():
     session = _session()
-    assert arcade.generate_field(session["seed"]) == session["field"]
+    seed, overlay, level = arcade._decode_token(IP, session["token"])[0]
+    assert arcade.generate_field(seed, overlay, level) == session["field"]
 
 
 def test_opening_is_always_playable():

@@ -30,7 +30,7 @@ import api as assistant
     ("Are references checked?", ["OpenAlex", "Crossref"]),
     ("How can I improve my score?", ["Open Science", "RRID"]),
     ("Do you detect AI writing?", ["advisory", "non-native"]),
-    ("Tell me about the forecast", ["Pidyne", "weight"]),
+    ("Tell me about the forecast", ["pi-Dyne", "weight"]),
     ("Is this CoARA compliant?", ["CoARA", "h-index"]),
 ])
 def test_core_concepts_are_answered_from_the_knowledge_base(question, expected_terms):

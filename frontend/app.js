@@ -71,12 +71,29 @@ try {
   function done(e, status) { if (!e) return; inflight = Math.max(0, inflight - 1); e.status = status; e.ms = Date.now() - e.t; paint(); }
 
   // ---- the wrappers --------------------------------------------------------------------------------
-  const F = window.fetch;
+  const F = window.fetch, sharing = new Map();
   if (F) window.fetch = function (input, init) {
     const url = typeof input === "string" ? input : input && input.url, method = (init && init.method) || (input && input.method) || "GET";
     if (declined(method, url, init && init.body)) return Promise.resolve(new Response(JSON.stringify({ declined: true }), { status: 403, headers: { "Content-Type": "application/json" } }));
+    // the same plain GET already on its way (several parts of the page ask for /api/chain/status, /api/forecast
+    // and the like as it loads): share that one request, each caller getting its own copy of the answer
+    let key = null;
+    if (String(method).toUpperCase() === "GET" && typeof input === "string" && /^\/api\//.test(input) && !(init && (init.signal || init.body))) {
+      let h = null;
+      try { h = init && init.headers ? [...new Headers(init.headers)] : []; } catch (_) { h = null; }
+      if (h && h.every(([k]) => k === "authorization")) key = input + "\n" + (h[0] ? h[0][1] : "");   // the same visitor's same question
+    }
+    const shareable = key !== null;
+    if (String(method).toUpperCase() !== "GET") sharing.clear();      // a write: no answer from before it is reused
+    if (shareable && sharing.has(key)) return sharing.get(key).then(r => r.clone());
     const e = begin(classify(method, url, init && init.body));
-    return F.apply(this, arguments).then(r => { done(e, r.status); return r; }, err => { done(e, "failed"); throw err; });
+    const p = F.apply(this, arguments).then(r => { done(e, r.status); return r; }, err => { done(e, "failed"); throw err; });
+    if (!shareable) return p;
+    sharing.set(key, p);
+    // kept two seconds after it arrives (parts of the page that load a moment apart ask the same), then asked afresh
+    const forget = () => { if (sharing.get(key) === p) sharing.delete(key); };
+    p.then(r => { if (r.ok) setTimeout(forget, 2000); else forget(); }, forget);
+    return p.then(r => r.clone());
   };
   const X = window.XMLHttpRequest && window.XMLHttpRequest.prototype;
   if (X) {
@@ -9941,7 +9958,7 @@ window.SUPERAI_PROGRAM = {
   "supers": [
    {
     "id": "welcome",
-    "text": "ScholarPi: a panel of AI models assesses your research paper against open, science-aligned criteria, and tells you what holds it back. Start with Tools.",
+    "text": "ScholarPi: AI models assess your paper against open, science-aligned criteria and show what holds it back. Scroll up on the first box in Tools, below, to assess one.",
     "kind": "box",
     "desktop": true,
     "n": 1000,
@@ -22806,7 +22823,12 @@ try {
     if (!dx && !dy) return;
     const nodes = els.filter(e => e.classList.contains("lv-node")).map(e => e.dataset.id).filter(Boolean);
     if (nodes.length && window.LabView && window.LabView.moveNodes) window.LabView.moveNodes(nodes, dx, dy);
-    const bubbles = els.filter(e => e.classList.contains("orbit-bubble")).map(e => e.dataset.key).filter(Boolean);
+    // until the visitor first presses, scrolls or wires (se:touched, super/pack.js) the start's own layout places the
+    // bubbles: a super that opens wide for a moment while the page settles must not carry a bubble off its spot and keep
+    // it there (on a phone it left Lab lying over Library)
+    let untouched = false;
+    try { untouched = localStorage.getItem("se:touched") !== "1"; } catch (_) { /* private mode */ }
+    const bubbles = untouched ? [] : els.filter(e => e.classList.contains("orbit-bubble")).map(e => e.dataset.key).filter(Boolean);
     if (bubbles.length && window.PiOrbit && window.PiOrbit.moveBubbles) window.PiOrbit.moveBubbles(bubbles, dx, dy);
     if (els.some(e => e.classList.contains("se-project")) && window.SeProject && window.SeProject.moveBy) window.SeProject.moveBy(dx, dy);
     els.filter(e => e.classList.contains("orbit-panel")).forEach(p => {
