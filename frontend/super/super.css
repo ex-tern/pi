@@ -757,13 +757,14 @@ html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .
 html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .orbit-panel, .orbit-title, .se-titlesuper):focus { outline: none !important; }
 html.shape-se .se-pressing { outline: none !important; }
 html.se-gl :is(.ob-member, .ob-label).se-sel::before, html.se-gl :is(.ob-member, .ob-label).se-sel { border-color: transparent !important; box-shadow: none !important; }
-/* the selected super keeps its own ink edge: no blue rectangle round it (owner, 2026-10-13: "remove the blue corner
-   rect"); its sheen shows it is selected */
+/* the selected super is surrounded in blue, along its own edge (owner, 2026-10-13: "add blue surround for a super that
+   is selected"); never a rectangle or a dotted line round it ("remove the blue corner rect", "remove the blue dotted
+   line"): a square, a circle, a star keep their shape, only their edge turns cobalt (the engine draws the same) */
 html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel,
-html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--ink) !important; border-width: var(--u-edge, 1.5px) !important; }
-html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--ink); stroke-width: 1.5; }
-html.shape-se .ob-member.se-sel::before { border-color: var(--ink); border-width: 1.5px; }
-html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-loop .om-page-loop { stroke: var(--sky-ink, var(--ink)) !important; }
+html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2.5px !important; border-style: solid !important; }
+html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 2.5; }
+html.shape-se .ob-member.se-sel::before { border-color: var(--cobalt); border-width: 2px; }
+html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-loop .om-page-loop { stroke: var(--cobalt) !important; stroke-width: 2.5; }
 html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: transparent !important; }
 html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper).se-sel::before { padding: 3px; }
 

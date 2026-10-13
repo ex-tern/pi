@@ -423,14 +423,16 @@ function drawPanes() {
       const key = el._seKey || (el._seKey = "p" + (++k) + Math.random().toString(36).slice(2, 6));
       ids.set(el, key);
       const sel = el.classList.contains("se-sel"), hov = false;   // only a selected super lights up (owner, 2026-10-12: "only when selecting a super makes it light up"), never a hovered one
-      const edge = tokens.ink;   // no blue edge when selected (owner, 2026-10-13: "remove the blue corner rect"): the sheen says it
+      // the selected super is surrounded in blue, along its own edge (owner, 2026-10-13: "add blue surround for a super that is
+      // selected"; never a rectangle or a dotted line round it: "remove the blue corner rect", "remove the blue dotted line")
+      const edge = sel ? tokens.cobalt : tokens.ink;
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       // at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"): under about 30 px its
       // shape glides to the port sparkles' astroid
       const side = Math.min(r.width, r.height), sp = K.keep ? 0 : Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
       setPane(key, cx, cy, a, b, sp > 0 ? nn + (0.62 - nn) * sp * sp * (3 - 2 * sp) : nn,
-        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || (K.inner ? 1.2 : 1.5)), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * (K.inner ? depthOf(el.closest(".orbit-bubble")) + 1 : depthOf(el)) + (K.inner ? 1 : 0) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
+        { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: sel ? 2.5 : Math.max(1, bw || (K.inner ? 1.2 : 1.5)), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * (K.inner ? depthOf(el.closest(".orbit-bubble")) + 1 : depthOf(el)) + (K.inner ? 1 : 0) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, inner: !!K.inner, h: heightOf(el, K.order), i: all.length });
     });
   }
@@ -464,12 +466,12 @@ function drawLoops() {
     const sel = html.classList.contains("se-sel-loop"), hov = false;   // selected only
     // the main, second and third supers are supers like any other (owner, 2026-10-12: "all supers have the same
     // effect including main, second and third supers"): glass, a bevel, a shadow, the sheen when hovered or selected
-    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: skyInk(), edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
+    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : skyInk(), edgeW: sel ? 2.5 : 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = false, busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: busy ? tokens.cobalt : skyInk(), edgeW: busy ? 1.5 : 0, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08   /* no rectangle round the site (owner, 2026-10-13); busy keeps its cobalt edge */ });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : skyInk(), edgeW: sel ? 2.5 : busy ? 1.5 : 0, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08   /* no rectangle round the site (owner, 2026-10-13); busy keeps its cobalt edge */ });
   }
 }
 
