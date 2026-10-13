@@ -29,46 +29,16 @@ uniform float uNight;                                                     // 0 b
 vec2 sunAt(float t) { return mix(vec2(0.68 + 0.01 * sin(t * 0.02), 0.74 + 0.006 * sin(t * 0.03) - 0.035), vec2(0.74 + 0.006 * sin(t * 0.015), 0.20), uNight); }   // by night, the moon high on the right
 // the light's own colour on the glass: gold by day, a cool silver by night
 vec3 tint(vec3 warm) { return mix(warm, vec3(0.78, 0.85, 1.0) * (0.55 + 0.45 * dot(warm, vec3(0.333))), uNight); }
-vec3 light(vec2 uv, float t) {
-  float a = uRes.x / uRes.y;
-  vec2 v = (uv - 0.5) * vec2(a, 1.0);
-  float y = uv.y;                                                          // 0 at the top, 1 at the bottom
-  // by day (less bright, owner, 2026-10-12: "make it less brighter"): a grey-blue overcast, a soft peach horizon
-  // no horizon (owner, 2026-10-12: "remove the bottom horizon... do the same for light version"): one soft sky top to
-  // bottom, a grey-blue overcast by day, a deep blue-grey by night
-  vec3 c = mix(vec3(0.77, 0.80, 0.84), vec3(0.89, 0.88, 0.87), smoothstep(0.0, 1.0, y));
-  vec3 nsky = mix(vec3(0.17, 0.20, 0.27), vec3(0.24, 0.27, 0.33), smoothstep(0.0, 1.0, y));
-  c = mix(c, nsky, uNight);
-  // the sun and the moon are not drawn in the sky (owner, 2026-10-12: "delete the moon but keep its effects on glass
-  // effect of supers", "do the same to sun"): their light is seen only on the glass (PANE_FS, from sunAt)
-  // a light vignette toward the edges ("add light vignette")
-  c *= 1.0 - 0.10 * smoothstep(0.38, 1.05, length(v));
-  return min(c, vec3(1.0));
-}
-float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
-// the whole sky, clouds and stars too: the background draws it and the panes see it through their glass, bent by the
-// lens (owner, 2026-10-13: "improve the glass reflection, light reflection and lensing effect"): a smooth gradient alone
-// gave the lens nothing to bend
-vec3 sky(vec2 uv, float t) {
-  vec3 c = light(uv, t);
-  vec2 q = vec2(uv.x * uRes.x / uRes.y, uv.y) * vec2(2.2, 5.5) + vec2(t * 0.004, 0.0);
-  float cl = 0.5 * vn(q) + 0.3 * vn(q * 2.1 + 3.7) + 0.2 * vn(q * 4.3 - 1.9);
-  float up = 1.0 - smoothstep(0.55, 0.76, uv.y);
-  float mass = smoothstep(0.36, 0.70, cl) * up;
-  vec3 cloud = mix(mix(vec3(0.68, 0.71, 0.76), vec3(0.92, 0.84, 0.74), smoothstep(0.35, 0.72, uv.y)), vec3(0.28, 0.31, 0.38), uNight);   // by night, dark clouds
-  c = mix(c, cloud, 0.68 * mass);
-  c += mix(vec3(1.0, 1.0, 0.98) * 0.07, vec3(0.70, 0.78, 0.95) * 0.06, uNight) * smoothstep(0.30, 0.10, abs(cl - 0.42)) * up * (1.0 - mass);   // bright gaps (silver by moonlight)
-  vec2 g = uv * uRes / 3.0; float st = step(0.9975, h21(floor(g))) * (0.6 + 0.4 * sin(t * 0.7 + h21(floor(g) + 5.0) * 30.0));
-  c += vec3(0.85, 0.9, 1.0) * st * 0.55 * uNight * up * (1.0 - mass);   // stars by night, where no cloud is
-  return c;
-}`;
+// a simple background (owner, 2026-10-13: "use a simple background"): flat paper by day, flat night paper by night,
+// the same colours as --paper in theme.css and super.css; no sky, clouds, stars, vignette or grain
+vec3 light(vec2 uv, float t) { return mix(vec3(0.965, 0.965, 0.957), vec3(0.114, 0.133, 0.188), uNight); }
+vec3 sky(vec2 uv, float t) { return light(uv, t); }
+`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
   vec3 c = sky(uv, uTime);
-  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;          // the grain (owner, 2026-10-12: "keep the grains")
   gl_FragColor = vec4(c, 1.0);
 }`;
 
