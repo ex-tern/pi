@@ -27157,25 +27157,40 @@ def _versioned_index() -> str:
     return stamp(_ASSET_QUERY.sub(sub, html), os.getenv("SCHOLARPI_SHAPE", ""))
 
 
+_INDEX_GZ: Dict[str, bytes] = {}
+
 if os.path.isdir(_FRONTEND_DIR):
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
-    def _serve_index():
-        """index.html with asset versions stamped from the files on disk.
+    def _serve_index(request: Request):
+        """index.html, the whole front end in one file, with asset versions stamped from the files on disk.
 
-        no-store on the HTML itself, because it is the document that carries
-        the version numbers — a cached copy of it would pin the browser to
-        whatever asset versions were current when it was cached, which is the
-        exact failure this exists to prevent. The assets it points at stay
-        aggressively cacheable, which is where the benefit actually is.
+        It carries every script and style now (owner, 2026-10-13: "merge everything in front end into one thing"),
+        so it is no longer no-store: a browser keeps it and asks each time whether it changed (no-cache + an ETag
+        of its content), and an unchanged page answers 304 with no body. Sent gzipped when the browser accepts it
+        (about a quarter of its size), compressed once per version.
         """
         try:
-            headers = {"Cache-Control": "no-store, must-revalidate"}
-            if IS_EXPERIMENTAL:
-                headers["X-Robots-Tag"] = "noindex, nofollow"
-            return HTMLResponse(_versioned_index(), headers=headers)
+            html = _versioned_index()
         except OSError:
             raise HTTPException(status_code=404, detail="Frontend is not available.")
+        body = html.encode("utf-8")
+        etag = '"' + hashlib.sha256(body).hexdigest()[:24] + '"'
+        headers = {"Cache-Control": "no-cache", "ETag": etag, "Vary": "Accept-Encoding"}
+        if IS_EXPERIMENTAL:
+            headers["X-Robots-Tag"] = "noindex, nofollow"
+        if etag in [t.strip() for t in request.headers.get("if-none-match", "").split(",")]:
+            return Response(status_code=304, headers=headers)
+        if "gzip" in request.headers.get("accept-encoding", "").lower():
+            packed = _INDEX_GZ.get(etag)
+            if packed is None:
+                import gzip
+                packed = gzip.compress(body, compresslevel=6, mtime=0)
+                _INDEX_GZ.clear()                       # only the current version is worth keeping
+                _INDEX_GZ[etag] = packed
+            return Response(packed, media_type="text/html; charset=utf-8",
+                            headers={**headers, "Content-Encoding": "gzip"})
+        return HTMLResponse(body, headers=headers)
 
     # The Lab boots HAL-OS in the browser with v86, which is an ES module
     # (.mjs) plus WebAssembly. Browsers refuse a module script served with a

@@ -15,8 +15,8 @@ function handle(req) {
   return JSON.parse(dec.decode(new Uint8Array(ex.memory.buffer, ex.sa_out_ptr(), ex.sa_out_len())));
 }
 const ctx = { window: {} }; vm.createContext(ctx);
-// the program is a generated region of app.js (scripts/tools.py build-program)
-const app = readFileSync(new URL("../app.js", here), "utf8");
+// the program is a generated region of index.html (scripts/tools.py build-program)
+const app = readFileSync(new URL("../index.html", here), "utf8");
 const region = app.slice(app.indexOf("// <pitechlab.super.js>"), app.indexOf("// </pitechlab.super.js>"));
 vm.runInContext(region, ctx);
 const program = ctx.window.SUPERAI_PROGRAM;
