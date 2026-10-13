@@ -426,7 +426,7 @@ html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 9.96578); }    /* 
 /* the content of a window stays clear of the π corners: the inset a superellipse needs is (1 − 2^(−1/n)) / 2 ≈ 10 % */
 html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 9%; }
 /* the same port sparkles everywhere */
-html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p { width: 10px; height: 10px; background: var(--ink); }
+html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p { width: 15px; height: 15px; background: var(--ink); }   /* a bit bigger (owner, 2026-10-13: "make the connectors a bit bigger") */
 /* the same type inside supers: the diagram's mono for what a super says, Geist for what it reads */
 html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; }
 /* selected and hovered the same way everywhere: the edge takes cobalt */

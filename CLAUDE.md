@@ -128,5 +128,6 @@ Status: the owner set `QUVI_PUBLIC=1` on **production** on 2026-10-09, so QuVI i
 - Reset is the fifth control (a circular arrow, after open and stop): a press arms it, a second press within 3 s starts the app afresh (SuperLink.reset, wire.js resetApp).
 - Every side of a super is a line of connectors: a wire starts from, or is dropped on, any point along a side (wire.js nearEdge, within 9 px; the sparkle still wins within 12 px of it) and keeps where along it it is (the anchor's `t`, 0..1 from the left or the top; edgePoint), so one super takes many wires on each side; the main and second supers keep their sparkles.
 - The controls and conditions look like supers (square at n = 1000, ink edge, frosted pane, its shadow; no button hover or press look).
+- The connectors (port sparkles) are 15 px (owner: "make the connectors a bit bigger"; smaller supers still scale theirs by --port-s).
 - The favicon is a super: a square pane with "pi" in it and its four port sparkles (super/icon.svg).
 - orbit.js no longer keeps a box clear for the π counter while π and friends are off (it sat in the third super and threw back every bubble dropped there); the project lands exactly beside Lab at the start (pack.js measures its move).
