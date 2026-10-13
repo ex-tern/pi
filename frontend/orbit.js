@@ -732,7 +732,7 @@
     b.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       if (e.target.closest(".ob-chat, .ob-member")) return;   // typing or a member pill, not a drag
-      if (merged() && isLocked(b) && !e.target.closest(".se-lock")) return;   // locked: it keeps its place
+      if (merged() && (isLocked(b) || (window.SeLock && window.SeLock.pinned && window.SeLock.pinned(b))) && !e.target.closest(".se-lock")) return;   // locked, or in a locked super: it keeps its place
       sx = e.clientX; sy = e.clientY; moved = false;
       const r = b.getBoundingClientRect(); ox = (e.clientX - r.left) / (L.pageFit() || 1); oy = (e.clientY - r.top) / (L.pageFit() || 1);
       b.setPointerCapture(e.pointerId);

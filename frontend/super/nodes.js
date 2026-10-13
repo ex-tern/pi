@@ -1136,7 +1136,7 @@
     if (e.button !== undefined && e.button !== 0) return;
     // a locked super keeps its place (owner, 2026-10-12: "locking a super also keeps it in place and in its layer"):
     // it is not dragged (its words still wire, its lock still unlocks)
-    if (!spawn && startEl && window.SeLock && window.SeLock.isLocked(startEl)) { lockNote(e); return; }
+    if (!spawn && startEl && window.SeLock && (window.SeLock.pinned ? window.SeLock.pinned(startEl) : window.SeLock.isLocked(startEl))) { lockNote(e); return; }
     const x0 = e.clientX, y0 = e.clientY;
     let n = spawn ? null : nodes.find(x => x.el === startEl), moved = false, dx = 0, dy = 0;
     if (n) { const r = n.el.getBoundingClientRect(), f = toLayout(0, 0).f; dx = (x0 - r.left) / f; dy = (y0 - r.top) / f; }

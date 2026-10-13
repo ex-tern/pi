@@ -119,6 +119,21 @@
     sweep();
     new MutationObserver(sweep).observe(document.body, { childList: true, subtree: true });
   }
-  window.SeLock = { isLocked, set, nameOf, loop: k => hosts[k] || null };
+  // held in place (owner, 2026-10-13: "initial lock system doesn't work"): a super is kept where it is when it is locked
+  // itself, or when the super it sits in is locked: the second super (locked at the start by the lock control's wire) or
+  // a holder. Windows are not held: they open and move to be read. SeLock.pinned(el) is what the drags and the delete ask.
+  function pinned(el) {
+    if (!el || !el.classList) return false;
+    if (isLocked(el)) return true;
+    if (el.classList.contains("orbit-panel") || el.closest(".orbit-panel")) return false;
+    const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const holder = [...document.querySelectorAll(".lv-node.is-holder.is-locked")].find(h => {
+      const q = h.getBoundingClientRect(); return h !== el && x > q.left && x < q.right && y > q.top && y < q.bottom;
+    });
+    if (holder) return true;
+    const S = window.SeSite, inSite = S && S.inSite ? S.inSite(x, y) : false;
+    return !!(inSite && hosts.site && isLocked(hosts.site));
+  }
+  window.SeLock = { isLocked, pinned, set, nameOf, loop: k => hosts[k] || null };
   if (document.body) start(); else document.addEventListener("DOMContentLoaded", start);
 })();

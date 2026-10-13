@@ -74,7 +74,7 @@
   function keeps(el) {
     if (!el) return "";
     if (wiredKeep(el).length) return "wired";
-    if (window.SeLock && window.SeLock.isLocked(el)) return "locked";
+    if (window.SeLock && (window.SeLock.pinned ? window.SeLock.pinned(el) : window.SeLock.isLocked(el))) return "locked";   // or in a locked super
     return "";
   }
   // a note where it can not be removed (a locked one says nothing: owner, 2026-10-13)

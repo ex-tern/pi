@@ -419,7 +419,7 @@
   document.addEventListener("se:windows", () => { if (el && !el.classList.contains("is-open") && !el._pjDrag) settleFree(); });
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it
-    if (window.SeLock && window.SeLock.isLocked(el)) return;   // locked: it keeps its place
+    if (window.SeLock && (window.SeLock.pinned ? window.SeLock.pinned(el) : window.SeLock.isLocked(el))) return;   // locked, or in a locked super: it keeps its place
     el._pjDrag = true;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
     if (window.SeWall) window.SeWall.begin(el, x0, y0);                 // the edge of the super it is in is a wall (super/wall.js)

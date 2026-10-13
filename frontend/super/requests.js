@@ -106,7 +106,7 @@
     el.addEventListener("dblclick", () => clearTimeout(clickT), true);
     el.addEventListener("pointerdown", e => {
       if (e.button !== 0 || e.target.closest(".se-req-card, button")) return;
-      if (window.SeLock && window.SeLock.isLocked(el)) return;            // locked: it keeps its place
+      if (window.SeLock && (window.SeLock.pinned ? window.SeLock.pinned(el) : window.SeLock.isLocked(el))) return;   // locked, or in a locked super: it keeps its place
       const r = el.getBoundingClientRect(); drag = { x0: e.clientX, y0: e.clientY, l: r.left, t: r.top, on: false, id: e.pointerId };
     });
     window.addEventListener("pointermove", e => {
