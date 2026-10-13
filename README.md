@@ -60,10 +60,6 @@ Push to `experimental` first, and promote to `main` only after looking at exp.pi
 - **Privacy:** the first visit asks for consent; declined requests are never sent (`/api/cookies` lists every cookie and storage key).
 - **Integrations:** `/api/dossier/by-doi` (used by the Zotero plugin), FAIR and CoARA dossiers per assessment.
 
-## The look
-
-Ink on paper with one cobalt accent, Geist type, sentence case, flat paper background. The superellipse look (`se.`, or `SCHOLARPI_SHAPE=superellipse`) is a SuperAI program of "supers" joined by wires and drawn by three.js; the round look keeps the orbit of bubbles around the π mark.
-
 ## Credits
 
 The Lab shows **Unigyro II** and **QuVI**, by Murtaza Vefadar (Gebze Technical University). Both remain his; QuVI is MIT licensed, and `front/quvi/` is an independent browser implementation of it. HAL-OS, Neuro Frenzy and FaceMace come from their own repositories.
