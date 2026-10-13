@@ -23,3 +23,8 @@
 .se-req-card .se-req-choices { margin-top: 8px; font: 500 12px/1 var(--font-mono, ui-monospace, monospace); padding: 6px 10px; border-radius: 10px;
   border: 1px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; }
 .se-req-card li.k-blocked .k { color: var(--cobalt); font-weight: 600; }
+.se-consent details { margin-top: 12px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); padding-top: 8px; }
+.se-consent summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.se-consent-list { font-size: 13px; }
+.se-consent-list ul { margin: 4px 0 8px; }
+.se-consent-list span { color: var(--graphite); }

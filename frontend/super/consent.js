@@ -45,15 +45,30 @@
     if (path === "/api/visit" && m === "POST" && !c.count) { visitHeld = true; return { ok: false, why: "visit counting is off" }; }
     if (path === "/api/pien/learn" && !c.learn) return { ok: false, why: "PiEn learning is off" };
     if (!c.ext && m !== "GET") {
-      if (/^\/api\/assess(\/|$)/.test(path) || /^\/api\/super\/(ask|panel)/.test(path) || /\/review\/llm$/.test(path)) return { ok: false, why: "outside AI providers are off (these use them)" };
+      // the same list the server keeps (backend/cookies.py RULES): /api/super/ask is our own engines only
+      if (/^\/api\/assess(\/|$)/.test(path) || /^\/api\/super\/(panel|weigh)$/.test(path) || /\/review\/llm$/.test(path)) return { ok: false, why: "outside AI providers are off (these use them)" };
       if (/^\/api\/super\/one/.test(path)) {
-        try { const j = typeof body === "string" ? JSON.parse(body) : null; if (j && OUTSIDE.includes(String(j.engine || "").toLowerCase())) return { ok: false, why: "outside AI providers are off" }; } catch (_) { /* fine */ }
+        try { const j = typeof body === "string" ? JSON.parse(body) : null; if (j && OUTSIDE.concat(["judge"]).includes(String(j.engine || "").toLowerCase())) return { ok: false, why: "outside AI providers are off" }; } catch (_) { /* fine */ }
       }
     }
     return { ok: true };
   }
 
   // ---- the notice -----------------------------------------------------------------------------------
+  // the cookies and storage the site uses: the server's own list (backend/cookies.py, GET /api/cookies); this text until it comes
+  const esc = t => String(t).replace(/[&<>"]/g, c => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;" }[c]));
+  let COOKIE_TEXT = "<p>One cookie, <b>pi_consent</b>: your choices here, for a year. No tracking or advertising cookies, and none from other sites. In your browser's storage: your layout and supers, and your sign-in if you sign in.</p>";
+  function listOf(j) {
+    const row = x => "<li><b>" + esc(x.name) + "</b>: " + esc(x.purpose) + " <span>" + esc(x.lasts) + (x.essential ? ", needed" : "") + "</span></li>";
+    return "<p>Cookies (no tracking or advertising cookies, none from other sites):</p><ul>" + (j.cookies || []).map(row).join("") + "</ul>" +
+      "<p>In your browser's storage (not cookies):</p><ul>" + (j.storage || []).map(row).join("") + "</ul>";
+  }
+  function loadList() {
+    fetch("/api/cookies", { cache: "no-store" }).then(r => r.ok ? r.json() : null).then(j => {
+      if (!j || !j.cookies) return; COOKIE_TEXT = listOf(j);
+      const el = box && box.querySelector(".se-consent-list"); if (el) el.innerHTML = COOKIE_TEXT;
+    }).catch(() => {});
+  }
   let box = null;
   function open() {
     if (box || !document.body) return;
@@ -73,6 +88,7 @@
       '<label><input type="checkbox" data-k="count"' + (c.count ? " checked" : "") + '><span><b>Count my visit.</b> Your IP is turned into a pseudonymous key so we count visitors once. Nothing else about you is kept.</span></label>' +
       '<label><input type="checkbox" data-k="learn"' + (c.learn ? " checked" : "") + '><span><b>Help PiEn learn.</b> Which windows you open, and in what order, train our shared model to suggest the next one. No text you type.</span></label>' +
       '<label><input type="checkbox" data-k="ext"' + (c.ext ? " checked" : "") + '><span><b>Use outside AI providers.</b> What you send to an AI may go to Llama, Mistral, Qwen, Gemini or DeepSeek, to be answered. Off: only our own models (siM, riB, piD, PiEn) answer, and assessing a manuscript, whose panel uses outside jurors, is unavailable.</span></label>' +
+      '<details class="se-consent-cookies"><summary>Cookies and storage this site uses</summary><div class="se-consent-list">' + COOKIE_TEXT + '</div></details>' +
       '<p class="se-consent-small">We never sell your data. You can change this any time from <b>Privacy choices</b> in the bottom-left corner.</p>' +
       '<div class="se-consent-btns"><button type="button" data-a="essential">Essential only</button><button type="button" data-a="save">Save my choices</button><button type="button" data-a="all" class="is-main">Accept all</button></div>' +
       "</div>";
@@ -89,6 +105,7 @@
       if (e.shiftKey && i <= 0) { e.preventDefault(); f[f.length - 1].focus(); } else if (!e.shiftKey && i === f.length - 1) { e.preventDefault(); f[0].focus(); }
     });
     document.body.appendChild(box);
+    loadList();
     setTimeout(() => { const b = box && box.querySelector(".is-main"); if (b) b.focus({ preventScroll: true }); }, 50);
   }
   function decide(c) {

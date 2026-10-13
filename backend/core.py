@@ -201,6 +201,11 @@ app.add_middleware(
 import gate as _gate
 _gate.install(app, lambda: os.getenv("SESSION_SECRET", "").strip())
 
+# The visitor's privacy choices (the pi_consent cookie, set by the first-visit notice): what they declined, the
+# server does not do either; GET /api/cookies lists every cookie and storage key the site uses. See cookies.py.
+import cookies as _cookies
+_cookies.install(app)
+
 w3 = Web3()
 APP_LOGS = deque(maxlen=200)
 _STATE_RESTORED = False

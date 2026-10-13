@@ -323,6 +323,11 @@ def build_router(answer: Callable[[str], Dict], rows: Callable[[], List[Dict]], 
         known = {e["id"]: e for e in _engines()}
         if eid not in known:
             raise HTTPException(status_code=404, detail="Unknown engine.")
+        # an outside model, for a visitor whose pi_consent says no to outside providers (cookies.py)
+        if known[eid].get("kind") == "outside":
+            import cookies as _ck
+            if _ck.declined(request, "ext"):
+                raise HTTPException(status_code=403, detail=_ck.WHY["ext"])
         _limit_one(request, eid)
         t0 = time.time()
         out: Dict = {"engine": eid}
