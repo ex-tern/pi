@@ -342,12 +342,57 @@
     const ch = targetsOf("chain")[0], C = top.querySelector(".se-ctl-chain"), chained = !!(ch && ch !== "all" && window.SeChain && window.SeChain.isChained(ch));
     if (C && C.classList.contains("is-chained") !== chained) { C.classList.toggle("is-chained", chained); C.setAttribute("aria-pressed", String(chained)); }
   }
-  // either side of the main super's sync port (top) and condition port (bottom), just inside its edge
+  // which super carries the bars (owner, 2026-10-13: "if a super gets bigger than 70% of the page, the control and
+  // conditions go to the next layer super"): the main super, unless it covers more than BIG of the page; then the
+  // super it holds (the second super), and so on down, each time the biggest super held directly by the last one
+  const BIG = 0.70;
+  const pid = (o, p) => o === "site" ? p : o + "/" + p;
+  const portAt = (o, p) => { const e = document.querySelector('.se-port[data-pid="' + pid(o, p) + '"]'); if (!e) return null; const r = e.getBoundingClientRect(); return r.width || r.height ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
+  function boxOf(o) {                                                    // a super's box, from its four ports
+    const s = portAt(o, "sync"), c = portAt(o, "condition"), i = portAt(o, "input"), u = portAt(o, "output");
+    if (!s || !c) return null;
+    const l = i ? i[0] : Math.min(s[0], c[0]), r = u ? u[0] : Math.max(s[0], c[0]);
+    return { l, r, t: s[1], b: c[1], area: Math.max(0, r - l) * Math.max(0, c[1] - s[1]) };
+  }
+  function ownerOf(el) {                                                 // the port owner of a super element
+    if (el.classList.contains("se-project")) return "project";
+    if (el.classList.contains("lv-node") && el.dataset.id) return "node:" + el.dataset.id;
+    if (el.classList.contains("orbit-bubble") && el.dataset.key) return "bubble:" + el.dataset.key;
+    if (el.classList.contains("orbit-panel")) { const k = O().keyOf && O().keyOf(el); return k ? "win:" + k : null; }
+    return null;
+  }
+  const area = r => r.width * r.height;
+  function inner(o, box) {                                               // the biggest super held directly by o
+    const H = window.SeHold; if (!H || !H.hosts) return null;
+    let list;
+    if (o === "site") {
+      const all = [...document.querySelectorAll(".lv-node[data-id], .orbit-bubble.is-group:not([hidden]), .se-project, .orbit-panel:not(.leaving)")].filter(shown);
+      list = all.filter(el => { if (H.hostOf(el)) return false; const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2; return x > box.l && x < box.r && y > box.t && y < box.b; });
+    } else {
+      const el = window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(o) : null;
+      list = el && H.heldBy ? H.heldBy(el).filter(shown) : [];
+    }
+    const best = list.map(el => ({ el, o: ownerOf(el), a: area(el.getBoundingClientRect()) })).filter(x => x.o && boxOf(x.o)).sort((a, b) => b.a - a.a)[0];
+    return best ? best.o : null;
+  }
+  let carrier = "main";
+  function layer() {
+    const page = window.innerWidth * window.innerHeight;
+    let o = "main", box = boxOf("main");
+    for (let i = 0; i < 8 && box && box.area > BIG * page; i++) {
+      const next = o === "main" ? (boxOf("site") ? "site" : null) : inner(o, box);
+      if (!next) break;
+      o = next; box = boxOf(o);
+    }
+    if (o !== carrier) { carrier = o; html.dataset.seBars = o; }
+  }
+  // either side of the carrying super's sync port (top) and condition port (bottom), just inside its edge
   function place() {
     if (!top) return;
     const vis = on();
     top.hidden = bottom.hidden = !vis; if (!vis) return;
-    const sync = document.querySelector('.se-port[data-pid="main/sync"]'), cnd = document.querySelector('.se-port[data-pid="main/condition"]');
+    if (!boxOf(carrier)) carrier = "main";                               // it went away: back to the main super
+    const sync = document.querySelector('.se-port[data-pid="' + pid(carrier, "sync") + '"]'), cnd = document.querySelector('.se-port[data-pid="' + pid(carrier, "condition") + '"]');
     const W = window.innerWidth, H = window.innerHeight;
     const sr = sync && sync.getBoundingClientRect(), cr = cnd && cnd.getBoundingClientRect();
     const cx = sr && sr.width ? sr.left + sr.width / 2 : W / 2, ty = sr && sr.width ? sr.top + sr.height / 2 : 3;
@@ -359,7 +404,7 @@
     if (tt && l) { const a = tt.getBoundingClientRect(), b = l.getBoundingClientRect(); if (a.width && b.width && b.left < a.right + 4 && y < a.bottom + 4) y = Math.round(a.bottom + 6); }
     st(top, cx, y); st(bottom, bx, Math.min(H - 4, by - 4));
   }
-  function loop() { place(); const now = performance.now(); if (now - markAt > 250) { markAt = now; mark(); } requestAnimationFrame(loop); }
+  function loop() { place(); const now = performance.now(); if (now - markAt > 250) { markAt = now; mark(); layer(); } requestAnimationFrame(loop); }
   function start() {
     build(); if (!top) { setTimeout(start, 400); return; }
     requestAnimationFrame(loop);
@@ -396,7 +441,7 @@
   setInterval(syncWired, 2000);                                          // and whenever the page changes under them
   document.addEventListener("superlink:change", () => setTimeout(() => { mark(); syncWired(); }, 80));
   document.addEventListener("se:select", () => setTimeout(mark, 20));
-  window.SeControls = { act: k => CONTROLS.includes(k) && press(k), wiredTo, how: () => null,
+  window.SeControls = { carrier: () => carrier, act: k => CONTROLS.includes(k) && press(k), wiredTo, how: () => null,
     valueOf: owner => owner.startsWith("cond:") ? condValue(owner.slice(5)) : owner.startsWith("ctl:") ? owner.slice(4) : "",
     conditions: () => Object.assign({}, cond),
     set: (k, v) => { if (!CONDS.includes(k)) return; if (v) cond[k] = String(v); else delete cond[k]; save(); const i = bottom && bottom.querySelector('[data-cond="' + k + '"] input'); if (i) { i.value = cond[k] || ""; fitInput(i); } if (k === "timer") setTimer(); } };

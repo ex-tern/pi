@@ -182,12 +182,15 @@ void main() {
     OVER(env, inside * pow(1.0 - tb, 2.5) * 0.38);
     // a rainbow shine in the reflection (owner, 2026-10-13: "add some rainbow color shine to the reflected effect"): a
     // thin-film sheen over the bevel, its colours running along the edge and with the depth, drifting slowly
-    float film = fract(tb * 1.35 + dot(nrm, vec2(0.31, 0.19)) + (vL.x - vL.y) / (uHalf.x + uHalf.y) * 0.55 + uTime * 0.015);
-    OVER(mix(hue(film), vec3(1.0), 0.35), inside * pow(1.0 - tb, 1.6) * (1.0 - pow(1.0 - tb, 8.0)) * mix(0.30, 0.22, uNight));
+    // (owner, 2026-10-13: "reduce the rainbow effect on the glass. It's too much. Just very subtle. and dynamic"): a
+    // pale tint, a third as strong, its colours drifting faster and a slow wave of light passing across it
+    float film = fract(tb * 1.35 + dot(nrm, vec2(0.31, 0.19)) + (vL.x - vL.y) / (uHalf.x + uHalf.y) * 0.55 + uTime * 0.04);
+    float filmWave = 0.55 + 0.45 * sin(uTime * 0.35 - (vL.x + vL.y) / (uHalf.x + uHalf.y) * 3.0);
+    OVER(mix(hue(film), vec3(1.0), 0.78), inside * pow(1.0 - tb, 1.6) * (1.0 - pow(1.0 - tb, 8.0)) * mix(0.10, 0.08, uNight) * filmWave);
     float bigK = 1.0 - 0.6 * smoothstep(140.0, 320.0, min(uHalf.x, uHalf.y));
     float sd2 = vL.x / max(uHalf.x, 1.0) * 0.55 + vL.y / max(uHalf.y, 1.0);
     { float sb = smoothstep(-1.05, -0.88, sd2) * (1.0 - smoothstep(-0.70, -0.45, sd2));
-      OVER(mix(vec3(1.0), hue(fract((sd2 + 1.05) * 1.6 + uTime * 0.01)), 0.45), inside * sb * 0.15 * bigK * tb); }   // the glossy streak, with a rainbow edge
+      OVER(mix(vec3(1.0), hue(fract((sd2 + 1.05) * 1.6 + uTime * 0.03)), 0.12), inside * sb * 0.15 * bigK * tb); }   // the glossy streak, a faint rainbow edge
     vec2 cPx = uv * uRes / uDpr - vL, toM = uMouse - cPx - vL;
     float mr = 0.45 * min(uHalf.x, uHalf.y) + 30.0;
     vec2 hp = vL - clamp((uMouse - cPx) * 0.35, -uHalf, uHalf);
@@ -218,8 +221,8 @@ void main() {
   // the prism: the edge splits the light a little, red outside, blue inside, always faint
   float rr = 1.0 - smoothstep(0.0, 1.4, abs(d - 1.3)), bb = 1.0 - smoothstep(0.0, 1.4, abs(d + 1.6));
   float lit = 0.35 + 1.4 * facing * sunK;                                  // the light comes from the sun: the edge facing it splits it most
-  OVER(vec3(1.0, 0.45, 0.30), rr * 0.18 * lit * step(0.0001, uFill));
-  OVER(vec3(0.35, 0.55, 1.0), bb * 0.16 * lit * step(0.0001, uFill));
+  OVER(vec3(1.0, 0.80, 0.72), rr * 0.06 * lit * step(0.0001, uFill));   // pale and faint (owner, 2026-10-13)
+  OVER(vec3(0.74, 0.82, 1.0), bb * 0.05 * lit * step(0.0001, uFill));
   // the sun spilling past the lit edge, a soft gold halo just outside it
   if (uFill > 0.0) OVER(tint(vec3(1.0, 0.78, 0.42)), step(0.0, d) * (1.0 - smoothstep(0.0, 9.0, d)) * pow(facing, 2.0) * 0.40 * sunK);
   // the edge: a fine line in the edge colour, a little see-through so the glass reads
@@ -230,8 +233,8 @@ void main() {
     float ang = atan(vL.y / uHalf.y, vL.x / uHalf.x) / 6.2831853 + 0.5;
     float head = fract(uTime * 0.12);
     float k = abs(fract(ang - head + 0.5) - 0.5);
-    float w = (1.0 - smoothstep(0.0, 0.24, k)) * (1.0 - smoothstep(uEdgeW * 0.5, uEdgeW * 0.5 + 2.5, abs(d))) * uSheen;
-    OVER(hue(ang * 1.5 - uTime * 0.05) * 0.85 + 0.15, w);
+    float w = (1.0 - smoothstep(0.0, 0.20, k)) * (1.0 - smoothstep(uEdgeW * 0.5, uEdgeW * 0.5 + 2.0, abs(d))) * uSheen * 0.35;
+    OVER(mix(vec3(1.0), hue(ang * 1.5 - uTime * 0.05), 0.30), w);       // mostly white light, a hint of colour (owner, 2026-10-13)
   }
   gl_FragColor = acc;
 }`;

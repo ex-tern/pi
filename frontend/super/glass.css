@@ -42,7 +42,7 @@ html.shape-se .ob-mini .obm-box { fill: rgba(255, 255, 255, 0.55); }
 html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper)::before {
   content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
   border-radius: inherit; corner-shape: inherit; padding: 1.5px;
-  background: conic-gradient(from var(--glass-a), transparent 0deg, rgba(255, 120, 120, 0.9) 30deg, rgba(255, 210, 120, 0.9) 60deg, rgba(120, 220, 170, 0.9) 90deg, rgba(110, 160, 255, 0.95) 120deg, rgba(200, 130, 255, 0.9) 150deg, transparent 190deg, transparent 360deg);
+  background: conic-gradient(from var(--glass-a), transparent 0deg, rgba(255, 200, 190, 0.32) 30deg, rgba(255, 236, 200, 0.32) 60deg, rgba(205, 238, 222, 0.32) 90deg, rgba(200, 218, 255, 0.34) 120deg, rgba(232, 210, 255, 0.32) 150deg, transparent 190deg, transparent 360deg);   /* pale and faint (owner, 2026-10-13: "very subtle") */
   -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
   mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
   opacity: 0; transition: opacity 0.9s ease;
