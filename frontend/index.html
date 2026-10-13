@@ -22,7 +22,7 @@
   function mark(){var n=night();h.style.setProperty("--night",n.toFixed(3));h.classList.toggle("se-night",n>0.5);document.dispatchEvent(new CustomEvent("se:sky"))}
   window.SeSky={night:night};mark();setInterval(mark,60000);if(dm&&dm.addEventListener)dm.addEventListener("change",mark);
 })(document.documentElement);</script>
-<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se")){try{document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(function(l){l.href="super/icon.svg"})}catch(e){}h.classList.add("se-boot");try{var S="9";if(localStorage.getItem("se:start")!==S){Object.keys(localStorage).filter(function(k){return /^(lv:|orbit:|se:)/.test(k)}).forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("se:start",S)}}catch(e){}}})(document.documentElement);</script>
+<script>(function(h){h.classList.add("orbit-on");if(/^(se|super)\./.test(location.hostname)||/[?&]shape=se\b/.test(location.search))h.classList.add("shape-se");if(h.classList.contains("shape-se")){try{document.querySelectorAll('link[rel="icon"],link[rel="apple-touch-icon"]').forEach(function(l){l.href="super/icon.svg"})}catch(e){}h.classList.add("se-boot");try{var S="11";if(localStorage.getItem("se:start")!==S){Object.keys(localStorage).filter(function(k){return /^(lv:|orbit:|se:)/.test(k)}).forEach(function(k){localStorage.removeItem(k)});localStorage.setItem("se:start",S)}}catch(e){}}})(document.documentElement);</script>
 <link rel="preload" href="fonts/Geist-Variable.woff2" as="font" type="font/woff2" crossorigin>
 <link rel="stylesheet" href="style.css?v=96">
 <link rel="stylesheet" href="theme.css?v=1">
@@ -32,11 +32,11 @@
 <link rel="stylesheet" href="facemace.css?v=1">
 <link rel="stylesheet" href="medicine/view.css?v=2">
 <link rel="stylesheet" href="live.css?v=3">
-<link rel="stylesheet" href="super/super.css?v=112">
+<link rel="stylesheet" href="super/super.css?v=113">
 <link rel="stylesheet" href="super/nodes.css?v=17">
 <link rel="stylesheet" href="traffic.css?v=2">
 <link rel="stylesheet" href="superprompt.css?v=1">
-<link rel="stylesheet" href="super/project.css?v=12">
+<link rel="stylesheet" href="super/project.css?v=13">
 <link rel="stylesheet" href="super/glass.css?v=18">
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.4/chart.umd.min.js"></script>
 <script defer src="https://cdnjs.cloudflare.com/ajax/libs/mermaid/10.9.1/mermaid.min.js"></script>
@@ -1080,14 +1080,14 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="ribsuggest.js?v=2"></script>
 <script src="lab.js?v=90"></script>
 <script src="channel.js?v=2"></script>
-<script src="super/loop.js?v=30"></script>
-<script src="super/pitechlab.super.js?v=112"></script>
+<script src="super/loop.js?v=31"></script>
+<script src="super/pitechlab.super.js?v=114"></script>
 <script src="super/runtime.js?v=6"></script>
 <script src="super/superai-rs.js?v=7"></script>
 <script src="super/zoombox.js?v=10"></script>
 <script src="super/legible.js?v=9"></script>
 <script src="super/squircle.js?v=7"></script>
-<script src="orbit.js?v=129"></script>
+<script src="orbit.js?v=131"></script>
 <script src="pien.js?v=10"></script>
 <script src="numbers.js?v=4"></script>
 <script src="capabilities.js?v=13"></script>
@@ -1107,22 +1107,23 @@ You can ask for it to be withdrawn at any time, and it will be removed.</textare
 <script src="super/chain.js?v=3"></script>
 <script src="super/save.js?v=4"></script>
 <script src="super/bind.js?v=17"></script>
+<script src="super/pack.js?v=4"></script>
 <script src="super/inner.js?v=1"></script>
 <script src="traffic.js?v=2"></script>
 <!-- the superellipse superlattice (super.pitechlab.com), one concern per file: see DESIGN.md -->
-<script src="super/logo.js?v=6"></script>
+<script src="super/logo.js?v=7"></script>
 <script src="super/motion.js?v=3"></script>
 <script src="super/select.js?v=11"></script>
-<script src="super/shape.js?v=14"></script>
-<script src="super/nodes.js?v=163"></script>
+<script src="super/shape.js?v=15"></script>
+<script src="super/nodes.js?v=165"></script>
 <script src="super/wire.js?v=28"></script>
 <script src="super/move.js?v=3"></script>
-<script src="super/site.js?v=22"></script>
+<script src="super/site.js?v=23"></script>
 <script src="super/scroll.js?v=49"></script>
 <script src="super/hover.js?v=9"></script>
 <script src="superprompt.js?v=1"></script>
-<script src="super/project.js?v=37"></script>
-<script type="module" src="super/engine.js?v=39"></script>
+<script src="super/project.js?v=39"></script>
+<script type="module" src="super/engine.js?v=40"></script>
 <script src="super/boot.js?v=3"></script>
 <script src="super/shapehud.js?v=7"></script>
 <script src="super/shiftsize.js?v=11"></script>

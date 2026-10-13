@@ -769,7 +769,7 @@
   function reshape(n, dy) {
     n.manual = true;                                                   // your n: it no longer follows size and use
     const S = window.SeShape;
-    const nn = S ? S.step("node:" + n.id, n.n, dy, 0.3, 12) : Math.max(0.3, Math.min(12, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
+    const nn = S ? S.step("node:" + n.id, n.n, dy, 0.3, 1000) : Math.max(0.3, Math.min(1000, (n.st.nTo || n.n) * Math.exp(-dy * 0.002)));
     n.st.nTo = nn;
     if (S) S.at(nn);
     const fn = fnOfN(nn);
@@ -790,7 +790,7 @@
     // two kinds by the mouse (owner, 2026-10-12: "double left click makes display complete square, double right click
     // makes a prompt sparkle supers"): a Display, a complete square (n = 24) that shows what is wired into it; a
     // prompt, a Super AI super (role "engine", asking every engine) drawn as a sparkle (n = 0.62); both keep their shape
-    const display = kind === "display" || kind === "square", nn = 10;   // every super starts at n = 10 (owner, 2026-10-13), a square, a prompt and a Display alike
+    const display = kind === "display" || kind === "square", nn = 1000;   // every super starts at n = 1000 (owner, 2026-10-13), a square, a prompt and a Display alike
     if (display) ai = false;
     const m = make({ id, fn: kind ? "box" : fnOfN(nn), role: ai ? "engine" : undefined, manual: !!kind, auto: !!kind, size: ENGINE_BASE, fx: (L.x - ENGINE_BASE / 2) / window.innerWidth, fy: (L.y - ENGINE_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
@@ -987,8 +987,8 @@
       if (!n.auto || n.id === "site-box" || isHolder(n)) return;
       const want = dst.has(n.id) ? "display" : src.has(n.id) ? "prompt" : "square";
       const is = n.role === "engine" ? "prompt" : "square";              // a Display and a square are both a plain ■ (n = 24)
-      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = n.manual ? n.n : 10; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
-      else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = n.manual ? n.n : 10; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
+      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = n.manual ? n.n : 1000; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
+      else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = n.manual ? n.n : 1000; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
     });
     if (changed) { persist(); tick(); }
   }
@@ -1095,7 +1095,7 @@
     clear(n);
   }
   // step down until it overlaps no other node (two nodes wired to the same thing would sit on each other)
-  function lockNote(e) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); }
+  function lockNote() { /* a locked super simply stays put: no note (owner, 2026-10-13: "remove the label unlock to move it") */ }
   function clear(n) {
     if (locked(n)) return;                                               // locked: it keeps its place, nothing moves it off
     if (n.role === "loop" || isHolder(n) || holderOf(n)) return;         // a loop or a holder holds things, and what is inside stays

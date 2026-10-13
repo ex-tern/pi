@@ -4,7 +4,7 @@
   background: var(--surface, #fff); color: var(--ink, #191919);
   border: 1.5px solid var(--ink, #191919);
   border-radius: 50%;
-  corner-shape: superellipse(var(--se-k-window, 3.32193));   /* n = 10 like every super; Shift + scroll gives it its own (super/site.js) */
+  corner-shape: superellipse(var(--se-k-window, 9.96578));   /* n = 1000 like every super; Shift + scroll gives it its own (super/site.js) */
   overflow: hidden; touch-action: none; overscroll-behavior: contain;
   cursor: default;                                          /* the same as a bubble: nothing to grab, only zoom */
 }
@@ -79,4 +79,4 @@
 /* the program editor sits inside the super's π corners, like a window's content (owner, 2026-10-12: "fix all ui");
    the margin round it is where a scroll out closes it */
 html.shape-se .se-project .pj-editor { padding: 9% 10%; }
-html.shape-se .se-project.is-open { corner-shape: superellipse(var(--pj-k, 3.32193)); }
+html.shape-se .se-project.is-open { corner-shape: superellipse(var(--pj-k, 9.96578)); }

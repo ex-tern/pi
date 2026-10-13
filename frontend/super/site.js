@@ -380,10 +380,10 @@
     if (!hasCorner) { delete el.dataset.seClip; clipWindows(); }
   }
   function shapeEl(el, dy) {
-    const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || 10;   // the badge starts at its own n (every super starts at n = 10)
+    const cur = el._seNTo || +el.dataset.seN || (el.classList.contains("orbit-title") && window.SeLogo ? window.SeLogo.n() : 0) || 1000;   // the badge starts at its own n (every super starts at n = 1000)
     const S = window.SeShape;
     if (!el._seShapeId) el._seShapeId = ++shapeId;
-    const nn = S ? S.step("el:" + el._seShapeId, +el.dataset.seN || cur, dy, 0.3, 40) : Math.min(40, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
+    const nn = S ? S.step("el:" + el._seShapeId, +el.dataset.seN || cur, dy, 0.3, 1000) : Math.min(1000, Math.max(0.3, cur * Math.exp(-dy * 0.002)));
     el._seNTo = nn;
     if (S) S.at(nn);
     if (!el._seShapeId) el._seShapeId = ++shapeId;

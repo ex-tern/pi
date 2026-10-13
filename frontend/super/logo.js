@@ -4,7 +4,7 @@
 // (super/scroll.js), and Shift + scroll changes its n (super/site.js shapeEl → SeLogo.setN).
 (function () {
   "use strict";
-  const TITLE_N = 10;   // every super starts at n = 10 (owner, 2026-10-13)
+  const TITLE_N = 1000;   // every super starts at n = 1000 (owner, 2026-10-13)
   let n = 0;
   function setN(v) {
     n = v;

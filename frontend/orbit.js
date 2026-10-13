@@ -726,7 +726,7 @@
     b.addEventListener("pointerdown", e => {
       if (e.button !== 0) return;
       if (e.target.closest(".ob-chat, .ob-member")) return;   // typing or a member pill, not a drag
-      if (merged() && isLocked(b) && !e.target.closest(".se-lock")) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
+      if (merged() && isLocked(b) && !e.target.closest(".se-lock")) return;   // locked: it keeps its place
       sx = e.clientX; sy = e.clientY; moved = false;
       const r = b.getBoundingClientRect(); ox = (e.clientX - r.left) / (L.pageFit() || 1); oy = (e.clientY - r.top) / (L.pageFit() || 1);
       b.setPointerCapture(e.pointerId);
@@ -1241,7 +1241,7 @@
       el.addEventListener("pointerdown", e => {
         if (only && e.target !== el) return;
         if (e.button !== 0 || e.defaultPrevented) return;
-        if (merged() && isLocked(p)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
+        if (merged() && isLocked(p)) return;   // locked: it keeps its place
         if (only) e.preventDefault();                                   // from the margin: no text selection on the way
         drag = true; sx = e.clientX; sy = e.clientY; px = p.offsetLeft; py = p.offsetTop;
         if (window.SeHold) window.SeHold.begin(p);                       // what the window holds comes along (super/hold.js)
@@ -1948,6 +1948,15 @@
         it.w = it.bubble.offsetWidth || it.w; it.h = it.bubble.offsetHeight || it.h;
         const r = it.bubble.getBoundingClientRect(), a = toLayout(0, 0), b = toLayout(sx - (r.left + r.width / 2), sy - (r.top + r.height / 2));   // by the offset from where it is now (its top left kept, its size new)
         it.at = { x: it.lastAt.x + b.x - a.x, y: it.lastAt.y + b.y - a.y, w: it.w, h: it.h }; it.lastAt = Object.assign({}, it.at); keep(it);
+        layoutSoon();
+      },
+      // a bubble's centre set straight to a screen point (super/pack.js), as its target: not measured from where it is
+      // drawn now, so a bubble still gliding lands right
+      placeBubbleAt: (key, sx, sy) => {
+        const it = items.find(i => i.key === key); if (!it) return;
+        it.w = it.bubble.offsetWidth || it.w; it.h = it.bubble.offsetHeight || it.h;
+        const c = toLayout(sx, sy);
+        it.at = { x: c.x - it.w / 2, y: c.y - it.h / 2, w: it.w, h: it.h }; it.lastAt = Object.assign({}, it.at); keep(it);
         layoutSoon();
       },
       moveBubbles: (keys, dx, dy) => {

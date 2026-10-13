@@ -96,7 +96,7 @@
     el.style.setProperty("--pj-map", Math.max(0, Math.min(1, (t - 0.04) / 0.22)).toFixed(3));   // the map comes in as the bubble drawing goes
     // opening, its corners square up a little (n from π to 8), so the map and the program are never cut by them
     const sq = Math.max(0, Math.min(1, (t - 0.4) / 0.5)), sqk = sq * sq * (3 - 2 * sq);
-    el.style.setProperty("--pj-k", "3.32193"); void sqk;   // n = 10 compact and open (owner, 2026-10-13)
+    el.style.setProperty("--pj-k", "9.96578"); void sqk;   // n = 1000 compact and open (owner, 2026-10-13)
     el.classList.toggle("is-open", show > 0.02);
     el.classList.toggle("is-mini", t < 0.12);
     el.classList.toggle("is-full", t > 0.98);
@@ -412,7 +412,7 @@
   document.addEventListener("se:windows", () => { if (el && !el.classList.contains("is-open") && !el._pjDrag) settleFree(); });
   function dragFrom(e) {
     if (el.classList.contains("is-open")) return;                    // open, it stays put: zoom out to move it
-    if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to move it"); return; }   // locked: it keeps its place
+    if (window.SeLock && window.SeLock.isLocked(el)) return;   // locked: it keeps its place
     el._pjDrag = true;
     const r = el.getBoundingClientRect(), dx = e.clientX - r.left, dy = e.clientY - r.top, x0 = e.clientX, y0 = e.clientY;
     let moved = false;

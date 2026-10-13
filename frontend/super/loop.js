@@ -14,7 +14,7 @@
     // n is π (computed live) until you scroll on the loop: then it is yours, kept in this browser
     // the first visit in the superellipse look: the main super nearly a box (n = 24) holding the site, itself a
     // near-box (n = 24), at full size; after that, whatever you scrolled them to
-    let markN = load("orbit:mark:n") || (document.documentElement.classList.contains("shape-se") ? 10 : null);   // n = 10 at the start (owner, 2026-10-13)
+    let markN = load("orbit:mark:n") || (document.documentElement.classList.contains("shape-se") ? 1000 : null);   // n = 1000 at the start (owner, 2026-10-13)
     const loopN = () => markN || (window.SeMorph && window.SeMorph.pi) || Math.PI;
     let nShowT = 0;
     // In the superellipse look the loop is the page: |x/a|^n + |y/b|^n = 1 with a, b half the
@@ -108,7 +108,7 @@
       else { const s = { v: zoom }; window.SeMotion.glide("page:zoom", s, "v", target, 160, () => { zoom = s.v; loopKey = ""; drawLoop(); }); }
     }
     // back to how a first visit sees it: zoom 1, both supers at n = 24, the inner super in the middle
-    const VIEW_N = 10;
+    const VIEW_N = 1000;
     function resetView() {
       zoomTo = null; scrollN.to = null; scrollSiteN.to = null;
       const from = { z: zoom, m: loopN(), s: siteNv(), x: siteOff.x, y: siteOff.y, mz: mainZ };
@@ -431,7 +431,7 @@
     if (typeof siteOff.x !== "number" || typeof siteOff.y !== "number") siteOff = { x: 0, y: 0 };
     // the inner super's n: the main loop's until shift + scroll inside it (on nothing) gives it one of its
     // own (super/scroll.js), kept as orbit:site:n; from then on the two change shape independently
-    let siteN = +load("orbit:site:n") || (document.documentElement.classList.contains("shape-se") ? 10 : 0);
+    let siteN = +load("orbit:site:n") || (document.documentElement.classList.contains("shape-se") ? 1000 : 0);
     const siteNv = () => siteN || loopN();
     function scrollSiteN(e) {
       if (!merged()) return;

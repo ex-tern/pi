@@ -57,7 +57,7 @@
   }
 
   const K = n => Math.log2(n);
-  const START_N = 10;
+  const START_N = 1000;   // every super starts at n = 1000 (owner, 2026-10-13)
   const last = {};
   const put = (name, v) => { if (last[name] !== v) { html.style.setProperty(name, v); last[name] = v; } };
   function publish() {
@@ -183,7 +183,7 @@
     panel.style.transform = ""; panel.style.opacity = "";
     // and its shape grows from n → 0 (a cross) to n = 12 (nearly a box), slowly (owner, 2026-10-12: "when zooming on a
     // button new super grows from n=0 to n=12 slowly"); the window keeps n = 12 (its own n, as Shift + scroll gives)
-    const N0 = 0.3, N1 = 10, nd = 900;   // opens to n = 10, as every super starts (owner, 2026-10-13)   // super/motion.js stretches it (SLOW)
+    const N0 = 0.3, N1 = 1000, nd = 900;   // opens to n = 1000, as every super starts (owner, 2026-10-13)   // super/motion.js stretches it (SLOW)
     const setN = n => { panel.style.setProperty("--se-k-window", Math.log2(n).toFixed(4)); panel.style.setProperty("--se-k-panel", Math.log2(n).toFixed(4)); panel.dataset.seN = n.toFixed(4); };
     setN(N0);
     if (window.SeMotion) { const o = { v: Math.log(N0) }; window.SeMotion.tween(o, { v: Math.log(N1) }, { duration: nd, easing: "easeInOutSine", update: () => setN(Math.exp(o.v)) }); }
@@ -205,7 +205,7 @@
     // its shape shrinks from the window's n (12) to n → 0 as it folds away ("opened super shrinks from n=12 to n=0 slowly"),
     // and it aims at its own pill wherever that is now, frame by frame (owner: "closing support pi should aim at its own
     // place": the view or the bubble may move while it folds)
-    const n0 = +panel.dataset.seN || 10, n1 = 0.3, t0 = performance.now();
+    const n0 = +panel.dataset.seN || 1000, n1 = 0.3, t0 = performance.now();
     const ease = k => 1 - Math.pow(1 - k, 3);
     const step = now => {
       if (!g.isConnected) return;
