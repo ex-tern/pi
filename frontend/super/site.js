@@ -132,7 +132,7 @@
       });
       // the main canvas's controls and conditions are supers too, with four ports each (owner, 2026-10-13: "the buttons are
       // super as well for wiring"; super/controls.js reads what they are wired to)
-      document.querySelectorAll(".se-ctlbar:not([hidden]) .se-ctl[data-ctl], .se-ctlbar:not([hidden]) .se-cond[data-cond]").forEach(b => {
+      document.querySelectorAll(".se-ctlbar:not([hidden]) .se-ctl[data-ctl], .se-ctlbar:not([hidden]) .se-cond[data-cond], .se-req[data-ctl]:not([hidden])").forEach(b => {
         const r = b.getBoundingClientRect(); if (!r.width) return;
         const owner = b.dataset.ctl ? "ctl:" + b.dataset.ctl : "cond:" + b.dataset.cond; seen.add(owner);
         placeAt(ensurePorts(owner, b.dataset.ctl || b.dataset.cond), r.left + r.width / 2, r.top + r.height / 2, r.width / 2, r.height / 2);
@@ -187,7 +187,7 @@
   const ownerEl = owner => owner === "project" ? document.querySelector(".se-project") : owner.startsWith("win:") ? (O().elOf ? O().elOf(owner.slice(4)) : null)
     : owner.startsWith("bubble:") ? bubbleEl(owner.slice(7))
     : owner.startsWith("node:") ? document.querySelector('.lv-node[data-id="' + CSS.escape(owner.slice(5)) + '"]')
-    : owner.startsWith("ctl:") ? document.querySelector('.se-ctl[data-ctl="' + CSS.escape(owner.slice(4)) + '"]')
+    : owner.startsWith("ctl:") ? document.querySelector('[data-ctl="' + CSS.escape(owner.slice(4)) + '"]')
     : owner.startsWith("cond:") ? document.querySelector('.se-cond[data-cond="' + CSS.escape(owner.slice(5)) + '"]') : null;
   const ownerName = owner => { if (owner === "site") return "the site"; if (/^(ctl|cond):/.test(owner)) return owner.split(":")[1]; if (owner === "main") return "the main super"; if (owner === "project") return "the project"; if (owner.startsWith("win:")) { const i = O().info && O().info(owner.slice(4)); return i ? i.title : "the window"; }
     if (owner.startsWith("bubble:")) { const i = O().info && O().info(owner.slice(7)); return i ? i.title : "the bubble"; } return "the node"; };

@@ -135,26 +135,36 @@
       '<p class="n">' + (ext.length ? "Also loaded from: " + ext.map(esc).join(", ") + " (code libraries and fonts; nothing of yours is sent to them)." : "No other sites contacted.") + "</p>";
   }
   // clear of the conditions bar (super/controls.js): on a narrow screen it sits just above it
+  // a super by itself inside the main canvas (owner, 2026-10-13: "privacy choices is a super by itself inside the
+  // canvas"): at the main super's bottom-left, inside its edge, clear of the conditions bar
+  const portAt = pid => { const p = document.querySelector('.se-port[data-pid="' + pid + '"]'); if (!p) return null; const r = p.getBoundingClientRect(); return r.width || r.height ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
   function seat() {
-    if (!el) return;
-    const bar = document.querySelector(".se-ctl-bottom:not([hidden])"), B = 12;
-    let bottom = B;
+    if (!el || el.hidden) return;
+    const B = 12, w = el.offsetWidth, h = el.offsetHeight, ip = portAt("main/input"), cp = portAt("main/condition");
+    let left = B, top = window.innerHeight - B - h;
+    if (ip && cp) { left = Math.max(B, ip[0] + 18); top = Math.min(window.innerHeight - B - h, cp[1] - 18 - h); }
+    const bar = document.querySelector(".se-ctl-bottom:not([hidden])");
     if (bar) {                                                           // the bar is an anchor: its buttons are its extent
       const rs = [...bar.querySelectorAll(".se-cond, .se-ctl")].map(x => x.getBoundingClientRect()).filter(r => r.width);
       if (rs.length) {
-        const r = { left: Math.min(...rs.map(x => x.left)), top: Math.min(...rs.map(x => x.top)), bottom: Math.max(...rs.map(x => x.bottom)) }, w = el.offsetWidth;
-        if (r.left < B + w + 8 && r.bottom > window.innerHeight - B - el.offsetHeight - 8) bottom = Math.max(B, Math.round(window.innerHeight - r.top + 8));
+        const r = { left: Math.min(...rs.map(x => x.left)), top: Math.min(...rs.map(x => x.top)), bottom: Math.max(...rs.map(x => x.bottom)) };
+        if (r.left < left + w + 10 && r.bottom > top - 10 && r.top < top + h + 10) top = Math.round(r.top - 14 - h);   // above it
       }
     }
-    const v = bottom + "px"; if (el.style.bottom !== v) el.style.bottom = v;
+    const L = Math.round(left) + "px", T = Math.round(top) + "px";
+    if (el.style.left !== L) el.style.left = L; if (el.style.top !== T) el.style.top = T; if (el.style.bottom !== "auto") el.style.bottom = "auto";
   }
-  setInterval(seat, 500); window.addEventListener("resize", seat);
+  setInterval(seat, 300); window.addEventListener("resize", seat);
   // the owner only: asked of the server, with the page's own cookie (the check itself is listed like any request)
   let owner = false;
   async function whoIs() {
     try { const j = await (await window.fetch("/api/auth/session", { cache: "no-store" })).json(); owner = !!(j && j.is_owner === true); } catch (_) { owner = false; }
     // the owner sees the indicator; everyone else only a way back to their privacy choices (super/consent.js)
-    if (el) { el.hidden = !owner && !window.SeConsent; el.classList.toggle("is-min", !owner); seat(); paint(); }
+    if (el) {
+      el.hidden = !owner && !window.SeConsent; el.classList.toggle("is-min", !owner);
+      if (owner) delete el.dataset.ctl; else el.dataset.ctl = "privacy";   // a super with four ports, wireable like the controls
+      seat(); paint();
+    }
   }
   function boot() { build(); whoIs(); setInterval(whoIs, 30000); }
   if (document.body) boot(); else document.addEventListener("DOMContentLoaded", boot);

@@ -382,6 +382,8 @@ const KINDS = [
   { sel: ".lv-palette", fill: 0.45, order: 15, shadow: 0.6 },
   // the main canvas's controls and conditions are supers too (owner, 2026-10-13: "the buttons are super as well")
   { sel: ".se-ctlbar:not([hidden]) .se-ctl, .se-ctlbar:not([hidden]) .se-cond", fill: 0.55, order: 40, shadow: 0.45, keep: true },
+  // privacy choices (and the owner's request indicator) is a super by itself inside the canvas (owner, 2026-10-13)
+  { sel: ".se-req:not([hidden])", fill: 0.55, order: 40, shadow: 0.45, keep: true },
   // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
   // its name box and its window pills are glass panes, drawn above their bubble
   { sel: ".orbit-bubble.is-group:not(.is-compact):not(.is-growing) > .ob-label, .orbit-bubble.is-group:not(.is-compact):not(.is-growing) .ob-member", fill: 0.6, order: 10, shadow: 0.35, inner: true, keep: true },   // a thin pill stays a box, never a sparkle

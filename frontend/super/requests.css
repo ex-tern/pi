@@ -1,10 +1,15 @@
 /* super/requests.css: the server request indicator (super/requests.js), bottom left: ink on paper, cobalt while a
    request is out, the one accent the design language allows (theme.css) */
 .se-req[hidden] { display: none !important; }
+/* a super like every other (owner, 2026-10-13: "privacy choices is a super by itself inside the canvas"): the square at
+   n = 1000 of the controls, the ink edge, the frosted pane and its shadow; with the engine it draws the glass */
 .se-req { position: fixed; left: 12px; bottom: 12px; z-index: 2147483000; display: flex; align-items: center; gap: 8px;
-  padding: 6px 12px 6px 10px; border: 1px solid color-mix(in srgb, var(--ink) 80%, transparent); border-radius: 14px; corner-shape: superellipse(1.6);
-  background: color-mix(in srgb, var(--paper) 88%, transparent); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
-  font: 500 12px/1.2 var(--font-mono, ui-monospace, monospace); color: var(--ink); cursor: default; user-select: none; max-width: calc(100vw - 24px); }
+  height: 48px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 4px; corner-shape: superellipse(9.96578);
+  background: color-mix(in srgb, var(--paper, #fff) 62%, transparent); -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
+  font: 500 14px/1 var(--font, "Geist", system-ui, sans-serif); color: var(--ink); cursor: default; user-select: none; max-width: calc(100vw - 24px); }
+@media (max-width: 699px) { .se-req { height: 36px; padding: 0 12px; font-size: 13px; } }
+html.se-gl .se-req { background: transparent !important; border-color: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
 .se-req:focus, .se-req:focus-visible { outline: none; }
 .se-req:focus-visible { border-color: var(--cobalt); }
 .se-req-light { width: 8px; height: 8px; border-radius: 50%; background: var(--graphite); opacity: 0.45; flex: none; transition: background 0.2s, opacity 0.2s; }
@@ -13,7 +18,7 @@
 @keyframes se-req-pulse { 50% { transform: scale(1.5); opacity: 0.55; } }
 @media (prefers-reduced-motion: reduce) { .se-req.is-busy .se-req-light { animation: none; } }
 .se-req-sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-.se-req-card { display: none; position: absolute; left: 0; bottom: calc(100% + 8px); width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 460px); overflow: auto;
+.se-req-card { display: none; position: absolute; left: 0; bottom: calc(100% + 12px); z-index: 2147483000; width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 460px); overflow: auto;
   padding: 12px 14px; border: 1px solid var(--ink); border-radius: 16px; corner-shape: superellipse(1.6); background: var(--paper);
   box-shadow: 0 14px 30px -12px rgba(25, 25, 25, 0.45); font: 400 12px/1.45 var(--font-mono, ui-monospace, monospace); cursor: auto; user-select: text; }
 .se-req:hover .se-req-card, .se-req:focus .se-req-card, .se-req:focus-within .se-req-card { display: block; }
@@ -30,6 +35,6 @@
 .se-req-card li.none { display: block; color: var(--graphite); }
 html.se-night .se-req, html.se-night .se-req-card { color: var(--ink); }
 /* everyone but the owner: only the way back to their privacy choices (super/consent.js) */
-.se-req.is-min { cursor: pointer; padding: 6px 12px; }
+.se-req.is-min { cursor: pointer; }
 .se-req.is-min .se-req-light, .se-req.is-min .se-req-card { display: none !important; }
-.se-req.is-min:hover { border-color: var(--cobalt); color: var(--cobalt); }
+.se-req.is-min:hover { color: var(--cobalt); }

@@ -96,7 +96,7 @@
     if ((m = /^port:([^/]+)\//.exec(h))) {
       const o = m[1];
       if (o === "main" || o === "site") return "all";
-      if (o.startsWith("ctl:")) return document.querySelector('.se-ctl[data-ctl="' + CSS.escape(o.slice(4)) + '"]');
+      if (o.startsWith("ctl:")) return document.querySelector('[data-ctl="' + CSS.escape(o.slice(4)) + '"]');
       if (o.startsWith("cond:")) return document.querySelector('.se-cond[data-cond="' + CSS.escape(o.slice(5)) + '"]');
       if (o.startsWith("pill:")) return document.querySelector('.ob-member[data-key="' + CSS.escape(o.slice(5)) + '"]');
       return window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(o) : null;
@@ -196,6 +196,7 @@
     else if (el.classList.contains("se-project")) { if (window.SeProject) { window.SeProject.open(); ok = true; } }
     else if (el.classList.contains("orbit-panel")) { el.classList.remove("se-held"); ok = true; }
     else if (el.classList.contains("se-ctl")) { press(el.dataset.ctl); ok = true; }
+    else if (el.dataset && el.dataset.ctl === "privacy" && window.SeConsent) { window.SeConsent.open(); ok = true; }   // the privacy choices super
     if (!quiet) say(ok ? "Opened " + nameOf(el) : nameOf(el) + " cannot open (locked?)");
     if (ok) after(el);
     return ok;
