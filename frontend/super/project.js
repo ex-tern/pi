@@ -96,7 +96,7 @@
     el.style.setProperty("--pj-map", Math.max(0, Math.min(1, (t - 0.04) / 0.22)).toFixed(3));   // the map comes in as the bubble drawing goes
     // opening, its corners square up a little (n from π to 8), so the map and the program are never cut by them
     const sq = Math.max(0, Math.min(1, (t - 0.4) / 0.5)), sqk = sq * sq * (3 - 2 * sq);
-    el.style.setProperty("--pj-k", (1.6515 + (3 - 1.6515) * sqk).toFixed(4));
+    el.style.setProperty("--pj-k", "3.32193"); void sqk;   // n = 10 compact and open (owner, 2026-10-13)
     el.classList.toggle("is-open", show > 0.02);
     el.classList.toggle("is-mini", t < 0.12);
     el.classList.toggle("is-full", t > 0.98);

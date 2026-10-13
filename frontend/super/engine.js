@@ -330,7 +330,9 @@ function nOf(el) {
   const m = s.match(/superellipse\(\s*([-\d.]+)/);
   if (m) return Math.pow(2, +m[1]);
   if (/round/.test(s)) return 2;
-  return Math.PI;
+  // a browser without corner-shape: the n the page gave it (a node's --lv-k, a window's --se-k-panel, else --se-k-window)
+  for (const v of ["--lv-k", "--se-k-panel", "--sts-k", "--pj-k", "--se-k-window"]) { const k = parseFloat(cs.getPropertyValue(v)); if (isFinite(k)) return Math.pow(2, k); }
+  return 10;
 }
 const KINDS = [
   { sel: ".orbit-bubble.is-group:not([hidden])", fill: 0.30, order: 10, shadow: 1 },

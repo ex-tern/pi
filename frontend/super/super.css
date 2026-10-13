@@ -25,7 +25,7 @@ html.shape-se {
   --se-card: 18px;       /* tiles and cards */
   --se-window: 26px;     /* windows */
   --se-k-button: -0.79286;   /* log2 γ, until super/shape.js has computed it */
-  --se-k-window: 1.65149;    /* log2 π */
+  --se-k-window: 3.32193;    /* log2 10: every super starts at n = 10 (owner, 2026-10-13: "make all super n=10 initial state") */
 }
 /* n and the star's growth animate (registered, so they interpolate) */
 @property --se-k { syntax: "<number>"; inherits: true; initial-value: 1.651496; }
@@ -368,7 +368,7 @@ html.shape-se .orbit-panel * { overscroll-behavior: none; }
 html.shape-se .orbit-title .se-titlesuper {
   position: relative; display: grid; place-items: center; box-sizing: border-box;
   width: calc(156px * var(--se-title-k, 1) + 52px); height: calc(46px * var(--se-title-k, 1));   /* its icons keep their size whatever its scale */   /* bigger (owner, 2026-10-12); one line, low, with room for its lock and save at the right end; the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
-  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 1.6515));
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 3.32193));
   font: 500 calc(18px * var(--se-title-k, 1))/1 "Geist Mono", ui-monospace, monospace; color: var(--ink);
   text-align: center; text-transform: lowercase; letter-spacing: 0; padding: 0 52px 0 10px;
   white-space: normal; overflow-wrap: normal; user-select: none; -webkit-user-select: none;
@@ -422,7 +422,7 @@ html.shape-se .se-project, html.shape-se .lv-palette {
   background: var(--paper); border: 1.5px solid var(--ink); box-shadow: none; filter: none;
 }
 html.shape-se .lv-node.lv-box.is-holder { background: transparent; }        /* a holder stays see-through */
-html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 1.6515); }    /* windows at n = π like everything else */
+html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 3.32193); }    /* windows at n = 10 like every super */
 /* the content of a window stays clear of the π corners: the inset a superellipse needs is (1 − 2^(−1/n)) / 2 ≈ 10 % */
 html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 9%; }
 /* the same port sparkles everywhere */
@@ -579,7 +579,7 @@ html.shape-se .se-shapehud { display: flex; }
 /* a closing window folds back into its button (super/shape.js close): a plain pane of the same glass */
 .se-fold { position: fixed; z-index: 900; pointer-events: none; box-sizing: border-box; transform-origin: 50% 50%;
   background: color-mix(in srgb, var(--paper) 78%, transparent); border: 1.5px solid color-mix(in srgb, var(--ink) 60%, transparent);
-  border-radius: 50%; corner-shape: superellipse(3.585); box-shadow: 0 14px 30px -12px rgba(25, 25, 25, 0.4); }   /* its n shrinks as it folds (super/shape.js close) */
+  border-radius: 50%; corner-shape: superellipse(3.32193); box-shadow: 0 14px 30px -12px rgba(25, 25, 25, 0.4); }   /* its n shrinks as it folds (super/shape.js close) */
 
 /* a super that got too small closes, fading away (every kind alike: super/bubble.js, super/project.js) */
 html.shape-se .se-closing { opacity: 0 !important; transform-origin: 50% 50%; transition: opacity 0.7s ease !important; pointer-events: none; }
@@ -740,3 +740,9 @@ html.shape-se.se-night .lv-node.lv-box.is-holder > .lv-glyph { color: var(--ink)
 html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; font-weight: 500; }   /* a compact bubble's drawn name too */
 /* a double click on a super never selects its name as text */
 html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node.is-holder > .lv-glyph, .orbit-title .se-titlesuper, .se-project .pj-face) { -webkit-user-select: none; user-select: none; }
+
+/* every super starts at n = 10 (owner, 2026-10-13); what is inside a super that is not a super (a window's buttons and
+   cards) keeps n = π (the descendant reset above), but the supers inside an open bubble (its name box and pills) are
+   supers: n = 10 too, until hold shift + scroll gives one its own */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) :is(.ob-member, .ob-label) { --se-k-window: 3.32193; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { --se-k: 3.32193 !important; }

@@ -59,7 +59,7 @@
 
 ; the start: the supers and wires a first visit begins with
 diagram
-  ▣ hold box "super" desktop n=12 at.inSite=0.31,0.055,0.961,0.945
+  ▣ hold box "super" desktop n=10 at.inSite=0.31,0.055,0.961,0.945
   ⟶ main△ site△
   ⟶ title▷ site△
   ⟶ site▽ main▽

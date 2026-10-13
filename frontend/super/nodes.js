@@ -790,7 +790,7 @@
     // two kinds by the mouse (owner, 2026-10-12: "double left click makes display complete square, double right click
     // makes a prompt sparkle supers"): a Display, a complete square (n = 24) that shows what is wired into it; a
     // prompt, a Super AI super (role "engine", asking every engine) drawn as a sparkle (n = 0.62); both keep their shape
-    const display = kind === "display" || kind === "square", nn = display ? 24 : kind === "prompt" ? 0.62 : +Math.PI.toFixed(3);
+    const display = kind === "display" || kind === "square", nn = 10;   // every super starts at n = 10 (owner, 2026-10-13), a square, a prompt and a Display alike
     if (display) ai = false;
     const m = make({ id, fn: kind ? "box" : fnOfN(nn), role: ai ? "engine" : undefined, manual: !!kind, auto: !!kind, size: ENGINE_BASE, fx: (L.x - ENGINE_BASE / 2) / window.innerWidth, fy: (L.y - ENGINE_BASE / 2) / window.innerHeight, inputs: [], n: nn });
     if (!holderOf(m)) clear(m);                                        // made inside a super: it stays where it was made
@@ -987,8 +987,8 @@
       if (!n.auto || n.id === "site-box" || isHolder(n)) return;
       const want = dst.has(n.id) ? "display" : src.has(n.id) ? "prompt" : "square";
       const is = n.role === "engine" ? "prompt" : "square";              // a Display and a square are both a plain ■ (n = 24)
-      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = 24; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
-      else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = 24; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
+      if (want === "prompt" && is !== "prompt") { n.role = "engine"; n.n = n.manual ? n.n : 10; shape(n); changed = true; say("Prompt: type a question and press Enter; the super it is wired into shows the answer"); }
+      else if (want !== "prompt" && is === "prompt") { n.role = null; n.answer = ""; n.prompt = ""; n.n = n.manual ? n.n : 10; shape(n); changed = true; if (want === "display") say("Display: it shows what the prompt wired into it answers"); }
     });
     if (changed) { persist(); tick(); }
   }

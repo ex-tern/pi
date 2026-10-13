@@ -57,30 +57,21 @@
   }
 
   const K = n => Math.log2(n);
+  const START_N = 10;
   const last = {};
   const put = (name, v) => { if (last[name] !== v) { html.style.setProperty(name, v); last[name] = v; } };
   function publish() {
     put("--se-k-button", K(gamma).toFixed(6)); put("--se-n-button", gamma.toFixed(10));
-    put("--se-k-window", K(pi).toFixed(6)); put("--se-n-window", pi.toFixed(10));
+    put("--se-k-window", K(START_N).toFixed(6)); put("--se-n-window", START_N.toFixed(10));   // every super starts at n = 10 (owner, 2026-10-13), no longer the live π
     put("--se-sparkle", "polygon(" + starPts(gamma, 48).map(p => (50 + 50 * p[0]).toFixed(2) + "% " + (50 + 50 * p[1]).toFixed(2) + "%").join(", ") + ")");
   }
-  // n grows with use: a button you never opened is γ; the more you open it,
-  // the closer it comes to π, the shape of the window it opens.
-  //   n(u) = γ + (π − γ) · u / (u + 8),  u = times opened
-  const nOfUse = u => gamma + (pi - gamma) * u / (u + 8);
+  // a pill's n no longer grows with use (owner, 2026-10-13: "remove the rule of usage = super's n"): every pill is a
+  // super at n = 10 from the start, its shape round its name; only hold shift + scroll gives it another
   function perButton() {
-    if (!on() || !window.PiOrbit || !window.PiOrbit.info) return;
-    // the pills are the buttons; bubbles are objects and keep n = π
+    if (!on()) return;
     document.querySelectorAll(".ob-member[data-key]").forEach(el => {
-      const i = window.PiOrbit.info(el.dataset.key);
-      if (!i) return;
-      const u = i.use || 0, n = nOfUse(u), k = K(n).toFixed(5);
-      if (el.dataset.seK !== k) {
-        el.dataset.seK = k; el.dataset.seN = n.toFixed(5);
-        el.style.setProperty("--se-k", k);
-        el.style.setProperty("--se-t", (u / (u + 8)).toFixed(4));   // 0: a star beside the name, 1: the shape around it
-        el.title = "";                                                 // no tooltip: nothing to press here, the pill is a wire end
-      }
+      if (el.dataset.seK === "fixed") return;
+      el.dataset.seK = "fixed"; el.style.removeProperty("--se-k"); el.style.setProperty("--se-t", "1"); el.title = "";
     });
   }
   let gammaFixed = false;
@@ -192,7 +183,7 @@
     panel.style.transform = ""; panel.style.opacity = "";
     // and its shape grows from n → 0 (a cross) to n = 12 (nearly a box), slowly (owner, 2026-10-12: "when zooming on a
     // button new super grows from n=0 to n=12 slowly"); the window keeps n = 12 (its own n, as Shift + scroll gives)
-    const N0 = 0.3, N1 = 12, nd = 900;   // super/motion.js stretches it (SLOW)
+    const N0 = 0.3, N1 = 10, nd = 900;   // opens to n = 10, as every super starts (owner, 2026-10-13)   // super/motion.js stretches it (SLOW)
     const setN = n => { panel.style.setProperty("--se-k-window", Math.log2(n).toFixed(4)); panel.style.setProperty("--se-k-panel", Math.log2(n).toFixed(4)); panel.dataset.seN = n.toFixed(4); };
     setN(N0);
     if (window.SeMotion) { const o = { v: Math.log(N0) }; window.SeMotion.tween(o, { v: Math.log(N1) }, { duration: nd, easing: "easeInOutSine", update: () => setN(Math.exp(o.v)) }); }
@@ -214,7 +205,7 @@
     // its shape shrinks from the window's n (12) to n → 0 as it folds away ("opened super shrinks from n=12 to n=0 slowly"),
     // and it aims at its own pill wherever that is now, frame by frame (owner: "closing support pi should aim at its own
     // place": the view or the bubble may move while it folds)
-    const n0 = +panel.dataset.seN || 12, n1 = 0.3, t0 = performance.now();
+    const n0 = +panel.dataset.seN || 10, n1 = 0.3, t0 = performance.now();
     const ease = k => 1 - Math.pow(1 - k, 3);
     const step = now => {
       if (!g.isConnected) return;
@@ -264,5 +255,5 @@
     for (let i = 0; i <= K; i++) { const t = i / K * Math.PI / 2; pts.push([cx - r * sx * Math.pow(Math.cos(t), e), cy + r * sy * Math.pow(Math.sin(t), e)]); }
     return "M" + f(x1) + "," + f(y1) + pts.map(q => "L" + f(q[0]) + "," + f(q[1])).join("") + "L" + f(x2) + "," + f(y2);
   }
-  window.SeMorph = { wire, open, close, path: boxPath, star, nOfUse, get gamma() { return gamma; }, get pi() { return pi; } };
+  window.SeMorph = { wire, open, close, path: boxPath, star, nOfUse: () => START_N, get gamma() { return gamma; }, get pi() { return pi; } };
 })();

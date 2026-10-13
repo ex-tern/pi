@@ -222,7 +222,7 @@ window.SUPERAI_PROGRAM = {
     "text": "super",
     "desktop": true,
     "hold": true,
-    "n": 12,
+    "n": 10,
     "at": {
      "inSite": [
       0.31,
