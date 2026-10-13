@@ -2952,28 +2952,28 @@ def run_bounded(tasks: Iterable[Tuple[Any, Callable[[], Any]]], budget_seconds: 
     results: Dict[Any, Any] = {}
     deadline = time.time() + budget_seconds
 
-    with concurrent.futures.ThreadPoolExecutor(
-        max_workers=min(max_workers, len(task_list))
-    ) as executor:
-        future_map = {executor.submit(fn): key for key, fn in task_list}
-        try:
-            for future in concurrent.futures.as_completed(
-                future_map, timeout=max(0.1, deadline - time.time())
-            ):
-                key = future_map[future]
-                try:
-                    results[key] = future.result()
-                except Exception as e:
-                    logging.debug("Bounded task %s failed: %s", key, e)
-        except concurrent.futures.TimeoutError:
-            incomplete = len(task_list) - len(results)
-            logging.info(
-                "Bounded batch hit its %.1fs budget with %d task(s) unfinished; "
-                "returning partial results.", budget_seconds, incomplete,
-            )
-        finally:
-            for future in future_map:
-                future.cancel()
+    # Not a `with` block: leaving one waits for every task still running, which turned the budget into a suggestion
+    # (one slow registry held an assessment for as long as its own timeout). Unfinished tasks are left to finish on
+    # their own; nobody waits for them.
+    executor = concurrent.futures.ThreadPoolExecutor(max_workers=min(max_workers, len(task_list)))
+    future_map = {executor.submit(fn): key for key, fn in task_list}
+    try:
+        for future in concurrent.futures.as_completed(
+            future_map, timeout=max(0.1, deadline - time.time())
+        ):
+            key = future_map[future]
+            try:
+                results[key] = future.result()
+            except Exception as e:
+                logging.debug("Bounded task %s failed: %s", key, e)
+    except concurrent.futures.TimeoutError:
+        incomplete = len(task_list) - len(results)
+        logging.info(
+            "Bounded batch hit its %.1fs budget with %d task(s) unfinished; "
+            "returning partial results.", budget_seconds, incomplete,
+        )
+    finally:
+        executor.shutdown(wait=False, cancel_futures=True)
 
     return results
 
@@ -11431,12 +11431,71 @@ def verify_doi_against_crossref(doi: str) -> Optional[bool]:
     return None
 
 
+# Verdicts on DOIs, kept in the database so they outlive a restart (the in-memory cache empties on every deploy).
+# A DOI that exists stays existing, so "verified" is kept for good; "fabricated" (both registries said 404) is kept
+# for 30 days, since a work can be registered late. "unverified" is never kept: it is the absence of an answer.
+_DOI_VERDICT_TTL = {"verified": None, "fabricated": 30 * 24 * 3600}
+_doi_table_ready = False
+
+
+def _doi_verdicts_conn():
+    global _doi_table_ready
+    conn = get_db_connection()
+    if not _doi_table_ready:
+        conn.execute("CREATE TABLE IF NOT EXISTS doi_verdicts (doi TEXT PRIMARY KEY, verdict TEXT NOT NULL, "
+                     "checked_at REAL NOT NULL)")
+        conn.commit()
+        _doi_table_ready = True
+    return conn
+
+
+def stored_doi_verdict(doi: str) -> Optional[str]:
+    try:
+        conn = _doi_verdicts_conn()
+        try:
+            row = conn.execute("SELECT verdict, checked_at FROM doi_verdicts WHERE doi = ?", (doi.lower(),)).fetchone()
+        finally:
+            conn.close()
+    except Exception as e:                                   # noqa: BLE001  (a cache never fails an audit)
+        logging.debug("DOI verdict lookup failed: %s", e)
+        return None
+    if not row or row[0] not in _DOI_VERDICT_TTL:
+        return None
+    ttl = _DOI_VERDICT_TTL[row[0]]
+    return row[0] if ttl is None or time.time() - float(row[1]) < ttl else None
+
+
+def store_doi_verdict(doi: str, verdict: str) -> None:
+    if verdict not in _DOI_VERDICT_TTL:
+        return
+    try:
+        conn = _doi_verdicts_conn()
+        try:
+            conn.execute("INSERT OR REPLACE INTO doi_verdicts (doi, verdict, checked_at) VALUES (?, ?, ?)",
+                         (doi.lower(), verdict, time.time()))
+            conn.commit()
+        finally:
+            conn.close()
+    except Exception as e:                                   # noqa: BLE001
+        logging.debug("DOI verdict store failed: %s", e)
+
+
 def classify_citation_validity(doi: str) -> str:
     """Classify one DOI as verified / fabricated / unverified.
 
     Crossref is consulted only when OpenAlex does not confirm the work, which
     halves the request count for the common case of a well-indexed reference.
+    A verdict reached before (stored_doi_verdict) is answered without asking either registry.
     """
+    known = stored_doi_verdict(doi)
+    if known:
+        return known
+    verdict = _classify_citation_validity(doi)
+    store_doi_verdict(doi, verdict)
+    return verdict
+
+
+def _classify_citation_validity(doi: str) -> str:
     oa = verify_doi_against_openalex(doi)
     if oa is True:
         return "verified"

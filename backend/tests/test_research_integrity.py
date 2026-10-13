@@ -21,6 +21,35 @@ import api as security
 import api as scientometrics
 
 
+@pytest.fixture(autouse=True)
+def _no_stored_doi_verdicts(monkeypatch):
+    """These tests fake the registries' answers: a verdict kept from another test (or run) must not answer for them."""
+    monkeypatch.setattr(scientometrics, "stored_doi_verdict", lambda doi: None)
+    monkeypatch.setattr(scientometrics, "store_doi_verdict", lambda doi, verdict: None)
+
+
+def test_doi_verdicts_outlive_the_memory_cache(monkeypatch, tmp_path):
+    """A verified DOI is answered from the database after a restart, without asking a registry again."""
+    import importlib
+    api = importlib.import_module("api")
+    monkeypatch.setattr(api, "DB_PATH", str(tmp_path / "v.db"))
+    monkeypatch.setattr(api, "_doi_table_ready", False)
+    monkeypatch.undo()   # the autouse stubs off for this test; the database path back on below
+    monkeypatch.setattr(api, "DB_PATH", str(tmp_path / "v.db"))
+    monkeypatch.setattr(api, "_doi_table_ready", False)
+    calls = []
+    monkeypatch.setattr(api, "verify_doi_against_openalex", lambda d: calls.append(d) or True)
+    assert api.classify_citation_validity("10.1234/Kept.1") == "verified"
+    api.doi_cache.clear()
+    monkeypatch.setattr(api, "verify_doi_against_openalex", lambda d: calls.append(d) or None)
+    monkeypatch.setattr(api, "verify_doi_against_crossref", lambda d: None)
+    assert api.classify_citation_validity("10.1234/kept.1") == "verified"
+    assert len(calls) == 1
+    # "unverified" (no answer) is never kept
+    assert api.classify_citation_validity("10.1234/unknown") == "unverified"
+    assert api.stored_doi_verdict("10.1234/unknown") is None
+
+
 # --------------------------------------------------------------------------
 # Canary
 # --------------------------------------------------------------------------
