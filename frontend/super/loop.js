@@ -79,7 +79,7 @@
     // the superellipse look starts zoomed out: the site a small super in the middle of the main one
     // the superellipse look starts zoomed out, the inner super small in the middle of the main one (owner, 2026-10-12:
     // "make this the initial state"); a scroll out goes further, a scroll in comes up to 100 %
-    const START_ZOOM = window.innerWidth < 700 ? 0.6 : 0.4;            // a phone a little closer: its screen is small
+    const START_ZOOM = window.innerWidth < 700 ? 0.6 : 0.62;            // a phone a little closer: its screen is small
     let zoom = Math.max(0.25, Math.min(3, +load("orbit:zoom") || (document.documentElement.classList.contains("shape-se") ? START_ZOOM : 1))), zoomT;
     let zoomTo = null;
     // the main super's own zoom (owner, 2026-10-12: "if the main super is selected and locked, the second super gets

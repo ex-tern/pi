@@ -1,55 +1,54 @@
-// super/pack.js: the start packs its supers close together (owner, 2026-10-13: "make the supers very close to each
-// other"). The program's at.inSite places them for a usual screen; the bubbles' size follows the screen's shape, so on
-// a first visit (or after a reset) this measures it and sets Connect, the third super with Tools, Explore and Library
-// along its top and Lab and the project under them, GAP layout px apart, the third super wrapped close round its
-// members, the whole group in the middle of the second super. Once; after that, wherever you move them.
+// super/pack.js: lays out the start (owner, 2026-10-13: "set initial state of the app as this image"). The program's
+// at.inSite places the supers roughly; once the second super has stopped moving this sets them exactly, in shares of
+// the second super, so the start lands the same on every screen shape: Connect a square in its top-left corner, the
+// third super beside it holding Tools, Explore, Lab and Library as four small squares, the project a wide box under
+// them. On every load until you first press, scroll or wire on a super (se:touched); after that, wherever you move them.
 (function () {
   "use strict";
   const html = document.documentElement;
-  const GAP = 4, PAD = 5, KEY = "se:touched";
+  const KEY = "se:touched";
   const done = () => { try { return localStorage.getItem(KEY) === "1"; } catch (_) { return true; } };
   // the first press, scroll or wire on a super makes the arrangement yours
   const touch = e => { if (done() || !e.isTrusted) return; const t = e.target; if (t && t.closest && t.closest(".orbit-bubble, .lv-node, .se-project, .orbit-panel, .se-port, .wire-hit, .sl-layer, .orbit-title")) { try { localStorage.setItem(KEY, "1"); } catch (_) { /* private mode */ } } };
   document.addEventListener("pointerdown", touch, true);
   document.addEventListener("wheel", touch, { capture: true, passive: true });
   const O = () => window.PiOrbit || {};
+  // the start (owner, 2026-10-13: "set initial state of the app as this image"), in shares of the second super (x of
+  // its width, y of its height): Connect a square in its top-left corner, the third super beside it holding Tools,
+  // Explore, Lab and Library as four small squares two by two, the project a wide box under them
+  const START = { connect: [0, 0.064, 0.165],                         // left, top, side (a share of the width)
+    hold: [0.168, 0.069, 0.387, 0.376],                                // left, top, right, bottom
+    tiny: 0.0155, cols: [0.278, 0.346], rows: [0.155, 0.291],          // the four members: side, centres
+    project: [0.099, 0.381, 0.406, 0.551] };
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
-    const sb = O().siteBox && O().siteBox(), f = (O().fit && O().fit().f) || 1, F = O().fit ? O().fit() : null;
+    const sb = O().siteBox && O().siteBox(), F = O().fit ? O().fit() : null;
     const q = s => document.querySelector(s);
     const B = { connect: q('.orbit-bubble[data-key^="connect:"]'), tools: q('.orbit-bubble[data-key="assess:Tools group"]'), explore: q('.orbit-bubble[data-key^="explore:"]'),
       lib: q('.orbit-bubble[data-key^="lib:"]'), lab: q('.orbit-bubble[data-key^="lab:Lab"]') };
     const hold = q('.lv-node[data-id="hold"]'), proj = q(".se-project");
-    if (!sb || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || Object.values(B).some(b => !b || !b.classList.contains("is-compact"))) return false;
-    // every bubble at the one compact size (sizes super/bind.js gave members while the window changed are dropped),
-    // and bind.js measures their places afresh once they have glided there
+    if (!sb || !sb.a || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || Object.values(B).some(b => !b || !b.classList.contains("is-compact"))) return false;
     if (window.SeBind && window.SeBind.settle) window.SeBind.settle();
-    Object.values(B).forEach(b => { if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); } try { localStorage.removeItem("se:size:" + b.dataset.key); } catch (_) { /* private mode */ } });
-    const S = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || B.connect.offsetWidth;   // a compact bubble's side, in layout px
-    if (!(S > 20)) return false;
-    // the third super's room is what super/bind.js keeps its members in (bind.js inner): a padding of 3.5 % of its
-    // smaller side plus up to 4 px on screen, and a top strip for its lock and name of 6.5 % of its height, at most
-    // 46 px; packed any closer, bind.js would squeeze the members together to keep them in
-    let W = 3 * S + 2 * GAP + 2 * PAD, H = 2 * S + GAP + 2 * PAD, P = PAD, T = PAD;
-    for (let it = 0; it < 8; it++) {
-      P = 0.035 * Math.min(W, H) + Math.min(4 / f, 0.02 * W) + 1;
-      T = Math.max(P, Math.min(46, 0.065 * H)) + 1;
-      W = 3 * S + 2 * GAP + 2 * P; H = T + 2 * S + GAP + P;
-    }
-    const total = S + GAP + W;
-    const x0 = sb.cx - total / 2, y0 = sb.cy - H / 2;                  // the group in the middle of the second super
-    const hx = x0 + S + GAP;
-    window.LabView.setRect(hold, hx, y0, W, H);
-    // the rest from where the third super really is on screen now (a layout-to-screen mapping can be stale just after
-    // the window changed size), in screen px
-    const hr = hold.getBoundingClientRect(), k = hr.width / W, s = S * k, g = GAP * k, p = P * k, tt = T * k;
-    const r1 = hr.top + tt + s / 2, r2 = r1 + s + g, c = i => hr.left + p + s / 2 + i * (s + g);
-    const put = (b, x, y) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, x, y);
-    put(B.connect, hr.left - g - s / 2, r1);
-    put(B.tools, c(0), r1); put(B.explore, c(1), r1); put(B.lib, c(2), r1); put(B.lab, c(1), r2);
-    if (window.SeProject.resize) window.SeProject.resize(S, S);         // the project at the bubbles' size too
+    // layout px from shares; the second super is 2a by 2b layout px about (cx, cy)
+    const W2 = 2 * sb.a, H2 = 2 * sb.b, X = s => sb.cx - sb.a + s * W2, Y = s => sb.cy - sb.b + s * H2;
+    const f = F.f || 1, sx = l => F.px + (l - F.px) * f, sy = l => F.py + (l - F.py) * f;   // layout to screen
+    const size = (b, side) => {
+      const v = Math.max(10, Math.round(side));
+      b.style.width = v + "px"; b.style.height = v + "px"; b.classList.add("se-sized");
+      try { localStorage.setItem("se:size:" + b.dataset.key, JSON.stringify({ w: v, h: v })); } catch (_) { /* private mode */ }
+    };
+    const h = START.hold;
+    window.LabView.setRect(hold, X(h[0]), Y(h[1]), (h[2] - h[0]) * W2, (h[3] - h[1]) * H2);
+    const c = START.connect, cs = c[2] * W2;
+    size(B.connect, cs);
+    const put = (b, lx, ly) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx), sy(ly));
+    put(B.connect, X(c[0]) + cs / 2, Y(c[1]) + cs / 2);
+    const t = START.tiny * W2;
+    [[B.tools, 0, 0], [B.explore, 1, 0], [B.lab, 0, 1], [B.lib, 1, 1]].forEach(([b, i, j]) => { size(b, t); put(b, X(START.cols[i]), Y(START.rows[j])); });
+    const pj = START.project, pw = (pj[2] - pj[0]) * W2, ph = (pj[3] - pj[1]) * H2;
+    if (window.SeProject.resize) window.SeProject.resize(pw, ph);
     const pr = proj.getBoundingClientRect();
-    window.SeProject.moveBy(c(2) - s / 2 - pr.left, r2 - s / 2 - pr.top);
+    window.SeProject.moveBy(sx(X(pj[0])) - pr.left, sy(Y(pj[1])) - pr.top);
     return true;
   }
   // as soon as the layout is there, before the page fades in (super/boot.js waits for it to settle)
