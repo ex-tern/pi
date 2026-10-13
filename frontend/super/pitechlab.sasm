@@ -51,15 +51,15 @@
 ⊕ diagram "Architecture" parts=Overview,"Scoring Pipeline in Detail","Stage Reference","CoARA Compliance & Core Pillars"
 
 ; the bubbles and where they start: packed close together, about 5 px apart (owner, 2026-10-13: "make the supers very close to each other")
-◯ "Lab" source=lab at.fx=0.094 at.fy=0.168 at.inSite=0.278,0.291 atPhone.inSite=0.73,0.56
-◯ "Tools" members="Assess Manuscripts [Pi]", at.fx=-0.073 at.fy=-0.19 at.inSite=0.278,0.155 atPhone.inSite=0.27,0.34
-◯ "Library" key=lib members=RiBD,"The Global Map of Science",Whitepaper,Architecture,Capabilities at.fx=0.333 at.fy=-0.19 at.inSite=0.346,0.291 atPhone.inSite=0.27,0.56
-◯ "Explore" key=explore members=Live,"The journal",Leaderboards,"Proof-of-Research Ledger Explorer","Recent assessments",Analytics,Performance,"Minting Difficulty" at.fx=0.151 at.fy=-0.19 at.inSite=0.346,0.155 atPhone.inSite=0.73,0.34
-◯ "Connect" key=connect at.fx=-0.375 at.fy=-0.223 at.inSite=0.083,0.220 atPhone.inSite=0.5,0.17 members="Your account","Your assessments","Research profile","piQ held for you","Assessment results","Reset platform","Why sign in","Invite a researcher","Support Pi","Contact us",GitHub
+◯ "Lab" source=lab at.fx=0.094 at.fy=0.168 at.inSite=0.582,0.680 atPhone.inSite=0.73,0.56
+◯ "Tools" members="Assess Manuscripts [Pi]", at.fx=-0.073 at.fy=-0.19 at.inSite=0.414,0.372 atPhone.inSite=0.27,0.34
+◯ "Library" key=lib members=RiBD,"The Global Map of Science",Whitepaper,Architecture,Capabilities at.fx=0.333 at.fy=-0.19 at.inSite=0.750,0.372 atPhone.inSite=0.27,0.56
+◯ "Explore" key=explore members=Live,"The journal",Leaderboards,"Proof-of-Research Ledger Explorer","Recent assessments",Analytics,Performance,"Minting Difficulty" at.fx=0.151 at.fy=-0.19 at.inSite=0.582,0.372 atPhone.inSite=0.73,0.34
+◯ "Connect" key=connect at.fx=-0.375 at.fy=-0.223 at.inSite=0.240,0.372 atPhone.inSite=0.5,0.17 members="Your account","Your assessments","Research profile","piQ held for you","Assessment results","Reset platform","Why sign in","Invite a researcher","Support Pi","Contact us",GitHub
 
 ; the start: the supers and wires a first visit begins with
 diagram
-  ▣ hold box desktop n=1000 at.inSite=0.168,0.069,0.387,0.376
+  ▣ hold box desktop n=1000 at.inSite=0.326,0.159,0.838,0.841
   ⟶ main△ site△
   ⟶ title▷ site△
   ⟶ site▽ main▽
@@ -75,10 +75,10 @@ diagram
   ⟶ bubble:Explore▷ bubble:Library◁
   ⟶ bubble:Lab▷ project◁
   ⟶ bubble:Explore▽ bubble:Lab△
-  ⟶ site△ project△
+  ⟶ bubble:Library▽ project△
 end
 
-.projectAt inSite=0.253,0.466
+.projectAt inSite=0.668,0.530
 .live source=/api/live every=30 status=liveStatus counts=liveCounts ago=ago inside=Explore
 
 graph percent

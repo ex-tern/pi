@@ -372,6 +372,8 @@ const KINDS = [
   { sel: ".lv-node", fill: 0.45, order: 14, shadow: 0.6 },
   { sel: ".orbit-title .se-titlesuper", fill: 0.45, order: 15, shadow: 0.6 },
   { sel: ".lv-palette", fill: 0.45, order: 15, shadow: 0.6 },
+  // the main canvas's controls and conditions are supers too (owner, 2026-10-13: "the buttons are super as well")
+  { sel: ".se-ctlbar:not([hidden]) .se-ctl, .se-ctlbar:not([hidden]) .se-cond", fill: 0.55, order: 40, shadow: 0.45, keep: true },
   // what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it"):
   // its name box and its window pills are glass panes, drawn above their bubble
   { sel: ".orbit-bubble.is-group:not(.is-compact):not(.is-growing) > .ob-label, .orbit-bubble.is-group:not(.is-compact):not(.is-growing) .ob-member", fill: 0.6, order: 10, shadow: 0.35, inner: true },
@@ -418,7 +420,7 @@ function drawPanes() {
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       // at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"): under about 30 px its
       // shape glides to the port sparkles' astroid
-      const side = Math.min(r.width, r.height), sp = Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
+      const side = Math.min(r.width, r.height), sp = K.keep ? 0 : Math.max(0, Math.min(1, (30 - side) / 16)), nn = nOf(el);
       setPane(key, cx, cy, a, b, sp > 0 ? nn + (0.62 - nn) * sp * sp * (3 - 2 * sp) : nn,
         { fill: holder ? 0.26 * op : K.fill * op, edge, edgeW: Math.max(1, bw || (K.inner ? 1.2 : 1.5)), shadow: (holder ? 1 : K.shadow) * op, sheen: sel || hov, order: (holder ? 3 : K.order) + 20 * (K.inner ? depthOf(el.closest(".orbit-bubble")) + 1 : depthOf(el)) + (K.inner ? 1 : 0) });   // above the super it lies in   // a holder (the third super) is glass too, under what it holds
       if (panes.has(key)) all.push({ m: panes.get(key), cx, cy, a, b, holder, inner: !!K.inner, h: heightOf(el, K.order), i: all.length });

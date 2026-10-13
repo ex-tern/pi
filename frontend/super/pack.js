@@ -1,8 +1,8 @@
-// super/pack.js: lays out the start (owner, 2026-10-13: "set initial state of the app as this image"). The program's
+// super/pack.js: lays out the start (owner, 2026-10-13: "the initial state of app is this picture"). The program's
 // at.inSite places the supers roughly; once the second super has stopped moving this sets them exactly, in shares of
-// the second super, so the start lands the same on every screen shape: Connect a square in its top-left corner, the
-// third super beside it holding Tools, Explore, Lab and Library as four small squares, the project a wide box under
-// them. On every load until you first press, scroll or wire on a super (se:touched); after that, wherever you move them.
+// the second super's middle, so the start lands the same on every screen shape: Connect on the left, the third super
+// beside it holding Tools, Explore and Library along its top and Lab and the project under Explore and Library, every
+// one the same square. On every load until you first press, scroll or wire on a super (se:touched); after that, wherever you move them.
 (function () {
   "use strict";
   const html = document.documentElement;
@@ -13,13 +13,11 @@
   document.addEventListener("pointerdown", touch, true);
   document.addEventListener("wheel", touch, { capture: true, passive: true });
   const O = () => window.PiOrbit || {};
-  // the start (owner, 2026-10-13: "set initial state of the app as this image"), in shares of the second super (x of
-  // its width, y of its height): Connect a square in its top-left corner, the third super beside it holding Tools,
-  // Explore, Lab and Library as four small squares two by two, the project a wide box under them
-  const START = { connect: [0, 0.064, 0.165],                         // left, top, side (a share of the width)
-    hold: [0.168, 0.069, 0.387, 0.376],                                // left, top, right, bottom
-    tiny: 0.0155, cols: [0.278, 0.346], rows: [0.155, 0.291],          // the four members: side, centres
-    project: [0.099, 0.381, 0.406, 0.551] };
+  // the start (owner, 2026-10-13: "the initial state of app is this picture"): every bubble and the project one square
+  // size; Connect on the left; beside it the third super holding Tools, Explore and Library along its top and Lab and
+  // the project under Explore and Library (the empty corner under Tools left free); all in proportion to the square's
+  // side S, measured from the owner's picture: GAP between squares, PAD inside the third super, TOP its lock strip
+  const GAP = 0.027, PAD = 0.125, TOP = 0.15;
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
     const sb = O().siteBox && O().siteBox(), F = O().fit ? O().fit() : null;
@@ -29,26 +27,26 @@
     const hold = q('.lv-node[data-id="hold"]'), proj = q(".se-project");
     if (!sb || !sb.a || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || Object.values(B).some(b => !b || !b.classList.contains("is-compact"))) return false;
     if (window.SeBind && window.SeBind.settle) window.SeBind.settle();
-    // layout px from shares; the second super is 2a by 2b layout px about (cx, cy)
-    const W2 = 2 * sb.a, H2 = 2 * sb.b, X = s => sb.cx - sb.a + s * W2, Y = s => sb.cy - sb.b + s * H2;
+    // every bubble at the one compact size (sizes set before are dropped)
+    Object.values(B).forEach(b => { if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); } try { localStorage.removeItem("se:size:" + b.dataset.key); } catch (_) { /* private mode */ } });
+    let S = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || B.connect.offsetWidth;   // a compact bubble's side, in layout px
+    if (!(S > 20)) return false;
+    // the whole group fits the second super with a margin
+    const fitS = Math.min(1.9 * sb.a / (4 + 3 * GAP + 2 * PAD), 1.9 * sb.b / (2 + GAP + TOP + PAD));
+    if (S > fitS) S = fitS;
+    const g = GAP * S, P = PAD * S, T = TOP * S;
+    const W = 3 * S + 2 * g + 2 * P, H = T + 2 * S + g + P, total = S + g + W;
+    const x0 = sb.cx - total / 2, y0 = sb.cy - H / 2, hx = x0 + S + g;
+    window.LabView.setRect(hold, hx, y0, W, H);
     const f = F.f || 1, sx = l => F.px + (l - F.px) * f, sy = l => F.py + (l - F.py) * f;   // layout to screen
-    const size = (b, side) => {
-      const v = Math.max(10, Math.round(side));
-      b.style.width = v + "px"; b.style.height = v + "px"; b.classList.add("se-sized");
-      try { localStorage.setItem("se:size:" + b.dataset.key, JSON.stringify({ w: v, h: v })); } catch (_) { /* private mode */ }
-    };
-    const h = START.hold;
-    window.LabView.setRect(hold, X(h[0]), Y(h[1]), (h[2] - h[0]) * W2, (h[3] - h[1]) * H2);
-    const c = START.connect, cs = c[2] * W2;
-    size(B.connect, cs);
-    const put = (b, lx, ly) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx), sy(ly));
-    put(B.connect, X(c[0]) + cs / 2, Y(c[1]) + cs / 2);
-    const t = START.tiny * W2;
-    [[B.tools, 0, 0], [B.explore, 1, 0], [B.lab, 0, 1], [B.lib, 1, 1]].forEach(([b, i, j]) => { size(b, t); put(b, X(START.cols[i]), Y(START.rows[j])); });
-    const pj = START.project, pw = (pj[2] - pj[0]) * W2, ph = (pj[3] - pj[1]) * H2;
-    if (window.SeProject.resize) window.SeProject.resize(pw, ph);
+    const size = b => { if (Math.abs(b.offsetWidth - S) > 1) { const v = Math.round(S); b.style.width = v + "px"; b.style.height = v + "px"; b.classList.add("se-sized"); try { localStorage.setItem("se:size:" + b.dataset.key, JSON.stringify({ w: v, h: v })); } catch (_) { /* private mode */ } } };
+    const put = (b, lx, ly) => { size(b); (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx + S / 2), sy(ly + S / 2)); };
+    const r1 = y0 + T, r2 = r1 + S + g, c = i => hx + P + i * (S + g);
+    put(B.connect, x0, r1);
+    put(B.tools, c(0), r1); put(B.explore, c(1), r1); put(B.lib, c(2), r1); put(B.lab, c(1), r2);
+    if (window.SeProject.resize) window.SeProject.resize(S, S);
     const pr = proj.getBoundingClientRect();
-    window.SeProject.moveBy(sx(X(pj[0])) - pr.left, sy(Y(pj[1])) - pr.top);
+    window.SeProject.moveBy(sx(c(2)) - pr.left, sy(r2) - pr.top);
     return true;
   }
   // as soon as the layout is there, before the page fades in (super/boot.js waits for it to settle)

@@ -98,8 +98,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.094,
     "fy": 0.168,
     "inSite": [
-     0.278,
-     0.291
+     0.582,
+     0.68
     ]
    },
    "atPhone": {
@@ -118,8 +118,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.073,
     "fy": -0.19,
     "inSite": [
-     0.278,
-     0.155
+     0.414,
+     0.372
     ]
    },
    "atPhone": {
@@ -143,8 +143,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.333,
     "fy": -0.19,
     "inSite": [
-     0.346,
-     0.291
+     0.75,
+     0.372
     ]
    },
    "atPhone": {
@@ -171,8 +171,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.151,
     "fy": -0.19,
     "inSite": [
-     0.346,
-     0.155
+     0.582,
+     0.372
     ]
    },
    "atPhone": {
@@ -189,8 +189,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.375,
     "fy": -0.223,
     "inSite": [
-     0.083,
-     0.22
+     0.24,
+     0.372
     ]
    },
    "atPhone": {
@@ -224,10 +224,10 @@ window.SUPERAI_PROGRAM = {
     "n": 1000,
     "at": {
      "inSite": [
-      0.168,
-      0.069,
-      0.387,
-      0.376
+      0.326,
+      0.159,
+      0.838,
+      0.841
      ]
     }
    }
@@ -294,15 +294,15 @@ window.SUPERAI_PROGRAM = {
     "bubble:Lab.sync"
    ],
    [
-    "site.sync",
+    "bubble:Library.condition",
     "project.sync"
    ]
   ]
  },
  "projectAt": {
   "inSite": [
-   0.253,
-   0.466
+   0.668,
+   0.53
   ]
  },
  "live": {

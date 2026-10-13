@@ -1,184 +1,235 @@
-// super/controls.js: the main canvas's controls and conditions (owner, 2026-10-13: "the top of the canvas have controls
-// like stop, run, play, repeat, next, previous, and the bottom has conditions like time, when, how, then, if"; "controls
-// and conditions are only in the main canvas"). They sit on the main super's top edge, either side of its sync port,
-// and on its bottom edge, either side of its condition port: control comes in at the top and conditions at the bottom,
-// as every super's sync and condition ports do (data goes in at the left and out at the right).
+// super/controls.js: the main canvas's controls and conditions (owner, 2026-10-13: "the control buttons at the top are
+// save, lock, open, stop, and the condition buttons at the bottom are if, then, plus, minus, multiply, divide, timer";
+// "controls and conditions are only in the main canvas"; "delete these icons from the super and put these icons on the
+// control. Everything should be iconized, both controls and condition"). They sit on the main super's top edge, either
+// side of its sync port, and on its bottom edge, either side of its condition port: control comes in at the top and
+// conditions at the bottom, as every super's sync and condition ports do (data goes in at the left, out at the right).
+// Every button is an icon (its name is its tooltip and its accessible name); the padlock and the disk are the ones the
+// supers carried, and they show the state of what they act on (closed padlock: locked; filled disk: saved).
 //
-// The controls act on the selected super (the main or second super selected: on every Super AI super):
-//   previous / next   select the super before or after it, in reading order
-//   stop              stop it: a Super AI super stops asking, a window closes, a bubble or the project compacts;
-//                     repeat and play stop too
-//   run               run it once: a Super AI super asks (or computes), a bubble opens, a pill opens its window,
-//                     the project opens
-//   play              run every Super AI super in turn, from the first, `time` apart
-//   repeat            run it again every `time` (on until pressed again or stopped)
-// The conditions (a click on one types its value; Enter keeps it, empty clears it) shape every run:
-//   time   how long between repeats and plays: 10, 10s, 2m (default 10 s)
-//   when   when to run by itself: "changes" (whenever its value changes), "start" (on load), or a clock time 09:30
-//   how    which engines answer: llama, mistral… (several by commas or spaces); empty: all of them
-//   then   what follows a run: "next" (the next super runs), "stop", or words such as "open explore"
-//   if     run only if its value passes: > 5, < 3, = yes, or a word it must contain
-// Kept as se:cond (the conditions) in the visitor's browser.
+// Every button is a super too, with four ports (owner: "the buttons are super as well for wiring"; super/site.js owners
+// ctl:<name> and cond:<name>, drawn by the engine). The controls act on the supers they are wired to, else on the
+// selected super (with the main or second super selected: on every Super AI super for open and stop):
+//   save   saves it (a saved super is never deleted), or unsaves it when it is saved
+//   lock   locks it (it keeps its place, size and n), or unlocks it
+//   open   opens it: a bubble or the project grows open, a pill opens its window, a Super AI super asks (words typed
+//          into a plain super make it one), a held window comes back
+//   stop   stops it: asking stops, a window closes, a bubble or the project compacts; the timer stops too
+// The conditions (a click on one types its value; Enter keeps it, empty clears it; kept as se:cond):
+//   if      open goes ahead only if the value passes: > 5, < 3, = yes, or a word it must contain; wired from a super,
+//           that super's value is tested (wired alone, it must say something true)
+//   then    what follows an open: "stop", words such as "open explore", or (wired) the supers it is wired to open
+//   + − × ÷ compute: every super wired into it (by any port but its output) and the number typed into it, in order;
+//           the result shows on it and is its output's value, so it can be wired on into any super
+//   timer   every so many seconds (10, 10s, 2m) the supers it is wired to open, else the super selected when it was
+//           set; it counts down on itself; empty or stop ends it
 (function () {
   "use strict";
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {}, LV = () => window.LabView || {}, SS = () => window.SeSelect || {};
-  const SVG = d => '<svg viewBox="0 0 16 16" aria-hidden="true">' + d + "</svg>";
+  const SVG = (d, vb) => '<svg viewBox="' + (vb || "0 0 16 16") + '" aria-hidden="true">' + d + "</svg>";
+  const SHACKLE = { closed: "M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5", open: "M8.5,5.5 V4 a2.5,2.5 0 0 0 -5,0 V1.4" };   // super/lock.js's padlock
   const ICON = {
-    previous: SVG('<path d="M4 3v10" stroke-width="1.6"/><path class="f" d="M13 3.5v9L6 8z"/>'),
+    save: SVG('<path class="sv-body" d="M2,1.5 H8.6 L10.5,3.4 V10.5 H2 Z"/><path class="sv-label" d="M3.6,1.5 V4 H7.6 V1.5"/><rect class="sv-slot" x="3.6" y="6.6" width="5.3" height="3.9" rx="0.6"/>', "0 0 12 12"),
+    lock: SVG('<path class="lk-shackle" d="' + SHACKLE.open + '"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/>', "0 0 12 12"),
+    open: SVG('<path d="M7 3H3v10h10V9" stroke-width="1.5"/><path d="M9 2.6h4.4V7M13.2 2.8L7.6 8.4" stroke-width="1.6"/>'),
     stop: SVG('<rect class="f" x="3.5" y="3.5" width="9" height="9"/>'),
-    run: SVG('<path class="f" d="M4.5 3v10L13 8z"/>'),
-    play: SVG('<path class="f" d="M2 3.5v9L8 8z"/><path class="f" d="M8 3.5v9L14 8z"/>'),
-    repeat: SVG('<path d="M12.6 6.2A5 5 0 1 0 13 9.6" stroke-width="1.6"/><path class="f" d="M14.2 2.6v4.6H9.6z"/>'),
-    next: SVG('<path class="f" d="M3 3.5v9L10 8z"/><path d="M12 3v10" stroke-width="1.6"/>'),
+    if: SVG('<path d="M8 1.8L14.2 8 8 14.2 1.8 8z" stroke-width="1.5"/><path d="M6.3 6.4a1.8 1.8 0 1 1 2.5 1.6c-.5.3-.8.6-.8 1.2" stroke-width="1.3"/><circle class="f" cx="8" cy="11" r=".8"/>'),
+    then: SVG('<path d="M2 8h10.5" stroke-width="1.6"/><path d="M9 4.2L12.8 8 9 11.8" stroke-width="1.6"/>'),
+    plus: SVG('<path d="M8 3v10M3 8h10" stroke-width="1.8"/>'),
+    minus: SVG('<path d="M3 8h10" stroke-width="1.8"/>'),
+    multiply: SVG('<path d="M4.2 4.2l7.6 7.6M11.8 4.2l-7.6 7.6" stroke-width="1.8"/>'),
+    divide: SVG('<path d="M3 8h10" stroke-width="1.7"/><circle class="f" cx="8" cy="4.3" r="1.25"/><circle class="f" cx="8" cy="11.7" r="1.25"/>'),
+    timer: SVG('<circle cx="8" cy="9" r="5.3" stroke-width="1.5"/><path d="M8 9V6.2M6.4 1.8h3.2M12.3 4.3l1-1" stroke-width="1.5"/>'),
   };
-  const CONTROLS = ["previous", "stop", "run", "play", "repeat", "next"];
-  const CONDS = ["time", "when", "how", "then", "if"];
-  const HINT = { time: "10s", when: "changes", how: "llama", then: "next", if: "> 5" };
-  let top, bottom, cond = {}, repT = 0, playT = 0, playing = false, repeating = false, whenT = 0, lastVal = new Map(), clockDone = "";
+  const CONTROLS = ["save", "lock", "open", "stop"];
+  const CONDS = ["if", "then", "plus", "minus", "multiply", "divide", "timer"];
+  const HINT = { if: "> 5", then: "stop", plus: "0", minus: "0", multiply: "1", divide: "1", timer: "10s" };
+  const OPS = { plus: (a, b) => a + b, minus: (a, b) => a - b, multiply: (a, b) => a * b, divide: (a, b) => b === 0 ? NaN : a / b };
+  let top, bottom, cond = {};
   try { cond = JSON.parse(localStorage.getItem("se:cond") || "{}") || {}; } catch (_) { cond = {}; }
+  ["time", "when", "how"].forEach(k => delete cond[k]);                 // conditions there are no longer
   const save = () => { try { localStorage.setItem("se:cond", JSON.stringify(cond)); } catch (_) { /* private mode */ } };
-  const say = t => { const o = document.querySelector(".lv-out"); if (o) o.textContent = t; flash(t); };
   let noteEl, noteT = 0;
+  const say = t => { const o = document.querySelector(".lv-out"); if (o) o.textContent = t; flash(t); };
   function flash(t) {
     if (!noteEl) { noteEl = document.createElement("div"); noteEl.className = "se-ctl-note"; noteEl.setAttribute("aria-hidden", "true"); document.body.appendChild(noteEl); }
     noteEl.textContent = t; noteEl.classList.add("is-on"); clearTimeout(noteT); noteT = setTimeout(() => noteEl.classList.remove("is-on"), 2200);
     if (bottom) { const r = bottom.getBoundingClientRect(); noteEl.style.left = (window.innerWidth / 2) + "px"; noteEl.style.top = (r.top - 30) + "px"; }
   }
 
-  // ---- what the controls act on ------------------------------------------------------------------
-  const SUPERS = ".orbit-title .se-titlesuper, .orbit-bubble[data-key]:not([hidden]), .orbit-panel:not(.leaving), .se-project, .lv-node[data-id]";
+  // ---- the supers ----------------------------------------------------------------------------------
   const shown = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && el.getClientRects().length; };
-  function order() {                                                     // every super on the page, in reading order
-    const all = [...document.querySelectorAll(SUPERS)].filter(shown).map(el => ({ el, r: el.getBoundingClientRect() }));
-    const row = Math.max(24, window.innerHeight * 0.04);
-    all.sort((a, b) => Math.abs(a.r.top - b.r.top) > row ? a.r.top - b.r.top : a.r.left - b.r.left);
-    return all.map(x => x.el);
-  }
-  const engines = () => order().filter(el => el.classList.contains("lv-node") && LV().isEngine && LV().isEngine(el));
-  const target = () => { const s = SS().selected ? SS().selected() : ""; return s && typeof s !== "string" ? s : null; };   // an element, or null for the main and second supers
-  const nameOf = el => !el ? "every super" : el.classList.contains("orbit-panel") ? "the window" : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim() : el.classList.contains("se-project") ? "the project" : el.classList.contains("lv-node") ? "the super" : el.classList.contains("ob-member") ? (el.textContent || "the pill").trim().slice(0, 30) : "the title";
+  const engines = () => [...document.querySelectorAll(".lv-node[data-id]")].filter(el => shown(el) && LV().isEngine && LV().isEngine(el));
+  const target = () => { const s = SS().selected ? SS().selected() : ""; return s && typeof s !== "string" ? s : null; };
+  const nameOf = el => !el ? "every super" : el.classList.contains("orbit-panel") ? "the window" : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim() : el.classList.contains("se-project") ? "the project" : el.classList.contains("lv-node") ? "the super" : el.classList.contains("ob-member") ? (el.textContent || "the pill").trim().slice(0, 30) : el.classList.contains("se-ctl") || el.classList.contains("se-cond") ? (el.dataset.ctl || el.dataset.cond) : "the title";
   function valueOf(el) {
     if (!el) return "";
+    if (el.classList.contains("se-cond")) return condValue(el.dataset.cond);
     if (el.classList.contains("lv-node")) return LV().valueOf ? LV().valueOf(el) : el.textContent || "";
     return (el.textContent || "").replace(/\s+/g, " ").trim().slice(0, 400);
   }
+  const numOf = v => { const m = String(v == null ? "" : v).replace(",", ".").match(/-?\d+(\.\d+)?(e[-+]?\d+)?/i); return m ? parseFloat(m[0]) : NaN; };
 
-  // ---- the conditions ------------------------------------------------------------------------------
-  function seconds() {
-    const m = /^\s*([\d.]+)\s*(ms|s|sec|m|min|h)?\s*$/i.exec(cond.time || "");
-    if (!m) return 10;
-    const v = +m[1], u = (m[2] || "s").toLowerCase();
-    return Math.max(0.5, Math.min(86400, u === "ms" ? v / 1000 : u[0] === "m" && u !== "ms" ? v * 60 : u === "h" ? v * 3600 : v));
+  // ---- what a button is wired to -------------------------------------------------------------------
+  function elOfAnchor(h) {
+    if (!h) return null;
+    let m;
+    if ((m = /^port:([^/]+)\//.exec(h))) {
+      const o = m[1];
+      if (o === "main" || o === "site") return "all";
+      if (o.startsWith("ctl:")) return document.querySelector('.se-ctl[data-ctl="' + CSS.escape(o.slice(4)) + '"]');
+      if (o.startsWith("cond:")) return document.querySelector('.se-cond[data-cond="' + CSS.escape(o.slice(5)) + '"]');
+      if (o.startsWith("pill:")) return document.querySelector('.ob-member[data-key="' + CSS.escape(o.slice(5)) + '"]');
+      return window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(o) : null;
+    }
+    if (/^(input|output|sync|condition)$/.test(h.replace(/^port:/, ""))) return "all";
+    if (h.startsWith("node:")) return document.querySelector('.lv-node[data-id="' + CSS.escape(h.slice(5)) + '"]');
+    if (h.startsWith("k:")) return [...document.querySelectorAll('[data-key="' + CSS.escape(h.slice(2)) + '"]')].find(e => e.getClientRects().length) || null;
+    if (h === "project") return document.querySelector(".se-project");
+    if (h === "title") return document.querySelector(".orbit-title .se-titlesuper");
+    if (h.startsWith("w:")) return [...document.querySelectorAll(".orbit-panel")].find(p => { const t = p.querySelector(".op-title"); return t && t.textContent === h.slice(2); }) || null;
+    return null;
   }
-  const how = () => { const v = (cond.how || "").trim(); return v ? v.split(/[\s,;]+/).filter(Boolean) : null; };
-  function passes(el) {                                                  // the "if" condition on its value
-    const c = (cond.if || "").trim(); if (!c) return true;
-    const v = valueOf(el), m = /^(>=|<=|!=|>|<|=)\s*(.+)$/.exec(c);
+  // the supers a button is wired to, with the port of the button the wire is at
+  function wires(owner) {
+    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], pre = "port:" + owner + "/";
+    const out = [];
+    L.forEach(l => {
+      const a = l.a && l.a.h, b = l.b && l.b.h;
+      const mineA = !!a && a.startsWith(pre), mineB = !!b && b.startsWith(pre); if (mineA === mineB) return;
+      const port = (mineA ? a : b).slice(pre.length), el = elOfAnchor(mineA ? b : a);
+      if (el && !out.some(x => x.el === el)) out.push({ el, port });
+    });
+    return out;
+  }
+  const wiredTo = owner => wires(owner).map(w => w.el);
+  const ins = k => wires("cond:" + k).filter(w => w.port !== "output" && w.el !== "all").map(w => w.el);   // what flows into a condition
+
+  // ---- the conditions -------------------------------------------------------------------------------
+  function condValue(k) {
+    if (OPS[k]) {                                                       // + − × ÷: the wired values, then the typed one
+      const vals = ins(k).map(el => numOf(valueOf(el))).filter(isFinite);
+      const own = numOf(cond[k]); if (isFinite(own)) vals.push(own);
+      if (!vals.length) return "";
+      const r = vals.reduce((a, b) => OPS[k](a, b));
+      return isFinite(r) ? String(Math.round(r * 1e9) / 1e9) : "undefined";
+    }
+    if (k === "timer") return timer.on ? String(Math.max(0, Math.ceil((timer.at - performance.now()) / 1000))) : "";
+    const w = ins(k)[0];
+    return w ? valueOf(w) : (cond[k] || "");
+  }
+  function passes(el) {                                                  // "if"
+    const w = ins("if")[0], c = (cond.if || "").trim();
+    if (w && !c) { const t = valueOf(w).trim().toLowerCase(); return !!t && t !== "0" && t !== "false" && t !== "no"; }
+    if (!c) return true;
+    const v = valueOf(w || el), m = /^(>=|<=|!=|>|<|=)\s*(.+)$/.exec(c);
     if (m) {
-      const a = parseFloat(String(v).replace(/[^\d.eE+-]/g, " ").trim().split(/\s+/)[0]), b = parseFloat(m[2]), num = isFinite(a) && isFinite(b);
-      const x = num ? a : v.trim().toLowerCase(), y = num ? b : m[2].trim().toLowerCase();
+      const a = numOf(v), b = numOf(m[2]), num = isFinite(a) && isFinite(b);
+      const x = num ? a : String(v).trim().toLowerCase(), y = num ? b : m[2].trim().toLowerCase();
       return m[1] === ">" ? x > y : m[1] === "<" ? x < y : m[1] === ">=" ? x >= y : m[1] === "<=" ? x <= y : m[1] === "!=" ? x !== y : x === y;
     }
-    return v.toLowerCase().includes(c.toLowerCase());
+    return String(v).toLowerCase().includes(c.toLowerCase());
   }
-  function after(el) {                                                   // the "then" condition
-    const t = (cond.then || "").trim().toLowerCase(); if (!t) return;
-    if (t === "next") { setTimeout(() => { step(1); runOne(target()); }, 600); return; }
-    if (t === "stop") { stopAll(); return; }
-    if (t === "previous") { setTimeout(() => { step(-1); runOne(target()); }, 600); return; }
-    if (LV().act && LV().act(cond.then)) return;
+  let thenBusy = false;
+  function after(el) {                                                   // "then"
+    if (thenBusy) return;
+    const tw = wires("cond:then").filter(w => w.port !== "input" && w.el !== el && w.el !== "all").map(w => w.el);
+    if (tw.length) { thenBusy = true; setTimeout(() => { tw.forEach(x => openOne(x, true)); thenBusy = false; say("then: opened " + tw.map(nameOf).join(", ")); }, 600); return; }
+    const t = (cond.then || "").trim(); if (!t) return;
+    if (t.toLowerCase() === "stop") { setTimeout(() => stopOne(el), 600); return; }
+    if (LV().act) LV().act(t);
+  }
+  // the timer
+  const timer = { on: false, at: 0, every: 10, who: null, t: 0 };
+  function seconds(v) {
+    const m = /^\s*([\d.]+)\s*(ms|s|sec|m|min|h)?\s*$/i.exec(v || "");
+    if (!m) return 0;
+    const n = +m[1], u = (m[2] || "s").toLowerCase();
+    return Math.max(0.5, Math.min(86400, u === "ms" ? n / 1000 : u === "m" || u === "min" ? n * 60 : u === "h" ? n * 3600 : n));
+  }
+  function setTimer() {
+    clearTimeout(timer.t); const s = seconds(cond.timer);
+    timer.on = s > 0; timer.every = s; timer.who = target(); timer.at = performance.now() + s * 1000;
+    if (timer.on) timer.t = setTimeout(fire, s * 1000);
+  }
+  function fire() {
+    if (!timer.on) return;
+    const w = wires("cond:timer").filter(x => x.port !== "input").map(x => x.el);
+    const list = w.length ? w : [timer.who && timer.who.isConnected ? timer.who : null];
+    list.forEach(x => openOne(x === "all" ? null : x, true));
+    timer.at = performance.now() + timer.every * 1000; timer.t = setTimeout(fire, timer.every * 1000);
   }
 
   // ---- the controls ---------------------------------------------------------------------------------
-  function runOne(el, quiet) {
-    if (!el) { const all = engines(); if (!all.length) { say("Nothing to run: double click to make a super, type into it, then run"); return false; } all.forEach(n => runOne(n, true)); say("Ran " + all.length + " super" + (all.length > 1 ? "s" : "")); return true; }
-    if (!passes(el)) { if (!quiet) say("if " + cond.if + ": not met, " + nameOf(el) + " does not run"); return false; }
+  function openOne(el, quiet) {
+    if (!el) { const all = engines(); if (!all.length) { if (!quiet) say("Nothing to open here: select a super first"); return false; } all.forEach(n => openOne(n, true)); if (!quiet) say("Opened " + all.length + " super" + (all.length > 1 ? "s" : "")); return true; }
+    if (!passes(el)) { if (!quiet) say("if " + (cond.if || "its wire") + ": not met, " + nameOf(el) + " does not open"); return false; }
     let ok = false;
     if (el.classList.contains("lv-node")) ok = !!(LV().run && LV().run(el));
     else if (el.classList.contains("orbit-bubble")) ok = !!(window.SeBubble && window.SeBubble.open(el, true) !== false);
     else if (el.classList.contains("ob-member")) { const k = el.dataset.key; if (k && O().openKey) { O().openKey(k); ok = true; } }
     else if (el.classList.contains("se-project")) { if (window.SeProject) { window.SeProject.open(); ok = true; } }
     else if (el.classList.contains("orbit-panel")) { el.classList.remove("se-held"); ok = true; }
-    if (!quiet) say(ok ? "Run: " + nameOf(el) : nameOf(el) + " cannot run (locked?)");
+    else if (el.classList.contains("se-ctl")) { press(el.dataset.ctl); ok = true; }
+    if (!quiet) say(ok ? "Opened " + nameOf(el) : nameOf(el) + " cannot open (locked?)");
     if (ok) after(el);
     return ok;
   }
   function stopOne(el) {
-    if (!el) return;
+    if (!el) { engines().forEach(n => LV().stop && LV().stop(n)); return; }
     if (el.classList.contains("lv-node")) { if (LV().stop) LV().stop(el); }
     else if (el.classList.contains("orbit-bubble")) { if (window.SeBubble && !el.classList.contains("is-compact")) window.SeBubble.open(el, false); }
-    else if (el.classList.contains("orbit-panel")) { const k = O().keyOf && O().keyOf(el) || (el.item && el.item.key); if (k && O().close) O().close(k); }
+    else if (el.classList.contains("orbit-panel")) { const k = (O().keyOf && O().keyOf(el)) || (el.item && el.item.key); if (k && O().close) O().close(k); }
     else if (el.classList.contains("se-project")) { if (window.SeProject) window.SeProject.close(); }
   }
-  function stopAll() {
-    clearTimeout(repT); clearTimeout(playT); repT = playT = 0; playing = repeating = false; mark();
-    const el = target();
-    if (el) stopOne(el); else engines().forEach(n => LV().stop && LV().stop(n));
-    say("Stopped " + nameOf(el));
+  // save and lock: the state of what they act on (the main and second supers lock through their own hosts)
+  const lockable = el => el === "all" ? (window.SeLock && window.SeLock.loop ? window.SeLock.loop("site") : null) : el;
+  const isLocked = el => { el = lockable(el); return !!(el && window.SeLock && window.SeLock.isLocked(el)); };
+  const isSaved = el => !!(el && el !== "all" && window.SeSave && window.SeSave.isSaved(el));
+  function toggle(k, el) {
+    el = k === "lock" ? lockable(el) : el; if (!el || el === "all") return null;
+    const A = k === "lock" ? window.SeLock : window.SeSave; if (!A) return null;
+    if (window.SeLock && !window.SeLock.nameOf(el)) return null;           // not a super that keeps a lock or a save
+    const now = k === "lock" ? A.isLocked(el) : A.isSaved(el);
+    A.set(el, !now);
+    return (k === "lock" ? (now ? "Unlocked " : "Locked ") : (now ? "Unsaved " : "Saved ")) + nameOf(el);
   }
-  function step(d) {
-    const all = order(); if (!all.length) return;
-    const cur = target(), i = cur ? all.indexOf(cur) : -1;
-    const next = all[((i < 0 ? (d > 0 ? -1 : 0) : i) + d + all.length) % all.length];
-    if (SS().select) SS().select(next);
-    say("Selected " + nameOf(next));
+  function selfWired(x, k) { return x && x.classList && x.classList.contains("se-ctl") && x.dataset.ctl === k; }
+  function targetsOf(k) {
+    const w = wiredTo("ctl:" + k).filter(x => !selfWired(x, k));
+    if (w.length) return w;
+    const s = SS().selected ? SS().selected() : "";
+    if (s && typeof s !== "string") return [s];
+    if (k === "lock" && s && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];   // the main or second super: its own lock
+    return [null];
   }
-  function play() {
-    if (playing) { playing = false; clearTimeout(playT); mark(); say("Play stopped"); return; }
-    const list = engines(); if (!list.length) { say("Nothing to play: no Super AI super has words yet"); return; }
-    playing = true; mark();
-    let i = 0;
-    const go = () => {
-      if (!playing) return;
-      if (i >= list.length) { playing = false; mark(); say("Played " + list.length); return; }
-      const el = list[i++]; if (SS().select) SS().select(el);
-      runOne(el, true); say("Playing " + i + " of " + list.length);
-      // the next one when this one has answered (or after `time`, whichever is later)
-      const t0 = performance.now(), wait = () => { if (!playing) return; const busy = LV().busy && LV().busy(el); if (busy && performance.now() - t0 < 120000) { playT = setTimeout(wait, 400); return; } playT = setTimeout(go, Math.max(0, seconds() * 1000 - (performance.now() - t0))); };
-      playT = setTimeout(wait, 400);
-    };
-    go();
-  }
-  function repeat() {
-    if (repeating) { repeating = false; clearTimeout(repT); mark(); say("Repeat off"); return; }
-    repeating = true; mark();
-    const el = target();
-    const go = () => { if (!repeating) return; if (el && !el.isConnected) { repeating = false; mark(); return; } runOne(el, true); repT = setTimeout(go, seconds() * 1000); };
-    say("Repeating " + nameOf(el) + " every " + seconds() + " s"); go();
-  }
-  const ACT = { previous: () => step(-1), next: () => step(1), stop: stopAll, run: () => runOne(target()), play, repeat };
-
-  // "when": watched once a second
-  function watch() {
-    const w = (cond.when || "").trim().toLowerCase();
-    if (!w || !on()) return;
-    const clock = /^(\d{1,2}):(\d{2})$/.exec(w);
-    if (clock) {
-      const d = new Date(), stamp = d.toDateString() + w;
-      if (d.getHours() === +clock[1] && d.getMinutes() === +clock[2] && clockDone !== stamp) { clockDone = stamp; runOne(target()); }
-      return;
+  function press(k) {
+    const list = targetsOf(k);
+    if (k === "open") { list.forEach(x => openOne(x === "all" ? null : x, list.length > 1)); if (list.length > 1) say("Opened " + list.length + " wired supers"); return; }
+    if (k === "stop") {
+      if (timer.on && !wiredTo("ctl:stop").length) { timer.on = false; clearTimeout(timer.t); }
+      list.forEach(x => stopOne(x === "all" ? null : x)); say("Stopped " + (list.length > 1 ? list.length + " supers" : nameOf(list[0] === "all" ? null : list[0]))); return;
     }
-    if (w === "changes" || w === "change" || w === "changed") {
-      const list = target() ? [target()] : engines();
-      list.forEach(el => { const v = valueOf(el), was = lastVal.get(el); lastVal.set(el, v); if (was != null && was !== v && !(LV().busy && LV().busy(el))) { if (passes(el)) after(el); } });
-    }
+    const done = list.map(x => x && toggle(k, x)).filter(Boolean);
+    say(done.length ? done.join(", ") : "Select a super (or wire it to " + k + ") first");
+    mark();
   }
 
   // ---- the bars ------------------------------------------------------------------------------------
   function build() {
     if (top || !on() || !document.body) return;
     top = document.createElement("div"); top.className = "se-ctlbar se-ctl-top"; top.setAttribute("role", "toolbar"); top.setAttribute("aria-label", "controls");
-    const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<button type="button" class="se-ctl" data-ctl="' + k + '" title="' + k + '">' + ICON[k] + '<span class="se-ctl-w">' + k + "</span></button>").join("") + "</div>";
-    top.innerHTML = half(CONTROLS.slice(0, 3), "l") + half(CONTROLS.slice(3), "r");
+    const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<button type="button" class="se-ctl se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + '" aria-label="' + k + '">' + ICON[k] + "</button>").join("") + "</div>";
+    top.innerHTML = half(CONTROLS.slice(0, 2), "l") + half(CONTROLS.slice(2), "r");
     bottom = document.createElement("div"); bottom.className = "se-ctlbar se-ctl-bottom"; bottom.setAttribute("role", "toolbar"); bottom.setAttribute("aria-label", "conditions");
-    const chip = k => '<label class="se-cond" data-cond="' + k + '"><span class="se-cond-k">' + k + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"></label>';
-    bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + CONDS.slice(0, 2).map(chip).join("") + '</div><div class="se-ctl-half se-ctl-r">' + CONDS.slice(2).map(chip).join("") + "</div>";
+    const chip = k => '<label class="se-cond' + (OPS[k] ? " is-op" : "") + '" data-cond="' + k + '" title="' + k + '"><span class="se-cond-k">' + ICON[k] + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"><span class="se-cond-r" aria-live="polite"></span></label>';
+    bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + CONDS.slice(0, 3).map(chip).join("") + '</div><div class="se-ctl-half se-ctl-r">' + CONDS.slice(3).map(chip).join("") + "</div>";
     document.body.appendChild(top); document.body.appendChild(bottom);
     // the bars are the main canvas's own: a press, scroll or double click on them goes nowhere else
     [top, bottom].forEach(b => ["pointerdown", "dblclick", "wheel", "click", "keydown"].forEach(t => b.addEventListener(t, e => { e.stopPropagation(); }, { passive: t !== "click" && t !== "dblclick" && t !== "keydown" })));
-    top.addEventListener("click", e => { const b = e.target.closest(".se-ctl"); if (!b) return; e.preventDefault(); ACT[b.dataset.ctl](); });
+    top.addEventListener("click", e => { const b = e.target.closest(".se-ctl"); if (!b) return; e.preventDefault(); press(b.dataset.ctl); });
     bottom.querySelectorAll(".se-cond").forEach(c => {
       const k = c.dataset.cond, inp = c.querySelector("input");
       inp.value = cond[k] || ""; fitInput(inp);
@@ -187,19 +238,34 @@
       inp.addEventListener("change", () => commit(k, inp));
       inp.addEventListener("blur", () => commit(k, inp));
     });
-    mark(); place();
+    if (cond.timer) setTimer();
+    place();
   }
   function fitInput(inp) { inp.size = Math.max(1, Math.min(18, (inp.value || "").length || 1)); inp.closest(".se-cond").classList.toggle("is-set", !!inp.value.trim()); }
   function commit(k, inp) {
     const v = inp.value.trim(); if ((cond[k] || "") === v) return;
     if (v) cond[k] = v; else delete cond[k];
-    save(); fitInput(inp); lastVal.clear();
+    save(); fitInput(inp);
+    if (k === "timer") setTimer();
     say(v ? k + " " + v : k + " cleared");
   }
+  // what the buttons show: the padlock and the disk of what they act on, results, the countdown, wired ones
+  let markAt = 0;
   function mark() {
-    if (!top) return;
-    const set = (k, v) => { const b = top.querySelector('[data-ctl="' + k + '"]'); if (b) { b.classList.toggle("is-on", v); b.setAttribute("aria-pressed", v ? "true" : "false"); } };
-    set("play", playing); set("repeat", repeating);
+    if (!bottom) return;
+    bottom.querySelectorAll(".se-cond").forEach(c => {
+      const k = c.dataset.cond, r = c.querySelector(".se-cond-r");
+      const wired = wires("cond:" + k).length > 0;
+      if (c.classList.contains("is-wired") !== wired) c.classList.toggle("is-wired", wired);
+      const show = OPS[k] ? (condValue(k) && (ins(k).length || cond[k]) ? "= " + condValue(k) : "") : k === "timer" && timer.on ? condValue(k) + " s" : "";
+      if (r.textContent !== show) r.textContent = show;
+    });
+    top.querySelectorAll(".se-ctl").forEach(b => { const w = wiredTo("ctl:" + b.dataset.ctl).length > 0; if (b.classList.contains("is-wired") !== w) b.classList.toggle("is-wired", w); });
+    const lk = targetsOf("lock")[0], sv = targetsOf("save")[0];
+    const L = top.querySelector(".se-ctl-lock"), Sv = top.querySelector(".se-ctl-save");
+    const locked = !!lk && isLocked(lk), saved = !!sv && isSaved(sv);
+    if (L && L.classList.contains("is-locked") !== locked) { L.classList.toggle("is-locked", locked); L.querySelector(".lk-shackle").setAttribute("d", locked ? SHACKLE.closed : SHACKLE.open); L.setAttribute("aria-pressed", String(locked)); }
+    if (Sv && Sv.classList.contains("is-saved") !== saved) { Sv.classList.toggle("is-saved", saved); Sv.setAttribute("aria-pressed", String(saved)); }
   }
   // either side of the main super's sync port (top) and condition port (bottom), just inside its edge
   function place() {
@@ -218,13 +284,16 @@
     if (tt && l) { const a = tt.getBoundingClientRect(), b = l.getBoundingClientRect(); if (a.width && b.width && b.left < a.right + 4 && y < a.bottom + 4) y = Math.round(a.bottom + 6); }
     st(top, cx, y); st(bottom, bx, Math.min(H - 4, by - 4));
   }
-  function loop() { place(); requestAnimationFrame(loop); }
+  function loop() { place(); const now = performance.now(); if (now - markAt > 250) { markAt = now; mark(); } requestAnimationFrame(loop); }
   function start() {
     build(); if (!top) { setTimeout(start, 400); return; }
     requestAnimationFrame(loop);
-    whenT = setInterval(watch, 1000);
-    if ((cond.when || "").trim().toLowerCase() === "start") setTimeout(() => runOne(target()), 2500);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-  window.SeControls = { act: k => ACT[k] && ACT[k](), how, seconds, conditions: () => Object.assign({}, cond), set: (k, v) => { if (CONDS.includes(k)) { if (v) cond[k] = String(v); else delete cond[k]; save(); const i = bottom && bottom.querySelector('[data-cond="' + k + '"] input'); if (i) { i.value = cond[k] || ""; fitInput(i); } } } };
+  document.addEventListener("superlink:change", () => setTimeout(mark, 50));
+  document.addEventListener("se:select", () => setTimeout(mark, 20));
+  window.SeControls = { act: k => CONTROLS.includes(k) && press(k), wiredTo, how: () => null,
+    valueOf: owner => owner.startsWith("cond:") ? condValue(owner.slice(5)) : owner.startsWith("ctl:") ? owner.slice(4) : "",
+    conditions: () => Object.assign({}, cond),
+    set: (k, v) => { if (!CONDS.includes(k)) return; if (v) cond[k] = String(v); else delete cond[k]; save(); const i = bottom && bottom.querySelector('[data-cond="' + k + '"] input'); if (i) { i.value = cond[k] || ""; fitInput(i); } if (k === "timer") setTimer(); } };
 })();
