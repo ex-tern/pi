@@ -28009,7 +28009,7 @@ void main() {
     float ao = 0.30 * exp(-max(dc, 0.0) / 2.2);
     float sh = uShadow * mix(1.0, 1.35, uNight) * (1.0 - (1.0 - pen) * (1.0 - ao)) * outside * fade;
     OVER(mix(vec3(0.10, 0.12, 0.17), vec3(0.01, 0.02, 0.05), uNight), min(sh, 0.62));
-    if (uFill > 0.0) OVER(tint(vec3(1.0, 0.86, 0.60)), uShadow * outside * (1.0 - smoothstep(0.0, 2.5, abs(ds + 1.5 + off * 0.25))) * step(0.5, off) * 0.16 * mix(0.6, 0.35, uNight));
+    // (the warm caustic in the shadow went with the sun)
   }
   // the glass: the light behind it, frosted (brightened, a touch whitened), lighter at the top, with a bright rim
   float inside = 1.0 - smoothstep(-aa, aa, d);
@@ -28019,7 +28019,7 @@ void main() {
   vec2 toSunPx = (sunAt(uTime) - uv) * uRes;
   float sunD = length(toSunPx) / uRes.y;
   vec2 toSun = toSunPx / max(length(toSunPx), 1e-3);
-  float sunK = (0.45 + 0.55 * exp(-sunD / 0.55)) * mix(0.62, 0.45, uNight);   // nearer the sun, stronger; softer overall (owner: "make it less brighter")
+  float sunK = 0.0 * sunD;   // no sun on the glass (owner, 2026-10-13: "remove the sun ray yellow effect"): no rays, warm wash, gold rim, glint, halo or bronze edge
   vec2 nrm = normalize(vec2(sdf(vL + vec2(1.5, 0.0)) - sdf(vL - vec2(1.5, 0.0)), sdf(vL + vec2(0.0, 1.5)) - sdf(vL - vec2(0.0, 1.5))) + 1e-5);
   float facing = max(dot(nrm, toSun), 0.0), away = max(-dot(nrm, toSun), 0.0);
   if (uFill > 0.0 && inside > 0.0) {
