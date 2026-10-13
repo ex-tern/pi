@@ -27192,6 +27192,30 @@ if os.path.isdir(_FRONTEND_DIR):
                             headers={**headers, "Content-Encoding": "gzip"})
         return HTMLResponse(body, headers=headers)
 
+    @app.get("/app", include_in_schema=False)
+    @app.get("/app/", include_in_schema=False)
+    def _serve_rust_app():
+        """The front end written in Rust (back/rust/ui, built to front/app/ui.wasm).
+
+        A browser has to be handed a document before it will run anything, so this is the least one can be: a
+        character set, a viewport and the script that starts the WebAssembly. Every view is drawn by the Rust code.
+        """
+        h = hashlib.sha256()
+        for name in ("host.js", "ui.wasm"):
+            try:
+                with open(os.path.join(_FRONTEND_DIR, "app", name), "rb") as fh:
+                    h.update(fh.read())
+            except OSError:
+                raise HTTPException(status_code=404, detail="The Rust front end is not built.")
+        doc = ('<!doctype html><html lang="en"><meta charset="utf-8">'
+               '<meta name="viewport" content="width=device-width,initial-scale=1"><title>ScholarPi</title>'
+               '<link rel="icon" href="/icon.svg">'
+               f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script></html>')
+        headers = {"Cache-Control": "no-cache"}
+        if IS_EXPERIMENTAL:
+            headers["X-Robots-Tag"] = "noindex, nofollow"
+        return HTMLResponse(doc, headers=headers)
+
     # The Lab boots HAL-OS in the browser with v86, which is an ES module
     # (.mjs) plus WebAssembly. Browsers refuse a module script served with a
     # non-JavaScript MIME type, and python:3.11-slim has no /etc/mime.types to

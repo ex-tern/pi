@@ -1,0 +1,20 @@
+[package]
+name = "ui"
+version = "0.1.0"
+edition = "2024"
+description = "ScholarPi's front end in Rust: every view, built as WebAssembly and drawn into the page through a small host shim (front/app/host.js)"
+license-file = "../../LICENSES/LicenseRef-PiTechLab-Proprietary.txt"
+
+# No dependencies, and no standard library: core and alloc only, so it builds offline with nothing but rustc.
+[dependencies]
+
+[lib]
+crate-type = ["cdylib"]
+path = "src/lib.rs"
+
+[profile.release]
+opt-level = "z"
+lto = true
+panic = "abort"
+codegen-units = 1
+strip = true

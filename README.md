@@ -9,6 +9,7 @@ Live at **[piii.app](https://piii.app)**.
 ```
 front/          everything the browser gets
   index.html    the whole front end in one file: styles, scripts, web workers (each part under a banner)
+  app/          the front end in Rust (ui.wasm, built from back/rust/ui) and its host shim, at /app
   super/        the site's program (pitechlab.sasm), the SuperAI engine (superai.wasm)
   hal/ quvi/ confirm/ learn/   separate pages: HAL-OS in the browser, QuVI, permission links, Learn SuperAI
   vendor/ fonts/ …             three.js, v86, Geist, images, sound, numbers.wasm
@@ -17,7 +18,7 @@ back/           everything else
   api.py        the whole server in one file (FastAPI; each former module under a banner)
   tests/        pytest suite
   scripts/tools.py   every build and run command
-  rust/         the SuperAI language and the constants (π, e, φ, γ), built to WebAssembly
+  rust/         the front end (ui), the SuperAI language and the constants (π, e, φ, γ), built to WebAssembly
   zotero/       the Zotero plugin's source
   deploy/ LICENSES/
 nixpacks.toml railway.toml requirements.txt runtime.txt .github/   read by Railway and GitHub at the root
@@ -40,6 +41,7 @@ Add at least `GROQ_API_KEY` to `back/.env` so the AI panel can run. Each panel s
 | `node front/super/superai.test.mjs`, `node front/quvi/engine.test.mjs` | the JavaScript engines' tests |
 | `python back/scripts/tools.py build-program [--check]` | assemble `super/pitechlab.sasm` into its region of `index.html` |
 | `python back/scripts/tools.py build-superai [--crate numbers]` | Rust to WebAssembly |
+| `python back/scripts/tools.py build-ui [--library DIR]` | the Rust front end to `front/app/ui.wasm` (`--library`: the standard library's source, when the wasm32 target is not installed) |
 | `python back/scripts/tools.py build-hal --src ../HAL-OS` | HAL-OS boot image for the Lab |
 | `python back/scripts/tools.py build-hal-shell [--check]` | the HAL-OS shell image |
 | `python back/scripts/tools.py zotero` | package the Zotero plugin |

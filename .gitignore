@@ -29,3 +29,4 @@ front/hal/build.json
 
 # Rust build output
 back/rust/*/target/
+back/rust/ui/target/

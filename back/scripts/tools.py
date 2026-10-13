@@ -6,6 +6,7 @@
     python back/scripts/tools.py build-hal-shell [--check] the HAL-OS shell image (was scripts/build_hal_shell.py)
     python back/scripts/tools.py build-program [--check]  pitechlab.sasm to pitechlab.super.js (was scripts/build_program.py)
     python back/scripts/tools.py build-superai [...]      the SuperAI engine to WebAssembly (was scripts/build_superai.py)
+    python back/scripts/tools.py build-ui [--library DIR] the Rust front end (back/rust/ui) to front/app/ui.wasm
     python back/scripts/tools.py zotero                   package the Zotero plugin (back/zotero/) as front/zotero/scholarpi.xpi
     python back/scripts/tools.py whitepaper [OUTDIR]      typeset the whitepaper, PDF and HTML; needs reportlab
                                                      (was backend/build_whitepaper.py + whitepaper_content.py)
@@ -980,6 +981,50 @@ def _main_build_superai():
     sys.exit(build_superai_main())
 
 
+def build_ui_main() -> int:
+    """back/rust/ui -> front/app/ui.wasm.
+
+    With the wasm32 target installed (rustup target add wasm32-unknown-unknown) this is a plain cargo build. Without
+    it, --library DIR builds core, compiler_builtins and alloc for wasm32 from the standard library's source (the
+    `library/` folder of rust-lang/rust at the tag of your rustc) and links the crate against them with rustc alone,
+    so no download is needed.
+    """
+    args = sys.argv[1:]
+    crate = REPO / "back" / "rust" / "ui"
+    out = REPO / "front" / "app" / "ui.wasm"
+    target = "wasm32-unknown-unknown"
+    env = dict(os.environ)
+    if "--library" not in args:
+        subprocess.run(["cargo", "build", "--release", "--target", target], cwd=crate, check=True)
+        shutil.copyfile(crate / "target" / target / "release" / "ui.wasm", out)
+    else:
+        lib = Path(args[args.index("--library") + 1]).resolve()
+        sysroot = crate / "target" / "sysroot"
+        sysroot.mkdir(parents=True, exist_ok=True)
+        env["RUSTC_BOOTSTRAP"] = "1"
+        base = ["rustc", "--edition", "2024", "--crate-type", "rlib", "--target", target, "-C", "opt-level=s",
+                "-C", "panic=abort", "--cap-lints", "allow", "--out-dir", str(sysroot), "-L", str(sysroot)]
+        parts = [("core", lib / "core/src/lib.rs", []),
+                 ("compiler_builtins", lib / "compiler-builtins/compiler-builtins/src/lib.rs",
+                  ["--cfg", 'feature="mem"', "--cfg", 'feature="compiler-builtins"',
+                   "--cfg", 'feature="unmangled-names"', "-C", "codegen-units=1"]),
+                 ("alloc", lib / "alloc/src/lib.rs", [])]
+        for name, src, extra in parts:
+            if not (sysroot / f"lib{name}.rlib").exists():
+                print(f"building {name} for {target}")
+                subprocess.run(base + ["--crate-name", name, *extra, str(src)], check=True, env=env)
+        subprocess.run(["rustc", "--edition", "2024", "--crate-type", "cdylib", "--crate-name", "ui", "--target", target,
+                        "-C", "opt-level=z", "-C", "panic=abort", "-C", "lto", "-C", "codegen-units=1",
+                        "-C", "strip=symbols", "--sysroot", str(sysroot / "none"), "-L", str(sysroot),
+                        str(crate / "src" / "lib.rs"), "-o", str(out)], check=True, env=env)
+    print(f"{out.relative_to(REPO)}: {out.stat().st_size} bytes")
+    return 0
+
+
+def _main_build_ui():
+    sys.exit(build_ui_main())
+
+
 # ==============================================================================================================
 # run.py (was its own script)
 # ==============================================================================================================
@@ -1061,6 +1106,7 @@ COMMANDS = {
     "build-hal-shell": _main_build_hal_shell,
     "build-program": _main_build_program,
     "build-superai": _main_build_superai,
+    "build-ui": _main_build_ui,
     "run": _main_run,
     "zotero": _main_zotero,
 }
