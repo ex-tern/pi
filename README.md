@@ -191,6 +191,7 @@ every push/PR.
 | Architecture | "Architecture" tab, static description |
 | Defense strategy / criterion detail modals | Modal popups, backed by `/api/defense-strategy` |
 | Health check | `GET /api/health` |
+| Zotero plugin | download https://pitechlab.com/zotero/scholarpi.xpi, then in Zotero 7: Tools → Plugins → ⚙ → Install Plugin From File. Adds a piX column and a ScholarPi item section. Source in `zotero/`; `python scripts/tools.py zotero` rebuilds it |
 | Background cron worker | `python backend/api.py cron`, or `.github/workflows/cron.yml` |
 
 ## 6. First-run notes

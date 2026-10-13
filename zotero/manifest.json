@@ -1,0 +1,17 @@
+{
+  "manifest_version": 2,
+  "name": "ScholarPi",
+  "version": "1.0.0",
+  "description": "Shows each paper's ScholarPi assessment (piX) in Zotero, from pitechlab.com.",
+  "author": "Pi Tech Lab",
+  "homepage_url": "https://pitechlab.com",
+  "icons": { "48": "icon.svg", "96": "icon.svg" },
+  "applications": {
+    "zotero": {
+      "id": "scholarpi@pitechlab.com",
+      "update_url": "https://pitechlab.com/zotero/updates.json",
+      "strict_min_version": "6.999",
+      "strict_max_version": "7.*"
+    }
+  }
+}

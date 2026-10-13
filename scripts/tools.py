@@ -7,6 +7,7 @@
     python scripts/tools.py build-program [--check]  pitechlab.sasm to pitechlab.super.js (was scripts/build_program.py)
     python scripts/tools.py build-superai [...]      the SuperAI engine to WebAssembly (was scripts/build_superai.py)
     python scripts/tools.py sync-unigyro --src DIR   Unigyro from its own repo (was scripts/sync_unigyro.py)
+    python scripts/tools.py zotero                   package the Zotero plugin (zotero/) as frontend/zotero/scholarpi.xpi
     python scripts/tools.py whitepaper [OUTDIR]      typeset the whitepaper, PDF and HTML; needs reportlab
                                                      (was backend/build_whitepaper.py + whitepaper_content.py)
 """
@@ -1084,6 +1085,33 @@ def run_main() -> None:
 def _main_run():
     run_main()
 
+# ==============================================================================================================
+# zotero: the ScholarPi plugin for Zotero 7 (zotero/), packaged for download from pitechlab.com
+# ==============================================================================================================
+def _main_zotero():
+    """Zips zotero/ into frontend/zotero/scholarpi.xpi and writes frontend/zotero/updates.json beside it."""
+    import zipfile
+    root = Path(__file__).resolve().parent.parent
+    src, out = root / "zotero", root / "frontend" / "zotero"
+    manifest = json.loads((src / "manifest.json").read_text(encoding="utf-8"))
+    out.mkdir(parents=True, exist_ok=True)
+    xpi = out / "scholarpi.xpi"
+    with zipfile.ZipFile(xpi, "w", zipfile.ZIP_DEFLATED) as z:
+        for f in sorted(src.rglob("*")):
+            if f.is_file():
+                info = zipfile.ZipInfo(str(f.relative_to(src)), date_time=(2026, 1, 1, 0, 0, 0))   # same input, same file
+                info.compress_type = zipfile.ZIP_DEFLATED
+                z.writestr(info, f.read_bytes())
+    pid = manifest["applications"]["zotero"]["id"]
+    updates = {"addons": {pid: {"updates": [{
+        "version": manifest["version"],
+        "update_link": "https://pitechlab.com/zotero/scholarpi.xpi",
+        "applications": {"zotero": {"strict_min_version": manifest["applications"]["zotero"]["strict_min_version"]}},
+    }]}}}
+    (out / "updates.json").write_text(json.dumps(updates, indent=2) + "\n", encoding="utf-8")
+    print(f"wrote {xpi.relative_to(root)} ({xpi.stat().st_size} bytes) and updates.json, version {manifest['version']}")
+
+
 COMMANDS = {
     "whitepaper": _main_build_whitepaper,
     "build-hal": _main_build_hal,
@@ -1092,6 +1120,7 @@ COMMANDS = {
     "build-superai": _main_build_superai,
     "sync-unigyro": _main_sync_unigyro,
     "run": _main_run,
+    "zotero": _main_zotero,
 }
 
 

@@ -27186,6 +27186,7 @@ if os.path.isdir(_FRONTEND_DIR):
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("application/wasm", ".wasm")
     mimetypes.add_type("font/woff2", ".woff2")   # the self-hosted Geist typeface
+    mimetypes.add_type("application/x-xpinstall", ".xpi")   # the Zotero plugin (frontend/zotero/scholarpi.xpi)
 
     # Mounted after the routes above so "/" resolves to the stamped index
     # rather than to the raw file on disk.
