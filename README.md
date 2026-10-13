@@ -2,7 +2,7 @@
 
 **ScholarPi** assesses research papers. A panel of AI models reviews a manuscript, and deterministic checks look at its references, reproducibility and integrity. It then scores the paper on eight open, science-aligned criteria (the **piX** index) and shows what holds it back. Each assessment is recorded on a Proof-of-Research ledger and earns **piQ**, a soulbound token minted on Sepolia.
 
-Live at **[pitechlab.com](https://pitechlab.com)** (branch `main`). Also at [exp.pitechlab.com](https://exp.pitechlab.com) (`experimental`) and [se.pitechlab.com](https://se.pitechlab.com) (`super`).
+Live at **[piii.app](https://piii.app)** (branch `main`). Test builds run at [exp.pitechlab.com](https://exp.pitechlab.com) (`experimental`) and [se.pitechlab.com](https://se.pitechlab.com) (`super`).
 
 ## Layout
 
