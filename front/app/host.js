@@ -5,7 +5,7 @@
 // handles. It holds no views, no text and no logic of the site: all of that is in the Rust crate.
 const nodes = [null], freed = [], forms = [null], files = [null];
 const enc = new TextEncoder(), dec = new TextDecoder();
-let W;
+let W, capturing = false;
 
 const str = (p, l) => dec.decode(new Uint8Array(W.memory.buffer, p, l));
 function put(s) {
@@ -36,7 +36,10 @@ function fileList(list) {
 const safe = (f, d) => { try { return f(); } catch (_) { return d; } };
 
 const host = {
-  create: (p, l) => keep(document.createElement(str(p, l))),
+  create: (p, l) => {
+    const t = str(p, l);
+    return keep(t.startsWith("svg:") ? document.createElementNS("http://www.w3.org/2000/svg", t.slice(4)) : document.createElement(t));
+  },
   text: (p, l) => keep(document.createTextNode(str(p, l))),
   set_text: (id, p, l) => { nodes[id].data = str(p, l); },
   attr: (id, kp, kl, vp, vl) => nodes[id].setAttribute(str(kp, kl), str(vp, vl)),
@@ -52,6 +55,7 @@ const host = {
   listen: (id, kp, kl) => {
     const n = nodes[id], k = str(kp, kl);
     if (k === "enter") n.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(id, k, n.value || ""); } });
+    else if (k === "pdown") n.addEventListener("pointerdown", (e) => { if (e.button === 0) send(id, k, e.clientX + "," + e.clientY); });
     else if (k === "files") n.addEventListener("change", () => { const v = fileList(n.files); n.value = ""; send(id, k, v); });
     else if (k === "drop") {
       n.addEventListener("dragover", (e) => e.preventDefault());
@@ -104,10 +108,18 @@ const host = {
   title: (p, l) => { document.title = str(p, l); },
   scroll_top: () => window.scrollTo(0, 0),
   focus: (id) => nodes[id].focus(),
+  print: () => window.print(),
+  vw: () => window.innerWidth,
+  vh: () => window.innerHeight,
+  capture: (on) => { capturing = !!on; document.documentElement.classList.toggle("dragging", capturing); },
 };
 
 const wasm = new URL("ui.wasm" + new URL(import.meta.url).search, import.meta.url);
 const bytes = await (await fetch(wasm)).arrayBuffer();
 W = (await WebAssembly.instantiate(bytes, { host })).instance.exports;
 addEventListener("hashchange", () => W.nav());
+addEventListener("resize", () => W.resized());
+addEventListener("pointermove", (e) => { if (capturing) W.pointer(0, e.clientX, e.clientY); });
+addEventListener("pointerup", (e) => { if (capturing) W.pointer(1, e.clientX, e.clientY); });
+addEventListener("pointercancel", (e) => { if (capturing) W.pointer(2, e.clientX, e.clientY); });
 W.start();

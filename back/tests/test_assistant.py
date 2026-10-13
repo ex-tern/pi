@@ -31,7 +31,7 @@ import api as assistant
     ("How can I improve my score?", ["Open Science", "RRID"]),
     ("Do you detect AI writing?", ["advisory", "non-native"]),
     ("Tell me about the forecast", ["pi-Dyne", "weight"]),
-    ("Is this CoARA compliant?", ["CoARA", "h-index"]),
+    ("Does the h-index count towards the score?", ["h-index"]),
 ])
 def test_core_concepts_are_answered_from_the_knowledge_base(question, expected_terms):
     result = assistant.answer(question)

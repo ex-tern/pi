@@ -1,8 +1,9 @@
 //! ScholarPi: the state, what changes it, and the views.
 //!
-//! Pages are addressed by the fragment: #/assess (the start), #/explore[/papers|/authors|/journal], #/library,
-//! #/account, #/paper/<hash>. Every change goes through `update`, after which the whole view is built again and
-//! `Dom` patches the page.
+//! The page is a canvas of supers around the π mark (#/). Opening one (#/assess, #/explore[/papers|/authors|
+//! /journal], #/live, #/library, #/account, #/paper/<hash>, #/confirm/<token>) makes it fill the canvas, and every
+//! other super turns into an icon in the rail at the side (along the bottom on a phone); π in the rail goes back.
+//! Every change goes through `update`, after which the whole view is built again and `Dom` patches the page.
 
 use crate::dom::{Node, el, txt};
 use crate::host;
@@ -19,6 +20,12 @@ type N = Node<Msg>;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
+    Home,
+    Group(u8),
+    Item(u8, u8),
+    Map,
+    Live,
+    Confirm,
     Assess,
     Explore,
     Library,
@@ -64,6 +71,25 @@ enum Msg {
     SignIn,
     SignOut,
     Retry,
+    Close(usize),
+    GatePw(String),
+    GateEnter,
+    ConfirmName(String),
+    ConfirmNote(String),
+    ConfirmAnswer(bool),
+    Print,
+    PDown(u8, String),
+    PMember(u8),
+    Activate(u8),
+}
+
+impl crate::dom::Fill for Msg {
+    fn fill(self, v: String) -> Self {
+        match self {
+            Msg::PDown(id, _) => Msg::PDown(id, v),
+            m => m,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -83,6 +109,12 @@ enum Want {
     Login,
     Stream,
     Visit,
+    Live,
+    Fair(String),
+    Request(String),
+    Answer,
+    Gate,
+    Item(u8, u8),
 }
 
 /// Something fetched: nothing yet, on its way, here, or failed.
@@ -163,6 +195,34 @@ struct State {
     pending: BTreeMap<u32, Pending>,
     next_req: u32,
     ticking: bool,
+    // the canvas: what is open, in the order it was opened (the page in use is one of them)
+    open: Vec<(Page, String)>,
+    live: Slot,
+    fair: Slot,
+    pi: String,
+    pi_shown: usize,
+    // a private deployment's password
+    gate: bool,
+    gate_pw: String,
+    gate_err: Option<String>,
+    // a permission request (/confirm/?t=…)
+    ctoken: String,
+    req: Slot,
+    c_name: String,
+    c_note: String,
+    c_sent: Option<Value>,
+    c_err: Option<String>,
+    c_busy: bool,
+    // the canvas: where supers were moved, the view, lock and chain, a drag under way
+    offs: [(f64, f64); NSUP],
+    pan: (f64, f64),
+    locked: bool,
+    chained: bool,
+    dirty: bool,
+    drag: Option<Drag>,
+    pend_member: Option<u8>,
+    item: Slot,
+    item_key: (u8, u8),
 }
 
 static STATE: Global<Option<State>> = Global::new(None);
@@ -170,6 +230,8 @@ static DOM: Global<Option<crate::dom::Dom<Msg>>> = Global::new(None);
 
 const T_POW: u32 = 1;
 const T_TICK: u32 = 2;
+const T_PI: u32 = 3;
+const T_LIVE: u32 = 4;
 
 fn st() -> &'static mut State {
     STATE.get().as_mut().expect("started")
@@ -183,6 +245,11 @@ pub fn start() {
     let css = host::create_text(crate::style::CSS);
     host::append_child(style, css);
     host::append_child(head, style);
+    let shape = host::create_el("style");
+    let rule = crate::style::shape_css();
+    let rule_node = host::create_text(&rule);
+    host::append_child(shape, rule_node);
+    host::append_child(head, shape);
     let meta = host::create_el("meta");
     host::set_attr(meta, "name", "theme-color");
     host::set_attr(meta, "content", "#f7f5ef");
@@ -193,7 +260,7 @@ pub fn start() {
 
     let consent = read_consent();
     let mut s = State {
-        page: Page::Assess,
+        page: Page::Home,
         paper: String::new(),
         tab: Tab::Recent,
         consent,
@@ -232,6 +299,30 @@ pub fn start() {
         pending: BTreeMap::new(),
         next_req: 1,
         ticking: false,
+        open: Vec::new(),
+        live: Slot::default(),
+        fair: Slot::default(),
+        pi: crate::pi::digits(400),
+        pi_shown: 2,
+        gate: false,
+        gate_pw: String::new(),
+        gate_err: None,
+        ctoken: String::new(),
+        req: Slot::default(),
+        c_name: String::new(),
+        c_note: String::new(),
+        c_sent: None,
+        c_err: None,
+        c_busy: false,
+        offs: [(0.0, 0.0); NSUP],
+        pan: (0.0, 0.0),
+        locked: true,
+        chained: true,
+        dirty: false,
+        drag: None,
+        pend_member: None,
+        item: Slot::default(),
+        item_key: (255, 255),
     };
 
     // Coming back from ORCID: the callback sends ?orcid=…&orcid_name=…&token=… (or ?orcid_error=…).
@@ -252,10 +343,18 @@ pub fn start() {
             host::store_set("sp_wallet", &w);
         }
     }
-    if !params.is_empty() {
+    let mut confirm_to: Option<String> = None;
+    if href.split(['?', '#']).next().unwrap_or("").contains("/confirm") {
+        confirm_to = p("t");
+    }
+    if !params.is_empty() || confirm_to.is_some() {
         let path = href.split(['?', '#']).next().unwrap_or("").to_string();
         let path = path.splitn(4, '/').nth(3).map(|x| format!("/{}", x)).unwrap_or_else(|| "/".to_string());
-        let frag = fragment(&href);
+        let path = if path.starts_with("/confirm") { "/".to_string() } else { path };
+        let frag = match &confirm_to {
+            Some(t) => format!("/confirm/{}", url_encode(t)),
+            None => fragment(&href).to_string(),
+        };
         host::replace_url(&if frag.is_empty() { path } else { format!("{}#{}", path, frag) });
     }
     s.token = host::store_get("sp_token").unwrap_or_default();
@@ -263,12 +362,15 @@ pub fn start() {
     s.wallet = host::store_get("sp_wallet").unwrap_or_default();
     s.name = host::store_get("sp_researcher_name").unwrap_or_default();
     *STATE.get() = Some(s);
+    layout_load();
 
     route();
     let s = st();
     if s.login_err.is_some() {
         s.page = Page::Account;
+        open_win(Page::Account, "");
     }
+    host::timer(400, T_PI);
     request(Want::Session, "GET", "/api/auth/session", "", 0);
     request(Want::Emission, "GET", "/api/emission", "", 0);
     request(Want::Trial, "GET", "/api/trial/status", "", 0);
@@ -313,6 +415,19 @@ pub fn on_timer(token: u32) {
                 tick();
             }
         }
+        T_PI => {
+            if s.pi_shown < 120 {
+                s.pi_shown += 1;
+                host::timer(if s.pi_shown < 12 { 160 } else { 90 }, T_PI);
+            }
+        }
+        T_LIVE => {
+            if matches!(s.page, Page::Home | Page::Live) && !s.live.busy {
+                s.live.busy = true;
+                request(Want::Live, "GET", "/api/live", "", 0);
+            }
+            host::timer(30000, T_LIVE);
+        }
         _ => {}
     }
     render();
@@ -333,6 +448,11 @@ fn render() {
     }
     let s = st();
     let t = match s.page {
+        Page::Home => "piii lab",
+        Page::Group(_) | Page::Item(_, _) => "piii lab",
+        Page::Map => "piii lab · Project",
+        Page::Live => "ScholarPi · Live",
+        Page::Confirm => "ScholarPi · Permission request",
         Page::Assess => "ScholarPi · Assess a manuscript",
         Page::Explore => "ScholarPi · Explore",
         Page::Library => "ScholarPi · Library",
@@ -348,6 +468,36 @@ fn route() {
     let mut parts = frag.split('/');
     let s = st();
     match parts.next().unwrap_or("") {
+        "" => s.page = Page::Home,
+        "map" => s.page = Page::Map,
+        "g" => {
+            let g: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            s.page = if (g as usize) < GROUPS.len() { Page::Group(g) } else { Page::Home };
+        }
+        "i" => {
+            let g: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(255);
+            let m: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(255);
+            if GROUPS.get(g as usize).map(|x| (m as usize) < x.members.len()).unwrap_or(false) {
+                if s.item_key != (g, m) {
+                    s.item.reset();
+                    s.item_key = (g, m);
+                }
+                s.page = Page::Item(g, m);
+            } else {
+                s.page = Page::Home;
+            }
+        }
+        "live" => s.page = Page::Live,
+        "confirm" => {
+            let t = crate::text::url_decode(parts.next().unwrap_or(""));
+            if t != s.ctoken {
+                s.req.reset();
+                s.c_sent = None;
+                s.c_err = None;
+            }
+            s.ctoken = t;
+            s.page = Page::Confirm;
+        }
         "explore" => {
             s.page = Page::Explore;
             s.tab = match parts.next().unwrap_or("") {
@@ -363,18 +513,91 @@ fn route() {
             let h = parts.next().unwrap_or("").to_string();
             if h != s.paper {
                 s.dossier.reset();
+                s.fair.reset();
             }
             s.paper = h;
             s.page = Page::Paper;
         }
         _ => s.page = Page::Assess,
     }
+    let arg = match s.page {
+        Page::Paper => s.paper.clone(),
+        Page::Confirm => s.ctoken.clone(),
+        _ => String::new(),
+    };
+    if s.page != Page::Home {
+        open_win(s.page, &arg);
+    }
+}
+
+/// Puts a window among the open ones (a few papers at most: the oldest goes first).
+fn open_win(page: Page, arg: &str) {
+    let s = st();
+    if s.open.iter().any(|(p, a)| *p == page && a == arg) {
+        return;
+    }
+    if page == Page::Paper && s.open.iter().filter(|(p, _)| *p == Page::Paper).count() >= 4 {
+        if let Some(i) = s.open.iter().position(|(p, _)| *p == Page::Paper) {
+            s.open.remove(i);
+        }
+    }
+    s.open.push((page, arg.to_string()));
+}
+
+fn hash_of(page: Page, arg: &str) -> String {
+    match page {
+        Page::Home => "#/".to_string(),
+        Page::Group(g) => format!("#/g/{}", g),
+        Page::Item(g, m) => format!("#/i/{}/{}", g, m),
+        Page::Map => "#/map".to_string(),
+        Page::Live => "#/live".to_string(),
+        Page::Confirm => format!("#/confirm/{}", url_encode(arg)),
+        Page::Assess => "#/assess".to_string(),
+        Page::Explore => "#/explore".to_string(),
+        Page::Library => "#/library".to_string(),
+        Page::Account => "#/account".to_string(),
+        Page::Paper => format!("#/paper/{}", arg),
+    }
 }
 
 /// Fetches what the current page shows and does not have yet.
 fn load() {
     let s = st();
+    if s.gate {
+        return;
+    }
     match s.page {
+        Page::Home | Page::Live => {
+            if s.live.needed() {
+                s.live.busy = true;
+                request(Want::Live, "GET", "/api/live", "", 0);
+                host::timer(30000, T_LIVE);
+            }
+            if s.page == Page::Home && s.summary.needed() {
+                s.summary.busy = true;
+                request(Want::Summary, "GET", "/api/analytics/summary", "", 0);
+            }
+        }
+        Page::Group(_) | Page::Map => {}
+        Page::Item(g, m) => {
+            if let Some((_, Target::Data(url, _))) = GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)) {
+                if s.item.needed() {
+                    s.item.busy = true;
+                    let u = if *url == "/api/profile" || *url == "/api/assessments/claimable" {
+                        format!("{}?{}", url, ident_query(s))
+                    } else {
+                        url.to_string()
+                    };
+                    request(Want::Item(g, m), "GET", &u, "", 0);
+                }
+            }
+        }
+        Page::Confirm => {
+            if s.req.needed() && !s.ctoken.is_empty() {
+                s.req.busy = true;
+                request(Want::Request(s.ctoken.clone()), "GET", &format!("/api/consent/r/{}", url_encode(&s.ctoken)), "", 0);
+            }
+        }
         Page::Assess => {
             if s.mode == Mode::Find && s.topics.needed() {
                 s.topics.busy = true;
@@ -417,6 +640,7 @@ fn load() {
                 let u = format!("/api/explorer/dossier/{}", url_encode(&s.paper));
                 request(Want::Dossier(s.paper.clone()), "GET", &u, "", 0);
             }
+
         }
     }
 }
@@ -481,6 +705,20 @@ pub fn on_fetch(req: u32, status: u32, chunk: String, done: bool) {
     } else {
         Some(error_text(p.status, parsed.as_ref()))
     };
+    if p.status == 401 && p.want != Want::Gate && err.as_deref() == Some("This deployment is private.") {
+        s.gate = true;
+        render();
+        return;
+    }
+    if p.want == Want::Gate {
+        if p.status == 204 || p.status == 200 {
+            host::go("/");
+        } else {
+            st().gate_err = Some("That is not it.".to_string());
+        }
+        render();
+        return;
+    }
     apply(p.want, parsed.unwrap_or(Value::Null), err);
     render();
 }
@@ -575,6 +813,30 @@ fn apply(want: Want, v: Value, err: Option<String>) {
             fail_run(&err.unwrap_or_else(|| "The assessment could not start.".to_string()));
         }
         Want::Visit => {}
+        Want::Live => put(&mut s.live, v, err),
+        Want::Fair(h) => {
+            if h == s.paper {
+                put(&mut s.fair, v, err);
+            }
+        }
+        Want::Request(t) => {
+            if t == s.ctoken {
+                put(&mut s.req, v, err);
+            }
+        }
+        Want::Answer => {
+            s.c_busy = false;
+            match err {
+                Some(e) => s.c_err = Some(e),
+                None => s.c_sent = Some(v),
+            }
+        }
+        Want::Gate => {}
+        Want::Item(g, m) => {
+            if s.item_key == (g, m) {
+                put(&mut s.item, v, err);
+            }
+        }
     }
 }
 
@@ -854,8 +1116,50 @@ fn update(msg: Msg) {
             s.mine.reset();
             request(Want::Session, "GET", "/api/auth/session", "", 0);
         }
+        Msg::Close(i) => {
+            if i < s.open.len() {
+                let (page, arg) = s.open.remove(i);
+                let current = page == s.page
+                    && match page {
+                        Page::Paper => arg == s.paper,
+                        Page::Confirm => arg == s.ctoken,
+                        _ => true,
+                    };
+                if current {
+                    let to = s.open.last().map(|(p, a)| hash_of(*p, a)).unwrap_or_else(|| "#/".to_string());
+                    host::go(&to);
+                }
+            }
+        }
+        Msg::GatePw(v) => s.gate_pw = v,
+        Msg::GateEnter => {
+            s.gate_err = None;
+            let body = format!("{{\"password\":{}}}", json::quote(&s.gate_pw));
+            request(Want::Gate, "POST", "/api/gate", &body, 0);
+        }
+        Msg::ConfirmName(v) => s.c_name = v,
+        Msg::ConfirmNote(v) => s.c_note = v,
+        Msg::ConfirmAnswer(yes) => {
+            s.c_err = None;
+            if s.c_name.trim().chars().count() < 2 {
+                s.c_err = Some("Write your name: it records who answered.".to_string());
+            } else if !s.c_busy {
+                s.c_busy = true;
+                let body = format!(
+                    "{{\"decision\":\"{}\",\"name\":{},\"note\":{}}}",
+                    if yes { "granted" } else { "declined" },
+                    json::quote(s.c_name.trim()),
+                    json::quote(s.c_note.trim())
+                );
+                request(Want::Answer, "POST", &format!("/api/consent/r/{}", url_encode(&s.ctoken)), &body, 0);
+            }
+        }
+        Msg::Print => host::print(),
+        Msg::PDown(id, xy) => begin_drag(id as usize, &xy),
+        Msg::PMember(m) => s.pend_member = Some(m),
+        Msg::Activate(id) => activate(id as usize, None),
         Msg::Retry => {
-            for slot in [&mut s.summary, &mut s.rubric, &mut s.dossier, &mut s.piq, &mut s.mine, &mut s.topics] {
+            for slot in [&mut s.summary, &mut s.rubric, &mut s.dossier, &mut s.piq, &mut s.mine, &mut s.topics, &mut s.live, &mut s.req, &mut s.item] {
                 if slot.err.is_some() {
                     slot.reset();
                 }
@@ -913,54 +1217,410 @@ fn save_consent(c: [bool; 3]) {
 // ------------------------------------------------------------------------------------------------- views
 
 fn view(s: &State) -> N {
-    let page = match s.page {
-        Page::Assess => assess_page(s),
-        Page::Explore => explore_page(s),
-        Page::Library => library_page(s),
-        Page::Account => account_page(s),
-        Page::Paper => paper_page(s),
+    if s.gate {
+        return gate_view(s);
+    }
+    let body: N = if s.page == Page::Home {
+        canvas_view(s)
+    } else {
+        let page = match s.page {
+            Page::Assess => assess_page(s),
+            Page::Explore => explore_page(s),
+            Page::Library => library_page(s),
+            Page::Account => account_page(s),
+            Page::Paper => paper_page(s),
+            Page::Live => live_page(s),
+            Page::Confirm => confirm_page(s),
+            Page::Group(g) => group_page(g as usize),
+            Page::Item(g, m) => item_page(s, g as usize, m as usize),
+            Page::Map => map_page(),
+            Page::Home => txt(""),
+        };
+        el("div").cls("focus").kid(rail(s)).kid(window_frame(s, page)).into()
     };
-    el("div")
-        .cls("app")
-        .kid(header(s))
-        .kid(el("main").kid(page))
-        .kid(footer())
-        .kid_if(s.consent_open, || consent_panel(s))
+    el("div").cls("app").kid(body).kid_if(s.consent_open, || consent_panel(s)).into()
+}
+
+
+fn super_name(s: &State, page: Page, arg: &str) -> String {
+    match page {
+        Page::Home => "Everything".to_string(),
+        Page::Assess => "Assess".to_string(),
+        Page::Explore => "Explore".to_string(),
+        Page::Live => "Live".to_string(),
+        Page::Library => "Library".to_string(),
+        Page::Account => {
+            if signed_in(s) && !s.name.is_empty() {
+                s.name.clone()
+            } else if signed_in(s) {
+                "Account".to_string()
+            } else {
+                "Sign in".to_string()
+            }
+        }
+        Page::Paper => {
+            let t = if arg == s.paper {
+                s.dossier.data.as_ref().map(|d| d.get("title").str().to_string()).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if t.is_empty() { "A paper".to_string() } else { t }
+        }
+        Page::Confirm => "Permission request".to_string(),
+        Page::Group(g) => GROUPS.get(g as usize).map(|x| x.title).unwrap_or("").to_string(),
+        Page::Item(g, m) => GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)).map(|x| x.0).unwrap_or("").to_string(),
+        Page::Map => "Project".to_string(),
+    }
+}
+
+/// An icon: two letters for a name (one word: its first two; more: their initials).
+fn glyph(name: &str) -> String {
+    let words: Vec<&str> = name.split([' ', ':', '-', '/']).filter(|w| w.chars().any(|c| c.is_alphanumeric())).collect();
+    match words.len() {
+        0 => "·".to_string(),
+        1 => {
+            let mut c = words[0].chars();
+            let a = c.next().map(|x| x.to_uppercase().to_string()).unwrap_or_default();
+            let b = c.next().map(|x| x.to_lowercase().to_string()).unwrap_or_default();
+            format!("{}{}", a, b)
+        }
+        _ => words.iter().take(2).filter_map(|w| w.chars().next()).flat_map(|c| c.to_uppercase()).collect(),
+    }
+}
+
+fn is_current(s: &State, page: Page, arg: &str) -> bool {
+    page == s.page
+        && match page {
+            Page::Paper => arg == s.paper,
+            Page::Confirm => arg == s.ctoken,
+            _ => true,
+        }
+}
+
+/// A super's icon: a line drawing for each kind; a paper shows its title's initials, so several can be told apart.
+fn mark_of(page: Page, name: &str) -> N {
+    let d: &[&str] = match page {
+        Page::Home => return txt("π"),
+        Page::Paper | Page::Item(_, _) => return txt(glyph(name)),
+        Page::Group(g) => match GROUPS.get(g as usize).map(|x| x.sup).unwrap_or(0) {
+            S_TOOLS => &["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"],
+            S_EXPLORE => &["M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13z", "M20 20l-4.8-4.8"],
+            S_LIBRARY => &["M4 4h5v16H4z", "M9 4h5v16H9z", "M14.5 6.2l4.3-1.2 3.4 13.5-4.3 1.2z"],
+            S_LAB => &["M9 3h6", "M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3", "M7 15h10"],
+            _ => &["M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8z", "M4 21c1.6-4 4.6-6 8-6s6.4 2 8 6"],
+        },
+        Page::Map => &["M4 5h5v5H4z", "M15 5h5v5h-5z", "M9.5 17h5v4h-5z", "M9 7.5h6", "M6.5 10v3.5H12V17", "M17.5 10v3.5H12"],
+        Page::Assess => &["M7 3h7l4 4v14H7z", "M14 3v4h4", "M9.5 14.5l2 2 4-4.5"],
+        Page::Explore => &["M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13z", "M20 20l-4.8-4.8"],
+        Page::Live => &["M3 12h4l2.5-6 5 12 2.5-6h4"],
+        Page::Library => &["M4 4h5v16H4z", "M9 4h5v16H9z", "M14.5 6.2l4.3-1.2 3.4 13.5-4.3 1.2z"],
+        Page::Account => &["M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8z", "M4 21c1.6-4 4.6-6 8-6s6.4 2 8 6"],
+        Page::Confirm => &["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M9 12l2.2 2.2L15.5 10"],
+    };
+    el("svg:svg")
+        .attr("viewBox", "0 0 24 24")
+        .attr("width", "20")
+        .attr("height", "20")
+        .attr("fill", "none")
+        .attr("stroke", "currentColor")
+        .attr("stroke-width", "1.8")
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .attr("aria-hidden", "true")
+        .kids(d.iter().map(|x| -> N { el("svg:path").attr("d", *x).into() }))
         .into()
 }
 
-fn header(s: &State) -> N {
-    let link = |href: &str, label: &str, on: bool| -> N {
-        el("a").attr("href", href).cls_if(on, "on").text(label).into()
+fn rail(s: &State) -> N {
+    let icon = |page: Page, arg: &str| -> N {
+        let name = super_name(s, page, arg);
+        let open = s.open.iter().any(|(p, a)| *p == page && a == arg);
+        el("a")
+            .cls("ric")
+            .cls_if(open, "open")
+            .cls_if(is_current(s, page, arg), "on")
+            .attr("href", hash_of(page, arg))
+            .attr("aria-label", name.clone())
+            .kid(el("span").cls("g").kid(mark_of(page, &name)))
+            .kid(el("span").cls("tip").text(name))
+            .kid(ports())
+            .into()
     };
-    let acct = if signed_in(s) {
-        if s.name.is_empty() { "Account".to_string() } else { s.name.split(' ').next().unwrap_or("Account").to_string() }
-    } else {
-        "Sign in".to_string()
+    let mut r = el("nav").cls("rail").attr("aria-label", "Everything else").kid(
+        el("a")
+            .cls("ric home")
+            .attr("href", "#/")
+            .attr("aria-label", "Back to the canvas")
+            .kid(el("span").cls("g").text("π"))
+            .kid(el("span").cls("tip").text("piii lab"))
+            .kid(ports()),
+    );
+    r = r.kid(el("span").cls("rsep"));
+    let tops = [Page::Group(0), Page::Group(1), Page::Group(2), Page::Group(3), Page::Group(4), Page::Map];
+    for p in tops {
+        r = r.kid(icon(p, ""));
+    }
+    let extra: Vec<&(Page, String)> = s.open.iter().filter(|(p, _)| !tops.contains(p)).collect();
+    if !extra.is_empty() {
+        r = r.kid(el("span").cls("rsep"));
+        for (p, a) in extra {
+            r = r.kid(icon(*p, a));
+        }
+    }
+    r.into()
+}
+
+fn window_frame(s: &State, content: N) -> N {
+    let idx = s.open.iter().position(|(p, a)| is_current(s, *p, a));
+    let arg = match s.page {
+        Page::Paper => s.paper.as_str(),
+        Page::Confirm => s.ctoken.as_str(),
+        _ => "",
     };
-    el("header")
-        .cls("top")
+    el("section")
+        .cls("win")
+        .attr("aria-label", super_name(s, s.page, arg))
         .kid(
             el("div")
-                .cls("top-in")
+                .cls("win-head")
+                .kid(el("span").cls("win-title tag").text(super_name(s, s.page, arg)))
+                .kid_if(idx.is_some(), || {
+                    el("button")
+                        .cls("win-x")
+                        .attr("aria-label", "Close")
+                        .attr("title", "Close")
+                        .text("×")
+                        .on("click", Msg::Close(idx.unwrap_or(0)))
+                        .into()
+                }),
+        )
+        .kid(el("div").cls("win-body").kid(el("div").cls("win-in").kid(content)))
+        .kid(ports())
+        .into()
+}
+
+fn gate_view(s: &State) -> N {
+    el("div")
+        .cls("gate")
+        .kid(
+            el("div")
+                .cls("gate-in")
+                .kid(el("div").cls("mark-big small").text("π"))
+                .kid(el("p").cls("hint").text("This copy of Piii Lab is private."))
                 .kid(
-                    el("a")
-                        .cls("brand")
-                        .attr("href", "#/assess")
-                        .kid(el("span").cls("mark").text("π"))
-                        .kid(el("span").text("ScholarPi")),
+                    el("input")
+                        .cls("input")
+                        .attr("type", "password")
+                        .attr("aria-label", "Password")
+                        .attr("autocomplete", "current-password")
+                        .prop("value", s.gate_pw.clone())
+                        .on_val("input", Msg::GatePw)
+                        .on("enter", Msg::GateEnter),
                 )
-                .kid(
-                    el("nav")
-                        .cls("nav")
-                        .kid(link("#/assess", "Assess", s.page == Page::Assess))
-                        .kid(link("#/explore", "Explore", s.page == Page::Explore || s.page == Page::Paper))
-                        .kid(link("#/library", "Library", s.page == Page::Library))
-                        .kid(link("#/account", &acct, s.page == Page::Account)),
-                ),
+                .kid(el("button").cls("btn primary").text("Enter").on("click", Msg::GateEnter))
+                .kid(el("div").cls("gate-no").attr("aria-live", "polite").text(s.gate_err.clone().unwrap_or_default())),
         )
         .into()
 }
+
+fn live_page(s: &State) -> N {
+    let body = slot_view(&s.live, "Loading…", |d| {
+        let idle = d.get("idle");
+        let status = if idle.get("working_now").truthy() {
+            "Assessing a paper on its own right now."
+        } else if idle.get("enabled").truthy() {
+            "Quiet. Papers are assessed when people submit them, and on their own when nobody is using the site."
+        } else {
+            "Papers are assessed when people submit them."
+        };
+        let rows = d.get("latest").arr();
+        let list: N = if rows.is_empty() {
+            empty("Nothing assessed yet.")
+        } else {
+            el("div")
+                .cls("list")
+                .kids(rows.iter().map(|r| -> N {
+                    let field = r.get("field").str();
+                    let score = el("div").cls("score").text(num(r.get("score").f(), 1)).kid(el("small").text("piX"));
+                    if r.get("auto").truthy() {
+                        el("div")
+                            .cls("item")
+                            .kid(
+                                el("div")
+                                    .cls("grow")
+                                    .kid(
+                                        el("a")
+                                            .cls("t")
+                                            .attr("href", format!("#/paper/{}", r.get("eval_hash").str()))
+                                            .text(r.get("title").str().to_string().or_untitled()),
+                                    )
+                                    .kid(el("div").cls("s").text(format!(
+                                        "Assessed on its own · {} · {}",
+                                        if field.is_empty() { "open research" } else { field },
+                                        date(r.get("at"))
+                                    ))),
+                            )
+                            .kid(score)
+                            .into()
+                    } else {
+                        el("div")
+                            .cls("item")
+                            .kid(
+                                el("div")
+                                    .cls("grow")
+                                    .kid(el("div").cls("t").text(format!(
+                                        "A paper in {}",
+                                        if field.is_empty() { "an unlisted field" } else { field }
+                                    )))
+                                    .kid(el("div").cls("s").text(format!(
+                                        "Submitted by {} · {}",
+                                        if r.get("signed_in").truthy() { "a signed-in researcher" } else { "a visitor" },
+                                        r.get("date").str()
+                                    ))),
+                            )
+                            .kid(score)
+                            .into()
+                    }
+                }))
+                .into()
+        };
+        el("div")
+            .cls("stack")
+            .kid(
+                el("div")
+                    .cls("card")
+                    .kid(el("p").style("font-weight:500").text(status))
+                    .kid(el("p").cls("hint").style("margin-top:4px").text(format!(
+                        "{} assessed today · {} in total",
+                        num(d.get("today").f(), 0),
+                        num(d.get("total").f(), 0)
+                    ))),
+            )
+            .kid(list)
+            .into()
+    });
+    el("div")
+        .kid(head(
+            "Live",
+            "What Piii Lab is doing now. Papers people submit stay private here: only their field and score are shown.",
+        ))
+        .kid(body)
+        .into()
+}
+
+fn confirm_page(s: &State) -> N {
+    let body = slot_view(&s.req, "Loading the request…", |r| {
+        let terms = r.get("terms").arr();
+        let requester = r.get("requester").str();
+        let mut card = el("div").cls("card").kid(el("h2").text(r.get("title").str())).kid(
+            el("p").cls("hint").style("margin-top:4px").text(format!(
+                "From {} to {}{}",
+                if requester.is_empty() { "Piii Lab" } else { requester },
+                r.get("recipient").str(),
+                if r.get("created_at").is_null() { String::new() } else { format!(" · {}", date(r.get("created_at"))) }
+            )),
+        );
+        let work = r.get("work").str();
+        if !work.is_empty() {
+            card = card.kid(el("p").style("margin-top:12px").kid(el("strong").text("Work: ")).text(work));
+        }
+        let msg = r.get("message").str();
+        if !msg.is_empty() {
+            card = card.kid(el("p").style("margin-top:10px;white-space:pre-wrap").text(msg));
+        }
+        if !terms.is_empty() {
+            card = card.kid(el("h3").style("margin-top:16px").text("What you would allow")).kid(
+                el("ul").style("margin:6px 0 0;padding-left:20px").kids(terms.iter().map(|t| -> N {
+                    let text = match t {
+                        Value::Str(x) => x.clone(),
+                        _ => t.any(&["text", "label", "title", "term"]).str().to_string(),
+                    };
+                    el("li").style("margin:4px 0").text(text).into()
+                })),
+            );
+        }
+        let mut col = el("div").cls("stack").kid(card);
+        if let Some(done) = &s.c_sent {
+            let granted = done.get("decision").str() == "granted";
+            return col
+                .kid(
+                    el("div")
+                        .cls("card")
+                        .kid(el("h2").text(if granted { "Permission granted" } else { "Permission declined" }))
+                        .kid(
+                            el("p")
+                                .cls("hint")
+                                .style("margin-top:6px")
+                                .text(format!("Recorded {}. Your receipt: ", done.get("answered_at").str()))
+                                .kid(el("code").text(done.get("receipt").str())),
+                        ),
+                )
+                .into();
+        }
+        let prev = r.get("answer");
+        if !prev.is_null() {
+            col = col.kid(el("div").cls("note").text(format!(
+                "Already answered: {} by {} on {}. You can answer again; the latest answer counts.",
+                prev.get("decision").str(),
+                prev.get("name").str(),
+                prev.get("answered_at").str()
+            )));
+        }
+        if r.get("closed").truthy() {
+            return col.kid(el("div").cls("note").text("This request has been closed by its sender.")).into();
+        }
+        col.kid(
+            el("div")
+                .cls("card")
+                .kid(el("h3").text("Your answer"))
+                .kid(
+                    el("input")
+                        .cls("input")
+                        .style("margin-top:10px")
+                        .attr("type", "text")
+                        .attr("aria-label", "Your name")
+                        .attr("placeholder", "Your name")
+                        .attr("autocomplete", "name")
+                        .prop("value", s.c_name.clone())
+                        .on_val("input", Msg::ConfirmName),
+                )
+                .kid(
+                    el("textarea")
+                        .cls("input")
+                        .style("margin-top:8px;min-height:84px;resize:vertical")
+                        .attr("aria-label", "A note (optional)")
+                        .attr("placeholder", "A note (optional)")
+                        .prop("value", s.c_note.clone())
+                        .on_val("input", Msg::ConfirmNote),
+                )
+                .kid_if(s.c_err.is_some(), || {
+                    el("div").cls("err-box").style("margin-top:10px").text(s.c_err.clone().unwrap_or_default()).into()
+                })
+                .kid(
+                    el("div")
+                        .cls("row")
+                        .style("margin-top:12px")
+                        .kid(
+                            el("button")
+                                .cls("btn primary")
+                                .attr_if(s.c_busy, "disabled", "")
+                                .text("Grant permission")
+                                .on("click", Msg::ConfirmAnswer(true)),
+                        )
+                        .kid(el("button").cls("btn").attr_if(s.c_busy, "disabled", "").text("Decline").on("click", Msg::ConfirmAnswer(false))),
+                ),
+        )
+        .into()
+    });
+    el("div")
+        .kid(head(
+            "Permission request",
+            "Someone asks for your permission. Your answer, your name and the time are recorded, and you get a receipt.",
+        ))
+        .kid(body)
+        .into()
+}
+
 
 fn footer() -> N {
     el("footer")
@@ -971,8 +1631,7 @@ fn footer() -> N {
                 .kid(el("span").text("Piii Lab · ScholarPi"))
                 .kid(el("button").text("Privacy choices").on("click", Msg::ConsentOpen))
                 .kid(el("a").attr("href", "/api/cookies").attr("target", "_blank").text("Cookies"))
-                .kid(el("a").attr("href", "/docs").attr("target", "_blank").text("API"))
-                .kid(el("a").attr("href", "/").text("Classic site")),
+                .kid(el("a").attr("href", "/docs").attr("target", "_blank").text("API")),
         )
         .into()
 }
@@ -1595,8 +2254,10 @@ fn journal_list(rows: &[Value]) -> N {
 // ---- A paper's dossier
 
 fn paper_page(s: &State) -> N {
-    let body = slot_view(&s.dossier, "Loading the dossier…", dossier_view);
-    el("div").kid(el("a").cls("back").attr("href", "#/explore").text("← Explore")).kid(body).into()
+    let body = slot_view(&s.dossier, "Loading the dossier…", |d| {
+        el("div").cls("stack").kid(dossier_view(d)).into()
+    });
+    el("div").kid(body).into()
 }
 
 fn dossier_view(d: &Value) -> N {
@@ -1763,7 +2424,6 @@ fn dossier_view(d: &Value) -> N {
 
     let mut links = el("div").cls("row");
     links = links.kid(el("a").attr("href", format!("/api/dossier/{}/fair", hash)).attr("target", "_blank").text("FAIR record"));
-    links = links.kid(el("a").attr("href", format!("/api/dossier/{}/coara.html", hash)).attr("target", "_blank").text("CoARA summary"));
     if d.get("has_file").truthy() {
         links = links.kid(el("a").attr("href", format!("/api/papers/{}/file", hash)).attr("target", "_blank").text("Manuscript"));
     }
@@ -2003,3 +2663,5 @@ fn account_page(s: &State) -> N {
 fn short(w: &str) -> String {
     if w.len() > 12 { format!("{}…{}", &w[..6], &w[w.len() - 4..]) } else { w.to_string() }
 }
+
+include!("scene.rs");

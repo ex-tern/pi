@@ -41,6 +41,10 @@ unsafe extern "C" {
     pub fn title(p: *const u8, l: usize);
     pub fn scroll_top();
     pub fn focus(id: u32);
+    pub fn print();
+    pub fn vw() -> f64;
+    pub fn vh() -> f64;
+    pub fn capture(on: u32);
 }
 }
 
@@ -161,6 +165,18 @@ mod imp {
     pub fn focus_(id: u32) {
         unsafe { focus(id) }
     }
+    pub fn print_() {
+        unsafe { print() }
+    }
+    pub fn vw_() -> f64 {
+        unsafe { vw() }
+    }
+    pub fn vh_() -> f64 {
+        unsafe { vh() }
+    }
+    pub fn capture_(on: bool) {
+        unsafe { capture(on as u32) }
+    }
 }
 
 // Outside the browser (cargo check, unit tests) the host does nothing.
@@ -199,6 +215,10 @@ mod imp {
     pub fn title_(_: &str) {}
     pub fn scroll_top_() {}
     pub fn focus_(_: u32) {}
+    pub fn print_() {}
+    pub fn vw_() -> f64 { 1280.0 }
+    pub fn vh_() -> f64 { 800.0 }
+    pub fn capture_(_: bool) {}
 }
 
 pub use imp::{
@@ -206,7 +226,7 @@ pub use imp::{
     form_ as form_new, form_file_ as form_file, form_str_ as form_str, go_ as go, head_ as head, href_ as href,
     insert_ as insert_before, listen_ as listen, now_ as now, open_ as open, release_ as release,
     remove_ as remove, remove_attr, replace_url_ as replace_url, scroll_top_ as scroll_top, set_attr,
-    set_cookie_ as set_cookie, set_prop, set_text_ as set_text, store_del_ as store_del,
+    set_cookie_ as set_cookie, set_prop, print_ as print, vw_ as vw, vh_ as vh, capture_ as capture, set_text_ as set_text, store_del_ as store_del,
     store_get_ as store_get, store_set_ as store_set, timer_ as timer, title_ as set_title,
 };
 

@@ -1,26 +1,10 @@
 # Railway build: Python only (owner, 2026-10-13: "no docker"). Nixpacks's Python provider installs
 # requirements.txt (the root one points at back/requirements.txt) and runs the start command below.
-#
-# The Lab: HAL-OS stays its own repository. Its boot image is built here from a pinned commit, exactly as
-# `python bitllm_kernel.py` builds it on a desktop, and served to the browser, which boots it with v86.
-# back/scripts/tools.py build-hal refuses to build if front/hal/wire.js and HAL-OS disagree on the wire protocol. To ship a
-# newer HAL-OS, change the ref. The download is retried and falls back to GitHub's other archive address (codeload once
-# answered 404 for a public commit, 2026-10-14); a fetch that still fails fails the build loudly rather than deploying
-# a Lab with no machine.
+# The front end is Rust built to WebAssembly (front/app/ui.wasm, committed; python back/scripts/tools.py build-ui),
+# so the build has nothing else to do.
 [variables]
 ENVIRONMENT = "production"
 PYTHONUNBUFFERED = "1"
-HAL_OS_REF = "7f2e094df20a3bf523a085445a2bc53ee76a703a"
-HAL_OS_REPO = "https://github.com/neurophilic/HAL-OS"
-
-[phases.setup]
-nixPkgs = ["...", "curl", "gnutar", "gzip", "bash"]
-
-[phases.build]
-cmds = [
-  "bash -c 'PIN=7f2e094df20a3bf523a085445a2bc53ee76a703a; mkdir -p /tmp/hal-os; for REF in \"${HAL_OS_REF:-$PIN}\" \"$PIN\"; do for URL in \"https://codeload.github.com/neurophilic/HAL-OS/tar.gz/$REF\" \"https://github.com/neurophilic/HAL-OS/archive/$REF.tar.gz\"; do echo \"HAL-OS: fetching $URL\"; if curl -fsSL --retry 3 --retry-delay 2 \"$URL\" -o /tmp/hal-os.tgz; then tar xzf /tmp/hal-os.tgz -C /tmp/hal-os --strip-components=1 && rm /tmp/hal-os.tgz && echo \"$REF\" > /tmp/hal-os.ref && exit 0; fi; done; done; echo \"HAL-OS could not be fetched (HAL_OS_REF=${HAL_OS_REF:-unset})\"; exit 1'",
-  "bash -c 'python back/scripts/tools.py build-hal --src /tmp/hal-os --ref \"$(cat /tmp/hal-os.ref)\" --repo \"${HAL_OS_REPO:-https://github.com/neurophilic/HAL-OS}\" && rm -rf /tmp/hal-os /tmp/hal-os.ref'",
-]
 
 [start]
 # gunicorn.conf.py chdirs into back/ itself (the start command runs from the repository root, with no shell)

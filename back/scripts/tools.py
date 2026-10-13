@@ -2,18 +2,13 @@
 """tools.py: every build and local-run script in one file (owner, 2026-10-13: "put everything in one file").
 
     python back/scripts/tools.py run [--lab]              run ScholarPi locally (was run.py)
-    python back/scripts/tools.py build-hal --src DIR      HAL-OS's boot image for the Lab (was scripts/build_hal.py)
-    python back/scripts/tools.py build-hal-shell [--check] the HAL-OS shell image (was scripts/build_hal_shell.py)
-    python back/scripts/tools.py build-program [--check]  pitechlab.sasm to pitechlab.super.js (was scripts/build_program.py)
-    python back/scripts/tools.py build-superai [...]      the SuperAI engine to WebAssembly (was scripts/build_superai.py)
-    python back/scripts/tools.py build-ui [--library DIR] the Rust front end (back/rust/ui) to front/app/ui.wasm
+    python back/scripts/tools.py build-ui [--library DIR] the front end (back/rust/ui) to front/app/ui.wasm
     python back/scripts/tools.py zotero                   package the Zotero plugin (back/zotero/) as front/zotero/scholarpi.xpi
-    python back/scripts/tools.py whitepaper [OUTDIR]      typeset the whitepaper, PDF and HTML; needs reportlab
+    python back/scripts/tools.py whitepaper [OUTDIR]      typeset the whitepaper PDF; needs reportlab
                                                      (was backend/build_whitepaper.py + whitepaper_content.py)
 """
 import argparse
 import hashlib
-import html
 import json
 import os
 import re
@@ -41,7 +36,7 @@ downloadable PDF cannot drift apart.
 """
 
 TITLE = "ScholarPi: A Transparent, Deterministic-First Framework for Research Assessment"
-SUBTITLE = "Design, rubric, and honest limitations of a CoARA-aligned manuscript assessment system"
+SUBTITLE = "Design, rubric, and honest limitations of a manuscript assessment system"
 AUTHOR = "Ali Vafadar Yengejeh"
 AFFILIATION = "University of Milano-Bicocca, Milan, Italy"
 VERSION = "Whitepaper v1.0 · Rubric pi-index-rubric/3.0"
@@ -50,7 +45,7 @@ ABSTRACT = """\
 Research assessment increasingly relies on quantitative indicators that are neither published \
 nor auditable, and that measure the venue a paper appeared in rather than what the paper \
 reports. ScholarPi is an open assessment framework that inverts this: it scores manuscripts \
-against eight CoARA-aligned criteria in which 78% of the composite derives from deterministic, \
+against eight open, science-aligned criteria in which 78% of the composite derives from deterministic, \
 reproducible text analysis and only 22% from language-model interpretation, and it publishes \
 the full rubric, every weight, and the split between the two. Large language models are used \
 as a panel of jurors rather than as an oracle; their contribution is bounded by weight, gated \
@@ -77,7 +72,7 @@ SECTIONS = [
             "Manifesto [2] followed in 2015 with ten principles for the responsible use of metrics, "
             "the first of which is that quantitative evaluation should support, not supplant, "
             "qualitative expert assessment. The Agreement on Reforming Research Assessment [3], "
-            "finalised in July 2022 and now the basis of the CoARA coalition, commits signatories to "
+            "finalised in July 2022, commits signatories to "
             "recognising a diverse range of outputs and to abandoning inappropriate uses of "
             "journal- and publication-based metrics.",
 
@@ -108,8 +103,8 @@ SECTIONS = [
              "measured, not inferred. Model opinion is a fallback for what cannot be counted, not a "
              "default. The rubric quantifies this: 78% of the composite is deterministic."),
             ("Published methodology.", "Every criterion is a weighted sum of named signals, every "
-             "weight is stated, and the rubric is served from a versioned API endpoint. CoARA's "
-             "transparency commitment is not satisfiable when the methodology is an undocumented "
+             "weight is stated, and the rubric is served from a versioned API endpoint. Transparency "
+             "is not possible when the methodology is an undocumented "
              "coefficient buried in a function body."),
             ("Bounded claims.", "Where the system cannot measure something, it says so rather than "
              "producing a number to two decimal places. Two criteria are flagged interpretive; "
@@ -349,7 +344,7 @@ SECTIONS = [
         "title": "Related work",
         "paras": [
             "ScholarPi's rubric operationalises commitments articulated in DORA [1], the Leiden "
-            "Manifesto [2] and CoARA [3], none of which prescribe an instrument. Its deterministic "
+            "Manifesto [2] and the Agreement on Reforming Research Assessment [3], none of which prescribe an instrument. Its deterministic "
             "checks build directly on MDAR [5], RRID [6] and FAIR [7]. Automated reporting-checklist "
             "tools exist in the life sciences and share the goal of relieving reviewers of "
             "mechanical verification; ScholarPi differs in publishing its full weighting, in "
@@ -606,380 +601,15 @@ def build_pdf(path):
     return path
 
 
-# ---------------------------------------------------------------------------
-# HTML fragment for the Architecture tab
-# ---------------------------------------------------------------------------
-def esc(t):
-    return html.escape(str(t), quote=False)
-
-
-def build_html(path):
-    out = ['<div class="wp">']
-    out.append(f'<h2 class="wp-title">{esc(TITLE)}</h2>')
-    out.append(f'<p class="wp-subtitle">{esc(SUBTITLE)}</p>')
-    out.append(f'<p class="wp-byline">{esc(AUTHOR)} · <span>{esc(AFFILIATION)}</span></p>')
-    out.append(f'<p class="wp-version">{esc(VERSION)}</p>')
-
-    out.append('<section class="wp-abstract"><h3>Abstract</h3>'
-               f'<p>{esc(ABSTRACT)}</p></section>')
-
-    for sec in SECTIONS:
-        out.append(f'<h3 class="wp-h1">{esc(sec["n"])}. {esc(sec["title"])}</h3>')
-        for p in sec.get("paras", []):
-            out.append(f"<p>{esc(p)}</p>")
-        if sec.get("bullets"):
-            out.append("<ul class='wp-list'>")
-            for lead, body in sec["bullets"]:
-                out.append(f"<li><strong>{esc(lead)}</strong> {esc(body)}</li>")
-            out.append("</ul>")
-        for sub in sec.get("subsections", []):
-            out.append(f'<h4 class="wp-h2">{esc(sub["n"])} {esc(sub["title"])}</h4>')
-            for p in sub.get("paras", []):
-                out.append(f"<p>{esc(p)}</p>")
-        if sec.get("table"):
-            spec = sec["table"]
-            out.append('<div class="table-scroll"><table class="data-table wp-table"><thead><tr>')
-            out += [f"<th>{esc(h)}</th>" for h in spec["headers"]]
-            out.append("</tr></thead><tbody>")
-            for r in spec["rows"]:
-                out.append("<tr>" + "".join(f"<td>{esc(c)}</td>" for c in r) + "</tr>")
-            out.append("</tbody></table></div>")
-            out.append(f'<p class="wp-note">{esc(spec["note"])}</p>')
-        for p in sec.get("after", []):
-            out.append(f"<p>{esc(p)}</p>")
-
-    out.append('<h3 class="wp-h1">References</h3><ol class="wp-refs">')
-    out += [f"<li>{esc(r)}</li>" for r in REFERENCES]
-    out.append("</ol></div>")
-
-    doc = "\n".join(out)
-    with open(path, "w", encoding="utf-8") as fh:
-        fh.write(doc)
-    return path
-
-
 def _main_build_whitepaper():
     outdir = sys.argv[1] if len(sys.argv) > 1 else "."
     pdf = build_pdf(os.path.join(outdir, "ScholarPi_Whitepaper.pdf"))
-    frag = build_html(os.path.join(outdir, "whitepaper.html"))
     print("wrote:", pdf)
-    print("wrote:", frag)
 
 
 # ==============================================================================================================
-# build_hal.py (was its own script)
+# build_ui: the front end
 # ==============================================================================================================
-#!/usr/bin/env python3
-"""build_hal.py -- build HAL-OS's boot image from its own repository, for the Lab.
-
-    python scripts/build_hal.py --src ../HAL-OS
-    python scripts/build_hal.py --src /tmp/HAL-OS --ref 7f2e094
-
-HAL-OS is a separate repository and stays one. ScholarPi does not vendor its
-source; it builds the image from a checkout at deploy time (see Dockerfile),
-the same way `python bitllm_kernel.py` does on a desktop, and serves the
-result to the browser, where v86 boots it.
-
-Two things are written to frontend/hal/:
-
-    bitllm.img   the boot disk, trimmed (see below)
-    build.json   what was built, from which ref, and the constants the browser
-                 side was written against
-
-THE AGREEMENT IS CHECKED HERE, NOT DISCOVERED IN A BROWSER
----------------------------------------------------------
-frontend/hal/wire.js is a port of inject.py's encoder. The two only work if
-they agree on geometry, palette band and protocol constants -- and a mismatch
-does not error, it renders every colour slightly wrong or trains the wrong
-slots. So the build imports the HAL-OS modules and compares their constants
-with the values wire.js declares, and refuses to produce an image if any of
-them disagree. Change the kernel's geometry and this build fails until
-wire.js follows.
-
-WHY THE IMAGE IS TRIMMED
-------------------------
-bitllm_kernel.py pads the disk to 8 MiB for VirtualBox's geometry probing.
-Everything after the MBR and stage 2 is zeros, and in a browser those zeros
-are an 8 MiB download. SeaBIOS under v86 boots a 64 KiB disk identically, and
-the build checks that no non-zero byte is cut off.
-"""
-
-
-HERE = os.path.dirname(os.path.abspath(__file__))
-OUT_DIR = os.path.join(str(REPO), "front", "hal")
-WIRE_JS = os.path.join(OUT_DIR, "wire.js")
-TRIM_TO = 64 * 1024
-
-
-def wire_constants():
-    """The `export const NAME = <int>;` lines of wire.js, as a dict."""
-    with open(WIRE_JS, "r", encoding="utf-8") as fh:
-        text = fh.read()
-    found = {}
-    for name, value in re.findall(r"export const (\w+) = (0x[0-9A-Fa-f]+|\d+);", text):
-        found[name] = int(value, 0)
-    return found
-
-
-def build_hal_main():
-    p = argparse.ArgumentParser(description=__doc__.split("\n")[0])
-    p.add_argument("--src", default=os.environ.get("HAL_OS_DIR",
-                                                   os.path.join(os.path.dirname(HERE), "..", "HAL-OS")),
-                   help="path to a HAL-OS checkout (default: $HAL_OS_DIR or ../HAL-OS)")
-    p.add_argument("--ref", default=os.environ.get("HAL_OS_REF", ""),
-                   help="the commit or tag the checkout is at, recorded in build.json")
-    p.add_argument("--repo", default=os.environ.get("HAL_OS_REPO", "https://github.com/neurophilic/HAL-OS"))
-    args = p.parse_args()
-
-    src = os.path.abspath(args.src)
-    if not os.path.isfile(os.path.join(src, "bitllm_kernel.py")):
-        sys.exit("[build_hal] no bitllm_kernel.py in %s -- point --src at a HAL-OS checkout" % src)
-    sys.path.insert(0, src)
-    import bitllm_kernel as K   # noqa: E402
-    import inject as I          # noqa: E402
-
-    # ---- the agreement -------------------------------------------------
-    js = wire_constants()
-    expected = {
-        "SCREEN_W": (I.SCREEN_W, K.NEURON_W),
-        "SCREEN_H": (I.SCREEN_H, K.NEURON_H),
-        # The palette is decided by the kernel (palette_dac starts the cube at
-        # OUT_MIN), so that is what the browser must match -- not inject.py,
-        # which disagrees with it in HAL-OS 7f2e094 (see the warning below).
-        "OUT_LO": (K.OUT_MIN,),
-        "CUBE": (I.CUBE,),
-        "MAX_SEG": (I.MAX_SEG,),
-        "MIN_RUN": (I.MIN_RUN,),
-        "BRIDGE": (I.BRIDGE,),
-        "CMD_ADDR": (I.CMD_ADDR,),
-        "CMD_DUMP": (I.CMD_DUMP,),
-        "CMD_WIRE_BASE": (I.CMD_WIRE_BASE, getattr(K, "CMD_WIRE_BASE", I.CMD_WIRE_BASE)),
-    }
-    bad = []
-    for name, sources in expected.items():
-        if name not in js:
-            bad.append("%s missing from wire.js" % name)
-            continue
-        for v in sources:
-            if js[name] != v:
-                bad.append("%s: wire.js says %d, HAL-OS says %d" % (name, js[name], v))
-    ops = {"FILL8": I.OP_FILL8, "ROW": I.OP_ROW, "SEEK": I.OP_SEEK,
-           "SAVE": I.OP_SAVE, "LOAD": I.OP_LOAD, "RESET": I.OP_RESET}
-    with open(WIRE_JS, "r", encoding="utf-8") as fh:
-        wire_text = fh.read()
-    for name, op in ops.items():
-        if not re.search(r"\b%s: \[0x%02X," % (name, op), wire_text, re.I):
-            bad.append("opcode %s (0x%02X) does not match wire.js MNEMONICS" % (name, op))
-    if I.OUT_LO != K.OUT_MIN:
-        print("[build_hal] WARNING: HAL-OS's own inject.py packs colours from index %d, but "
-              "the kernel's palette starts at OUT_MIN = %d. Desktop injection will show "
-              "shifted colours until inject.py is fixed; the browser follows the kernel."
-              % (I.OUT_LO, K.OUT_MIN))
-    if bad:
-        sys.exit("[build_hal] wire.js and HAL-OS disagree -- refusing to build:\n  "
-                 + "\n  ".join(bad))
-
-    # ---- the image -----------------------------------------------------
-    with tempfile.TemporaryDirectory() as tmp:
-        path = os.path.join(tmp, "bitllm.img")
-        K.build(path)
-        with open(path, "rb") as fh:
-            img = fh.read()
-    extent = len(img.rstrip(b"\0"))
-    if extent > TRIM_TO:
-        sys.exit("[build_hal] image has %d bytes of content, more than the %d it is "
-                 "trimmed to -- raise TRIM_TO" % (extent, TRIM_TO))
-    img = img[:TRIM_TO]
-
-    os.makedirs(OUT_DIR, exist_ok=True)
-    with open(os.path.join(OUT_DIR, "bitllm.img"), "wb") as fh:
-        fh.write(img)
-
-    # The kernel saves bank by bank, two 64-sector halves each, from WEIGHT_LBA.
-    weight_sectors = K.WEIGHT_LBA + K.BANKS * 2 * K.SECT_PER_CALL
-    info = {
-        "repo": args.repo,
-        "ref": args.ref or "local",
-        "built_at": time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime()),
-        "image_sha256": hashlib.sha256(img).hexdigest(),
-        "image_bytes": len(img),
-        "content_bytes": extent,
-        "neurons": [K.NEURON_W, K.NEURON_H],
-        "screen": [K.SCREEN_W, K.SCREEN_H],
-        "resp_linear": K.RESP_SEG << 4,
-        "frame_counter": K.FRAME,
-        "weights_restored_flag": K.DBOK,
-        "weight_magic": K.MAGIC,
-        "weight_disk_bytes": max(1 << 20, weight_sectors * 512),
-        "init_mode": getattr(K, "INIT_MODE", "block"),
-        # Where the portal's keyboard channel writes, and where the command
-        # row sits, in SLOT space. Read by the browser so it never guesses.
-        "key_band_start": K.KEY_BAND_START,
-        "cmd_base": K.CMD_BASE,
-        "commands": bool(getattr(K, "COMMANDS", False)),
-    }
-    with open(os.path.join(OUT_DIR, "build.json"), "w", encoding="utf-8") as fh:
-        json.dump(info, fh, indent=2)
-    print("[build_hal] bitllm.img %d bytes (%d of content) from %s @ %s"
-          % (len(img), extent, src, info["ref"]))
-
-
-def _main_build_hal():
-    build_hal_main()
-
-
-# ==============================================================================================================
-# build_hal_shell.py (was its own script)
-# ==============================================================================================================
-"""Build the HAL-OS shell boot image: frontend/hal/shell/shell.asm -> frontend/hal/shell.img.
-
-    python scripts/build_hal_shell.py          # needs nasm
-    python scripts/build_hal_shell.py --check  # verify the committed image matches the source
-
-The image is committed (it is 64 KB), so the deployment does not need nasm.
-It is padded to 64 KB, the size of the network image, so the emulated BIOS
-sees an ordinary small disk.
-"""
-
-build_hal_shell_ROOT = str(REPO)
-build_hal_shell_SRC = os.path.join(build_hal_shell_ROOT, "front", "hal", "shell", "shell.asm")
-build_hal_shell_OUT = os.path.join(build_hal_shell_ROOT, "front", "hal", "shell.img")
-SIZE = 64 * 1024
-
-
-def build() -> bytes:
-    if not shutil.which("nasm"):
-        sys.exit("nasm is required: apt install nasm / brew install nasm")
-    with tempfile.TemporaryDirectory() as d:
-        out = os.path.join(d, "shell.bin")
-        subprocess.run(["nasm", "-f", "bin", build_hal_shell_SRC, "-o", out], check=True)
-        raw = open(out, "rb").read()
-    if raw[510:512] != b"\x55\xaa":
-        sys.exit("boot signature missing")
-    if len(raw) > SIZE:
-        sys.exit(f"shell is {len(raw)} bytes, more than {SIZE}")
-    return raw + bytes(SIZE - len(raw))
-
-
-def build_hal_shell_main():
-    ap = argparse.ArgumentParser()
-    ap.add_argument("--check", action="store_true")
-    a = ap.parse_args()
-    img = build()
-    if a.check:
-        have = open(build_hal_shell_OUT, "rb").read() if os.path.exists(build_hal_shell_OUT) else b""
-        if have != img:
-            sys.exit("frontend/hal/shell.img is out of date: run python scripts/build_hal_shell.py")
-        print("[build_hal_shell] shell.img matches shell.asm")
-        return
-    open(build_hal_shell_OUT, "wb").write(img)
-    used = len(img.rstrip(b"\0"))
-    print(f"[build_hal_shell] shell.img {len(img)} bytes ({used} used), sha256 {hashlib.sha256(img).hexdigest()[:16]}")
-
-
-def _main_build_hal_shell():
-    build_hal_shell_main()
-
-
-# ==============================================================================================================
-# build_program.py (was its own script)
-# ==============================================================================================================
-"""Assembles the site's program, frontend/super/pitechlab.sasm (SuperAI assembly), into
-the program region of frontend/index.html (window.SUPERAI_PROGRAM, between the `// <pitechlab.super.js>` markers;
-it was its own file, super/pitechlab.super.js), with the SuperAI engine in Rust (rust/superai, asm.rs).
-
-    python back/scripts/tools.py build-program           assemble and write the region
-    python back/scripts/tools.py build-program --check   fail if the region is not what the assembly gives
-"""
-
-build_program_ROOT = REPO
-build_program_SRC = build_program_ROOT / "front/super/pitechlab.sasm"
-build_program_OUT = build_program_ROOT / "front/index.html"
-REGION_OPEN = "// <pitechlab.super.js> generated by `python back/scripts/tools.py build-program` from super/pitechlab.sasm: edit the\n// assembly, not this region\n"
-REGION_CLOSE = "// </pitechlab.super.js>\n"
-CRATE = build_program_ROOT / "back/rust/superai"
-
-HEAD = """// Pi Tech Lab, written in SuperAI. GENERATED from super/pitechlab.sasm by scripts/build_program.py: edit the
-// assembly, not this file.
-//
-// SuperAI is the site's graphical language: supers joined by wires, data flowing from outputs into inputs, powered
-// by AI engines. super/runtime.js loads this as SuperAI.program (or the visitor's own edited copy):
-//
-//   orbit.js           builds the site from  sources, titles, merges and bubbles
-//   super/nodes.js     lays out the diagram  diagram.supers and diagram.wires (on a first visit)
-//   super/project.js   draws the project map project
-"""
-
-
-def build_program_main():
-    subprocess.run(["cargo", "build", "-q", "--release"], cwd=CRATE, check=True)
-    req = json.dumps({"op": "assemble", "source": build_program_SRC.read_text(encoding="utf-8")})
-    r = subprocess.run([str(CRATE / "target/release/superai")], input=req, capture_output=True, text=True, check=True)
-    ans = json.loads(r.stdout)
-    if not ans.get("ok"):
-        sys.exit("pitechlab.sasm:\n  " + "\n  ".join(ans.get("errors", [])))
-    prog = ans["program"]
-    v = json.loads(subprocess.run([str(CRATE / "target/release/superai")], input=json.dumps({"op": "validate", "program": prog}),
-                                  capture_output=True, text=True, check=True).stdout)
-    if not v.get("ok"):
-        sys.exit("the program does not validate:\n  " + "\n  ".join(v.get("errors", [])))
-    # inside index.html's script: "</" written as "<\\/" so no string in the program can end the script
-    text = HEAD + "window.SUPERAI_PROGRAM = " + json.dumps(prog, ensure_ascii=False, indent=1).replace("</", "<\\/") + ";\n"
-    app = build_program_OUT.read_text(encoding="utf-8")
-    a, b = app.index(REGION_OPEN) + len(REGION_OPEN), app.index(REGION_CLOSE)
-    if "--check" in sys.argv:
-        if app[a:b] != text:
-            sys.exit("the program in index.html is out of date: run python back/scripts/tools.py build-program")
-        print("index.html's program matches pitechlab.sasm")
-        return
-    build_program_OUT.write_text(app[:a] + text + app[b:], encoding="utf-8")
-    print(f"wrote the program into {build_program_OUT.relative_to(build_program_ROOT)} ({len(text)} bytes)")
-
-
-def _main_build_program():
-    build_program_main()
-
-
-# ==============================================================================================================
-# build_superai.py (was its own script)
-# ==============================================================================================================
-"""Build a Rust crate of the site to WebAssembly: the SuperAI engine (rust/superai -> frontend/super/superai.wasm)
-by default, or another of the front end's Rust modules with --crate (rust/numbers -> frontend/numbers.wasm).
-
-    python scripts/build_superai.py                   build and copy the .wasm
-    python scripts/build_superai.py --crate numbers   the constants (π, e, φ, γ)
-    python scripts/build_superai.py --test            run the crate's tests first (cargo test)
-
-Needs Rust with the wasm32-unknown-unknown target (`rustup target add wasm32-unknown-unknown`). Where
-that target cannot be downloaded, `--build-std` builds core and alloc from rust-src instead
-(RUSTC_BOOTSTRAP=1 cargo build -Z build-std=core,alloc).
-"""
-
-build_superai_ROOT = REPO
-CRATES = {"superai": build_superai_ROOT / "front" / "super" / "superai.wasm", "numbers": build_superai_ROOT / "front" / "numbers.wasm"}
-
-
-def build_superai_main() -> int:
-    args = sys.argv[1:]
-    name = args[args.index("--crate") + 1] if "--crate" in args else "superai"
-    CRATE, OUT = build_superai_ROOT / "back" / "rust" / name, CRATES[name]
-    if "--test" in args:
-        subprocess.run(["cargo", "test", "-q"], cwd=CRATE, check=True)
-    cmd = ["cargo", "build", "--release", "--lib", "--target", "wasm32-unknown-unknown"]
-    env = dict(os.environ)
-    if "--build-std" in args:
-        cmd += ["-Z", "build-std=core,alloc", "-Z", "build-std-features=compiler-builtins-mem", "--offline"]
-        env["RUSTC_BOOTSTRAP"] = "1"
-    subprocess.run(cmd, cwd=CRATE, check=True, env=env)
-    built = CRATE / "target" / "wasm32-unknown-unknown" / "release" / (name + ".wasm")
-    shutil.copyfile(built, OUT)
-    print(f"{OUT.relative_to(build_superai_ROOT)}: {OUT.stat().st_size} bytes")
-    return 0
-
-
-def _main_build_superai():
-    sys.exit(build_superai_main())
-
 
 def build_ui_main() -> int:
     """back/rust/ui -> front/app/ui.wasm.
@@ -1032,8 +662,7 @@ def _main_build_ui():
 """Run ScholarPi locally, on macOS, Linux or Windows (Python only: no shell or batch scripts).
 
     python run.py          set up a virtual environment the first time, then serve http://localhost:8000
-    python run.py --lab    the Lab wired as production has it: HAL-OS's boot image built from ../HAL-OS
-                           (or $HAL_OS_DIR) and private projects served from ../private (or $PRIVATE_PROJECTS_DIR)
+    python run.py --lab    with private projects served from ../private (or $PRIVATE_PROJECTS_DIR)
 """
 
 run_ROOT = REPO
@@ -1062,7 +691,6 @@ def run_main() -> None:
     host, port = "0.0.0.0", env.get("PORT", "8000")
     args = ["--reload"]
     if lab:
-        subprocess.run([str(py), str(run_ROOT / "back/scripts/tools.py"), "build-hal", "--src", env.get("HAL_OS_DIR", str(run_ROOT.parent / "HAL-OS"))], check=True)
         env.setdefault("PRIVATE_PROJECTS_DIR", str(run_ROOT.parent / "private"))
         env.setdefault("SESSION_SECRET", secrets.token_hex(32))   # owner sign-in needs one; a fresh one per run only means signing in again
         host, args = "127.0.0.1", []
@@ -1102,10 +730,6 @@ def _main_zotero():
 
 COMMANDS = {
     "whitepaper": _main_build_whitepaper,
-    "build-hal": _main_build_hal,
-    "build-hal-shell": _main_build_hal_shell,
-    "build-program": _main_build_program,
-    "build-superai": _main_build_superai,
     "build-ui": _main_build_ui,
     "run": _main_run,
     "zotero": _main_zotero,

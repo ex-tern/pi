@@ -18,6 +18,7 @@ mod dom;
 mod host;
 mod json;
 mod mem;
+mod pi;
 mod sha256;
 mod style;
 mod text;
@@ -77,6 +78,18 @@ pub extern "C" fn fetched(req: u32, status: u32, p: *mut u8, l: usize, done: u32
 #[unsafe(no_mangle)]
 pub extern "C" fn timer(token: u32) {
     app::on_timer(token);
+}
+
+/// The window changed size.
+#[unsafe(no_mangle)]
+pub extern "C" fn resized() {
+    app::on_resize();
+}
+
+/// The pointer moved (phase 0), was let go (1) or was taken away (2) while a super is being dragged.
+#[unsafe(no_mangle)]
+pub extern "C" fn pointer(phase: u32, x: f64, y: f64) {
+    app::on_pointer(phase, x, y);
 }
 
 /// The address changed (a link to #/… was followed, or back or forward).
