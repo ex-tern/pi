@@ -90,7 +90,7 @@
   const shown = el => { const r = el.getBoundingClientRect(); return r.width > 0 && r.height > 0 && el.getClientRects().length; };
   const engines = () => [...document.querySelectorAll(".lv-node[data-id]")].filter(el => shown(el) && LV().isEngine && LV().isEngine(el));
   const target = () => { const s = SS().selected ? SS().selected() : ""; return s && typeof s !== "string" ? s : null; };
-  const nameOf = el => !el ? "every super" : el.classList.contains("orbit-panel") ? "the window" : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim() : el.classList.contains("se-project") ? "the project" : el.classList.contains("lv-node") ? "the super" : el.classList.contains("ob-member") ? (el.textContent || "the pill").trim().slice(0, 30) : el.classList.contains("se-ctl") || el.classList.contains("se-cond") ? (el.dataset.ctl || el.dataset.cond) : "the title";
+  const nameOf = el => !el ? "every super" : el.classList && el.classList.contains("se-req") ? "Privacy choices" : el.classList.contains("orbit-panel") ? "the window" : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim() : el.classList.contains("se-project") ? "the project" : el.classList.contains("lv-node") ? "the super" : el.classList.contains("ob-member") ? (el.textContent || "the pill").trim().slice(0, 30) : el.classList.contains("se-ctl") || el.classList.contains("se-cond") ? (el.dataset.ctl || el.dataset.cond) : "the title";
   function valueOf(el) {
     if (!el) return "";
     if (el.classList.contains("se-cond")) return condValue(el.dataset.cond);
@@ -412,6 +412,21 @@
     bottom.innerHTML = '<div class="se-ctl-half se-ctl-l">' + ARROWS.slice(0, 2).map(arrow).join("") + '</div><div class="se-ctl-half se-ctl-r">' + ARROWS.slice(2).map(arrow).join("") + "</div>";
     bottom.setAttribute("aria-label", "arrows");
     // smart buttons: pressed (a click, Enter) or opened by a wire, PiEn decides what each does (arrowGo below)
+    // the controls are buttons too (owner, 2026-10-13: "lock button should lock in place"): a click on lock locks the
+    // selected super where it is (a click again unlocks it); save, chain and reset the same way. A drag that starts on one
+    // (moving it, or a wire from its port) is not a press.
+    top.querySelectorAll(".se-ctl[data-ctl]").forEach(a => {
+      let down = null;
+      a.addEventListener("pointerdown", e => { down = e.button === 0 ? [e.clientX, e.clientY] : null; });
+      a.addEventListener("click", e => {
+        e.stopPropagation();
+        if (e.target.closest && e.target.closest(".se-port")) return;
+        if (down && Math.hypot(e.clientX - down[0], e.clientY - down[1]) > 6) return;
+        press(a.dataset.ctl);
+      });
+      a.setAttribute("role", "button"); a.tabIndex = 0;
+      a.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); press(a.dataset.ctl); } });
+    });
     bottom.querySelectorAll(".se-arrow").forEach(a => {
       a.addEventListener("click", e => { e.stopPropagation(); press(a.dataset.ctl); });
       a.addEventListener("keydown", e => { if (e.key === "Enter" || e.key === " ") { e.preventDefault(); press(a.dataset.ctl); } });

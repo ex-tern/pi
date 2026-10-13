@@ -77,7 +77,7 @@ html.se-gl .wire-term { fill: transparent !important; stroke: transparent !impor
 
 /* the first paint (super/boot.js): only the light, until the supers have settled; then everything fades in in place */
 html.se-boot body > * { opacity: 0 !important; transition: none !important; }
-html.se-unveil body > * { transition: opacity 0.9s ease !important; }
+html.se-unveil body > * { transition: opacity 0.3s ease !important; }
 html.se-boot body::before, html.se-unveil body::before { display: block !important; }
 
 /* a window covers what lies under it (owner, 2026-10-12: "explore is always on top": with the engine every page

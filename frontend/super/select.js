@@ -42,10 +42,11 @@
       if ((h = el.closest(".orbit-bubble"))) return "site";
       if ((h = el.closest(".lv-node"))) { const r = h.getBoundingClientRect(); return loopHolding(r.left + r.width / 2, r.top + r.height / 2, h) || (inSite(r.left + r.width / 2, r.top + r.height / 2) ? "site" : "loop"); }
       if (el.closest(".orbit-title, .lv-palette")) return "loop";
+      if (el.closest(".se-req")) return "site";
     }
     return loopHolding(x, y) || (inSite(x, y) ? "site" : "loop");
   }
-  const isThing = el => !!(el && el.closest && el.closest(".orbit-panel, .orbit-bubble, .lv-node, .se-project, .orbit-title, .lv-palette"));
+  const isThing = el => !!(el && el.closest && el.closest(".orbit-panel, .orbit-bubble, .lv-node, .se-project, .orbit-title, .lv-palette, .se-req"));
   const ownCursor = el => !!(el && el.closest && el.closest(".se-port, .wire-hit, .wire-handle, .op-head button, .op-close, .se-ctlbar"));
   function elOf(s) { return s === "loop" ? null : s === "site" ? null : s; }
   function select(s) {
@@ -72,6 +73,7 @@
       if ((h = t.closest(".orbit-panel"))) return { on: h };
       if ((h = t.closest(".orbit-bubble"))) return { on: h };
       if ((h = t.closest(".lv-node, .se-project"))) return { on: h };
+      if ((h = t.closest(".se-req")) && !t.closest(".se-req-card")) return { on: h };   // privacy choices, a super like the others (super/requests.js)
       if ((h = t.closest(".orbit-title"))) return { on: h.querySelector(".se-titlesuper") || h };   // the title is a selectable super (owner, 2026-10-12)
       if (t.closest(".lv-palette")) return { inside: "loop" };
     }

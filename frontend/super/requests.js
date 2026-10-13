@@ -98,7 +98,11 @@
     // a click opens the choices, a moment later so that a double click (delete, super/delete.js) does not (its second click
     // is the double click's, e.detail > 1); a drag moves it
     let clickT = 0;
-    el.addEventListener("click", e => { if (dragged) { dragged = false; return; } if (e.target.closest(".se-req-card")) return; clearTimeout(clickT); if (e.detail > 1) return; clickT = setTimeout(() => { if (!owner && window.SeConsent && el.isConnected && !el.hidden) window.SeConsent.open(); }, 260); });
+    // like the other supers (owner, 2026-10-13: "privacy choices doesn't act as others"): a click selects it (super/select.js);
+    // a click on it once selected opens the choices
+    let wasSel = false;
+    window.addEventListener("pointerdown", e => { if (el && el.contains(e.target)) wasSel = !!(window.SeSelect && window.SeSelect.isSelected(el)); }, true);
+    el.addEventListener("click", e => { if (dragged) { dragged = false; return; } if (e.target.closest(".se-req-card")) return; clearTimeout(clickT); if (e.detail > 1 || !wasSel) return; clickT = setTimeout(() => { if (!owner && window.SeConsent && el.isConnected && !el.hidden) window.SeConsent.open(); }, 260); });
     el.addEventListener("dblclick", () => clearTimeout(clickT), true);
     el.addEventListener("pointerdown", e => {
       if (e.button !== 0 || e.target.closest(".se-req-card, button")) return;
@@ -180,7 +184,11 @@
     const fr = frame(), h = el.offsetHeight;
     let left = 12, top = window.innerHeight - 12 - h;
     if (fr && at) { const p = fr.to(at.x, at.y); left = p[0]; top = p[1] - h / 2; }
-    else if (fr && window.innerWidth < 700) { const p = fr.to(0.5, 0.95); left = p[0] - el.offsetWidth / 2; top = p[1] - h / 2; }   // a phone: under the two columns, in the middle
+    else if (fr && window.innerWidth < 700) {                             // a phone: in the free space right of the project, clear of the arrows
+      const pj = document.querySelector(".se-project"), pr = pj && pj.getBoundingClientRect();
+      const p = fr.to(0.75, 0.81), cy = pr && pr.height ? pr.top + pr.height / 2 : p[1];
+      left = Math.min(window.innerWidth - 8 - el.offsetWidth, Math.max(pr && pr.width ? pr.right + 12 : 0, p[0] - el.offsetWidth / 2)); top = cy - h / 2;
+    }
     else if (fr) { const p = fr.to(START_AT.x, START_AT.y); left = p[0]; top = p[1] - h / 2; }
     const L = Math.round(left) + "px", T = Math.round(top) + "px";
     if (el.style.left !== L) el.style.left = L; if (el.style.top !== T) el.style.top = T; if (el.style.bottom !== "auto") el.style.bottom = "auto";
