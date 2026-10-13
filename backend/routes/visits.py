@@ -122,10 +122,10 @@ def engines_status():
     # rather than hidden: an engine whose numbers are partly model-taught is a
     # materially different claim from one taught entirely by the platform's own
     # data, and the panel should be able to say which it is looking at.
-    for key, mod in (("riB", rib_learning), ("siM", scilem_learning)):
+    for key, tutor_status in (("riB", rib_learning.tutor_status), ("siM", scilem_learning.tutor_status)):
         try:
-            if isinstance(out.get(key), dict) and hasattr(mod, "tutor_status"):
-                out[key]["tutor"] = mod.tutor_status()
+            if isinstance(out.get(key), dict):
+                out[key]["tutor"] = tutor_status()
         except Exception:
             pass
     return out

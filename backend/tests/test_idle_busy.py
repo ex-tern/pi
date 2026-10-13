@@ -1,6 +1,5 @@
 """What makes the site 'busy' for the idle assessment worker."""
 
-import importlib
 import time
 
 import config
@@ -47,17 +46,11 @@ def test_in_flight_assessment_blocks_the_worker(monkeypatch):
 def test_on_by_default_only_when_hosted(monkeypatch):
     for k in ("RAILWAY_ENVIRONMENT", "RAILWAY_ENVIRONMENT_NAME", "RAILWAY_PROJECT_ID", "ENABLE_IDLE_ASSESSMENTS"):
         monkeypatch.delenv(k, raising=False)
-    importlib.reload(config)
-    assert config.ENABLE_IDLE_ASSESSMENTS is False
+    assert config._idle_assessments_on() is False
     monkeypatch.setenv("RAILWAY_ENVIRONMENT_NAME", "production")
-    importlib.reload(config)
-    assert config.ENABLE_IDLE_ASSESSMENTS is True
+    assert config._idle_assessments_on() is True
     monkeypatch.setenv("ENABLE_IDLE_ASSESSMENTS", "0")
-    importlib.reload(config)
-    assert config.ENABLE_IDLE_ASSESSMENTS is False
-    monkeypatch.delenv("ENABLE_IDLE_ASSESSMENTS")
-    monkeypatch.delenv("RAILWAY_ENVIRONMENT_NAME")
-    importlib.reload(config)
+    assert config._idle_assessments_on() is False
 
 
 def test_public_status_has_no_operator_detail():

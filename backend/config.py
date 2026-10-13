@@ -590,9 +590,13 @@ SIM_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("SIM_TUTOR_MAX_CALLS_PER_DAY", "40")
 # is quiet; off by default anywhere else, so a clone of this public repository
 # never starts spending provider quota just because it was left running.
 # ENABLE_IDLE_ASSESSMENTS=0 switches it off on a hosted deployment too.
-_HOSTED = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME")
-               or os.getenv("RAILWAY_PROJECT_ID"))
-ENABLE_IDLE_ASSESSMENTS = _env_bool("ENABLE_IDLE_ASSESSMENTS", _HOSTED)
+def _idle_assessments_on() -> bool:
+    hosted = bool(os.getenv("RAILWAY_ENVIRONMENT") or os.getenv("RAILWAY_ENVIRONMENT_NAME")
+                  or os.getenv("RAILWAY_PROJECT_ID"))
+    return _env_bool("ENABLE_IDLE_ASSESSMENTS", hosted)
+
+
+ENABLE_IDLE_ASSESSMENTS = _idle_assessments_on()
 
 # Papers per UTC day. Providers rate-limit well before this on a free tier, so
 # treat it as a ceiling rather than a target.
