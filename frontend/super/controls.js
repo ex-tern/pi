@@ -394,8 +394,10 @@
     if (C && C.classList.contains("is-chained") !== chained) { C.classList.toggle("is-chained", chained); C.setAttribute("aria-pressed", String(chained)); }
   }
   // which super carries the bars (owner, 2026-10-13: "if a super gets bigger than 70% of the page, the control and
-  // conditions go to the next layer super"): the main super, unless it covers more than BIG of the page; then the
-  // super it holds (the second super), and so on down, each time the biggest super held directly by the last one
+  // conditions go to the next layer super"; "because the second canvas is smaller than 70% of the main canvas, the
+  // controls and conditions should be on the main canvas"): the main super, unless the super it holds (the second
+  // super) covers more than BIG of the page; then that one, and so on down while the next layer (the biggest super held
+  // directly by the last one) is itself bigger than BIG of the page
   const BIG = 0.70;
   const pid = (o, p) => o === "site" ? p : o + "/" + p;
   const portAt = (o, p) => { const e = document.querySelector('.se-port[data-pid="' + pid(o, p) + '"]'); if (!e) return null; const r = e.getBoundingClientRect(); return r.width || r.height ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
@@ -430,10 +432,11 @@
   function layer() {
     const page = window.innerWidth * window.innerHeight;
     let o = "main", box = boxOf("main");
-    for (let i = 0; i < 8 && box && box.area > BIG * page; i++) {
+    for (let i = 0; i < 8 && box; i++) {
       const next = o === "main" ? (boxOf("site") ? "site" : null) : inner(o, box);
-      if (!next) break;
-      o = next; box = boxOf(o);
+      const nb = next && boxOf(next);
+      if (!nb || nb.area <= BIG * page) break;                          // the next layer is not that big: the bars stay here
+      o = next; box = nb;
     }
     if (o !== carrier) { carrier = o; html.dataset.seBars = o; }
   }
