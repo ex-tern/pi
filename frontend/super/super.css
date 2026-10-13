@@ -750,3 +750,19 @@ html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { --se-k: 9.965
 html.shape-se .lv-node.lv-box.is-holder > .lv-glyph:empty { display: none; }
 /* π and friends are switched off (owner, 2026-10-13): no π digits along the title's wire or round the loop */
 .sl-pi, .om-page-pi, .om-page-pipath { display: none !important; }
+
+/* no square focus ring on a super (owner, 2026-10-13: "remove the blue corner rect"): a super shows that it is
+   selected by its own edge (the engine's cobalt edge and sheen); the browser's focus outline drew a square box round it */
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .orbit-panel, .orbit-title, .se-titlesuper, .orbit-mark, .se-port, .sl-layer, .orbit-stage, .orbit-bubbles):focus-visible,
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .orbit-panel, .orbit-title, .se-titlesuper):focus { outline: none !important; }
+html.shape-se .se-pressing { outline: none !important; }
+html.se-gl :is(.ob-member, .ob-label).se-sel::before, html.se-gl :is(.ob-member, .ob-label).se-sel { border-color: transparent !important; box-shadow: none !important; }
+/* the selected super keeps its own ink edge: no blue rectangle round it (owner, 2026-10-13: "remove the blue corner
+   rect"); its sheen shows it is selected */
+html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel,
+html.shape-se :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--ink) !important; border-width: var(--u-edge, 1.5px) !important; }
+html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--ink); stroke-width: 1.5; }
+html.shape-se .ob-member.se-sel::before { border-color: var(--ink); border-width: 1.5px; }
+html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-loop .om-page-loop { stroke: var(--sky-ink, var(--ink)); }
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: transparent !important; }
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper).se-sel::before { padding: 3px; }

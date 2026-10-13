@@ -44,42 +44,31 @@ vec3 light(vec2 uv, float t) {
   // a light vignette toward the edges ("add light vignette")
   c *= 1.0 - 0.10 * smoothstep(0.38, 1.05, length(v));
   return min(c, vec3(1.0));
+}
+float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
+float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
+// the whole sky, clouds and stars too: the background draws it and the panes see it through their glass, bent by the
+// lens (owner, 2026-10-13: "improve the glass reflection, light reflection and lensing effect"): a smooth gradient alone
+// gave the lens nothing to bend
+vec3 sky(vec2 uv, float t) {
+  vec3 c = light(uv, t);
+  vec2 q = vec2(uv.x * uRes.x / uRes.y, uv.y) * vec2(2.2, 5.5) + vec2(t * 0.004, 0.0);
+  float cl = 0.5 * vn(q) + 0.3 * vn(q * 2.1 + 3.7) + 0.2 * vn(q * 4.3 - 1.9);
+  float up = 1.0 - smoothstep(0.55, 0.76, uv.y);
+  float mass = smoothstep(0.36, 0.70, cl) * up;
+  vec3 cloud = mix(mix(vec3(0.68, 0.71, 0.76), vec3(0.92, 0.84, 0.74), smoothstep(0.35, 0.72, uv.y)), vec3(0.28, 0.31, 0.38), uNight);   // by night, dark clouds
+  c = mix(c, cloud, 0.68 * mass);
+  c += mix(vec3(1.0, 1.0, 0.98) * 0.07, vec3(0.70, 0.78, 0.95) * 0.06, uNight) * smoothstep(0.30, 0.10, abs(cl - 0.42)) * up * (1.0 - mass);   // bright gaps (silver by moonlight)
+  vec2 g = uv * uRes / 3.0; float st = step(0.9975, h21(floor(g))) * (0.6 + 0.4 * sin(t * 0.7 + h21(floor(g) + 5.0) * 30.0));
+  c += vec3(0.85, 0.9, 1.0) * st * 0.55 * uNight * up * (1.0 - mass);   // stars by night, where no cloud is
+  return c;
 }`;
 const BG_VS = `varying vec2 vP; void main() { vP = position.xy; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const BG_FS = `uniform vec2 uRes; uniform float uTime; varying vec2 vP; ${LIGHT}
-float h21(vec2 p) { p = fract(p * vec2(123.34, 456.21)); p += dot(p, p + 45.32); return fract(p.x * p.y); }
-float vn(vec2 p) { vec2 i = floor(p), f = fract(p); f = f * f * (3.0 - 2.0 * f); return mix(mix(h21(i), h21(i + vec2(1.0, 0.0)), f.x), mix(h21(i + vec2(0.0, 1.0)), h21(i + vec2(1.0, 1.0)), f.x), f.y); }
-// embers: tiny glowing motes drifting slowly up through the light
-vec3 embers(vec2 px, float t) {
-  vec3 acc = vec3(0.0);
-  for (int L = 0; L < 3; L++) {
-    float sc = 90.0 + float(L) * 55.0, sp = 6.0 + float(L) * 4.0;
-    vec2 q = px / sc; q.y += t * sp / sc; q.x += sin(t * 0.07 + float(L)) * 0.3;
-    vec2 id = floor(q), f = fract(q) - 0.5;
-    float r = h21(id + float(L) * 17.0);
-    if (r > 0.42) continue;                                                 // most cells are empty
-    vec2 o = vec2(h21(id + 3.1), h21(id + 7.7)) - 0.5;
-    float dd = length((f - o * 0.7) * sc);
-    float tw = 0.55 + 0.45 * sin(t * (0.6 + r * 1.7) + r * 40.0);
-    acc += vec3(1.0, 0.55, 0.30) * exp(-dd * dd / 3.0) * 0.55 * tw + vec3(1.0, 0.8, 0.6) * exp(-dd / 6.0) * 0.06 * tw;
-  }
-  return acc;
-}
 void main() {
   vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
-  vec3 c = light(uv, uTime);                                              // sunshine, with its grain (owner, 2026-10-12: "keep the grains")
-  // soft stratocumulus drifting slowly across the upper sky, lit gold on their undersides near the horizon
-  vec2 q = vec2(uv.x * uRes.x / uRes.y, uv.y) * vec2(2.2, 5.5) + vec2(uTime * 0.004, 0.0);
-  float cl = 0.5 * vn(q) + 0.3 * vn(q * 2.1 + 3.7) + 0.2 * vn(q * 4.3 - 1.9);
-  float sky = 1.0 - smoothstep(0.55, 0.76, uv.y);
-  float mass = smoothstep(0.36, 0.70, cl) * sky;
-  vec3 cloud = mix(mix(vec3(0.68, 0.71, 0.76), vec3(0.92, 0.84, 0.74), smoothstep(0.35, 0.72, uv.y)), vec3(0.28, 0.31, 0.38), uNight);   // by night, dark clouds
-  c = mix(c, cloud, 0.68 * mass);
-  c += mix(vec3(1.0, 1.0, 0.98) * 0.07, vec3(0.70, 0.78, 0.95) * 0.06, uNight) * smoothstep(0.30, 0.10, abs(cl - 0.42)) * sky * (1.0 - mass);   // bright gaps (silver by moonlight)
-  // stars by night, where no cloud is
-  { vec2 g = gl_FragCoord.xy / 3.0; float st = step(0.9975, h21(floor(g))) * (0.6 + 0.4 * sin(uTime * 0.7 + h21(floor(g) + 5.0) * 30.0));
-    c += vec3(0.85, 0.9, 1.0) * st * 0.55 * uNight * sky * (1.0 - mass); }
-  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;
+  vec3 c = sky(uv, uTime);
+  c += (h21(gl_FragCoord.xy + fract(uTime) * 91.0) - 0.5) * 0.03;          // the grain (owner, 2026-10-12: "keep the grains")
   gl_FragColor = vec4(c, 1.0);
 }`;
 
@@ -87,13 +76,23 @@ void main() {
 const PANE_VS = `uniform vec2 uSize; varying vec2 vL; void main() { vL = position.xy * uSize; gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0); }`;
 const PANE_FS = `
 uniform vec2 uRes; uniform float uTime; uniform vec2 uHalf; uniform float uN; uniform float uFill; uniform vec3 uEdge;
-uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uLift; uniform float uDpr; varying vec2 vL; ${LIGHT}
+uniform float uEdgeW; uniform float uSheen; uniform float uShadow; uniform float uLift; uniform float uDpr; uniform vec2 uMouse; varying vec2 vL; ${LIGHT}
 // its neighbours (owner, 2026-10-12: "improve the glass effect to reflect off each other"): up to NB nearby panes,
 // as (centre relative to this one, half size) in px; each shows in this pane's glass near the edge facing it
 #define NB 6
 uniform vec4 uNb[NB]; uniform int uNbN;
 float boxd(vec2 p, vec2 h) { float r = min(h.x, h.y) * 0.42; vec2 q = abs(p) - h + r; return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r; }
-float sdf(vec2 p) {                                   // the superellipse's distance in px (first order, from its gradient)
+float sdfS(vec2 p);
+// the superellipse's distance in px: for n of 2.2 and up the rounded box that meets it at its corners (exact, so shadows
+// and the bevel have no diagonal streaks: the first-order estimate drew wings out of square panes), else the estimate
+float sdf(vec2 p) {
+  if (uN < 2.2) return sdfS(p);
+  vec2 h = max(uHalf, vec2(1.0));
+  float r = min(min(h.x, h.y) * (1.0 - pow(2.0, -1.0 / uN)) / 0.2929, min(h.x, h.y));
+  vec2 q = abs(p) - h + r;
+  return length(max(q, 0.0)) + min(max(q.x, q.y), 0.0) - r;
+}
+float sdfS(vec2 p) {                                  // the first-order estimate, from its gradient
   // normalised by the larger coordinate, so a large n on a small pane never overflows (which drew a coloured box)
   vec2 q = max(abs(p) / max(uHalf, vec2(1.0)), vec2(1e-4));
   float m = max(q.x, q.y);
@@ -108,17 +107,27 @@ void main() {
   float d = sdf(vL), aa = 0.75;
   vec4 acc = vec4(0.0);                                 // premultiplied: each layer goes over what is below it
   #define OVER(C_, A_) acc = vec4((C_) * (A_) + acc.rgb * (1.0 - (A_)), (A_) + acc.a * (1.0 - (A_)))
-  // the shadow under it: wide, soft and warm, a little below (outside the pane only)
+  vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
+  vec2 cuv = uv - vL * uDpr / uRes;                                      // the pane's centre, in the page's uv
+  // the shadow (owner, 2026-10-13: "improve the shadows"): a tight dark contact shadow where it meets what is under it,
+  // and a soft penumbra cast away from the light, longer and softer the higher it lies; cool, as a shadow on a grey sky
+  // is; the light the glass gathers falls into it as a faint caustic
   if (uShadow > 0.0) {
-    // a super on top casts a bigger, softer, farther shadow; one underneath a small close one (owner, 2026-10-12)
-    float off = 3.0 + 15.0 * uLift, fall = 5.0 + 13.0 * uLift, cap = 36.0 - off;
-    float ds = sdf(vL - vec2(0.0, off));
-    float sh = uShadow * (0.26 + 0.22 * uLift) * exp(-max(ds, 0.0) / fall) * smoothstep(-aa, aa, d) * (1.0 - smoothstep(cap * 0.55, cap, ds));   // fades out well inside its quad
-    OVER(vec3(0.10, 0.10, 0.10), sh);
+    vec2 away = normalize((cuv - sunAt(uTime)) * uRes + 1e-3);
+    vec2 sdir = normalize(vec2(0.0, 1.0) + away * 0.55);
+    float off = 2.0 + 13.0 * uLift, fall = 3.5 + 12.0 * uLift, cap = 38.0 - off;
+    float outside = smoothstep(-aa, aa, d);
+    float dc = sdf(vL - sdir * off * 0.18);
+    float ds = sdf(vL - sdir * off);
+    float fade = 1.0 - smoothstep(cap * 0.5, cap, ds);
+    float pen = (0.20 + 0.16 * uLift) * exp(-pow(max(ds, 0.0) / fall, 1.25));
+    float ao = 0.30 * exp(-max(dc, 0.0) / 2.2);
+    float sh = uShadow * mix(1.0, 1.35, uNight) * (1.0 - (1.0 - pen) * (1.0 - ao)) * outside * fade;
+    OVER(mix(vec3(0.10, 0.12, 0.17), vec3(0.01, 0.02, 0.05), uNight), min(sh, 0.62));
+    if (uFill > 0.0) OVER(tint(vec3(1.0, 0.86, 0.60)), uShadow * outside * (1.0 - smoothstep(0.0, 2.5, abs(ds + 1.5 + off * 0.25))) * step(0.5, off) * 0.16 * mix(0.6, 0.35, uNight));
   }
   // the glass: the light behind it, frosted (brightened, a touch whitened), lighter at the top, with a bright rim
   float inside = 1.0 - smoothstep(-aa, aa, d);
-  vec2 uv = gl_FragCoord.xy / uRes; uv.y = 1.0 - uv.y;
   float ny = clamp(vL.y / (2.0 * uHalf.y) + 0.5, 0.0, 1.0);              // 0 at the top, 1 at the bottom
   // the sun on the glass (owner, 2026-10-12: "make the sun rays hit the glass"): which way the sun is from here, how
   // strongly it reaches this pane, and the outward normal of the pane's edge
@@ -129,12 +138,17 @@ void main() {
   vec2 nrm = normalize(vec2(sdf(vL + vec2(1.5, 0.0)) - sdf(vL - vec2(1.5, 0.0)), sdf(vL + vec2(0.0, 1.5)) - sdf(vL - vec2(0.0, 1.5))) + 1e-5);
   float facing = max(dot(nrm, toSun), 0.0), away = max(-dot(nrm, toSun), 0.0);
   if (uFill > 0.0 && inside > 0.0) {
-    // lensing (owner, 2026-10-12: "add a lensing effect to the supers"): the glass bends what is behind it, magnifying a
-    // little through its middle and refracting strongly near its edge, along the edge's normal
-    float lensRim = 1.0 - smoothstep(0.0, 26.0, max(-d, 0.0));
-    vec2 lensUv = uv - (vL / uRes) * 0.10 - (nrm * lensRim * 14.0) / uRes;
-    vec3 behind = light(lensUv, uTime);
-    vec3 glass = mix(behind * 0.985, vec3(1.0), uFill + (1.0 - uFill) * 0.42 * uNight);   // by night the frost is lit by the moon: light enough to read on
+    // lensing (owner, 2026-10-12: "add a lensing effect to the supers"; 2026-10-13: "improve ... lensing"): the glass is
+    // a slab with a rounded bevel; through its flat middle the sky is magnified a little, and over the bevel it is bent
+    // sharply outward along the edge's normal (the slope of a quarter circle), with the colours parting there as a
+    // thick lens parts them
+    float depth0 = max(-d, 0.0), R = clamp(0.32 * min(uHalf.x, uHalf.y), 6.0, 30.0);
+    float tb = clamp(depth0 / R, 0.0, 1.0), slope = (1.0 - tb) / sqrt(max(1.0 - (1.0 - tb) * (1.0 - tb), 0.04));
+    vec2 bend = nrm * min(slope, 4.0) * R * 0.55 * uDpr / uRes;
+    vec2 lensUv = uv - (vL * uDpr / uRes) * 0.12 + bend;
+    float disp = 0.10 + 0.25 * (1.0 - tb);
+    vec3 behind = vec3(sky(lensUv + bend * disp, uTime).r, sky(lensUv, uTime).g, sky(lensUv - bend * disp, uTime).b);
+    vec3 glass = mix(behind * 0.985, vec3(1.0), (uFill + (1.0 - uFill) * 0.42 * uNight) * (1.0 - 0.35 * (1.0 - tb)));   // by night the frost is lit by the moon: light enough to read on; clearer over the bevel
     glass = mix(glass, vec3(1.0), 0.10 * (1.0 - ny));                     // the top catches more light
     OVER(glass, inside * (0.42 + 0.48 * uFill));
     // the others, reflected: each neighbour's light glows into the glass along the edge facing it, and its edge
@@ -142,23 +156,38 @@ void main() {
     if (uNbN > 0) {
       float depth = max(-d, 0.0), band = 1.0 - smoothstep(0.0, 52.0, depth);
       vec2 mir = vL + nrm * 7.0 * depth;                                    // where this point sees in the edge's curved mirror (compressed, as a convex glass shows it)
-      float ga = 0.0, ghost = 0.0, rimW = min(34.0, 0.22 * min(uHalf.x, uHalf.y));   // a small super keeps its middle clear
+      float ga = 0.0, ghost = 0.0, mfill = 0.0, rimW = min(34.0, 0.22 * min(uHalf.x, uHalf.y));   // a small super keeps its middle clear
       vec3 rc = mix(light(uv, uTime) * 1.15 + 0.08, vec3(1.0), 0.55);     // a neighbour's frosted light, brighter than this pane's
       for (int i = 0; i < NB; i++) {
         if (i >= uNbN) break;
         vec4 nb = uNb[i];
         float dn = boxd(vL - nb.xy, nb.zw);                                 // how far the neighbour is from this point
         vec2 dir = normalize(nb.xy - vL + 1e-5);
-        float face = smoothstep(0.15, 0.9, dot(nrm, dir));                 // only the edge that faces it
+        float face = smoothstep(0.15, 0.9, dot(normalize(vL / max(uHalf * uHalf, vec2(1.0)) + 1e-6), dir));   // a smooth normal: the edge normal jumps along the diagonals and drew an X                 // only the edge that faces it
         float w = exp(-max(dn, 0.0) / 90.0) * face * band;
         ga += w;
         float dm = boxd(mir - nb.xy, nb.zw);                               // the neighbour's edge, seen in the mirror
+        mfill += (1.0 - smoothstep(-2.0, 2.0, dm)) * face * smoothstep(1.5, 4.0, depth) * (1.0 - smoothstep(rimW * 0.5, rimW * 1.2, depth));   // its glass, mirrored
         ghost += (1.0 - smoothstep(3.0, 9.0, abs(dm))) * face * smoothstep(1.5, 4.0, depth) * (1.0 - smoothstep(rimW * 0.4, rimW, depth));   // the neighbour's edge, a soft line in the rim
       }
       ga = min(ga, 1.0);
       if (ga > 0.0) OVER(rc, ga * 0.55 * inside);
-      OVER(mix(uEdge, rc, 0.45), min(ghost, 1.0) * 0.28 * inside);
+      OVER(rc, min(mfill, 1.0) * 0.16 * inside);
+      OVER(mix(uEdge, rc, 0.45), min(ghost, 1.0) * 0.30 * inside);
     }
+    // light reflected off the glass (owner, 2026-10-13: "improve ... light reflection"): the bevel reflects more the
+    // steeper it is (Fresnel), showing the sky beside it; a glossy streak lies across its upper left; and a soft
+    // highlight and a bright glint on the bevel follow the pointer, as a lamp held over glass would
+    vec3 env = mix(sky(uv - nrm * 30.0 * uDpr / uRes, uTime), vec3(1.0), 0.55);
+    OVER(env, inside * pow(1.0 - tb, 2.5) * 0.38);
+    float bigK = 1.0 - 0.6 * smoothstep(140.0, 320.0, min(uHalf.x, uHalf.y));
+    float sd2 = vL.x / max(uHalf.x, 1.0) * 0.55 + vL.y / max(uHalf.y, 1.0);
+    OVER(vec3(1.0), inside * smoothstep(-1.05, -0.88, sd2) * (1.0 - smoothstep(-0.70, -0.45, sd2)) * 0.13 * bigK * tb);
+    vec2 cPx = uv * uRes / uDpr - vL, toM = uMouse - cPx - vL;
+    float mr = 0.45 * min(uHalf.x, uHalf.y) + 30.0;
+    vec2 hp = vL - clamp((uMouse - cPx) * 0.35, -uHalf, uHalf);
+    OVER(vec3(1.0), inside * exp(-dot(hp, hp) / (mr * mr)) * 0.11 * bigK);
+    OVER(vec3(1.0), inside * pow(max(dot(nrm, normalize(toM + 1e-3)), 0.0), 10.0) * (1.0 - smoothstep(0.5, 5.0, depth0)) * 0.45 * exp(-length(toM) / 420.0));
     // the bevel: a bright inner line all round, strongest along the top
     float rim = (1.0 - smoothstep(0.6, 2.2, -d)) * inside;
     OVER(vec3(1.0), rim * mix(0.85, 0.30, ny));
@@ -222,7 +251,9 @@ void main() { vec2 q = abs(vU); float s = pow(q.x, 0.62) + pow(q.y, 0.62); float
 // ---------------------------------------------------------------- the scene
 let slowCheck = true, frameTimes = [];
 let renderer, scene, camera, bg, sparks, raf = 0, W = 0, H = 0, dpr = 1, t0 = performance.now(), failed = false;
-const uRes = { value: new THREE.Vector2(1, 1) }, uTime = { value: 0 }, uNight = { value: 0 };
+const uRes = { value: new THREE.Vector2(1, 1) }, uTime = { value: 0 }, uNight = { value: 0 }, uDprU = { value: 1 }, uMouse = { value: new THREE.Vector2(-9999, -9999) };
+const mouseTo = { x: -9999, y: -9999 };
+window.addEventListener("pointermove", e => { mouseTo.x = e.clientX; mouseTo.y = e.clientY; if (uMouse.value.x < -9000) uMouse.value.set(e.clientX, e.clientY); }, { passive: true });
 document.addEventListener("se:sky", () => { uNight._t = -99; });           // dark mode switched, or the hour turned: look again now
 const panes = new Map(), wires = new Map();
 const quad = new THREE.PlaneGeometry(1, 1);
@@ -288,7 +319,7 @@ function resize() {
   renderer.setPixelRatio(dpr); renderer.setSize(W, H, false);
   renderer.domElement.style.width = W + "px"; renderer.domElement.style.height = H + "px";
   camera.left = 0; camera.right = W; camera.top = 0; camera.bottom = H; camera.updateProjectionMatrix();
-  uRes.value.set(W * dpr, H * dpr);
+  uRes.value.set(W * dpr, H * dpr); uDprU.value = dpr;
   bg.position.set(W / 2, H / 2, 0); bg.scale.set(W, H, 1);
 }
 function stop() {
@@ -305,7 +336,7 @@ function paneMesh(key) {
   let m = panes.get(key);
   if (!m) {
     const u = { uRes, uTime, uNight, uSize: { value: new THREE.Vector2(1, 1) }, uHalf: { value: new THREE.Vector2(1, 1) }, uN: { value: Math.PI }, uFill: { value: 0.4 },
-      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uLift: { value: 0.5 }, uDpr: { value: 1 },
+      uEdge: { value: new THREE.Color() }, uEdgeW: { value: 1.5 }, uSheen: { value: 0 }, uShadow: { value: 1 }, uLift: { value: 0.5 }, uDpr: uDprU, uMouse,
       uNb: { value: Array.from({ length: 6 }, () => new THREE.Vector4()) }, uNbN: { value: 0 } };
     m = new THREE.Mesh(quad, new THREE.ShaderMaterial({ vertexShader: PANE_VS, fragmentShader: PANE_FS, uniforms: u, transparent: true, depthTest: false, depthWrite: false, side: THREE.DoubleSide, premultipliedAlpha: true }));
     m.frustumCulled = false; m._sheen = 0;
@@ -382,7 +413,7 @@ function drawPanes() {
       const key = el._seKey || (el._seKey = "p" + (++k) + Math.random().toString(36).slice(2, 6));
       ids.set(el, key);
       const sel = el.classList.contains("se-sel"), hov = false;   // only a selected super lights up (owner, 2026-10-12: "only when selecting a super makes it light up"), never a hovered one
-      const edge = sel ? tokens.cobalt : hov ? tokens.hint : tokens.ink;
+      const edge = tokens.ink;   // no blue edge when selected (owner, 2026-10-13: "remove the blue corner rect"): the sheen says it
       const op = +cs.opacity;
       const cx = r.left + r.width / 2, cy = r.top + r.height / 2, a = r.width / 2 - bw / 2, b = r.height / 2 - bw / 2;
       // at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"): under about 30 px its
@@ -423,12 +454,12 @@ function drawLoops() {
     const sel = html.classList.contains("se-sel-loop"), hov = false;   // selected only
     // the main, second and third supers are supers like any other (owner, 2026-10-12: "all supers have the same
     // effect including main, second and third supers"): glass, a bevel, a shadow, the sheen when hovered or selected
-    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: sel ? tokens.cobalt : hov ? tokens.hint : skyInk(), edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
+    setPane("main", g.cx, g.cy + top, g.a, g.b, g.n, { fill: 0.12, edge: skyInk(), edgeW: 2, shadow: 1, sheen: sel || hov, order: 1, lift: 0 });
   }
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = false, busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: sel || busy ? tokens.cobalt : hov ? tokens.hint : skyInk(), edgeW: sel ? 2.5 : 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: busy ? tokens.cobalt : skyInk(), edgeW: 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
   }
 }
 
@@ -549,6 +580,7 @@ function frame() {
   try {
     if (performance.now() - tokensAt > 3000) readTokens();
     uTime.value = (performance.now() - t0) / 1000;
+    if (mouseTo.x > -9000) { uMouse.value.x += (mouseTo.x - uMouse.value.x) * 0.18; uMouse.value.y += (mouseTo.y - uMouse.value.y) * 0.18; }
     if (!(uTime.value - (uNight._t || -99) < 30)) { uNight._t = uTime.value; uNight.value = window.SeSky ? window.SeSky.night() : 0; }   // the sky by the visitor's clock, looked at every 30 s
     drawLoops(); drawWires(); drawPanes(); drawSparks();
     sweep(panes); sweep(wires);
