@@ -63,7 +63,7 @@
 ; project as squares big enough to read; Connect folded below the welcome. The demonstration wiring of the canvas's
 ; conditions (a small square into if, then, the timer) is gone: a first visit sees what it can do, not a puzzle.
 diagram
-  ■ welcome "ScholarPi: AI models assess your paper against open, science-aligned criteria and show what holds it back. Scroll up on the first box in Tools, below, to assess one." box desktop n=1000 at.inSite=0.035,0.065,0.300,0.315
+  ■ welcome "ScholarPi: AI models assess your paper against open, science-aligned criteria and show what holds it back. Start in Assess a Manuscript; the rest of the lab is round it." box desktop n=1000 at.inSite=0.035,0.065,0.300,0.315
   ▣ hold box desktop n=1000 at.inSite=0.340,0.065,0.965,0.935
   ⟶ main◁ site◁
   ⟶ site▷ main▷

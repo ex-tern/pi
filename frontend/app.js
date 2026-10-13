@@ -9642,6 +9642,7 @@ try {
     function seatEdges() {
       if (!merged()) return;
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
+      const fits = (l, t, r, b, n, m = 6) => [l - m, r + m].every(x => [t - m, b + m].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
       if (title && title.offsetWidth) {
         // the title (a simple super) stays in the page's top-left corner whatever the loops' n (owner, 2026-10-11)
@@ -9967,7 +9968,7 @@ window.SUPERAI_PROGRAM = {
   "supers": [
    {
     "id": "welcome",
-    "text": "ScholarPi: AI models assess your paper against open, science-aligned criteria and show what holds it back. Scroll up on the first box in Tools, below, to assess one.",
+    "text": "ScholarPi: AI models assess your paper against open, science-aligned criteria and show what holds it back. Start in Assess a Manuscript; the rest of the lab is round it.",
     "kind": "box",
     "desktop": true,
     "n": 1000,
@@ -11237,7 +11238,7 @@ try {
       const extraH = p.offsetHeight - bh;
       content.style.width = Math.round(bw / kMin) + "px";
       const needH = content.offsetHeight * kMin + extraH;
-      const h = Math.min(cap.h, Math.ceil(needH));   // laid out wider and scaled, it fills the width: only the height grows
+      const h = Math.min(cap.h, Math.ceil(needH)), w = Math.min(cap.w, p.offsetWidth);   // laid out wider and scaled, it fills the width: only the height grows
       if (h <= p.offsetHeight + 1) return;
       p.seRead = true; p._seGrowing = true;
       const r = p.getBoundingClientRect(), cy = r.top + r.height / 2;   // only its height changes: where it is stays the layout's (a glide may be moving it)
@@ -13460,6 +13461,12 @@ try {
       reopen.forEach(it => { if (!it.panel) openItem(it); });
       restoring = false;
       if (reopen.length) rememberOpen();
+      // a first visit opens the tool itself (owner, 2026-10-13: "big Assess window open at start"), readable, with the
+      // diagram round it; after that the visitor's own windows come back instead
+      else if (!load("orbit:assess-first") && !location.hash) {
+        store("orbit:assess-first", 1);
+        setTimeout(() => { if (!items.some(i => i.panel)) openTitle("Assess Manuscripts [Pi]"); }, merged() ? 2600 : 300);
+      }
       if (location.hash) fromHash();
     }, 350);
     requestAnimationFrame(() => document.documentElement.classList.add("orbit-ready"));
