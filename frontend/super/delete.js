@@ -8,7 +8,8 @@
 // The rule (owner, 2026-10-13: "because the super was not connected to save icon and it was not connected to chain
 // icon ... and it was not connected to lock icon, I was able to remove it. And when I removed it, it didn't remove the
 // elements inside it. Make this a rule"; "this rule also applies the other way around"):
-//   - since 13:05 the same day only the lock keeps a super (owner, 2026-10-13: "everything is movable or deletable
+//   - since 15:18 the same day a wire from the save control keeps a super from being removed too (it still moves); a wire
+//     from the lock keeps it from moving and from being removed. Before that, from 13:05, only the lock kept a super (owner, 2026-10-13: "everything is movable or deletable
 //     unless it's connected to lock"): a super connected to the lock (wired to the lock control, or locked by it) can
 //     not be moved or removed by any gesture (a double click, a scroll out at its smallest, a drop outside the second
 //     super); cut the wire, or unlock it, first. Saved or chained, it moves and goes like any other (save keeps a
@@ -62,10 +63,13 @@
   }
   // no confirmation any more (owner, 2026-10-12: "remove these instead add a save icon next to the lock"): an unsaved,
   // unlocked super is deleted at once; a saved one (super/save.js) or a locked one stays, and says why
-  // only the lock keeps a super (super/controls.js: a super wired to the lock control is locked while the wire is there)
+  // a wire from the lock or the save control keeps a super (owner, 2026-10-13: "even though the save control wire is
+  // connected to the object, when double clicked it deletes"): wired to save, it can still be moved but not removed;
+  // wired to the lock, neither (super/controls.js: a super wired to the lock control is locked while the wire is there)
+  const KEEPERS = ["lock", "save"];
   function wiredKeep(el) {
     const C = window.SeControls; if (!C || !C.wiredTo || !el) return [];
-    try { return C.wiredTo("ctl:lock").includes(el) ? ["lock"] : []; } catch (_) { return []; }
+    try { return KEEPERS.filter(k => C.wiredTo("ctl:" + k).includes(el)); } catch (_) { return []; }
   }
   function keeps(el) {
     if (!el) return "";

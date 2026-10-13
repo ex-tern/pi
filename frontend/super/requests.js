@@ -117,9 +117,7 @@
       const d = drag; drag = null; el.classList.remove("is-dragging");
       if (!d.on) return;
       dragged = true;
-      const was = moved || { dx: 0, dy: 0 };                             // what the pointer moved it by, added to where it was
-      moved = { dx: Math.round(was.dx + parseFloat(el.style.left) - d.l), dy: Math.round(was.dy + parseFloat(el.style.top) - d.t) };
-      try { localStorage.setItem("se:move:privacy", JSON.stringify(moved)); } catch (_) { /* private mode */ }
+      keepAt();                                                          // where it was dropped, in shares of the second super
     }, true);
     el.addEventListener("keydown", e => { if (!owner && window.SeConsent && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); window.SeConsent.open(); } });
     el.addEventListener("mouseenter", () => { others(); paint(true); });
@@ -159,33 +157,43 @@
       '<ul>' + (rows || '<li class="none">Nothing yet.</li>') + '</ul>' +
       '<p class="n">' + (ext.length ? "Also loaded from: " + ext.map(esc).join(", ") + " (code libraries and fonts; nothing of yours is sent to them)." : "No other sites contacted.") + "</p>";
   }
-  // clear of the conditions bar (super/controls.js): on a narrow screen it sits just above it
-  // a super by itself inside the main canvas (owner, 2026-10-13: "privacy choices is a super by itself inside the
-  // canvas"): at the main super's bottom-left, inside its edge, clear of the conditions bar
-  const portAt = pid => { const p = document.querySelector('.se-port[data-pid="' + pid + '"]'); if (!p) return null; const r = p.getBoundingClientRect(); return r.width || r.height ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
-  // moved like any super (owner, 2026-10-13: "this is also movable and deletable, draggable etc., same as others"): kept as
-  // an offset from its own place (se:move:privacy), so it follows the canvas; deleted, it is gone until the app is reset
-  let moved = null, gone = false;
-  try { moved = JSON.parse(localStorage.getItem("se:move:privacy") || "null"); gone = localStorage.getItem("se:gone:privacy") === "1"; } catch (_) { moved = null; }
+  // a super inside the second super, as the others are (owner, 2026-10-13: "put privacy choices in there and same it should
+  // act as other supers"): its place is kept in shares of the second super's box, as the start places the bubbles
+  // (super/pack.js START), so it follows that super's moves and the page's zoom; at the start it sits just right of Connect.
+  // Dragged, the new share is kept (se:at:privacy); deleted, it is gone until the app is reset.
+  const START_AT = { x: 0.155, y: 0.855 };                                 // its left edge and its middle, in shares of the box
+  let at = null, gone = false;
+  try { at = JSON.parse(localStorage.getItem("se:at:privacy") || "null"); gone = localStorage.getItem("se:gone:privacy") === "1"; } catch (_) { at = null; }
+  try { localStorage.removeItem("se:move:privacy"); } catch (_) { /* the old offset from the corner: no longer used */ }
+  // layout to screen and back: the second super's box (PiOrbit.siteBox) under the page's zoom (PiOrbit.fit)
+  function frame() {
+    const O = window.PiOrbit, sb = O && O.siteBox && O.siteBox(), F = O && O.fit && O.fit();
+    if (!sb || !sb.a || !F) return null;
+    const f = F.f || 1, W2 = 2 * sb.a, H2 = 2 * sb.b;
+    return {
+      to: (x, y) => [F.px + (sb.cx - sb.a + x * W2 - F.px) * f, F.py + (sb.cy - sb.b + y * H2 - F.py) * f],
+      from: (l, t) => [((F.px + (l - F.px) / f) - (sb.cx - sb.a)) / W2, ((F.py + (t - F.py) / f) - (sb.cy - sb.b)) / H2],
+    };
+  }
   function seat() {
-    if (!el || el.hidden) return;
-    if (drag) return;                                                     // it follows the pointer while dragged
-    const B = 12, w = el.offsetWidth, h = el.offsetHeight, ip = portAt("main/input"), cp = portAt("main/condition");
-    let left = B, top = window.innerHeight - B - h;
-    if (ip && cp) { left = Math.max(B, ip[0] + 18); top = Math.min(window.innerHeight - B - h, cp[1] - 18 - h); }
-    const bar = document.querySelector(".se-ctl-bottom:not([hidden])");
-    if (bar) {                                                           // the bar is an anchor: its buttons are its extent
-      const rs = [...bar.querySelectorAll(".se-cond, .se-ctl")].map(x => x.getBoundingClientRect()).filter(r => r.width);
-      if (rs.length) {
-        const r = { left: Math.min(...rs.map(x => x.left)), top: Math.min(...rs.map(x => x.top)), bottom: Math.max(...rs.map(x => x.bottom)) };
-        if (r.left < left + w + 10 && r.bottom > top - 10 && r.top < top + h + 10) top = Math.round(r.top - 14 - h);   // above it
-      }
-    }
-    if (moved) { left = Math.max(0, Math.min(window.innerWidth - w, left + moved.dx)); top = Math.max(0, Math.min(window.innerHeight - h, top + moved.dy)); }   // where it was dragged to
+    if (!el || el.hidden || drag) return;                                 // it follows the pointer while dragged
+    const fr = frame(), h = el.offsetHeight;
+    let left = 12, top = window.innerHeight - 12 - h;
+    if (fr && at) { const p = fr.to(at.x, at.y); left = p[0]; top = p[1] - h / 2; }
+    else if (fr && window.innerWidth < 700) { const p = fr.to(0.5, 0.95); left = p[0] - el.offsetWidth / 2; top = p[1] - h / 2; }   // a phone: under the two columns, in the middle
+    else if (fr) { const p = fr.to(START_AT.x, START_AT.y); left = p[0]; top = p[1] - h / 2; }
     const L = Math.round(left) + "px", T = Math.round(top) + "px";
     if (el.style.left !== L) el.style.left = L; if (el.style.top !== T) el.style.top = T; if (el.style.bottom !== "auto") el.style.bottom = "auto";
   }
-  setInterval(seat, 300); window.addEventListener("resize", seat);
+  function keepAt() {
+    const fr = frame(); if (!fr || !el) return;
+    const r = el.getBoundingClientRect(), s = fr.from(r.left, r.top + r.height / 2);
+    at = { x: +s[0].toFixed(4), y: +s[1].toFixed(4) };
+    try { localStorage.setItem("se:at:privacy", JSON.stringify(at)); } catch (_) { /* private mode */ }
+  }
+  // every frame while the page moves (a zoom, the second super dragged), so it moves with them, not after them
+  (function follow() { seat(); requestAnimationFrame(follow); })();
+  window.addEventListener("resize", seat);
   // the owner only: asked of the server, with the page's own cookie (the check itself is listed like any request)
   let owner = false, drag = null, dragged = false;
   async function whoIs() {
