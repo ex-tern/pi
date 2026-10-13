@@ -255,6 +255,10 @@
     const a = ins[0] || ZERO, nums = ins.map(v => v.num), none = { num: 0, bool: false, text: "" };
     const allNum = ins.every(v => v.isNum);   // a word, a button or a window is its name: + joins names into text
     let r;
+    // the graphical language (super/define.js): numbers, operators, select, ≠, repeat, while, count, keep, in, out,
+    // export, and any defined super's name are computed in any super, whatever its shape; a holder never
+    const ext = n.id !== "site-box" && !isHolder(n) && n.role !== "stop" && window.SeDefine ? window.SeDefine.page(n, ins, attachedOp(n)) : null;
+    if (ext) { n.prompt = ""; n.answer = ""; r = ext; } else
     switch (n.fn) {
       case "add":
         if (!ins.length) r = none;
@@ -603,6 +607,7 @@
         const was = st.sync; st.sync = key;
         if (key !== null && was !== null && key !== was && !n.held) {
           n.changed = performance.now();
+          if (window.SeDefine) window.SeDefine.tickCount(n);                // a counter counts each tick (super/define.js)
           if ((n.fn === "super" || n.fn === "ask") && n.prompt) { clearTimeout(n.st.timer); n.st.timer = setTimeout(() => (n.fn === "ask" ? askPanel(n) : askEngine(n)), 300); }
         }
       } else if (port === "condition") {
@@ -678,7 +683,7 @@
   }
 
   // ---- making, moving and removing nodes -------------------------------
-  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined, auto: n.auto || undefined, keepHold: n.keepHold || undefined }))); }
+  function persist() { save("lv:nodes", nodes.map(n => ({ id: n.id, fn: n.fn, fx: n.fx, fy: n.fy, inputs: n.inputs, answer: (n.fn === "super" || n.fn === "ask" || n.role === "engine") && n.answer ? n.answer.slice(0, 3000) : undefined, str: n.str || undefined, role: n.role || undefined, target: n.target, targetTitle: n.targetTitle, size: n.size, n: n.n, hint: n.hint || undefined, hold: n.hold || undefined, mem: n.mem || undefined, aspect: n.aspect || undefined, layer: n.layer || undefined, use: n.use || undefined, manual: n.manual || undefined, grp: n.grp || undefined, auto: n.auto || undefined, keepHold: n.keepHold || undefined }))); }
   // nodes are scaled about the page's centre by the fit (orbit.js setFit): a screen point, in layout units
   function toLayout(sx, sy) {
     const F = O().fit ? O().fit() : { f: 1, px: window.innerWidth / 2, py: window.innerHeight / 2 };
@@ -732,6 +737,7 @@
       return inp;
     };
     n.role = spec.role || null; n.target = spec.target; n.targetTitle = spec.targetTitle; n.size = spec.size; n.i = 0; n.hint = spec.hint || ""; n.hold = !!spec.hold; n.use = +spec.use || 0; n.manual = !!spec.manual; n.aspect = +spec.aspect || 0;   // aspect: height over width (a holder laid out as a box, not a square)
+    n.mem = spec.mem && typeof spec.mem === "object" ? spec.mem : null;     // count and keep remember (super/define.js)
     n.grp = !!spec.grp; if (n.grp) el.classList.add("lv-group");   // a group super round wired supers (regroup)
     n.auto = !!spec.auto; n.keepHold = !!spec.keepHold;                                              // made by a double click: a prompt or a Display by its wiring (autoKinds)
     n.layer = spec.layer || undefined; if (n.layer) el.dataset.layer = n.layer;
@@ -1343,6 +1349,7 @@
       }
       if (n.role === "engine" && e.key === "Enter" && n.str) {          // Enter asks what was typed
         e.preventDefault(); e.stopPropagation();
+        if (window.SeDefine && window.SeDefine.onRun(n)) { tick(); return; }   // count counts, export downloads (super/define.js)
         n.st.commit = true; clearTimeout(n.st.timer); n.st.timer = 0; askEngine(n, true); return;   // asks (and ticks) at once: no settle timer to ask again
       }
       // the first thing typed into a blank ■ or ● decides: a letter makes a text field, a digit an integer field
@@ -1391,6 +1398,66 @@
     };
   }
   // the operation of an operator super (+ − × ÷ ^ %) joined to n by any port or wire, other than one feeding n's input
+  // ---- a holder as a definition (super/define.js): what is drawn inside it, as the language's { supers, wires } ----
+  const IN_RE = /^\s*in(?:put)?(?:\s+\S+)?\s*$/i, OUT_RE = /^\s*out(?:put)?\s*$/i;
+  function graphOf(el) {
+    const h = nodes.find(x => x.el === el); if (!h || !isHolder(h)) return null;
+    const D = window.SeDefine, isDef = m => isHolder(m) && D && D.defName(m.str);
+    // what belongs to it: a super whose nearest holder is this one, or a plain holder (a frame) inside it; a super in
+    // another definition (inside this one, or overlapping it) is that one's
+    const nearest = m => nodes.filter(x => x !== m && isHolder(x) && within(x, m)).sort((a, b) => (a.size || 0) * (a.size || 0) * (a.aspect || 1) - (b.size || 0) * (b.size || 0) * (b.aspect || 1))[0] || null;
+    const belongs = m => { let c = nearest(m), k = 0; while (c && c !== h && !isDef(c) && k++ < 12) c = nearest(c); return c === h; };
+    let ins = inside(h).filter(m => m.id !== "site-box" && !isHolder(m) && belongs(m));
+    const ids = new Set(ins.map(m => m.id));
+    const pos = m => { const r = m.el.getBoundingClientRect(); return [r.top, r.left]; };
+    const inNodes = ins.filter(m => IN_RE.test(m.str || "")).sort((a, b) => { const p = pos(a), q = pos(b); return Math.abs(p[0] - q[0]) > 6 ? p[0] - q[0] : p[1] - q[1]; });
+    const outNode = ins.find(m => OUT_RE.test(m.str || ""));
+    const supers = [], wires = [], L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
+    let k = 0, portIn = null;
+    inNodes.forEach((m, i) => supers.push({ id: m.id, kind: "input", slot: i, name: (m.str || "in").trim() }));
+    ins.filter(m => !inNodes.includes(m)).forEach(m => supers.push({ id: m.id, kind: m === outNode ? "output" : "super", shape: m.role === "engine" || m.fn === "ask" || m.fn === "super" ? "prompt" : "box", text: (m.str || "").trim(), attached: (() => { const o = attachedOp(m); return o ? ({ "*": "×", "/": "÷" }[o] || o) : null; })() }));
+    const idOf = hh => { const x = hh && (/^node:(.+)$/.exec(hh) || /^port:node:([^/]+)\/(\w+)$/.exec(hh)); return x ? { id: x[1], port: x[2] || "" } : null; };
+    const fromHolderIn = () => { if (!portIn) { portIn = { id: "in", kind: "input", slot: 0, name: "in" }; supers.unshift(portIn); } return "in"; };
+    // a source anchor: a super inside, the holder's input port, or a value from outside (kept as a constant)
+    function source(an) {
+      const x = idOf(an && an.h);
+      if (x && ids.has(x.id)) return inNodes.some(m => m.id === x.id) || !ins.find(m => m.id === x.id) ? x.id : x.id;
+      if (x && x.id === h.id) return x.port === "input" || !x.port ? (inNodes.length ? inNodes[0].id : fromHolderIn()) : null;
+      if (x && nodes.some(m => m.id === x.id && isDef(m))) return null;
+      const v = valueOfAnchor(an), c = "c" + (k++);
+      supers.push({ id: c, kind: "const", value: v && v.isNum ? v.num : (v ? (v.str != null && v.str !== "" ? v.str : v.text) : null) });
+      return c;
+    }
+    ins.filter(m => !inNodes.includes(m)).forEach(m => {
+      const me = "node:" + m.id, condPort = "port:" + me + "/condition", inPort = "port:" + me + "/input";
+      // what holds it: a wire into its condition port; between two condition (or sync) ports the value goes the way the
+      // wire was drawn, from its first end to its second, as on the page (super/nodes.js linkIns)
+      const ctlPort = hh => /^port:node:[^/]+\/(condition|sync)$/.test(hh || "");
+      const conds = L.filter(l => (l.b && l.b.h) === condPort || ((l.a && l.a.h) === condPort && !ctlPort(l.b && l.b.h))).map(l => (l.b && l.b.h) === condPort ? l.a : l.b);
+      const condIds = new Set();
+      conds.forEach(an => { const sid = source(an); if (sid) { condIds.add(an.h); wires.push([sid + ".output", m.id + ".condition"]); } });
+      // what is wired from the holder's own input port into this super
+      L.forEach(l => { const ends = [l.a && l.a.h, l.b && l.b.h]; if (ends.includes("port:node:" + h.id + "/input") && ends.some(e => e === me || e === inPort)) wires.push([(inNodes.length ? inNodes[0].id : fromHolderIn()) + ".output", m.id + ".input"]); });
+      m.inputs.forEach(ref => { if (ref.node && ids.has(ref.node)) wires.push([ref.node + ".output", m.id + ".input"]); });
+      linkIns(m).forEach(an => {
+        if (an.h && condIds.has(an.h)) return;
+        const x = idOf(an.h); if (x && x.id === h.id) return;                // the holder's own ports: above
+        if (x && x.port === "condition" && x.id === m.id) return;
+        const sid = source(an); if (sid && sid !== m.id) wires.push([sid + ".output", m.id + ".input"]);
+      });
+    });
+    // the result: "out", else what is wired into the holder's output port, else what nothing inside takes from
+    if (!outNode) {
+      const hp = "port:node:" + h.id + "/output";
+      const into = L.map(l => (l.a && l.a.h) === hp ? l.b : (l.b && l.b.h) === hp ? l.a : null).filter(Boolean).map(an => idOf(an.h)).find(x => x && ids.has(x.id));
+      const res = into ? into.id : (() => { const b = bodyOut(h); return b && ids.has(b.id) ? b.id : null; })();
+      supers.push({ id: "out", kind: "output" });
+      if (res) wires.push([res + ".output", "out.input"]);
+    }
+    const seen = new Set();
+    return { supers, wires: wires.filter(w => { const kk = w.join(">"); if (seen.has(kk)) return false; seen.add(kk); return true; }) };
+  }
+
   function attachedOp(n) {
     if (!window.SuperLink) return null;
     const me = "node:" + n.id;
@@ -1854,6 +1921,7 @@
     window.LabView = { loopPort, unrun,
       // the main canvas's controls (super/controls.js): run a super once, stop it, act on words, read its value
       run: el => { const n = nodes.find(x => x.el === el); if (!n || isHolder(n)) return false;
+        if (window.SeDefine && window.SeDefine.onRun(n)) { tick(); return true; }   // count, export (super/define.js)
         // words typed into a plain super, run from the canvas's controls: it becomes a Super AI super and asks them
         if (n.role !== "engine" && (n.role === "text" || n.role == null) && (n.str || "").trim() && !opOf(n.str)) {
           if (n.field) { const g = document.createElement("span"); g.className = "lv-glyph"; n.field.replaceWith(g); n.field = null; }
@@ -1867,7 +1935,12 @@
       busy: el => { const n = nodes.find(x => x.el === el); return !!(n && n.el.classList.contains("is-thinking")); },
       act: text => { const v = verbOf(text); if (!v) return false; actOn(v.verb, v.target); return true; },
       valueOf: el => { const n = nodes.find(x => x.el === el); return n ? String(n.answer || n.text || n.str || "") : ""; },
-      typeOfLink, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+      typeOfLink, graphOf, persist: () => persist(),
+      holders: () => nodes.filter(n => isHolder(n)).map(n => ({ el: n.el, id: n.id, str: n.str || "" })),
+      setText: (id, t) => { const n = nodes.find(x => x.id === id); if (!n) return false; n.str = t; n.answer = ""; n.st.asked = ""; persist(); tick(); return true; },
+      spawn: (x, y, ai, kind) => { const m = spawnAt(x, y, ai !== false, kind); return m ? m.id : null; },
+      holder: (x, y, w, name) => { const L = toLayout(x, y), m = make({ id: "h" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: "box", hold: true, size: Math.max(HOLD_AT + 10, Math.round((w || 260) / (toLayout(0, 0).f || 1))), manual: true, n: 12, str: name || "super", fx: L.x / window.innerWidth, fy: L.y / window.innerHeight, inputs: [] }); persist(); tick(); return m.id; },
+      inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        // super/delete.js: deleted after a confirmation (a holder with what it holds; never the central super)
                        close: (el, now) => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; if (now) remove(n); else closeNode(n); return true; },   /* what it held stays (super/delete.js, the rule) */   // now: it has vanished already (super/delete.js)
