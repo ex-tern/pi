@@ -386,6 +386,10 @@
     const t = $(".orbit-title");
     if (!t) return { x: 0, y: 0, w: 0, h: 0 };
     const b = t.getBoundingClientRect();
+    // the superellipse look: the title super sits in the top-left corner, where it is on screen (in layout units); it
+    // was taken for the round look's centred title, a phantom box in the middle of the third super that no bubble
+    // could be dropped on (owner, 2026-10-13: "I can't seem to move the supers inside the second super")
+    if (merged()) { const s = t.querySelector(".se-titlesuper") || t, r = s.getBoundingClientRect(); if (!r.width) return { x: 0, y: 0, w: 0, h: 0 }; const a = toLayout(r.left, r.top), c = toLayout(r.right, r.bottom); return { x: a.x, y: a.y, w: c.x - a.x, h: c.y - a.y }; }
     const w = Math.max(b.width, titleBox.w), h = Math.max(b.height, titleBox.h);
     return { x: W / 2 - w / 2, y: b.top - top, w, h };
   }
@@ -490,7 +494,9 @@
     const out = [
       // the mark in the middle (the round look; in the superellipse look the central super, a node, is in the way instead)
       merged() ? { x: -9999, y: -9999, w: 0, h: 0 } : grow((rr => ({ x: lx - rr, y: ly - rr, w: 2 * rr, h: 2 * rr }))(Math.min(R, capR())), g),
-      grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g),
+      // the π counter's box, only while π and friends run (they are off since 2026-10-13: its empty box sat in the
+      // third super and threw back every bubble dropped there; owner: "I can't seem to move the supers")
+      window.PI_FRIENDS ? grow((([x, y]) => ({ x: x - piBox.w / 2, y: y - piBox.h / 2, w: piBox.w, h: piBox.h }))(piCentre()), g) : { x: -9999, y: -9999, w: 0, h: 0 },
     ];
     out.push(grow(titleRect(), g));
     document.querySelectorAll(".buddy-float, .live-dock:not(.docked) .live-tab, .lv-palette").forEach(el => {     // the Functions palette too: it sits inside the loop

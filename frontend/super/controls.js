@@ -11,10 +11,13 @@
 // ctl:<name> and cond:<name>, drawn by the engine). The controls act on the supers they are wired to, else on the
 // selected super (with the main or second super selected: on every Super AI super for open and stop):
 //   save   saves it (a saved super is never deleted), or unsaves it when it is saved
-//   lock   locks it (it keeps its place, size and n), or unlocks it
+//   lock   locks it (it keeps its place, size and n), or unlocks it; a super wired to it is locked and stays locked
+//          while the wire is there (cut the wire and it unlocks)
 //   open   opens it: a bubble or the project grows open, a pill opens its window, a Super AI super asks (words typed
 //          into a plain super make it one), a held window comes back
 //   stop   stops it: asking stops, a window closes, a bubble or the project compacts; the timer stops too
+//   reset  starts the app afresh, as on a first visit (a second press within 3 s; owner, 2026-10-13: "delete this reset
+//          button and instead put the reset in the control icons": the title's wire into the site no longer resets)
 // The conditions (a click on one types its value; Enter keeps it, empty clears it; kept as se:cond):
 //   if      open goes ahead only if the value passes: > 5, < 3, = yes, or a word it must contain; wired from a super,
 //           that super's value is tested (wired alone, it must say something true)
@@ -23,6 +26,9 @@
 //           the result shows on it and is its output's value, so it can be wired on into any super
 //   timer   every so many seconds (10, 10s, 2m) the supers it is wired to open, else the super selected when it was
 //           set; it counts down on itself; empty or stop ends it
+// A super wired from its condition port into a condition's top port is that condition's subject: if governs only its
+// subjects, then follows only their opening (and opens what its out port is wired to), the timer opens them; a value
+// wired into a condition's in port is what it reads.
 (function () {
   "use strict";
   const html = document.documentElement;
@@ -35,6 +41,7 @@
     lock: SVG('<path class="lk-shackle" d="' + SHACKLE.open + '"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/>', "0 0 12 12"),
     open: SVG('<path d="M7 3H3v10h10V9" stroke-width="1.5"/><path d="M9 2.6h4.4V7M13.2 2.8L7.6 8.4" stroke-width="1.6"/>'),
     stop: SVG('<rect class="f" x="3.5" y="3.5" width="9" height="9"/>'),
+    reset: SVG('<path d="M3.4 8a4.6 4.6 0 1 0 1.5-3.4" stroke-width="1.6"/><path class="f" d="M2.2 1.9v4.6h4.6z"/>'),
     if: SVG('<path d="M8 1.8L14.2 8 8 14.2 1.8 8z" stroke-width="1.5"/><path d="M6.3 6.4a1.8 1.8 0 1 1 2.5 1.6c-.5.3-.8.6-.8 1.2" stroke-width="1.3"/><circle class="f" cx="8" cy="11" r=".8"/>'),
     then: SVG('<path d="M2 8h10.5" stroke-width="1.6"/><path d="M9 4.2L12.8 8 9 11.8" stroke-width="1.6"/>'),
     plus: SVG('<path d="M8 3v10M3 8h10" stroke-width="1.8"/>'),
@@ -43,7 +50,7 @@
     divide: SVG('<path d="M3 8h10" stroke-width="1.7"/><circle class="f" cx="8" cy="4.3" r="1.25"/><circle class="f" cx="8" cy="11.7" r="1.25"/>'),
     timer: SVG('<circle cx="8" cy="9" r="5.3" stroke-width="1.5"/><path d="M8 9V6.2M6.4 1.8h3.2M12.3 4.3l1-1" stroke-width="1.5"/>'),
   };
-  const CONTROLS = ["save", "lock", "open", "stop"];
+  const CONTROLS = ["save", "lock", "open", "stop", "reset"];
   const CONDS = ["if", "then", "plus", "minus", "multiply", "divide", "timer"];
   const HINT = { if: "> 5", then: "stop", plus: "0", minus: "0", multiply: "1", divide: "1", timer: "10s" };
   const OPS = { plus: (a, b) => a + b, minus: (a, b) => a - b, multiply: (a, b) => a * b, divide: (a, b) => b === 0 ? NaN : a / b };
@@ -106,6 +113,10 @@
   }
   const wiredTo = owner => wires(owner).map(w => w.el);
   const ins = k => wires("cond:" + k).filter(w => w.port !== "output" && w.el !== "all").map(w => w.el);   // what flows into a condition
+  // a condition's subjects: the supers wired to its top (control) port, from their condition port, are the ones it
+  // governs (if: they open only when it passes; then: it follows their opening; timer: it opens them)
+  const subjects = k => wires("cond:" + k).filter(w => w.port === "sync" && w.el !== "all").map(w => w.el);
+  const dataIn = k => wires("cond:" + k).filter(w => w.port === "input" && w.el !== "all").map(w => w.el);   // values fed into its in port
 
   // ---- the conditions -------------------------------------------------------------------------------
   function condValue(k) {
@@ -117,11 +128,12 @@
       return isFinite(r) ? String(Math.round(r * 1e9) / 1e9) : "undefined";
     }
     if (k === "timer") return timer.on ? String(Math.max(0, Math.ceil((timer.at - performance.now()) / 1000))) : "";
-    const w = ins(k)[0];
+    const w = dataIn(k)[0];
     return w ? valueOf(w) : (cond[k] || "");
   }
   function passes(el) {                                                  // "if"
-    const w = ins("if")[0], c = (cond.if || "").trim();
+    const subs = subjects("if"); if (subs.length && !subs.includes(el)) return true;   // it governs only its subjects
+    const w = dataIn("if")[0], c = (cond.if || "").trim();
     if (w && !c) { const t = valueOf(w).trim().toLowerCase(); return !!t && t !== "0" && t !== "false" && t !== "no"; }
     if (!c) return true;
     const v = valueOf(w || el), m = /^(>=|<=|!=|>|<|=)\s*(.+)$/.exec(c);
@@ -135,7 +147,8 @@
   let thenBusy = false;
   function after(el) {                                                   // "then"
     if (thenBusy) return;
-    const tw = wires("cond:then").filter(w => w.port !== "input" && w.el !== el && w.el !== "all").map(w => w.el);
+    const subs = subjects("then"); if (subs.length && !subs.includes(el)) return;      // it follows only its subjects
+    const tw = wires("cond:then").filter(w => w.port === "output" && w.el !== el && w.el !== "all").map(w => w.el);
     if (tw.length) { thenBusy = true; setTimeout(() => { tw.forEach(x => openOne(x, true)); thenBusy = false; say("then: opened " + tw.map(nameOf).join(", ")); }, 600); return; }
     const t = (cond.then || "").trim(); if (!t) return;
     if (t.toLowerCase() === "stop") { setTimeout(() => stopOne(el), 600); return; }
@@ -156,7 +169,7 @@
   }
   function fire() {
     if (!timer.on) return;
-    const w = wires("cond:timer").filter(x => x.port !== "input").map(x => x.el);
+    const w = wires("cond:timer").filter(x => x.port === "sync" || x.port === "output").map(x => x.el);
     const list = w.length ? w : [timer.who && timer.who.isConnected ? timer.who : null];
     list.forEach(x => openOne(x === "all" ? null : x, true));
     timer.at = performance.now() + timer.every * 1000; timer.t = setTimeout(fire, timer.every * 1000);
@@ -198,20 +211,34 @@
   }
   function selfWired(x, k) { return x && x.classList && x.classList.contains("se-ctl") && x.dataset.ctl === k; }
   function targetsOf(k) {
+    const s = SS().selected ? SS().selected() : "";
+    // save and lock: the selected super (the wired ones are held saved or locked by their wire, super/controls.js syncWired)
+    if ((k === "lock" || k === "save") && s) {
+      if (typeof s !== "string") return [s];
+      if (k === "lock" && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];
+    }
     const w = wiredTo("ctl:" + k).filter(x => !selfWired(x, k));
     if (w.length) return w;
-    const s = SS().selected ? SS().selected() : "";
     if (s && typeof s !== "string") return [s];
     if (k === "lock" && s && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];   // the main or second super: its own lock
     return [null];
   }
+  let armed = 0;
   function press(k) {
+    if (k === "reset") {                                                // the app starts afresh, as on a first visit; a second press within 3 s
+      const b = top && top.querySelector(".se-ctl-reset");
+      if (performance.now() < armed) { if (window.SuperLink && window.SuperLink.reset) window.SuperLink.reset(); return; }
+      armed = performance.now() + 3000; if (b) { b.classList.add("is-on"); setTimeout(() => b.classList.remove("is-on"), 3000); }
+      say("Reset: press again to start the app afresh"); return;
+    }
     const list = targetsOf(k);
     if (k === "open") { list.forEach(x => openOne(x === "all" ? null : x, list.length > 1)); if (list.length > 1) say("Opened " + list.length + " wired supers"); return; }
     if (k === "stop") {
       if (timer.on && !wiredTo("ctl:stop").length) { timer.on = false; clearTimeout(timer.t); }
       list.forEach(x => stopOne(x === "all" ? null : x)); say("Stopped " + (list.length > 1 ? list.length + " supers" : nameOf(list[0] === "all" ? null : list[0]))); return;
     }
+    const held = list.filter(x => x && x !== "all" && wiredTo("ctl:" + k).includes(x));
+    if (held.length && held.length === list.length) { say(nameOf(held[0]) + " is wired to " + k + ": it stays " + (k === "lock" ? "locked" : "saved") + " while the wire is there"); return; }
     const done = list.map(x => x && toggle(k, x)).filter(Boolean);
     say(done.length ? done.join(", ") : "Select a super (or wire it to " + k + ") first");
     mark();
@@ -290,7 +317,28 @@
     requestAnimationFrame(loop);
   }
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", start); else start();
-  document.addEventListener("superlink:change", () => setTimeout(mark, 50));
+  // a super wired to the lock control is locked, and stays locked while the wire is there; cut the wire and it unlocks
+  // (owner, 2026-10-13: "if I connect them to the lock control, they should stay locked"); one wired to save is saved
+  const isSuper = x => x && x !== "all" && x.classList && !x.classList.contains("se-ctl") && !x.classList.contains("se-cond");
+  function elOfName(n) {
+    if (n === "title") return document.querySelector(".orbit-title .se-titlesuper");
+    if (n.startsWith("pill:")) return document.querySelector('.ob-member[data-key="' + CSS.escape(n.slice(5)) + '"]');
+    return window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(n) : null;
+  }
+  let settled = false;
+  function syncWired() {
+    if (!settled || !window.SeLock) return;
+    const L = window.SeLock, now = wiredTo("ctl:lock").filter(isSuper), names = now.map(el => L.nameOf(el)).filter(Boolean);
+    let prev = []; try { prev = JSON.parse(localStorage.getItem("se:lockwired") || "[]") || []; } catch (_) { prev = []; }
+    now.forEach(el => { if (!L.isLocked(el)) L.set(el, true); });
+    prev.filter(n => !names.includes(n)).forEach(n => { const el = elOfName(n); if (el && L.isLocked(el)) L.set(el, false); });
+    try { localStorage.setItem("se:lockwired", JSON.stringify(names)); } catch (_) { /* private mode */ }
+    if (window.SeSave) wiredTo("ctl:save").filter(isSuper).forEach(el => { if (!window.SeSave.isSaved(el)) window.SeSave.set(el, true); });
+    mark();
+  }
+  setTimeout(() => { settled = true; syncWired(); }, 4000);              // once the program's wires are on the page
+  setInterval(syncWired, 2000);                                          // and whenever the page changes under them
+  document.addEventListener("superlink:change", () => setTimeout(() => { mark(); syncWired(); }, 80));
   document.addEventListener("se:select", () => setTimeout(mark, 20));
   window.SeControls = { act: k => CONTROLS.includes(k) && press(k), wiredTo, how: () => null,
     valueOf: owner => owner.startsWith("cond:") ? condValue(owner.slice(5)) : owner.startsWith("ctl:") ? owner.slice(4) : "",

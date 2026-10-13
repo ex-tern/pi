@@ -234,18 +234,6 @@ window.SUPERAI_PROGRAM = {
   ],
   "wires": [
    [
-    "main.sync",
-    "site.sync"
-   ],
-   [
-    "title.output",
-    "site.sync"
-   ],
-   [
-    "site.condition",
-    "main.condition"
-   ],
-   [
     "main.input",
     "site.input"
    ],
@@ -296,6 +284,54 @@ window.SUPERAI_PROGRAM = {
    [
     "bubble:Library.condition",
     "project.sync"
+   ],
+   [
+    "ctl:save.condition",
+    "bubble:Tools.sync"
+   ],
+   [
+    "ctl:save.condition",
+    "bubble:Explore.sync"
+   ],
+   [
+    "ctl:lock.condition",
+    "bubble:Connect.sync"
+   ],
+   [
+    "ctl:lock.condition",
+    "hold.sync"
+   ],
+   [
+    "ctl:lock.condition",
+    "bubble:Tools.sync"
+   ],
+   [
+    "ctl:lock.condition",
+    "bubble:Explore.sync"
+   ],
+   [
+    "ctl:lock.condition",
+    "bubble:Library.sync"
+   ],
+   [
+    "bubble:Connect.condition",
+    "cond:if.sync"
+   ],
+   [
+    "bubble:Connect.condition",
+    "cond:then.sync"
+   ],
+   [
+    "bubble:Tools.condition",
+    "cond:then.sync"
+   ],
+   [
+    "site.condition",
+    "cond:timer.sync"
+   ],
+   [
+    "project.condition",
+    "cond:timer.sync"
    ]
   ]
  },

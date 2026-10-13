@@ -812,7 +812,7 @@
     const keep = s => (!round || s.everywhere) && !(s.desktop && window.innerWidth < 700);
     const ids = new Set((all.supers || []).filter(keep).map(s => s.id));
     const who = e => String(e).slice(0, String(e).lastIndexOf("."));
-    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "main" || who(e) === "title" || who(e) === "project" || who(e).startsWith("bubble:")));   // the title and bubble wires: the superellipse look (supers there)
+    const known = e => ids.has(who(e)) || who(e) === "site" || (!round && (who(e) === "main" || who(e) === "title" || who(e) === "project" || who(e).startsWith("bubble:") || /^(ctl|cond):/.test(who(e))));   // the title and bubble wires: the superellipse look (supers there)
     const prog = { supers: (all.supers || []).filter(keep), wires: (all.wires || []).filter(w => w.every(known)) };
     if (!prog.supers.length) return;
     const Wv = window.innerWidth, Hv = window.innerHeight, done = {};
@@ -856,6 +856,7 @@
     if (w === "main") return { h: "port:main/" + port, el: 1 };
     if (w === "title") return { h: "title", el: 1 };
     if (w === "project") return document.querySelector(".se-project") ? { h: "port:project/" + port, el: 1 } : null;   // the project super's ports (super/site.js)
+    if (/^(ctl|cond):/.test(w)) return document.querySelector('.se-port[data-pid="' + CSS.escape(w + "/" + port) + '"]') ? { h: "port:" + w + "/" + port, el: 1 } : null;   // the canvas's controls and conditions (super/controls.js)
     if (w.startsWith("bubble:")) {
       const b = [...document.querySelectorAll(".orbit-bubble.is-group[data-key]")].find(x => ((x.querySelector(":scope > .ob-label") || {}).textContent || "").trim() === w.slice(7));
       return b ? { h: "port:bubble:" + b.dataset.key + "/" + port, el: 1 } : null;

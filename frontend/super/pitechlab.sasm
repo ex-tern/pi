@@ -60,9 +60,6 @@
 ; the start: the supers and wires a first visit begins with
 diagram
   ▣ hold box desktop n=1000 at.inSite=0.326,0.159,0.838,0.841
-  ⟶ main△ site△
-  ⟶ title▷ site△
-  ⟶ site▽ main▽
   ⟶ main◁ site◁
   ⟶ site▷ main▷
   ⟶ site△ bubble:Connect△
@@ -76,6 +73,20 @@ diagram
   ⟶ bubble:Lab▷ project◁
   ⟶ bubble:Explore▽ bubble:Lab△
   ⟶ bubble:Library▽ project△
+  ; the canvas's controls and conditions are wired in (owner, 2026-10-13: "initial state should look like this"):
+  ; save and lock govern the supers, if and then follow Connect and Tools, the timer the site and the project
+  ⟶ ctl:save▽ bubble:Tools△
+  ⟶ ctl:save▽ bubble:Explore△
+  ⟶ ctl:lock▽ bubble:Connect△
+  ⟶ ctl:lock▽ hold△
+  ⟶ ctl:lock▽ bubble:Tools△
+  ⟶ ctl:lock▽ bubble:Explore△
+  ⟶ ctl:lock▽ bubble:Library△
+  ⟶ bubble:Connect▽ cond:if△
+  ⟶ bubble:Connect▽ cond:then△
+  ⟶ bubble:Tools▽ cond:then△
+  ⟶ site▽ cond:timer△
+  ⟶ project▽ cond:timer△
 end
 
 .projectAt inSite=0.668,0.530

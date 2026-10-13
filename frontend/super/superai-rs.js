@@ -60,7 +60,7 @@
     return { error: "too many questions in one run" };
   };
 
-  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=9") || "super/superai.wasm?v=5";
+  const src = (document.currentScript && document.currentScript.src || "").replace(/superai-rs\.js.*$/, "superai.wasm?v=10") || "super/superai.wasm?v=5";
   fetch(src).then(r => { if (!r.ok) throw new Error(r.status); return r.arrayBuffer(); })
     .then(b => WebAssembly.instantiate(b, {}))
     .then(({ instance }) => {

@@ -45,8 +45,16 @@
     put(B.connect, x0, r1);
     put(B.tools, c(0), r1); put(B.explore, c(1), r1); put(B.lib, c(2), r1); put(B.lab, c(1), r2);
     if (window.SeProject.resize) window.SeProject.resize(S, S);
-    const pr = proj.getBoundingClientRect();
-    window.SeProject.moveBy(sx(c(2)) - pr.left, sy(r2) - pr.top);
+    // moved until it lands (its move is measured, not assumed: the project super may scale a move by the page's zoom)
+    const tx = sx(c(2)), ty = sy(r2);
+    let kx = 1, ky = 1;
+    for (let k = 0; k < 4; k++) {
+      const pr = proj.getBoundingClientRect(), dx = tx - pr.left, dy = ty - pr.top;
+      if (Math.abs(dx) < 0.5 && Math.abs(dy) < 0.5) break;
+      window.SeProject.moveBy(dx * kx, dy * ky);
+      const nr = proj.getBoundingClientRect(), mx = nr.left - pr.left, my = nr.top - pr.top;
+      if (Math.abs(mx) > 0.5) kx *= dx / mx; if (Math.abs(my) > 0.5) ky *= dy / my;
+    }
     return true;
   }
   // as soon as the layout is there, before the page fades in (super/boot.js waits for it to settle)

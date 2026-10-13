@@ -778,9 +778,11 @@ html:not(.shape-se) .se-ctlbar, html.shape-se .se-ctlbar[hidden] { display: none
 html.shape-se .se-ctl-half { display: flex; gap: 4px; pointer-events: auto; }
 html.shape-se .se-ctl, html.shape-se .se-cond {
   display: inline-flex; align-items: center; justify-content: center; gap: 4px; min-width: 28px; height: 26px; padding: 0 6px; margin: 0;
-  border: 1.5px solid var(--ink); border-radius: 7px; corner-shape: superellipse(4);
-  background: color-mix(in srgb, var(--paper, #fff) 72%, transparent); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2);
-  color: inherit; font: 500 12px/1 var(--font, "Geist", system-ui, sans-serif); cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset, 0 3px 10px -4px rgba(20, 24, 34, 0.35);
+  /* a super like every other (owner, 2026-10-13: "they should be same as other supers, not regular buttons"): the square
+     at n = 1000, the ink edge, the frosted pane and its shadow; no button hover or press look */
+  border: 1.5px solid var(--ink); border-radius: 4px; corner-shape: superellipse(9.96578);
+  background: color-mix(in srgb, var(--paper, #fff) 62%, transparent); -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
+  color: inherit; font: 500 12px/1 var(--font, "Geist", system-ui, sans-serif); cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
   transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease;
 }
 html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 15px; height: 15px; flex: none; display: block; overflow: visible; }
@@ -791,8 +793,7 @@ html.shape-se .se-ctl.is-locked .lk-body { fill: currentColor; }
 html.shape-se .se-ctl .sv-body, html.shape-se .se-ctl .sv-label, html.shape-se .se-ctl .sv-slot { stroke-width: 1.2; }
 html.shape-se .se-ctl.is-saved .sv-body { fill: currentColor; }
 html.shape-se .se-ctl.is-saved .sv-label, html.shape-se .se-ctl.is-saved .sv-slot { stroke: var(--paper, #fff); }
-html.shape-se .se-ctl:hover, html.shape-se .se-cond:hover { background: color-mix(in srgb, var(--paper, #fff) 92%, transparent); }
-html.shape-se .se-ctl:active { transform: translateY(1px); }
+html.shape-se .se-ctl.is-on { color: var(--cobalt); border-color: var(--cobalt); }
 html.shape-se .se-ctl:focus-visible, html.shape-se .se-cond:focus-within { outline: none !important; border-color: var(--cobalt); }
 html.shape-se .se-cond { cursor: text; }
 html.shape-se .se-cond-k { display: inline-flex; opacity: 0.8; }

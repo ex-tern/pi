@@ -153,6 +153,45 @@
     }
     return undefined;
   }
+  // ---- the four lines of a super (owner, 2026-10-13: "each super can have many connectors", "the top line is control,
+  // bottom line is condition, left line is in, right line is out"): a wire may meet a super anywhere along a side, not
+  // only at its sparkle; the anchor keeps its port (h) and where along the side it is (t, 0..1 from left or top)
+  function edgesOf(owner) {
+    const q = p => { const e = document.querySelector('.se-port[data-pid="' + CSS.escape(owner === "site" ? p : owner + "/" + p) + '"]'); if (!e || !e.getClientRects().length || e.classList.contains("is-tiny") || e.classList.contains("is-covered")) return null; const d = (e.querySelector(".se-port-dot") || e).getBoundingClientRect(); return [d.left + d.width / 2, d.top + d.height / 2]; };
+    const i = q("input"), o = q("output"), s = q("sync"), c = q("condition");
+    if (!i || !o || !s || !c) return null;
+    return { L: i[0], R: o[0], T: s[1], B: c[1] };
+  }
+  const ownerOfH = h => { const m = /^port:(?:(.+)\/)?(input|output|sync|condition)$/.exec(h || ""); return m ? { owner: m[1] || "site", port: m[2] } : null; };
+  function edgePoint(an) {
+    const o = ownerOfH(an.h); if (!o) return null;
+    const E = edgesOf(o.owner); if (!E) return null;
+    const t = Math.max(0, Math.min(1, an.t));
+    return o.port === "sync" ? [E.L + t * (E.R - E.L), E.T] : o.port === "condition" ? [E.L + t * (E.R - E.L), E.B] : o.port === "input" ? [E.L, E.T + t * (E.B - E.T)] : [E.R, E.T + t * (E.B - E.T)];
+  }
+  const SNAP_EDGE = 9;
+  function nearEdge(x, y, except) {
+    const owners = new Set();
+    document.querySelectorAll(".se-port").forEach(p => owners.add(p.dataset.owner || "site"));
+    let best = null;
+    owners.forEach(owner => {
+      if (owner === "main" || owner === "site") return;                    // the lattice keeps its sparkles
+      const E = edgesOf(owner); if (!E || E.R - E.L < 30 || E.B - E.T < 30) return;
+      const pid = p => "port:" + owner + "/" + p;
+      const cand = [];
+      if (x > E.L + 6 && x < E.R - 6) { cand.push([Math.abs(y - E.T), "sync", (x - E.L) / (E.R - E.L)]); cand.push([Math.abs(y - E.B), "condition", (x - E.L) / (E.R - E.L)]); }
+      if (y > E.T + 6 && y < E.B - 6) { cand.push([Math.abs(x - E.L), "input", (y - E.T) / (E.B - E.T)]); cand.push([Math.abs(x - E.R), "output", (y - E.T) / (E.B - E.T)]); }
+      cand.forEach(([d, port, t]) => {
+        if (d > SNAP_EDGE) return;
+        const key = pid(port);
+        if (except && (key === except || clash({ h: except }, { h: key }))) return;
+        if (!best || d < best.d) best = { d, key, t: Math.round(t * 1000) / 1000, E };
+      });
+    });
+    if (!best) return null;
+    const E = best.E;
+    return { anchor: { h: best.key, el: 1, t: best.t }, rect: { left: E.L, top: E.T, right: E.R, bottom: E.B, width: E.R - E.L, height: E.B - E.T } };
+  }
   function endPoint(an, toward) {
     if (an.loop) return O().loopPoint ? O().loopPoint(toward[0], toward[1]) : null;
     const r = endRect(an);
@@ -160,6 +199,7 @@
     const cx = r.left + r.width / 2, cy = r.top + r.height / 2;
     // a port: the wire runs right into its sparkle (owner, 2026-10-12: "side wires dont work": short wires between
     // two ports stopped a few px short of both, and looked broken)
+    if (an.h && an.h.startsWith("port:") && an.t != null) { const q = edgePoint(an); if (q) return q; }   // a connector along the edge's line
     if (an.h && an.h.startsWith("port:")) {
       const pe = hostEl(an.h), dot = pe && (pe.querySelector(".se-port-dot") || pe);
       if (dot && dot.getClientRects().length) { const d = dot.getBoundingClientRect(); return [d.left + d.width / 2, d.top + d.height / 2]; }
@@ -427,7 +467,13 @@
   }
   function targetAt(x, y, fromKey) {
     const port = nearPort(x, y, fromKey);
-    if (port) return port;
+    if (port && port.d === undefined) {
+      // a sparkle within reach wins only near it; further along a side the side's line itself is the connector
+      const edge = nearEdge(x, y, fromKey);
+      if (edge && port.rect) { const pr = port.rect, d = Math.hypot(x - (pr.left + pr.width / 2), y - (pr.top + pr.height / 2)); if (d > 12) return edge; }
+      return port;
+    }
+    { const edge = nearEdge(x, y, fromKey); if (edge) return edge; }
     const u = unitAt(x, y);
     if (u) return { anchor: u.anchor, rect: rectOf(u.node, u.a, u.b) };
     const el = document.elementFromPoint(x, y);
@@ -522,6 +568,7 @@
       let g = edgeAt(e.clientX, e.clientY);
       const port = e.target.closest && e.target.closest(".se-port");
       if (port) g = { anchor: { h: "port:" + (port.dataset.pid || port.dataset.port), el: 1 }, rect: port.getBoundingClientRect(), el: port };
+      else if (html.classList.contains("shape-se")) { const ed = nearEdge(e.clientX, e.clientY, null); if (ed) g = { anchor: ed.anchor, rect: ed.rect, el: e.target }; }   // a side's line: a connector there
       if (g) { e.preventDefault(); e.stopImmediatePropagation(); }       // on an edge (or a port) it wires: the thing does not move
       else if (owned(e.target)) return;
       const u = g ? null : unitAt(e.clientX, e.clientY);
@@ -603,5 +650,5 @@
     if (links.length !== before) { save(); lastHtml = ""; draw(); }
   }
   function removeAt(i) { if (i >= 0 && i < links.length) { links.splice(i, 1); save(); lastHtml = ""; draw(); return true; } return false; }
-  window.SuperLink = { links: () => JSON.parse(JSON.stringify(links)), unitAt, add, forget, intent, removeAt, selectable, rectOf: an => (an && !an.loop ? endRect(an) : null) || null };
+  window.SuperLink = { reset: resetApp, links: () => JSON.parse(JSON.stringify(links)), unitAt, add, forget, intent, removeAt, selectable, rectOf: an => (an && !an.loop ? endRect(an) : null) || null };
 })();
