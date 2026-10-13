@@ -83,3 +83,26 @@ def test_enforce_database_schema_is_idempotent(temp_db):
         assert cols.count("free_evals_used") == 1
     finally:
         conn.close()
+
+
+def test_leaderboard_groups_researchers_by_registry_id():
+    """One researcher written two ways is one row; two researchers with one name are two (owner, 2026-10-13)."""
+    import json as _json
+    A = {"name": "John Smith", "openalex_id": "A1", "orcid": "0000-0001-0000-0001"}
+    A2 = {"name": "J. Smith", "openalex_id": "A1", "orcid": "0000-0001-0000-0001"}      # same person, other byline
+    B = {"name": "John Smith", "openalex_id": "A2", "orcid": ""}                          # a different John Smith
+    C = {"name": "Ada Lovelace", "openalex_id": "A3", "orcid": ""}
+    rows = [
+        ("John Smith, Ada Lovelace", 2.0, 80.0, 0.0, None, _json.dumps([A, C])),
+        ("J. Smith", 1.0, 60.0, 0.0, None, _json.dumps([A2])),
+        ("John Smith", 1.0, 50.0, 0.0, None, _json.dumps([B])),
+        ("Ada Lovelace", 4.0, 90.0, 0.0, None, ""),          # no registry record: her name joins her id
+    ]
+    out = {(r["orcid"] or r["openalex_id"]): r for r in database.aggregate_author_statistics(rows)}
+    assert set(out) == {"0000-0001-0000-0001", "A2", "A3"}
+    assert out["0000-0001-0000-0001"]["papers"] == 2
+    assert out["A3"]["papers"] == 2 and out["A3"]["piq"] == 5.0          # 1.0 (half of 2.0) + 4.0
+    assert out["A2"]["papers"] == 1
+    # rows from before author_ids existed still group by name
+    old = database.aggregate_author_statistics([("Grace Hopper", 1.0, 70.0), ("Grace Hopper", 1.0, 80.0)])
+    assert len(old) == 1 and old[0]["papers"] == 2

@@ -3137,6 +3137,62 @@ def registry_orcids_for_doi(doi: str) -> List[str]:
     return found
 
 
+def fetch_work_authors(doi: str) -> Optional[List[Dict]]:
+    """Every author of the work with their OpenAlex id and ORCID, from OpenAlex's authorships for the DOI.
+
+    [] when the registry knows the work but lists nobody, or has no record of the DOI; None when it could not be
+    reached (so the caller asks again later rather than recording "no authors").
+    """
+    doi = (doi or "").replace("https://doi.org/", "").strip()
+    if not doi or doi.lower() in ("none", ""):
+        return []
+    status, payload = fetch_json(f"{attribution_OPENALEX_BASE}/works/https://doi.org/{doi}",
+                                 cache=work_cache, cache_key=("oa-orcid", doi))
+    if status == 404:
+        return []
+    if status != 200 or not payload:
+        return None
+    out = []
+    for authorship in (payload.get("authorships") or []):
+        a = authorship.get("author") or {}
+        name = (a.get("display_name") or authorship.get("raw_author_name") or "").strip()
+        oa = (a.get("id") or "").rsplit("/", 1)[-1]
+        m = re.search(r"(\d{4}-\d{4}-\d{4}-\d{3}[\dX])", a.get("orcid") or "")
+        if name or oa:
+            out.append({"name": name, "openalex_id": oa, "orcid": m.group(1) if m else ""})
+    return out
+
+
+def backfill_author_ids(limit: int = 1000, pause: float = 0.25) -> int:
+    """Looks up the registry authors of papers assessed before author_ids existed. Returns how many were filled.
+
+    One OpenAlex request at a time with a pause between (a polite pace for a public API); a paper whose registry
+    cannot be reached now is left for the next start.
+    """
+    conn = get_db_connection()
+    try:
+        rows = conn.execute("SELECT eval_hash, doi FROM papers_assessment WHERE COALESCE(author_ids, '') = '' "
+                            "LIMIT ?", (limit,)).fetchall()
+    finally:
+        conn.close()
+    filled = 0
+    for eval_hash, doi in rows:
+        found = fetch_work_authors(real_doi(doi))
+        if found is None:
+            continue
+        conn = get_db_connection()
+        try:
+            conn.execute("UPDATE papers_assessment SET author_ids = ? WHERE eval_hash = ?", (json.dumps(found), eval_hash))
+            conn.commit()
+        finally:
+            conn.close()
+        filled += 1
+        time.sleep(pause)
+    if filled:
+        logging.info("Author ids looked up for %d earlier paper(s).", filled)
+    return filled
+
+
 def orcid_lists_work(orcid: str, doi: str = "", title: str = "") -> Optional[str]:
     """Does this ORCID record contain the work? Returns how it matched.
 
@@ -4540,7 +4596,7 @@ REQUIRED_ASSESSMENT_COLUMNS = {
     "warnings_json", "judge_metadata", "integrity_report", "reference_audit",
     "authorship_signal", "topology_detail", "classification", "criteria_breakdown",
     "signal_vector", "rubric_version", "author_metrics", "emission_record",
-    "author_openalex_id", "scoring_epoch", "unweighted_score", "attribution",
+    "author_openalex_id", "scoring_epoch", "unweighted_score", "attribution", "author_ids",
     # The four deterministic structural measurements, stored so a later user
     # correction can be learned from without retaining manuscript text.
     "scilem_signals",
@@ -4868,6 +4924,10 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # Author identity resolved to an OpenAlex ID, so per-author accounting
         # survives byline variation ("J. Smith" vs "John Smith").
         "author_openalex_id": "TEXT DEFAULT ''",
+        # Every author of the work as the registry knows them: [{name, openalex_id, orcid}], from OpenAlex's
+        # authorships for the DOI ('' until looked up, '[]' when the registry has none). The leaderboard groups by
+        # these ids, so "J. Smith" and "John Smith" are one researcher and two John Smiths are two.
+        "author_ids": "TEXT DEFAULT ''",
         # Authorship verdict: piQ is minted only to verified authors, so the
         # evidence behind that decision must be recorded with the assessment.
         "attribution": "TEXT DEFAULT '{}'",
@@ -14736,6 +14796,8 @@ def process_single_pdf(
         )
         author_metrics = guarded(lambda: fetch_author_metrics(extracted_author),
                                  fallback={}, label="author bibliometrics")
+        work_authors = guarded(lambda: fetch_work_authors(real_doi(provided_doi)), fallback=None,
+                               label="the work's authors")
 
         scores_dict = apply_scoring_rubric(signal_vector)
         criteria_breakdown = explain_all_criteria(signal_vector)
@@ -14968,6 +15030,10 @@ def process_single_pdf(
                 paper_fingerprint,
             ),
         )
+
+        if work_authors is not None:
+            cursor.execute("UPDATE papers_assessment SET author_ids = ? WHERE eval_hash = ?",
+                           (json.dumps(work_authors), file_hash))
 
         cursor.execute("SELECT COUNT(*) FROM blockchain_por_weights")
         count_row = cursor.fetchone()
@@ -18150,6 +18216,10 @@ def on_startup():
 
     # Drains the settlement queue on a timer. Daemon thread, same as above, so
     # it cannot delay the healthcheck or hold the process open on shutdown.
+    # the registry authors of papers assessed before they were recorded (the leaderboard groups by them)
+    threading.Thread(target=lambda: guarded(backfill_author_ids, fallback=0, label="author id backfill"),
+                     name="author-ids", daemon=True).start()
+
     try:
         admin_start_auto_settlement()     # (called by a name that did not exist since the routers were split out)
     except Exception as e:
@@ -21336,15 +21406,49 @@ def aggregate_author_statistics(rows):
     yet is a fact about their account, and belongs beside the number rather
     than in place of it.
     """
-    authors = {}
+    # Who is who (owner, 2026-10-13: "reliable author leaderboard"): an author is their ORCID, else their OpenAlex
+    # id, else (only when the registry has no record of the work) their name. Names on a paper without registry
+    # authors join an id when exactly one id carries that name elsewhere in the corpus, so "Jane Doe" on an
+    # unregistered preprint counts with her registered papers, and two different Jane Does are never merged.
+    def _norm(n):
+        n = unicodedata.normalize("NFKD", n or "").encode("ascii", "ignore").decode().lower()
+        return re.sub(r"[^a-z]+", " ", n).strip()
+
+    def _ids(row):
+        raw = row[5] if len(row) > 5 else ""
+        try:
+            v = json.loads(raw) if raw else None
+        except (TypeError, ValueError):
+            v = None
+        return v if isinstance(v, list) else None
+
+    def _key(a):
+        return ("orcid:" + a["orcid"]) if a.get("orcid") else ("oa:" + a["openalex_id"]) if a.get("openalex_id") \
+            else "name:" + _norm(a.get("name"))
+
+    name_keys = {}
+    for row in rows:
+        for a in (_ids(row) or []):
+            if a.get("name") and not _key(a).startswith("name:"):
+                name_keys.setdefault(_norm(a["name"]), set()).add(_key(a))
+    alias = {n: next(iter(k)) for n, k in name_keys.items() if len(k) == 1}
+
+    authors, shown = {}, {}
     for row in rows:
         author_str, piq, score = row[0], row[1], row[2]
         escrowed = safe_float(row[3], 0.0) if len(row) > 3 else 0.0
         claimed = bool(row[4]) if len(row) > 4 else True
-        ca = clean_author_name(author_str)
-        if not ca or ca.lower() in ("unidentified", "unknown") or is_likely_institution(ca):
-            continue
-        names = [x.strip() for x in ca.split(",") if x.strip()]
+        reg = _ids(row)
+        names = []                                    # (key, name as written, orcid, openalex id)
+        if reg:
+            names = [(_key(a), a.get("name") or "", a.get("orcid") or "", a.get("openalex_id") or "") for a in reg]
+        else:
+            ca = clean_author_name(author_str)
+            if not ca or ca.lower() in ("unidentified", "unknown") or is_likely_institution(ca):
+                continue
+            names = [(alias.get(_norm(n)) or "name:" + _norm(n), n, "", "") for n in
+                     [x.strip() for x in ca.split(",") if x.strip()]]
+        names = [n for n in names if n[0] != "name:"]
         if not names:
             continue
 
@@ -21368,9 +21472,14 @@ def aggregate_author_statistics(rows):
         # co-author with no wallet and no ORCID has no account to settle into.
         # See the note on the endpoint below.
         share = 1.0 / len(names)
-        for a in names:
-            rec = authors.setdefault(a, {"author": a, "minted": 0.0, "held": 0.0,
-                                         "claimed": 0.0, "papers": 0, "_score_sum": 0.0})
+        for key, written, orcid, oa_id in names:
+            rec = authors.setdefault(key, {"author": written, "orcid": "", "openalex_id": "", "minted": 0.0,
+                                           "held": 0.0, "claimed": 0.0, "papers": 0, "_score_sum": 0.0})
+            rec["orcid"] = rec["orcid"] or orcid
+            rec["openalex_id"] = rec["openalex_id"] or oa_id
+            if written:
+                counts = shown.setdefault(key, {})
+                counts[written] = counts.get(written, 0) + 1
             rec["minted"] += safe_float(piq, 0.0) * share
             # Escrow counts either way — as held while unclaimed, as claimed
             # once released. It is NOT folded into `minted`: releasing escrow
@@ -21385,7 +21494,9 @@ def aggregate_author_statistics(rows):
             rec["papers"] += 1
             rec["_score_sum"] += safe_float(score, 0.0)
     results = []
-    for rec in authors.values():
+    for key, rec in authors.items():
+        if shown.get(key):                            # the name it is written with most often
+            rec["author"] = max(shown[key].items(), key=lambda kv: (kv[1], len(kv[0])))[0]
         rec["avg_score"] = round(rec["_score_sum"] / rec["papers"], 2) if rec["papers"] else 0.0
         rec["minted"] = round(rec["minted"], 2)
         rec["held"] = round(rec["held"], 2)
@@ -21408,10 +21519,10 @@ def analytics_summary():
                       MIN(timestamp), MAX(timestamp)
                FROM papers_assessment"""
         ).fetchone()
-        author_rows = conn.execute("SELECT author_name, 0, 0 FROM papers_assessment").fetchall()
+        author_rows = conn.execute("SELECT author_name, 0, 0, 0, NULL, author_ids FROM papers_assessment").fetchall()
     finally:
         conn.close()
-    unique_authors = {r["author"] for r in aggregate_author_statistics(author_rows)}
+    unique_authors = aggregate_author_statistics(author_rows)                # one entry per researcher
     return {
         "total_papers": row[0] or 0,
         # Settled: minted to a verified author. This is what the leaderboard
@@ -21611,7 +21722,7 @@ def analytics_leaderboard(
     conn = get_db_connection()
     try:
         rows = conn.execute(
-            "SELECT author_name, piq_minted, final_score, piq_escrowed, piq_claimed_at "
+            "SELECT author_name, piq_minted, final_score, piq_escrowed, piq_claimed_at, author_ids "
             "FROM papers_assessment").fetchall()
     finally:
         conn.close()
