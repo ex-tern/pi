@@ -1,7 +1,7 @@
 {
   "name": "ScholarPi — Pi-Index Assessment Engine",
   "short_name": "ScholarPi",
-  "description": "Assess research manuscripts against CoARA-aligned criteria.",
+  "description": "Assess research manuscripts against science-aligned criteria.",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#f6f6f4",

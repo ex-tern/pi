@@ -63,7 +63,7 @@
 ; project as squares big enough to read; Connect folded below the welcome. The demonstration wiring of the canvas's
 ; conditions (a small square into if, then, the timer) is gone: a first visit sees what it can do, not a puzzle.
 diagram
-  ■ welcome "ScholarPi: a panel of AI models assesses your research paper against open, CoARA-aligned criteria, and tells you what holds it back. Start with Tools." box desktop n=1000 at.inSite=0.035,0.065,0.300,0.315
+  ■ welcome "ScholarPi: a panel of AI models assesses your research paper against open, science-aligned criteria, and tells you what holds it back. Start with Tools." box desktop n=1000 at.inSite=0.035,0.065,0.300,0.315
   ▣ hold box desktop n=1000 at.inSite=0.340,0.065,0.965,0.935
   ⟶ main◁ site◁
   ⟶ site▷ main▷

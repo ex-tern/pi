@@ -218,7 +218,7 @@ window.SUPERAI_PROGRAM = {
   "supers": [
    {
     "id": "welcome",
-    "text": "ScholarPi: a panel of AI models assesses your research paper against open, CoARA-aligned criteria, and tells you what holds it back. Start with Tools.",
+    "text": "ScholarPi: a panel of AI models assesses your research paper against open, science-aligned criteria, and tells you what holds it back. Start with Tools.",
     "kind": "box",
     "desktop": true,
     "n": 1000,
