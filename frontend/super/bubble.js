@@ -35,20 +35,20 @@
     return '<path class="' + cls + '" d="M' + pts.map(p => f(p[0]) + "," + f(p[1])).join("L") + 'Z">' + (title ? "<title>" + esc(title) + "</title>" : "") + "</path>";
   }
   function drawing(name, members, cls, side) {
-    const n = Math.max(1, members.length), gap = Math.min(4, 36 / n), bh = Math.min(8, (72 - (n - 1) * gap) / n), bw = 20, x1 = 68, total = n * bh + (n - 1) * gap, y0 = (SIDE - total) / 2 - 4;   // clear of the lock at the lower right
-    // the name as large as its box lets (a compact bubble is drawn at --se-compact, 84 px or more: readable)
-    const px = (side || SIDE) / SIDE, label = name.trim().slice(0, 10), lx = 6, lw = 54, fs = Math.min(15 / px, lw * 0.92 / (0.62 * Math.max(4, label.length))), lh = fs + 8, ly = SIDE / 2 - lh / 2 - 4;   // about 15 px on screen (still readable when the layout makes the bubbles a little smaller), as large as its box lets
+    // the name across the top, as large as the box lets, so it stays readable at the zoomed-out start (owner,
+    // 2026-10-13: "make it a useful tool"); under it one box per pill, wired from the name
+    const label = name.trim().slice(0, 12), lx = 6, lw = SIDE - 12;
+    const fs = Math.min(24, lw * 0.9 / (0.66 * Math.max(4, label.length))), lh = fs + 8, ly = 8;   // in the drawing's own units: it scales with the square
+    const n = Math.max(1, members.length), top = ly + lh + 8, room = SIDE - 10 - top, gap = Math.min(3, 24 / n);
+    const bh = Math.max(2, Math.min(8, (room - (n - 1) * gap) / n)), bw = 52, x1 = 40, xt = 24, total = n * bh + (n - 1) * gap, y0 = top + (room - total) / 2;
     let s = '<svg class="' + (cls || "ob-mini") + '" viewBox="0 0 ' + SIDE + ' ' + SIDE + '" aria-hidden="true">';
     members.forEach((m, i) => {
-      const y = y0 + i * (bh + gap) + bh / 2, x0 = lx + lw, mx = (x0 + x1) / 2, yc = ly + lh / 2;
-      s += '<path class="obm-wire" d="M' + x0 + ',' + yc + ' C' + mx + ',' + yc + ' ' + mx + ',' + y + ' ' + x1 + ',' + y + '"/>';
+      const y = y0 + i * (bh + gap) + bh / 2;
+      s += '<path class="obm-wire" d="M' + xt + ',' + (ly + lh) + ' C' + xt + ',' + y + ' ' + xt + ',' + y + ' ' + x1 + ',' + y + '"/>';
     });
     s += seBox(lx, ly, lw, lh, lh / 2, "obm-box obm-name") +
          '<text class="obm-text" x="' + (lx + lw / 2) + '" y="' + (ly + lh / 2 + fs * 0.36).toFixed(1) + '" text-anchor="middle" style="font-size:' + fs.toFixed(1) + 'px">' + esc(label) + '</text>';
-    members.forEach((m, i) => {
-      const y = y0 + i * (bh + gap);
-      s += seBox(x1, y, bw, bh, bh / 2, "obm-box", m);
-    });
+    members.forEach((m, i) => { s += seBox(x1, y0 + i * (bh + gap), bw, bh, bh / 2, "obm-box", m); });
     return s + "</svg>";
   }
   function redraw(el) {
