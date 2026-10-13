@@ -6,8 +6,12 @@
 (function () {
   "use strict";
   const html = document.documentElement;
-  const GAP = 4, PAD = 5, KEY = "se:packed";
+  const GAP = 4, PAD = 5, KEY = "se:touched";
   const done = () => { try { return localStorage.getItem(KEY) === "1"; } catch (_) { return true; } };
+  // the first press, scroll or wire on a super makes the arrangement yours
+  const touch = e => { if (done() || !e.isTrusted) return; const t = e.target; if (t && t.closest && t.closest(".orbit-bubble, .lv-node, .se-project, .orbit-panel, .se-port, .wire-hit, .sl-layer, .orbit-title")) { try { localStorage.setItem(KEY, "1"); } catch (_) { /* private mode */ } } };
+  document.addEventListener("pointerdown", touch, true);
+  document.addEventListener("wheel", touch, { capture: true, passive: true });
   const O = () => window.PiOrbit || {};
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
@@ -17,7 +21,11 @@
       lib: q('.orbit-bubble[data-key^="lib:"]'), lab: q('.orbit-bubble[data-key^="lab:Lab"]') };
     const hold = q('.lv-node[data-id="hold"]'), proj = q(".se-project");
     if (!sb || !F || !hold || !proj || !window.LabView || !window.LabView.setRect || !O().placeBubble || !window.SeProject || Object.values(B).some(b => !b || !b.classList.contains("is-compact"))) return false;
-    const S = B.connect.offsetWidth;                                     // a compact bubble's side, in layout px
+    // every bubble at the one compact size (sizes super/bind.js gave members while the window changed are dropped),
+    // and bind.js measures their places afresh once they have glided there
+    if (window.SeBind && window.SeBind.settle) window.SeBind.settle();
+    Object.values(B).forEach(b => { if (b.classList.contains("se-sized")) { b.style.width = ""; b.style.height = ""; b.classList.remove("se-sized"); } try { localStorage.removeItem("se:size:" + b.dataset.key); } catch (_) { /* private mode */ } });
+    const S = parseFloat(getComputedStyle(html).getPropertyValue("--se-compact")) || B.connect.offsetWidth;   // a compact bubble's side, in layout px
     if (!(S > 20)) return false;
     // the third super's room is what super/bind.js keeps its members in (bind.js inner): a padding of 3.5 % of its
     // smaller side plus up to 4 px on screen, and a top strip for its lock and name of 6.5 % of its height, at most
@@ -30,16 +38,18 @@
     }
     const total = S + GAP + W;
     const x0 = sb.cx - total / 2, y0 = sb.cy - H / 2;                  // the group in the middle of the second super
-    const hx = x0 + S + GAP, row1 = y0 + T + S / 2, row2 = row1 + S + GAP;
-    const col = i => hx + P + S / 2 + i * (S + GAP);
-    const scr = (x, y) => [F.px + (x - F.px) * f, F.py + (y - F.py) * f];   // layout to screen
+    const hx = x0 + S + GAP;
     window.LabView.setRect(hold, hx, y0, W, H);
-    const put = (b, x, y) => { const [sx, sy] = scr(x, y); (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx, sy); };
-    put(B.connect, x0 + S / 2, row1);
-    put(B.tools, col(0), row1); put(B.explore, col(1), row1); put(B.lib, col(2), row1); put(B.lab, col(1), row2);
-    const pr = proj.getBoundingClientRect(), [tx, ty] = scr(col(2) - S / 2, row2 - S / 2);
-    window.SeProject.moveBy(tx - pr.left, ty - pr.top);
-    try { localStorage.setItem(KEY, "1"); } catch (_) { /* private mode */ }
+    // the rest from where the third super really is on screen now (a layout-to-screen mapping can be stale just after
+    // the window changed size), in screen px
+    const hr = hold.getBoundingClientRect(), k = hr.width / W, s = S * k, g = GAP * k, p = P * k, tt = T * k;
+    const r1 = hr.top + tt + s / 2, r2 = r1 + s + g, c = i => hr.left + p + s / 2 + i * (s + g);
+    const put = (b, x, y) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, x, y);
+    put(B.connect, hr.left - g - s / 2, r1);
+    put(B.tools, c(0), r1); put(B.explore, c(1), r1); put(B.lib, c(2), r1); put(B.lab, c(1), r2);
+    if (window.SeProject.resize) window.SeProject.resize(S, S);         // the project at the bubbles' size too
+    const pr = proj.getBoundingClientRect();
+    window.SeProject.moveBy(c(2) - s / 2 - pr.left, r2 - s / 2 - pr.top);
     return true;
   }
   // as soon as the layout is there, before the page fades in (super/boot.js waits for it to settle)
@@ -50,9 +60,23 @@
     if (done() || tries++ > 60) return;
     const sb = O().siteBox && O().siteBox(), key = sb ? [sb.cx, sb.cy, sb.a, sb.b].map(v => Math.round(v)).join(",") : "";
     if (!key || key !== lastSb) { lastSb = key; setTimeout(attempt, 120); return; }
-    if (!pack()) setTimeout(attempt, 120);
+    if (!pack()) { setTimeout(attempt, 120); return; }
+    // the third super can still glide a moment after it is set: a second pass places the rest against where it settled
+    setTimeout(() => { if (!done()) pack(); }, 1400);
   }
+  // the window changed size while the start is still untouched: the start is laid out again from scratch (a fresh
+  // load always lands right; moving the laid-out supers live after a resize fought the layout and bind.js)
+  let rT = 0, w0 = window.innerWidth, h0 = window.innerHeight;
+  window.addEventListener("resize", () => {
+    clearTimeout(rT);
+    rT = setTimeout(() => {
+      if (done() || !html.classList.contains("shape-se")) return;
+      if (Math.abs(window.innerWidth - w0) < w0 * 0.03 && Math.abs(window.innerHeight - h0) < h0 * 0.03) return;   // a scrollbar or a toolbar, not a new window size
+      try { Object.keys(localStorage).filter(k => /^(lv:|orbit:|se:)/.test(k) && k !== "se:start" && k !== KEY).forEach(k => localStorage.removeItem(k)); } catch (_) { /* private mode */ }
+      location.reload();
+    }, 600);
+  });
   document.addEventListener("orbit:ready", () => setTimeout(attempt, 150));
   if (window.PiOrbit && window.PiOrbit.siteBox) setTimeout(attempt, 300);
-  window.SePack = { pack: () => { try { localStorage.removeItem(KEY); } catch (_) {} return pack(); } };
+  window.SePack = { pack: () => { try { localStorage.removeItem(KEY); } catch (_) { /* private mode */ } return pack(); } };
 })();

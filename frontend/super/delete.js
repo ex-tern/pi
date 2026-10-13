@@ -50,7 +50,7 @@
   // unlocked super is deleted at once; a saved one (super/save.js) or a locked one stays, and says why
   function ask(el, x, y) {
     if (!el) return;
-    if (window.SeLock && window.SeLock.isLocked(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "locked", "unlock it to delete it"); return; }
+    if (window.SeLock && window.SeLock.isLocked(el)) { /* a locked super simply does nothing: no note (owner, 2026-10-13) */ return; }
     if (window.SeSave && window.SeSave.isSaved(el)) { if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "saved", "unsave it to delete it"); return; }
     remove(el);
   }

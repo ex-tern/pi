@@ -85,5 +85,8 @@
       }
     }).observe(document.body, { childList: true, subtree: false });
   }
+  // π and friends are switched off (owner, 2026-10-13: "deactivate pi and friends counter and stop showing it"): no
+  // window, no worker. Set window.PI_FRIENDS = true before this file loads to bring them back.
+  if (!window.PI_FRIENDS) return;
   if (window.PiOrbit) start(); else document.addEventListener("orbit:ready", start, { once: true });
 })();

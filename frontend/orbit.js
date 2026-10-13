@@ -1602,7 +1602,9 @@
     };
     showPi = show;
     window.OrbitPi = () => { if (!pending) { pending = true; requestAnimationFrame(show); } };
-    try {
+    // the π counter is switched off (owner, 2026-10-13: "deactivate pi and friends counter and stop showing it"):
+    // no worker computes its digits and none are drawn (window.PI_FRIENDS = true brings it back)
+    if (window.PI_FRIENDS) try {
       const w = new Worker("pi-worker.js?v=5");
       piWorker = w;
       watchActivity();

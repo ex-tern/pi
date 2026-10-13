@@ -79,7 +79,7 @@
     if (d <= 10) return;                                               // its edge starts a wire, as on any super
     e.stopImmediatePropagation();
     if (window.SeLock && window.SeLock.isLocked(host)) {
-      if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "the group it is chained into is locked");
+      /* a locked super simply does nothing: no note (owner, 2026-10-13) */
       drag = { el, host, id: e.pointerId, x: e.clientX, y: e.clientY, moved: false, locked: true };
       return;
     }

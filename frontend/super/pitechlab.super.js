@@ -219,7 +219,6 @@ window.SUPERAI_PROGRAM = {
    {
     "id": "hold",
     "kind": "box",
-    "text": "super",
     "desktop": true,
     "hold": true,
     "n": 1000,

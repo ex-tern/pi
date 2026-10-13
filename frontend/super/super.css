@@ -746,3 +746,7 @@ html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node.is-holder > .lv
    supers: n = 10 too, until hold shift + scroll gives one its own */
 html.shape-se .orbit-bubble.is-group:not(.is-compact) :is(.ob-member, .ob-label) { --se-k-window: 9.96578; }
 html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { --se-k: 9.96578 !important; }
+/* a holder with no name shows no empty name box */
+html.shape-se .lv-node.lv-box.is-holder > .lv-glyph:empty { display: none; }
+/* π and friends are switched off (owner, 2026-10-13): no π digits along the title's wire or round the loop */
+.sl-pi, .om-page-pi, .om-page-pipath { display: none !important; }

@@ -490,7 +490,7 @@
         n.text = r.text; n.changed = now;
         // a prompt with a Display wired from its output keeps showing its question: the Display shows the answer (owner, 2026-10-12)
         const asks = n.role === "engine" && n.auto && n.str && nodes.some(x => x !== n && promptInto(x) === n);
-        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : isHolder(n) && n.str ? n.str : asks ? n.str : r.text;   // a holder shows its own name   // holds its value inside
+        if ((n.fn === "box" || n.fn === "dot") && !n.field && n.role !== "stop") n.el.querySelector(".lv-glyph").textContent = n.role === "loop" ? "" : isHolder(n) ? (n.str || "") : asks ? n.str : r.text;   // a holder shows its own name or nothing, never what is wired into it   // a holder shows its own name   // holds its value inside
         else if (n.fn === "ask") n.el.querySelector(".lv-ans").textContent = r.text;
         else if (n.fn !== "super") n.val.textContent = r.text;
       }
@@ -1781,6 +1781,8 @@
     // a program that has one lays the diagram out again when it is missing
     const progRun = !!((((window.SuperAI || {}).program || {}).diagram || {}).supers || []).find(x => x.id === id);
     const fresh = (!saved || (progRun && !central)) && se();
+    // the third super has no label any more (owner, 2026-10-13: "delete super label"): a kept layout loses it too
+    { const h = nodes.find(x => x.id === "hold"); if (h && h.str === "super") { h.str = ""; h.text = null; persist(); tick(); } }
     if (fresh) layoutProgram();                                     // a first visit (or a diagram kept from the round look, without the central super): the program's diagram (super/pitechlab.super.js)
     else if (!saved) layoutProgram(true);                           // a first visit in the round look: its first supers
     if (!fresh && central && !central.role) { central.role = "engine"; persist(); }   // a diagram from before the engine role

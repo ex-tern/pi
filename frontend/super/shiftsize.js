@@ -29,7 +29,7 @@
     const el = t.closest(SEL) || (bare ? holderAt(e.clientX, e.clientY) : null); if (!el) return;
     if (window.SeLock && window.SeLock.isLocked(el)) {                // locked: its size is kept
       e.preventDefault(); e.stopImmediatePropagation();
-      if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to change its size or shape");
+      /* a locked super simply does nothing: no note (owner, 2026-10-13) */
       return;
     }
     e.preventDefault(); e.stopImmediatePropagation();

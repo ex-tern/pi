@@ -102,4 +102,20 @@
   document.addEventListener("dblclick", e => { if (on() && e.target.closest && e.target.closest(".wire-hit")) return; }, true);
   // nothing is selected at first: a calm start (owner, 2026-10-12: "make it look professional"); a click selects
   window.SeSelect = { selected: () => sel, select, containerOf, superAt, isSelected: s => s === sel };
+  // a super that opens is selected (owner, 2026-10-13: "when a super is opened it is selected by default"): a window
+  // as it appears, a bubble once it has grown open, the project once it is open
+  const wasOpen = new WeakMap();
+  const isOpen = el => el.classList.contains("orbit-panel") ? !el.classList.contains("leaving")
+    : el.classList.contains("orbit-bubble") ? !el.classList.contains("is-compact") && !el.classList.contains("is-growing")
+    : el.classList.contains("se-project") ? el.classList.contains("is-open") : false;
+  function lookOpen() {
+    if (!on()) return;
+    document.querySelectorAll(".orbit-panel, .orbit-bubble.is-group, .se-project").forEach(el => {
+      const now = isOpen(el), was = wasOpen.get(el);
+      wasOpen.set(el, now);
+      if (now && was === false && el.getClientRects().length) select(el);
+      else if (now && was === undefined && el.classList.contains("orbit-panel") && performance.now() > 4000) select(el);   // a window that has just appeared
+    });
+  }
+  new MutationObserver(() => { clearTimeout(lookOpen.t); lookOpen.t = setTimeout(lookOpen, 60); }).observe(document.body, { subtree: true, childList: true, attributes: true, attributeFilter: ["class"] });
 })();

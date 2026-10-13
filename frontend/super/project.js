@@ -297,7 +297,7 @@
       if (!html.classList.contains("shape-se") || !inside(e) || e.shiftKey) return;
       if (window.SeLock && el && window.SeLock.isLocked(el) && !e.target.closest(".pj-editor, .se-lock")) {   // locked: it does not grow or shrink (owner, 2026-10-12)
         e.preventDefault(); e.stopImmediatePropagation();
-        if (window.SeShape && window.SeShape.note) window.SeShape.note(e.clientX, e.clientY, "locked", "unlock it to open it");
+        /* a locked super simply does nothing: no note (owner, 2026-10-13) */
         return;
       }
       if (e.target.closest(".pj-editor")) {                              // the program scrolls; at its top, a scroll out closes it

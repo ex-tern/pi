@@ -70,7 +70,7 @@
   // shape"): each member keeps its place in the holder as a share of it (across and down apart), and its size scales
   // with the holder (by the smaller of the two, so a bubble stays a square). The place is kept as a share, so putting
   // it there again is always the same answer: nothing drifts, whoever else moves things
-  const state = new WeakMap();                                           // holder -> { w, h (unzoomed), at: Map(member -> [sx, sy]) }
+  let state = new WeakMap();                                             // holder -> { w, h (unzoomed), at: Map(member -> [sx, sy]) }
   // a member's width on screen set to `sw` (its height in its own proportion): absolute, so many small steps of a
   // resize never compound
   function sizeTo(el, sw) {
@@ -204,5 +204,7 @@
   }
   document.addEventListener("se:frame", () => requestAnimationFrame(sparkles));
   setInterval(sparkles, 400);
-  window.SeBind = { members, need, enforce, isBound };
+  // super/pack.js re-arranged the start: forget every member's place and look again once the glides are over
+  function settle() { state = new WeakMap(); busyAt = performance.now() + 1500; }
+  window.SeBind = { members, need, enforce, isBound, settle };
 })();

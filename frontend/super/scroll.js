@@ -100,7 +100,7 @@
   let noteAt = 0;
   function lockedNote(el, x, y) {
     const now = performance.now(); if (now - noteAt < 250) return; noteAt = now;
-    if (window.SeShape && window.SeShape.note) window.SeShape.note(x, y, "locked", "unlock it to change its size or shape");
+    /* a locked super simply does nothing: no note (owner, 2026-10-13) */
   }
   const holderAt = (x, y) => [...document.querySelectorAll(".lv-node.is-holder")].map(el => ({ el, r: el.getBoundingClientRect() }))
     .filter(o => x >= o.r.left && x <= o.r.right && y >= o.r.top && y <= o.r.bottom).sort((a, b) => a.r.width * a.r.height - b.r.width * b.r.height).map(o => o.el)[0] || null;
