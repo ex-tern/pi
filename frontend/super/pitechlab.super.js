@@ -217,6 +217,21 @@ window.SUPERAI_PROGRAM = {
  "diagram": {
   "supers": [
    {
+    "id": "welcome",
+    "text": "ScholarPi: a panel of AI models assesses your research paper against open, CoARA-aligned criteria, and tells you what holds it back. Start with Tools.",
+    "kind": "box",
+    "desktop": true,
+    "n": 1000,
+    "at": {
+     "inSite": [
+      0.035,
+      0.065,
+      0.3,
+      0.315
+     ]
+    }
+   },
+   {
     "id": "hold",
     "kind": "box",
     "desktop": true,
@@ -224,24 +239,10 @@ window.SUPERAI_PROGRAM = {
     "n": 1000,
     "at": {
      "inSite": [
-      0.313,
-      0.15,
-      0.852,
-      0.848
-     ]
-    }
-   },
-   {
-    "id": "sq",
-    "kind": "box",
-    "desktop": true,
-    "n": 1000,
-    "at": {
-     "inSite": [
-      0.1775,
-      0.841,
-      0.2245,
-      0.929
+      0.34,
+      0.065,
+      0.965,
+      0.935
      ]
     }
    }
@@ -262,10 +263,6 @@ window.SUPERAI_PROGRAM = {
    [
     "site.sync",
     "hold.sync"
-   ],
-   [
-    "bubble:Connect.output",
-    "hold.input"
    ],
    [
     "bubble:Tools.output",
@@ -294,26 +291,6 @@ window.SUPERAI_PROGRAM = {
    [
     "ctl:lock.condition",
     "site.sync"
-   ],
-   [
-    "bubble:Connect.condition",
-    "cond:then.sync"
-   ],
-   [
-    "bubble:Tools.condition",
-    "cond:then.sync"
-   ],
-   [
-    "hold.condition",
-    "cond:if.sync"
-   ],
-   [
-    "site.condition",
-    "cond:timer.sync"
-   ],
-   [
-    "sq.output",
-    "cond:if.input"
    ]
   ]
  },

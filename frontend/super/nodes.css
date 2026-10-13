@@ -135,6 +135,10 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in) { width: auto; padding: 0 10px; }
 .lv-node.lv-box.has-val { width: auto; padding: 0 12px; }
 .lv-node.lv-box.is-long, html.shape-se .lv-node.lv-box.is-long { width: max-content; height: auto; padding: 8px 12px; }
+/* a text super given a size of its own (the start's welcome, or one sized by hand: --lv-h is set) keeps that box, and its
+   words wrap inside it (owner, 2026-10-13: the start's welcome) */
+html.shape-se .lv-node.lv-box.is-long[style*="--lv-h"] { width: var(--lv-s); height: var(--lv-h); max-width: none; padding: 14px 16px; box-sizing: border-box; }
+html.shape-se .lv-node.lv-box.is-long[style*="--lv-h"] .lv-glyph { display: block; height: 100%; max-height: none; white-space: normal; overflow-wrap: anywhere; text-align: left; font: 500 19px/1.4 var(--font, "Geist", system-ui, sans-serif); overflow: hidden; }   /* the start shows it at 0.62: about 12 px, over legible.js MIN */
 /* ?: just the mark until a question is typed */
 .lv-node.lv-ask { display: grid; place-items: center; gap: 0; }
 .lv-node.lv-ask .lv-q, .lv-node.lv-ask .lv-ans { display: none; }

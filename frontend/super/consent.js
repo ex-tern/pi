@@ -90,7 +90,7 @@
       '<label><input type="checkbox" data-k="ext"' + (c.ext ? " checked" : "") + '><span><b>Use outside AI providers.</b> What you send to an AI may go to Llama, Mistral, Qwen, Gemini or DeepSeek, to be answered. Off: only our own models (siM, riB, piD, PiEn) answer, and assessing a manuscript, whose panel uses outside jurors, is unavailable.</span></label>' +
       '<details class="se-consent-cookies"><summary>Cookies and storage this site uses</summary><div class="se-consent-list">' + COOKIE_TEXT + '</div></details>' +
       '<p class="se-consent-small">We never sell your data. You can change this any time from <b>Privacy choices</b> in the bottom-left corner.</p>' +
-      '<div class="se-consent-btns"><button type="button" data-a="essential">Essential only</button><button type="button" data-a="save">Save my choices</button><button type="button" data-a="all" class="is-main">Accept all</button></div>' +
+      '<div class="se-consent-btns"><button type="button" data-a="essential" class="is-main">Reject all</button><button type="button" data-a="save">Save my choices</button><button type="button" data-a="all" class="is-main">Accept all</button></div>' +
       "</div>";
     // the page's own gestures (zoom, wiring, typing into supers, making supers) stay out of it
     ["pointerdown", "dblclick", "wheel", "keydown", "contextmenu"].forEach(t => box.addEventListener(t, e => e.stopPropagation(), { passive: t !== "dblclick" && t !== "contextmenu" && t !== "keydown" }));
@@ -106,7 +106,7 @@
     });
     document.body.appendChild(box);
     loadList();
-    setTimeout(() => { const b = box && box.querySelector(".is-main"); if (b) b.focus({ preventScroll: true }); }, 50);
+    setTimeout(() => { const b = box && box.querySelector('[data-a="all"]'); if (b) b.focus({ preventScroll: true }); }, 50);
   }
   function decide(c) {
     choice = { count: !!c.count, learn: !!c.learn, ext: !!c.ext }; write(choice);

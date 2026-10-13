@@ -20,11 +20,15 @@
   // the start as the owner's picture of pitechlab.com (2026-10-13, "this is the initial state of the website"), in shares
   // of the second super's box: Connect open at its left; the third super in the middle with Tools, Explore and Library along
   // its top and Lab and the project under them, each a small square of its own side; the square under Connect feeds if.
+  // the start since 2026-10-13 14:10 (owner: "make the initial state as you desire"), in shares of the second super: the
+  // welcome at its top left (the program's diagram places it), Tools open under it, Connect folded below Tools; the third
+  // super on the right holding Explore and Library above, Lab and the project below, squares big enough to read
   const START = {
-    hold: [0.332, 0.119, 0.535, 0.445],
-    open: { connect: [0.069, 0.103, 0.228, 0.401] },
-    squares: { tools: [0.371, 0.209, 0.035], explore: [0.438, 0.214, 0.035], lib: [0.500, 0.214, 0.035], lab: [0.410, 0.363, 0.049] },
-    project: [0.501, 0.363, 0.035],
+    hold: [0.340, 0.065, 0.965, 0.935],
+    welcome: [0.035, 0.065, 0.300, 0.315],
+    open: { tools: [0.035, 0.355, 0.300, 0.745] },
+    squares: { connect: [0.0975, 0.855, 0.075], explore: [0.500, 0.305, 0.115], lib: [0.805, 0.305, 0.115], lab: [0.500, 0.695, 0.115] },
+    project: [0.805, 0.695, 0.115],
   };
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
@@ -39,6 +43,8 @@
     const f = F.f || 1, sx = l => F.px + (l - F.px) * f, sy = l => F.py + (l - F.py) * f;   // layout to screen
     const h = START.hold;
     window.LabView.setRect(hold, X(h[0]), Y(h[1]), (h[2] - h[0]) * W2, (h[3] - h[1]) * H2);
+    const wl = q('.lv-node[data-id="welcome"]'), wr = START.welcome;            // the welcome: its whole box, so its sentence reads
+    if (wl) window.LabView.setRect(wl, X(wr[0]), Y(wr[1]), (wr[2] - wr[0]) * W2, (wr[3] - wr[1]) * H2);
     const sizeAs = (b, w, hh, open) => {
       const v = { w: Math.round(w), h: Math.round(hh) };
       if (Math.abs(b.offsetWidth - v.w) > 1 || Math.abs(b.offsetHeight - v.h) > 1) { b.style.width = v.w + "px"; b.style.height = v.h + "px"; b.classList.add("se-sized"); }

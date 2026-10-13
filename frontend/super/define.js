@@ -197,7 +197,10 @@
     const t = String(n.str || "").trim(); if (!t) return null;
     const k = norm(t);
     const known = OPWORDS.test(k) || isNum(t) || OPS[k] || k === "select" || /^repeat\s+\S/i.test(t) || /^while\s+\S+\s+\S+$/i.test(t) || k === "count" || k === "keep" || k === "supers" || k === "export" || isPort(t) || !!find(t);
-    if (!known || defName(t)) return null;
+    if (defName(t)) return null;
+    // a square's words are that text (the language: "other text: that text"), so a ■ with a sentence typed in shows it;
+    // a prompt's words stay a question, and a Display (made to show what is wired in) keeps showing that
+    if (!known) return (n.fn === "box" || n.fn === "dot") && n.role !== "engine" && n.role !== "stop" && !n.auto && !n.field ? toPage(t) : null;
     const xs = ins.map(fromPage);
     const st = n.mem || (n.mem = {});
     if (k === "keep") { const v = xs.find(x => x != null); if (v != null && !n.portHeld && v !== st.keep) { st.keep = v; if (window.LabView && window.LabView.persist) window.LabView.persist(); } }
