@@ -84,3 +84,8 @@ html.se-boot body::before, html.se-unveil body::before { display: block !importa
    element is see-through and its glass is drawn under all of them, so a bubble under a window showed through it):
    in the engine look a window keeps a paper ground of its own, inside its edge (the engine's edge and shadow show) */
 html.se-gl body .orbit-panel.orbit-panel.orbit-panel { background: var(--paper) !important; background-clip: padding-box !important; }
+
+/* no blue dotted rectangle round a super (owner, 2026-10-13: "remove the blue rectangle dotted line"): the pointer on
+   an edge (wire.js .sl-edge-on), a drop target while dragging (nodes.js .lv-hover) and a bubble under a wire being
+   drawn (orbit.js .wire-target) show no outline; the cursor and the glass's own light say it */
+html.shape-se .sl-edge-on, html.shape-se .lv-hover, html.shape-se .orbit-bubble.wire-target { outline: none !important; }
