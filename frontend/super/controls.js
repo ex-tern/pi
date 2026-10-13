@@ -64,7 +64,9 @@
     left: SVG('<path d="M13.5 8H2.8" stroke-width="1.7"/><path d="M7 3.8L2.8 8 7 12.2" stroke-width="1.7"/>'),
     right: SVG('<path d="M2.5 8h10.7" stroke-width="1.7"/><path d="M9 3.8L13.2 8 9 12.2" stroke-width="1.7"/>'),
   };
-  const CONTROLS = ["save", "lock", "chain", "open", "compact", "stop", "reset"];
+  // open, compact and stop are no longer on the bar (owner, 2026-10-13: "remove these 3 buttons from control"): the
+  // arrows below go in and out (PiEn), a super still opens and stops by Enter and its words; their code stays for wires
+  const CONTROLS = ["save", "lock", "chain", "reset"];
   // the bottom bar: four arrows (owner, 2026-10-13: "add only top, down, left, right arrows to this section"; "each of
   // these are smart buttons: using PiEn it decides what it does"); the conditions it held before (if, then, + − × ÷,
   // the timer) are no longer on the bar: the same words still work typed into any super (super/define.js)
