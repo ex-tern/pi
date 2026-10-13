@@ -17,12 +17,14 @@
   // its width, y of its height): Connect open at its top left; the third super on the right holding Tools, Explore and
   // Library along the top, Lab and the project under them; a small square below Connect (the program's diagram). Compact squares are a side of
   // SQ (a share of the width); open bubbles a box [x0, y0, x1, y1]; squares by their centres
-  const SQ = 0.157;
+  // the start as the owner's picture of pitechlab.com (2026-10-13, "this is the initial state of the website"), in shares
+  // of the second super's box: Connect open at its left; the third super in the middle with Tools, Explore and Library along
+  // its top and Lab and the project under them, each a small square of its own side; the square under Connect feeds if.
   const START = {
-    hold: [0.313, 0.150, 0.852, 0.848],
-    open: { connect: [0.023, 0.162, 0.298, 0.309] },
-    squares: { tools: [0.418, 0.356], explore: [0.589, 0.356], lib: [0.750, 0.356], lab: [0.525, 0.667] },
-    project: [0.713, 0.667],
+    hold: [0.332, 0.119, 0.535, 0.445],
+    open: { connect: [0.069, 0.103, 0.228, 0.401] },
+    squares: { tools: [0.371, 0.209, 0.035], explore: [0.438, 0.214, 0.035], lib: [0.500, 0.214, 0.035], lab: [0.410, 0.363, 0.049] },
+    project: [0.501, 0.363, 0.035],
   };
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;
@@ -43,10 +45,9 @@
       try { localStorage.setItem("se:size:" + b.dataset.key + (open ? ":open" : ""), JSON.stringify(v)); } catch (_) { /* private mode */ }
     };
     const put = (b, lx, ly) => (O().placeBubbleAt || O().placeBubble)(b.dataset.key, sx(lx), sy(ly));
-    const S = SQ * W2;
     Object.entries(START.squares).forEach(([k, c]) => {
-      const b = B[k]; if (!b.classList.contains("is-compact")) window.SeBubble.open(b, false);
-      sizeAs(b, S, S, false); put(b, X(c[0]), Y(c[1]));
+      const b = B[k], q = c[2] * W2; if (!b.classList.contains("is-compact")) window.SeBubble.open(b, false);
+      sizeAs(b, q, q, false); put(b, X(c[0]), Y(c[1]));
     });
     let settledOpen = true;
     Object.entries(START.open).forEach(([k, r]) => {
@@ -56,9 +57,10 @@
       sizeAs(b, (r[2] - r[0]) * W2, (r[3] - r[1]) * H2, true);
       put(b, X((r[0] + r[2]) / 2), Y((r[1] + r[3]) / 2));
     });
-    if (window.SeProject.resize) window.SeProject.resize(S, S);
+    const PS = START.project[2] * W2;
+    if (window.SeProject.resize) window.SeProject.resize(PS, PS);
     // moved until it lands (its move is measured, not assumed: the project super may scale a move by the page's zoom)
-    const tx = sx(X(START.project[0]) - S / 2), ty = sy(Y(START.project[1]) - S / 2);
+    const tx = sx(X(START.project[0]) - PS / 2), ty = sy(Y(START.project[1]) - PS / 2);
     let kx = 1, ky = 1;
     for (let k = 0; k < 4; k++) {
       const pr = proj.getBoundingClientRect(), dx = tx - pr.left, dy = ty - pr.top;

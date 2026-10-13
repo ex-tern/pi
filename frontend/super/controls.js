@@ -294,7 +294,7 @@
   function build() {
     if (top || !on() || !document.body) return;
     top = document.createElement("div"); top.className = "se-ctlbar se-ctl-top"; top.setAttribute("role", "toolbar"); top.setAttribute("aria-label", "controls");
-    const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<button type="button" class="se-ctl se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + '" aria-label="' + k + '">' + ICON[k] + "</button>").join("") + "</div>";
+    const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<span class="se-ctl se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + '" role="img" aria-label="' + k + '">' + ICON[k] + "</span>").join("") + "</div>";
     top.innerHTML = half(CONTROLS.slice(0, 3), "l") + half(CONTROLS.slice(3), "r");
     bottom = document.createElement("div"); bottom.className = "se-ctlbar se-ctl-bottom"; bottom.setAttribute("role", "toolbar"); bottom.setAttribute("aria-label", "conditions");
     const chip = k => '<label class="se-cond' + (OPS[k] ? " is-op" : "") + '" data-cond="' + k + '" title="' + k + '"><span class="se-cond-k">' + ICON[k] + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"><span class="se-cond-r" aria-live="polite"></span></label>';
@@ -302,7 +302,7 @@
     document.body.appendChild(top); document.body.appendChild(bottom);
     // the bars are the main canvas's own: a press, scroll or double click on them goes nowhere else
     [top, bottom].forEach(b => ["pointerdown", "dblclick", "wheel", "click", "keydown"].forEach(t => b.addEventListener(t, e => { e.stopPropagation(); }, { passive: t !== "click" && t !== "dblclick" && t !== "keydown" })));
-    top.addEventListener("click", e => { const b = e.target.closest(".se-ctl"); if (!b) return; e.preventDefault(); press(b.dataset.ctl); });
+    // the controls are supers, not buttons: nothing presses them (owner, 2026-10-13); they act by wires and by scroll
     bottom.querySelectorAll(".se-cond").forEach(c => {
       const k = c.dataset.cond, inp = c.querySelector("input");
       inp.value = cond[k] || ""; fitInput(inp);
