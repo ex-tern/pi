@@ -766,3 +766,45 @@ html.shape-se .ob-member.se-sel::before { border-color: var(--ink); border-width
 html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-loop .om-page-loop { stroke: var(--sky-ink, var(--ink)); }
 html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: transparent !important; }
 html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper).se-sel::before { padding: 3px; }
+
+/* the main canvas's controls (top) and conditions (bottom), super/controls.js: two halves either side of the main
+   super's sync and condition ports; small glass supers, ink icons, words in sentence case */
+html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 24px; pointer-events: none; --ctl-gap: 46px; font: 500 12px/1 var(--font, "Geist", system-ui, sans-serif); color: var(--ink); }
+html.shape-se .se-ctl-bottom { transform: translateY(-100%); --ctl-gap: 22px; }
+html.shape-se .se-ctl-half.se-ctl-l { position: absolute; top: 0; right: var(--ctl-gap); }
+html.shape-se .se-ctl-half.se-ctl-r { position: absolute; top: 0; left: var(--ctl-gap); }
+html:not(.shape-se) .se-ctlbar, html.shape-se .se-ctlbar[hidden] { display: none; }
+html.shape-se .se-ctl-half { display: flex; gap: 3px; pointer-events: auto; }
+html.shape-se .se-ctl, html.shape-se .se-cond {
+  display: inline-flex; align-items: center; gap: 5px; height: 24px; padding: 0 8px; margin: 0;
+  border: 1.5px solid var(--ink); border-radius: 7px; corner-shape: superellipse(4);
+  background: color-mix(in srgb, var(--paper, #fff) 72%, transparent); -webkit-backdrop-filter: blur(8px) saturate(1.2); backdrop-filter: blur(8px) saturate(1.2);
+  color: inherit; font: inherit; cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.55) inset, 0 3px 10px -4px rgba(20, 24, 34, 0.35);
+  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease;
+}
+html.shape-se .se-ctl svg { width: 12px; height: 12px; flex: none; }
+html.shape-se .se-ctl svg path, html.shape-se .se-ctl svg rect { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+html.shape-se .se-ctl svg .f { fill: currentColor; stroke: none; }
+html.shape-se .se-ctl:hover, html.shape-se .se-cond:hover { background: color-mix(in srgb, var(--paper, #fff) 92%, transparent); }
+html.shape-se .se-ctl:active { transform: translateY(1px); }
+html.shape-se .se-ctl.is-on { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+html.shape-se .se-ctl:focus-visible, html.shape-se .se-cond:focus-within { outline: none !important; border-color: var(--cobalt); }
+html.shape-se .se-cond { cursor: text; gap: 4px; }
+html.shape-se .se-cond-k { opacity: 0.62; }
+html.shape-se .se-cond.is-set .se-cond-k { opacity: 1; color: var(--cobalt); }
+html.shape-se .se-cond-v { border: 0; outline: 0; background: transparent; font: inherit; color: inherit; padding: 0; width: auto; min-width: 1ch; max-width: 18ch; }
+html.shape-se .se-cond-v::placeholder { color: currentColor; opacity: 0.28; }
+html.shape-se .se-cond:not(:focus-within):not(.is-set) .se-cond-v { width: 0; min-width: 0; }
+html.shape-se .se-ctl-note { position: fixed; z-index: 967; transform: translate(-50%, 0); padding: 5px 10px; border: 1.5px solid var(--ink); border-radius: 7px; corner-shape: superellipse(4);
+  background: color-mix(in srgb, var(--paper, #fff) 86%, transparent); font: 500 12px/1.2 var(--font, "Geist", system-ui, sans-serif); color: var(--ink);
+  opacity: 0; pointer-events: none; transition: opacity 0.5s ease; white-space: nowrap; }
+html.shape-se .se-ctl-note.is-on { opacity: 1; }
+html:not(.shape-se) .se-ctl-note { display: none; }
+html.shape-se.se-night :is(.se-ctl, .se-cond, .se-ctl-note) { background: color-mix(in srgb, #1d2230 70%, transparent); border-color: var(--sky-ink, #e4e7ef); color: var(--sky-ink, #e4e7ef); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.10) inset, 0 3px 10px -4px rgba(0, 0, 0, 0.6); }
+html.shape-se.se-night .se-cond.is-set .se-cond-k { color: #9aa6ff; }
+html.shape-se.se-night .se-ctl.is-on { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+@media (max-width: 699px) {
+  html.shape-se .se-ctlbar { --ctl-gap: 30px; height: 26px; } html.shape-se .se-ctl-bottom { --ctl-gap: 16px; }
+  html.shape-se .se-ctl-w { display: none; }
+  html.shape-se .se-ctl, html.shape-se .se-cond { padding: 0 6px; height: 26px; }
+}

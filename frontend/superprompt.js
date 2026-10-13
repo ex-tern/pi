@@ -54,6 +54,8 @@
     r.done = loadEngines().then(all => {
       if (!all) { r.error = "The engines cannot be reached from here right now."; emit(); return r; }
       r.engines = all.filter(e => e.ready);
+      const only = opts && Array.isArray(opts.only) && opts.only.length ? opts.only.map(x => String(x).toLowerCase()) : null;   // the canvas's "how" condition: these engines only
+      if (only) { const some = r.engines.filter(e => only.includes(String(e.id).toLowerCase()) || only.includes(String(e.name || "").toLowerCase())); if (some.length) r.engines = some; }
       r.off = all.filter(e => !e.ready);
       r.engines.forEach(e => { r.results[e.id] = { state: "wait" }; });
       const outside = r.engines.filter(e => e.kind === "outside");

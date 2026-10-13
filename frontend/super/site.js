@@ -34,6 +34,9 @@
   const O = () => window.PiOrbit || {};
   const SM = () => window.SeMorph;
   const PORTS = [["input", "left"], ["output", "right"], ["sync", "top"], ["condition", "bottom"]];
+  // every super: in from the left, out to the right, control at the top, conditions at the bottom (owner, 2026-10-13:
+  // "from the right is out, and from the left is in for supers, for every super")
+  const SHOW = { input: "in", output: "out", sync: "control", condition: "condition" };
   let svg, path, lattice = {}, ports = {}, site = null;   // site: { cx, cy, a, b, n } of the inner super
   let inputText = "", answer = "", asking = false, askT = null, lastAsked = null;
 
@@ -59,8 +62,8 @@
     PORTS.forEach(([p, side]) => {
       const el = document.createElement("div");
       el.className = "se-port se-port-" + side; el.dataset.port = p; el.dataset.pid = p; el.dataset.owner = "site";
-      el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + p + "</span>";
-      el.title = { input: "input: wire a question in, every engine answers", output: "output: the site's answer", sync: "sync: the site's clock, π's digits", condition: "condition: wired false, the site pauses" }[p];
+      el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + (SHOW[p] || p) + "</span>";
+      el.title = { input: "in: wire a question in, every engine answers", output: "out: the site's answer", sync: "sync: the site's clock, π's digits", condition: "condition: wired false, the site pauses" }[p];
       document.body.appendChild(el); ports[p] = el;
     });
   }
@@ -68,14 +71,14 @@
   // ---- ports on every super ------------------------------------------------------------------
   // owner: "win:<key>" (a window, by its item key) or "node:<id>" (a loop); port ids are "<owner>/<name>"
   const owned = {};                                         // owner -> { input, output, sync, condition } elements
-  const TITLES = { input: "input: what is wired in goes into it", output: "output: what it says", sync: "sync: each tick refreshes it", condition: "condition: wired false, it is held" };
+  const TITLES = { input: "in: what is wired in goes into it", output: "out: what it says", sync: "sync: each tick refreshes it", condition: "condition: wired false, it is held" };
   function ensurePorts(owner, what) {
     if (owned[owner]) return owned[owner];
     const set = {};
     PORTS.forEach(([p, side]) => {
       const el = document.createElement("div");
       el.className = "se-port se-port-" + side + " se-port-owned"; el.dataset.port = p; el.dataset.owner = owner; el.dataset.pid = owner + "/" + p;
-      el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + p + "</span>";
+      el.innerHTML = '<span class="se-port-dot" aria-hidden="true"></span><span class="se-port-name">' + (SHOW[p] || p) + "</span>";
       el.title = what + ": " + TITLES[p];
       document.body.appendChild(el); set[p] = el; ports[owner + "/" + p] = el;
     });

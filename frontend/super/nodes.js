@@ -1515,7 +1515,7 @@
   function askEvery(n, prompt) {
     used(n, 2);
     if (n.st.run && !n.st.run.finished) n.st.run.stop();
-    const r = window.SuperPrompt.run(prompt.slice(0, 4000));
+    const r = window.SuperPrompt.run(prompt.slice(0, 4000), { only: window.SeControls && window.SeControls.how ? window.SeControls.how() : null });
     follow(n, r, prompt);
     say("Super AI: asking every engine about “" + clip(prompt) + "”");
     return r;
@@ -1547,7 +1547,7 @@
   // by wires (through other supers too), or sitting inside it. Unconnected, it computes what is computable
   // (numbers) but asks no engine, and says so.
   function connectedToRun(n) {
-    if (n.id === "site-box") return true;
+    if (n.id === "site-box" || (n.st && n.st.forced)) return true;    // run from the main canvas's controls (super/controls.js)
     const run = nodes.find(x => x.id === "site-box");
     if (!run) {                                                       // no central super (the start since 2026-10-12): wired into the diagram, or held by a super, is connected
       const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [], me = "node:" + n.id;
@@ -1843,7 +1843,23 @@
       zoomNode(n, (e.deltaY || e.deltaX) * 4);                        // pinch deltas are small
     }, { capture: true, passive: false });
     // super/scroll.js: a scroll on a node sizes it
-    window.LabView = { loopPort, unrun, typeOfLink, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
+    window.LabView = { loopPort, unrun,
+      // the main canvas's controls (super/controls.js): run a super once, stop it, act on words, read its value
+      run: el => { const n = nodes.find(x => x.el === el); if (!n || isHolder(n)) return false;
+        // words typed into a plain super, run from the canvas's controls: it becomes a Super AI super and asks them
+        if (n.role !== "engine" && (n.role === "text" || n.role == null) && (n.str || "").trim() && !opOf(n.str)) {
+          if (n.field) { const g = document.createElement("span"); g.className = "lv-glyph"; n.field.replaceWith(g); n.field = null; }
+          n.role = "engine"; n.auto = false; tick();
+        }
+        if (n.role === "engine") n.st.forced = true;
+        if (n.role === "engine" && (n.str || n.prompt)) { n.st.commit = true; clearTimeout(n.st.timer); n.st.timer = 0; askEngine(n, true); } else tick(); return true; },
+      stop: el => { const n = nodes.find(x => x.el === el); if (!n) return false; if (n.st.run && !n.st.run.finished) n.st.run.stop(); if (n.st.ctrl) { try { n.st.ctrl.abort(); } catch (_) { /* fine */ } }
+        n.st.go = false; n.el.classList.remove("is-thinking"); persist(); tick(); return true; },
+      isEngine: el => { const n = nodes.find(x => x.el === el); return !!(n && !isHolder(n) && n.id !== "site-box" && (n.role === "engine" ? (n.str || n.prompt) : (n.role === "text" || n.role == null) && (n.str || "").trim() && !opOf(n.str))); },
+      busy: el => { const n = nodes.find(x => x.el === el); return !!(n && n.el.classList.contains("is-thinking")); },
+      act: text => { const v = verbOf(text); if (!v) return false; actOn(v.verb, v.target); return true; },
+      valueOf: el => { const n = nodes.find(x => x.el === el); return n ? String(n.answer || n.text || n.str || "") : ""; },
+      typeOfLink, inspect: id => { const n = nodes.find(x => x.id === id); return n ? { ins: linkIns(n).map(a => a.h || a.t), inputs: n.inputs, held: !!n.held, portHeld: !!n.portHeld, prompt: n.prompt, text: n.text, str: n.str } : null; }, zoomNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) zoomNode(n, dy); return !!n; },
                        shapeNode: (el, dy) => { const n = nodes.find(x => x.el === el); if (n) reshape(n, dy); return !!n; },
                        // super/delete.js: deleted after a confirmation (a holder with what it holds; never the central super)
                        close: (el, now) => { const n = nodes.find(x => x.el === el); if (!n || n.id === "site-box") return false; if (now) { const crew = isHolder(n) ? inside(n) : []; crew.forEach(remove); remove(n); } else closeNode(n); return true; },   // now: it has vanished already (super/delete.js)

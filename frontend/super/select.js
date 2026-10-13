@@ -46,7 +46,7 @@
     return loopHolding(x, y) || (inSite(x, y) ? "site" : "loop");
   }
   const isThing = el => !!(el && el.closest && el.closest(".orbit-panel, .orbit-bubble, .lv-node, .se-project, .orbit-title, .lv-palette"));
-  const ownCursor = el => !!(el && el.closest && el.closest(".se-port, .wire-hit, .wire-handle, .op-head button, .op-close"));
+  const ownCursor = el => !!(el && el.closest && el.closest(".se-port, .wire-hit, .wire-handle, .op-head button, .op-close, .se-ctlbar"));
   function elOf(s) { return s === "loop" ? null : s === "site" ? null : s; }
   function select(s) {
     if (s === sel) return;

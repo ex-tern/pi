@@ -106,6 +106,7 @@
     .filter(o => x >= o.r.left && x <= o.r.right && y >= o.r.top && y <= o.r.bottom).sort((a, b) => a.r.width * a.r.height - b.r.width * b.r.height).map(o => o.el)[0] || null;
   function pick(hit, pinch, alt) {
     const t = hit && hit.closest ? hit : null;
+    if (t && t.closest(".se-ctlbar, .se-ctl-note")) return null;               // the main canvas's controls and conditions (super/controls.js)
     if (t && t.closest("input, textarea, select, [contenteditable]") && !t.closest("[data-zoombox]")) return pinch ? "site" : null;
     const node = t && t.closest(".lv-node");
     if (node) {
