@@ -1,3 +1,5 @@
+# SPDX-License-Identifier: AGPL-3.0-only
+# Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab). Part of ScholarPi's open science engines: see LICENSE.
 """
 Authorship attribution: who a manuscript's piQ actually belongs to.
 

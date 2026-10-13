@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab). Part of ScholarPi's open science engines: see LICENSE.
 //! Unsigned big integers in base 10⁹, little-endian: the few operations the constants need (adding,
 //! subtracting, multiplying and dividing by a small number or by another big one, comparing), each exact.
 use alloc::vec;

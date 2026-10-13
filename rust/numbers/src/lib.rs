@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab). Part of ScholarPi's open science engines: see LICENSE.
 //! The site's constants, computed exactly to many digits: π, e, φ and γ. A port of frontend/pi-worker.js
 //! and frontend/consts-worker.js (owner, 2026-10-13: "write the whole project in py and rust only"; the
 //! front end moves to Rust one module at a time). Fixed point: a value v is held as ⌊v · 10^(9w)⌋ in

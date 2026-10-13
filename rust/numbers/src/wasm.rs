@@ -1,3 +1,5 @@
+// SPDX-License-Identifier: AGPL-3.0-only
+// Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab). Part of ScholarPi's open science engines: see LICENSE.
 //! The WebAssembly face of the constants: an allocator that reuses memory (size classes of powers of two, each
 //! with a free list, so the many same-sized numbers of a long series recycle the same blocks), and five exports.
 //! The page calls nb_alloc(n) for the request's bytes ("pi 1000"), writes them, calls nb_handle(ptr, n), reads the

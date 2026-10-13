@@ -3,7 +3,7 @@ name = "pifront"
 version = "0.1.0"
 edition = "2021"
 description = "Pi Tech Lab's front door: static files, the site password, and the way through to the Python engines"
-license = "MIT"
+license-file = "../../LICENSES/LicenseRef-PiTechLab-Proprietary.txt"
 
 # Deliberately no dependencies: the standard library alone, so it builds anywhere, offline,
 # in seconds, and nothing in the front door can go stale. See src/main.rs.

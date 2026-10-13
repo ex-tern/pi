@@ -3,7 +3,7 @@ name = "numbers"
 version = "1.0.0"
 edition = "2021"
 description = "π, e, φ and γ to many digits, exactly: the site's constants, in Rust (no dependencies; no_std for wasm32)"
-license = "MIT"
+license = "AGPL-3.0-only"
 
 [lib]
 crate-type = ["cdylib", "rlib"]
