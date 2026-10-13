@@ -1,4 +1,4 @@
-// super/pack.js: lays out the start (owner, 2026-10-13: "set this as the initial state of the web app"). The program's
+// super/pack.js: lays out the start (owner, 2026-10-13: "this is the initial state of the app"). The program's
 // at.inSite places the supers roughly; once the second super has stopped moving this sets them exactly, in shares of
 // the second super's middle, so the start lands the same on every screen shape: Connect on the left, the third super
 // beside it holding Tools, Explore and Library along its top and Lab and the project under Explore and Library, every
@@ -13,16 +13,16 @@
   document.addEventListener("pointerdown", touch, true);
   document.addEventListener("wheel", touch, { capture: true, passive: true });
   const O = () => window.PiOrbit || {};
-  // the start (owner, 2026-10-13: "set this as the initial state of the web app", a picture), in shares of the second
-  // super (x of its width, y of its height): Connect open at its top left; the third super on the right holding Tools,
-  // the project and Library along the top, Lab under Tools and Explore open beside it. Compact squares are a side of
+  // the start (owner, 2026-10-13: "this is the initial state of the app", a picture), in shares of the second super (x of
+  // its width, y of its height): Connect open at its top left; the third super on the right holding Tools, Explore and
+  // Library along the top, Lab and the project under them; a small square below Connect (the program's diagram). Compact squares are a side of
   // SQ (a share of the width); open bubbles a box [x0, y0, x1, y1]; squares by their centres
-  const SQ = 0.159;
+  const SQ = 0.157;
   const START = {
-    hold: [0.323, 0.112, 0.951, 0.928],
-    open: { connect: [0.022, 0.125, 0.278, 0.369], explore: [0.602, 0.529, 0.921, 0.837] },
-    squares: { tools: [0.452, 0.358], lib: [0.851, 0.325], lab: [0.448, 0.708] },
-    project: [0.665, 0.315],
+    hold: [0.313, 0.150, 0.852, 0.848],
+    open: { connect: [0.023, 0.162, 0.298, 0.309] },
+    squares: { tools: [0.418, 0.356], explore: [0.589, 0.356], lib: [0.750, 0.356], lab: [0.525, 0.667] },
+    project: [0.713, 0.667],
   };
   function pack() {
     if (!html.classList.contains("shape-se") || done() || window.innerWidth < 700) return false;

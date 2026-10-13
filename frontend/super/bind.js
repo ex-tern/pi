@@ -111,7 +111,13 @@
     if (html.classList.contains("se-chain-dragging")) return;
     document.querySelectorAll(".lv-node.is-holder").forEach(h => {
       if (h.classList.contains("is-dragging") || !h.getClientRects().length) return;
-      const ms = members(h); if (!ms.length) { state.delete(h); return; }
+      // its members: the supers its sync reaches, and (owner, 2026-10-13: "supers can dynamically get smaller or bigger if
+      // they are inside a super that restricts them from going out") whatever it holds by being inside it (super/hold.js),
+      // kept once taken in until you drag it out yourself: they all scale and move with it, so nothing gets out
+      const wired = members(h), st0 = state.get(h);
+      const kept = st0 ? [...st0.at.keys()].filter(e => e.isConnected && e.getClientRects().length && !wired.includes(e) && !e.contains(h)) : [];
+      const geo = window.SeHold.heldBy ? window.SeHold.heldBy(h).filter(e => e && e.matches && e.matches(".orbit-bubble.is-group, .lv-node, .se-project") && !wired.includes(e) && !e.contains(h)) : [];
+      const ms = [...new Set([...wired, ...kept, ...geo])]; if (!ms.length) { state.delete(h); return; }
       const r = h.getBoundingClientRect(), sc = parseFloat(h.style.scale) || 1, w = r.width / sc, hh = r.height / sc, i = inner(r);
       let st = state.get(h);
       if (!st) { st = { w, h: hh, at: new Map() }; state.set(h, st); }
@@ -154,8 +160,8 @@
           open.forEach(el => { const b = el.getBoundingClientRect(); U.l = Math.min(U.l, b.left - pad); U.t = Math.min(U.t, b.top - pad - (i.t - r.top)); U.r = Math.max(U.r, b.right + pad); U.b = Math.max(U.b, b.bottom + pad); });
           // never over a super outside it (owner, 2026-10-12: "3rd super shouldnt eat the connect super when gets bigger")
           const outs = window.SeHold.outsiders ? window.SeHold.outsiders(h) : [];
-          if (outs.length && window.SeHold.wouldMeet({ left: U.l, top: U.t, right: U.r, bottom: U.b }, outs)) return;
-          if (U.l < r.left - 1 || U.t < r.top - 1 || U.r > r.right + 1 || U.b > r.bottom + 1) {
+          const blocked = outs.length && window.SeHold.wouldMeet({ left: U.l, top: U.t, right: U.r, bottom: U.b }, outs);   // then the others still scale with it (below)
+          if (!blocked && (U.l < r.left - 1 || U.t < r.top - 1 || U.r > r.right + 1 || U.b > r.bottom + 1)) {
             const L = window.LabView.rectOf(h), k = sc, nw = (U.r - U.l) / k, nh = (U.b - U.t) / k;
             window.LabView.setRect(h, L.x + (U.l - r.left) / k, L.y + (U.t - r.top) / k, nw, nh);
             st.w = nw; st.h = nh;                                         // a growth for it, not a resize: nothing scales
@@ -189,7 +195,13 @@
   }, true);
   document.addEventListener("pointerup", () => setTimeout(() => {
     held.forEach(el => {
-      document.querySelectorAll(".lv-node.is-holder").forEach(h => { const st = state.get(h); if (st && st.at.has(el)) { const r = h.getBoundingClientRect(); st.at.set(el, shareOf(el, r, inner(r))); } });
+      document.querySelectorAll(".lv-node.is-holder").forEach(h => {
+        const st = state.get(h); if (!st || !st.at.has(el)) return;
+        const r = h.getBoundingClientRect(), e = el.getBoundingClientRect(), cx = e.left + e.width / 2, cy = e.top + e.height / 2;
+        // a super it holds only by being inside it goes free when you drag it out; a wired member comes back in
+        if (!members(h).includes(el) && (cx < r.left || cx > r.right || cy < r.top || cy > r.bottom)) { st.at.delete(el); return; }
+        st.at.set(el, shareOf(el, r, inner(r)));
+      });
     });
     held.clear(); enforce();
   }, 120), true);

@@ -98,8 +98,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.094,
     "fy": 0.168,
     "inSite": [
-     0.448,
-     0.708
+     0.525,
+     0.667
     ]
    },
    "atPhone": {
@@ -118,8 +118,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.073,
     "fy": -0.19,
     "inSite": [
-     0.452,
-     0.358
+     0.418,
+     0.356
     ]
    },
    "atPhone": {
@@ -143,8 +143,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.333,
     "fy": -0.19,
     "inSite": [
-     0.851,
-     0.325
+     0.75,
+     0.356
     ]
    },
    "atPhone": {
@@ -171,8 +171,8 @@ window.SUPERAI_PROGRAM = {
     "fx": 0.151,
     "fy": -0.19,
     "inSite": [
-     0.762,
-     0.683
+     0.589,
+     0.356
     ]
    },
    "atPhone": {
@@ -189,8 +189,8 @@ window.SUPERAI_PROGRAM = {
     "fx": -0.375,
     "fy": -0.223,
     "inSite": [
-     0.15,
-     0.247
+     0.16,
+     0.235
     ]
    },
    "atPhone": {
@@ -224,10 +224,24 @@ window.SUPERAI_PROGRAM = {
     "n": 1000,
     "at": {
      "inSite": [
-      0.323,
-      0.112,
-      0.951,
-      0.928
+      0.313,
+      0.15,
+      0.852,
+      0.848
+     ]
+    }
+   },
+   {
+    "id": "sq",
+    "kind": "box",
+    "desktop": true,
+    "n": 1000,
+    "at": {
+     "inSite": [
+      0.1775,
+      0.841,
+      0.2245,
+      0.929
      ]
     }
    }
@@ -246,6 +260,10 @@ window.SUPERAI_PROGRAM = {
     "bubble:Connect.sync"
    ],
    [
+    "site.sync",
+    "hold.sync"
+   ],
+   [
     "bubble:Connect.output",
     "hold.input"
    ],
@@ -262,35 +280,47 @@ window.SUPERAI_PROGRAM = {
     "project.input"
    ],
    [
-    "bubble:Tools.condition",
+    "bubble:Explore.condition",
     "bubble:Lab.sync"
    ],
    [
-    "bubble:Tools.condition",
-    "bubble:Explore.sync"
-   ],
-   [
-    "bubble:Explore.condition",
+    "bubble:Library.condition",
     "project.sync"
    ],
    [
     "ctl:save.condition",
-    "site.sync"
+    "bubble:Tools.sync"
    ],
    [
     "ctl:lock.condition",
     "site.sync"
    ],
    [
-    "site.condition",
+    "bubble:Connect.condition",
     "cond:then.sync"
+   ],
+   [
+    "bubble:Tools.condition",
+    "cond:then.sync"
+   ],
+   [
+    "hold.condition",
+    "cond:if.sync"
+   ],
+   [
+    "site.condition",
+    "cond:timer.sync"
+   ],
+   [
+    "sq.output",
+    "cond:if.input"
    ]
   ]
  },
  "projectAt": {
   "inSite": [
-   0.665,
-   0.315
+   0.713,
+   0.667
   ]
  },
  "live": {

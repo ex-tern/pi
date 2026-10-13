@@ -17,6 +17,9 @@
 //          it stays chained while the wire is there
 //   open   opens it: a bubble or the project grows open, a pill opens its window, a Super AI super asks (words typed
 //          into a plain super make it one), a held window comes back
+//   compact compacts it (owner, 2026-10-13: "a compact button in the control, which compacts a super"): an open bubble
+//          folds back to its compact square (a compact one sized by hand to the usual size), the project compacts, a
+//          window folds into its pill, a Super AI super goes back to its usual size, a holder wraps close round what it holds
 //   stop   stops it: asking stops, a window closes, a bubble or the project compacts; the timer stops too
 //   reset  starts the app afresh, as on a first visit (a second press within 3 s; owner, 2026-10-13: "delete this reset
 //          button and instead put the reset in the control icons": the title's wire into the site no longer resets)
@@ -42,6 +45,7 @@
     save: SVG('<path class="sv-body" d="M2,1.5 H8.6 L10.5,3.4 V10.5 H2 Z"/><path class="sv-label" d="M3.6,1.5 V4 H7.6 V1.5"/><rect class="sv-slot" x="3.6" y="6.6" width="5.3" height="3.9" rx="0.6"/>', "0 0 12 12"),
     lock: SVG('<path class="lk-shackle" d="' + SHACKLE.open + '"/><rect class="lk-body" x="2" y="5.5" width="8" height="5.5" rx="1.6"/>', "0 0 12 12"),
     chain: SVG('<rect class="ch-link" x="1.2" y="5.6" width="7.4" height="4.8" rx="2.4" stroke-width="1.5"/><rect class="ch-link" x="7.4" y="5.6" width="7.4" height="4.8" rx="2.4" stroke-width="1.5"/>'),
+    compact: SVG('<path d="M2.5 6.2h3.7V2.5M13.5 6.2H9.8V2.5M2.5 9.8h3.7v3.7M13.5 9.8H9.8v3.7" stroke-width="1.6"/>'),
     open: SVG('<path d="M7 3H3v10h10V9" stroke-width="1.5"/><path d="M9 2.6h4.4V7M13.2 2.8L7.6 8.4" stroke-width="1.6"/>'),
     stop: SVG('<rect class="f" x="3.5" y="3.5" width="9" height="9"/>'),
     reset: SVG('<path d="M3.4 8a4.6 4.6 0 1 0 1.5-3.4" stroke-width="1.6"/><path class="f" d="M2.2 1.9v4.6h4.6z"/>'),
@@ -53,7 +57,7 @@
     divide: SVG('<path d="M3 8h10" stroke-width="1.7"/><circle class="f" cx="8" cy="4.3" r="1.25"/><circle class="f" cx="8" cy="11.7" r="1.25"/>'),
     timer: SVG('<circle cx="8" cy="9" r="5.3" stroke-width="1.5"/><path d="M8 9V6.2M6.4 1.8h3.2M12.3 4.3l1-1" stroke-width="1.5"/>'),
   };
-  const CONTROLS = ["save", "lock", "chain", "open", "stop", "reset"];
+  const CONTROLS = ["save", "lock", "chain", "open", "compact", "stop", "reset"];
   const CONDS = ["if", "then", "plus", "minus", "multiply", "divide", "timer"];
   const HINT = { if: "> 5", then: "stop", plus: "0", minus: "0", multiply: "1", divide: "1", timer: "10s" };
   const OPS = { plus: (a, b) => a + b, minus: (a, b) => a - b, multiply: (a, b) => a * b, divide: (a, b) => b === 0 ? NaN : a / b };
@@ -193,6 +197,37 @@
     if (ok) after(el);
     return ok;
   }
+  function compactOne(el) {
+    if (!el || el === "all") return false;
+    if (el.classList.contains("orbit-bubble")) {
+      if (!el.classList.contains("is-compact")) { if (window.SeBubble) window.SeBubble.open(el, false); return true; }
+      if (el.classList.contains("se-sized")) { el.style.width = ""; el.style.height = ""; el.classList.remove("se-sized"); try { localStorage.removeItem("se:size:" + el.dataset.key); } catch (_) { /* private mode */ } if (O().layout) O().layout(); return true; }
+      return false;
+    }
+    if (el.classList.contains("se-project")) { if (window.SeProject) { window.SeProject.close(); if (window.SeProject.resize) { const s = parseFloat(getComputedStyle(document.documentElement).getPropertyValue("--se-compact")) || 104; window.SeProject.resize(s, s); } } return true; }
+    if (el.classList.contains("orbit-panel")) { const k = (O().keyOf && O().keyOf(el)) || (el.item && el.item.key); if (k && O().close) O().close(k); return true; }
+    if (el.classList.contains("lv-node") && LV().rectOf && LV().setRect) {
+      const r = LV().rectOf(el); if (!r) return false;
+      let w = 84, h = 84;
+      if (el.classList.contains("is-holder")) {                       // a holder: close round what it holds, keeping 30 % free
+        const held = [...new Set([...(window.SeBind && window.SeBind.members ? window.SeBind.members(el) : []), ...(window.SeHold && window.SeHold.heldBy ? window.SeHold.heldBy(el) : [])])];
+        if (!held.length) return false;
+        const b = el.getBoundingClientRect(), k = (r.w / (b.width || r.w)) || 1, rs = held.map(e => e.getBoundingClientRect());
+        const L = Math.min(...rs.map(q => q.left)), T = Math.min(...rs.map(q => q.top)), R = Math.max(...rs.map(q => q.right)), B = Math.max(...rs.map(q => q.bottom));
+        const area = rs.reduce((a, q) => a + q.width * q.height, 0), pad = Math.max(10, Math.min(R - L, B - T) * 0.06);
+        let W = R - L + 2 * pad, H = B - T + 2 * pad + Math.min(46, (B - T) * 0.08);
+        if (area > 0.7 * W * H) { const g = Math.sqrt(area / (0.7 * W * H)); W *= g; H *= g; }   // the 30 % rule
+        if (W >= b.width - 1 && H >= b.height - 1) return false;
+        const cx = (L + R) / 2, cy = (T + B) / 2;
+        if (window.SeBind && window.SeBind.settle) window.SeBind.settle();   // what it holds keeps its size: the shares are taken afresh
+        LV().setRect(el, r.x + (cx - W / 2 - b.left) * k, r.y + (cy - H / 2 - b.top) * k, W * k, H * k);
+        return true;
+      }
+      if (Math.abs(r.w - w) < 1 && Math.abs(r.h - h) < 1) return false;
+      LV().setRect(el, r.x + (r.w - w) / 2, r.y + (r.h - h) / 2, w, h); return true;
+    }
+    return false;
+  }
   function stopOne(el) {
     if (!el) { engines().forEach(n => LV().stop && LV().stop(n)); return; }
     if (el.classList.contains("lv-node")) { if (LV().stop) LV().stop(el); }
@@ -240,6 +275,10 @@
     }
     const list = targetsOf(k);
     if (k === "open") { list.forEach(x => openOne(x === "all" ? null : x, list.length > 1)); if (list.length > 1) say("Opened " + list.length + " wired supers"); return; }
+    if (k === "compact") {
+      const done = list.filter(x => x && compactOne(x));
+      say(done.length ? "Compacted " + done.map(nameOf).join(", ") : list[0] ? nameOf(list[0]) + " is compact already" : "Select a super (or wire it to compact) first"); return;
+    }
     if (k === "stop") {
       if (timer.on && !wiredTo("ctl:stop").length) { timer.on = false; clearTimeout(timer.t); }
       list.forEach(x => stopOne(x === "all" ? null : x)); say("Stopped " + (list.length > 1 ? list.length + " supers" : nameOf(list[0] === "all" ? null : list[0]))); return;
