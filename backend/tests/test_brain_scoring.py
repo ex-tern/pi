@@ -5,7 +5,6 @@ on every commit / in CI without any API keys configured.
 
 Run with:  cd backend && pytest tests/ -v
 """
-import math
 
 import brain
 

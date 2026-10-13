@@ -22,7 +22,7 @@
   const html = document.documentElement;
   const on = () => html.classList.contains("shape-se");
   const O = () => window.PiOrbit || {};
-  const NOT = "input, textarea, select, [contenteditable], button, a, summary, label, .ob-member, .ob-chat, .se-port, .se-lock, .wire-hit, .lv-edge, .se-confirm";
+  const NOT = "input, textarea, select, [contenteditable], button, a, summary, label, .ob-member, .ob-chat, .se-port, .se-lock, .wire-hit, .lv-edge";
   function superAt(t) {
     if (!t || !t.closest || t.closest(NOT)) return null;
     const node = t.closest(".lv-node");

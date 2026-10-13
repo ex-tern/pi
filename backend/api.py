@@ -3,73 +3,20 @@ concern (routes/*.py), then the Lab, consent, layout, PiEn, recent, live, traffi
 Engine routers and the static frontend. Run with `gunicorn api:app`. Names other modules and the
 tests take from here (idle_worker, tests/test_orcid_return) are re-exported below."""
 from core import *  # noqa: F401,F403
-from core import _RATE_LIMIT_BUCKETS, _STATE_RESTORED  # noqa: F401
+import importlib
 
-from routes import meta as _r_meta
-from routes import auth as _r_auth
-from routes import piq as _r_piq
-from routes import chain as _r_chain
-from routes import status as _r_status
-from routes import identity as _r_identity
-from routes import arcade as _r_arcade
-from routes import visits as _r_visits
-from routes import profile as _r_profile
-from routes import assessments as _r_assessments
-from routes import reviews as _r_reviews
-from routes import history as _r_history
-from routes import admin as _r_admin
-from routes import reviewing as _r_reviewing
-from routes import bugreport as _r_bugreport
-from routes import assess as _r_assess
-from routes import discover as _r_discover
-from routes import scilem as _r_scilem
-from routes import forecast as _r_forecast
-from routes import analytics as _r_analytics
-from routes import explorer as _r_explorer
+# One router per concern, included in this order (it is the matching order).
+_ROUTERS = ("meta", "auth", "piq", "chain", "status", "identity", "arcade", "visits", "profile",
+            "assessments", "reviews", "history", "admin", "reviewing", "bugreport", "assess",
+            "discover", "scilem", "forecast", "analytics", "explorer")
+for _name in _ROUTERS:
+    app.include_router(importlib.import_module(f"routes.{_name}").router)
 
-app.include_router(_r_meta.router)
-app.include_router(_r_auth.router)
-app.include_router(_r_piq.router)
-app.include_router(_r_chain.router)
-app.include_router(_r_status.router)
-app.include_router(_r_identity.router)
-app.include_router(_r_arcade.router)
-app.include_router(_r_visits.router)
-app.include_router(_r_profile.router)
-app.include_router(_r_assessments.router)
-app.include_router(_r_reviews.router)
-app.include_router(_r_history.router)
-app.include_router(_r_admin.router)
-app.include_router(_r_reviewing.router)
-app.include_router(_r_bugreport.router)
-app.include_router(_r_assess.router)
-app.include_router(_r_discover.router)
-app.include_router(_r_scilem.router)
-app.include_router(_r_forecast.router)
-app.include_router(_r_analytics.router)
-app.include_router(_r_explorer.router)
-
-from routes.meta import build_info, get_logs, health_check, robots_txt  # noqa: F401,E402
-from routes.auth import WalletVerifyRequest, _ORCID_RETURN_DEFAULTS, _OWN_ORIGINS, _orcid_return_allowed, _orcid_state, _orcid_unstate, _request_origin, auth_session, orcid_callback, orcid_login_url, resolve_frontend_origin, resolve_orcid_redirect_uri, verify_wallet  # noqa: F401,E402
-from routes.piq import PIQ_TOTAL_SQL, ZERO_ADDRESS, count_assessed_papers, is_tx_hash, normalize_identity, piq_fields, require_affordable, resolve_active_fee, settlement_state, user_piq_ledger, user_piq_total  # noqa: F401,E402
-from routes.chain import backup_run, backup_status, chain_contracts, chain_status, donate_info  # noqa: F401,E402
-from routes.status import get_challenge, providers_status, trial_status  # noqa: F401,E402
-from routes.identity import _arcade_key, _display_name, _identity_values, _profile_key, require_identity, require_owner  # noqa: F401,E402
-from routes.arcade import ArcadeRun, arcade_field_papers, arcade_finish, arcade_leaderboard_endpoint, arcade_start  # noqa: F401,E402
-from routes.visits import RibFeedback, _visitor_key, engines_status, register_visit, rib_feedback, stats_count, visitor_counts  # noqa: F401,E402
-from routes.profile import ProfileSlotRequest, ResearcherProfile, activate_profile, list_profiles, read_profile, remove_profile_slot, research_buddy, research_buddy_suggest, reset_profile, write_profile, write_profile_slot  # noqa: F401,E402
-from routes.assessments import ChallengeConfirm, ChallengeStart, PublishRequest, challenge_confirm, challenge_options, challenge_start, claim_escrow, claimable_escrow, disown_paper, my_assessments, my_escrow, publish_assessment, publish_status, serve_paper_file  # noqa: F401,E402
-from routes.reviews import REVIEW_MIN_CHARS, REVIEW_REQUIREMENTS, RatingRequest, RebuttalRequest, ReportRequest, ReviewRequest, ReviewSubmission, _perform_llm_review, cancel_review, journal, open_reviews, rate_review_endpoint, rebut_review, report_review_endpoint, request_llm_review, request_review, review_jobs, review_report_reasons, review_state  # noqa: F401,E402
-from routes.history import ClearHistoryRequest, clear_my_history  # noqa: F401,E402
-from routes.admin import CleanupRequest, GrantRequest, MAX_SINGLE_GRANT, ResetRequest, _cap_report, _dir_size, _human, _known_eval_hashes, _settle_state, _settlement_loop, admin_grant, admin_overview, admin_reset, admin_review_reports, reset_options, settle_batch, settle_pending, settlement_blockers, settlement_queue, start_auto_settlement, storage_cleanup, storage_report  # noqa: F401,E402
-from routes.reviewing import remove_assessment, review_eligibility, submit_review  # noqa: F401,E402
-from routes.bugreport import BugReport, bug_report_list, bug_report_status, submit_bug_report  # noqa: F401,E402
-from routes.assess import HEARTBEAT_SECONDS, JOURNAL_CHECK_BUDGET_SECONDS, MAX_DISCOVERY_BATCH, _fmt_score, _json_safe, assess_stream, build_result_payload, estimate_word_count, retrieve_manuscript_bytes, stream_assessment_progress  # noqa: F401,E402
-from routes.discover import DefenseRequest, TextAssessRequest, assess_text, defense_strategy, discover_hot_topics, discover_search  # noqa: F401,E402
-from routes.scilem import ScilemChatRequest, ScilemFeedback, ScilemResetRequest, scilem_chat, scilem_feedback, scilem_learning_status, scilem_reset, scilem_status  # noqa: F401,E402
-from routes.forecast import CRITERIA_KEYS, WEIGHT_MAX, WEIGHT_MIN, _run_forecast_impl, describe_forecast_criteria, project_weights_onto_simplex, reconstruct_weight_history, run_forecast  # noqa: F401,E402
-from routes.analytics import RescoreRequest, aggregate_author_statistics, analytics_fields, analytics_leaderboard, analytics_map, analytics_summary, analytics_top_papers, architecture_parameters, format_topic_path, get_emission_policy, get_rubric, list_corpus_fields, rescore_corpus  # noqa: F401,E402
-from routes.explorer import CRITERIA_TITLES, CRITERION_DEFINITIONS, DOSSIER_LICENSE, DOSSIER_SCHEMA_VERSION, EXPLORER_COLUMNS, _EXPLORER_SORTS, build_dossier_from_row, build_fair_dossier, coara_dossier_html, dossier_by_doi, explorer_dossier, explorer_latest, explorer_search, explorer_tx_url, fair_dossier, restrict_to_existing_columns  # noqa: F401,E402
+# Re-exported for idle_worker and tests/test_orcid_return, which take them from here.
+from routes.auth import _orcid_state  # noqa: F401,E402
+from routes.identity import require_identity, require_owner  # noqa: F401,E402
+from routes.visits import _visitor_key  # noqa: F401,E402
+from routes.assess import build_result_payload, retrieve_manuscript_bytes  # noqa: F401,E402
 
 
 

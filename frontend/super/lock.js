@@ -36,10 +36,8 @@
   // control, they should stay locked"; super/controls.js): the start locks only the main super and the title itself
   const START = { main: 1, title: 1 };
   const atStart = name => !!START[name];
-  const LOCKED_AT_START = new Proxy({}, { get: (_, name) => atStart(String(name)) });
   const load = name => { try { const v = localStorage.getItem("se:lock:" + name); return v == null ? atStart(name) : v === "1"; } catch (_) { return atStart(name); } };
   const save = (name, v) => { try { if (v) localStorage.setItem("se:lock:" + name, "1"); else if (atStart(name)) localStorage.setItem("se:lock:" + name, "0"); else localStorage.removeItem("se:lock:" + name); } catch (_) { /* private mode */ } };
-  void LOCKED_AT_START;
   const isLocked = el => !!(el && el.classList && el.classList.contains("is-locked"));
 
   const SHACKLE = { closed: "M3.5,5.5 V4 a2.5,2.5 0 0 1 5,0 V5.5", open: "M8.5,5.5 V4 a2.5,2.5 0 0 0 -5,0 V1.4" };   // open: the left leg lifted clear of the body
@@ -48,14 +46,14 @@
     const name = nameOf(el); if (!name) return;
     el.classList.toggle("is-locked", !!locked);
     save(name, !!locked);
-    const b = el.querySelector(":scope > .se-lock:not(.se-chain):not(.se-save)");
+    const b = el.querySelector(":scope > .se-lock:not(.se-save)");
     if (b) { shackle(b, !!locked); b.setAttribute("aria-pressed", String(!!locked)); b.setAttribute("aria-label", locked ? "Locked: what is inside stays inside, and it goes into no other super. Scroll out on it to unlock" : "Unlocked. Scroll in on it to lock"); }
     const out = document.querySelector(".lv-out"); if (out) out.textContent = (locked ? "Locked " : "Unlocked ") + name.replace(/^(node|bubble|win):/, "");
     document.dispatchEvent(new CustomEvent("se:lock", { detail: { el, locked: !!locked } }));
   }
   // the lock: a small padlock drawn in the shape language (a superellipse body, a shackle)
   function badge(el) {
-    if (el.querySelector(":scope > .se-lock:not(.se-chain):not(.se-save)")) return;
+    if (el.querySelector(":scope > .se-lock:not(.se-save)")) return;
     const name = nameOf(el); if (!name) return;
     const b = document.createElement(el.tagName === "BUTTON" ? "span" : "button");   // inside a pill (a button) a span that acts as one
     if (b.tagName === "SPAN") { b.setAttribute("role", "button"); b.tabIndex = 0; } else b.type = "button"; b.className = "se-lock"; b.setAttribute("aria-pressed", "false");
@@ -76,7 +74,7 @@
   // the scroll on a lock is taken before anything else (the page's zoom, a super's size): on the window, captured
   let acc = 0, accT = 0;
   window.addEventListener("wheel", e => {
-    const b = e.target && e.target.closest && e.target.closest(".se-lock:not(.se-chain):not(.se-save)");
+    const b = e.target && e.target.closest && e.target.closest(".se-lock:not(.se-save)");
     if (!b || e.shiftKey || !on()) return;
     if (window.SeScroll && window.SeScroll.gesturing(e.timeStamp)) return;   // a scroll gesture already sizing something goes on (super/scroll.js)
     const pr = b.parentElement.getBoundingClientRect();

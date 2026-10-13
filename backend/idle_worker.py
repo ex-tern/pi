@@ -267,8 +267,7 @@ def run_once() -> dict:
         return {"ran": False, "reason": "not eligible"}
 
     try:
-        from api import (retrieve_manuscript_bytes, build_result_payload,
-                         estimate_word_count, add_log)
+        from api import retrieve_manuscript_bytes, build_result_payload, add_log
         from brain import process_single_pdf
         import paper_store
 

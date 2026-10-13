@@ -50,7 +50,6 @@
   //   n ≥ 5          a box        ?  (help: the panel of AIs)
   const fnOfN = n => n < 1 ? "add" : n < 1.7 ? "super" : n < 2.6 ? "dot" : n < 5 ? "box" : "ask";
   const nOfFn = { add: 0.6, super: 1.3, dot: 2, box: Math.PI, ask: 7 };
-  const randomN = () => +Math.exp(Math.log(0.45) + Math.random() * (Math.log(9) - Math.log(0.45))).toFixed(3);
   const BY = Object.fromEntries(FNS.map(f => [f.k, f]));
   const TARGETS = ".lv-node, .ob-member, .orbit-bubble, .orbit-core, .orbit-pi, .orbit-panel, .se-port";
   const html = document.documentElement;
@@ -478,7 +477,6 @@
       if (n.held && n.st.timer) { clearTimeout(n.st.timer); n.st.timer = 0; }
     });
   }
-  const wiredToPi = n => n.inputs.some(r => r.core || r.pi) || linkIns(n).some(an => an.loop || an.h === "pi");
 
   function tick() {
     const f = O().fit ? O().fit().f : 1;
@@ -882,87 +880,6 @@
     if (window.SuperLink && window.SuperLink.forget) window.SuperLink.forget("node:" + n.id);
     persist(); tick();
   }
-  // ---- wired supers are one group (owner, 2026-10-12: "if you connect two supers together or more, they are grouped
-  // as one super inside the super the sync is connected to") -----------------------------------------------------
-  // Supers joined by wires (any port but a sync wire to the super they belong to) are wrapped in a group super: a
-  // holder (grp) around them, chained (super/chain.js), so they move as one. A sync wire says where a super belongs:
-  // drawn into its sync sparkle from another super, or out of its sync sparkle onto one, the group goes inside that
-  // super (a holder, an open bubble, a window, or a super that grows into a holder to take it). Cut the wires apart and
-  // the group lets go of them (its holder goes; they stay where they are).
-  const nodeOfH = h => { const m = h && (/^node:(.+)$/.exec(h) || /^port:node:([^/]+)\//.exec(h)); return m ? m[1] : null; };
-  const syncOf = h => { const m = h && /^port:node:([^/]+)\/sync$/.exec(h); return m ? m[1] : null; };
-  function groupGraph() {
-    const cand = nodes.filter(n => !isHolder(n) && !n.grp && n.role !== "loop" && !n.st.closing && !locked(n));
-    const ids = new Set(cand.map(n => n.id)), up = {}, edges = [], parent = {};
-    const find = x => (up[x] === undefined || up[x] === x ? (up[x] = x) : (up[x] = find(up[x])));
-    const join = (a, b) => { const ra = find(a), rb = find(b); if (ra !== rb) up[ra] = rb; edges.push(a < b ? a + "-" + b : b + "-" + a); };
-    const L = window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : [];
-    L.forEach(l => {
-      const ha = l.a && l.a.h, hb = l.b && l.b.h, na = nodeOfH(ha), nb = nodeOfH(hb);
-      // a sync wire: into B's sync from A, B belongs in A; out of A's sync onto B (not B's sync), A belongs in B
-      const sb = syncOf(hb), sa = syncOf(ha);
-      if (sb && ids.has(sb)) { if (!parent[sb]) parent[sb] = ha; return; }
-      if (sa && ids.has(sa)) { if (!parent[sa]) parent[sa] = hb; return; }
-      if (na && nb && na !== nb && ids.has(na) && ids.has(nb)) join(na, nb);
-    });
-    cand.forEach(n => n.inputs.forEach(r => { if (r.node && r.node !== n.id && ids.has(r.node)) join(n.id, r.node); }));
-    const comps = {};
-    cand.forEach(n => { const r = find(n.id); (comps[r] = comps[r] || []).push(n); });
-    return { groups: Object.values(comps).filter(c => c.length >= 2), parent, sig: edges.sort().join(",") + "|" + JSON.stringify(parent) };
-  }
-  const GPAD = 18, GTOP = 46;
-  function groupBox(members) {                                          // the holder's box round its members, on screen
-    const rs = members.map(m => m.el.getBoundingClientRect());
-    const l = Math.min(...rs.map(r => r.left)), t = Math.min(...rs.map(r => r.top)), r = Math.max(...rs.map(r => r.right)), b = Math.max(...rs.map(r => r.bottom));
-    const W = Math.max(HOLD_AT + 10, (r - l + 2 * GPAD) / 0.86), k = W * 0.07;
-    const H = Math.max(W * 0.5, (b - t) + 2 * GPAD + 2 * k + GTOP);
-    return { x: (l + r) / 2 - W / 2, y: t - GPAD - k - GTOP, w: W, h: H };
-  }
-  function inSite(B) {                                                  // a screen box kept within the inner super (never past its edge)
-    const sb = O().siteBox ? O().siteBox() : null; if (!sb || !sb.a) return B;
-    const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f, a = sb.a * f - 6, b = sb.b * f - 6;
-    const w = Math.min(B.w, 2 * a), h = Math.min(B.h, 2 * b);
-    return { x: Math.max(cx - a, Math.min(cx + a - w, B.x)), y: Math.max(cy - b, Math.min(cy + b - h, B.y)), w, h };
-  }
-  function setBox(n, B) {                                               // a screen box to a node's layout place and size
-    const F = O().fit ? O().fit() : null, f = (F && F.f) || 1, L = toLayout(B.x, B.y);
-    n.aspect = Math.abs(B.h / B.w - 1) < 0.01 ? 0 : B.h / B.w; n.st.sizeTo = null; sizeDot(n, Math.round(B.w / f));
-    n.fx = L.x / window.innerWidth; n.fy = L.y / window.innerHeight; place(n);
-  }
-  function hostRect(h) {                                                // the super a sync wire names, as an element that can hold
-    if (!h) return null;
-    const id = nodeOfH(h); if (id) { const p = nodes.find(x => x.id === id); return p ? { node: p, el: p.el } : null; }
-    let m = /^port:bubble:([^/]+)\//.exec(h) || /^k:(.+)$/.exec(h);
-    if (m) { const b = [...document.querySelectorAll('.orbit-bubble.is-group[data-key="' + CSS.escape(m[1]) + '"]')].find(e => e.getClientRects().length); return b && !b.classList.contains("is-compact") ? { el: b } : null; }
-    m = /^port:win:([^/]+)\//.exec(h);
-    if (m) { const w = [...document.querySelectorAll(".orbit-panel")].find(p => O().keyOf && O().keyOf(p) === m[1]); return w ? { el: w, win: m[1] } : null; }
-    if (h === "project" || /^port:project\//.test(h)) { const p = document.querySelector(".se-project"); return p ? { el: p } : null; }
-    return null;                                                        // the site and the main super: where it already is
-  }
-  function intoParent(g, members, ph) {
-    const P = hostRect(ph); if (!P || P.el === g.el || members.some(m => m.el === P.el)) return;
-    if (members.some(m => m.id === "site-box")) return;                // the central super never steps aside
-    if (locked(g)) return;
-    const gr = g.el.getBoundingClientRect();
-    if (P.node && !isHolder(P.node)) {                                 // a single super grows into a holder to take the group
-      if (locked(P.node)) return;
-      const pr = P.el.getBoundingClientRect(), W = Math.max(pr.width, (gr.width + 24) / 0.86), H = Math.max(pr.height, gr.height + 2 * W * 0.07 + GTOP + 12);
-      if (P.node.fn !== "box") return;
-      P.node.hold = true; setBox(P.node, inSite({ x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H }));
-    }
-    const pr = P.el.getBoundingClientRect(), k = Math.min(pr.width, pr.height) * 0.07, top = P.node ? GTOP : (P.win ? 8 : 12);
-    const inside = gr.left >= pr.left + k && gr.right <= pr.right - k && gr.top >= pr.top + top && gr.bottom <= pr.bottom - k;
-    if (inside) return;
-    if (P.node && (gr.width > pr.width - 2 * k || gr.height > pr.height - top - k)) {   // a holder too small for it grows
-      const W = Math.max(pr.width, gr.width / 0.86 + 8), H = Math.max(pr.height, gr.height + top + 2 * k + 8);
-      setBox(P.node, inSite({ x: pr.left + pr.width / 2 - W / 2, y: pr.top + pr.height / 2 - H / 2, w: W, h: H }));
-    }
-    const p2 = P.el.getBoundingClientRect();
-    const dx = (p2.left + p2.width / 2) - (gr.left + gr.width / 2), dy = (p2.top + top / 2 + p2.height / 2) - (gr.top + gr.height / 2);
-    if (P.win) [g, ...members].forEach(m => { m.layer = "win:" + P.win; m.el.dataset.layer = m.layer; });   // in a window's layer (hold.js)
-    window.LabView.moveNodes([g.id, ...members.map(m => m.id)], dx, dy);
-    say("Grouped " + members.length + " wired supers inside " + (P.node ? (P.node.str || BY[P.node.fn].name) : ((P.el.querySelector(":scope > .ob-label, .op-title") || {}).textContent || "the super")).trim());
-  }
   // a super made by a double click is a prompt (a Super AI super, a sparkle) unless a prompt's output is wired into
   // it: then it is a Display (a complete square showing what comes in); cut that wire and an empty Display is a prompt again
   function promptInto(n) {                                            // the prompt whose output is wired into n's input
@@ -1000,57 +917,6 @@
     if (changed) { persist(); tick(); }
   }
   document.addEventListener("superlink:change", () => setTimeout(autoKinds, 60));
-  let groupSig = null;
-  function regroup(force) {
-    if (!html.classList.contains("shape-se") || !nodes.length) return;
-    const G = groupGraph();
-    const holders = nodes.filter(n => n.grp);
-    const holderFor = (members, used) => holders.find(h => !used.has(h) && h.mem && members.some(m => h.mem.includes(m.id)))
-      || holders.find(h => !used.has(h) && members.some(m => within(h, m)));
-    // its members inside its frame: a frame kept within the inner super may have left some outside (made at its edge)
-    const pullIn = (g, members) => {
-      const r = g.el.getBoundingClientRect(), rs = members.map(m => m.el.getBoundingClientRect()), k = r.width * 0.07 + 2;
-      const l = Math.min(...rs.map(x => x.left)), t = Math.min(...rs.map(x => x.top)), R = Math.max(...rs.map(x => x.right)), Bt = Math.max(...rs.map(x => x.bottom));
-      const dx = l < r.left + k ? r.left + k - l : R > r.right - k ? r.right - k - R : 0;
-      const dy = t < r.top + k + GTOP ? r.top + k + GTOP - t : Bt > r.bottom - k ? r.bottom - k - Bt : 0;
-      if (Math.abs(dx) > 0.5 || Math.abs(dy) > 0.5) window.LabView.moveNodes(members.map(m => m.id), dx, dy);
-    };
-    const fit = (g, members) => {                                        // it grows to take its members wherever they went, never shrinks under you
-      const B = inSite(groupBox(members)), r = g.el.getBoundingClientRect();
-      const l = Math.min(r.left, B.x), t = Math.min(r.top, B.y), R = Math.max(r.right, B.x + B.w), Bt = Math.max(r.bottom, B.y + B.h);
-      if (l < r.left - 4 || t < r.top - 4 || R > r.right + 4 || Bt > r.bottom + 4) setBox(g, inSite({ x: l, y: t, w: R - l, h: Bt - t }));
-      pullIn(g, members);
-    };
-    if (!force && G.sig === groupSig) {                                  // nothing rewired: the groups only keep round their supers
-      const used = new Set();
-      G.groups.forEach(members => { const g = holderFor(members, used); if (g && !g.el.classList.contains("is-dragging") && !html.classList.contains("se-chain-dragging") && !locked(g)) { used.add(g); g.mem = members.map(m => m.id); fit(g, members); } });
-      return;
-    }
-    groupSig = G.sig;
-    const used = new Set();
-    G.groups.forEach(members => {
-      // the group's holder: one that already holds any of them, else a new one round them
-      let g = holderFor(members, used);
-      const B = groupBox(members);
-      if (!g) {
-        g = make({ id: "g" + Date.now().toString(36) + Math.random().toString(36).slice(2, 5), fn: "box", fx: 0, fy: 0, inputs: [], hold: true, str: "group", n: 12, manual: true, size: HOLD_AT + 10 });
-        if (!g) return;
-        g.grp = true; g.el.classList.add("lv-group");
-        canvas.insertBefore(g.el, canvas.firstChild);                  // under what it holds
-        nodes = [g, ...nodes.filter(x => x !== g)];
-        setBox(g, inSite(B)); pullIn(g, members);
-        if (window.SeChain) window.SeChain.set(g.el, true);             // one group: a drag on any of them moves them all
-        say("Grouped " + members.length + " wired supers");
-      } else fit(g, members);
-      used.add(g); g.mem = members.map(m => m.id);
-      const ph = members.map(m => G.parent[m.id]).find(Boolean) || G.parent[g.id];
-      if (ph) intoParent(g, members, ph);
-    });
-    // a group whose supers are no longer wired together lets go of them: its holder goes, they stay
-    holders.filter(h => !used.has(h)).forEach(h => { say("Ungrouped: its supers are no longer wired together"); remove(h); });
-    persist(); tick();
-    document.dispatchEvent(new CustomEvent("se:obstacle"));
-  }
   function attach(n, ref) {
     if (!ref || (ref.node && ref.node === n.id)) return false;
     if (n.inputs.some(r => same(r, ref))) return true;
@@ -1612,12 +1478,6 @@
       tick();
     });
   }
-  function openBox(n) {
-    window.SuperPrompt.open(n.str || n.prompt || "", n.st.run || null, (q, r) => {
-      n.str = q; n.st.commit = true; n.answer = "";
-      follow(n, r, q); persist();
-    });
-  }
   // A Super AI super runs only when it is connected to run, the central super (owner, 2026-10-12): joined to it
   // by wires (through other supers too), or sitting inside it. Unconnected, it computes what is computable
   // (numbers) but asks no engine, and says so.
@@ -1959,14 +1819,9 @@
     }, true);
     // a wire added or deleted anywhere: values update at once
     document.addEventListener("superlink:change", () => tick());
-    // wired supers group (regroup): checked after every wire change and now and then (wires dropped on a super's
-    // body go by its inputs), once the layout has settled
-    let rgT = 0;
-    // (no regroup on wire changes: grouping is switched off)
     // grouping wired supers is switched off (owner, 2026-10-12: "remove the grouping"); groups made before let go of
     // their supers once (the group holders go, the supers stay where they are)
     setTimeout(() => { nodes.filter(n => n.grp).forEach(remove); }, 2500);
-    void regroup;
     document.addEventListener("se:obstacle", () => { nodes.forEach(n => clear(n)); persist(); });   // something moved onto the nodes: they step off it
     // typing with nothing focused goes into the selected super (a prompt is written straight into it)
     document.addEventListener("keydown", e => {

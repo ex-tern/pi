@@ -403,14 +403,9 @@
     function seatEdges() {
       if (!merged()) return;
       const Wv = window.innerWidth, A = LOOP_M * Wv / 2, B = LOOP_M * ctx.H() / 2, cx = Wv / 2, cy = ctx.top() + ctx.H() / 2, root = document.documentElement.style;
-      const fits = (l, t, r, b, n, m = 6) => [l - m, r + m].every(x => [t - m, b + m].every(y => seNorm(Math.abs(x - cx) / A, Math.abs(y - cy) / B, n || Math.PI) <= 1));
       const title = $(".orbit-title");
       if (title && title.offsetWidth) {
-        // the title sits in the corner of the main loop as it is now (not at π), so a near-box loop keeps it
-        // high, in the gap above the inner super
-        const tr = title.getBoundingClientRect(), h = tr.height, tn = Math.max(Math.PI, loopN()), TITLE_M = -0.3 * Math.min(tr.width, h);   // its box's corners are empty (see measure)
         // the title (a simple super) stays in the page's top-left corner whatever the loops' n (owner, 2026-10-11)
-        void fits; void tn; void TITLE_M;
         root.setProperty("--se-title-top", "14px");
       }
       siteM = null;                                                    // the inner super's margins, measured again once the title is seated

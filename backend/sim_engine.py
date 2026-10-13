@@ -503,7 +503,7 @@ def tutor_from_llm(signals: Dict[str, float], title: str, excerpt: str) -> Dict:
     Never raises: tutoring is an optimisation, and the caller runs it after the
     assessment the user is waiting for has already been returned.
     """
-    from config import SIM_TUTOR_WEIGHT, SIM_TUTOR_MAX_CALLS_PER_DAY
+    from config import SIM_TUTOR_MAX_CALLS_PER_DAY
     if not tutor_phase_active():
         return {"tutored": False, "reason": "not active"}
 

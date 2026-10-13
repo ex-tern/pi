@@ -19,7 +19,6 @@ import json
 import time
 import logging
 import math
-import random
 import hashlib
 import re
 import difflib
@@ -1506,7 +1505,7 @@ def run_evaluation_pipeline(text, model, text_limit, file_hash="unknown", canary
             entry.pop("_raw_error", None)
 
     _quality_meta = (consensus_results.get("_judge_metadata") or {})
-    scilem_opinion = update_structural_analyzer(
+    update_structural_analyzer(
         text, evidence_report, pidyne_ai_rating,
         independent_sources=int(_quality_meta.get("independent_source_count") or 0),
         title=select_consensus_value(consensus_results, "title")[0] or "",
@@ -1870,7 +1869,6 @@ def process_single_pdf(
                 "budget. No references were counted as fabricated and no penalty was applied."
             )
 
-        topological_entropy = topology_detail.get("score", 0.50)
         if topology_detail.get("basis") == "legacy-concepts":
             warnings_list.append(
                 "TOPIC TAXONOMY: OpenAlex has not yet reprocessed this work under its current topic "

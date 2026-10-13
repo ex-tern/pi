@@ -216,24 +216,6 @@ def learned_forecast(series, criterion: str) -> float:
     return _model_for(criterion).predict(_feature_vector(series))
 
 
-def observe_outcome(series_before, criterion: str, actual: float) -> Dict:
-    """Score a previous forecast against what the ledger actually recorded.
-
-    `series_before` must be the series AS IT WAS when the forecast was made —
-    scoring a prediction against a series that already contains the answer
-    would report a model far better than it is.
-    """
-    from database import save_engine_state, log_engine_observation
-
-    model = _model_for(criterion)
-    feats = _feature_vector(series_before)
-    result = model.observe(feats, float(actual))
-    save_engine_state(model.name, model.to_json())
-    log_engine_observation(f"pid:{criterion}", feats, float(actual), result,
-                           source="block")
-    return result
-
-
 def learn_from_history(weight_matrix, criteria: List[str]) -> Dict:
     """Walk the recorded block history and learn from every transition.
 

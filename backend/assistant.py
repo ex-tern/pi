@@ -39,7 +39,7 @@ except ImportError:
 # ---------------------------------------------------------------------------
 def _concepts() -> Dict[str, Dict]:
     """Built lazily from the live modules, so answers cannot drift from code."""
-    from rubric import RUBRIC, RUBRIC_VERSION, SIGNAL_CATALOGUE
+    from rubric import RUBRIC, RUBRIC_VERSION
     import emission
 
     criteria_lines = "\n".join(

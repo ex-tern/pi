@@ -3394,7 +3394,6 @@ async function showWriteReviewModal(hash) {
   // reviewed — or already published — can be reviewed again by someone else,
   // and that review costs its author nothing. The only case with nothing to
   // do is a paper the viewer is not allowed to review at all.
-  const alreadyByMe = (state.reviews || []).length && state.may_rate === false;
   const canReviewAnyway = !state.may_request || sessionState.is_owner;
   if (!openHere && !canReviewAnyway) {
     const already = Number(state.peer_review_count || 0) > 0;
@@ -5474,17 +5473,6 @@ async function loadAnalyticsSummary() {
     }
   } catch (e) { /* ignore */ }
 }
-
-// --- Map of Science ---------------------------------------------------------
-// Rebuilt for legibility. The previous configuration used a very strong
-// gravitational constant with damping pinned at 1.0, which produced a dense
-// unreadable clump that never settled; nodes carried no labels, so the map
-// could only be read via the legend table.
-const MAP_DEFAULTS = {
-  maxNodes: 20, nodeScale: 1.0, gravity: 30, repulsion: 50, linkStrength: 50,
-  damping: 45, overlap: 85, labelSize: 13, sizeMode: "frequency",
-  physics: true, clusterByDomain: true,
-};
 
 
 // ---------------------------------------------------------------------------

@@ -21,7 +21,7 @@ _ENV_PATH = os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
 # Capture the real environment BEFORE importing config, which merges .env in.
 _REAL_ENV = set(os.environ)
 
-import config  # noqa: E402
+import config  # noqa: E402,F401  (merges .env into the environment)
 from providers import build_routes, provider_configuration  # noqa: E402
 
 PROVIDER_KEYS = [

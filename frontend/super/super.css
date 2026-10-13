@@ -113,7 +113,6 @@ html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-str
 /* a window opening out of its button, or closing into it (super/shape.js) */
 .se-morph { position: fixed; inset: 0; pointer-events: none; z-index: 950; overflow: visible; }
 .se-morph path { fill: var(--paper); stroke: var(--ink); stroke-width: 1.25; }
-html.shape-se .orbit-panel.se-arriving { opacity: 0; transition: none; }
 
 /* the title is a simple super (super/logo.js) */
 html.shape-se .orbit-title .ot-text { display: none; }
@@ -590,31 +589,9 @@ html.shape-se .se-lockhost { position: fixed; z-index: 965; width: 14px; height:
 html.shape-se .se-lockhost > .se-lock { left: 0; top: 0; transform: none; pointer-events: auto; }
 html:not(.shape-se) .se-lockhost { display: none; }
 
-/* the confirmation before a super is deleted (super/delete.js): a square that deletes it, a sparkle that keeps it */
-.se-confirm { position: fixed; z-index: 2100; display: flex; gap: 10px; align-items: flex-end; }
-.se-cf { position: relative; display: grid; place-items: center; width: 58px; height: 58px; padding: 0; border: 0; background: none; cursor: pointer; font: 500 11px/1 var(--font-mono, ui-monospace, monospace); color: var(--ink); }
-.se-cf::before { content: ""; position: absolute; inset: 0; background: var(--paper); box-shadow: 0 10px 22px -10px rgba(25, 25, 25, 0.45); }
-.se-cf-del::before { border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(3.585); }   /* a square: n = 12 */
-.se-cf-keep::before { background: var(--ink); clip-path: var(--se-sparkle, polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%)); }   /* a sparkle */
-.se-cf-keep::after { content: ""; position: absolute; inset: 3px; background: var(--paper); clip-path: var(--se-sparkle, polygon(50% 0, 62% 38%, 100% 50%, 62% 62%, 50% 100%, 38% 62%, 0 50%, 38% 38%)); }
-.se-cf span { position: relative; z-index: 1; }
-.se-cf-keep span { font-size: 10px; }
-.se-cf:hover::before, .se-cf:focus-visible::before { box-shadow: 0 0 0 2px var(--cobalt), 0 10px 22px -10px rgba(25, 25, 25, 0.45); }
-.se-cf-keep:hover::before, .se-cf-keep:focus-visible::before { background: var(--cobalt); }
-.se-cf:focus-visible { outline: none; }
-html.shape-se .se-deleting { outline: 2px dashed color-mix(in srgb, var(--ink) 60%, transparent); outline-offset: 4px; }
 /* any size if unlocked (owner, 2026-10-12): a window you size may be as small as 24 px; one you have not sized keeps its
    readable minimum (super/loop.js) */
 html.shape-se .orbit-panel { min-width: 24px; min-height: 24px; }
-/* the chain (super/chain.js): beside the lock, the same pen; chained, its links are inked in */
-html.shape-se .se-chain { left: calc(50% + 19px); }
-html.shape-se .lv-node:not(.is-holder) > .se-chain { left: calc(50% + 13px); }
-html.shape-se .orbit-title .se-titlesuper > .se-chain { left: calc(50% + 11px); }
-html.shape-se .se-chain .ch-link { fill: none; stroke: var(--ink); stroke-width: 1.1; }
-html.shape-se .se-chain .lk-body, html.shape-se .se-chain .lk-shackle { display: none; }
-html.shape-se .is-chained > .se-chain { opacity: 1; }
-html.shape-se .is-chained > .se-chain .ch-link { stroke-width: 1.4; }
-html.shape-se .is-locked:not(.is-chained) > .se-chain { opacity: 0.35; }
 html.se-chain-dragging, html.se-chain-dragging * { user-select: none !important; cursor: grabbing !important; }
 
 /* data wires (input, output, or joining supers) are thicker and coloured by the type they carry; control wires (sync,
@@ -631,9 +608,7 @@ html.shape-se .sl-data .wire-term { fill: var(--wt); }
 html.shape-se .sl-data[data-type="list"] .wire-bed { stroke-width: 5.4; }
 html.shape-se .om-site .om-lattice { stroke-width: 3.6; }
 
-/* the save icon (super/save.js): beside the chain, the same pen; saved, the disk is inked in. The delete/keep
-   confirmation is gone (owner, 2026-10-12: "remove these instead add a save icon next to the lock") */
-html.shape-se .se-save { left: calc(50% + 12px); }
+/* the save icon (super/save.js): beside the lock, the same pen; saved, the disk is inked in */
 html.shape-se .se-save .sv-body, html.shape-se .se-save .sv-label, html.shape-se .se-save .sv-slot { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; }
 html.shape-se .se-save .lk-body, html.shape-se .se-save .lk-shackle { display: none; }
 html.shape-se .is-saved > .se-save { opacity: 1; }
@@ -642,8 +617,6 @@ html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save
 html.shape-se :not(.is-saved) > .se-save { opacity: 0.55; }
 
 
-/* the chain icon is gone (owner, 2026-10-12): the save icon takes its place beside the lock */
-html.shape-se .se-chain { display: none !important; }
 html.shape-se .se-save { left: calc(50% + 12px); }
 /* a low super (the title, a pill) carries them at its right end instead, at the same size */
 html.shape-se .orbit-title .se-titlesuper > .se-lock { top: 50%; left: auto; right: 30px; transform: translateY(-50%); }

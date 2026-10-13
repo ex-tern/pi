@@ -119,12 +119,6 @@
   // ---- the morph ---------------------------------------------------------
   const DUR = 460;
   const ease = t => t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
-  // the corner radii [rx, ry] in px ("1.2em / 50%" computes to "14px 50%")
-  const radiusOf = el => {
-    const v = getComputedStyle(el).borderTopLeftRadius.split(" "), r = el.getBoundingClientRect();
-    const px = (t, size) => t && t.endsWith("%") ? parseFloat(t) / 100 * size : parseFloat(t) || 0;
-    return [px(v[0], r.width), px(v[1] || v[0], r.height)];
-  };
   const rectOf = el => { const r = el.getBoundingClientRect(); return { x: r.left, y: r.top, w: r.width, h: r.height }; };
   const usable = el => el && el.isConnected && el.getClientRects().length && rectOf(el).w > 0;
 

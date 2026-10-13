@@ -231,7 +231,7 @@ def stream_assessment_progress(files: List[tuple], doi: Optional[str], include_d
         and not the results already delivered."""
         try:
             return line({"type": "result", "item": item})
-        except Exception as e:
+        except Exception:
             logging.exception("Result serialisation failed for %s", label)
             return line({"type": "result_error", "label": str(label),
                          "message": ("This paper was assessed and saved to the ledger, but its "

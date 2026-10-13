@@ -5,7 +5,6 @@ behavior, not abstract logic.
 
 Run with:  cd backend && pytest tests/ -v
 """
-import sqlite3
 
 import pytest
 

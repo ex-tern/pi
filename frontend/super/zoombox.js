@@ -84,14 +84,13 @@
       const p = box.closest(".orbit-panel"), O = window.PiOrbit;
       if (!p || !O || !O.winCap || p._seGrowing || p.seSized) return;   // a window you sized yourself stays the size you gave it (its content moves by dragging)
       const cap = O.winCap(Object.assign({}, p, { seRead: true })), bw = box.clientWidth, bh = box.clientHeight;
-      const extraW = p.offsetWidth - bw, extraH = p.offsetHeight - bh;
+      const extraH = p.offsetHeight - bh;
       content.style.width = Math.round(bw / kMin) + "px";
       const needH = content.offsetHeight * kMin + extraH;
-      const h = Math.min(cap.h, Math.ceil(needH)), w = Math.min(cap.w, p.offsetWidth); void extraW;   // laid out wider and scaled, it fills the width: only the height grows
+      const h = Math.min(cap.h, Math.ceil(needH));   // laid out wider and scaled, it fills the width: only the height grows
       if (h <= p.offsetHeight + 1) return;
       p.seRead = true; p._seGrowing = true;
-      const r = p.getBoundingClientRect(), cx = r.left + r.width / 2, cy = r.top + r.height / 2;
-      void cx; void w;                                                   // only its height changes: where it is stays the layout's (a glide may be moving it)
+      const r = p.getBoundingClientRect(), cy = r.top + r.height / 2;   // only its height changes: where it is stays the layout's (a glide may be moving it)
       const put = s => { p.style.height = Math.round(s.h) + "px"; p.style.top = Math.round(cy - s.h / 2) + "px"; };
       const done = () => { p._seGrowing = false; if (p.item && O.saveWin) O.saveWin(p.item, p); refit(); };
       if (window.SeMotion) { const s = { w: r.width, h: r.height }; window.SeMotion.tween(s, { w, h }, { duration: 260, easing: "easeOutCubic", update: () => put(s), complete: done }); }

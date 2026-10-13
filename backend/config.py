@@ -569,7 +569,6 @@ RIB_TUTOR_WEIGHT = float(os.getenv("RIB_TUTOR_WEIGHT", "0.35"))
 ENABLE_SIM_LLM_TUTOR = _env_bool("ENABLE_SIM_LLM_TUTOR", False)
 SIM_TUTOR_UNTIL_OBS = int(os.getenv("SIM_TUTOR_UNTIL_OBS", "150"))
 SIM_TUTOR_MAX_CALLS_PER_DAY = int(os.getenv("SIM_TUTOR_MAX_CALLS_PER_DAY", "40"))
-SIM_TUTOR_WEIGHT = float(os.getenv("SIM_TUTOR_WEIGHT", "0.35"))
 
 # ---------------------------------------------------------------------------
 # Idle-time auto-assessment

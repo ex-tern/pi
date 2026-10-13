@@ -131,13 +131,6 @@ def is_provider_unreachable(provider: str) -> Tuple[bool, float]:
         return True, remaining
 
 
-def record_provider_reachable(provider: str):
-    """Any successful call proves the provider is up; clear the mark at once."""
-    if provider:
-        with _breaker_lock:
-            _providers_down.pop(provider, None)
-
-
 def record_rate_limit(model: str, provider: str, retry_after: Optional[float] = None):
     """Open the breaker for a route, honouring Retry-After when supplied."""
     key = _route_key(model, provider)
