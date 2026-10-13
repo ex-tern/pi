@@ -14,12 +14,12 @@ HAL_OS_REF = "7f2e094df20a3bf523a085445a2bc53ee76a703a"
 HAL_OS_REPO = "https://github.com/neurophilic/HAL-OS"
 
 [phases.setup]
-nixPkgs = ["...", "curl", "gnutar", "gzip"]
+nixPkgs = ["...", "curl", "gnutar", "gzip", "bash"]
 
 [phases.build]
 cmds = [
-  "mkdir -p /tmp/hal-os && (curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \"https://codeload.github.com/neurophilic/HAL-OS/tar.gz/$HAL_OS_REF\" -o /tmp/hal-os.tgz || curl -fsSL --retry 5 --retry-delay 3 --retry-all-errors \"https://github.com/neurophilic/HAL-OS/archive/$HAL_OS_REF.tar.gz\" -o /tmp/hal-os.tgz) && tar xzf /tmp/hal-os.tgz -C /tmp/hal-os --strip-components=1 && rm /tmp/hal-os.tgz",
-  "python back/scripts/tools.py build-hal --src /tmp/hal-os --ref \"$HAL_OS_REF\" --repo \"$HAL_OS_REPO\" && rm -rf /tmp/hal-os",
+  "bash -c 'PIN=7f2e094df20a3bf523a085445a2bc53ee76a703a; mkdir -p /tmp/hal-os; for REF in \"${HAL_OS_REF:-$PIN}\" \"$PIN\"; do for URL in \"https://codeload.github.com/neurophilic/HAL-OS/tar.gz/$REF\" \"https://github.com/neurophilic/HAL-OS/archive/$REF.tar.gz\"; do echo \"HAL-OS: fetching $URL\"; if curl -fsSL --retry 3 --retry-delay 2 \"$URL\" -o /tmp/hal-os.tgz; then tar xzf /tmp/hal-os.tgz -C /tmp/hal-os --strip-components=1 && rm /tmp/hal-os.tgz && echo \"$REF\" > /tmp/hal-os.ref && exit 0; fi; done; done; echo \"HAL-OS could not be fetched (HAL_OS_REF=${HAL_OS_REF:-unset})\"; exit 1'",
+  "bash -c 'python back/scripts/tools.py build-hal --src /tmp/hal-os --ref \"$(cat /tmp/hal-os.ref)\" --repo \"${HAL_OS_REPO:-https://github.com/neurophilic/HAL-OS}\" && rm -rf /tmp/hal-os /tmp/hal-os.ref'",
 ]
 
 [start]
