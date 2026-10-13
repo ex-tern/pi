@@ -7,7 +7,7 @@
 #
 # Adjust User/Group/WorkingDirectory/paths to match your deployment.
 # Assumes you've already run `python -m venv venv && pip install -r
-# requirements.txt` inside backend/, and created backend/.env.
+# requirements.txt` inside backend/, and created back/.env.
 
 [Unit]
 Description=ScholarPi — Pi-Index Assessment Engine
@@ -17,11 +17,11 @@ After=network.target
 Type=simple
 User=scholarpi
 Group=scholarpi
-WorkingDirectory=/opt/scholarpi_webapp/backend
+WorkingDirectory=/opt/scholarpi_webapp/back
 Environment=ENVIRONMENT=production
 Environment=SCHOLARPI_DATA_DIR=/opt/scholarpi_webapp/data
-EnvironmentFile=/opt/scholarpi_webapp/backend/.env
-ExecStart=/opt/scholarpi_webapp/backend/venv/bin/gunicorn api:app -c gunicorn.conf.py
+EnvironmentFile=/opt/scholarpi_webapp/back/.env
+ExecStart=/opt/scholarpi_webapp/back/venv/bin/gunicorn api:app -c gunicorn.conf.py
 Restart=on-failure
 RestartSec=5
 StandardOutput=append:/var/log/scholarpi/scholarpi.log

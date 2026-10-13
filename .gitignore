@@ -1,11 +1,11 @@
 # Secrets — never commit these
-backend/.env
+back/.env
 
 # Python
 __pycache__/
 *.pyc
 *.pyo
-backend/venv/
+back/venv/
 venv/
 .pytest_cache/
 *.egg-info/
@@ -23,9 +23,9 @@ logs/
 .vscode/
 .idea/
 
-# Lab: built at deploy time from the HAL-OS repo by scripts/build_hal.py
-frontend/hal/bitllm.img
-frontend/hal/build.json
+# Lab: built at deploy time from the HAL-OS repo by back/scripts/tools.py build-hal
+front/hal/bitllm.img
+front/hal/build.json
 
 # Rust build output
-rust/*/target/
+back/rust/*/target/

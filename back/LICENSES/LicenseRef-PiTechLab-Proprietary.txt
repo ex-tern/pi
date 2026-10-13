@@ -4,9 +4,9 @@ Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab). All rights reserved.
 
 This license covers every part of this repository that is not listed as open source in the LICENSE file at its
 root, and not third-party work under its own license. In particular it covers the website and its design: the
-front end (frontend/), its look and feel, the superellipse and glass interface, the graphics engine's shaders
-and drawing, the layout, icons, text, names and logos, the SuperAI language and its engines (rust/superai,
-rust/pifront, frontend/super/), the site's program (frontend/super/pitechlab.sasm and pitechlab.super.js), and
+front end (front/), its look and feel, the superellipse and glass interface, the graphics engine's shaders
+and drawing, the layout, icons, text, names and logos, the SuperAI language and its engines (back/rust/superai,
+back/rust/pifront, front/super/), the site's program (front/super/pitechlab.sasm and pitechlab.super.js), and
 the platform code that runs the service (accounts, piQ, the ledger's economics, the Lab, administration).
 
 1. No license is granted. You may view this repository where it is published. You may not copy, modify, merge,
@@ -17,9 +17,9 @@ the platform code that runs the service (accounts, piQ, the ledger's economics, 
 2. Publishing the repository on GitHub lets GitHub's users view and fork it on GitHub as GitHub's Terms of
    Service require. Nothing beyond that is granted.
 
-3. Versions of rust/numbers, rust/superai and rust/pifront published before 13 October 2026 declared the MIT
+3. Versions of back/rust/numbers, back/rust/superai and back/rust/pifront published before 13 October 2026 declared the MIT
    license in their Cargo.toml. Copies obtained under those declarations keep the rights MIT gave them. From
-   that date, rust/superai and rust/pifront are covered by this license and rust/numbers by the GNU AGPL 3.0.
+   that date, back/rust/superai and back/rust/pifront are covered by this license and back/rust/numbers by the GNU AGPL 3.0.
 
 4. THE MATERIAL IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND. IN NO EVENT SHALL THE COPYRIGHT HOLDER BE
    LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY ARISING FROM IT OR ITS USE.

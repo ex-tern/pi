@@ -5,7 +5,7 @@ import os
 import api as shape
 
 HERE = os.path.dirname(__file__)
-INDEX = os.path.join(HERE, "..", "..", "frontend", "index.html")
+INDEX = os.path.join(HERE, "..", "..", "front", "index.html")
 
 
 def _index():

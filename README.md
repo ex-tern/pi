@@ -8,14 +8,14 @@
 > - [The pi-Index framework, v2 (was pi-Index-Framework-v2-REWRITE.md)](#the-pi-index-framework-v2-was-pi-index-framework-v2-rewritemd)
 > - [Critique: logical flaws and what was done (was CRITIQUE.md)](#critique-logical-flaws-and-what-was-done-was-critiquemd)
 > - [Recommendations (was RECOMMENDATIONS.md)](#recommendations-was-recommendationsmd)
-> - [Vendored libraries (was frontend/vendor/README.md)](#vendored-libraries-was-frontendvendorreadmemd)
+> - [Vendored libraries (was front/vendor/README.md)](#vendored-libraries-was-frontendvendorreadmemd)
 > - [Evolution: the project's history (was EVOLUTION.md)](#evolution-the-projects-history-was-evolutionmd)
 
 A local-first (and production-deployable) research-assessment webapp:
 
-- **Backend:** FastAPI (`backend/api.py`) — REST/streaming API, also serves
+- **Backend:** FastAPI (`back/api.py`) — REST/streaming API, also serves
   the frontend as static files from the same process.
-- **Frontend:** plain HTML/CSS/JS (`frontend/`) — no build step, no
+- **Frontend:** plain HTML/CSS/JS (`front/`) — no build step, no
   framework.
 - **Engine:** deterministic MDAR/reproducibility/empirical-density scoring,
   multi-LLM consensus (Llama/Mistral/Qwen/Gemini + a local PyTorch "Scilem"
@@ -33,7 +33,7 @@ Physics, Gebze Technical University), shown here with credit:
 - **QuVI**, his LabVIEW quantum circuit toolkit, described in
   [From Block Diagrams to Bloch Spheres: Graphical Quantum Circuit Simulation in LabVIEW](https://arxiv.org/abs/2602.00643)
   ([source](https://github.com/MurVefa/QuVI---Quantum-Circuit-Toolkit), MIT licence).
-  `frontend/quvi/` is an independent browser implementation of the same model, credited to him under the MIT licence.
+  `front/quvi/` is an independent browser implementation of the same model, credited to him under the MIT licence.
 
 The video and both projects remain his.
 
@@ -42,16 +42,16 @@ The video and both projects remain his.
 ## 1. Local development
 
 ```bash
-python scripts/tools.py run     # macOS, Linux or Windows (add --lab: with HAL-OS and private projects)
+python back/scripts/tools.py run     # macOS, Linux or Windows (add --lab: with HAL-OS and private projects)
 ```
 
 It creates a virtualenv, installs dependencies, copies
-`backend/.env.example` → `backend/.env` on first run, and starts the server
+`back/.env.example` → `back/.env` on first run, and starts the server
 with auto-reload. Open **http://localhost:8000**.
 
 ### Manual setup
 ```bash
-cd backend
+cd back
 python -m venv venv
 source venv/bin/activate        # Windows: venv\Scripts\activate
 pip install -r requirements.txt
@@ -71,8 +71,8 @@ Every key in `.env` is optional:
   button just won't complete a login.
 - IPFS/Ethereum state backup is skipped silently without Pinata/Web3 keys.
 
-Add keys to `backend/.env` any time — no code changes needed. See
-`backend/.env.example` for where to get each one.
+Add keys to `back/.env` any time — no code changes needed. See
+`back/.env.example` for where to get each one.
 
 ---
 
@@ -82,15 +82,15 @@ Add keys to `backend/.env` any time — no code changes needed. See
 
 Python and Rust only: there is no Docker image, by design.
 
-1. `cd backend && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
+1. `cd back && python -m venv venv && source venv/bin/activate && pip install -r requirements.txt`
 2. `cp .env.example .env` and fill it in; set `ENVIRONMENT=production`
-3. Copy `deploy/scholarpi.service` to `/etc/systemd/system/`, edit the
+3. Copy `back/deploy/scholarpi.service` to `/etc/systemd/system/`, edit the
    paths/user to match your setup, then:
    ```bash
    sudo systemctl daemon-reload
    sudo systemctl enable --now scholarpi
    ```
-4. Copy `deploy/nginx.conf.example` to `/etc/nginx/sites-available/`, fill
+4. Copy `back/deploy/nginx.conf.example` to `/etc/nginx/sites-available/`, fill
    in your domain + cert paths (e.g. via `certbot --nginx`), enable it, and
    `systemctl reload nginx`.
 
@@ -123,7 +123,7 @@ Python and Rust only: there is no Docker image, by design.
   still exists too, purely as a fast UI hint.
 - **Rate limiting** on the assessment and Scilem-chat endpoints (in-process
   sliding window; put nginx's own `limit_req` in front of it too for
-  defense in depth — see `deploy/nginx.conf.example`).
+  defense in depth — see `back/deploy/nginx.conf.example`).
 - **Upload validation**: content-type check + a configurable per-file size
   cap (`MAX_UPLOAD_MB`), enforced before any parsing happens.
 - **No leaked internals.** A global exception handler logs full tracebacks
@@ -140,14 +140,14 @@ Python and Rust only: there is no Docker image, by design.
 - **WAL-mode SQLite** so reads aren't blocked by an in-flight write —
   matters once more than one request can be in flight (multi-worker
   gunicorn), not just single-user local dev.
-- `deploy/scholarpi.service`
+- `back/deploy/scholarpi.service`
   includes basic systemd sandboxing (`ProtectSystem=strict`,
   `NoNewPrivileges=true`).
 - **Pinned, trimmed dependencies** (`requirements.txt`) — compatible-release
   version ranges instead of unpinned `latest`, and five packages that were
   listed but never actually imported anywhere in the codebase (`pandas`,
   `torchvision`, `beautifulsoup4`, `tabulate`, `groq`) were dropped.
-- **Automated tests** (`backend/tests/`, run via `pytest`) covering the
+- **Automated tests** (`back/tests/`, run via `pytest`) covering the
   deterministic scoring engine and the database layer, wired into CI
   (`.github/workflows/tests.yml`) so regressions get caught on every push.
 
@@ -174,7 +174,7 @@ Python and Rust only: there is no Docker image, by design.
 ## 4. Testing
 
 ```bash
-cd backend
+cd back
 pip install -r requirements-dev.txt
 pytest tests/ -v
 ```
@@ -193,7 +193,7 @@ every push/PR.
 
 | Feature | Route |
 |---|---|
-| Sidebar (wallet, ORCID, live logs, Scilem chat) | `frontend/index.html` sidebar + `/api/auth/*`, `/api/logs`, `/api/scilem/*` |
+| Sidebar (wallet, ORCID, live logs, Scilem chat) | `front/index.html` sidebar + `/api/auth/*`, `/api/logs`, `/api/scilem/*` |
 | Assess Manuscript (local PDF or DOI lookup) | "Assess Manuscript" tab + `POST /api/assess/stream` (NDJSON progress stream) |
 | pi-Dyne LSTM forecast | "Analytics & Map" tab + `GET /api/forecast` |
 | Map of Science | Same tab, rendered client-side with `vis-network` from `GET /api/analytics/map` |
@@ -202,8 +202,8 @@ every push/PR.
 | Architecture | "Architecture" tab, static description |
 | Defense strategy / criterion detail modals | Modal popups, backed by `/api/defense-strategy` |
 | Health check | `GET /api/health` |
-| Zotero plugin | download https://pitechlab.com/zotero/scholarpi.xpi, then in Zotero 7: Tools → Plugins → ⚙ → Install Plugin From File. Adds a piX column and a ScholarPi item section. Source in `zotero/`; `python scripts/tools.py zotero` rebuilds it |
-| Background cron worker | `python backend/api.py cron`, or `.github/workflows/cron.yml` |
+| Zotero plugin | download https://pitechlab.com/zotero/scholarpi.xpi, then in Zotero 7: Tools → Plugins → ⚙ → Install Plugin From File. Adds a piX column and a ScholarPi item section. Source in `back/zotero/`; `python back/scripts/tools.py zotero` rebuilds it |
+| Background cron worker | `python back/api.py cron`, or `.github/workflows/cron.yml` |
 
 ## 6. First-run notes
 
@@ -219,12 +219,12 @@ every push/PR.
 
 Two licenses (see [LICENSE](LICENSE)):
 
-- **The science engines are open source** under the [GNU AGPL 3.0](LICENSES/AGPL-3.0-only.txt): the Pi-Index
-  rubric and the assessment pipeline, now all in `backend/api.py` (the whole server is one file, so that file as
-  a whole is AGPL-3.0-only) and the constants in Rust (`rust/numbers/`). Use, study, change and share them; if you run a changed
+- **The science engines are open source** under the [GNU AGPL 3.0](back/LICENSES/AGPL-3.0-only.txt): the Pi-Index
+  rubric and the assessment pipeline, now all in `back/api.py` (the whole server is one file, so that file as
+  a whole is AGPL-3.0-only) and the constants in Rust (`back/rust/numbers/`). Use, study, change and share them; if you run a changed
   version as a service, offer its users your source.
 - **The website and its design are proprietary**, all rights reserved
-  ([Pi Tech Lab Proprietary License](LICENSES/LicenseRef-PiTechLab-Proprietary.txt)): the front end, its look, the
+  ([Pi Tech Lab Proprietary License](back/LICENSES/LicenseRef-PiTechLab-Proprietary.txt)): the front end, its look, the
   SuperAI language and its engines, and the platform that runs the service.
 - Third-party work keeps its own license, beside it.
 
@@ -239,55 +239,56 @@ ScholarPi runs as two copies of this repository:
 |---|---|---|---|
 | https://pitechlab.com | `main` | production | Stable. Real users, real data. |
 | https://exp.pitechlab.com | `experimental` | experimental | Evolves constantly. May break. Separate data volume. |
-| https://se.pitechlab.com (also super.pitechlab.com) | `super` | its own environment | The superellipse site (`frontend/superellipse.css`, on by host name `se.*` or `super.*`, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). Deploys alone from `super`, branched from `experimental` on 2026-10-10. Changes the owner asks for on se. go to `super`. |
+| https://se.pitechlab.com (also super.pitechlab.com) | `super` | its own environment | The superellipse site (`front/superellipse.css`, on by host name `se.*` or `super.*`, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). Deploys alone from `super`, branched from `experimental` on 2026-10-10. Changes the owner asks for on se. go to `super`. |
 
 ### Rules for Claude
 
 1. **Work on `experimental`.** Branch from it, commit to it, and push to it when the owner asks for changes. That deploys to exp.pitechlab.com automatically.
 2. **Never push to `main`, and never merge into it, without the owner explicitly saying so in that conversation.** Promoting means merging `experimental` into `main` after the owner has looked at the experimental site.
 3. **Before every push, run:**
-   - `cd backend && python -m pytest -q`: compare against the known baseline. Do not add new failures. The tests import `api` (as the old module names: `import api as brain`).
-   - `python scripts/tools.py build-hal --src ../HAL-OS`: refuses to build if `frontend/hal/wire.js` and HAL-OS disagree.
+   - `cd back && python -m pytest -q`: compare against the known baseline. Do not add new failures. The tests import `api` (as the old module names: `import api as brain`).
+   - `python back/scripts/tools.py build-hal --src ../HAL-OS`: refuses to build if `front/hal/wire.js` and HAL-OS disagree.
    - Load the site in a browser at desktop and 390 px width: no page errors, no horizontal scroll.
-4. **The repository is public.** Never commit secrets, `.env` files, or anything from private projects (those live on the server volume; see `backend/lab.py`).
-5. **Keep the design language** in `frontend/theme.css`:
+4. **The repository is public.** Never commit secrets, `.env` files, or anything from private projects (those live on the server volume; see `back/lab.py`).
+5. **Keep the design language** in `front/theme.css`:
    - ink on paper, with one cobalt accent for "here / interactive"
    - status colours muted
    - Geist type, sentence case
    - the π circle as the only ornament
 
    Change it deliberately, not by accident.
-6. **Python and Rust only; no Docker, no Java** (owner, 2026-10-13). Railway builds with Nixpacks (`railway.toml`, `nixpacks.toml`: the Python provider installs `requirements.txt`, the build phase fetches the pinned HAL-OS commit and runs `scripts/tools.py build-hal`, the start command is gunicorn with `backend/gunicorn.conf.py`, which chdirs into `backend/` itself). The Dockerfile, docker-compose, the entrypoint script, the Java client and the Solidity/ZK artifacts (`.sol`, `.zok`, keys, `abi.json`) are gone; `backend/ledger.py` carries the contract ABIs it needs inline. `python scripts/tools.py run` runs it locally (`run --lab` builds HAL-OS and serves private projects as production does). The browser still runs JavaScript (the front end's modules) and the SuperAI engine compiled from Rust to WebAssembly.
+6. **Python and Rust only; no Docker, no Java** (owner, 2026-10-13). Railway builds with Nixpacks (`railway.toml`, `nixpacks.toml`: the Python provider installs `requirements.txt`, the build phase fetches the pinned HAL-OS commit and runs `back/scripts/tools.py build-hal`, the start command is gunicorn with `back/gunicorn.conf.py`, which chdirs into `back/` itself). The Dockerfile, docker-compose, the entrypoint script, the Java client and the Solidity/ZK artifacts (`.sol`, `.zok`, keys, `abi.json`) are gone; `back/ledger.py` carries the contract ABIs it needs inline. `python back/scripts/tools.py run` runs it locally (`run --lab` builds HAL-OS and serves private projects as production does). The browser still runs JavaScript (the front end's modules) and the SuperAI engine compiled from Rust to WebAssembly.
 7. **Prefer Python** (owner, 2026-10-13: "always use py language more"): put new logic in Python on the server whenever it can live there; JavaScript only for what must run in the browser (drawing, gestures, the page's own state), and keep it thin, calling the Python API.
-8. **Two licenses** (LICENSE, owner, 2026-10-13: "its science-related engines are public open source, but its website design is owned by me only"): the science engines are AGPL-3.0-only (rust/numbers, and backend/api.py, which now holds them: the rubric, brain, providers, scientometrics, attribution, security, extraction, integrations, http_client, diagnostics and ledger sections; since the whole server is that one file, the file as a whole is AGPL-3.0-only). Everything else, the website and its design above all, is `LicenseRef-PiTechLab-Proprietary` (LICENSES/): never add an open-source license header or a permissive `license =` to it. Third-party code keeps its own license file beside it.
-9. **One file per language, and the front end is one file** (owner, 2026-10-13: "put everything in one file, all .py in one .py, all .js in one .js etc", then "merge everything in front end into one thing"): the server is `backend/api.py`, the build and run scripts are `scripts/tools.py`, and the whole front end is `frontend/index.html`: its styles, the page's script, the SuperAI engine's binding and the web workers (script blocks started as blobs by `window.inlineWorker`) inline, each part under a banner naming the file it was; the file names used in this document (super/nodes.js, orbit.css, core.py, routes/…) name those sections. Add new code to the right section, not a new file. Still files: gunicorn.conf.py, the tests, WebAssembly, fonts, images, sound, the vendored libraries, the separate pages (hal/, quvi/, confirm/, learn/, which carries its own copy of the engine's binding) and the Zotero plugin (zotero/). The program (super/pitechlab.sasm) is assembled into a marked region of index.html by `python scripts/tools.py build-program`. index.html is served gzipped with an ETag (no-cache, 304 when unchanged).
+8. **Two licenses** (LICENSE, owner, 2026-10-13: "its science-related engines are public open source, but its website design is owned by me only"): the science engines are AGPL-3.0-only (back/rust/numbers, and back/api.py, which now holds them: the rubric, brain, providers, scientometrics, attribution, security, extraction, integrations, http_client, diagnostics and ledger sections; since the whole server is that one file, the file as a whole is AGPL-3.0-only). Everything else, the website and its design above all, is `LicenseRef-PiTechLab-Proprietary` (back/LICENSES/): never add an open-source license header or a permissive `license =` to it. Third-party code keeps its own license file beside it.
+10. **Two folders** (owner, 2026-10-13: "merge everything into front, back, folders only"): `front/` is everything the browser gets (index.html, the separate pages, WebAssembly, fonts, vendored libraries, the Zotero download); `back/` is everything else (api.py and its tests, gunicorn.conf.py, scripts/tools.py, the Rust crates, the Zotero plugin's source, the deploy examples, the licence texts). At the root stay only what Railway and GitHub read there (nixpacks.toml, railway.toml, requirements.txt, runtime.txt, .github/, .gitignore), LICENSE and this README.
+9. **One file per language, and the front end is one file** (owner, 2026-10-13: "put everything in one file, all .py in one .py, all .js in one .js etc", then "merge everything in front end into one thing"): the server is `back/api.py`, the build and run scripts are `back/scripts/tools.py`, and the whole front end is `front/index.html`: its styles, the page's script, the SuperAI engine's binding and the web workers (script blocks started as blobs by `window.inlineWorker`) inline, each part under a banner naming the file it was; the file names used in this document (super/nodes.js, orbit.css, core.py, routes/…) name those sections. Add new code to the right section, not a new file. Still files: gunicorn.conf.py, the tests, WebAssembly, fonts, images, sound, the vendored libraries, the separate pages (hal/, quvi/, confirm/, learn/, which carries its own copy of the engine's binding) and the Zotero plugin (back/zotero/). The program (super/pitechlab.sasm) is assembled into a marked region of index.html by `python back/scripts/tools.py build-program`. index.html is served gzipped with an ETag (no-cache, 304 when unchanged).
 
 ### Layout
 
-Since 2026-10-13 each language is one file (rule 9): `backend/api.py`, `scripts/tools.py`, `frontend/app.js`, `frontend/style.css`. The map below names the sections inside them by the files they were.
+Since 2026-10-13 each language is one file (rule 9): `back/api.py`, `back/scripts/tools.py`, `front/app.js`, `front/style.css`. The map below names the sections inside them by the files they were.
 
 ```
-backend/        FastAPI app: core.py (the app, configuration, logging, the database, the gate, rate limits, startup) + routes/ (one APIRouter per concern: meta, auth, piq, chain, status, identity, arcade, visits, profile, assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem, forecast, analytics, explorer; `from core import *` plus explicit imports between routers, no cycles) + api.py (assembles them, re-exports every name for idle_worker and the tests; gunicorn runs api:app), Lab private projects (lab.py),
+back/        FastAPI app: core.py (the app, configuration, logging, the database, the gate, rate limits, startup) + routes/ (one APIRouter per concern: meta, auth, piq, chain, status, identity, arcade, visits, profile, assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem, forecast, analytics, explorer; `from core import *` plus explicit imports between routers, no cycles) + api.py (assembles them, re-exports every name for idle_worker and the tests; gunicorn runs api:app), Lab private projects (lab.py),
                 permission requests (consent.py), signed-in layout sync (layout.py),
                 PiEN shared model (pien.py), recent assessments (recent.py), RiBD suggestions (rib_suggest.py), Live panel feed (live.py), idle auto-assessment (idle_worker.py), website traffic by day (traffic.py), the Super Neural Engine's one-prompt-every-engine endpoint, the "?" panel of AI jurors with a judge, and the super prompt box's per-engine endpoints /api/super/engines, /one and /weigh (super_engine.py), the site password (gate.py), the deployment's look (shape.py: SCHOLARPI_SHAPE=superellipse stamps shape-se into index.html on the way out, so a first visit lays out the superellipse site before the first paint instead of learning it from /api/build after the modules had laid out the round look), tests/
-frontend/       index.html, app.js (the app), vendor/three (three.js r185, the superellipse look's graphics engine, see vendor/README.md), style.css + theme.css (look),
-                orbit.js + orbit.css (orbit layout around the centre mark; scroll sizes the mark from a 4 px dot to a backdrop covering the page; curved wires between bubbles that you disconnect by clicking and connect by dragging from a bubble's handle, kept as orbit:wires; the main loop (the mark, "π" in orbit:wires) is a wire end too: drop on its edge, the counter or the mark, or drag from its edge; diagram nodes can take it as an input), pi-worker.js (live π digits), pien.js (PiEn, the mark that learns), numbers.js + consts-worker.js (π and friends: e, φ, γ), capabilities.js (the Capabilities pill), architecture.js (the Architecture flowchart), peeks.js (glimpses inside pills), recent.js (Recent assessments), intern.js (the Intern pill), performance.js (the simple Performance window), unigyro.js + unigyro.css (Unigyro, by Murtaza Vefadar; source: neurophilic/Unigyro, `python scripts/sync_unigyro.py --src ../Unigyro`), neurofrenzy.js + neurofrenzy.css + sound/neurofrenzy.mp3 (Neuro Frenzy, a game in the Library bubble with looping music and a mute toggle; from neurophilic/NeuroGame), facemace.js + facemace.css + facemace/ (FaceMace, sort photos by face; port of neurophilic/FaceID), medicine.js + medicine/ (MD, a public grade-free graduation plan in the Library bubble; never add grades, passed-exam dates or averages), ribsuggest.js (RiBD: papers to read and hot topics), live.js + live.css (the Live panel fixed to the right side), download.js (the dossier's Download paper button), traffic.js + traffic.css (website traffic in the Analytics window), superprompt.js + superprompt.css (SuperPrompt.run(question) asks every engine at once, the lab's siM, riB, piD and PiEn and the outside models Llama, Mistral, Qwen, Gemini and DeepSeek, one request each to /api/super/one, then the judge weighs the outside answers via /api/super/weigh; SuperPrompt.open shows a run's cards; the box itself is the round look's, opened by a double click on empty space),
+front/       index.html, app.js (the app), vendor/three (three.js r185, the superellipse look's graphics engine, see vendor/README.md), style.css + theme.css (look),
+                orbit.js + orbit.css (orbit layout around the centre mark; scroll sizes the mark from a 4 px dot to a backdrop covering the page; curved wires between bubbles that you disconnect by clicking and connect by dragging from a bubble's handle, kept as orbit:wires; the main loop (the mark, "π" in orbit:wires) is a wire end too: drop on its edge, the counter or the mark, or drag from its edge; diagram nodes can take it as an input), pi-worker.js (live π digits), pien.js (PiEn, the mark that learns), numbers.js + consts-worker.js (π and friends: e, φ, γ), capabilities.js (the Capabilities pill), architecture.js (the Architecture flowchart), peeks.js (glimpses inside pills), recent.js (Recent assessments), intern.js (the Intern pill), performance.js (the simple Performance window), unigyro.js + unigyro.css (Unigyro, by Murtaza Vefadar; source: neurophilic/Unigyro, `python back/scripts/sync_unigyro.py --src ../Unigyro`), neurofrenzy.js + neurofrenzy.css + sound/neurofrenzy.mp3 (Neuro Frenzy, a game in the Library bubble with looping music and a mute toggle; from neurophilic/NeuroGame), facemace.js + facemace.css + facemace/ (FaceMace, sort photos by face; port of neurophilic/FaceID), medicine.js + medicine/ (MD, a public grade-free graduation plan in the Library bubble; never add grades, passed-exam dates or averages), ribsuggest.js (RiBD: papers to read and hot topics), live.js + live.css (the Live panel fixed to the right side), download.js (the dossier's Download paper button), traffic.js + traffic.css (website traffic in the Analytics window), superprompt.js + superprompt.css (SuperPrompt.run(question) asks every engine at once, the lab's siM, riB, piD and PiEn and the outside models Llama, Mistral, Qwen, Gemini and DeepSeek, one request each to /api/super/one, then the judge weighs the outside answers via /api/super/weigh; SuperPrompt.open shows a run's cards; the box itself is the round look's, opened by a double click on empty space),
                 super/ (the superellipse look, se.pitechlab.com / super.pitechlab.com and, since 2026-10-12, pitechlab.com; one rule book, below),
                 lab.js (Lab tab), channel.js (experimental banner),
-                hal/ (HAL-OS web portal + v86 emulator; boots to the HAL-OS> shell, hal/shell/shell.asm -> hal/shell.img via `python scripts/build_hal_shell.py`, needs nasm; its `hal` command starts the network), confirm/ (permission-request page),
-                quvi/ (browser port of Murtaza Vefadar's QuVI; `node frontend/quvi/engine.test.mjs`)
-rust/numbers/   the site's constants in Rust (π by Machin, e, φ, γ by Brent–McMillan; base-10⁹ big numbers with exact long division; no dependencies, no_std for wasm32, a size-class allocator so long series reuse memory): `cargo test`, then `python scripts/build_superai.py --crate numbers --build-std` writes frontend/numbers.wasm (committed); pi-worker.js and consts-worker.js are now thin loaders that pace its digits out
-rust/superai/   the SuperAI language in Rust (no dependencies; no_std for wasm32): json.rs, asm.rs (the assembly), vm.rs (the stack machine), lang.rs (supers, wires, dataflow, the operators, the engine super), math.rs, the `superai` command (JSON request in, JSON answer out); `cargo test` in rust/superai, then `python scripts/build_superai.py` (add `--build-std` where the wasm32 target cannot be downloaded: it builds core and alloc from rust-src) writes frontend/super/superai.wasm, which is committed
-scripts/        tools.py: build-program (pitechlab.sasm into app.js's program region), build-superai (the SuperAI engine to WebAssembly), build-hal (HAL-OS's boot image from its own repo), build-hal-shell (the HAL-OS shell image; `--check` verifies it matches the source), sync-unigyro (Unigyro from its own repo), whitepaper, run
+                hal/ (HAL-OS web portal + v86 emulator; boots to the HAL-OS> shell, hal/shell/shell.asm -> hal/shell.img via `python back/scripts/build_hal_shell.py`, needs nasm; its `hal` command starts the network), confirm/ (permission-request page),
+                quvi/ (browser port of Murtaza Vefadar's QuVI; `node front/quvi/engine.test.mjs`)
+back/rust/numbers/   the site's constants in Rust (π by Machin, e, φ, γ by Brent–McMillan; base-10⁹ big numbers with exact long division; no dependencies, no_std for wasm32, a size-class allocator so long series reuse memory): `cargo test`, then `python back/scripts/build_superai.py --crate numbers --build-std` writes front/numbers.wasm (committed); pi-worker.js and consts-worker.js are now thin loaders that pace its digits out
+back/rust/superai/   the SuperAI language in Rust (no dependencies; no_std for wasm32): json.rs, asm.rs (the assembly), vm.rs (the stack machine), lang.rs (supers, wires, dataflow, the operators, the engine super), math.rs, the `superai` command (JSON request in, JSON answer out); `cargo test` in back/rust/superai, then `python back/scripts/build_superai.py` (add `--build-std` where the wasm32 target cannot be downloaded: it builds core and alloc from rust-src) writes front/super/superai.wasm, which is committed
+back/scripts/        tools.py: build-program (pitechlab.sasm into app.js's program region), build-superai (the SuperAI engine to WebAssembly), build-hal (HAL-OS's boot image from its own repo), build-hal-shell (the HAL-OS shell image; `--check` verifies it matches the source), sync-unigyro (Unigyro from its own repo), whitepaper, run
 ```
 
-### The superellipse look (frontend/super/): the rule book
+### The superellipse look (front/super/): the rule book
 
-The front end is a **SuperAI program**: `super/pitechlab.super.js` (plain JSON-compatible data) says what exists and how it is wired; `super/runtime.js` loads it as `SuperAI.program` (or the visitor's edited copy, `superai:program`, when it passes `SuperAI.validate`), and `super/superai-rs.js` runs the language's own engine, written in Rust (`rust/superai`, built to `super/superai.wasm` by `scripts/build_superai.py`; `node frontend/super/superai.test.mjs` tests it). The program's parts: `sources` (native blocks: parts of index.html whose cards become windows), `titles`, `hide`, `merges`, `bubbles` (what each bubble holds, and `at`, where it starts), `diagram` (the supers and wires a first visit starts with: `supers` with kind, text, hint, size, at, everywhere, desktop; `wires` as "super.port" pairs, where "site" is the inner super, "main" the main super, "title" the title super and "bubble:Title" a bubble), `live` (the Live window's source, refresh and the functions that write its lines), `functions` (small parts of the site written in SuperAI and run by the Rust engine: percent, ago, liveStatus, liveCounts, add; `SuperAI.call(name, inputs)`) and `project` (the project map). Change the site's structure in the program, not in the modules; the windows' insides stay native.
+The front end is a **SuperAI program**: `super/pitechlab.super.js` (plain JSON-compatible data) says what exists and how it is wired; `super/runtime.js` loads it as `SuperAI.program` (or the visitor's edited copy, `superai:program`, when it passes `SuperAI.validate`), and `super/superai-rs.js` runs the language's own engine, written in Rust (`back/rust/superai`, built to `super/superai.wasm` by `back/scripts/build_superai.py`; `node front/super/superai.test.mjs` tests it). The program's parts: `sources` (native blocks: parts of index.html whose cards become windows), `titles`, `hide`, `merges`, `bubbles` (what each bubble holds, and `at`, where it starts), `diagram` (the supers and wires a first visit starts with: `supers` with kind, text, hint, size, at, everywhere, desktop; `wires` as "super.port" pairs, where "site" is the inner super, "main" the main super, "title" the title super and "bubble:Title" a bubble), `live` (the Live window's source, refresh and the functions that write its lines), `functions` (small parts of the site written in SuperAI and run by the Rust engine: percent, ago, liveStatus, liveCounts, add; `SuperAI.call(name, inputs)`) and `project` (the project map). Change the site's structure in the program, not in the modules; the windows' insides stay native.
 
-**Drawn by three.js** (owner, 2026-10-12: "use an open source graphical engine"; super/engine.js, three.js r185 vendored in frontend/vendor/three, MIT): one WebGL canvas under the page draws the light behind the glass, the main and inner supers, every super's frosted pane (from its superellipse distance field: fill, ink edge, iridescent sheen when hovered or selected, soft shadow), every wire (strips sampled from the wires' own svg paths, dots flowing on hover), the lattice and every port sparkle; the page's elements keep their size, place and behaviour and stop painting their chrome (html.se-gl, super/glass.css). A software renderer (no graphics processor) or frames slower than 28 ms fall back to the CSS glass look; `?gl=1` forces the engine (tests here run without a GPU, so use it to see the engine).
+**Drawn by three.js** (owner, 2026-10-12: "use an open source graphical engine"; super/engine.js, three.js r185 vendored in front/vendor/three, MIT): one WebGL canvas under the page draws the light behind the glass, the main and inner supers, every super's frosted pane (from its superellipse distance field: fill, ink edge, iridescent sheen when hovered or selected, soft shadow), every wire (strips sampled from the wires' own svg paths, dots flowing on hover), the lattice and every port sparkle; the page's elements keep their size, place and behaviour and stop painting their chrome (html.se-gl, super/glass.css). A software renderer (no graphics processor) or frames slower than 28 ms fall back to the CSS glass look; `?gl=1` forces the engine (tests here run without a GPU, so use it to see the engine).
 
-**Everything is a super**, drawn the same way (super/super.css, the uniform block at its end; the material in super/glass.css): frosted glass over a deep warm light drifting slowly behind the page, amber, honey and sage with a soft vignette, embers and a fine grain (owner, 2026-10-12: "add this glass effect", "improve the glass ui"); each pane has a bright bevel along its top, a faint prism split at its edge and a wide warm shadow; every rounded corner on the page, inside windows too, is a superellipse corner (owner: "make everything superellipses, not round corners"; super/super.css :where(*) rule, and the drawings' boxes are superellipse paths), with an iridescent sheen running round the edge of the hovered or selected super, a 1.5 px ink edge, a superellipse at n = π (Shift + scroll gives one its own n, kept as se:n:<name>), four port sparkles on its sides (input left, output right, sync top, condition bottom; super/site.js places them and reads their values), a lock at its lower right (super/lock.js: a scroll in on it locks, out unlocks; locked, what is inside stays inside and it goes into no other super; se:lock:<name>), and the same hover (a hint of cobalt on its edge) and selection (a click, a cobalt edge; super/select.js: the supers nest and one is selected at a time). The supers: the **main super** (the loop round everything, super/loop.js: its ports a little inside the display's edge), the **inner super** (the site, super/site.js: locked in place and as big as the main super lets, its edge just inside the main super's side ports and just clear of the title super, super/loop.js siteMargins; no zoom, no drag), the **title super** ("pi tech lab" on one line, top-left corner, super/logo.js; a scroll on it resets the view once the view has changed; the 0 key too), the **bubbles** (Lab, Library, Tools, Explore, Connect; expandable, super/bubble.js: compact, a square of side --se-compact, the largest of which ten fit in the inner super (super/loop.js compactSide), with a small drawing of its name wired to its windows; every scroll step grows it a little toward its open size, its drawing giving way to its name and pills, and back (super/bubble.js zoom, --sb-t); open, it is its drawing grown up (owner, 2026-10-12): its name in a box on the left wired by soft curves (super/bubble.js links) to one labelled box per window in a column on the right, words never under 12 px; a scroll out on a pill shrinks the bubble; a wire dropped on it opens it; a scroll in on one of its pills expands that pill into its window; se:bubble:<key>), the **windows** (open at one uniform width in the middle of the inner super and no taller than their content (desktop; super/zoombox.js fitHeight), no bar: the content's own title shows and the window moves by the blank margin inside its edge; content fitted whole and zoomed, never scrolled, super/zoombox.js), the **project super** (the whole project as a SuperAI program, super/project.js: compact it is the same species as a bubble, drawn by the same function (SeBubble.drawing: its name's box, "Project", wired to a box per section); every scroll step grows it a little, the bubble drawing fading as the map comes in (--pj-map), until it fills the inner super, and scrolled on past that it shows the running program to edit; it drags and follows its ports as a bubble does), and the **Super AI supers** (super/nodes.js: the central one, id site-box, says "run"; a double click on bare space makes one that says "prompt" (windows open or not); type a question and Enter asks every engine, but only when it is connected to run by wires or sits inside it (connectedToRun), else it shows its question and says to connect it first; numbers and operators compute locally (2, 3 → + is 5; 3, 5 with + attached is 8; a word typed into a super is its label, not a question, unless it ends with "?": "math" with 4 and 3 wired in and + attached at any of its sparkles shows 7, and "show result" wired from it shows 7 too; a Super AI super takes what is wired to any of its sparkles as an input, a wire from another super's sync or condition sparkle carrying that super's result, data flowing from an output or else the way the wire was drawn; the site's and the main super's ports are the lattice, not data; an attached operator super is its operation; rust/superai lang.rs engine() agrees); a ■ scrolled past 150 px is a holder that holds supers (see-through; inside it is like the page; it moves by its label strip or edge); its n is the one it was made with until Shift + scroll gives it another (owner, 2026-10-13: "remove the rule of usage = super's n": it no longer follows size or use); Shift + scroll on a Super AI super or a holder changes only its shape).
+**Everything is a super**, drawn the same way (super/super.css, the uniform block at its end; the material in super/glass.css): frosted glass over a deep warm light drifting slowly behind the page, amber, honey and sage with a soft vignette, embers and a fine grain (owner, 2026-10-12: "add this glass effect", "improve the glass ui"); each pane has a bright bevel along its top, a faint prism split at its edge and a wide warm shadow; every rounded corner on the page, inside windows too, is a superellipse corner (owner: "make everything superellipses, not round corners"; super/super.css :where(*) rule, and the drawings' boxes are superellipse paths), with an iridescent sheen running round the edge of the hovered or selected super, a 1.5 px ink edge, a superellipse at n = π (Shift + scroll gives one its own n, kept as se:n:<name>), four port sparkles on its sides (input left, output right, sync top, condition bottom; super/site.js places them and reads their values), a lock at its lower right (super/lock.js: a scroll in on it locks, out unlocks; locked, what is inside stays inside and it goes into no other super; se:lock:<name>), and the same hover (a hint of cobalt on its edge) and selection (a click, a cobalt edge; super/select.js: the supers nest and one is selected at a time). The supers: the **main super** (the loop round everything, super/loop.js: its ports a little inside the display's edge), the **inner super** (the site, super/site.js: locked in place and as big as the main super lets, its edge just inside the main super's side ports and just clear of the title super, super/loop.js siteMargins; no zoom, no drag), the **title super** ("pi tech lab" on one line, top-left corner, super/logo.js; a scroll on it resets the view once the view has changed; the 0 key too), the **bubbles** (Lab, Library, Tools, Explore, Connect; expandable, super/bubble.js: compact, a square of side --se-compact, the largest of which ten fit in the inner super (super/loop.js compactSide), with a small drawing of its name wired to its windows; every scroll step grows it a little toward its open size, its drawing giving way to its name and pills, and back (super/bubble.js zoom, --sb-t); open, it is its drawing grown up (owner, 2026-10-12): its name in a box on the left wired by soft curves (super/bubble.js links) to one labelled box per window in a column on the right, words never under 12 px; a scroll out on a pill shrinks the bubble; a wire dropped on it opens it; a scroll in on one of its pills expands that pill into its window; se:bubble:<key>), the **windows** (open at one uniform width in the middle of the inner super and no taller than their content (desktop; super/zoombox.js fitHeight), no bar: the content's own title shows and the window moves by the blank margin inside its edge; content fitted whole and zoomed, never scrolled, super/zoombox.js), the **project super** (the whole project as a SuperAI program, super/project.js: compact it is the same species as a bubble, drawn by the same function (SeBubble.drawing: its name's box, "Project", wired to a box per section); every scroll step grows it a little, the bubble drawing fading as the map comes in (--pj-map), until it fills the inner super, and scrolled on past that it shows the running program to edit; it drags and follows its ports as a bubble does), and the **Super AI supers** (super/nodes.js: the central one, id site-box, says "run"; a double click on bare space makes one that says "prompt" (windows open or not); type a question and Enter asks every engine, but only when it is connected to run by wires or sits inside it (connectedToRun), else it shows its question and says to connect it first; numbers and operators compute locally (2, 3 → + is 5; 3, 5 with + attached is 8; a word typed into a super is its label, not a question, unless it ends with "?": "math" with 4 and 3 wired in and + attached at any of its sparkles shows 7, and "show result" wired from it shows 7 too; a Super AI super takes what is wired to any of its sparkles as an input, a wire from another super's sync or condition sparkle carrying that super's result, data flowing from an output or else the way the wire was drawn; the site's and the main super's ports are the lattice, not data; an attached operator super is its operation; back/rust/superai lang.rs engine() agrees); a ■ scrolled past 150 px is a holder that holds supers (see-through; inside it is like the page; it moves by its label strip or edge); its n is the one it was made with until Shift + scroll gives it another (owner, 2026-10-13: "remove the rule of usage = super's n": it no longer follows size or use); Shift + scroll on a Super AI super or a holder changes only its shape).
 
 **The start since se:start 20** (owner, 2026-10-13: "make the initial state as you desire"; pack.js START and the diagram in pitechlab.sasm): a welcome super at the second super's top left saying in one sentence what ScholarPi is and to start with Tools (a ■ with words shows them, super/define.js; a text super with a size of its own keeps it, nodes.css, its type big enough to clear legible.js at the start's zoom); Tools open under it; Connect folded below Tools; the third super on the right holding Explore and Library above, Lab and the project below, as squares big enough to read; wires: the site's own, Tools to Explore to Library, Lab to the project, save into Tools, lock into the second super; the demonstration wiring into if, then and the timer (and its small square) is gone. Phones keep their stacked start. The paragraph below is the start before it.
 
@@ -299,9 +300,9 @@ The front end is a **SuperAI program**: `super/pitechlab.super.js` (plain JSON-c
 
 **SuperAI is drawn, like LabVIEW** (super/define.js, owner, 2026-10-13: "make this super language a graphical language like a LabVIEW that can be used to write new, functioning supers"; "just the front end"): a holder named `super NAME` (or `def NAME`) is a definition; inside it supers typed `in` (or `in a`, `in b`, top to bottom) are its inputs and one typed `out` its output (else the holder's input and output ports, else the super nothing inside takes from); a condition wire holds a super while false. What is drawn compiles to the language's `{ supers, wires }` (`LabView.graphOf`) after each edit (never while the page loads or the start is still re-laid, `se:touched`) and is kept as `superai:defs`. Any super with NAME typed in runs it on what is wired in; definitions call one another and themselves (a condition ends recursion). New words: `≠`, `select` (condition, then, else), `repeat F` (x, n), `while F T` (x), `count` (+1 per sync tick or run; condition false holds), `keep` (remembers the last value, kept in lv:nodes `mem`), `supers` (lists them), `export` (Enter or the open control: downloads `my-supers.sasm`, the language's text form, for pitechlab.sasm). Numbers and operators compute in any super, whatever its shape; a square's words are text, a prompt's words a question. The Rust engine does not know the new words yet: they run in JavaScript (the wasm32 target could not be installed to rebuild superai.wasm).
 
-**Asking first** (super/consent.js + consent.css, owner, 2026-10-13: "add ask for permission what site is doing with users when site loads", "use cookies"): a first visit (no `pi_consent` cookie, or an older version of the notice) shows what the site does: always on (layout in the browser, sign-in session and account layout, IP for rate limits, the cookie) and three choices, unticked until chosen, and "Reject all" in blue beside "Accept all" (as easy to refuse as to accept): count my visit (`POST /api/visit`), help PiEn learn (`/api/pien/learn`), outside AI providers (llama, mistral, qwen, gemini, deepseek; off also turns off assessment, the panel and the AI reviewer, whose jurors are outside). Until a choice, nothing optional is sent. The cookie `pi_consent=v1.cX.lX.eX` (a year, SameSite=Lax, Secure on https) can be read by the server; the page enforces it in requests.js, which never sends a declined request and lists it as declined. Change what the notice says → bump its version so everyone is asked again. **The server honours it too** (backend/cookies.py, owner, 2026-10-13: "add use of cookies for the site and its permissions"): a middleware answers a declined visit count or PiEn lesson as done without doing it, and refuses with 403 the assessment, the panel, the weigh, the AI reviewer and an outside engine in /api/super/one (super_engine.py) when the cookie says no to outside providers; with no cookie at all it serves as before (API clients, tests), and a failure inside the check never blocks a request. `GET /api/cookies` lists every cookie and storage key the site uses (cookies.py COOKIES and STORAGE): the notice shows that list, so add a cookie or storage key there when the site starts using one, and keep cookies.py RULES and consent.js `allows` in step.
+**Asking first** (super/consent.js + consent.css, owner, 2026-10-13: "add ask for permission what site is doing with users when site loads", "use cookies"): a first visit (no `pi_consent` cookie, or an older version of the notice) shows what the site does: always on (layout in the browser, sign-in session and account layout, IP for rate limits, the cookie) and three choices, unticked until chosen, and "Reject all" in blue beside "Accept all" (as easy to refuse as to accept): count my visit (`POST /api/visit`), help PiEn learn (`/api/pien/learn`), outside AI providers (llama, mistral, qwen, gemini, deepseek; off also turns off assessment, the panel and the AI reviewer, whose jurors are outside). Until a choice, nothing optional is sent. The cookie `pi_consent=v1.cX.lX.eX` (a year, SameSite=Lax, Secure on https) can be read by the server; the page enforces it in requests.js, which never sends a declined request and lists it as declined. Change what the notice says → bump its version so everyone is asked again. **The server honours it too** (back/cookies.py, owner, 2026-10-13: "add use of cookies for the site and its permissions"): a middleware answers a declined visit count or PiEn lesson as done without doing it, and refuses with 403 the assessment, the panel, the weigh, the AI reviewer and an outside engine in /api/super/one (super_engine.py) when the cookie says no to outside providers; with no cookie at all it serves as before (API clients, tests), and a failure inside the check never blocks a request. `GET /api/cookies` lists every cookie and storage key the site uses (cookies.py COOKIES and STORAGE): the notice shows that list, so add a cookie or storage key there when the site starts using one, and keep cookies.py RULES and consent.js `allows` in step.
 
-**Server request indicator** (super/requests.js + requests.css, owner, 2026-10-13: "create server request indicators"; trust that users' data and AI are not abused; "this is shown in the owner page only"): shown only once `/api/auth/session` says the owner is signed in (checked every 30 s); everyone else sees only "Privacy choices" in its place, which reopens the notice. It is a super by itself inside the main canvas (owner, 2026-10-13): drawn by the engine like the controls (engine.js KINDS), with four ports (owner `ctl:privacy`, site.js), seated at the main super's bottom-left inside its edge and above the conditions bar; a click or a wire that opens it opens the choices (controls.js openOne). Loaded first in <head>, it wraps fetch, XMLHttpRequest and sendBeacon and shows every request in a corner chip (bottom left, lifted above the conditions bar): a light while one is out, counts of requests, AI calls and saves; hover or focus lists each one: time, read / sent your data / to AI (which model, ours or an outside provider by name), path only (never query values or bodies), bytes sent, status, time, and the other sites the page loaded from. The list lives in the tab's memory only and is never sent anywhere. Keep its AI route list in step with backend/routes when an AI endpoint is added.
+**Server request indicator** (super/requests.js + requests.css, owner, 2026-10-13: "create server request indicators"; trust that users' data and AI are not abused; "this is shown in the owner page only"): shown only once `/api/auth/session` says the owner is signed in (checked every 30 s); everyone else sees only "Privacy choices" in its place, which reopens the notice. It is a super by itself inside the main canvas (owner, 2026-10-13): drawn by the engine like the controls (engine.js KINDS), with four ports (owner `ctl:privacy`, site.js), seated at the main super's bottom-left inside its edge and above the conditions bar; a click or a wire that opens it opens the choices (controls.js openOne). Loaded first in <head>, it wraps fetch, XMLHttpRequest and sendBeacon and shows every request in a corner chip (bottom left, lifted above the conditions bar): a light while one is out, counts of requests, AI calls and saves; hover or focus lists each one: time, read / sent your data / to AI (which model, ours or an outside provider by name), path only (never query values or bodies), bytes sent, status, time, and the other sites the page loaded from. The list lives in the tab's memory only and is never sent anywhere. Keep its AI route list in step with back/routes when an AI endpoint is added.
 
 **The selected super is surrounded in blue** (owner, 2026-10-13: "add blue surround for a super that is selected"): its own edge turns cobalt and thicker (engine.js and super.css), the main and second supers too; never a rectangle or a dotted line round it.
 
@@ -347,7 +348,7 @@ The title super is selectable like any super (select.js). A holder growing to ta
 
 **An open bubble behaves like the third super** (owner, 2026-10-12: "all of these should behave like 3rd super"; bubble.js fit, --in-z): sized by hand or held to a share by its holder, its name box and pills re-form to its box, scaled together (CSS zoom), never squashed.
 
-**SuperAI assembly** (owner, 2026-10-12: "write the SuperAI language with graphical signs, Turing complete, and HAL-OS assembly", "use the connectors sync, condition, input, output as well"): the front end's program is written in `frontend/super/pitechlab.sasm`; `python scripts/build_program.py` assembles it with the Rust engine (rust/superai asm.rs, op `assemble`) into `super/pitechlab.super.js` (generated: edit the .sasm; `--check` verifies they agree). Signs: ◇ source, ◯ bubble, ⊕ merge, ■ ✦ ● ⊙ supers, ⟶ wire, ▭ map section, ▣ map super; the connectors ▷ output, ◁ input, △ sync, ▽ condition (`⟶ main△ site△`); `.key value`, `.put path "k" v`, `.push path v`, `.json path {…}`; blocks `diagram … end`, `graph name … end`, `map … end`, and `fn name params … end`: stack-machine code (rust/superai vm.rs: push, in, load/store, loadi/storei memory, arithmetic, jmp/jz/jnz to `label:`, call, ret, out, halt, and ◁ △ ▽ ▷ for the connectors; a million-step budget), which makes the language Turing complete. Prompting an LLM is an instruction (owner: "use prompting llm also as part of the programming language", "make it very simple"): `ask engine` (✦) sends the text on top to that engine (sim by default; rib, pid, pien, llama, mistral, qwen, gemini, deepseek) and puts its answer on top; the machine stops with the question (`asks`), `SuperAI.ask(name, inputs)` (super/superai-rs.js) asks /api/super/one and runs it again with the answer. Simple words: say, get, set, goto, if, ifnot, give, stop. BitLLM runs only inside HAL-OS's emulator, so it is not an `ask` engine yet. **Learn SuperAI** (owner: "create example on how to program a simple program on the web"): frontend/learn/index.html, served at /learn/, a course (owner: "create a page to teach me to program"): nine lessons (first program, numbers and math, inputs, remembering, decisions, loops, functions, supers and wires, ask an AI), each an idea with stack pictures and an example, then a challenge the page checks against tests (an AI lesson passes when the program asks), with a hint, an answer, a growing word list and progress kept as superai:course; run in the browser by the same wasm. The project super's editor shows the program as SuperAI assembly (the shipped super/pitechlab.sasm, or the text you ran last, superai:source) and takes assembly as well as JSON; ⌘/Ctrl + S downloads the form shown (.sasm or .json). runtime.js's own check knows the site's supers (site, main, title, project, run), so the shipped program passes it and can be edited.
+**SuperAI assembly** (owner, 2026-10-12: "write the SuperAI language with graphical signs, Turing complete, and HAL-OS assembly", "use the connectors sync, condition, input, output as well"): the front end's program is written in `front/super/pitechlab.sasm`; `python back/scripts/build_program.py` assembles it with the Rust engine (back/rust/superai asm.rs, op `assemble`) into `super/pitechlab.super.js` (generated: edit the .sasm; `--check` verifies they agree). Signs: ◇ source, ◯ bubble, ⊕ merge, ■ ✦ ● ⊙ supers, ⟶ wire, ▭ map section, ▣ map super; the connectors ▷ output, ◁ input, △ sync, ▽ condition (`⟶ main△ site△`); `.key value`, `.put path "k" v`, `.push path v`, `.json path {…}`; blocks `diagram … end`, `graph name … end`, `map … end`, and `fn name params … end`: stack-machine code (back/rust/superai vm.rs: push, in, load/store, loadi/storei memory, arithmetic, jmp/jz/jnz to `label:`, call, ret, out, halt, and ◁ △ ▽ ▷ for the connectors; a million-step budget), which makes the language Turing complete. Prompting an LLM is an instruction (owner: "use prompting llm also as part of the programming language", "make it very simple"): `ask engine` (✦) sends the text on top to that engine (sim by default; rib, pid, pien, llama, mistral, qwen, gemini, deepseek) and puts its answer on top; the machine stops with the question (`asks`), `SuperAI.ask(name, inputs)` (super/superai-rs.js) asks /api/super/one and runs it again with the answer. Simple words: say, get, set, goto, if, ifnot, give, stop. BitLLM runs only inside HAL-OS's emulator, so it is not an `ask` engine yet. **Learn SuperAI** (owner: "create example on how to program a simple program on the web"): front/learn/index.html, served at /learn/, a course (owner: "create a page to teach me to program"): nine lessons (first program, numbers and math, inputs, remembering, decisions, loops, functions, supers and wires, ask an AI), each an idea with stack pictures and an example, then a challenge the page checks against tests (an AI lesson passes when the program asks), with a hint, an answer, a growing word list and progress kept as superai:course; run in the browser by the same wasm. The project super's editor shows the program as SuperAI assembly (the shipped super/pitechlab.sasm, or the text you ran last, superai:source) and takes assembly as well as JSON; ⌘/Ctrl + S downloads the form shown (.sasm or .json). runtime.js's own check knows the site's supers (site, main, title, project, run), so the shipped program passes it and can be edited.
 
 **No sign icon on supers** (owner, 2026-10-13: "delete this", the grey ■ beside the lock): the signs ■ ● ◆ ✦ ▣ live in the language only (super/sign.js was removed). The assembly writes supers with them (◆ added; ▣ outside the map is a holder, `hold`).
 
@@ -356,9 +357,9 @@ The title super is selectable like any super (select.js). A holder growing to ta
 **The start is packed close** (owner, 2026-10-13: "make the supers very close to each other"; super/pack.js SePack): on a first visit or after a reset, once the second super has stopped moving, Connect, the third super and its members are set 4 layout px apart (about 2 px on screen at the zoomed-out start), from the real compact size, so the same on every screen shape: Connect beside the third super, Tools → Explore → Library along its top, Lab and the project under Explore and Library, the third super wrapped round them with exactly the room super/bind.js keeps members in (padding 3.5 % of its smaller side plus up to 4 px; top strip 6.5 % of its height, at most 46 px; any closer and bind.js squeezed members together), the group in the middle of the second super; again on every load until you first press, scroll or wire on a super (se:touched); while the start is untouched, a resize of the window lays the start out afresh (it reloads: moving the laid-out supers live fought the layout and bind.js; SeBind.settle makes bind.js measure its members afresh after a pack). PiOrbit.placeBubbleAt(key, sx, sy) sets a bubble's target straight from a screen point. A locked super simply does nothing when dragged, scrolled, sized, opened or deleted: no "locked … unlock it to …" note anywhere (owner, 2026-10-13). The third super has no label ("delete super label"; a holder with no name shows nothing, never what is wired into it). **π and friends are off** (owner, 2026-10-13: "deactivate pi and friends counter and stop showing it"): no π digits along the title's wire, no "π and friends" window, no workers (numbers.js, orbit.js; window.PI_FRIENDS = true brings them back). **A super that opens is selected** (owner, 2026-10-13; select.js): a window as it appears, a bubble once grown open, the project once open.
 
 **The start as the owner's picture** (owner, 2026-10-13: "set initial state of the app as this image"; super/pack.js START replaces the close packing): the view at 0.62; in shares of the second super (x of its width, y of its height), Connect a square of side 0.165 in its top-left corner (top 0.064); the third super at 0.168–0.387 × 0.069–0.376, holding Tools, Explore (top row) and Lab, Library (bottom row) as small squares of side 0.0155 centred at x 0.278 / 0.346, y 0.155 / 0.291 (so small they are sparkles); the project a wide box at 0.099–0.406 × 0.381–0.551, outside the third super (its sync wire comes from the site's sync). Sizes are kept as se:size:<key>; the program's at.inSite says the same; still laid out again on every load and window resize until you first touch a super (se:touched), desktop only.
- `SCHOLARPI_SHAPE=superellipse` stamps the look into index.html as it is served (backend/shape.py), so a first visit lays out the superellipse site before the first paint.
+ `SCHOLARPI_SHAPE=superellipse` stamps the look into index.html as it is served (back/shape.py), so a first visit lays out the superellipse site before the first paint.
 
-`SITE_PASSWORD=…` puts a password on the whole deployment (backend/gate.py: every page, API call and static file answers with a small password page or 401 until the visitor has typed it once; a signed HttpOnly cookie, an HMAC of the password with SESSION_SECRET, keeps them in for a month; changing the password logs everyone out; /api/health, /robots.txt and /api/gate stay open). Unset, nothing changes; never set it on production.
+`SITE_PASSWORD=…` puts a password on the whole deployment (back/gate.py: every page, API call and static file answers with a small password page or 401 until the visitor has typed it once; a signed HttpOnly cookie, an HMAC of the password with SESSION_SECRET, keeps them in for a month; changing the password logs everyone out; /api/health, /robots.txt and /api/gate stay open). Unset, nothing changes; never set it on production.
 
 `SCHOLARPI_CHANNEL=experimental` turns on the experimental banner (not in the superellipse look, where the main loop fills the whole screen; noindex still applies), `robots.txt: Disallow` and `X-Robots-Tag: noindex`.
 
@@ -558,7 +559,7 @@ delete it, wires and all. The diagram is kept in the browser (`lv:nodes`, `orbit
 
 ### 5. The engines
 
-Behind `/api` one FastAPI process runs everything, and all of it is one file, `backend/api.py` (owner,
+Behind `/api` one FastAPI process runs everything, and all of it is one file, `back/api.py` (owner,
 2026-10-13: "all .py in one .py"): what were core (the app, configuration, logging, the database, the gate,
 rate limits, the startup hook), one router per concern (meta, auth, piq, chain, status, identity, arcade,
 visits, profile, assessments, reviews, history, admin, reviewing, bugreport, assess, discover, scilem,
@@ -609,7 +610,7 @@ The engines behind the routes:
    `performance.js`, `unigyro.js`, `neurofrenzy.js`, `facemace.js`, `medicine.js`, `ribsuggest.js`,
    `live.js`, `download.js`, `traffic.js`, `lab.js`, and `hal/` (HAL-OS in a v86 emulator) and
    `quvi/` (a browser port of QuVI).
-6. The super look, one concern per file (`frontend/super/`): `super/loop.js` (the main super: the loop the
+6. The super look, one concern per file (`front/super/`): `super/loop.js` (the main super: the loop the
    size of the page, its n, the zoom and the fit, windows kept inside the inner super, the inner super's
    box and offset; created by orbit.js with what it needs from the layout), `super/logo.js` (the title), `super/motion.js` (the one tween and the
    per-frame redraw signal), `super/shape.js` (shapes, wires' paths, windows morphing), `super/nodes.js` (the
@@ -630,13 +631,13 @@ Everything the page remembers lives in `localStorage` under short prefixed keys 
 | super.pitechlab.com (se.) | `super` | The superellipse superlattice, deployed alone from its branch. |
 
 Each is a Railway environment built by Nixpacks (`nixpacks.toml`: Python only, no Docker) and started
-with gunicorn. `python scripts/tools.py run` runs it locally at
+with gunicorn. `python back/scripts/tools.py run` runs it locally at
 http://localhost:8000.
 
 ### 8. Working on it
 
-Before a push: `cd backend && python -m pytest -q` against the known baseline;
-`python scripts/tools.py build-hal --src ../HAL-OS` (refuses if HAL-OS and `frontend/hal/wire.js`
+Before a push: `cd back && python -m pytest -q` against the known baseline;
+`python back/scripts/tools.py build-hal --src ../HAL-OS` (refuses if HAL-OS and `front/hal/wire.js`
 disagree); load the site at desktop and 390 px widths with no page errors and no horizontal scroll.
 Work goes to `experimental` (or `super` for the super site); `main` only when the owner says so. The
 repository is public: no secrets, no `.env`, nothing from private projects. Credits that are not ours
@@ -1538,7 +1539,7 @@ cache — verified DOIs never change, so this should be a near-permanent cache.
 
 **4. No test suite in the repo.**
 The 516 assertions I wrote live in `/tmp` and will not survive. They should be
-`backend/tests/`, wired into the existing `.github/workflows/tests.yml`. The
+`back/tests/`, wired into the existing `.github/workflows/tests.yml`. The
 high-value ones: rubric bounds and monotonicity, injection false-positives on
 legitimate papers, reference-audit outage behaviour, and emission difficulty
 ordering.
@@ -1607,7 +1608,7 @@ override `current_fee()` in `emission.py` if you want that behaviour.
 
 ---
 
-# Vendored libraries (was frontend/vendor/README.md)
+# Vendored libraries (was front/vendor/README.md)
 
 Optional. The app loads Chart.js from a CDN and falls back to this directory
 if that fails.
@@ -1628,7 +1629,7 @@ dependency on someone else's network entirely.
 
 Run from the repository root:
 
-    curl -Lo "frontend/vendor/chart.umd.min.js" \
+    curl -Lo "front/vendor/chart.umd.min.js" \
       https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js
 
 Then commit it. Pin the same version the CDN tag in `index.html` uses (4.4.4),
@@ -1636,14 +1637,14 @@ so behaviour does not change depending on which source won the race.
 
 Mermaid (architecture diagrams) can be vendored the same way if needed:
 
-    curl -Lo "frontend/vendor/mermaid.min.js" \
+    curl -Lo "front/vendor/mermaid.min.js" \
       https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js
 
 ### three.js (the superellipse look's graphics engine)
 
 `vendor/three/` holds three.js r185 (0.185.1, MIT, see `vendor/three/LICENSE`): `three.module.min.js` and
 `three.core.min.js`, copied unchanged from the `build/` folder of https://github.com/mrdoob/three.js at tag
-`r185`. `frontend/super/engine.js` imports it to draw every super, wire, port and the glass light with WebGL.
+`r185`. `front/super/engine.js` imports it to draw every super, wire, port and the glass light with WebGL.
 To update, copy the same two files from a newer tag and bump `?v=` on `super/engine.js` in `index.html`.
 
 
@@ -1664,12 +1665,12 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 **Why:** to prepare the QuVI experiment for the Lab. The permission email promised that nothing goes live without the author's approval, so it's visible only to the signed-in owner until `QUVI_PUBLIC=1` is set (`/api/lab/features`). Credit and the full MIT licence text are on the page.
 
 **Verified:**
-- `node frontend/quvi/engine.test.mjs`: Bell, GHZ, teleportation fidelity for every outcome, superdense coding, Grover certainty, exact QFT amplitudes, anti-control, swap and norm all pass.
+- `node front/quvi/engine.test.mjs`: Bell, GHZ, teleportation fidelity for every outcome, superdense coding, Grover certainty, exact QFT amplitudes, anti-control, swap and norm all pass.
 - pytest at baseline (12 pre-existing failures), plus a new feature-flag test.
 - `build_hal.py` builds.
 - Browser checks for anonymous (hidden, plus a "Coming to the Lab" notice at /quvi/), owner (card and simulator) and public (card, no badge). Every tab at 1440 and 390 px, with no page errors and no horizontal scroll.
 
-**Files:** `frontend/quvi/*`, `frontend/lab.js`, `frontend/index.html`, `frontend/theme.css`, `backend/lab.py`, `backend/api.py`, `backend/tests/test_lab.py`, `CLAUDE.md`.
+**Files:** `front/quvi/*`, `front/lab.js`, `front/index.html`, `front/theme.css`, `back/lab.py`, `back/api.py`, `back/tests/test_lab.py`, `CLAUDE.md`.
 
 ### 2026-10-09: New PiTechLab mark and a friendlier welcome
 
@@ -1686,11 +1687,11 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Welcome: focus lands on "Let's begin", a door opens its tab, the brand reopens the screen, and Skip and Esc close it.
 - With reduced motion, the π strokes show fully without animating.
 
-**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+**Files:** `front/welcome.js`, `front/theme.css`, `front/index.html`, `front/icon.svg`, `front/confirm/index.html`.
 
 ### 2026-10-09: Total cap on stored manuscripts
 
-**What:** `backend/paper_store.py` now has a total budget for retained manuscripts, `PAPER_STORE_MAX_TOTAL_BYTES` (default 2 GB, `0` turns it off). When a new upload would go over it, the store evicts orphaned files first (those with no assessment left), then the oldest stored manuscripts. A single file larger than the whole cap is not stored. The owner Storage panel shows how much of the cap is used and a warning from 80%. That warning says eviction removes the file link from published papers.
+**What:** `back/paper_store.py` now has a total budget for retained manuscripts, `PAPER_STORE_MAX_TOTAL_BYTES` (default 2 GB, `0` turns it off). When a new upload would go over it, the store evicts orphaned files first (those with no assessment left), then the oldest stored manuscripts. A single file larger than the whole cap is not stored. The owner Storage panel shows how much of the cap is used and a warning from 80%. That warning says eviction removes the file link from published papers.
 
 **Why:** the store had no total limit and filled the production disk. A full volume stops the database as well, not only uploads.
 
@@ -1701,7 +1702,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - `/api/admin/storage` returns `manuscript_cap`.
 - Headless Chromium, every tab at 1440 and 390 px, signed out and as a mocked owner: no page errors and no horizontal scroll. The Storage panel was screenshotted with the warning showing.
 
-**Files:** `backend/paper_store.py`, `backend/api.py`, `backend/tests/test_paper_store.py`, `frontend/app.js`, `EVOLUTION.md`.
+**Files:** `back/paper_store.py`, `back/api.py`, `back/tests/test_paper_store.py`, `front/app.js`, `EVOLUTION.md`.
 
 ### 2026-10-09: The circling mark returns
 
@@ -1713,13 +1714,13 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - No centre dot is present.
 - With reduced motion, the mark is still and fully drawn.
 
-**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+**Files:** `front/welcome.js`, `front/theme.css`, `front/index.html`, `front/icon.svg`, `front/confirm/index.html`.
 
 ### 2026-10-09: Name written as "Pi Tech Lab"
 
 **What:** the owner's preferred spelling. Every visible name (titles, the sidebar brand, the welcome greeting, the permission page, the QuVI footer and the permission-request defaults) now reads "Pi Tech Lab". The domain stays pitechlab.com.
 
-**Files:** `frontend/index.html`, `frontend/welcome.js`, `frontend/confirm/*`, `frontend/quvi/index.html`.
+**Files:** `front/index.html`, `front/welcome.js`, `front/confirm/*`, `front/quvi/index.html`.
 
 ### 2026-10-09: Black circle, blue sweeping diameter; no dot, no skip link
 
@@ -1732,7 +1733,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - The rotation is measured mid-sweep.
 - With reduced motion, the mark is still and the trail is hidden.
 
-**Files:** `frontend/welcome.js`, `frontend/theme.css`, `frontend/index.html`, `frontend/icon.svg`, `frontend/confirm/index.html`.
+**Files:** `front/welcome.js`, `front/theme.css`, `front/index.html`, `front/icon.svg`, `front/confirm/index.html`.
 
 ### 2026-10-09: Simpler welcome mark; no "improves every night" line
 
@@ -1740,7 +1741,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - The degree ring (ticks and outer circle) is removed from the welcome mark. It's now just the black circle and the sweeping blue diameter, cropped to fit.
 - The line "This site improves a little every night…" and its link are removed from the welcome screen, at the owner's request.
 
-**Files:** `frontend/welcome.js`, `frontend/theme.css`.
+**Files:** `front/welcome.js`, `front/theme.css`.
 
 ### 2026-10-09: Orbit layout; live π under the mark
 
@@ -1753,7 +1754,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 **Checks:** 21 bubbles for visitors, 31 for the owner. HAL-OS runs inside a window. The first 150 digits of π were checked. There are no page errors at 1440 or 390 px. On phones, a few bubbles may touch as they pass.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/pi-worker.js`, `frontend/index.html`, `frontend/lab.js`, `frontend/theme.css`; `frontend/welcome.js` removed.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/pi-worker.js`, `front/index.html`, `front/lab.js`, `front/theme.css`; `front/welcome.js` removed.
 
 ### 2026-10-09: Still pills, no overlaps, a movable mark, use makes pills grow
 
@@ -1767,7 +1768,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 - Pills re-place themselves when the experimental banner fills in late, so nothing ends up under the π line.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: Varied pills; π in its own box; resizable logo; GitHub and ResBD as pills
 
@@ -1781,7 +1782,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 **Checks:** at 1440, 1280 and 390 px there are no overlaps after moving or resizing the π box and the logo. Pills stay still when a card opens. There is no horizontal scroll and no page errors.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: Size follows complexity and use; no resize knob on the logo
 
@@ -1789,7 +1790,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - A pill's size now follows how much is behind it, not chance. It is measured from the card: embedded tools (HAL-OS, QuVI), the map and other drawings, inputs, buttons, tables and the amount of text. Cards are ranked and sized 0.84× to 1.34× by rank, and the most complex value seen is remembered. Use multiplies on top, so the most complex, most used cards are the biggest. Typeface and style stay varied per pill.
 - The small resize circle on the logo is removed. The logo still resizes with the scroll wheel; double-click resets it.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: Pills move only when pushed; the mark sizes to the open card
 
@@ -1802,7 +1803,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 **Checks:** dropping a pill on empty space moves only that pill. Dropping onto another moves just the pill it lands on. Positions survive a reload. Opening cards moves no pills.
 
-**Files:** `frontend/orbit.js`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/index.html`.
 
 ### 2026-10-09: Windows stay open, fit their content, and come to the centre when clicked
 
@@ -1813,7 +1814,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Windows fit their content. Width runs from about 320 px for a few lines up to 440–820 px depending on the card's complexity, and 960 px for tools and tables. Height matches the content up to the screen. They refit as content loads, until you resize one yourself. On phones they are full-width and as tall as needed, up to 86% of the screen.
 - The π box sits beneath windows; the mark stays above them. The focus ring on a clicked window is gone.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: Your layout follows your account
 
@@ -1827,11 +1828,11 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
   The first time you sign in, this browser's layout becomes the account's. Signed out, everything stays in the browser only.
 - Windows now remember their place, and their size once resized, even when you are signed out.
-- Server: `backend/layout.py`, with `GET`/`PUT /api/me/layout`, available only to a signed session and only for its own identity (ORCID or wallet). Its own `layout.db`. The data is opaque, shape-checked and capped at 64 KB and 600 keys under "orbit:". Tests are in `backend/tests/test_layout.py`.
+- Server: `back/layout.py`, with `GET`/`PUT /api/me/layout`, available only to a signed session and only for its own identity (ORCID or wallet). Its own `layout.db`. The data is opaque, shape-checked and capped at 64 KB and 600 keys under "orbit:". Tests are in `back/tests/test_layout.py`.
 
 **Checks:** a second browser signed in as the same user shows the same layout and windows. A signed-out browser keeps its own. pytest: 374 pass; the 12 known failures are unchanged.
 
-**Files:** `backend/layout.py`, `backend/api.py`, `backend/tests/test_layout.py`, `frontend/orbit.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `back/layout.py`, `back/api.py`, `back/tests/test_layout.py`, `front/orbit.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: The name, top centre, in many languages
 
@@ -1841,7 +1842,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 
 **Checks:** all 32 names at 1440 and 390 px fit with no overlap and no horizontal scroll. No pill moves when the name changes.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: PiEn; nothing overlaps on any screen; smaller title; HAL-OS start-up race
 
@@ -1849,13 +1850,13 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - **PiEn.** The mark is PiEn, an engine that learns how the site is used. Its name is inside the circle.
   - It learns which cards are opened and which follow which.
   - Your own pattern is kept with your layout (`orbit:pien`, synced to your account when you are signed in).
-  - Everyone's pattern is pooled anonymously on the server (`backend/pien.py`, `/api/pien`): card names and counts only, never who. Requests are capped at 40 entries of at most 10, and each address may send 60 an hour.
+  - Everyone's pattern is pooled anonymously on the server (`back/pien.py`, `/api/pien`): card names and counts only, never who. Requests are capped at 40 entries of at most 10, and each address may send 60 an hour.
   - After each step, PiEn puts a soft blue halo on the card you are most likely to want next. Your habits weigh three times as much as everyone's, and it stays quiet with too little to go on. Hovering the mark shows how much it has learned.
 - **No overlaps on any screen.** Pills, the mark, the π box and the title never overlap: the π box avoids the mark and the title, and the mark stays below the title. When a screen has no room for every pill, all pills shrink together in steps until they fit. Tested at 13 sizes from 320×568 to 2560×1440, including phones in landscape: fresh, with the mark in a corner, and with the π box dropped on the mark.
 - **Title** is smaller: 20–28 px.
 - **HAL-OS** ignores pause/resume until the emulator has finished starting. This fixes occasional emulator errors when windows were opened in quick succession.
 
-**Files:** `backend/pien.py`, `backend/api.py`, `backend/tests/test_pien.py`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/hal/hal.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `back/pien.py`, `back/api.py`, `back/tests/test_pien.py`, `front/pien.js`, `front/orbit.js`, `front/orbit.css`, `front/hal/hal.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: The numbers window; full pill titles
 
@@ -1869,7 +1870,7 @@ Changes made on the `experimental` branch, newest last. Each entry: what changed
 - Pill titles are shown in full. Long ones wrap onto a second line on narrow screens instead of being cut with "…".
 - Fixed: `orbit:ready` fired before `window.PiOrbit` existed.
 
-**Files:** `frontend/numbers.js`, `frontend/consts-worker.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/numbers.js`, `front/consts-worker.js`, `front/orbit.js`, `front/orbit.css`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: Seamlessness pass
 
@@ -1889,7 +1890,7 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 - Nothing overlaps at 13 screen sizes, the account layout syncs, all 32 titles fit, and the constants are exact.
 - pytest: 378 pass; the 12 known failures are unchanged.
 
-**Files:** `frontend/orbit.js`, `frontend/app.js`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/app.js`, `front/index.html`.
 
 ### 2026-10-09: π and friends stays put and shows all seven
 
@@ -1897,7 +1898,7 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 - **A window you have placed stays where you put it.** Windows refit as their content grows, and the numbers grow all the time, so every refit was re-centring the window. Now, once a window has been moved (or restored to a saved place), refits change only its size, never its position.
 - **All seven constants are visible at once.** The window opens at full width, with a compact grid (three columns on desktop, one on phones). Each constant shows its two newest lines of digits; scroll back for the rest. Notes are hidden on phones.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 - π and friends is now π with three friends, at the owner's choice: Euler's number e, the golden ratio φ and the Euler–Mascheroni constant γ. √2, √3 and ln 2 are removed. Two columns on wider screens, one on phones; notes are hidden only on short phones. All four are visible at every tested size, from 320×568 to 1920×1080.
 
 ### 2026-10-09: Capabilities
@@ -1906,7 +1907,7 @@ An audit of every window, as a visitor and as the owner, at 1440 and 390 px: pag
 
 Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by title (`PiOrbit.openTitle`).
 
-**Files:** `frontend/capabilities.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/capabilities.js`, `front/orbit.js`, `front/orbit.css`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: "Analytics"; one "Architecture" window
 
@@ -1915,7 +1916,7 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 - Overview, Scoring Pipeline in Detail, Stage Reference and CoARA Compliance & Core Pillars are merged into one pill and window, "Architecture", in that order. The Whitepaper stays its own pill. Capabilities lists Architecture and Analytics.
 - A window's header no longer repeats its section name when the title already says it.
 
-**Files:** `frontend/orbit.js`, `frontend/capabilities.js`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/capabilities.js`, `front/index.html`.
 
 ### 2026-10-09: A cleaner map of science; Performance and PiEN
 
@@ -1934,7 +1935,7 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
   - the most common next steps.
 - What was learned about renamed or merged cards counts toward their new names.
 
-**Files:** `frontend/arcade.js`, `frontend/style.css`, `frontend/pien.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`.
+**Files:** `front/arcade.js`, `front/style.css`, `front/pien.js`, `front/orbit.js`, `front/orbit.css`, `front/capabilities.js`, `front/index.html`.
 
 ### 2026-10-09: Bubbles that hold pills, a chat pill, a signed-in check, a flowchart
 
@@ -1948,15 +1949,15 @@ Modules can now add pills of their own (`PiOrbit.addPill`) and open windows by t
 - **Assessment results open by themselves** whenever a run finishes (app.js announces `scholarpi:assessment-done`), not only the first time.
 - **Scrolling anywhere on the page** (outside windows) resizes PiEN. Scrolling on the π box resizes only the π box.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/architecture.js`, `frontend/peeks.js`, `frontend/capabilities.js`, `frontend/pien.js`, `frontend/app.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/architecture.js`, `front/peeks.js`, `front/capabilities.js`, `front/pien.js`, `front/app.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: Recent assessments, for everyone
 
 **What:** a "Recent assessments" pill (in Explore). It lists every assessment made on the site, newest first, including those made without signing in, so visitors can see the site in use. At the owner's choice, only the field, the piX score, the day and whether the person was signed in are shown. Never the title, the file, the author, the hash, any address or the time of day: people upload unpublished work. The pill shows the latest one, and the list refreshes when a run finishes.
 
-Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tests in `backend/tests/test_recent.py` that check nothing identifying leaks.
+Server: `back/recent.py` (`GET /api/assessments/recent`), read-only, with tests in `back/tests/test_recent.py` that check nothing identifying leaks.
 
-**Files:** `backend/recent.py`, `backend/api.py`, `backend/tests/test_recent.py`, `frontend/recent.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `back/recent.py`, `back/api.py`, `back/tests/test_recent.py`, `front/recent.js`, `front/orbit.css`, `front/capabilities.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: Leaderboard dates no longer clipped
 
@@ -1965,25 +1966,25 @@ Server: `backend/recent.py` (`GET /api/assessments/recent`), read-only, with tes
 - The "piQ (share)" header was clipped too. It now reads "piQ", and its hover text still explains the share.
 - On phones the leaderboard table was wider than the screen and silently cut. It now scrolls sideways.
 
-**Files:** `frontend/style.css`, `frontend/app.js`, `frontend/index.html`.
+**Files:** `front/style.css`, `front/app.js`, `front/index.html`.
 
 ### 2026-10-09: Intern, in the Tools bubble
 
 **What:** an "Intern" pill inside the Tools bubble, beside Assess a Manuscript. Intern ([in-tern/Intern](https://github.com/in-tern/Intern)) is a separate project: an iOS app, an AI electronic health record for doctors, built on Firebase, Azure Communication Services and MessageKit. It runs on iPhone and iPad, not in a browser, so its window says what it is and links to its source. Modules can now place a pill inside a group's bubble (`addPill({..., inGroup: "Tools"})`).
 
-**Files:** `frontend/intern.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/intern.js`, `front/orbit.js`, `front/orbit.css`, `front/capabilities.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: Push a window to the edge to close it
 
 **What:** dragging a window by its header against the left, right or bottom edge of the screen (or so that more than half of it is off-screen) closes it. While it is far enough out it fades slightly, to show that letting go will close it. A closed window is forgotten (it does not come back on the next visit) and reopens centred from its pill. This is the only way a window closes: there are still no close buttons, Esc or mark clicks.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: HAL-OS starts when you press Start
 
 **What:** opening HAL-OS no longer boots the machine. Its screen shows a "Start HAL-OS" button with the image size, and a note when there are weights from last time to pick up. The x86 emulator downloads and boots only when the button is pressed. Pause and Reboot do nothing until then, and pause/resume messages from the page are ignored until the machine is up.
 
-**Files:** `frontend/hal/hal.js`, `frontend/hal/hal.css`, `frontend/hal/index.html`.
+**Files:** `front/hal/hal.js`, `front/hal/hal.css`, `front/hal/index.html`.
 
 ### 2026-10-09: QuVI is public on production
 
@@ -1998,7 +1999,7 @@ The owner set `QUVI_PUBLIC=1` in Railway's production environment. QuVI now appe
 
 Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine still boots only when Start is pressed. The Lab bubble's own default opens QuVI where QuVI is visible, otherwise nothing. lab.js no longer writes `#lab`.
 
-**Files:** `frontend/orbit.js`, `frontend/lab.js`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/lab.js`, `front/index.html`.
 
 ### 2026-10-09: The name behind, PiEN on hover, a tidy chat box
 
@@ -2007,7 +2008,7 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - PiEN's name inside the mark shows only when you point at the mark, or reach it with Tab.
 - siM's chat box: the send button sits inside the right end of the field, centred. A site-wide margin under inputs had pushed it down and against the pill's edge.
 
-**Files:** `frontend/orbit.js`, `frontend/orbit.css`, `frontend/index.html`.
+**Files:** `front/orbit.js`, `front/orbit.css`, `front/index.html`.
 
 ### 2026-10-09: Performance, made simple
 
@@ -2019,7 +2020,7 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - The old detailed forecast (chart, lookback, chart type, sensitivity, modifiers) is folded away under "Show the detailed forecast", still driven by app.js.
 - PiEN's separate panel is replaced by its card; pien.js exposes `window.PiEN.stats()` for it.
 
-**Files:** `frontend/performance.js`, `frontend/pien.js`, `frontend/orbit.css`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/performance.js`, `front/pien.js`, `front/orbit.css`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: RiBD, your research mentor; SciM
 
@@ -2028,7 +2029,7 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 - **SciLM / siM is now SciM:** the "SciM Assistant" pill (with "Ask SciM…" in its chat box), its Performance card, Architecture, and the app's own labels.
 - Only visible names changed. The engines' data keys (`siM`, `riB`) and element ids stay, so the server and app.js are unaffected. Remembered places, use and PiEN's learning carry over from the old names.
 
-**Files:** `frontend/index.html`, `frontend/app.js`, `frontend/orbit.js`, `frontend/pien.js`, `frontend/capabilities.js`, `frontend/performance.js`, `frontend/architecture.js`.
+**Files:** `front/index.html`, `front/app.js`, `front/orbit.js`, `front/pien.js`, `front/capabilities.js`, `front/performance.js`, `front/architecture.js`.
 
 ### 2026-10-09: Unigyro, in the Lab, credited to Murtaza Vefadar
 
@@ -2036,15 +2037,15 @@ Now only pressing the HAL-OS pill in the Lab bubble opens it, and the machine st
 
 The [neurophilic/Unigyro](https://github.com/neurophilic/Unigyro) repository is empty, and this session cannot push to it (the Claude GitHub App is not installed for `neurophilic`). A README for it, citing him with the video and channel, was prepared for the owner to add.
 
-**Files:** `frontend/unigyro.js`, `frontend/orbit.js`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `README.md`, `CLAUDE.md`.
+**Files:** `front/unigyro.js`, `front/orbit.js`, `front/orbit.css`, `front/capabilities.js`, `front/index.html`, `README.md`, `CLAUDE.md`.
 
 ### 2026-10-09: neurophilic/Unigyro is the source of the Unigyro window
 
-**What:** the Unigyro window's code and styles are two plain files, `frontend/unigyro.js` and `frontend/unigyro.css` (the styles moved out of orbit.css). Their source is the Unigyro repository's `pitechlab/` folder. `python scripts/sync_unigyro.py --src ../Unigyro` copies them in, and `--check` fails if the site's copies differ, the same pattern as HAL-OS (`build_hal.py`).
+**What:** the Unigyro window's code and styles are two plain files, `front/unigyro.js` and `front/unigyro.css` (the styles moved out of orbit.css). Their source is the Unigyro repository's `pitechlab/` folder. `python back/scripts/sync_unigyro.py --src ../Unigyro` copies them in, and `--check` fails if the site's copies differ, the same pattern as HAL-OS (`build_hal.py`).
 
 The Unigyro repository's contents (README crediting Murtaza Vefadar, a standalone playable page, `pitechlab/`, `CITATION.cff`) are ready but not yet published. This session cannot push to `neurophilic` until the Claude GitHub App is installed there, so the owner adds them; a copy is in Tech/Unigyro.
 
-**Files:** `frontend/unigyro.css`, `frontend/orbit.css`, `frontend/index.html`, `scripts/sync_unigyro.py`, `CLAUDE.md`.
+**Files:** `front/unigyro.css`, `front/orbit.css`, `front/index.html`, `back/scripts/sync_unigyro.py`, `CLAUDE.md`.
 
 ### 2026-10-09: NeuroFrenzy, a game in the Lab
 
@@ -2055,7 +2056,7 @@ The Unigyro repository's contents (README crediting Murtaza Vefadar, a standalon
 
 The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for the owner: this session cannot write to `neurophilic`. A ready folder is in Tech/NeuroFrenzy.
 
-**Files:** `frontend/neurofrenzy.js`, `frontend/neurofrenzy.css`, `frontend/orbit.css`, `frontend/capabilities.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/neurofrenzy.js`, `front/neurofrenzy.css`, `front/orbit.css`, `front/capabilities.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: FaceMace; a Lib bubble; Tools renamed
 
@@ -2072,11 +2073,11 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 
 **Tools renamed** (owner's request): "Assess Manuscripts [Pi]" (was Assess a Manuscript) and "Assist a Diagnosis [Intern]" (was Intern). Remembered state and PiEN's learning carry over.
 
-**Files:** `frontend/facemace.js`, `frontend/facemace.css`, `frontend/facemace/`, `frontend/neurofrenzy.js`, `frontend/orbit.js`, `frontend/intern.js`, `frontend/capabilities.js`, `frontend/recent.js`, `frontend/pien.js`, `frontend/index.html`, `CLAUDE.md`.
+**Files:** `front/facemace.js`, `front/facemace.css`, `front/facemace/`, `front/neurofrenzy.js`, `front/orbit.js`, `front/intern.js`, `front/capabilities.js`, `front/recent.js`, `front/pien.js`, `front/index.html`, `CLAUDE.md`.
 
 ### 2026-10-09: Medicine in the Lib bubble
 
-**What:** a Medicine pill in the Lib bubble showing a public road-to-graduation plan: CFU progress (219 of 360, by year), the remaining courses grouped by session, and the to-do list. Data is `frontend/medicine/plan.json`, rendered by `medicine/view.js`; the same three files form the standalone Medicine repository.
+**What:** a Medicine pill in the Lib bubble showing a public road-to-graduation plan: CFU progress (219 of 360, by year), the remaining courses grouped by session, and the to-do list. Data is `front/medicine/plan.json`, rendered by `medicine/view.js`; the same three files form the standalone Medicine repository.
 
 **Why:** the owner asked for the Graduation Plan (now the Medicine folder) to get a repository and a Lib button, public but without personal files. The public plan carries no grades, no dates of passed exams, no average or base score, no course codes and no names; the libretto and correspondence stay private.
 
@@ -2084,7 +2085,7 @@ The repository rename (NeuroGame to NeuroFrenzy) and its new contents are for th
 
 ### 2026-10-09: the π logo plays a song
 
-**What:** pressing the PiEN mark plays a 19-second song (`frontend/sound/dd.mp3`, supplied by the owner); pressing again stops it. `logosound.js` loads the audio on the first press only, and drags never count as presses. The mark keeps its other click behaviour (setting windows aside).
+**What:** pressing the PiEN mark plays a 19-second song (`front/sound/dd.mp3`, supplied by the owner); pressing again stops it. `logosound.js` loads the audio on the first press only, and drags never count as presses. The mark keeps its other click behaviour (setting windows aside).
 
 **Verified:** pytest at baseline; `build_hal.py` builds; at 1440 and 390 px the first press plays (audio fetched), the second stops, with no page errors and no horizontal scroll.
 
@@ -2303,7 +2304,7 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 - Nothing with zero relevance is suggested, and the researcher's own papers never are.
 - Each card says why it was picked and opens the paper's dossier.
 
-**Where it lives:** `backend/rib_suggest.py` (pure functions), `GET /api/buddy/suggest` (only public ledger fields: title, author, fields, piX, date) and `frontend/ribsuggest.js`. `app.js` only adds the slot.
+**Where it lives:** `back/rib_suggest.py` (pure functions), `GET /api/buddy/suggest` (only public ledger fields: title, author, fields, piX, date) and `front/ribsuggest.js`. `app.js` only adds the slot.
 
 **Verified:**
 - `tests/test_rib_suggest.py` (5 tests) checks:
@@ -2337,7 +2338,7 @@ pytest 386 passed with the 12 baseline failures; `build_hal.py` builds; the site
 
 ### 2026-10-09: papers assessed automatically while the site is idle
 
-**What:** the existing idle worker (`backend/idle_worker.py`) is now on, and it can actually run.
+**What:** the existing idle worker (`back/idle_worker.py`) is now on, and it can actually run.
 - **On by default on the hosted deployments.** Railway sets `RAILWAY_ENVIRONMENT*`. It stays off by default elsewhere, so a clone of this public repo never spends provider quota. `ENABLE_IDLE_ASSESSMENTS=0` switches it off anywhere.
 - **What it does:** while the site is quiet it picks a live research topic, finds an open-access paper on OpenAlex and runs it through the normal pipeline.
   - Up to 10 a day (`IDLE_MAX_PER_DAY`), after 5 minutes of quiet.
@@ -2382,7 +2383,7 @@ It refreshes every 30 s (only while the tab is visible) and after your own asses
 - **Folding:** the "Live" tab folds it to a slim tab and back, and the choice is remembered (`orbit:live:open`).
 - **Narrow screens:** it starts folded, opens over the page, and the pills keep clear of the tab.
 
-**Backend:** `backend/live.py`, `GET /api/live`. Idle papers are recognised by their submitter, "ScholarPi (idle)". Recent assessments no longer counts that submitter as "signed in".
+**Backend:** `back/live.py`, `GET /api/live`. Idle papers are recognised by their submitter, "ScholarPi (idle)". Recent assessments no longer counts that submitter as "signed in".
 
 **Verified:**
 - `tests/test_live.py` checks that idle papers are named and people's uploads never show their title or hash; the `test_recent.py` tests still pass.
@@ -2394,7 +2395,7 @@ It refreshes every 30 s (only while the tab is visible) and after your own asses
 ### 2026-10-09: Download paper in the dossier; a yellow account dot for one sign-in
 
 **What:**
-- **Download paper:** every dossier has a "Download paper" button (`frontend/download.js`). The server still decides who may have the file (`/api/papers/{hash}/file`, now with `?download=1` for a file to save). That is anyone once the author has published the assessment, or the author for their own upload; the session token goes with the request.
+- **Download paper:** every dossier has a "Download paper" button (`front/download.js`). The server still decides who may have the file (`/api/papers/{hash}/file`, now with `?download=1` for a file to save). That is anyone once the author has published the assessment, or the author for their own upload; the session token goes with the request.
   - If the file isn't available but the paper has a DOI (as auto-assessed open-access papers do), the button opens the publisher's copy.
   - Otherwise it says the manuscript stays private until its author publishes it.
 - **Account pill:** the dot is red when signed out, yellow (muted, #c9a53e) with one sign-in (a wallet or ORCID), and a green check with both. Its title says which one is missing.
@@ -2462,7 +2463,7 @@ The backend is `rib_suggest.hot_topics` and the `more` and `hot` fields of `/api
 The mark also gets a soft cobalt glow while working.
 
 **How:**
-- **Server activity:** `GET /api/activity` (backend/live.py, from `idle_worker.activity()`, no database) reports provider requests in flight and whether the idle worker is assessing. `orbit.js` polls it every 5 s while the tab is visible.
+- **Server activity:** `GET /api/activity` (back/live.py, from `idle_worker.activity()`, no database) reports provider requests in flight and whether the idle worker is assessing. `orbit.js` polls it every 5 s while the tab is visible.
 - **This page's own requests:** a request the page is waiting on (`orbit-busy`) raises the level by one.
 - **Smooth sweep:** the sweep is now turned by `orbit.js` (requestAnimationFrame) at a speed that eases to the new level, so a change of pace never jumps the line.
 - **Digit pace:** the π worker takes `{pace}`.
@@ -2497,11 +2498,11 @@ The mark also gets a soft cobalt glow while working.
 
 ### 2026-10-10: the forecast tests run again
 
-**What:** `tests/test_forecast.py` imported a `forecast` module that no longer exists, so the whole file was skipped with `--ignore` and its 14 tests (forecast caching, bounded training, the Holt fallback) protected nothing. The module was renamed piD (`backend/pid_engine.py`) with the same functions, so the test now imports `pid_engine as forecast`. CLAUDE.md's pre-push command drops the `--ignore`.
+**What:** `tests/test_forecast.py` imported a `forecast` module that no longer exists, so the whole file was skipped with `--ignore` and its 14 tests (forecast caching, bounded training, the Holt fallback) protected nothing. The module was renamed piD (`back/pid_engine.py`) with the same functions, so the test now imports `pid_engine as forecast`. CLAUDE.md's pre-push command drops the `--ignore`.
 
 **Verified:** all 14 forecast tests pass; the full suite is 12 failed (the same pre-existing baseline) and 418 passed, up from 404; `build_hal.py` builds; the site loaded at 1440 and 390 px on every tab with no page errors and no horizontal scroll (no frontend change).
 
-**Files:** `backend/tests/test_forecast.py`, `CLAUDE.md`, `EVOLUTION.md`.
+**Files:** `back/tests/test_forecast.py`, `CLAUDE.md`, `EVOLUTION.md`.
 
 ### 2026-10-10: website traffic in Analytics
 
@@ -2510,7 +2511,7 @@ The mark also gets a soft cobalt glow while working.
 - **Chart:** a 30-day bar chart of distinct visitors per day, one cobalt series, hover tooltip per day with visitors and visits.
 - **Table view** of the same numbers.
 
-**Data:** `backend/traffic.py`, a new `site_traffic` table (day, the existing keyed IP hash, visit count), filled by the same once-per-session ping as the visitor total (`POST /api/visit`).
+**Data:** `back/traffic.py`, a new `site_traffic` table (day, the existing keyed IP hash, visit count), filled by the same once-per-session ping as the visitor total (`POST /api/visit`).
 - `GET /api/traffic?days=30` returns aggregates only.
 - Rows older than 120 days are dropped.
 - "All time" is the existing `site_visits` total (never less than what the daily table has seen).
@@ -2527,10 +2528,10 @@ The mark also gets a soft cobalt glow while working.
 
 **Verified:** screenshots of the chart with a hovered bar at 1440 and 390 px show labels at their normal shape and round bar tops; every tab at both widths had no page errors and no horizontal scroll; pytest at baseline (12 pre-existing failures, 420 passed); `build_hal.py` builds.
 
-**Files:** `frontend/traffic.js`, `frontend/traffic.css`, `frontend/index.html`, `EVOLUTION.md`.
+**Files:** `front/traffic.js`, `front/traffic.css`, `front/index.html`, `EVOLUTION.md`.
 ### 2026-10-10: HAL-OS boots to a command prompt
 
-**What:** HAL-OS is now a basic working OS. The Lab's machine boots a 16-bit real-mode shell (`frontend/hal/shell/shell.asm`, about 3 KB) to a `HAL-OS>` prompt. It uses only the BIOS (video, keyboard, clock, memory, disk), so it would run on QEMU, VirtualBox or real hardware too. Commands:
+**What:** HAL-OS is now a basic working OS. The Lab's machine boots a 16-bit real-mode shell (`front/hal/shell/shell.asm`, about 3 KB) to a `HAL-OS>` prompt. It uses only the BIOS (video, keyboard, clock, memory, disk), so it would run on QEMU, VirtualBox or real hardware too. Commands:
 - help, clear/cls, echo
 - time and date (the RTC, UTC), uptime, mem (conventional and extended memory)
 - color XY (text attribute), calc A op B (signed 16-bit + − * / %)
@@ -2544,7 +2545,7 @@ Commands are case-insensitive, and the line editor supports backspace.
 - In shell mode the guest gets the keyboard, and nothing is sent down the wire.
 - Reboot returns to the prompt. Forget and Load weights boot the network directly.
 
-**Build:** `python scripts/build_hal_shell.py` (nasm) writes `frontend/hal/shell.img` (padded to 64 KB, committed, so deploys need no nasm). `--check` verifies it matches the source. The HAL-OS repository itself is untouched.
+**Build:** `python back/scripts/build_hal_shell.py` (nasm) writes `front/hal/shell.img` (padded to 64 KB, committed, so deploys need no nasm). `--check` verifies it matches the source. The HAL-OS repository itself is untouched.
 
 **Verified:** in the browser, on the standalone portal and inside the Lab window, at 1280/1440 and 390 px:
 - every command produced the expected output, e.g. `calc 12 * 7` → 84, `calc -100 / 7` → -14, `mem` 639 KB + 3072 KB
@@ -2593,7 +2594,7 @@ pytest at baseline; `build_hal.py` builds.
 
 ### 2026-10-10: the superellipse look, for se.pitechlab.com
 
-**What:** `frontend/superellipse.css` gives superellipse ("squircle") corners to pills, bubbles, member chips, buttons, cards, tiles, the π box and windows. It uses CSS `corner-shape: superellipse(2)` with radii that suit each element. Browsers without corner-shape (at the time of writing, those outside Chrome/Edge 139+) keep ordinary rounded corners at the same radii.
+**What:** `front/superellipse.css` gives superellipse ("squircle") corners to pills, bubbles, member chips, buttons, cards, tiles, the π box and windows. It uses CSS `corner-shape: superellipse(2)` with radii that suit each element. Browsers without corner-shape (at the time of writing, those outside Chrome/Edge 139+) keep ordinary rounded corners at the same radii.
 
 **When it is on:** when `<html>` has `shape-se`, which `channel.js` sets:
 - on any host starting with `se.`, so se.pitechlab.com needs no configuration beyond the domain
@@ -2612,7 +2613,7 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 
 ### 2026-10-10: Superellipse title for the superellipse look
 
-**What:** `frontend/selogo.js` draws the "Pi Tech Lab" title from superellipse geometry (|x/a|^n + |y/b|^n = 1, n = 4): letters built from superellipse rings and bars, with a cobalt superellipse dot on the i, inside a superellipse badge. It replaces the text title only when `html.shape-se` is set (se.pitechlab.com, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). The accessible name stays "Pi Tech Lab".
+**What:** `front/selogo.js` draws the "Pi Tech Lab" title from superellipse geometry (|x/a|^n + |y/b|^n = 1, n = 4): letters built from superellipse rings and bars, with a cobalt superellipse dot on the i, inside a superellipse badge. It replaces the text title only when `html.shape-se` is set (se.pitechlab.com, `SCHOLARPI_SHAPE=superellipse` or `?shape=se`). The accessible name stays "Pi Tech Lab".
 
 **Why:** the owner asked for the title to be built on superellipses, with letters and badge both superellipse-based.
 
@@ -2624,9 +2625,9 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 ### 2026-10-10: n means something: buttons n = γ, windows n = π; a Functions palette
 
 **What:**
-- `frontend/semorph.js`: in the superellipse look, buttons, pills and bubbles have corners with exponent n = γ (Euler–Mascheroni, 0.5772…, concave), and windows and cards n = π. Both values are computed in the page and keep improving: γ from H_m − ln m with its asymptotic correction (or the Numbers window's exact digits once present), π from the mark's live digits (Machin's formula until they arrive). They reach CSS as `corner-shape: superellipse(K)`, n = 2^K.
+- `front/semorph.js`: in the superellipse look, buttons, pills and bubbles have corners with exponent n = γ (Euler–Mascheroni, 0.5772…, concave), and windows and cards n = π. Both values are computed in the page and keep improving: γ from H_m − ln m with its asymptotic correction (or the Numbers window's exact digits once present), π from the mark's live digits (Machin's formula until they arrive). They reach CSS as `corner-shape: superellipse(K)`, n = 2^K.
 - Opening a window grows it out of its button while n climbs from γ to π; closing folds it back while n falls to γ. The moving outline is drawn from the superellipse formula, so browsers without `corner-shape` see the morph too. Reduced motion skips it.
-- `frontend/labview.js` + `labview.css`: a LabVIEW-style Functions palette, bottom-left: Add, Subtract, Multiply, Divide, And, Or, Exclusive Or, Not, Greater?, Equal?, For Loop, While Loop, Case Structure. They are dummies that fire on the two newest π digits; the loops run until pressed again. It starts open only where it does not cover the diagram (folded on phones) and remembers your choice.
+- `front/labview.js` + `labview.css`: a LabVIEW-style Functions palette, bottom-left: Add, Subtract, Multiply, Divide, And, Or, Exclusive Or, Not, Greater?, Equal?, For Loop, While Loop, Case Structure. They are dummies that fire on the two newest π digits; the loops run until pressed again. It starts open only where it does not cover the diagram (folded on phones) and remembers your choice.
 
 **Why:** the owner asked for minimise/maximise to be a change in n, buttons at n = γ, windows at n = π, computed by the app and animated; then for dummy LabVIEW function buttons.
 
@@ -2693,7 +2694,7 @@ The experimental banner then reads "Superellipse preview". Every other site is u
 
 ### 2026-10-10: A connector on every word, character and number
 
-**What:** `frontend/superlink.js`.
+**What:** `front/superlink.js`.
 - **Connect mode:** a Connect node in the Functions palette turns it on (Escape turns it off). While it is on, the piece of text under the pointer lights up, found with `caretPositionFromPoint` / `caretRangeFromPoint` and checked against the character's own box:
   - a word (letters together);
   - a number (up to 12 digits together);

@@ -1,17 +1,17 @@
 """
 Gunicorn config for production.
 
-    gunicorn api:app -c backend/gunicorn.conf.py     (from the repo root)
-    gunicorn api:app -c gunicorn.conf.py             (from backend/)
+    gunicorn api:app -c back/gunicorn.conf.py        (from the repo root)
+    gunicorn api:app -c gunicorn.conf.py             (from back/)
 
 Both work because this file locates itself and chdirs there. That matters
 because the backend modules import each other flatly (`from config import ...`),
-so the process must run with backend/ as its working directory — and platforms
+so the process must run with back/ as its working directory — and platforms
 launch the start command from the repository root.
 
 Doing it here rather than in the start command also avoids needing a shell.
 Railway executes the start command directly, with no shell to interpret it, so
-a command beginning `cd backend && ...` fails with "The executable `cd` could
+a command beginning `cd back && ...` fails with "The executable `cd` could
 not be found" — `cd` is a shell builtin, not a program.
 
 Overridable via environment variables so the same config works across

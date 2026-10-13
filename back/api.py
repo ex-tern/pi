@@ -27119,7 +27119,7 @@ app.include_router(super_engine_build_router(
 # ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
 # ---------------------------------------------------------------------------
-_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "frontend")
+_FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "front")
 
 # Asset versions are derived from file mtimes, not maintained by hand.
 #

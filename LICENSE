@@ -5,33 +5,33 @@ Copyright (c) 2026 Ali Vafadar Yengejeh (Pi Tech Lab).
 This repository holds two kinds of work, under two licenses.
 
 1. The science engines: open source, under the GNU Affero General Public License, version 3 only
-   (LICENSES/AGPL-3.0-only.txt; SPDX: AGPL-3.0-only). Anyone may use, study, change and share them. Anyone who
+   (back/LICENSES/AGPL-3.0-only.txt; SPDX: AGPL-3.0-only). Anyone may use, study, change and share them. Anyone who
    runs a changed version for users over a network must offer those users the source of their version (AGPL
    section 13).
 
-     backend/api.py             the whole server in one file (owner, 2026-10-13): it holds the science
+     back/api.py             the whole server in one file (owner, 2026-10-13): it holds the science
                                 engines (the Pi-Index scoring rubric, the assessment pipeline, routing to the
                                 panel's models, scientometrics, attribution, security checks, bibliographic
                                 extraction and lookups, the shared HTTP client, reception diagnostics, the
                                 proof-of-research ledger), and so the file as a whole, the platform code
                                 merged into it included, is AGPL-3.0-only
-     rust/numbers/              the constants (pi, e, phi, gamma) in Rust, and frontend/numbers.wasm built from it
+     back/rust/numbers/              the constants (pi, e, phi, gamma) in Rust, and front/numbers.wasm built from it
 
-   Each of these carries an SPDX-License-Identifier: AGPL-3.0-only header. Inside backend/api.py, banners
+   Each of these carries an SPDX-License-Identifier: AGPL-3.0-only header. Inside back/api.py, banners
    name the module each part came from; the engines listed above were the open ones before the merge.
 
 2. Everything else, including the website and its design: proprietary, all rights reserved
-   (LICENSES/LicenseRef-PiTechLab-Proprietary.txt). That is the front end and its look, the superellipse and
-   glass interface, the SuperAI language and its engines (rust/superai, rust/pifront, frontend/super/), the
+   (back/LICENSES/LicenseRef-PiTechLab-Proprietary.txt). That is the front end and its look, the superellipse and
+   glass interface, the SuperAI language and its engines (back/rust/superai, back/rust/pifront, front/super/), the
    site's program, and the platform that runs the service.
 
 3. Third-party work keeps its own license, beside it:
-     frontend/vendor/three/          three.js, MIT
-     frontend/hal/vendor/v86/        v86 (BSD-2-Clause) and SeaBIOS (LGPL-3.0)
-     frontend/quvi/                  QuVI, MIT (see LICENSE-QuVI.txt)
-     frontend/fonts/                 Geist and Geist Mono, SIL Open Font License 1.1
+     front/vendor/three/          three.js, MIT
+     front/hal/vendor/v86/        v86 (BSD-2-Clause) and SeaBIOS (LGPL-3.0)
+     front/quvi/                  QuVI, MIT (see LICENSE-QuVI.txt)
+     front/fonts/                 Geist and Geist Mono, SIL Open Font License 1.1
    The JavaScript libraries loaded from cdnjs (Chart.js, Mermaid, anime.js) are under their own licenses.
 
-Before 13 October 2026 the repository had no license at its root (all rights reserved), and rust/numbers,
-rust/superai and rust/pifront declared MIT in their Cargo.toml; copies obtained under those declarations keep
+Before 13 October 2026 the repository had no license at its root (all rights reserved), and back/rust/numbers,
+back/rust/superai and back/rust/pifront declared MIT in their Cargo.toml; copies obtained under those declarations keep
 the rights MIT gave them.

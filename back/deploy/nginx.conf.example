@@ -21,7 +21,7 @@ server {
     ssl_certificate_key /etc/letsencrypt/live/your-domain.com/privkey.pem;
     ssl_protocols TLSv1.2 TLSv1.3;
 
-    client_max_body_size 30M;  # match/exceed MAX_UPLOAD_MB in backend/.env
+    client_max_body_size 30M;  # match/exceed MAX_UPLOAD_MB in back/.env
 
     # Tighter limit on the heavy assessment endpoint; the app also
     # rate-limits itself in-process, this is a second layer in front of it.

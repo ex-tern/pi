@@ -17,13 +17,13 @@ jobs:
           python-version: "3.11"
 
       - name: Install dependencies
-        working-directory: backend
+        working-directory: back
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements-dev.txt
 
       - name: Run tests
-        working-directory: backend
+        working-directory: back
         run: pytest tests/ -v
         env:
           # Deliberately left empty — the scoring engine must work with no
@@ -38,8 +38,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - name: SuperAI
-        working-directory: rust/superai
+        working-directory: back/rust/superai
         run: cargo test -q
       - name: Numbers
-        working-directory: rust/numbers
+        working-directory: back/rust/numbers
         run: cargo test -q
