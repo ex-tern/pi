@@ -1,3 +1,11 @@
+/* style.css: every stylesheet of pitechlab.com in one file (owner, 2026-10-13: "put everything in one file, all .js in one
+   .js etc"), in the order index.html loaded them, each under a banner naming the file it was. The separate pages
+   (hal/, quvi/, confirm/, learn/) keep their own. */
+
+
+/* ================================================================================================================
+   style.css
+   ================================================================================================================ */
 /* NOTE: several orphaned declaration bodies were removed from this file.
    Their selectors had been deleted when the features they styled (a
    multi-select field search, and a canvas map legend) were removed, but the
@@ -2156,3 +2164,2405 @@ button.seal { font-family: inherit; cursor: pointer; }
 .rs-hot-meta { grid-column: 1; font-size: 12px; color: var(--graphite); }
 .rs-heat { grid-column: 2; grid-row: 1 / span 2; height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
 .rs-heat i { display: block; height: 100%; background: var(--cobalt); }
+
+
+/* ================================================================================================================
+   theme.css
+   ================================================================================================================ */
+/* theme.css — ScholarPi, light monochrome.
+ *
+ * Loaded after style.css and changes only how things look: no selector here
+ * hides, moves or renames anything app.js depends on.
+ *
+ * One idea carries the identity: π is the ratio of a circle to its diameter.
+ * The brand mark is that circle and that line, and the same circle marks the
+ * active tab. Everything else is ink on paper, hairlines and space. Colour is
+ * reserved for meaning: cobalt for "you are here / this is interactive", and
+ * muted red, ochre and green for status, which still has to read.
+ */
+
+/* Geist, self-hosted (SIL Open Font License, fonts/LICENSE-Geist-OFL.txt):
+   no third-party font request on every visit. */
+@font-face {
+  font-family: "Geist"; src: url("fonts/Geist-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+@font-face {
+  font-family: "Geist Mono"; src: url("fonts/GeistMono-Variable.woff2") format("woff2");
+  font-weight: 100 900; font-style: normal; font-display: swap;
+}
+
+:root {
+  --paper: #f6f6f4;
+  --surface: #ffffff;
+  --ink: #191919;
+  --graphite: #6e6e6a;
+  --hair: #dcdcd8;
+  --hair-strong: #c9c9c4;
+  --cobalt: #2f40e8;
+
+  /* style.css tokens, remapped */
+  --bg: var(--paper);
+  --card-bg: var(--surface);
+  --border: var(--hair);
+  --border-strong: var(--hair-strong);
+  --text: var(--ink);
+  --muted: var(--graphite);
+  --faint: #94948e;
+  --accent: var(--ink);
+  --accent-soft: #efeff3;
+  --accent-hover: #000000;
+  --danger: #b3261e;
+  --warn: #8a6a12;
+  --warn-bg: #f7f3e8;
+  --success: #2f6b3a;
+  --success-bg: #eef3ec;
+  --radius: 10px;
+  --shadow: none;
+
+  --font: "Geist", ui-sans-serif, system-ui, -apple-system, "Segoe UI", sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, SFMono-Regular, Menlo, monospace;
+}
+
+/* ---------- Type ---------- */
+body {
+  font-family: var(--font);
+  font-size: 14px;
+  line-height: 1.55;
+  background: var(--paper);
+  color: var(--ink);
+  font-feature-settings: "ss01", "tnum";
+  text-rendering: optimizeLegibility;
+}
+button, input, select, textarea { font-family: inherit; }
+code, pre, .mono, kbd, samp { font-family: var(--font-mono); }
+code { background: #efefec; }
+h1, h2, h3, h4, h5 { font-weight: 500; color: var(--ink); }
+h1 { font-size: 2.1rem; letter-spacing: -0.035em; line-height: 1.1; }
+h2 { font-size: 1.12rem; letter-spacing: -0.015em; }
+h3 { font-size: 0.98rem; letter-spacing: -0.01em; }
+a { color: var(--cobalt); text-underline-offset: 2px; text-decoration-thickness: 1px; }
+.hint { color: var(--graphite); }
+.lede { color: #2e2e2b; font-size: 14.5px; max-width: 68ch; }
+
+/* No ornamental elevation anywhere: hierarchy comes from space and lines.
+   Focus rings and the modal keep theirs because they carry meaning. */
+*:not(:focus-visible):not(.modal):not(.toast) { box-shadow: none !important; }
+:focus-visible { outline: 2px solid var(--cobalt) !important; outline-offset: 2px; }
+
+/* ---------- Brand ---------- */
+.brand {
+  display: flex; align-items: center; gap: 12px;
+  margin: 2px 0 26px; color: var(--ink); text-decoration: none;
+}
+.brand-mark { width: 34px; height: 34px; flex: none; }
+.brand-name { font-size: 19px; font-weight: 500; letter-spacing: -0.03em; }
+.brand-name small { display: block; font-size: 11.5px; letter-spacing: 0; color: var(--graphite); font-weight: 400; margin-top: 1px; }
+
+/* ---------- Layout ---------- */
+.main { padding: 34px 48px 80px; max-width: 1180px; }
+.sidebar {
+  background: var(--paper);
+  border-right: 1px solid var(--hair);
+  padding: 58px 20px 28px;
+}
+.sidebar-title {
+  text-transform: none; letter-spacing: -0.01em; font-size: 13px; font-weight: 500;
+  color: var(--graphite); margin-bottom: 14px;
+}
+.sidebar-expander {
+  background: transparent; border: 0; border-top: 1px solid var(--hair);
+  border-radius: 0; padding: 12px 2px; margin: 0;
+}
+.sidebar-expander summary { font-weight: 500; font-size: 13.5px; }
+.researcher-info, .donate-card { background: var(--surface); border-radius: 10px; }
+
+/* ---------- Navigation: the circle marks where you are ----------
+   Scoped to .nav-tabs: the floating architecture button is also a .tab-btn
+   and must keep its own fixed position and shape. */
+.nav-tabs {
+  gap: 4px 26px; border-bottom: 1px solid var(--hair);
+  padding-bottom: 0; margin-bottom: 38px;
+}
+.nav-tabs .tab-btn {
+  position: relative;
+  background: transparent; border: 0; border-radius: 0;
+  padding: 10px 0 14px 18px; font-size: 15px; font-weight: 450;
+  color: var(--graphite); letter-spacing: -0.01em;
+}
+.nav-tabs .tab-btn::before {
+  content: ""; position: absolute; left: 0; top: 50%; margin-top: -7px;
+  width: 9px; height: 9px; border-radius: 50%;
+  border: 1.4px solid var(--hair-strong); background: transparent;
+  transition: background 0.15s ease, border-color 0.15s ease;
+}
+.nav-tabs .tab-btn:hover { color: var(--ink); }
+.nav-tabs .tab-btn:hover::before { border-color: var(--ink); }
+.nav-tabs .tab-btn.active { background: transparent; color: var(--ink); }
+.nav-tabs .tab-btn.active::before { background: var(--cobalt); border-color: var(--cobalt); }
+.tab-btn.arch-fab.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+.page-header { margin-bottom: 22px; align-items: flex-end; }
+.page-header h1 { margin-bottom: 0; }
+
+/* ---------- Surfaces ---------- */
+.card {
+  background: var(--surface);
+  border: 1px solid var(--hair);
+  border-radius: var(--radius);
+  padding: 26px 28px;
+  margin-bottom: 22px;
+}
+.card h2 { margin-bottom: 14px; }
+
+/* ---------- Controls: round, like the mark ---------- */
+.btn, .tab-btn.arch-fab, .gh-fab {
+  border-radius: 999px;
+}
+.btn {
+  font-weight: 500; font-size: 13px; padding: 9px 16px;
+  background: transparent; border: 1px solid var(--hair-strong); color: var(--ink);
+}
+.btn:hover:not(:disabled) { background: #efefec; border-color: var(--ink); }
+.btn-primary, .btn-donate, .mm-btn, .orcid-btn, .amount-btn.selected {
+  background: var(--ink); border-color: var(--ink); color: #ffffff;
+}
+.btn-primary:hover:not(:disabled), .btn-donate:hover, .mm-btn:hover, .orcid-btn:hover {
+  background: #000000; border-color: #000000;
+}
+.btn-secondary { background: transparent; color: var(--danger); border-color: #e6cdc8; }
+.btn-ghost { border-color: transparent; }
+.btn-ghost:hover:not(:disabled) { border-color: transparent; }
+
+input[type=text], input[type=email], input[type=number], input[type=search], input[type=url],
+input[type=password], select, textarea {
+  border-radius: 8px !important;
+  border-color: var(--hair-strong) !important;
+  background: var(--surface);
+}
+
+.pill { border-radius: 999px; font-weight: 500; letter-spacing: 0; }
+.pill-muted { background: transparent; color: var(--graphite); border: 1px solid var(--hair); }
+
+.help-btn { border-color: var(--hair-strong); color: var(--graphite); font-weight: 500; }
+.help-btn:hover { background: var(--ink); border-color: var(--ink); color: #fff; }
+
+/* Status stays legible but quiet: a hairline frame and a dot, not a slab. */
+.chain-badge { background: transparent !important; border: 1px solid var(--hair) !important; font-weight: 500; }
+
+/* ---------- Tables ---------- */
+.data-table th {
+  background: transparent; color: var(--graphite); font-weight: 500;
+  text-transform: none; letter-spacing: 0; border-bottom: 1px solid var(--ink);
+}
+.data-table td { border-bottom: 1px solid var(--hair); }
+.data-table tr:hover td { background: #fafaf8; }
+
+/* ---------- Floating corner buttons ---------- */
+.gh-fab, .tab-btn.arch-fab {
+  background: var(--surface); color: var(--ink); border: 1px solid var(--hair);
+}
+.gh-fab:hover, .tab-btn.arch-fab:hover { border-color: var(--ink); }
+
+/* ---------- Modal ---------- */
+.modal-overlay { background: rgba(246, 246, 244, 0.82); backdrop-filter: blur(3px); }
+.modal { border: 1px solid var(--hair); border-radius: 14px; box-shadow: 0 30px 60px -30px rgba(25, 25, 25, 0.25); }
+
+/* ---------- Lab ---------- */
+.lab-frame { border-radius: 10px; }
+
+
+/* Labels: style.css's tracked capitals were switched to sentence case at
+   the source (text-transform: none), so nothing is needed here. */
+
+/* ---------- Quieter sidebar: one solid action, the rest outlined ---------- */
+.orcid-btn, .btn-donate, #sidebar .btn-primary {
+  background: transparent; color: var(--ink); border-color: var(--hair-strong);
+}
+.orcid-btn:hover, .btn-donate:hover { background: #efefec; border-color: var(--ink); }
+.sidebar .card, .sidebar [class*="card"] { background: transparent; border-color: var(--hair); }
+
+/* ---------- Segmented choices (sub-tabs) as pills ---------- */
+.subtab-btn {
+  border-radius: 999px; background: transparent; border-color: var(--hair-strong);
+  font-weight: 500; color: var(--graphite); padding: 6px 14px;
+}
+.subtab-btn:hover { color: var(--ink); border-color: var(--ink); }
+.subtab-btn.active { background: var(--ink); color: #fff; border-color: var(--ink); }
+
+/* KPI tiles: numbers carry the weight, the label sits under it quietly */
+.stat-card, .kpi, [class*="stat-box"] { border-radius: var(--radius); }
+
+/* ---------- Small screens ---------- */
+@media (max-width: 760px) {
+  .main { padding: 64px 16px 60px; }
+  h1 { font-size: 1.7rem; }
+  .nav-tabs { gap: 2px 20px; }
+  .card { padding: 20px 18px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  * { transition: none !important; animation: none !important; }
+}
+
+/* The sidebar mark turns too, slowly enough to read as alive, not busy. */
+.brand-mark { color: var(--ink); }
+.brand-mark .mark-spin { transform-origin: 16px 16px; animation: wi-turn 30s linear infinite; }
+
+/* ---------- Experimental channel (channel.js) ----------
+   A slim strip in the page flow, above everything: always seen, never
+   covering content or the corner buttons. */
+.channel-bar {
+  display: flex; align-items: center; justify-content: center; gap: 10px; flex-wrap: wrap;
+  background: var(--ink); color: #fff; padding: 8px 16px 8px 56px;
+  font-size: 12.5px; line-height: 1.4; text-align: center;
+}
+.channel-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.4); flex: none; }
+.channel-link { color: #fff; text-decoration: underline; white-space: nowrap; }
+html.is-experimental .sidebar-toggle { top: 4px; color: #fff; opacity: 0.85; }
+
+/* ---------- Permission requests (owner, Lab) ---------- */
+.consent-form { display: grid; gap: 10px; margin-top: 12px; max-width: 720px; }
+.consent-form label { display: grid; gap: 4px; font-size: 13px; color: var(--graphite); }
+.consent-form input, .consent-form textarea { font: inherit; font-size: 13.5px; color: var(--ink); padding: 8px 10px; border: 1px solid var(--hair-strong); }
+.consent-form button { justify-self: start; }
+.consent-item { border-top: 1px solid var(--hair); padding: 14px 0; }
+.consent-item:first-child { border-top: 0; padding-top: 4px; }
+.consent-top { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+.consent-status { border: 1px solid var(--hair); color: var(--graphite); background: transparent; }
+.consent-item[data-status="granted"] .consent-status { color: var(--success); border-color: #cddbc9; background: var(--success-bg); }
+.consent-item[data-status="declined"] .consent-status { color: var(--danger); border-color: #e6cdc8; background: #f8eeec; }
+.consent-link { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-top: 8px; }
+.consent-link input { flex: 1 1 320px; min-width: 0; font-family: var(--font-mono); font-size: 12px; padding: 8px 10px; border: 1px solid var(--hair-strong); background: #fbfbfa; color: var(--ink); }
+.consent-history { margin: 10px 0 0; padding-left: 18px; font-size: 13px; }
+.consent-history li { margin: 4px 0; }
+
+/* QuVI sits on paper, not on HAL-OS's dark instrument frame. */
+.lab-frame.lab-frame-light { background: var(--paper); }
+.lab-frame.lab-frame-light iframe { height: min(1100px, 90vh); }
+
+
+/* ================================================================================================================
+   orbit.css
+   ================================================================================================================ */
+/* orbit.css — the orbit layout (orbit.js). Loaded after theme.css.
+   The old chrome (sidebar, tab row, page column) is hidden, not removed:
+   app.js still drives it, and orbit.js clicks its tab buttons. */
+
+html.orbit-on, html.orbit-on body { height: 100%; overflow: hidden; }
+html.orbit-on .app-shell,
+html.orbit-on .sidebar-toggle,
+html.orbit-on .sidebar-scrim,
+html.orbit-on .arch-fab,
+html.orbit-on .gh-fab { display: none !important; }
+
+.orbit-stage {
+  position: fixed; left: 0; right: 0; bottom: 0; top: 0; z-index: 10; overflow: hidden;
+  background: var(--paper);      /* a simple background (owner, 2026-10-13) */
+  touch-action: none;
+}
+.orbit-rings { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; }
+.orbit-rings ellipse { fill: none; stroke: var(--hair); stroke-width: 1; stroke-dasharray: 2 7; }
+
+/* --- the mark: fixed in the centre, its size following what the site does --- */
+.orbit-center { position: fixed; inset: 0; z-index: 950; pointer-events: none; }
+.orbit-core {
+  position: absolute; z-index: 2; pointer-events: auto; padding: 0; border: 0; border-radius: 50%; background: none; cursor: pointer;
+  transition: width 0.6s cubic-bezier(.2, .7, .2, 1), height 0.6s cubic-bezier(.2, .7, .2, 1),
+              left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), transform 0.2s ease, opacity 0.3s ease;
+}
+.orbit-mark { width: 100%; height: 100%; display: block; overflow: visible; }
+.om-circle { fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
+.om-r { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; vector-effect: non-scaling-stroke; }
+.om-sweep { transform-origin: 200px 200px; animation: wi-turn 16s linear infinite; }
+html.orbit-busy .om-sweep { animation-duration: 2.2s; }
+html.orbit-still .om-sweep { animation-play-state: paused; }   /* double-click on the mark */
+html.orbit-js-spin .om-sweep { animation: none; }               /* turned by orbit.js at the site's pace */
+html[data-activity="working"] .orbit-core, html[data-activity="busy"] .orbit-core { filter: drop-shadow(0 0 14px rgba(47, 64, 232, 0.28)); }
+html.orbit-busy .orbit-core { filter: drop-shadow(0 0 18px rgba(47, 64, 232, 0.35)); }
+@keyframes wi-turn { to { transform: rotate(-360deg); } }
+
+.orbit-core.pressed { transform: scale(0.95); }
+.orbit-core:hover { transform: scale(1.04); }
+.orbit-core { transform-origin: 50% 50%; cursor: grab; touch-action: none; }
+html.orbit-moving .orbit-core { cursor: grabbing; transition: none; transform: scale(1.06); }
+html.orbit-moving .orbit-pi { transition: none; }
+.orbit-core.pulse { animation: om-pulse 0.6s cubic-bezier(.2, .7, .2, 1); }
+@keyframes om-pulse { 40% { transform: scale(1.18); } }
+
+/* the name, in the top-left corner */
+.orbit-title {
+  position: absolute; left: 50%; transform: translateX(-50%); top: calc(var(--orbit-top, 0px) + 16px); margin: 0;
+  pointer-events: auto; cursor: default; white-space: nowrap; text-align: center;
+  font-size: clamp(20px, 2vw, 28px); font-weight: 500; letter-spacing: -0.035em; line-height: 1.15; color: var(--ink);
+}
+.ot-text { display: inline-block; transition: opacity 0.45s ease, filter 0.45s ease; }
+.ot-text.ot-out { opacity: 0; filter: blur(4px); }
+.ot-text:not(:lang(en)) { letter-spacing: -0.02em; }
+/* joined and syllabic scripts break apart under negative tracking */
+.ot-text:lang(fa), .ot-text:lang(ar), .ot-text:lang(he), .ot-text:lang(hi), .ot-text:lang(bn), .ot-text:lang(th),
+.ot-text:lang(zh), .ot-text:lang(ja), .ot-text:lang(ko) { letter-spacing: normal; }
+.ot-probe { position: absolute; visibility: hidden; white-space: nowrap; left: -9999px; top: 0; }
+
+/* --- π, computed live in its own box: move it, resize it --- */
+.orbit-pi {
+  position: absolute; transform: translate(-50%, -50%); pointer-events: auto; cursor: grab; touch-action: none; user-select: none;
+  width: 45ch; max-width: calc(94vw - 2.4em); box-sizing: content-box; padding: 0.7em 1.2em 0.6em; border-radius: 14px;
+  background: var(--surface); border: 1px solid var(--hair);
+  font-family: var(--font-mono); font-size: calc(var(--pi-base, 12px) * var(--pi-scale, 1)); color: var(--graphite);
+  display: flex; flex-direction: column; align-items: center; gap: 0.2em;
+  transition: left 0.6s cubic-bezier(.2, .7, .2, 1), top 0.6s cubic-bezier(.2, .7, .2, 1), opacity 0.3s ease, border-color 0.15s ease;
+}
+.orbit-pi:hover { border-color: var(--hair-strong); }
+.orbit-pi.dragging { cursor: grabbing; border-color: var(--cobalt); }
+.op-grip {
+  position: absolute; right: 3px; bottom: 3px; width: 14px; height: 14px; cursor: nwse-resize; touch-action: none; opacity: 0.45;
+  background: linear-gradient(135deg, transparent 0 55%, var(--graphite) 55% 62%, transparent 62% 75%, var(--graphite) 75% 82%, transparent 82%);
+}
+.orbit-pi:hover .op-grip { opacity: 1; }
+.orbit-pi .op-digits { min-height: 1.3em; white-space: nowrap; overflow: hidden; text-overflow: clip; max-width: 100%; direction: rtl; }
+.orbit-pi .op-digits span { direction: ltr; unicode-bidi: isolate; }
+.orbit-pi .op-digits b { color: var(--cobalt); font-weight: 500; }
+.orbit-pi .op-count { font-family: var(--font); font-size: 0.95em; color: var(--faint); min-height: 1.3em; }
+
+/* --- orbiting cards --- */
+.orbit-bubbles { position: absolute; inset: 0; z-index: 3; pointer-events: none; }
+.orbit-bubble {
+  position: absolute; left: 0; top: 0; pointer-events: auto;
+  display: inline-flex; align-items: center; gap: 0.6em; max-width: min(30em, calc(100vw - 24px));
+  padding: 0.55em 1.15em 0.55em 0.85em; border-radius: 999px;
+  background: var(--surface); border: 1px solid var(--hair); color: var(--ink);
+  font: inherit; font-size: calc(var(--pill-base, 13px) * var(--pz, 1) * var(--use, 1) * var(--pill-fit, 1)); line-height: 1.2; white-space: nowrap; cursor: grab;
+  touch-action: none; user-select: none; -webkit-user-select: none; will-change: transform;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+/* pills glide to a new place only when something moved them */
+html.orbit-ready .orbit-bubble { transition: border-color 0.15s ease, background 0.15s ease, transform 0.45s cubic-bezier(.2, .7, .2, 1); }
+html.orbit-moving .orbit-bubble, .orbit-bubble.dragging { transition: border-color 0.15s ease, background 0.15s ease !important; }
+/* size: --pz from how complex the card is, times --use from how much you use it */
+.orbit-bubble[data-tier="2"], .orbit-bubble[data-tier="3"] { font-weight: 500; }
+
+/* each pill its own look: typeface ... */
+/* ... and style */
+.orbit-bubble.is-link .ob-label::after { content: " ↗"; }
+.orbit-bubble[hidden] { display: none; }
+.orbit-bubble:hover { border-color: var(--cobalt); }
+.orbit-bubble.dragging { cursor: grabbing; border-color: var(--cobalt); z-index: 5; }
+.orbit-bubble.is-open { background: var(--ink); color: #fff; border-color: var(--ink); box-shadow: none; }
+/* titles are always shown in full: a long one wraps rather than being cut */
+.ob-label { white-space: normal; text-wrap: balance; overflow-wrap: anywhere; }
+.ob-dot { width: 0.6em; height: 0.6em; border-radius: 50%; flex: none; border: 1.5px solid var(--cobalt); }
+/* sections are told apart by the dot alone, so the orbit stays monochrome */
+.orbit-bubble[data-section="assess"] .ob-dot { background: var(--cobalt); }
+.orbit-bubble[data-section="journal"] .ob-dot { border-color: var(--ink); background: var(--ink); }
+.orbit-bubble[data-section="analytics"] .ob-dot { border-color: var(--cobalt); }
+.orbit-bubble[data-section="lab"] .ob-dot { border-color: var(--ink); }
+.orbit-bubble[data-section="diagram"] .ob-dot { border-color: var(--hair-strong); background: var(--hair-strong); }
+.orbit-bubble[data-section="account"] .ob-dot { border-radius: 2px; border-color: var(--graphite); }
+.orbit-bubble.is-open .ob-dot { border-color: #fff; }
+
+/* --- expanded cards: floating windows --- */
+.orbit-panel {
+  position: fixed; display: flex; flex-direction: column; min-width: 260px; min-height: 120px; max-width: 100vw;
+  background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 16px; overflow: hidden; resize: both;
+  filter: drop-shadow(0 22px 36px rgba(25, 25, 25, 0.16));
+}
+.orbit-panel.gliding { transition: left 0.38s cubic-bezier(.2, .7, .2, 1), top 0.38s cubic-bezier(.2, .7, .2, 1); }
+.orbit-panel:focus, .orbit-panel:focus-visible { outline: none !important; }
+/* set aside (a click on the mark): windows step out of the way, still open */
+.orbit-panel { transition: opacity 0.25s ease, transform 0.25s ease; }
+html.orbit-aside .orbit-panel { opacity: 0; transform: scale(0.96); pointer-events: none; }
+.op-head {
+  display: flex; align-items: center; gap: 10px; padding: 12px 18px; flex: none;
+  background: var(--surface); border-bottom: 1px solid var(--hair); cursor: move; touch-action: none; user-select: none;
+}
+.op-section { font-size: 12px; color: var(--graphite); flex: none; }
+.op-title { font-size: 15px; font-weight: 500; margin: 0; flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; letter-spacing: -0.01em; }
+.op-head button {
+  flex: none; width: 32px; height: 32px; border-radius: 50%; border: 1px solid var(--hair); background: transparent;
+  cursor: pointer; font-size: 17px; line-height: 1; color: var(--ink);
+}
+.op-head button:hover { border-color: var(--ink); }
+.op-body { flex: 1; overflow: auto; padding: 18px; }
+/* the window is the frame now; a single card inside drops its own */
+.op-body .orbit-content > .card:only-child { border: 0; background: transparent; padding: 0; margin: 0; }
+.op-body .orbit-content > * + * { margin-top: 14px; }
+.op-body details.sidebar-expander { border: 0; padding: 0; }
+.op-body .stats-bar { margin: 0; }
+
+@media (max-width: 700px) {
+  .orbit-bubble { --pill-base: 11px; padding: 0.4em 0.85em 0.4em 0.65em; max-width: min(15em, 62vw); gap: 0.45em; border-radius: 1.1em; }
+  .orbit-title { top: calc(var(--orbit-top, 0px) + 12px); font-size: 20px; }
+  .orbit-panel { min-width: 0; }
+  .op-head { cursor: default; }
+  .op-body { padding: 14px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .om-sweep { animation: none; }
+  .orbit-core { transition: none; }
+}
+
+/* While cards are open the mark steps back: smaller and see-through
+   (still there to drag, or to click to close everything). */
+html.orbit-open .orbit-core { opacity: 0.6; }
+html.orbit-open .orbit-core:hover { opacity: 1; }
+html.orbit-open .orbit-pi { opacity: 0.7; }
+@media (max-width: 700px) {
+  html.orbit-open .orbit-core { opacity: 0.4; }
+  html.orbit-open .orbit-pi { opacity: 0.5; }
+  .orbit-pi { --pi-base: 10.5px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  html.orbit-ready .orbit-bubble, .orbit-pi { transition: none; }
+  .orbit-core.pulse { animation: none; }
+}
+
+/* ResBD lives in a pill's window now: drop its own floating-window frame */
+.op-body .buddy-float {
+  position: static !important; inset: auto !important; width: auto !important; height: auto !important; max-width: none; max-height: none;
+  box-shadow: none; border: 0; border-radius: 0; overflow: visible; display: flex;
+}
+.op-body .buddy-float .buddy-bar { cursor: default; }
+.op-body .buddy-float .buddy-bar button, .op-body .buddy-float .buddy-resize { display: none !important; }
+.op-body .buddy-float.is-min .buddy-scroll { display: block !important; }
+
+.orbit-stage > .orbit-pi { z-index: 4; }
+
+/* PiEN: its name inside the mark, and the halo on the card it suggests next */
+.om-name { font-family: var(--font); font-size: 30px; font-weight: 500; letter-spacing: -0.02em; fill: var(--ink); }
+.orbit-bubble.pien-pick { box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.16), 0 0 18px rgba(47, 64, 232, 0.28); }
+.orbit-bubble.pien-pick::after {
+  content: ""; position: absolute; inset: -6px; border-radius: inherit; border: 1px solid rgba(47, 64, 232, 0.45);
+  animation: pien-halo 2.8s ease-in-out infinite; pointer-events: none;
+}
+@keyframes pien-halo { 50% { inset: -10px; opacity: 0.25; } }
+@media (prefers-reduced-motion: reduce) { .orbit-bubble.pien-pick::after { animation: none; } }
+
+/* the numbers window (numbers.js): every constant visible at once */
+.nb { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 0 26px; }
+.nb-intro { grid-column: 1 / -1; color: var(--graphite); font-size: 12.5px; margin: 0 0 4px; }
+.nb-row { padding: 10px 0; border-top: 1px solid var(--hair); min-width: 0; }
+.nb-row header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 4px; }
+.nb-sym { font-family: "Iowan Old Style", "Palatino Linotype", Palatino, Georgia, serif; font-style: italic; font-size: 19px; min-width: 1.9em; color: var(--ink); }
+.nb-name { font-weight: 500; font-size: 13px; flex: 1; min-width: 0; }
+.nb-count { font-size: 11.5px; color: var(--faint); font-variant-numeric: tabular-nums; white-space: nowrap; }
+/* two lines of the newest digits; scroll back for the rest */
+.nb-digits {
+  margin: 0; font-family: var(--font-mono); font-size: 12px; line-height: 1.5; color: var(--graphite);
+  word-break: break-all; overflow-wrap: anywhere; height: 3em; overflow-y: auto; scrollbar-width: thin;
+}
+.nb-note { margin: 4px 0 0; font-size: 11.5px; line-height: 1.4; color: var(--faint); }
+@media (max-width: 700px) { .nb-row { padding: 8px 0; } .nb-intro { font-size: 12px; } }
+@media (max-width: 700px) and (max-height: 700px) { .nb-note { display: none; } }
+
+/* the capabilities window (capabilities.js) */
+.cap { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 300px), 1fr)); gap: 4px 28px; }
+.cap-intro { grid-column: 1 / -1; color: var(--graphite); font-size: 13px; margin: 0 0 4px; }
+.cap-group { border-top: 1px solid var(--hair); padding: 10px 0 6px; min-width: 0; }
+.cap-group h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
+.cap-group ul { list-style: none; margin: 0; padding: 0; }
+.cap-group li { padding: 5px 0; font-size: 13px; line-height: 1.4; }
+.cap-open {
+  display: inline; padding: 0; margin: 0 6px 0 0; border: 0; background: none; font: inherit; font-weight: 500;
+  color: var(--ink); cursor: pointer; text-decoration: underline; text-decoration-color: var(--hair-strong); text-underline-offset: 3px;
+}
+.cap-open:hover { color: var(--cobalt); text-decoration-color: var(--cobalt); }
+.cap-what { color: var(--graphite); }
+.orbit-bubble[data-section="about"] .ob-dot { border-color: var(--cobalt); background: var(--cobalt); border-radius: 2px; }
+
+/* PiEN in the Performance window (pien.js) */
+.pien-perf { padding-bottom: 16px; margin-bottom: 4px; border-bottom: 1px solid var(--hair); }
+.pien-perf h2 { font-size: 17px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+.pien-perf h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 14px 0 6px; }
+.pp-lede { color: var(--graphite); font-size: 13px; margin: 0 0 12px; }
+.pp-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 10px; }
+.pp-stats > div { border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.pp-stats b { display: block; font-size: 22px; font-weight: 500; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
+.pp-stats span { font-size: 12px; color: var(--graphite); }
+.pp-next { font-size: 13px; margin: 12px 0 0; color: var(--graphite); }
+.pp-pairs { margin: 0; padding-left: 18px; font-size: 13px; }
+.pp-pairs li { padding: 3px 0; }
+.pp-pairs li span { color: var(--faint); margin-left: 8px; font-variant-numeric: tabular-nums; }
+.pp-empty { font-size: 12.5px; color: var(--faint); margin: 12px 0 0; }
+
+/* --- the account pill: red signed out, yellow with one sign-in, a green check with both --- */
+.orbit-bubble.is-account .ob-dot { width: 1em; height: 1em; border: 0; border-radius: 50%; background: #c0645c; position: relative; }
+.orbit-bubble.is-account[data-signed="true"] .ob-dot { background: #4f8f5a; }
+.orbit-bubble.is-account[data-signed="partial"] .ob-dot { background: #c9a53e; }
+.orbit-bubble.is-account[data-signed="partial"] .ob-dot::after,
+.orbit-bubble.is-account[data-signed="true"] .ob-dot::after {
+  content: "✓"; position: absolute; inset: 0; display: grid; place-items: center; color: #fff; font-size: 0.72em; font-weight: 700; line-height: 1;
+}
+
+/* --- a pill with a chat box in it (siM Assistant) --- */
+.orbit-bubble.is-chat { gap: 0.55em; padding-right: 0.35em; }
+.ob-chat { display: inline-flex; align-items: center; gap: 2px; margin: 0; }
+.ob-chat input {
+  width: 11em; font: inherit; font-size: 0.92em; padding: 0.3em 0.7em; border-radius: 999px;
+  border: 1px solid var(--hair); background: var(--paper); color: var(--ink); cursor: text;
+}
+.ob-chat input:focus { outline: none; border-color: var(--cobalt); }
+.ob-chat button { width: 1.9em; height: 1.9em; border-radius: 50%; border: 0; background: var(--ink); color: #fff; cursor: pointer; font: inherit; font-size: 0.85em; }
+@media (max-width: 700px) { .ob-chat input { width: 7.5em; } }
+
+/* --- a bubble holding pills (Lab, Tools) --- */
+.orbit-bubble.is-group { padding: 0.45em 0.5em 0.45em 0.9em; gap: 0.6em; border-radius: 1.4em; }
+.ob-members { display: inline-flex; flex-wrap: wrap; gap: 0.3em; max-width: 22em; }
+.ob-member {
+  font: inherit; font-size: 0.86em; padding: 0.3em 0.8em; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--hair-strong); background: var(--paper); color: var(--ink); white-space: nowrap;
+}
+.ob-member:hover { border-color: var(--cobalt); color: var(--cobalt); }
+@media (max-width: 700px) { .ob-members { max-width: 11em; } }
+
+/* --- a glimpse of what is inside (peeks.js) --- */
+.ob-text { display: inline-flex; flex-direction: column; min-width: 0; text-align: left; }
+.ob-peek { font-size: 0.78em; opacity: 0.7; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 18em; font-weight: 400; font-style: normal; }
+@media (max-width: 700px) { .ob-peek { max-width: 11em; } }
+
+/* --- Architecture as a flowchart (architecture.js) --- */
+.arch { container-type: inline-size; }
+.arch-lede { color: var(--graphite); font-size: 13px; margin: 0 0 14px; }
+.arch-flow { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 22px; }
+.arch-flow li { position: relative; display: flex; }
+.arch-flow li + li::before {
+  content: ""; position: absolute; left: -19px; top: 50%; width: 16px; border-top: 1px solid var(--hair-strong);
+}
+.arch-flow li + li::after {
+  content: ""; position: absolute; left: -7px; top: calc(50% - 3.5px); border-left: 5px solid var(--hair-strong);
+  border-top: 3.5px solid transparent; border-bottom: 3.5px solid transparent;
+}
+.arch-step {
+  flex: 1; display: flex; flex-direction: column; align-items: flex-start; gap: 4px; text-align: left; cursor: pointer;
+  padding: 12px 12px 14px; border-radius: 14px; border: 1px solid var(--hair); background: var(--surface); font: inherit; color: var(--ink);
+}
+.arch-step:hover { border-color: var(--hair-strong); }
+.arch-step[aria-pressed="true"] { border-color: var(--cobalt); box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.10); }
+.arch-n { width: 22px; height: 22px; border-radius: 50%; border: 1px solid var(--cobalt); color: var(--cobalt); display: grid; place-items: center; font-size: 11.5px; font-variant-numeric: tabular-nums; }
+.arch-step[aria-pressed="true"] .arch-n { background: var(--cobalt); color: #fff; }
+.arch-k { font-weight: 500; font-size: 14px; }
+.arch-s { font-size: 12px; color: var(--graphite); line-height: 1.35; }
+.arch-detail { margin-top: 16px; padding: 14px 16px; border-radius: 14px; background: var(--surface); border: 1px solid var(--hair); }
+.arch-detail h3 { font-size: 14px; font-weight: 500; margin: 0 0 6px; }
+.arch-detail ul, .arch-note ul { margin: 0; padding-left: 18px; font-size: 13px; line-height: 1.55; color: var(--ink); }
+.arch-note { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--hair); }
+.arch-note h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
+.arch-cite { font-size: 11.5px; color: var(--faint); margin: 10px 0 0; }
+.arch-cite a { color: var(--cobalt); text-decoration: none; }
+.arch-cite a:hover { text-decoration: underline; }
+/* narrow windows: three by two, then one column with arrows downwards */
+@container (max-width: 760px) {
+  .arch-flow { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+  .arch-flow li:nth-child(4)::before, .arch-flow li:nth-child(4)::after { display: none; }
+}
+@container (max-width: 460px) {
+  .arch-flow { grid-template-columns: 1fr; gap: 16px; }
+  .arch-flow li + li::before { left: 22px; top: -14px; width: 0; height: 12px; border-top: 0; border-left: 1px solid var(--hair-strong); display: block; }
+  .arch-flow li + li::after { left: 18.5px; top: -5px; border-left: 3.5px solid transparent; border-right: 3.5px solid transparent; border-top: 5px solid var(--hair-strong); border-bottom: 0; display: block; }
+  .arch-step { flex-direction: row; align-items: center; flex-wrap: wrap; column-gap: 10px; }
+  .arch-s { flex-basis: 100%; padding-left: 32px; }
+}
+.arch-sub { margin: -2px 0 8px; font-size: 12.5px; color: var(--graphite); }
+
+/* recent assessments (recent.js) */
+.recent-lede { color: var(--graphite); font-size: 13px; margin: 0 0 12px; }
+.recent-empty, .recent-total { font-size: 12.5px; color: var(--faint); margin: 12px 0 0; }
+.recent-list { list-style: none; margin: 0; padding: 0; }
+.recent-list li {
+  display: grid; grid-template-columns: minmax(0, 1.3fr) minmax(60px, 1fr) 3.2em minmax(0, 1fr); align-items: center; gap: 12px;
+  padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13px;
+}
+.rc-field { font-weight: 500; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rc-bar { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.rc-bar i { display: block; height: 100%; background: var(--cobalt); border-radius: 3px; }
+.rc-score { font-weight: 500; text-align: right; font-variant-numeric: tabular-nums; }
+.rc-meta { color: var(--faint); font-size: 12px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+@media (max-width: 700px) {
+  .recent-list li { grid-template-columns: minmax(0, 1fr) 3em; row-gap: 4px; }
+  .rc-bar { grid-column: 1 / -1; grid-row: 2; }
+  .rc-meta { grid-column: 1 / -1; }
+}
+
+/* Intern (intern.js) */
+.intern h2 { font-size: 17px; font-weight: 500; margin: 0 0 4px; }
+.in-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 12px; }
+.in-points { margin: 0 0 12px; padding-left: 18px; font-size: 13px; line-height: 1.6; }
+.in-note { font-size: 12.5px; color: var(--faint); margin: 0 0 12px; }
+.orbit-panel.leaving { opacity: 0.45; transform: scale(0.97); transition: opacity 0.15s ease, transform 0.15s ease; }
+
+/* the name lives in the stage, behind pills and windows */
+.orbit-stage > .orbit-title { top: 16px; z-index: 1; pointer-events: auto; }
+@media (max-width: 700px) { .orbit-stage > .orbit-title { top: 12px; } }
+
+/* PiEN's name shows only when you point at the mark (or reach it by keyboard) */
+.om-name { opacity: 0; transition: opacity 0.2s ease; }
+.orbit-core:hover .om-name, .orbit-core:focus-visible .om-name { opacity: 1; }
+
+/* siM's chat box: the send button sits inside the right end of the field */
+.orbit-bubble.is-chat { padding-right: 0.4em; }
+.ob-chat { position: relative; gap: 0; }
+.ob-chat input { padding-right: 2.3em; height: 2.1em; box-sizing: border-box; }
+.ob-chat button {
+  position: absolute; right: 0.22em; top: 50%; transform: translateY(-50%);
+  width: 1.6em; height: 1.6em; display: grid; place-items: center; padding: 0; font-size: 0.82em; line-height: 1;
+}
+.ob-chat input { margin: 0; } .ob-chat { height: 2.1em; align-items: center; }
+
+/* Performance, made simple (performance.js) */
+.perf-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 14px; }
+.perf-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 12px; }
+.perf-card { border: 1px solid var(--hair); border-radius: 14px; padding: 14px; background: var(--surface); }
+.pc-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
+.pc-head b { font-size: 16px; font-weight: 500; }
+.pc-tag { font-size: 11px; color: var(--graphite); white-space: nowrap; }
+.pc-what { font-size: 12.5px; color: var(--graphite); margin: 4px 0 10px; line-height: 1.45; }
+.pc-meter { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.pc-meter i { display: block; height: 100%; background: var(--cobalt); border-radius: 3px; }
+.pc-status { font-size: 13px; margin: 8px 0 0; line-height: 1.45; }
+.perf-idle { margin: 14px 0 0; font-size: 13px; line-height: 1.5; color: var(--graphite); }
+.perf-idle:empty { display: none; }
+.perf-idle b { color: var(--ink); font-weight: 500; }
+.perf-next { margin-top: 16px; padding: 14px 16px; border-radius: 14px; border: 1px solid var(--hair); }
+.perf-next h3 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 4px; }
+.perf-next-body { margin: 0; font-size: 13.5px; line-height: 1.5; }
+.perf-more { margin-top: 16px; border-top: 1px solid var(--hair); padding-top: 10px; }
+.perf-more > summary { cursor: pointer; font-size: 13px; color: var(--graphite); }
+.perf-more[open] > summary { margin-bottom: 12px; }
+.orbit-bubble.is-group > .ob-label { white-space: nowrap; flex: none; }
+
+/* --- the simple look: one style for every pill and bubble, no rings --- */
+.orbit-rings { display: none; }
+.orbit-bubble { --use: 1 !important; font-weight: 400; }
+.orbit-bubble .ob-dot { border-color: var(--hair-strong); background: transparent; border-radius: 50%; }
+.orbit-bubble.is-group > .ob-dot { border-color: var(--cobalt); background: var(--cobalt); }
+.orbit-bubble.is-group { background: var(--surface); border-color: var(--hair-strong); }
+.orbit-bubble.is-group > .ob-label { font-weight: 500; }
+.ob-member { background: var(--paper); }
+.orbit-bubble[data-tier] { font-weight: 400; }
+@media (max-width: 700px) {
+  /* long member names wrap instead of running off a narrow screen */
+  .ob-members { max-width: min(11em, 46vw); }
+  .ob-member { white-space: normal; text-align: left; line-height: 1.25; }
+}
+
+/* --- wires between the bubbles, LabVIEW style (orbit.js drawWires) --- */
+.orbit-wires { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 2; overflow: visible; }
+.wire-bed { fill: none; stroke: var(--hair-strong); stroke-width: 2; stroke-linejoin: miter; }
+.wire-flow { fill: none; stroke: transparent; stroke-width: 2; }
+.wire-term { fill: var(--paper); stroke: var(--ink); stroke-width: 1.5; }
+.wire.live .wire-bed { stroke: rgba(47, 64, 232, 0.25); stroke-width: 3; }
+.wire.live .wire-flow { stroke: var(--cobalt); stroke-dasharray: 6 8; animation: wire-flow 1.6s linear infinite; }
+.wire.live .wire-term { fill: var(--cobalt); stroke: var(--cobalt); }
+html[data-activity="working"] .wire.live .wire-flow { animation-duration: 0.8s; }
+html[data-activity="busy"] .wire.live .wire-flow { animation-duration: 0.4s; }
+@keyframes wire-flow { to { stroke-dashoffset: -28; } }
+@media (prefers-reduced-motion: reduce) { .wire.live .wire-flow { animation: none; stroke-dasharray: none; } }
+
+/* the mark scrolled past the room around it covers the page as a backdrop,
+   behind the pills and windows; scrolled down to a dot it drops the counter */
+html.orbit-mark-big .orbit-center {
+  z-index: 9;                     /* just under the stage, which turns see-through */
+  background: var(--paper);
+}
+html.orbit-mark-big .orbit-stage { background: transparent; }
+html.orbit-mark-tiny .orbit-center > .orbit-pi { display: none; }
+
+/* wires you can edit: click one to disconnect it, drag from a bubble's handle to connect */
+.wire-hit { fill: none; stroke: transparent; stroke-width: 14; pointer-events: stroke; cursor: pointer; }
+.wire:hover .wire-bed { stroke: #b4574f; stroke-dasharray: 5 4; }
+.wire:hover .wire-term { stroke: #b4574f; }
+.wire-handle { pointer-events: all; cursor: crosshair; opacity: 0.55; transition: opacity 0.15s ease; }
+.wire-handle .wh-hit { fill: transparent; }
+.wire-handle .wh-dot { fill: var(--paper); stroke: var(--graphite); stroke-width: 1.5; }
+.wire-handle:hover { opacity: 1; }
+.wire-handle:hover .wh-dot { fill: var(--cobalt); stroke: var(--cobalt); }
+.wire-temp { fill: none; stroke: var(--cobalt); stroke-width: 2; stroke-dasharray: 6 6; pointer-events: none; }
+html.orbit-linking, html.orbit-linking * { cursor: crosshair !important; }
+.orbit-bubble.wire-target { outline: 2px dashed var(--cobalt); outline-offset: 4px; }
+@media (hover: none) { .wire-handle { opacity: 0.8; } }
+
+/* the main loop as a wire end: its edge is a handle, and it lights up when a wire is dropped on it */
+.loop-hit { fill: none; stroke: transparent; stroke-width: 16; pointer-events: stroke; cursor: crosshair; }
+html.wire-target .om-page-loop, html.wire-target .om-loop, html.wire-target .om-circle { stroke: var(--cobalt); }
+/* Your account as a pill inside Connect: its mark says whether you are signed in (red out, amber one of two, green in) */
+html .ob-member.is-account::before, html.shape-se .ob-member.is-account::before { background: #c0645c; }
+html .ob-member.is-account[data-signed="partial"]::before, html.shape-se .ob-member.is-account[data-signed="partial"]::before { background: #c9a53e; }
+html .ob-member.is-account[data-signed="true"]::before, html.shape-se .ob-member.is-account[data-signed="true"]::before { background: #4f8f5a; }
+
+
+/* ================================================================================================================
+   unigyro.css
+   ================================================================================================================ */
+/* Unigyro (unigyro.js) */
+.unigyro { container-type: inline-size; }
+.unigyro h2 { font-size: 17px; font-weight: 500; margin: 0 0 4px; }
+.ug-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 12px; }
+.ug-video { position: relative; width: 100%; aspect-ratio: 16 / 9; border-radius: 12px; overflow: hidden; background: #111; }
+.ug-video iframe { position: absolute; inset: 0; width: 100%; height: 100%; border: 0; }
+.ug-placeholder { position: absolute; inset: 0; display: grid; place-items: center; color: #bbb; font-size: 12.5px; }
+.ug-credit { font-size: 12.5px; color: var(--graphite); margin: 10px 0 0; line-height: 1.6; }
+.ug-quvi { color: var(--ink); text-decoration: underline; text-decoration-color: var(--hair-strong); text-underline-offset: 3px; cursor: pointer; }
+
+
+/* ================================================================================================================
+   neurofrenzy.css
+   ================================================================================================================ */
+/* NeuroFrenzy (neurofrenzy.js) */
+.nf { max-width: 640px; }
+.nf h2 { font-size: 20px; font-weight: 500; margin: 0 0 6px; letter-spacing: -0.01em; }
+.nf-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 14px; line-height: 1.5; }
+.nf-best, .nf-final { font-size: 14px; margin: 0 0 14px; }
+.nf-final b { font-size: 28px; font-weight: 500; }
+.nf-go {
+  font: inherit; font-size: 14px; font-weight: 500; padding: 8px 20px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--cobalt); background: var(--cobalt); color: #fff;
+}
+.nf-top { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 10px; font-size: 12.5px; color: var(--graphite); margin-bottom: 8px; }
+.nf-score { margin-left: auto; color: var(--ink); font-weight: 500; font-variant-numeric: tabular-nums; }
+.nf-level { padding: 2px 9px; border-radius: 999px; border: 1px solid var(--hair-strong); color: var(--ink); }
+.nf-hard { border-color: var(--ink); }
+.nf-clock { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.nf-clock i { display: block; height: 100%; width: 100%; background: var(--cobalt); transition: width 0.1s linear; }
+.nf-clock i.low { background: #c0645c; }
+.nf-time { font-size: 12px; color: var(--faint); margin: 4px 0 12px; font-variant-numeric: tabular-nums; }
+.nf-text { font-size: 15.5px; line-height: 2.1; margin: 0 0 10px; }
+.nf-blank {
+  font: inherit; font-size: 14.5px; width: 8.5em; padding: 2px 8px; margin: 0 3px; border: 0; border-bottom: 2px solid var(--cobalt);
+  background: rgba(47, 64, 232, 0.06); border-radius: 4px 4px 0 0; color: var(--ink);
+}
+.nf-blank:focus { outline: none; background: rgba(47, 64, 232, 0.12); }
+.nf-blank.ok { border-bottom-color: #4f8f5a; background: rgba(79, 143, 90, 0.10); }
+.nf-blank.no { border-bottom-color: #c0645c; background: rgba(192, 100, 92, 0.10); }
+.nf-hint { margin: 0 0 14px; font-size: 13px; color: var(--graphite); }
+.nf-hint summary { cursor: pointer; }
+.nf-hint p { margin: 6px 0 0; }
+.nf-feedback { font-size: 14px; margin: 12px 0 0; min-height: 1.4em; }
+/* inline blanks: the site's own input rule makes every input a full-width block */
+.nf .nf-blank { display: inline-block; width: 8.5em; max-width: 60%; height: auto; min-height: 0; margin: 0 3px; padding: 2px 8px; box-shadow: none; }
+@media (max-width: 700px) { .nf .nf-blank { width: 7em; } .nf-text { font-size: 15px; } }
+
+/* music toggle */
+.nf-box { position: relative; }
+.nf-mute {
+  position: absolute; top: 0; right: 0; z-index: 1; display: inline-flex; align-items: center; gap: 6px;
+  font: inherit; font-size: 12px; padding: 4px 10px 4px 8px; border-radius: 999px; cursor: pointer; margin: 0; height: auto;
+  border: 1px solid var(--hair-strong); background: transparent; color: var(--ink);
+}
+.nf-mute:hover { border-color: var(--cobalt); color: var(--cobalt); }
+.nf-mute svg { width: 16px; height: 16px; fill: none; stroke: currentColor; stroke-width: 1.5; stroke-linecap: round; stroke-linejoin: round; }
+.nf-mute svg path:first-child { fill: currentColor; stroke: none; }
+.nf-mute[aria-pressed="true"] { color: var(--graphite); }
+.nf h2, .nf-top { padding-right: 104px; }
+
+/* difficulty and reset */
+.nf-diff { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 0 0 6px; font-size: 13px; }
+.nf-diff span { color: var(--graphite); margin-right: 4px; }
+.nf-diff button, .nf-reset, .nf-alt {
+  font: inherit; font-size: 13px; padding: 4px 12px; border-radius: 999px; cursor: pointer; margin: 0; height: auto;
+  border: 1px solid var(--hair-strong); background: transparent; color: var(--ink);
+}
+.nf-diff button:hover, .nf-reset:hover, .nf-alt:hover { border-color: var(--cobalt); color: var(--cobalt); }
+.nf-diff button[aria-checked="true"] { border-color: var(--cobalt); background: var(--cobalt); color: #fff; }
+.nf-diff-say { font-size: 12.5px; color: var(--graphite); margin: 0 0 14px; }
+.nf-reset { font-size: 12px; padding: 2px 10px; }
+.nf-on { font-size: 13px; color: var(--graphite); }
+.nf-row { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.nf-alt { font-size: 14px; padding: 8px 18px; }
+
+
+/* ================================================================================================================
+   facemace.css
+   ================================================================================================================ */
+/* FaceMace (facemace.js) */
+.fm h2 { font-size: 20px; font-weight: 500; margin: 0 0 6px; }
+.fm-lede { color: var(--graphite); font-size: 13.5px; margin: 0 0 14px; line-height: 1.5; }
+.fm-lede b { color: var(--ink); font-weight: 500; }
+.fm-drop { border: 1.5px dashed var(--hair-strong); border-radius: 14px; padding: 18px; text-align: center; background: var(--surface); }
+.fm-drop.over { border-color: var(--cobalt); background: rgba(47, 64, 232, 0.05); }
+.fm-drop > p { margin: 0 0 10px; color: var(--graphite); font-size: 13px; }
+.fm-pick { display: flex; gap: 8px; justify-content: center; flex-wrap: wrap; }
+.fm-count { margin: 10px 0 0 !important; color: var(--ink) !important; font-weight: 500; }
+.fm-btn {
+  display: inline-block; font: inherit; font-size: 13.5px; font-weight: 500; padding: 7px 16px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--cobalt); background: var(--cobalt); color: #fff;
+}
+.fm-ghost { background: transparent; color: var(--cobalt); }
+.fm-settings { margin: 14px 0; font-size: 13px; }
+.fm-settings label { display: flex; align-items: center; gap: 10px; font-weight: 500; flex-wrap: wrap; }
+.fm-settings input[type=range] { flex: 1; min-width: 160px; }
+.fm-settings p { margin: 4px 0 0; color: var(--graphite); font-size: 12.5px; }
+.fm-go {
+  font: inherit; font-size: 14px; font-weight: 500; padding: 8px 22px; border-radius: 999px; cursor: pointer;
+  border: 1px solid var(--ink); background: var(--ink); color: #fff;
+}
+.fm-go:disabled { opacity: 0.35; cursor: default; }
+.fm-progress { margin-top: 14px; }
+.fm-bar { height: 6px; border-radius: 3px; background: var(--hair); overflow: hidden; }
+.fm-bar i { display: block; height: 100%; width: 0; background: var(--cobalt); transition: width 0.2s ease; }
+.fm-progress p { font-size: 12.5px; color: var(--graphite); margin: 6px 0 0; }
+.fm-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(110px, 1fr)); gap: 10px; margin: 16px 0 10px; }
+.fm-metrics > div { border: 1px solid var(--hair); border-radius: 12px; padding: 10px 12px; background: var(--surface); }
+.fm-metrics b { display: block; font-size: 20px; font-weight: 500; }
+.fm-metrics span { font-size: 12px; color: var(--graphite); }
+.fm-save { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 8px; }
+.fm-saved { font-size: 12.5px; color: var(--graphite); }
+.fm-warn { font-size: 13px; color: #a8504a; }
+.fm-group { border-top: 1px solid var(--hair); padding: 10px 0; }
+.fm-group h3 { font-size: 13.5px; font-weight: 500; margin: 0 0 8px; }
+.fm-thumbs { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.fm-thumbs img { width: 64px; height: 64px; object-fit: cover; border-radius: 8px; border: 1px solid var(--hair); }
+.fm-more { font-size: 12.5px; color: var(--graphite); padding: 0 6px; }
+
+
+/* ================================================================================================================
+   medicine/view.css
+   ================================================================================================================ */
+/* view.css — the public Medicine plan (view.js) */
+.md { max-width: 680px; }
+.md h2 { font-size: 20px; font-weight: 500; margin: 0 0 4px; letter-spacing: -0.01em; }
+.md h3 { font-size: 13px; font-weight: 500; color: var(--graphite, #5b5b60); margin: 22px 0 8px; }
+.md-lede { color: var(--graphite, #5b5b60); font-size: 13.5px; margin: 0 0 14px; line-height: 1.5; }
+.md-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin: 0 0 10px; }
+.md-stats div { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.md-stats b { font-size: 24px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.md-stats span { font-size: 12px; color: var(--graphite, #5b5b60); }
+.md-bar { display: block; height: 6px; border-radius: 3px; background: var(--hair, #e6e6ea); overflow: hidden; flex: 1; }
+.md-bar i { display: block; height: 100%; background: var(--cobalt, #2f40e8); }
+.md-years { display: grid; gap: 6px; }
+.md-year { display: flex; align-items: center; gap: 10px; font-size: 12.5px; }
+.md-year > span:first-child { width: 46px; flex: none; color: var(--graphite, #5b5b60); }
+.md-year em { width: 24px; flex: none; font-style: normal; text-align: right; font-variant-numeric: tabular-nums; }
+.md-phases { list-style: none; margin: 0; padding: 0; }
+.md-phase { display: grid; grid-template-columns: 118px minmax(0, 1fr); gap: 12px; padding: 10px 0; border-top: 1px solid var(--hair, #e6e6ea); }
+.md-when { font-size: 12px; color: var(--graphite, #5b5b60); font-variant-numeric: tabular-nums; }
+.md-what > b { font-size: 13.5px; font-weight: 500; }
+.md-what ul { list-style: none; margin: 4px 0 0; padding: 0; }
+.md-what li { display: flex; flex-wrap: wrap; gap: 2px 8px; align-items: baseline; font-size: 13.5px; padding: 2px 0; }
+.md-name { min-width: 0; }
+.md-tag { font-size: 11.5px; color: var(--graphite, #5b5b60); }
+.md-what small { flex-basis: 100%; font-size: 12px; color: var(--faint, #8a8a90); }
+.md-what li.is-done .md-name { text-decoration: line-through; color: var(--graphite, #5b5b60); }
+.md-tasks { list-style: none; margin: 0; padding: 0; }
+.md-tasks li { display: grid; grid-template-columns: 88px minmax(0, 1fr); gap: 12px; font-size: 13.5px; padding: 6px 0; border-top: 1px solid var(--hair, #e6e6ea); }
+.md-note { font-size: 12px; color: var(--faint, #8a8a90); margin: 14px 0 0; }
+@media (max-width: 520px) {
+  .md-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .md-phase, .md-tasks li { grid-template-columns: minmax(0, 1fr); gap: 2px; }
+}
+
+
+/* ================================================================================================================
+   live.css
+   ================================================================================================================ */
+/* The Live panel (live.js), fixed to the right-hand side */
+.live-dock {
+  position: fixed; right: 0; top: var(--orbit-top, 0px); bottom: 0; z-index: 960;   /* above the mark (950), under dialogs (1000) */
+  display: flex; align-items: flex-start; pointer-events: none;
+}
+.live-tab {
+  pointer-events: auto; position: absolute; right: 0; top: 50%; transform: translateY(-50%);
+  display: flex; flex-direction: column; align-items: center; gap: 6px; margin: 0; height: auto;
+  padding: 12px 7px; border-radius: 12px 0 0 12px; border: 1px solid var(--hair-strong); border-right: 0;
+  background: var(--paper); color: var(--ink); font: inherit; font-size: 12px; cursor: pointer;
+  filter: drop-shadow(0 6px 14px rgba(25, 25, 25, 0.10));
+}
+.live-tab:hover { color: var(--cobalt); }
+.live-tab-text { writing-mode: vertical-rl; transform: rotate(180deg); letter-spacing: 0.04em; }
+.live-dot { width: 7px; height: 7px; border-radius: 50%; background: var(--graphite); flex: none; }
+.live-dock.working .live-dot, .live-body.working .live-dot { background: var(--cobalt); animation: live-pulse 1.6s ease-in-out infinite; }
+@keyframes live-pulse { 50% { opacity: 0.35; } }
+
+.live-body {
+  display: none; pointer-events: auto; width: 300px; max-width: 88vw; height: 100%; overflow-y: auto; box-sizing: border-box;
+  padding: 16px 16px 24px; background: var(--paper); border-left: 1px solid var(--hair-strong);
+}
+.live-dock.open .live-body { display: block; }
+.live-dock.open .live-tab { right: 300px; }
+.live-dock:not(.docked).open .live-body { filter: drop-shadow(-12px 0 24px rgba(25, 25, 25, 0.12)); }
+@media (max-width: 380px) { .live-dock.open .live-tab { right: 88vw; } }
+.live-head { display: flex; align-items: center; gap: 8px; font-size: 15px; }
+.live-head b { font-weight: 500; }
+.live-updated { margin-left: auto; font-size: 11px; color: var(--faint); }
+.live-status { font-size: 13px; line-height: 1.45; color: var(--graphite); margin: 10px 0 4px; }
+.live-status b { color: var(--ink); font-weight: 500; }
+.live-counts { font-size: 12px; color: var(--graphite); margin: 0 0 14px; font-variant-numeric: tabular-nums; }
+.live-dock h4 { font-size: 12px; font-weight: 500; color: var(--graphite); margin: 0 0 6px; }
+.live-list { list-style: none; margin: 0; padding: 0; }
+.live-list li { display: flex; flex-direction: column; gap: 2px; padding: 8px 0; border-top: 1px solid var(--hair); font-size: 13px; }
+.live-list li b { font-weight: 500; }
+.live-list li span { font-size: 11.5px; color: var(--graphite); }
+.live-list li em { font-style: normal; color: var(--cobalt); }
+.live-list li button {
+  all: unset; cursor: pointer; font-size: 13px; line-height: 1.35; color: var(--ink); overflow-wrap: anywhere;
+}
+.live-list li button:hover { color: var(--cobalt); }
+.live-list li.none { color: var(--graphite); }
+.live-dock.ping .live-head .live-dot, .live-body.ping .live-head .live-dot { animation: live-pulse 0.5s ease-in-out 3; }
+.live-scroll { display: block; }
+
+
+/* ================================================================================================================
+   super/super.css
+   ================================================================================================================ */
+/* super/super.css — the superellipse look.
+ *
+ * On when <html> has the class shape-se: on se.pitechlab.com (by its host
+ * name), wherever the server sets SCHOLARPI_SHAPE=superellipse, or with
+ * ?shape=se in the address (channel.js decides).
+ *
+ * Shapes are superellipses |x/a|^n + |y/b|^n = 1, symmetric about both axes
+ * (border-radius: 50% with corner-shape: superellipse(K), n = 2^K):
+ *   pills (buttons)    a star at n = γ (0.5772…) beside the name until used;
+ *                      each use widens it towards n = π around the name
+ *                      (super/shape.js sets --se-t and --se-k); hover shows it grown
+ *   objects            bubbles, buttons in windows, nodes: n = π
+ *   dots, wire ends    the whole curve at n = γ: sparkles
+ *   windows, cards     superellipse corners at n = π
+ *   the loop           the whole page, everything inside it; scrolling moves
+ *                      its n from 0 to ∞ (orbit.js)
+ * super/shape.js computes γ and π in the page and sets --se-k-button and
+ * --se-k-window (CSS writes superellipse(K) with n = 2^K); it also animates
+ * the change of n when a window opens out of its button or closes into it.
+ * Browsers with CSS corner-shape (Chrome/Edge 139+) draw the corners; the
+ * others keep the same radii as rounded corners but still see the morph.
+ */
+html.shape-se {
+  --se-pill: 1.15em;     /* pills, chips and buttons, relative to their text */
+  --se-card: 18px;       /* tiles and cards */
+  --se-window: 26px;     /* windows */
+  --se-k-button: -0.79286;   /* log2 γ, until super/shape.js has computed it */
+  --se-k-window: 9.96578;    /* log2 1000: every super starts at n = 1000, a square (owner, 2026-10-13: "make all n equal thousand") */
+}
+/* n and the star's growth animate (registered, so they interpolate) */
+@property --se-k { syntax: "<number>"; inherits: true; initial-value: 1.651496; }
+@property --se-t { syntax: "<number>"; inherits: true; initial-value: 1; }
+
+/* objects: full symmetric superellipses at n = π, padded so what is inside
+   stays inside the curve (it holds a rectangle about 80% of its size) */
+html.shape-se .orbit-bubble,
+html.shape-se .btn,
+html.shape-se .nf-go, html.shape-se .nf-mute, html.shape-se .nf-reset, html.shape-se .nf-alt, html.shape-se .nf-diff button,
+html.shape-se .dl-btn,
+html.shape-se .ob-chat button {
+  border-radius: 50%;
+  corner-shape: superellipse(var(--se-k-window));
+}
+html.shape-se .orbit-bubble { padding: 0.45em 1.15em 0.45em 1em; }              /* little padding: just clear of the curve */
+html.shape-se .orbit-bubble.is-group { padding: 0.6em 1.6em 0.6em 1.45em; }
+html.shape-se .btn, html.shape-se .dl-btn { padding-inline: 1.6em; }
+@media (max-width: 700px) {
+  html.shape-se .orbit-bubble { padding-inline: 1.1em 1.2em; }
+  html.shape-se .orbit-bubble.is-group { padding-inline: 1.9em 2em; }
+}
+
+/* pills: a star beside the name that grows into the shape around it with use */
+html.shape-se .ob-member {
+  --star: 1.35em;
+  position: relative; isolation: isolate;
+  background: transparent !important; border-color: transparent !important; border-radius: 50%;
+  padding-left: calc((1 - var(--se-t)) * (var(--star) + 0.4em) + var(--se-t) * 1.05em);
+  padding-right: calc((1 - var(--se-t)) * 0.25em + var(--se-t) * 1.05em);
+  transition: --se-t 0.45s cubic-bezier(.2, .7, .2, 1), --se-k 0.45s cubic-bezier(.2, .7, .2, 1), color 0.15s ease;
+}
+html.shape-se .ob-member::before {
+  content: ""; position: absolute; z-index: -1; left: 0; top: 50%; transform: translateY(-50%);
+  width: calc((1 - var(--se-t)) * var(--star) + var(--se-t) * 100%);
+  height: calc((1 - var(--se-t)) * var(--star) + var(--se-t) * 100%);
+  border-radius: 50%; corner-shape: superellipse(var(--se-k));
+  background: color-mix(in srgb, var(--paper) calc(min(1, var(--se-t) * 2.5) * 100%), var(--graphite));   /* paper by the time it reaches the name */
+  border: 1px solid var(--hair-strong);
+}
+html.shape-se .ob-member:focus-visible {                   /* the keyboard still shows where it is */
+  --se-t: 1 !important; --se-k: var(--se-k-window) !important;
+}
+html.shape-se .ob-member:focus-visible { outline: none; }
+html.shape-se .ob-member:focus-visible::before { border: 2px solid var(--cobalt); }
+@media (prefers-reduced-motion: reduce) { html.shape-se .ob-member { transition: none; } }
+html.shape-se .ob-chat input { border-radius: 0.6em; corner-shape: superellipse(var(--se-k-window)); }
+/* dots are whole sparkles: the superellipse at n = γ */
+html.shape-se .ob-dot {
+  border: 0 !important; border-radius: 0 !important; width: 0.85em; height: 0.85em;
+  background: var(--hair-strong); clip-path: var(--se-sparkle);
+}
+html.shape-se .orbit-bubble.is-group > .ob-dot,
+html.shape-se .orbit-bubble[data-section="about"] .ob-dot { background: var(--cobalt); }
+html.shape-se .orbit-bubble.is-account .ob-dot { width: 1.1em; height: 1.1em; background: #c0645c; }
+html.shape-se .orbit-bubble.is-account[data-signed="true"] .ob-dot { background: #4f8f5a; }
+html.shape-se .orbit-bubble.is-account[data-signed="partial"] .ob-dot { background: #c9a53e; }
+html.shape-se .orbit-bubble.is-account .ob-dot::after { display: none; }
+html.shape-se .orbit-pi,
+html.shape-se .stat-card,
+html.shape-se .tr-tile,
+html.shape-se .rs-card,
+html.shape-se .perf-card,
+html.shape-se .perf-next,
+html.shape-se .buddy-corpus {
+  border-radius: var(--se-card);
+  corner-shape: superellipse(var(--se-k-window));
+}
+/* windows are supers: a whole superellipse at n = π, like the main loop (super/site.js clips them
+   the same way where corner-shape is missing); the content keeps clear of the curved corners */
+html.shape-se .orbit-panel {
+  border-radius: 50%;
+  corner-shape: superellipse(var(--se-k-window));
+  resize: none;                       /* the corner is gone: zoom on the window to size it */
+}
+/* the window's content lives in the rectangle the super holds (about 80% of its box at n = π): the scrolling
+   body is inset by margins, not padding, so its scrollbar and its last lines stay inside the curve too */
+html.shape-se .orbit-panel .op-body { margin: 0 9% 9%; padding: 6px 10px 10px; min-height: 0; scrollbar-width: thin; }
+html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin-inline: 9%; }
+html.shape-se .orbit-panel .op-outline { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; z-index: 3; }
+html.shape-se .orbit-panel .op-outline path { fill: none; stroke: var(--hair-strong); stroke-width: 2; }
+@supports not (corner-shape: round) { html.shape-se .orbit-panel { border: 0; } }
+/* the wire terminals are sparkles (orbit.js draws them with SeMorph.star) */
+
+/* a window opening out of its button, or closing into it (super/shape.js) */
+.se-morph { position: fixed; inset: 0; pointer-events: none; z-index: 950; overflow: visible; }
+.se-morph path { fill: var(--paper); stroke: var(--ink); stroke-width: 1.25; }
+
+/* the title is a simple super (super/logo.js) */
+html.shape-se .orbit-title .ot-text { display: none; }
+
+/* the mark is the loop around everything: a superellipse the size of the page
+   (a, b = half the stage), n = π until you scroll, which moves n from 0 to ∞;
+   the π counter at its centre (orbit.js draws the curve) */
+.om-loop { display: none; }
+html.shape-se .om-circle { display: none; }
+html.shape-se .om-loop { display: inline; fill: var(--surface); stroke: var(--ink); stroke-width: 3; vector-effect: non-scaling-stroke; }
+html.shape-se .orbit-core { border-radius: 30%; }
+html.shape-se .om-name { display: none; }
+html.shape-se .orbit-stage > .orbit-pi {
+  z-index: 4; width: var(--in-loop-w, 18em); max-width: none; padding: 0;
+  background: transparent; border: 0; border-radius: 0; cursor: pointer; font-size: var(--in-loop-font, 11px);
+}
+html.shape-se .orbit-stage > .orbit-pi .op-count { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+html.shape-se .orbit-pi .op-grip { display: none; }
+html.shape-se.orbit-open .orbit-pi { opacity: 1; }
+
+/* the loop's n, shown at its centre while you scroll */
+.orbit-nread {
+  position: absolute; transform: translate(-50%, -50%); z-index: 5; pointer-events: none;
+  font-family: var(--font-mono, monospace); font-size: 18px; color: var(--cobalt); white-space: nowrap;
+  opacity: 0; transition: opacity 0.3s ease;
+}
+.orbit-nread.show { opacity: 1; }
+
+/* the loop around everything, drawn in page coordinates (orbit.js drawLoop):
+   it grows to hold every object for the current n */
+.om-page { display: none; position: absolute; inset: 0; width: 100%; height: 100%; overflow: hidden; }
+html.shape-se .orbit-mark { display: none; }
+html.shape-se .om-page { display: block; }
+/* with a window open the loop gathers into a small mark above the windows: click it to close them */
+.om-page-loop { fill: var(--surface); stroke: var(--ink); stroke-width: 3; stroke-linejoin: round; }
+.om-page-r { stroke: var(--cobalt); stroke-width: 3; stroke-linecap: round; }
+/* what used to sit on the page's edge steps inside the loop */
+html.shape-se .orbit-title { top: calc(var(--orbit-top, 0px) + var(--se-title-top, 36px)); }   /* orbit.js seatEdges */
+html.shape-se .lv-palette { left: var(--se-pal-left, 9vw); bottom: var(--se-pal-bottom, 10vh); }
+
+/* no PiEN halo around the suggested bubble in this look (PiEN still learns; the bubble just is not ringed) */
+html.shape-se .orbit-bubble.pien-pick { box-shadow: none; }
+html.shape-se .orbit-bubble.pien-pick::after { display: none; animation: none; }
+
+/* with a window open the mark is off: no small mark, no π counter, nothing to press under the windows */
+html.shape-se.orbit-open .orbit-pi { visibility: hidden; pointer-events: none; }
+/* the main loop stays, windows open or not; it only stops taking clicks while they are open */
+html.shape-se.orbit-open .orbit-core, html.shape-se.orbit-open .orbit-core:hover { opacity: 1; pointer-events: none; }
+/* no pinch-zoom of the page on touch screens: two fingers size a node instead (super/nodes.js) */
+html.shape-se, html.shape-se body { touch-action: pan-x pan-y; }
+/* a fast or sideways swipe never takes the browser back (or forward) a page, nor bounces the page */
+html.shape-se, html.shape-se body { overscroll-behavior: none; }
+
+/* the diameter and the π counter, merged: π's digits run quietly along the inside of the main loop,
+   creeping round it as the sweep did; the newest digit is the cobalt one */
+html.shape-se .om-page-r { display: none; }
+html.shape-se .orbit-pi { visibility: hidden; pointer-events: none; }
+.om-page-pipath { fill: none; stroke: none; }
+.om-page-pi { font: 400 10.5px/1 var(--font-mono, ui-monospace, monospace); letter-spacing: 0.08em; fill: var(--graphite); opacity: 0.55; pointer-events: none; }
+.om-page-pi .om-pi-new { fill: var(--cobalt); opacity: 1; }
+.om-page-pi .om-pi-count { fill: var(--faint, #9a9a96); letter-spacing: 0.02em; }
+.om-page-pi.is-still { opacity: 0.3; }
+html.shape-se:not(.orbit-on) .om-page-pi { display: none; }
+/* no "n = …" label while scrolling: the shape says it */
+html.shape-se .orbit-nread { display: none; }
+
+/* Safari and other browsers without CSS corner-shape: border-radius: 50% alone would make every
+   bubble an ellipse and every star a grey dot. Near-superellipse radii instead, and the pill
+   stars cut with the same sparkle polygon the dots use (they stay stars beside their names). */
+@supports not (corner-shape: round) {
+  /* (the superellipse shapes themselves are painted by super/squircle.js in these browsers) */
+  html.shape-se .ob-member::before, html.shape-se .ob-member:focus-visible::before {
+    width: var(--star); height: var(--star); border: 0; border-radius: 0;
+    clip-path: var(--se-sparkle); background: var(--graphite);
+  }
+  html.shape-se .ob-member:focus-visible::before { background: var(--cobalt); }
+}
+/* no text selection while dragging a wire, a node or a moved panel (Safari needs the prefix) */
+html.sl-dragging, html.sl-dragging *, html.lv-dragging, html.lv-dragging *, html.se-moving, html.se-moving * { -webkit-user-select: none !important; user-select: none !important; }
+
+/* the site's super (super/site.js): the inner superellipse round the bubbles, its lattice lines out to the
+   main loop, and its four ports */
+.om-site { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; }
+html.shape-se .om-site { display: block; }
+.om-site-loop { fill: none; stroke: var(--ink); stroke-width: 1.5; }
+.om-lattice { fill: none; stroke: var(--hair-strong); stroke-width: 1.5; }
+html.se-site-thinking .om-site-loop { stroke: var(--cobalt); }
+.se-port {
+  position: fixed; z-index: 240; transform: translate(-50%, -50%); display: flex; align-items: center; gap: 5px;
+  font: 500 11px/1 var(--font-mono, ui-monospace, monospace); color: var(--graphite); letter-spacing: 0.04em;
+  cursor: crosshair; user-select: none; -webkit-user-select: none; padding: 4px 6px; pointer-events: auto;
+}
+.se-port-dot { width: 11px; height: 11px; background: var(--ink); clip-path: var(--se-sparkle); flex: none; }
+.se-port-left { flex-direction: row; }
+.se-port-right { flex-direction: row-reverse; }
+.se-port-top, .se-port-bottom { flex-direction: column; }
+.se-port-top .se-port-name { order: -1; }
+/* (a port does not change on hover: hovering only lights the super, super/hover.js) */
+/* nothing on a pill is pushable: no hand, no hover glow, no tooltip (a drag from its words wires it, a wire opens it) */
+html.shape-se .ob-member, html.shape-se .ob-member * { cursor: default; }
+html.shape-se .ob-member:hover { color: inherit; border-color: var(--hair-strong); }
+html.shape-se .orbit-bubble { cursor: default; }
+html.shape-se .orbit-bubble:hover { border-color: var(--hair-strong); }
+
+/* everything is a super: the Functions palette, the Live panel and its tab, and the cards inside windows are
+   whole superellipses at n = π like the windows and the main loop; their content keeps clear of the corners */
+html.shape-se .lv-palette,
+html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus {
+  border-radius: 50%; corner-shape: superellipse(var(--se-k-window));
+}
+html.shape-se .lv-palette .lv-grid { padding: 10px 24px; }
+html.shape-se .op-body .card, html.shape-se .rs-card, html.shape-se .perf-card, html.shape-se .perf-next, html.shape-se .buddy-corpus { padding-inline: calc(6% + 12px); padding-block: calc(4% + 10px); }
+
+/* ---- one shape language throughout: inside windows too --------------------------------------
+   Every rounded corner in the superellipse look is a superellipse corner (n = π); pressable and
+   typeable things (buttons, pills, chips, tags, inputs, selects) are whole supers; boxes and cards are
+   whole supers with their content padded clear of the corners; tables, scrollers, images and bars keep
+   their small radii but take the same corner. */
+html.shape-se .orbit-panel *, html.shape-se .modal, html.shape-se .modal * { corner-shape: superellipse(var(--se-k-window)); }
+html.shape-se .orbit-panel button:not(.op-close):not(.lv-fn), html.shape-se .orbit-panel .pill, html.shape-se .orbit-panel .hot-topic-chip,
+html.shape-se .orbit-panel .stage-tag, html.shape-se .orbit-panel .linked-badge, html.shape-se .orbit-panel .rank,
+html.shape-se .orbit-panel .status-reward, html.shape-se .orbit-panel .status-reward-none, html.shape-se .orbit-panel .status-curation,
+html.shape-se .orbit-panel .subtab-btn, html.shape-se .orbit-panel .tag-input, html.shape-se .orbit-panel .btn-like,
+html.shape-se .orbit-panel input:not([type=checkbox]):not([type=radio]):not([type=range]), html.shape-se .orbit-panel select, html.shape-se .orbit-panel textarea,
+html.shape-se .modal button, html.shape-se .modal input {
+  border-radius: 999px; padding-inline: 1.1em;   /* straight sides, superellipse ends (owner, 2026-10-12: corners are superellipses) */
+}
+html.shape-se .orbit-panel textarea { border-radius: 2.2em; padding: 0.9em 1.3em; }
+html.shape-se .orbit-panel .result-card, html.shape-se .orbit-panel .llm-card, html.shape-se .orbit-panel .opt-card, html.shape-se .orbit-panel .referral-card,
+html.shape-se .orbit-panel .report-body, html.shape-se .orbit-panel .judge-summary, html.shape-se .orbit-panel .researcher-info,
+html.shape-se .orbit-panel .status-box, html.shape-se .orbit-panel .ok-box, html.shape-se .orbit-panel .warning-box, html.shape-se .orbit-panel .insight-box,
+html.shape-se .orbit-panel .quality-rationale, html.shape-se .orbit-panel .fee-notice, html.shape-se .orbit-panel .est-cost, html.shape-se .orbit-panel .log-box, html.shape-se .orbit-panel .lab-text, html.shape-se .orbit-panel .lab-doc,
+html.shape-se .orbit-panel .opt-ok, html.shape-se .orbit-panel .opt-inactive, html.shape-se .orbit-panel .opt-blocked, html.shape-se .orbit-panel .warn-item,
+html.shape-se .modal {
+  border-radius: 50%; padding-inline: calc(5% + 12px); padding-block: calc(3% + 10px);
+}
+html.shape-se .orbit-panel .table-scroll, html.shape-se .orbit-panel .legend-scroll, html.shape-se .orbit-panel .lab-frame, html.shape-se .orbit-panel .lab-img,
+html.shape-se .orbit-panel .fm-item, html.shape-se .orbit-panel .fl-item, html.shape-se .orbit-panel .sidebar-expander { border-radius: 18px; }
+html.shape-se .orbit-panel .progress-track, html.shape-se .orbit-panel .progress-fill, html.shape-se .orbit-panel .engine-fill, html.shape-se .orbit-panel .rs-heat { border-radius: 999px; }
+/* what is pressable inside a window shows it; the one accent stays cobalt */
+html.shape-se .orbit-panel button:not(:disabled), html.shape-se .orbit-panel a, html.shape-se .orbit-panel .btn-like, html.shape-se .orbit-panel summary { cursor: pointer; }
+html.shape-se .orbit-panel button:focus-visible, html.shape-se .orbit-panel input:focus-visible, html.shape-se .orbit-panel select:focus-visible, html.shape-se .orbit-panel textarea:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+
+/* smooth motion: what scales or moves as one is promoted to its own layer */
+html.shape-se .orbit-bubbles, html.shape-se .orbit-title, html.shape-se .lv-palette, html.shape-se .lv-node { will-change: transform, scale, translate; }
+html.shape-se .om-page, html.shape-se .om-site, html.shape-se .sl-layer, html.shape-se .lv-wires, html.shape-se .orbit-wires { contain: layout paint; }
+/* no wire handles beside the bubbles: a bubble wires from its edge */
+html.shape-se .wire-handle { display: none; }
+/* the title sits in the main super's top-left corner, above the inner super (seatEdges finds its height) */
+html.shape-se .orbit-title { left: clamp(18px, 1.8vw, 40px); transform: none; }
+
+/* ports on every super (super/site.js): a window's and a loop's four ports sit on its sides, small,
+   the name shown when the pointer is near; a window held by its condition port is dimmed */
+.se-port-owned { z-index: 960; padding: 2px; gap: 0; font-size: 10px; }                    /* just the dot: the name takes no room (a small node's body stays its own) */
+.se-port-owned .se-port-dot { width: 8px; height: 8px; }
+.se-port-owned .se-port-name { opacity: 0; transition: opacity 0.15s ease; position: absolute; white-space: nowrap; pointer-events: none; }
+.se-port-owned.se-port-left .se-port-name { right: 100%; margin-right: 4px; }
+.se-port-owned.se-port-right .se-port-name { left: 100%; margin-left: 4px; }
+.se-port-owned.se-port-top .se-port-name { bottom: 100%; margin-bottom: 2px; }
+.se-port-owned.se-port-bottom .se-port-name { top: 100%; margin-top: 2px; }
+html.sl-dragging .se-port-owned .se-port-name, html.lv-dragging .se-port-owned .se-port-name { opacity: 1; }   /* names while wiring, not on hover */
+html.shape-se .orbit-panel.se-held { opacity: 0.45; }
+html.shape-se .orbit-panel.se-held .op-body { pointer-events: none; }
+
+/* the super under the pointer (super/hover.js): a hint of cobalt on its edge, a glance, not a selection
+   (a selection takes a click and shows the full cobalt edge below) */
+html.shape-se { --se-hint: color-mix(in srgb, var(--cobalt) 45%, var(--hair-strong)); }
+/* (hover hints removed: only a selected super lights up, owner 2026-10-12) */
+/* the selected super (super/select.js): a cobalt edge that stays; only its inside answers */
+html.shape-se .orbit-bubble.se-sel, html.shape-se .orbit-panel.se-sel, html.shape-se .lv-node.se-sel, html.shape-se .orbit-bubble.se-sel.se-on, html.shape-se .orbit-panel.se-sel.se-on, html.shape-se .lv-node.se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2px; }   /* the super's own edge, never a ring round it: a square, a circle, a star are all supers alike */
+html.shape-se .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 3; }
+html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-site.se-on-site .om-site-loop { stroke: var(--cobalt); stroke-width: 2.5; }
+html.shape-se.se-sel-loop .om-page-loop, html.shape-se.se-sel-loop.se-on-loop .om-page-loop { stroke: var(--cobalt); }
+
+/* a bubble being sized (super/scroll.js): the glide moves it, not a transition on its transform */
+html.shape-se .orbit-bubble.se-sizing { transition: border-color 0.15s ease, background 0.15s ease !important; }
+
+/* a bubble held by its condition port, and a tick on its sync port */
+html.shape-se .orbit-bubble.se-held { opacity: 0.45; }
+html.shape-se .orbit-bubble.se-tick { animation: se-tick 0.5s ease-out; }
+@keyframes se-tick { 0% { border-color: var(--cobalt); } 100% { border-color: var(--hair-strong); } }
+
+/* the supers inside a super, selected: a pill (its shape is its ::before), a card in a window */
+html.shape-se .ob-member.se-sel::before { border: 2px solid var(--cobalt); }
+html.shape-se .op-body .card.se-sel, html.shape-se .rs-card.se-sel, html.shape-se .perf-card.se-sel, html.shape-se .perf-next.se-sel,
+html.shape-se .buddy-corpus.se-sel, html.shape-se .stat-card.se-sel, html.shape-se .tr-tile.se-sel { border-color: var(--cobalt) !important; border-width: 2px; }
+
+/* what a scroll does here, by the pointer's shape (super/hover.js): a hand where it changes the super's n
+   (its surface, bare space inside it), an arrow where it sizes the super (just outside it, the bare
+   corners), a + on an edge where a drag wires; the rule covers everything, so cursor and action never
+   disagree, except what has a pointer of its own (fields, buttons, links, ports, wires, window heads) */
+/* the pointer's shape is what a scroll does (super/hover.js, from super/scroll.js zoneAt): a hand on a super
+   changes its n, an arrow off a super zooms; one rule, set on everything but fields, buttons, links and ports */
+html.shape-se.se-zone-hand *:not(input):not(textarea):not(select):not(button):not(a):not(.se-port):not(.se-port *):not(.op-head):not(.op-head *),
+html.shape-se.se-zone-hand { cursor: pointer !important; }
+html.shape-se.se-zone-arrow *:not(input):not(textarea):not(select):not(button):not(a):not(.se-port):not(.se-port *):not(.op-head):not(.op-head *),
+html.shape-se.se-zone-arrow { cursor: default !important; }
+html.shape-se.sl-edge, html.shape-se.sl-edge * { cursor: crosshair !important; }       /* the + on an edge: a drag wires */
+
+/* hovering only lights the super (super/hover.js): in this look nothing else changes under the pointer, no
+   colour, no growth, no glow, no dashed wire, no reveal; the light is the --se-hint edge alone */
+html.shape-se .orbit-core:hover { transform: none; }
+html.shape-se .orbit-pi:hover { border-color: inherit; }
+html.shape-se .orbit-pi:hover .op-grip, html.shape-se .orbit-core:hover .om-name { opacity: 0; }
+html.shape-se .orbit-bubble:hover:not(.se-on):not(.se-sel), html.shape-se .ob-member:hover { border-color: inherit; color: inherit; }
+html.shape-se .op-head button:hover { border-color: var(--hair); }
+html.shape-se .lv-fn:hover:not(.se-on):not(.se-sel) { border-color: inherit; }
+html.shape-se .wire:hover .wire-bed { stroke: inherit; stroke-dasharray: none; }
+html.shape-se .wire:hover .wire-term { stroke: inherit; }
+html.shape-se .live-list li button:hover, html.shape-se .cap-open:hover { color: inherit; }
+html.shape-se .arch-step:hover { border-color: inherit; }
+
+/* the title starts small: the "Pi Tech Lab" badge a modest mark in the corner (scroll on it to size it) */
+
+/* Reset view (super/scroll.js): back to 100 % and the first shape; shown only when the view has changed */
+
+/* wiring (super/wire.js): held long enough on text, the pointer is a wire's end; a clicked wire is selected */
+html.sl-armed, html.sl-armed * { cursor: crosshair !important; user-select: none !important; -webkit-user-select: none !important; }
+.sl-wire.is-sel .wire-bed, .sl-wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
+.sl-wire.is-sel .wire-term { fill: var(--cobalt) !important; }
+.sl-layer .wire-hit { stroke-width: 16; }
+
+/* ---- windows, one family (orbit.js uniformSize, super/zoombox.js) ------------------------------------
+   No scroll bars anywhere in this look: a scroll zooms. Every window is the same size and the same shape, a
+   superellipse at n = 8 (square enough that nothing is cut at its corners), with the same margins; its
+   content fits it whole and zooms about the pointer. The window's own heading says what it is; the same
+   heading repeated as the content's first line is hidden. */
+html.shape-se, html.shape-se * { scrollbar-width: none; }
+html.shape-se ::-webkit-scrollbar { display: none; width: 0; height: 0; }
+html.shape-se .orbit-panel { --se-k-panel: 3; corner-shape: superellipse(var(--se-k-panel)); }
+html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 0 4.5% 4.5%; padding: 0; }
+html.shape-se .se-zoombox { overflow: hidden !important; position: relative; overscroll-behavior: none; }
+html.shape-se .se-zoomed { transform-origin: 0 0; will-change: transform; box-sizing: border-box; padding: 4px 6px 10px; }
+html.shape-se .se-zoombox.is-zoomed { cursor: default; }   /* no magnifying glass anywhere (owner, 2026-10-12) */
+/* no bar on windows (owner, 2026-10-12): the head is gone, the content starts at the top with its own title,
+   and the window moves by the blank margin inside its edge (orbit.js wirePanel grip) */
+html.shape-se .orbit-panel .op-head { display: none !important; }
+html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 4.5%; }
+html.shape-se .orbit-panel .op-dup { display: revert; }
+html.shape-se .orbit-panel .op-section { font: 500 11px var(--font-mono); color: var(--graphite); letter-spacing: 0.02em; }
+html.shape-se .orbit-panel .op-title { font: 500 15px/1.25 var(--font); letter-spacing: -0.01em; }
+html.shape-se .orbit-panel .op-body h1, html.shape-se .orbit-panel .op-body h2 { font-size: 15px !important; font-weight: 500 !important; line-height: 1.3; margin: 14px 0 6px; letter-spacing: -0.01em; }
+html.shape-se .orbit-panel .op-body h3, html.shape-se .orbit-panel .op-body h4 { font-size: 13px !important; font-weight: 500 !important; line-height: 1.3; margin: 12px 0 4px; }
+html.shape-se .orbit-panel .op-body > .orbit-content > :first-child, html.shape-se .orbit-panel .op-body .op-dup + * { margin-top: 0; }
+html.shape-se .orbit-panel .op-body p, html.shape-se .orbit-panel .op-body li { font-size: 13.5px; line-height: 1.55; }
+html.shape-se .orbit-panel .op-body .card { padding: 14px 16px; margin: 0 0 10px; box-shadow: none; }
+html.shape-se .orbit-panel .op-body .card > .card { padding: 12px 14px; }
+html.shape-se .orbit-panel * { overscroll-behavior: none; }
+/* the title is a simple super (super/logo.js): a ■ at n = π with its four ports, "pi tech lab" in mono inside */
+html.shape-se .orbit-title .se-titlesuper {
+  position: relative; display: grid; place-items: center; box-sizing: border-box;
+  width: calc(156px * var(--se-title-k, 1) + 52px); height: calc(46px * var(--se-title-k, 1));   /* its icons keep their size whatever its scale */   /* bigger (owner, 2026-10-12); one line, low, with room for its lock and save at the right end; the inner super is as big as the gap above it lets (super/loop.js siteMargins) */
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 50%; corner-shape: superellipse(var(--sts-k, 9.96578));
+  font: 500 calc(18px * var(--se-title-k, 1))/1 "Geist Mono", ui-monospace, monospace; color: var(--ink);
+  text-align: center; text-transform: lowercase; letter-spacing: 0; padding: 0 52px 0 10px;
+  white-space: normal; overflow-wrap: normal; user-select: none; -webkit-user-select: none;
+}
+html.shape-se .orbit-title .sts-text { display: block; white-space: nowrap; }
+@supports not (corner-shape: round) { html.shape-se .orbit-title .se-titlesuper { border-radius: 32%; } }
+@media (max-width: 700px) { html.shape-se .orbit-title .se-titlesuper { width: calc(104px * var(--se-title-k, 1) + 52px); height: calc(36px * var(--se-title-k, 1)); font-size: calc(13px * var(--se-title-k, 1)); } }
+html.shape-se .orbit-title .sts-p { position: absolute; width: 9px; height: 9px; background: var(--ink); clip-path: var(--se-sparkle); pointer-events: none; }
+html.shape-se .orbit-title .sts-in { left: -5.5px; top: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-out { right: -5.5px; top: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-sync { top: -5.5px; left: calc(50% - 4.5px); }
+html.shape-se .orbit-title .sts-cond { bottom: -5.5px; left: calc(50% - 4.5px); }
+/* (hover hints removed: only a selected super lights up, owner 2026-10-12) */
+/* the title super is the Reset view button (super/scroll.js): nothing is written on it; once the view has changed a click on it resets */
+html.shape-se .orbit-title .se-titlesuper.is-changed { cursor: default; }   /* a scroll on it resets the view: nothing is clickable */
+/* a bubble wire or a node wire selected by a click (orbit.js, super/nodes.js): cobalt, Delete removes it */
+html.shape-se .wire.is-sel .wire-bed, html.shape-se .wire.is-sel .wire-flow { stroke: var(--cobalt) !important; stroke-width: 2.6 !important; }
+
+/* ---- bubbles are expandable supers (super/bubble.js) ----------------------------------------------
+   Compact: a 104 px squircle with a small drawing of the bubble's name wired to its windows; a scroll on it
+   opens it into the bubble with its pills, a scroll out compacts it again. */
+html.shape-se .orbit-bubble.is-group.is-compact {
+  width: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); height: calc(var(--se-compact, 104px) * var(--pill-fit, 1)); min-width: 0; max-width: none; padding: 0;   /* square always; smaller together when there is no room (orbit.js --pill-fit) */ box-sizing: border-box; display: block; overflow: hidden;
+  border-radius: 50%; corner-shape: superellipse(var(--se-k-window, 1.6515)); border: 1.5px solid var(--ink); background: var(--paper);   /* its own n (Shift + scroll) */
+}
+html.shape-se .orbit-bubble.is-group.is-compact > .ob-dot, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label,
+html.shape-se .orbit-bubble.is-group.is-compact > .ob-members, html.shape-se .orbit-bubble.is-group.is-compact > .ob-peek { display: none; }
+html.shape-se .orbit-bubble > .ob-mini { display: none; }
+html.shape-se .orbit-bubble.is-group.is-compact > .ob-mini { display: block; width: 100%; height: 100%; pointer-events: none; }
+html.shape-se .ob-mini .obm-box { fill: var(--paper); stroke: var(--graphite); stroke-width: 1; vector-effect: non-scaling-stroke; }
+html.shape-se .ob-mini .obm-name { stroke: var(--ink); stroke-width: 1.5; }
+html.shape-se .ob-mini .obm-wire { fill: none; stroke: var(--graphite); stroke-width: 1; opacity: 0.6; vector-effect: non-scaling-stroke; }
+html.shape-se .ob-mini .obm-text { font: 500 7px "Geist Mono", ui-monospace, monospace; fill: var(--ink); }
+/* growing or shrinking: the pills fade in with it, nothing spills */
+html.shape-se .orbit-bubble.is-group.is-growing { overflow: hidden; transition: none; position: relative; min-width: 0; }
+/* one after the other, never both at once (owner, 2026-10-12: "this is a bug": the drawing and the pills showed
+   together half way): the drawing fades out over the first half, the name, links and pills fade in over the second */
+html.shape-se .orbit-bubble.is-group.is-growing > .ob-members, html.shape-se .orbit-bubble.is-group.is-growing > .ob-label,
+html.shape-se .orbit-bubble.is-group.is-growing > .ob-dot, html.shape-se .orbit-bubble.is-group.is-growing > .ob-links { opacity: clamp(0, calc((var(--sb-t, 1) - 0.5) * 2), 1); }
+/* growing: its drawing gives way to its name and pills (super/bubble.js zoom) */
+html.shape-se .orbit-bubble.is-group.is-growing > .ob-mini { display: block; position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; opacity: clamp(0, calc(1 - var(--sb-t, 0) * 2.2), 1); }
+
+/* ---- one look for every super (owner, 2026-10-12: all supers uniform, all elements uniform) -----------------
+   Every super on the page, a Super AI super, a bubble (compact or open), a window, the Live panel and its tab,
+   the title, the project super and the palette, is drawn the same way: paper, a 1.5 px ink edge, a superellipse
+   at n = π (--se-k-window; Shift + scroll gives one its own), the same port sparkles, no shadow and no tint. */
+html.shape-se .lv-node, html.shape-se .lv-node.lv-box, html.shape-se .lv-node.lv-dot, html.shape-se .lv-node.lv-super, html.shape-se .lv-node.lv-ask, html.shape-se .lv-node.lv-add,
+html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
+html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper,
+html.shape-se .se-project, html.shape-se .lv-palette {
+  background: var(--paper); border: 1.5px solid var(--ink); box-shadow: none; filter: none;
+}
+html.shape-se .lv-node.lv-box.is-holder { background: transparent; }        /* a holder stays see-through */
+html.shape-se .orbit-panel { --se-k-panel: var(--se-k-window, 9.96578); }    /* windows at n = 1000 like every super */
+/* the content of a window stays clear of the π corners: the inset a superellipse needs is (1 − 2^(−1/n)) / 2 ≈ 10 % */
+html.shape-se .orbit-panel .op-body, html.shape-se .orbit-panel.is-long .op-body, html.shape-se .orbit-panel[data-se-n] .op-body { margin: 9%; }
+/* the same port sparkles everywhere */
+html.shape-se .se-port-dot, html.shape-se .se-port-owned .se-port-dot, html.shape-se .orbit-title .sts-p { width: 15px; height: 15px; background: var(--ink); }   /* a bit bigger (owner, 2026-10-13: "make the connectors a bit bigger") */
+/* the same type inside supers: the diagram's mono for what a super says, Geist for what it reads */
+html.shape-se .lv-node .lv-glyph, html.shape-se .orbit-title .se-titlesuper, html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; }
+/* selected and hovered the same way everywhere: the edge takes cobalt */
+html.shape-se:not(.se-gl) .orbit-bubble.se-sel, html.shape-se:not(.se-gl) .orbit-panel.se-sel, html.shape-se:not(.se-gl) .lv-node.se-sel, html.shape-se:not(.se-gl) .se-project.se-sel { border-color: var(--cobalt); }
+html.shape-se .op-outline path { stroke: var(--ink); stroke-width: 1.5; }   /* the drawn edge (browsers without corner-shape) is the same ink edge */
+/* wires are drawn in ink like the supers they join (they were hairline grey and hard to see) */
+html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed { stroke: var(--graphite); stroke-width: 1.5; }
+/* Live as a window in Explore (live.js, superellipse look): its body is plain window content */
+html.shape-se .live-window .live-body { display: block; width: auto; max-width: none; height: auto; padding: 0; border: 0; background: transparent; overflow: visible; filter: none; }
+html.shape-se .live-window .live-scroll { margin: 0; overflow: visible; }
+html.shape-se .live-window .live-head { margin-top: 0; }
+/* hovering on a wire shows data flowing along it: a dotted cobalt animation (owner, 2026-10-12) */
+html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow {
+  stroke: var(--cobalt); stroke-width: 2; stroke-dasharray: 6 8; animation: wire-flow 1.2s linear infinite;
+}
+html.shape-se .wire:hover .wire-bed, html.shape-se .sl-wire:hover .wire-bed { stroke: color-mix(in srgb, var(--cobalt) 25%, transparent); stroke-width: 3; }
+@media (prefers-reduced-motion: reduce) { html.shape-se .wire:hover .wire-flow, html.shape-se .sl-wire:hover .wire-flow { animation: none; } }
+
+/* ---- the lock on every super (super/lock.js) ------------------------------------------------------------
+   a small padlock at the top centre, just inside the edge under the sync sparkle (owner, 2026-10-12: "move the lock
+   button to top center of supers"), faint until it is locked (ink); locked, the super's edge is drawn a little heavier */
+html.shape-se .se-lock {
+  position: absolute; left: calc(50% - 12px); top: 8px; right: auto; bottom: auto; transform: translateX(-50%); width: 20px; height: 20px; padding: 0; margin: 0; border: 0; background: transparent;
+  cursor: default; z-index: 5; opacity: 0.8; transition: opacity 0.15s ease; pointer-events: auto; line-height: 0;   /* one size and place on every super (owner, 2026-10-13: "make these bigger", "uniform throughout") */
+}
+html.shape-se .se-lock svg { width: 18px; height: 18px; display: block; overflow: visible; }
+html.shape-se .se-lock::after { content: ""; position: absolute; inset: -6px; }   /* an easier target than the padlock alone */
+html.shape-se .se-lock { cursor: pointer; }
+html.shape-se .se-lock .lk-shackle { fill: none; stroke: var(--ink); stroke-width: 1.4; stroke-linecap: round; transition: d 0.25s ease; }
+html.shape-se .se-lock .lk-body { fill: var(--paper); stroke: var(--ink); stroke-width: 1.3; }
+html.shape-se .se-lock:hover, html.shape-se .is-locked > .se-lock { opacity: 1; }
+html.shape-se .is-locked > .se-lock .lk-body { fill: var(--ink); }
+html.shape-se .se-lock:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; border-radius: 4px; }
+html.shape-se .lv-node.is-locked, html.shape-se .orbit-bubble.is-locked, html.shape-se .orbit-panel.is-locked, html.shape-se .se-project.is-locked { border-width: 2.5px; }
+html.shape-se .orbit-bubble.is-compact > .se-lock { top: 8px; }
+html.shape-se .orbit-panel > .se-lock { top: 8px; }
+html.shape-se .se-project.is-open > .se-lock { top: 10px; }
+html.shape-se .is-locked > .se-lock { cursor: pointer; }
+
+/* text smaller than readable is a super (super/legible.js, owner 2026-10-12): a paper box in the shape language,
+   the text back once a scroll makes it readable */
+html.shape-se .se-glyph:not(svg *) {
+  color: transparent !important; -webkit-text-fill-color: transparent !important; text-shadow: none !important;
+}   /* not shown at all, no box in its place (owner, 2026-10-12: "dont use censoring, simply dont show the word") */
+html.shape-se svg .se-glyph { fill: transparent !important; }
+
+/* slow motion (owner, 2026-10-12: no sudden movement, everything stable and slow): the bubbles' layout and windows
+   pushed aside glide slowly; tweens are slowed in super/motion.js (SLOW) */
+html.shape-se.orbit-ready .orbit-bubble { transition: border-color 0.2s ease, background 0.2s ease, transform 1s cubic-bezier(.25, .6, .25, 1); }
+html.shape-se .orbit-panel.gliding { transition: left 0.9s cubic-bezier(.25, .6, .25, 1), top 0.9s cubic-bezier(.25, .6, .25, 1), width 0.9s cubic-bezier(.25, .6, .25, 1), height 0.9s cubic-bezier(.25, .6, .25, 1); }
+html.shape-se .se-glyph:not(svg *), html.shape-se .se-zoomed :is(p, li, span, b, strong, em, small, td, th, h1, h2, h3, h4, dt, dd, label, summary) { transition: color 0.6s ease, background-color 0.6s ease; }
+html.shape-se .ob-member { transition-duration: 0.9s, 0.9s, 0.3s; }
+html.shape-se .se-lock, html.shape-se .se-port, html.shape-se .lv-node { transition: opacity 0.6s ease, border-color 0.4s ease, background-color 0.4s ease, box-shadow 0.4s ease; }
+html.shape-se .orbit-panel { transition: opacity 0.5s ease, transform 0.5s ease; }
+
+/* content bigger than its window (zoomed, or at the readable floor) moves by dragging (super/zoombox.js) */
+html.shape-se .se-zoombox.is-panning, html.shape-se .se-zoombox.is-panning * { cursor: grabbing !important; -webkit-user-select: none !important; user-select: none !important; }
+html.shape-se .se-zoombox.is-overflowing { cursor: grab; }
+
+/* graphics (owner, 2026-10-12: "fix the graphics") */
+/* port names, the site's and the main super's too, show only while a wire is being drawn, as every other port's do */
+html.shape-se .se-port:not(.se-port-owned) .se-port-name { opacity: 0; transition: opacity 0.6s ease; position: absolute; white-space: nowrap; pointer-events: none; }
+html.shape-se .se-port-left:not(.se-port-owned) .se-port-name { left: 100%; margin-left: 4px; }
+html.shape-se .se-port-right:not(.se-port-owned) .se-port-name { right: 100%; margin-right: 4px; }
+html.shape-se .se-port-top:not(.se-port-owned) .se-port-name { top: 100%; margin-top: 2px; }
+html.shape-se .se-port-bottom:not(.se-port-owned) .se-port-name { bottom: 100%; margin-bottom: 2px; }
+html.shape-se.sl-dragging .se-port .se-port-name, html.shape-se.lv-dragging .se-port .se-port-name { opacity: 1; }
+/* the π line along the main super: readable, and only where the gap between the supers has room for it */
+html.shape-se .om-page-pi { font-size: 11px; opacity: 0.8; }
+/* the π line runs along the title's wire, not the main loop (super/wire.js .sl-pi): plain black, a size up
+   (owner, 2026-10-12: "make pi more readable", "make simple black") */
+html.shape-se .sl-pi .om-page-pi, html.shape-se .sl-pi .om-page-pi .om-pi-count, html.shape-se .sl-pi .om-page-pi .om-pi-new { font-size: 12.5px; font-weight: 500; opacity: 1; fill: #000; stroke: none; }
+html.shape-se .om-page > .om-page-pi { display: none; }
+.sl-pi { display: none; position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
+html.shape-se.orbit-on .sl-pi { display: block; }
+.sl-pi.is-off { display: none !important; }
+@media (max-width: 700px) { html.shape-se .om-page-pi { display: none; } }
+html.shape-se .se-port.is-covered { opacity: 0; pointer-events: none; }
+/* a focused Super AI super shows its focus by its cobalt edge alone (no second ring) */
+html.shape-se .lv-fn:focus-visible { outline: none; }
+
+/* ---- an open bubble is its drawing grown up (owner, 2026-10-12): the name in a box on the left, wired by soft
+   curves (super/bubble.js links) to one box per window in a column on the right ---------------------------------- */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) {
+  display: flex; flex-direction: row; align-items: center; gap: max(2.6em, 30px); padding: max(1.5em, 20px) max(3em, 42px) max(2.1em, 30px) max(2em, 26px); max-width: none; width: max-content;
+}
+@media (max-width: 700px) { html.shape-se .orbit-bubble.is-group:not(.is-compact) { gap: 24px; padding: 18px 34px 28px 20px; } }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-dot { display: none; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label {
+  position: relative; z-index: 1; flex: none; padding: 0.42em 1.05em; white-space: nowrap;
+  font: 500 1em/1.2 "Geist Mono", ui-monospace, monospace; letter-spacing: 0;
+  border: 1.5px solid var(--ink); border-radius: 0.55em; corner-shape: superellipse(var(--se-k-window, 1.6515));
+  background: var(--paper);
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-members {
+  position: relative; z-index: 1; display: inline-flex; flex-direction: column; flex-wrap: nowrap; align-items: stretch; gap: 0.42em; max-width: none;
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member {
+  --se-t: 1 !important; --se-k: var(--se-k-window, 1.6515) !important; justify-content: flex-start; text-align: left; white-space: nowrap;
+}
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { border-color: color-mix(in srgb, var(--graphite) 70%, transparent); background: var(--paper); border-radius: 0.5em; }
+html.shape-se .orbit-bubble > .ob-links { position: absolute; inset: 0; width: 100%; height: 100%; z-index: 0; pointer-events: none; overflow: visible; }
+html.shape-se .orbit-bubble > .ob-links path { fill: none; stroke: var(--graphite); stroke-width: 1; opacity: 0.6; }
+html.shape-se .orbit-bubble.is-group.is-compact > .ob-links { display: none; }
+/* never smaller than readable, however tight the layout (the pills' room shrinks, not their words) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { font-size: max(12px, 1em); }
+
+/* every rounded corner on the page is a superellipse corner (owner, 2026-10-12: "make everything superellipses, not
+   round corners"): buttons, fields, cards, tables, badges, pills, inside windows too. Low specificity, so a super
+   that has its own n (Shift + scroll) keeps it */
+html.shape-se :where(*), html.shape-se :where(*)::before, html.shape-se :where(*)::after { corner-shape: superellipse(var(--se-k-window, 1.6515)); }
+/* a super's own n (Shift + scroll, set on it as --se-k-window) is its own: what is inside it keeps n = π
+   (owner, 2026-10-12: "this is a bug": a bubble scrolled to a star turned its pills, links and label into stars) */
+html.shape-se :is(.orbit-bubble, .orbit-panel, .se-project, .orbit-title, .lv-palette, .live-dock, .lv-node) * { --se-k-window: 1.65149; }
+/* open bubbles: each pill is a box of its own (not drawn by ::before), so every browser can give it superellipse corners
+   (super/squircle.js paints them where corner-shape is unknown) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { background: var(--paper) !important; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent) !important; border-radius: 0.5em; padding: 0.32em 56px 0.32em 1.2em !important; }   /* room on the right for its lock and save */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { display: none; }
+
+/* corners that read as superellipses (owner, 2026-10-12: "corners should be superellipses"): a small radius drawn as a
+   superellipse still looks round, so the boxes have radii large enough for the shape to show: pills and labels have
+   superellipse ends, cards and stat tiles a generous superellipse corner */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { border-radius: 999px !important; }
+html.shape-se .orbit-panel :is(.stat-card, .tr-tile, .perf-card, .card, .rs-card, .leaderboard, .table-scroll, .status-box, .ok-box, .warning-box, .insight-box) { border-radius: 22px; }
+html.shape-se .orbit-panel :is(.pill, .badge, .chip, .tag, .rank, .stage-tag, .linked-badge) { border-radius: 999px; }
+/* a button pressed by a scroll in (super/scroll.js) shows it was pressed */
+html.shape-se .se-pressing { outline: 2px solid var(--cobalt) !important; outline-offset: 2px; transition: outline-color 0.4s ease; }
+
+/* lines and wires more visible (owner, 2026-10-12): wires in ink, a little heavier; the lattice and the drawings' wires
+   in graphite instead of hairline grey */
+html.shape-se .wire-bed, html.shape-se .sl-wire .wire-bed, html.shape-se .lv-wires .wire-bed { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; }
+html.shape-se .om-lattice { stroke: color-mix(in srgb, var(--ink) 82%, transparent); stroke-width: 2.2; stroke-linecap: round; }
+html.shape-se .ob-mini .obm-wire { opacity: 0.95; stroke: var(--graphite); }
+html.shape-se .orbit-bubble > .ob-links path { opacity: 0.9; stroke-width: 1.3; }
+
+/* Shift + scroll's readout (super/shapehud.js): the shape, its n and its name, beside the pointer */
+.se-shapehud { position: fixed; z-index: 2000; display: none; align-items: center; gap: 8px; padding: 6px 12px 6px 6px; pointer-events: none;
+  background: var(--paper); border: 1.5px solid var(--ink); border-radius: 999px; corner-shape: superellipse(1.65);
+  font: 500 12px/1.2 var(--font-mono, ui-monospace, monospace); color: var(--ink); opacity: 0; transition: opacity 0.35s ease;
+  box-shadow: 0 10px 24px -14px rgba(70, 36, 12, 0.5); }
+html.shape-se .se-shapehud { display: flex; }
+.se-shapehud.show { opacity: 1; }
+.se-shapehud svg { width: 30px; height: 30px; flex: none; }
+.se-shapehud path { fill: color-mix(in srgb, var(--paper) 70%, transparent); stroke: var(--ink); stroke-width: 1.6; }
+.se-shapehud.at-detent path { stroke: var(--cobalt); }
+.se-shapehud.at-detent .sh-n { color: var(--cobalt); }
+.se-shapehud .sh-name { color: var(--graphite); font-weight: 400; }
+.se-shapehud .sh-key { font-size: 10.5px; letter-spacing: 0.04em; color: var(--graphite); padding-right: 8px; margin-right: 0; border-right: 1px solid color-mix(in srgb, var(--ink) 25%, transparent); }
+
+/* a closing window folds back into its button (super/shape.js close): a plain pane of the same glass */
+.se-fold { position: fixed; z-index: 900; pointer-events: none; box-sizing: border-box; transform-origin: 50% 50%;
+  background: color-mix(in srgb, var(--paper) 78%, transparent); border: 1.5px solid color-mix(in srgb, var(--ink) 60%, transparent);
+  border-radius: 50%; corner-shape: superellipse(9.96578); box-shadow: 0 14px 30px -12px rgba(25, 25, 25, 0.4); }   /* its n shrinks as it folds (super/shape.js close) */
+
+/* a super that got too small closes, fading away (every kind alike: super/bubble.js, super/project.js) */
+html.shape-se .se-closing { opacity: 0 !important; transform-origin: 50% 50%; transition: opacity 0.7s ease !important; pointer-events: none; }
+html.shape-se .orbit-bubble[hidden] { display: none !important; }   /* a bubble put away (gone) is gone, compact or not */
+
+/* the main and second supers' locks (super/lock.js): a lock host at the top centre of each loop */
+html.shape-se .se-lockhost { position: fixed; z-index: 965; width: 14px; height: 14px; transform: translate(-50%, 0); pointer-events: none; }
+html.shape-se .se-lockhost > .se-lock { left: 0; top: 0; transform: none; pointer-events: auto; }
+html:not(.shape-se) .se-lockhost { display: none; }
+
+/* any size if unlocked (owner, 2026-10-12): a window you size may be as small as 24 px; one you have not sized keeps its
+   readable minimum (super/loop.js) */
+html.shape-se .orbit-panel { min-width: 24px; min-height: 24px; }
+html.se-chain-dragging, html.se-chain-dragging * { user-select: none !important; cursor: grabbing !important; }
+
+/* data wires (input, output, or joining supers) are thicker and coloured by the type they carry; control wires (sync,
+   condition) stay fine graphite curves (owner, 2026-10-12: "input output wire thicker and color data type specific") */
+html.shape-se .sl-data { --wt: var(--ink); }
+html.shape-se .sl-data[data-type="int"] { --wt: #2a5aa8; }
+html.shape-se .sl-data[data-type="number"] { --wt: #c0661c; }
+html.shape-se .sl-data[data-type="text"] { --wt: #b2457d; }
+html.shape-se .sl-data[data-type="bool"] { --wt: #3d7c3a; }
+html.shape-se .sl-data[data-type="list"] { --wt: #6b4fa2; }
+html.shape-se .sl-data[data-type="ai"] { --wt: #1f7a7e; }
+html.shape-se .sl-data .wire-bed, html.shape-se .sl-wire.sl-data .wire-bed { stroke: var(--wt); stroke-width: 3.6; }
+html.shape-se .sl-data .wire-term { fill: var(--wt); }
+html.shape-se .sl-data[data-type="list"] .wire-bed { stroke-width: 5.4; }
+html.shape-se .om-site .om-lattice { stroke-width: 3.6; }
+
+/* the save icon (super/save.js): beside the lock, the same pen; saved, the disk is inked in */
+html.shape-se .se-save .sv-body, html.shape-se .se-save .sv-label, html.shape-se .se-save .sv-slot { fill: none; stroke: var(--ink); stroke-width: 1.2; stroke-linejoin: round; }
+html.shape-se .se-save .lk-body, html.shape-se .se-save .lk-shackle { display: none; }
+html.shape-se .is-saved > .se-save { opacity: 1; }
+html.shape-se .is-saved > .se-save .sv-body { fill: var(--ink); }
+html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save .sv-slot { stroke: var(--paper); }
+html.shape-se :not(.is-saved) > .se-save { opacity: 0.55; }
+
+html.shape-se .se-save { left: calc(50% + 12px); }
+/* a low super (the title, a pill) carries them at its right end instead, at the same size */
+html.shape-se .orbit-title .se-titlesuper > .se-lock { top: 50%; left: auto; right: 30px; transform: translateY(-50%); }
+html.shape-se .orbit-title .se-titlesuper > .se-save { right: 8px; left: auto; }
+
+/* at its smallest a super is a sparkle (owner, 2026-10-12: "minimum size can be a sparkle"; super/bind.js se-sparkle):
+   what it shows hides, and without the engine its box is cut to the port sparkle's four points */
+html.shape-se .se-sparkle > :not(.se-port) { visibility: hidden !important; }
+html.shape-se:not(.se-gl) .se-sparkle { clip-path: polygon(50% 0, 58% 42%, 100% 50%, 58% 58%, 50% 100%, 42% 58%, 0 50%, 42% 42%); }
+
+/* a Display and a prompt start empty: no placeholder words (owner, 2026-10-12) */
+
+/* what is inside an open bubble is a super too (owner, 2026-10-12: "make inside supers same logic as outside it";
+   super/inner.js): the engine draws its glass, so its own chrome steps back; the soft curves are real wires now; its lock
+   and save sit at its right end; a cut pill dims (its window opens once it is wired again) */
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label { border-color: transparent; background: transparent; }
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member::before { border-color: transparent !important; background: transparent !important; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-links { display: none; }
+html.shape-se .ob-member > .se-lock, html.shape-se .ob-label > .se-lock { top: 50%; left: auto; right: 28px; transform: translateY(-50%); }
+html.shape-se .ob-member > .se-save, html.shape-se .ob-label > .se-save { right: 6px; left: auto; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label { padding-right: 56px !important; }
+html.shape-se .orbit-bubble.is-group.is-compact .ob-member > .se-lock, html.shape-se .orbit-bubble.is-group.is-compact > .ob-label > .se-lock { display: none; }
+html.shape-se .ob-member.is-cut { opacity: 0.45; }
+/* a super shrunk to a sparkle shows no ports */
+html.shape-se .se-port.is-tiny { opacity: 0; pointer-events: none; }
+html.se-gl.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-members .ob-member { background: transparent !important; border-color: transparent !important; }   /* the engine draws its glass */
+html.shape-se .sl-inner .wire-bed, html.shape-se .sl-wire.sl-inner .wire-bed { stroke: var(--graphite); stroke-width: 1.3; }   /* inside a bubble: fine wires */
+
+/* an open bubble sized by hand re-forms what is inside it to its box, scaled as a whole (super/bubble.js fit) */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-label, html.shape-se .orbit-bubble.is-group:not(.is-compact) > .ob-members { zoom: var(--in-z, 1); flex-shrink: 0; }
+html.shape-se .orbit-bubble.is-group.se-sized:not(.is-compact) { width: auto; justify-content: center; overflow: visible; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { flex-shrink: 0; }
+
+/* a port takes the pointer only on its sparkle, so it never covers the lock under it on a small, zoomed-out super
+   (the lock of a compact bubble at the zoomed-out start could not be clicked) */
+html.shape-se .se-port-owned { pointer-events: none; }
+html.shape-se .se-port-owned .se-port-dot { pointer-events: auto; }
+/* the compact project's lock and save at the page's zoom, as a compact bubble's are (super/project.js --pj-z) */
+html.shape-se .se-project > .se-lock { zoom: var(--pj-z, 1); }
+html.shape-se .se-project { border-width: calc(1.5px * var(--pj-z, 1)); }
+html.shape-se .se-project.is-locked { border-width: calc(2.5px * var(--pj-z, 1)); }
+html.shape-se .se-port-owned { transform: translate(-50%, -50%) scale(var(--port-s, 1)); }
+/* inside an open bubble a pill's first letter stays clear of its input sparkle */
+/* a Super AI super keeps its square whatever it shows: a long answer wraps inside it, under its lock and save, and
+   scrolls when it is longer than that (owner, 2026-10-13: uniform throughout) */
+html.shape-se .lv-node.lv-box.is-long { width: var(--lv-s, 84px); height: var(--lv-h, var(--lv-s, 84px)); max-width: none; min-height: 0; padding: 30px 10px 10px; box-sizing: border-box; }
+html.shape-se .lv-node.lv-box.is-long .lv-glyph { max-height: 100%; height: 100%; }
+
+/* ---- night: what is drawn straight on the dark sky is light ink (owner, 2026-10-13: "in dark mode text is unreadable") ----
+   the loops' edges and their lock hosts, the wires that carry no type yet, the lattice's sparkles, the π digits, a
+   holder's name and its lock and save; the panes stay light frost with dark ink on them */
+html.shape-se.se-night { --sky-ink: #e4e7ef; }
+html.shape-se.se-night .om-page-loop, html.shape-se.se-night .om-site-loop { stroke: var(--sky-ink); }
+html.shape-se.se-night.se-sel-site .om-site-loop, html.shape-se.se-night.se-sel-loop .om-page-loop { stroke: var(--cobalt); }
+html.shape-se.se-night .wire-bed, html.shape-se.se-night .sl-wire .wire-bed, html.shape-se.se-night .lv-wires .wire-bed { stroke: color-mix(in srgb, var(--sky-ink) 82%, transparent); }
+html.shape-se.se-night .sl-data { --wt: var(--sky-ink); }
+html.shape-se.se-night .sl-data[data-type="int"] { --wt: #7ea1e8; } html.shape-se.se-night .sl-data[data-type="number"] { --wt: #e49a5c; } html.shape-se.se-night .sl-data[data-type="text"] { --wt: #e07fb3; } html.shape-se.se-night .sl-data[data-type="bool"] { --wt: #7fc27b; } html.shape-se.se-night .sl-data[data-type="list"] { --wt: #ab93e0; } html.shape-se.se-night .sl-data[data-type="ai"] { --wt: #5fc3c7; }   /* the type colours lifted for the dark sky */
+html.shape-se.se-night .sl-pi .om-page-pi, html.shape-se.se-night .sl-pi .om-page-pi .om-pi-count, html.shape-se.se-night .sl-pi .om-page-pi .om-pi-new { fill: var(--sky-ink); }
+html.shape-se.se-night .se-port:not(.se-port-owned) .se-port-dot { background: var(--sky-ink); }
+html.shape-se.se-night .se-port:not(.se-port-owned) .se-port-name { color: var(--sky-ink); }
+html.shape-se.se-night .lv-node.lv-box.is-holder .lv-glyph { color: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-shackle, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-body,
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-body, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-label, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-save .sv-slot { stroke: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-locked > .se-lock .lk-body, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder) > .se-lock .lk-body { fill: transparent; }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-locked > .se-lock .lk-body { fill: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-body { fill: var(--sky-ink); }
+html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-label, html.shape-se.se-night :is(.se-lockhost, .lv-node.is-holder).is-saved > .se-save .sv-slot { stroke: #262b36; }
+html.shape-se.se-night .lv-node.is-holder .lv-glyph { user-select: none; -webkit-user-select: none; }
+
+/* ==== universal rules: every super looks the same (owner, 2026-10-13: "make ui look similar everywhere, uniform,
+   universal rules"). One edge, one name style, one selection, one icon set, whatever the kind of super. ==== */
+html.shape-se {
+  --u-edge: 1.5px;            /* every super's edge */
+  --u-edge-locked: 2.5px;     /* a locked super's edge */
+  --u-sel: 2px;               /* a selected super's edge (cobalt) */
+  --u-name: 500 13px/1.2 "Geist Mono", ui-monospace, monospace;   /* every super's name */
+}
+/* 1. the edge */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node:not(.is-holder), .lv-node.is-holder, .orbit-title .se-titlesuper) { border-width: var(--u-edge); border-style: solid; }
+html.shape-se .se-project { border-width: calc(var(--u-edge) * var(--pj-z, 1)); }
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node, .orbit-title .se-titlesuper).is-locked { border-width: var(--u-edge-locked); }
+html.shape-se .se-project.is-locked { border-width: calc(var(--u-edge-locked) * var(--pj-z, 1)); }
+/* 2. the selection */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: var(--cobalt); border-width: max(var(--u-sel), var(--u-edge)); }
+/* 3. the name: a bubble's name box, its pills, the project's name, a holder's name and what a Super AI super says
+   are all set in the one name style; a holder's name sits in a box like a bubble's name */
+html.shape-se :is(.orbit-bubble.is-group:not(.is-compact) > .ob-label, .orbit-bubble.is-group:not(.is-compact) .ob-member, .lv-node.is-holder > .lv-glyph, .se-project .pj-name) { font: var(--u-name); letter-spacing: 0; text-transform: none; }
+html.shape-se .lv-node.lv-box.is-holder > .lv-glyph {
+  left: 50%; right: auto; transform: translateX(-50%); width: max-content; max-width: 76%; top: max(4%, 30px);
+  padding: 0.32em 0.9em; border: 1px solid color-mix(in srgb, var(--graphite) 70%, transparent); border-radius: 0.5em;
+  background: var(--paper); color: var(--ink); font-size: 13px !important; white-space: nowrap; text-overflow: ellipsis;
+}
+html.shape-se.se-night .lv-node.lv-box.is-holder > .lv-glyph { color: var(--ink); }   /* on its paper box, dark ink day and night */
+html.shape-se .ob-mini .obm-text { font-family: "Geist Mono", ui-monospace, monospace; font-weight: 500; }   /* a compact bubble's drawn name too */
+/* a double click on a super never selects its name as text */
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node.is-holder > .lv-glyph, .orbit-title .se-titlesuper, .se-project .pj-face) { -webkit-user-select: none; user-select: none; }
+
+/* every super starts at n = 10 (owner, 2026-10-13); what is inside a super that is not a super (a window's buttons and
+   cards) keeps n = π (the descendant reset above), but the supers inside an open bubble (its name box and pills) are
+   supers: n = 10 too, until hold shift + scroll gives one its own */
+html.shape-se .orbit-bubble.is-group:not(.is-compact) :is(.ob-member, .ob-label) { --se-k-window: 9.96578; }
+html.shape-se .orbit-bubble.is-group:not(.is-compact) .ob-member { --se-k: 9.96578 !important; }
+/* a holder with no name shows no empty name box */
+html.shape-se .lv-node.lv-box.is-holder > .lv-glyph:empty { display: none; }
+/* π and friends are switched off (owner, 2026-10-13): no π digits along the title's wire or round the loop */
+.sl-pi, .om-page-pi, .om-page-pipath { display: none !important; }
+
+/* no square focus ring on a super (owner, 2026-10-13: "remove the blue corner rect"): a super shows that it is
+   selected by its own edge (the engine's cobalt edge and sheen); the browser's focus outline drew a square box round it */
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .orbit-panel, .orbit-title, .se-titlesuper, .orbit-mark, .se-port, .sl-layer, .orbit-stage, .orbit-bubbles):focus-visible,
+html.shape-se :is(.orbit-bubble, .ob-member, .ob-label, .lv-node, .se-project, .orbit-panel, .orbit-title, .se-titlesuper):focus { outline: none !important; }
+html.shape-se .se-pressing { outline: none !important; }
+html.se-gl :is(.ob-member, .ob-label).se-sel::before, html.se-gl :is(.ob-member, .ob-label).se-sel { border-color: transparent !important; box-shadow: none !important; }
+/* the selected super is surrounded in blue, along its own edge (owner, 2026-10-13: "add blue surround for a super that
+   is selected"); never a rectangle or a dotted line round it ("remove the blue corner rect", "remove the blue dotted
+   line"): a square, a circle, a star keep their shape, only their edge turns cobalt (the engine draws the same) */
+/* the page's own outlines only where the engine does not draw (owner, 2026-10-13: "remove the rectangle, just keep the
+   super"): with the engine (html.se-gl) the blue is the super's own superellipse edge alone (engine.js), and these
+   outlines, which are boxes and svg paths, stay hidden */
+html.shape-se:not(.se-gl) :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel,
+html.shape-se:not(.se-gl) :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: var(--cobalt) !important; border-width: 2.5px !important; border-style: solid !important; }
+html.shape-se:not(.se-gl) .orbit-panel.se-sel .op-outline path { stroke: var(--cobalt); stroke-width: 2.5; }
+html.shape-se:not(.se-gl) .ob-member.se-sel::before { border-color: var(--cobalt); border-width: 2px; }
+html.shape-se:not(.se-gl).se-sel-site .om-site-loop, html.shape-se:not(.se-gl).se-sel-loop .om-page-loop { stroke: var(--cobalt) !important; stroke-width: 2.5; }
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel.se-sel,
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node).se-sel.se-on { border-color: transparent !important; }
+html.se-gl :is(.orbit-bubble, .orbit-panel, .lv-node, .se-project, .orbit-title .se-titlesuper).se-sel { border-color: transparent !important; }
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper).se-sel::before { padding: 3px; }
+
+/* the main canvas's controls (top) and conditions (bottom), super/controls.js: two halves either side of the main
+   super's sync and condition ports; small glass supers, every one an icon (owner, 2026-10-13: "everything should be
+   iconized, both controls and condition"); the padlock and the disk are the ones the supers carried */
+html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 48px; pointer-events: none; --ctl-gap: 4px; color: var(--ink); }   /* the four together (owner, 2026-10-13) */
+html.shape-se .se-ctl-bottom { transform: translateY(-100%); --ctl-gap: 22px; }
+html.shape-se .se-ctl-half.se-ctl-l { position: absolute; top: 0; right: var(--ctl-gap); }
+html.shape-se .se-ctl-half.se-ctl-r { position: absolute; top: 0; left: var(--ctl-gap); }
+html:not(.shape-se) .se-ctlbar, html.shape-se .se-ctlbar[hidden] { display: none; }
+html.shape-se .se-ctl-half { display: flex; gap: 8px; pointer-events: auto; }
+html.shape-se .se-ctl, html.shape-se .se-cond {
+  display: inline-flex; align-items: center; justify-content: center; gap: 6px; min-width: 50px; height: 48px; padding: 0 10px; margin: 0;   /* bigger (owner, 2026-10-13: "make them bigger", and again: "make the buttons bigger") */
+  /* a super like every other (owner, 2026-10-13: "they should be same as other supers, not regular buttons"): the square
+     at n = 1000, the ink edge, the frosted pane and its shadow; no button hover or press look */
+  border: 1.5px solid var(--ink); border-radius: 4px; corner-shape: superellipse(9.96578);
+  background: color-mix(in srgb, var(--paper, #fff) 62%, transparent); -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
+  color: inherit; font: 500 14px/1 var(--font, "Geist", system-ui, sans-serif); cursor: pointer; box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
+  transition: background 0.4s ease, color 0.4s ease, border-color 0.4s ease;
+}
+html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 26px; height: 26px; flex: none; display: block; overflow: visible; }
+html.shape-se .se-ctlbar svg path, html.shape-se .se-ctlbar svg rect, html.shape-se .se-ctlbar svg circle { fill: none; stroke: currentColor; stroke-linecap: round; stroke-linejoin: round; }
+html.shape-se .se-ctlbar svg .f { fill: currentColor; stroke: none; }
+html.shape-se .se-ctl .lk-shackle, html.shape-se .se-ctl .lk-body { stroke-width: 1.3; }
+html.shape-se .se-ctl.is-locked .lk-body { fill: currentColor; }
+html.shape-se .se-ctl .sv-body, html.shape-se .se-ctl .sv-label, html.shape-se .se-ctl .sv-slot { stroke-width: 1.2; }
+html.shape-se .se-ctl.is-saved .sv-body { fill: currentColor; }
+html.shape-se .se-ctl.is-chained .ch-link { stroke-width: 2.2; }
+html.shape-se .se-ctl.is-chained { color: inherit; }                  /* blue means wired, nothing else (owner, 2026-10-13) */
+html.shape-se .se-ctl.is-saved .sv-label, html.shape-se .se-ctl.is-saved .sv-slot { stroke: var(--paper, #fff); }
+html.shape-se .se-ctl.is-on { color: inherit; border-color: inherit; }   /* reset waiting for its second press: no blue (only wired is) */
+html.shape-se .se-ctl:focus-visible, html.shape-se .se-cond:focus-within { outline: none !important; border-color: var(--cobalt); }
+html.shape-se .se-cond { cursor: text; }
+html.shape-se .se-cond-k { display: inline-flex; opacity: 0.8; }
+html.shape-se .se-cond.is-set .se-cond-k { opacity: 1; color: var(--cobalt); }
+html.shape-se .se-cond-v { border: 0; outline: 0; background: transparent; font: inherit; color: inherit; padding: 0; width: auto; min-width: 1ch; max-width: 18ch; }
+html.shape-se .se-cond-v::placeholder { color: currentColor; opacity: 0.28; }
+html.shape-se .se-cond:not(:focus-within):not(.is-set) .se-cond-v { width: 0; min-width: 0; }
+html.shape-se .se-cond-r:empty { display: none; }
+html.shape-se .se-cond-r { font-variant-numeric: tabular-nums; opacity: 0.75; white-space: nowrap; }
+html.shape-se .se-ctl-note { position: fixed; z-index: 967; transform: translate(-50%, 0); padding: 5px 10px; border: 1.5px solid var(--ink); border-radius: 7px; corner-shape: superellipse(4);
+  background: color-mix(in srgb, var(--paper, #fff) 86%, transparent); font: 500 12px/1.2 var(--font, "Geist", system-ui, sans-serif); color: var(--ink);
+  opacity: 0; pointer-events: none; transition: opacity 0.5s ease; white-space: nowrap; }
+html.shape-se .se-ctl-note.is-on { opacity: 1; }
+html:not(.shape-se) .se-ctl-note { display: none; }
+html.shape-se.se-night .se-ctlbar { color: var(--sky-ink, #e4e7ef); }
+html.shape-se.se-night :is(.se-ctl, .se-cond, .se-ctl-note) { background: color-mix(in srgb, #1d2230 70%, transparent); border-color: var(--sky-ink, #e4e7ef); color: var(--sky-ink, #e4e7ef); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.10) inset, 0 3px 10px -4px rgba(0, 0, 0, 0.6); }
+html.shape-se.se-night .se-cond.is-set .se-cond-k { color: #9aa6ff; }
+html.shape-se.se-night .se-ctl.is-saved .sv-label, html.shape-se.se-night .se-ctl.is-saved .sv-slot { stroke: #1d2230; }
+@media (max-width: 699px) {
+  html.shape-se .se-ctlbar { --ctl-gap: 4px; } html.shape-se .se-ctl-bottom { --ctl-gap: 14px; }
+  html.shape-se .se-ctlbar { height: 36px; }
+  html.shape-se .se-ctl, html.shape-se .se-cond { min-width: 36px; height: 36px; padding: 0 5px; }
+  html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 20px; height: 20px; }
+  html.shape-se .se-ctl-half { gap: 3px; }
+}
+/* no lock or save icon on the supers any more: they are the canvas's controls now (owner, 2026-10-13: "delete these
+   icons from the super and put these icons on the control"); the lock and the save still hold (lock.js, save.js) */
+html.shape-se .se-lock, html.shape-se .se-save, html.shape-se .se-lockhost { display: none !important; }
+
+/* the buttons are supers too: their ports above the bars; a wired one shows a cobalt word */
+html.shape-se .se-port[data-owner^="ctl:"], html.shape-se .se-port[data-owner^="cond:"] { z-index: 968; }
+html.shape-se .se-ctl.is-wired, html.shape-se .se-cond.is-wired .se-cond-k { color: var(--cobalt); opacity: 1; }
+html.shape-se.se-night .se-ctl.is-wired, html.shape-se.se-night .se-cond.is-wired .se-cond-k { color: #9aa6ff; }
+html.se-gl .se-ctlbar :is(.se-ctl, .se-cond):not(.is-on) { background: transparent !important; border-color: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+
+/* the site (second super) has no drawn rectangle round it (owner, 2026-10-13): its edge is the glass alone */
+html.shape-se .om-site-loop { stroke: none; }
+html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-site.se-on-site .om-site-loop { stroke: none; }
+/* dark mode, one palette (owner, 2026-10-13: "improve the dark mode experience"): at night the paper and the ink swap
+   for the whole page, so every pane, box, card, notice and chip reads light on the blue-grey sky instead of a pale box
+   with dark text. Cobalt stays the one accent; on the dark sky its text and lines are lifted (#9aa6ff) to stay legible. */
+html.shape-se.se-night { color-scheme: dark; --paper: #1d2230; --surface: #232838; --ink: #e4e7ef; --graphite: #a3a9b7; --faint: #7c8394;
+  --hair: #353b4b; --hair-strong: #48506a; --cobalt-text: #9aa6ff; }
+html.shape-se.se-night .lv-node.lv-box.is-holder > .lv-glyph { color: var(--sky-ink); }
+html.shape-se.se-night .se-consent { background: rgba(8, 10, 16, 0.55); }
+html.shape-se.se-night .se-consent-card, html.shape-se.se-night .se-req-card { border-color: #48506a; box-shadow: 0 24px 60px -20px rgba(0, 0, 0, 0.8); }
+html.shape-se.se-night .se-consent-btns button:not(.is-main), html.shape-se.se-night .se-req-choices { background: #2a3042; border-color: #5a6380; }
+html.shape-se.se-night .se-consent a, html.shape-se.se-night .se-req-card li em, html.shape-se.se-night .se-req-card li.k-blocked .k,
+html.shape-se.se-night .se-req.is-min:hover { color: var(--cobalt-text); }
+html.shape-se.se-night .se-req { background: color-mix(in srgb, var(--paper) 70%, transparent); box-shadow: 0 1px 0 rgba(255, 255, 255, 0.08) inset, 0 6px 14px -8px rgba(0, 0, 0, 0.7); }
+html.shape-se.se-night ::selection { background: rgba(122, 140, 255, 0.4); color: #fff; }
+
+
+/* ================================================================================================================
+   super/nodes.css
+   ================================================================================================================ */
+/* super/nodes.css — the Functions palette (super/nodes.js), a small floating window, as in LabVIEW */
+.lv-palette {
+  position: fixed; left: 16px; bottom: 16px; z-index: 250; width: max-content;
+  background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 12px;
+  font-size: 12px; color: var(--ink);
+  box-shadow: 0 10px 24px rgba(25, 25, 25, 0.08);
+}
+/* just the icons; the message line is for screen readers only */
+.lv-grid { display: grid; grid-template-columns: repeat(5, 40px); gap: 6px; padding: 8px; }
+.lv-out { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+.lv-fn {
+  height: 34px; min-width: 0; padding: 0; border: 1px solid var(--hair-strong); border-radius: 7px;
+  background: var(--paper); color: var(--ink); font-family: inherit; font-size: 14px; font-weight: 500; line-height: 1; cursor: pointer;
+  display: grid; place-items: center;
+}
+.lv-fn svg { width: 20px; height: 20px; stroke: currentColor; stroke-width: 1.3; fill: none; }
+.lv-fn svg text { fill: currentColor; stroke: none; font-size: 6.5px; font-weight: 600; }
+.lv-fn svg [fill="currentColor"] { fill: currentColor; }   /* solid shapes */
+.lv-fn:hover { border-color: var(--ink); }
+.lv-fn:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 1px; }
+.lv-fn.fired { animation: lv-fire 0.5s ease; }
+.lv-fn.is-running { border-color: var(--cobalt); color: var(--cobalt); }
+@keyframes lv-fire { 0% { background: var(--cobalt); color: var(--paper); } 100% { background: var(--paper); } }
+@media (max-width: 700px) {
+  .lv-palette { left: 10px; bottom: 10px; }
+}
+@media (prefers-reduced-motion: reduce) { .lv-fn.fired { animation: none; } }
+
+/* --- the block diagram: nodes dragged out onto the page, and their wires --- */
+.lv-canvas { position: fixed; inset: 0; z-index: 960; pointer-events: none; }   /* above windows and the mark, under dialogs */
+/* the superellipse look: the supers lie under the windows (owner, 2026-10-12: "this is a bug": run showed through a
+   window), and those a window holds lie on it, in a layer of their own above the windows (super/nodes.js layers) */
+html.shape-se .lv-canvas { z-index: 11; }   /* above the stage (bubbles), under the windows */
+.lv-canvas-top { position: fixed; inset: 0; z-index: 955; pointer-events: none; }
+html:not(.shape-se) .lv-canvas-top { display: none; }
+.lv-wires { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; }
+.lv-node {
+  position: fixed; pointer-events: auto; width: 46px; height: 32px; touch-action: none;
+  box-shadow: 0 4px 12px rgba(25, 25, 25, 0.1); cursor: grab;
+}
+.lv-node .lv-glyph { display: grid; place-items: center; }
+.lv-node .lv-val {
+  position: absolute; left: 50%; top: calc(100% + 3px); transform: translateX(-50%);
+  font: 500 10.5px/1.2 ui-monospace, "Geist Mono", monospace; color: var(--graphite); white-space: nowrap;
+  background: var(--paper); padding: 1px 4px; border-radius: 3px;
+}
+/* Show: an empty box that holds the value wired into it */
+.lv-node.lv-box { width: auto; min-width: 46px; max-width: 240px; padding: 0 10px; }
+.lv-node.lv-box .lv-glyph { font: 500 12px/1 ui-monospace, "Geist Mono", monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lv-node.lv-box .lv-val { display: none; }
+/* the output terminal, on the right like LabVIEW's */
+.lv-node::after { content: ""; position: absolute; right: -4px; top: 50%; width: 6px; height: 6px; margin-top: -3px; background: var(--ink); }
+.lv-node.is-dragging { cursor: grabbing; opacity: 0.85; box-shadow: 0 10px 24px rgba(25, 25, 25, 0.18); }
+.lv-palette .lv-fn { cursor: grab; touch-action: none; }
+html.lv-dragging, html.lv-dragging * { cursor: grabbing !important; user-select: none; }
+.lv-hover { outline: 2px dashed var(--cobalt) !important; outline-offset: 3px; }
+.lv-palette.lv-bin { border-color: #b4574f; box-shadow: 0 0 0 2px rgba(180, 87, 79, 0.25); }
+
+/* in the superellipse look: nodes are symmetric superellipses (n = π), the palette a window,
+   the output terminal a sparkle */
+html.shape-se .lv-fn { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); }
+html.shape-se .lv-node { width: 54px; }
+html.shape-se .lv-node.lv-box { width: auto; min-width: 54px; }
+html.shape-se .lv-node::after { width: 10px; height: 10px; margin-top: -5px; right: -6px; clip-path: var(--se-sparkle); }
+html.shape-se .lv-palette { border-radius: 50%; corner-shape: superellipse(var(--se-k-window)); }   /* a super like everything else */
+
+/* --- super/wire.js: dragging from any word, number or character draws a wire --- */
+.sl-layer { position: fixed; inset: 0; width: 100%; height: 100%; z-index: 958; pointer-events: none; overflow: visible; }
+.sl-layer .sl-hover { fill: rgba(47, 64, 232, 0.08); stroke: var(--cobalt); stroke-width: 1.5; }
+html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select: none !important; -webkit-user-select: none !important; }
+
+
+/* Super Neural Engine: a solid diamond (n = 1.3) that grows into a superellipse (n = π) */
+.lv-palette .lv-fn.lv-super svg .lv-star { fill: currentColor; stroke: none; }
+.lv-node.lv-super, html.shape-se .lv-node.lv-super { width: 58px; height: 58px; border-color: transparent; background: transparent; box-shadow: none; }
+.lv-node.lv-super .lv-glyph, .lv-node.lv-super svg { width: 100%; height: 100%; display: block; }
+.lv-node.lv-super .lv-star { fill: var(--ink); stroke: var(--ink); stroke-width: 3; }
+.lv-node.lv-super.is-grown .lv-star { stroke: var(--cobalt); }
+
+/* Show grows to hold a long answer (the Super Neural Engine's) */
+.lv-node.lv-box.is-long, html.shape-se .lv-node.lv-box.is-long { width: max-content; max-width: min(340px, calc(100vw - 24px)); height: auto; min-height: 32px; padding: 8px 12px; }
+.lv-node.lv-box.is-long .lv-glyph { display: block; white-space: pre-wrap; overflow-wrap: anywhere; text-align: left; line-height: 1.45; font-size: 11.5px; max-height: 240px; overflow: auto; text-overflow: clip; }
+.lv-node.lv-super.is-thinking .lv-star { stroke: var(--cobalt); }
+
+/* "?": ask the panel */
+.lv-node.lv-ask.is-thinking { border-color: var(--cobalt); color: var(--cobalt); animation: lv-panel-think 1.2s ease-in-out infinite; }
+@keyframes lv-panel-think { 50% { box-shadow: 0 0 0 4px rgba(47, 64, 232, 0.15); } }
+@media (prefers-reduced-motion: reduce) { .lv-node.lv-ask.is-thinking { animation: none; } }
+
+/* held by Stop: dashed and quiet until the wire is gone */
+.lv-node.is-held { border-style: dashed; color: var(--graphite); }
+.lv-node.lv-super.is-held .lv-star { stroke-dasharray: 6 5; }
+
+
+/* ■ stopped, ● paused: the hold is visible */
+.lv-node.is-stopped { border-color: var(--cobalt); border-style: dashed; color: var(--cobalt); }
+/* ●: a round blank input */
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot { width: 52px; height: 52px; border-radius: 50%; corner-shape: round; padding: 0; }
+.lv-node .lv-in { width: 40px; border: 0; background: transparent; color: inherit; text-align: center; font: 500 13px/1 ui-monospace, "Geist Mono", monospace; outline: none; padding: 0; }
+.lv-node .lv-in::placeholder { color: var(--graphite); font-size: 20px; }
+.lv-node.lv-dot .lv-val { top: calc(100% + 3px); }
+/* ?: a question field, and the answer under it */
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: auto; min-width: 46px; height: auto; min-height: 32px; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 4px 8px; }
+.lv-node.lv-ask .lv-glyph { font-size: 17px; font-weight: 600; }
+.lv-node .lv-q { width: 150px; border: 0; border-top: 1px solid var(--hair); background: transparent; color: inherit; font: 12px/1.3 inherit; padding: 3px 0 0; outline: none; }
+.lv-node .lv-ans:empty { display: none; }
+.lv-node .lv-ans { max-width: min(320px, calc(100vw - 40px)); max-height: 220px; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; font: 11.5px/1.45 ui-monospace, "Geist Mono", monospace; color: var(--ink); text-align: left; }
+.lv-fn.lv-ask { font-size: 17px; font-weight: 600; }
+
+
+/* a loop: a ring that counts; what sits inside it stays reachable */
+.lv-node.lv-dot.is-loop { background: transparent; box-shadow: none; border: 1.5px solid var(--ink); pointer-events: none; z-index: 0; }
+.lv-node.lv-dot.is-loop .lv-val { top: -9px; transform: translateX(-50%); pointer-events: auto; cursor: pointer; color: var(--ink); font-size: 12px; }
+.lv-node.lv-dot.is-loop.is-stopped { border-style: dashed; border-color: var(--cobalt); }
+.lv-node.lv-dot.is-loop::after { display: none; }
+/* ■ as a window's stop button: lit while its window is open */
+.lv-node.lv-box.is-on { border-color: var(--cobalt); color: var(--cobalt); }
+/* a text or integer field made by the first key */
+.lv-node.lv-box .lv-in { width: 90px; text-align: left; padding: 0 2px; }
+.lv-node.lv-box:has(.lv-in) { width: auto; padding: 0 8px; }
+
+/* the five on the page: one size, one stroke, empty shapes; + and ? drawn at the same weight */
+.lv-node, html.shape-se .lv-node,
+.lv-node.lv-box, html.shape-se .lv-node.lv-box,
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
+.lv-node.lv-super, html.shape-se .lv-node.lv-super,
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; border: 1.5px solid var(--ink); box-shadow: none; background: var(--paper); }
+.lv-node.lv-super, html.shape-se .lv-node.lv-super { border-color: transparent; background: transparent; }
+.lv-node .lv-glyph svg { width: 28px; height: 28px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; }
+.lv-node.lv-super .lv-star { fill: var(--paper); fill-opacity: 1; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
+.lv-node.lv-super.is-thinking .lv-star, .lv-node.lv-super.is-grown .lv-star { stroke: var(--cobalt); }
+/* a value, a field or an answer makes the shape grow around it */
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in) { width: auto; padding: 0 10px; }
+.lv-node.lv-box.has-val { width: auto; padding: 0 12px; }
+.lv-node.lv-box.is-long, html.shape-se .lv-node.lv-box.is-long { width: max-content; height: auto; padding: 8px 12px; }
+/* a text super given a size of its own (the start's welcome, or one sized by hand: --lv-h is set) keeps that box, and its
+   words wrap inside it (owner, 2026-10-13: the start's welcome) */
+html.shape-se .lv-node.lv-box.is-long[style*="--lv-h"] { width: var(--lv-s); height: var(--lv-h); max-width: none; padding: 14px 16px; box-sizing: border-box; }
+html.shape-se .lv-node.lv-box.is-long[style*="--lv-h"] .lv-glyph { display: block; height: 100%; max-height: none; white-space: normal; overflow-wrap: anywhere; text-align: left; font: 500 19px/1.4 var(--font, "Geist", system-ui, sans-serif); overflow: hidden; }   /* the start shows it at 0.62: about 12 px, over legible.js MIN */
+/* ?: just the mark until a question is typed */
+.lv-node.lv-ask { display: grid; place-items: center; gap: 0; }
+.lv-node.lv-ask .lv-q, .lv-node.lv-ask .lv-ans { display: none; }
+.lv-node.lv-ask.is-asking, html.shape-se .lv-node.lv-ask.is-asking { width: auto; height: auto; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 10px; }
+.lv-node.lv-ask.is-asking .lv-q { display: block; }
+.lv-node.lv-ask.is-asking .lv-ans:not(:empty) { display: block; }
+.lv-node.lv-dot.is-loop { background: transparent; }
+/* the palette: the same five icons, one stroke */
+.lv-palette .lv-fn svg { stroke-width: 1.5; stroke-linecap: round; }
+.lv-palette .lv-fn.lv-super svg .lv-star { fill: none; stroke: currentColor; }
+.lv-node.lv-dot.has-val { width: auto; padding: 0 14px; border-radius: 999px; }
+.lv-node.lv-box.has-val .lv-glyph, .lv-node.lv-dot.has-val .lv-glyph { font: 500 12px/1 ui-monospace, "Geist Mono", monospace; }
+
+/* transparent: the shapes are outlines, so what is under them shows through */
+.lv-node, html.shape-se .lv-node,
+.lv-node.lv-box, html.shape-se .lv-node.lv-box,
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask,
+.lv-node.lv-super, html.shape-se .lv-node.lv-super { background: transparent; }
+.lv-node.lv-super .lv-star { fill: none; }
+.lv-node .lv-val { background: transparent; }
+/* one size per node, set by zooming on it */
+.lv-node, html.shape-se .lv-node,
+.lv-node.lv-box, html.shape-se .lv-node.lv-box,
+.lv-node.lv-dot, html.shape-se .lv-node.lv-dot,
+.lv-node.lv-super, html.shape-se .lv-node.lv-super,
+.lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: var(--lv-s, 56px); min-width: var(--lv-s, 56px); height: var(--lv-h, var(--lv-s, 56px)); min-height: var(--lv-h, var(--lv-s, 56px)); }
+.lv-node .lv-glyph svg { width: calc(var(--lv-s, 56px) * 0.5); height: calc(var(--lv-s, 56px) * 0.5); }
+.lv-node.lv-super .lv-glyph svg { width: 100%; height: 100%; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), .lv-node.lv-box.has-val, .lv-node.lv-dot.has-val { width: auto; }
+.lv-node.lv-box.is-long, html.shape-se .lv-node.lv-box.is-long { width: max-content; height: auto; }
+.lv-node.lv-ask.is-asking, html.shape-se .lv-node.lv-ask.is-asking { width: auto; height: auto; }
+.lv-node.lv-ask.is-asking .lv-glyph svg { width: 20px; height: 20px; }
+.lv-node.lv-box .lv-glyph, .lv-node.lv-dot .lv-glyph, .lv-node.lv-box.has-val .lv-glyph, .lv-node.lv-dot.has-val .lv-glyph { font-size: max(12px, calc(var(--lv-s, 56px) * 0.3)); }
+.lv-node.lv-box.is-long .lv-glyph { font-size: 11.5px; }
+.lv-node .lv-in { font-size: max(13px, calc(var(--lv-s, 56px) * 0.26)); }
+
+/* super/wire.js: on the edge of a thing the pointer wires */
+html.sl-edge, html.sl-edge * { cursor: crosshair !important; }
+.sl-edge-on { outline: 1.5px dashed var(--cobalt); outline-offset: 2px; }
+.lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: 0 0 0 2px rgba(47, 64, 232, 0.35); }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { text-align: center; }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) - 16px); min-width: calc(var(--lv-s, 56px) - 16px); max-width: 220px; field-sizing: content; padding: 0; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in) { padding: 0 6px; }
+/* fields inside nodes: no page-wide text-field look (border, padding, focus ring); the node shows focus */
+.lv-node input.lv-in, .lv-node input.lv-in:focus, .lv-node input.lv-q, .lv-node input.lv-q:focus { border: 0; border-radius: 0; box-shadow: none; outline: none; background: transparent; margin: 0; height: auto; min-height: 0; }
+.lv-node input.lv-in, .lv-node input.lv-in:focus { padding: 0; }
+.lv-node:has(input:focus) { border-color: var(--cobalt); }
+.lv-node input.lv-in:focus-visible, .lv-node input.lv-q:focus-visible { outline: none !important; }   /* the node's cobalt edge shows focus instead */
+/* no labels under the shapes: values show inside a ■, status in the shape itself (cobalt while thinking, dashed when held) */
+.lv-node .lv-val, .lv-node.lv-dot.is-loop .lv-val { display: none; }
+/* the edge under the pointer: only the crosshair says so, no halo */
+.sl-edge-on, .lv-node.lv-dot.sl-edge-on { outline: none; box-shadow: none; }
+/* a ■ or ● keeps its shape: what it holds is fitted inside (super/nodes.js fitText), not grown around */
+.lv-node.lv-dot.has-val, .lv-node.lv-box.has-val, html.shape-se .lv-node.lv-dot.has-val, html.shape-se .lv-node.lv-box.has-val { width: var(--lv-s, 56px); padding: 0; }
+html.shape-se .lv-node.lv-dot.has-val, .lv-node.lv-dot.has-val { border-radius: 50%; }
+.lv-node.lv-box:has(.lv-in), .lv-node.lv-dot:has(.lv-in), html.shape-se .lv-node.lv-box:has(.lv-in), html.shape-se .lv-node.lv-dot:has(.lv-in) { width: var(--lv-s, 56px); padding: 0; }
+.lv-node.lv-box .lv-in, .lv-node.lv-dot .lv-in { width: calc(var(--lv-s, 56px) * 0.8); min-width: 0; max-width: none; field-sizing: fixed; }
+.lv-node .lv-glyph { white-space: nowrap; overflow: hidden; max-width: 100%; }
+
+/* the palette, a size up */
+.lv-grid { grid-template-columns: repeat(5, 52px); gap: 8px; padding: 10px; }
+.lv-palette .lv-fn { height: 46px; }
+.lv-palette .lv-fn svg { width: 26px; height: 26px; }
+html.se-moving, html.se-moving * { cursor: grabbing !important; user-select: none; }
+
+/* a node is a super: the superellipse at its own n (--lv-k = log2 n) says what it is; no palette any more */
+html.shape-se .lv-palette { display: none; }
+html.shape-se .lv-out { position: absolute; width: 1px; height: 1px; margin: -1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+html.shape-se .lv-node, html.shape-se .lv-node.lv-dot, html.shape-se .lv-node.lv-box, html.shape-se .lv-node.lv-super, html.shape-se .lv-node.lv-ask, html.shape-se .lv-node.lv-add {
+  border-radius: 50%; corner-shape: superellipse(var(--lv-k, 1.65)); border: 1.5px solid var(--ink); background: var(--paper);
+}
+html.shape-se .lv-node .lv-glyph svg { display: none; }           /* the shape is the icon */
+html.shape-se .lv-node.lv-super.is-thinking { border-color: var(--cobalt); border-style: dashed; }
+html.shape-se .lv-node.lv-dot.is-loop { background: transparent; }
+html.shape-se .lv-node.lv-add .lv-glyph, html.shape-se .lv-node.lv-super .lv-glyph { font-size: 0; }
+/* the central super (role "engine"): cobalt while it asks the engines */
+html.shape-se .lv-node.lv-box.is-thinking { color: var(--cobalt); border-color: var(--cobalt); }
+
+/* a Super AI super (super/nodes.js): its prompt and answer wrap over lines inside it, sized by fitText */
+.lv-node.lv-box.is-wrap .lv-glyph { white-space: normal; overflow-wrap: anywhere; text-align: center; line-height: 1.25; text-overflow: clip; padding: 0 10%; box-sizing: border-box; width: 100%; max-height: 84%; overflow: hidden; }
+.lv-node.lv-box.is-wrap .lv-glyph { display: grid; place-content: center; }
+
+/* a holder (super/nodes.js): a ■ grown past 150 px holds supers; its label sits at the top, out of their way,
+   and it lies under what it holds */
+.lv-node { z-index: 1; }
+.lv-node.lv-box.is-holder { z-index: 0; background: transparent !important; box-shadow: none; pointer-events: none; }   /* see-through: what is behind and under it shows, and takes the pointer */
+.lv-edge { display: none; }
+.lv-node.is-holder > .lv-edge { display: block; position: absolute; pointer-events: auto; }
+.lv-node.is-holder > .lv-edge-t { left: 0; right: 0; top: -6px; height: max(22px, 6%); cursor: grab; }
+.lv-node.is-holder > .lv-edge-b { left: 0; right: 0; bottom: -6px; height: 14px; }
+.lv-node.is-holder > .lv-edge-l { top: 0; bottom: 0; left: -6px; width: 14px; }
+.lv-node.is-holder > .lv-edge-r { top: 0; bottom: 0; right: -6px; width: 14px; }
+.lv-node.lv-box.is-holder .lv-glyph, .lv-node.lv-box.is-holder.is-wrap .lv-glyph {
+  display: block; position: absolute; left: 12%; right: 12%; top: max(5%, 26px); width: auto; height: auto; max-height: 17%; overflow: hidden;
+  padding: 0; text-align: center; font-size: 11px !important; line-height: 1.3; pointer-events: none; }
+
+/* a super zoomed into (super/nodes.js textZoom): its text is clipped to its shape */
+.lv-node.is-tzoom { overflow: hidden; }
+.lv-node.is-tzoom .lv-glyph { will-change: transform; }
+
+/* the round look (pitechlab.com): a Super AI super looks as it does in the superellipse look, a squircle at n = π
+   on paper with a port sparkle on each side (the first supers a visitor sees) */
+.lv-sp { display: none; }
+html:not(.shape-se) .lv-node.is-wrap {
+  background: var(--paper, #f6f6f4); border: 1.5px solid var(--ink, #191919); box-shadow: none; overflow: visible;
+  border-radius: 50%; corner-shape: superellipse(1.6515);
+}
+@supports not (corner-shape: round) { html:not(.shape-se) .lv-node.is-wrap { border-radius: 30%; } }
+html:not(.shape-se) .lv-node.is-wrap::after { display: none; }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp {
+  display: block; position: absolute; width: 11px; height: 11px; background: var(--ink, #191919); pointer-events: none;
+  clip-path: polygon(50% 0, 60% 40%, 100% 50%, 60% 60%, 50% 100%, 40% 60%, 0 50%, 40% 40%);
+}
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-l { left: -6.5px; top: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-r { right: -6.5px; top: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-t { top: -6.5px; left: calc(50% - 5.5px); }
+html:not(.shape-se) .lv-node.is-wrap .lv-sp-b { bottom: -6.5px; left: calc(50% - 5.5px); }
+
+/* a super scrolled smaller than its smallest closes: it fades and shrinks away slowly (super/nodes.js closeNode) */
+html.shape-se .lv-node.lv-closing { opacity: 0; transform: scale(0.6); transition: opacity 1.5s ease, transform 1.5s ease; pointer-events: none; }
+
+
+/* ================================================================================================================
+   traffic.css
+   ================================================================================================================ */
+/* Website traffic in the Analytics window (traffic.js) */
+.traffic { position: relative; margin-top: 18px; }
+.traffic h3 { font-size: 14px; font-weight: 500; margin: 0 0 10px; }
+.tr-tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-bottom: 12px; }
+.tr-tile { display: flex; flex-direction: column; gap: 2px; padding: 10px 12px; border: 1px solid var(--hair); border-radius: 12px; min-width: 0; }
+.tr-tile b { font-size: 22px; font-weight: 500; font-variant-numeric: tabular-nums; }
+.tr-tile span { font-size: 12px; color: var(--graphite); }
+.tr-chart { min-width: 0; }
+.tr-chart svg { display: block; max-width: 100%; height: 150px; overflow: visible; }
+.tr-bar { fill: var(--cobalt); }
+.tr-hit { fill: transparent; cursor: default; }
+.tr-hit.on { fill: rgba(47, 64, 232, 0.06); }
+.tr-grid { stroke: var(--hair); stroke-width: 1; stroke-dasharray: 2 4; vector-effect: non-scaling-stroke; }
+.tr-axis { stroke: var(--hair-strong); stroke-width: 1; vector-effect: non-scaling-stroke; }
+.tr-lab { font-size: 10px; fill: var(--graphite); font-family: inherit; }
+.tr-tip {
+  position: absolute; z-index: 2; pointer-events: none; white-space: nowrap; font-size: 12px; color: var(--ink);
+  background: var(--paper); border: 1px solid var(--hair-strong); border-radius: 8px; padding: 5px 9px;
+  filter: drop-shadow(0 4px 10px rgba(25, 25, 25, 0.10));
+}
+.tr-tip b { font-weight: 500; margin-right: 6px; }
+.tr-table { margin-top: 8px; font-size: 12.5px; }
+.tr-table summary { cursor: pointer; color: var(--graphite); }
+.tr-table table { border-collapse: collapse; margin-top: 6px; }
+.tr-table th, .tr-table td { text-align: right; padding: 3px 10px; border-bottom: 1px solid var(--hair); font-variant-numeric: tabular-nums; }
+.tr-table th:first-child, .tr-table td:first-child { text-align: left; }
+.tr-note { font-size: 11.5px; color: var(--faint); margin: 8px 0 0; }
+@media (max-width: 520px) { .tr-tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); } }
+
+
+/* ================================================================================================================
+   superprompt.css
+   ================================================================================================================ */
+/* Super prompt (superprompt.js): ink on paper, cobalt for "here". */
+.sp-veil {
+  position: fixed; inset: 0; z-index: 2147483000;
+  display: flex; align-items: flex-start; justify-content: center;
+  padding: 9vh 16px 16px;
+  background: rgba(246, 246, 244, .72);
+  -webkit-backdrop-filter: blur(6px); backdrop-filter: blur(6px);
+  overflow-y: auto;
+}
+.sp-veil[hidden] { display: none; }
+.sp-box {
+  width: min(880px, 100%);
+  background: var(--surface, #fff); color: var(--ink, #191919);
+  border: 1px solid var(--hair-strong, #c9c9c4); border-radius: 14px;
+  padding: 18px 18px 14px;
+  box-shadow: 0 18px 60px rgba(25, 25, 25, .12);
+  font-family: var(--font); animation: sp-in .16s ease-out;
+}
+@keyframes sp-in { from { opacity: 0; transform: translateY(-6px) scale(.985); } }
+.sp-head { display: flex; align-items: baseline; gap: 10px; margin-bottom: 10px; }
+.sp-head h2 { font-size: 16px; margin: 0; font-weight: 500; }
+.sp-hint { color: var(--graphite, #6e6e6a); font-size: 13px; flex: 1; min-width: 0; }
+.sp-x { margin-left: auto; border: 0; background: none; font-size: 22px; line-height: 1; color: var(--graphite); cursor: pointer; padding: 0 4px; }
+.sp-x:hover { color: var(--ink); }
+.sp-in {
+  width: 100%; box-sizing: border-box; resize: vertical; min-height: 64px;
+  font: 15px/1.5 var(--font); color: var(--ink);
+  background: var(--paper, #f6f6f4); border: 1px solid var(--hair, #dcdcd8); border-radius: 10px;
+  padding: 10px 12px; outline: none;
+}
+.sp-in:focus { border-color: var(--cobalt, #2f40e8); box-shadow: 0 0 0 3px rgba(47, 64, 232, .12); }
+.sp-row { display: flex; align-items: center; gap: 12px; margin-top: 8px; }
+.sp-keys { color: var(--faint, #94948e); font-size: 12px; flex: 1; min-width: 0; }
+.sp-go { background: var(--cobalt, #2f40e8) !important; border-color: var(--cobalt, #2f40e8) !important; color: #fff !important; white-space: nowrap; }
+.sp-list {
+  display: grid; grid-template-columns: repeat(auto-fill, minmax(260px, 1fr));
+  gap: 10px; margin-top: 14px;
+}
+.sp-note { grid-column: 1 / -1; margin: 2px 0; font-size: 13px; color: var(--graphite); }
+.sp-off { color: var(--faint, #94948e); }
+.sp-card {
+  border: 1px solid var(--hair); border-radius: 10px; padding: 10px 12px;
+  background: var(--surface, #fff); min-width: 0;
+  display: flex; flex-direction: column; max-height: 360px;
+}
+.sp-card.is-wait { border-style: dashed; }
+.sp-verdict { grid-column: 1 / -1; max-height: none; border-color: var(--ink); }
+.sp-card.is-err { background: var(--paper); }
+.sp-card header { display: flex; align-items: baseline; gap: 8px; margin-bottom: 6px; flex-wrap: wrap; }
+.sp-card header strong { font-weight: 500; font-size: 14px; }
+.sp-kind { font-size: 11px; color: var(--graphite); border: 1px solid var(--hair); border-radius: 999px; padding: 0 7px; }
+.sp-meta { font: 11px var(--font-mono); color: var(--faint); flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-align: right; }
+.sp-copy { border: 0; background: none; color: var(--cobalt, #2f40e8); font-size: 12px; cursor: pointer; padding: 0; }
+.sp-body { font-size: 13.5px; line-height: 1.55; overflow-y: auto; overflow-wrap: anywhere; }
+.sp-body p { margin: 0 0 8px; }
+.sp-body p:last-child { margin-bottom: 0; }
+.sp-body ul { margin: 0 0 8px; padding-left: 18px; list-style: disc; }
+.sp-body li { margin: 0; padding: 0; border: 0; background: none; }
+.sp-body code { font: 12px var(--font-mono); background: var(--paper); padding: 0 3px; border-radius: 4px; }
+.sp-body pre { font: 12px/1.45 var(--font-mono); background: var(--paper); padding: 8px; border-radius: 6px; overflow-x: auto; white-space: pre; }
+.sp-dots { display: inline-flex; gap: 4px; padding: 6px 0; }
+.sp-dots i { width: 5px; height: 5px; border-radius: 50%; background: var(--cobalt, #2f40e8); opacity: .25; animation: sp-dot 1s infinite; }
+.sp-dots i:nth-child(2) { animation-delay: .15s; }
+.sp-dots i:nth-child(3) { animation-delay: .3s; }
+@keyframes sp-dot { 50% { opacity: 1; } }
+html.shape-se .sp-box, html.shape-se .sp-card, html.shape-se .sp-in { border-radius: 22px; }
+@media (max-width: 520px) {
+  .sp-veil { padding-top: 16px; }
+  .sp-box { padding: 14px 12px 12px; }
+  .sp-hint, .sp-keys { display: none; }
+  .sp-row { justify-content: flex-end; }
+  .sp-list { grid-template-columns: 1fr; }
+}
+@media (prefers-reduced-motion: reduce) { .sp-box, .sp-dots i { animation: none; } }
+
+
+/* ================================================================================================================
+   super/project.css
+   ================================================================================================================ */
+/* The project in SuperAI (super/project.js): one super that opens, by zooming, into the whole project as a diagram. */
+.se-project {
+  position: fixed; z-index: 12; box-sizing: border-box;      /* compact, it lies with the bubbles, under windows (a window opened over it covers it) */
+  background: var(--surface, #fff); color: var(--ink, #191919);
+  border: 1.5px solid var(--ink, #191919);
+  border-radius: 50%;
+  corner-shape: superellipse(var(--se-k-window, 9.96578));   /* n = 1000 like every super; Shift + scroll gives it its own (super/site.js) */
+  overflow: hidden; touch-action: none; overscroll-behavior: contain;
+  cursor: default;                                          /* the same as a bubble: nothing to grab, only zoom */
+}
+.se-project.is-open { cursor: default; z-index: 975; }   /* open, it is in front of the page's supers, their ports and wires */
+.se-project.is-full { box-shadow: 0 10px 40px rgba(25, 25, 25, 0.08); }
+.se-project:hover { border-color: color-mix(in srgb, var(--cobalt, #2f40e8) 45%, var(--ink, #191919)); }
+
+/* compact: drawn as a bubble is (super/bubble.js drawing), the same species; it fades as the map comes in */
+.pj-face { position: absolute; inset: 0; pointer-events: none; opacity: calc(1 - var(--pj-map, 0)); }
+.pj-face .ob-mini { display: block; width: 100%; height: 100%; }
+
+/* open: the diagram, drawn at 1000 × 620 and scaled to fit */
+.pj-map { position: absolute; left: 0; top: 0; transform-origin: 0 0; pointer-events: none; opacity: var(--pj-map, 0); }   /* comes in as it grows */
+/* the miniature is drawn like a compact bubble's (super/bubble.js mini): boxes with an ink edge of about 1.4 px
+   on paper, wires in graphite of about 1 px, no section frames, no names, no values (drawn at about a tenth of
+   its size, so the strokes are ten times thicker here) */
+.se-project.is-mini .pj-sec { display: none; }
+.se-project.is-mini .pj-val, .se-project.is-mini .pj-node b { visibility: hidden; }
+.se-project.is-mini .pj-wire { stroke: var(--graphite, #6e6e6a); stroke-width: 10; opacity: 0.7; }
+.se-project.is-mini .pj-node { border-width: 15px; border-color: var(--ink, #191919); background: var(--paper, #f6f6f4); border-radius: 30%; }
+.se-project.is-mini .pj-ai, .se-project.is-mini .pj-answer { border-width: 15px; }
+.se-project.is-mini .pj-end { display: none; }
+.se-project.is-open .pj-map { pointer-events: auto; }
+.pj-wires { position: absolute; inset: 0; overflow: visible; pointer-events: none; }
+.pj-wire { fill: none; stroke: var(--hair-strong, #c9c9c4); stroke-width: 1.4; }
+.pj-wire.is-live { stroke: var(--cobalt, #2f40e8); stroke-width: 1.8; stroke-dasharray: 6 5; animation: pj-flow 0.9s linear infinite; }
+@keyframes pj-flow { to { stroke-dashoffset: -11; } }
+.pj-end { fill: var(--ink, #191919); }
+.pj-sec { position: absolute; border: 1px dashed var(--hair, #dcdcd8); border-radius: 26px; corner-shape: superellipse(1.65); pointer-events: none; }
+.pj-sec span { position: absolute; left: 18px; top: -8px; padding: 0 6px; background: var(--surface, #fff);
+  font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }
+
+.pj-node {
+  position: absolute; box-sizing: border-box; margin: 0; padding: 4px 6px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 1px;
+  background: var(--paper, #f6f6f4); color: var(--ink, #191919);
+  border: 1.5px solid var(--ink, #191919); border-radius: 30%; corner-shape: superellipse(1.65);
+  font: 500 12px/1.15 var(--font, system-ui); text-align: center; overflow: hidden;
+}
+.pj-node b { font-weight: 500; white-space: nowrap; }
+.pj-val { font: 9.5px/1.25 var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); max-width: 100%;
+  overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pj-ai { border-width: 2px; }
+.pj-out { background: var(--surface, #fff); }
+.pj-site { background: var(--surface, #fff); border-color: var(--hair-strong, #c9c9c4); }
+.pj-sink .pj-val, .pj-in .pj-val { white-space: normal; }
+.pj-node.pj-answer { justify-content: flex-start; padding: 10px 12px; }
+.pj-node.pj-answer .pj-val { white-space: normal; text-overflow: clip; color: var(--ink, #191919); font-size: 10px; margin-top: 4px; }
+.pj-node input.pj-field { width: 100%; box-sizing: border-box; margin-top: 4px; border: 1px solid var(--hair, #dcdcd8); border-radius: 8px;
+  background: var(--surface, #fff); font: 11px var(--font-mono, ui-monospace, monospace); padding: 4px 6px; color: var(--ink, #191919); outline: none; }
+.pj-node input.pj-field:focus { border-color: var(--cobalt, #2f40e8); }
+.pj-node.is-busy { border-color: var(--cobalt, #2f40e8); border-style: dashed; }
+.pj-node.is-busy .pj-val { color: var(--cobalt, #2f40e8); }
+.pj-node.is-ok { border-color: var(--cobalt, #2f40e8); }
+.pj-node.is-err .pj-val { color: var(--faint, #94948e); }
+@media (prefers-reduced-motion: reduce) { .pj-wire.is-live { animation: none; } }
+
+/* the program: read, edit and run it (super/project.js) */
+.pj-editor { position: absolute; inset: 0; z-index: 1; display: flex; flex-direction: column; gap: 8px; padding: 14px 16px 14px;
+  background: var(--surface, #fff); box-sizing: border-box; }
+.pj-editor[hidden] { display: none; }
+.pj-ed-head { display: flex; align-items: baseline; gap: 10px; padding-right: 90px; }
+.pj-ed-head strong { font: 500 14px var(--font, system-ui); }
+.pj-ed-state { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }
+.pj-ed-text { flex: 1; min-height: 0; resize: none; box-sizing: border-box; width: 100%; padding: 10px 12px;
+  font: 12px/1.5 var(--font-mono, ui-monospace, monospace); color: var(--ink, #191919); background: var(--paper, #f6f6f4);
+  border: 1px solid var(--hair, #dcdcd8); border-radius: 12px; outline: none; tab-size: 2; white-space: pre; overflow: auto; }
+.pj-ed-text:focus { border-color: var(--cobalt, #2f40e8); }
+.pj-ed-errors { font: 11.5px/1.4 var(--font-mono, ui-monospace, monospace); color: var(--danger, #b3261e); min-height: 1.4em; }
+.pj-ed-row { font: 11px var(--font-mono, ui-monospace, monospace); color: var(--graphite, #6e6e6a); }   /* the keys, not buttons: nothing here is clickable, only zoomable */
+
+/* the program editor sits inside the super's π corners, like a window's content (owner, 2026-10-12: "fix all ui");
+   the margin round it is where a scroll out closes it */
+html.shape-se .se-project .pj-editor { padding: 9% 10%; }
+html.shape-se .se-project.is-open { corner-shape: superellipse(var(--pj-k, 9.96578)); }
+
+
+/* ================================================================================================================
+   super/glass.css
+   ================================================================================================================ */
+/* super/glass.css: the glass look (owner, 2026-10-12: "add this glass effect").
+   Every super is a pane of frosted glass over a soft light that drifts slowly behind the page: see-through paper,
+   blurred and brightened behind it, a fine light rim along its top, a soft shadow under it, and an iridescent
+   sheen that runs round its edge when it is hovered or selected. The ink edge, the superellipse, the ports and the
+   type stay as they are (super/super.css), so the shape language is the same; only the material changes. */
+
+@property --glass-a { syntax: "<angle>"; inherits: false; initial-value: 0deg; }
+
+/* the page behind the glass: flat paper (owner, 2026-10-13: "use a simple background") */
+html.shape-se body::before { content: ""; position: fixed; inset: 0; z-index: 0; pointer-events: none; background: var(--paper); }
+/* the main super, and the backdrop it covers the page with (orbit.css .orbit-mark-big), let that light through */
+html.shape-se.orbit-mark-big .orbit-center { background: transparent; }
+html.shape-se .om-page-loop { fill: rgba(255, 255, 255, 0.06); }
+
+/* the panes */
+html.shape-se .lv-node:not(.is-holder), html.shape-se .orbit-bubble, html.shape-se .orbit-bubble.is-group, html.shape-se .orbit-bubble.is-group.is-compact,
+html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shape-se .se-project, html.shape-se .lv-palette {
+  background: linear-gradient(180deg, rgba(255, 255, 255, 0.72), rgba(255, 255, 255, 0.52));
+  -webkit-backdrop-filter: blur(24px) saturate(1.5) brightness(1.08);
+  backdrop-filter: blur(24px) saturate(1.5) brightness(1.08);
+  border-color: color-mix(in srgb, var(--ink) 92%, transparent);        /* dark edges and shadows on paper (owner, 2026-10-12) */
+  box-shadow: inset 0 1.5px 0 rgba(255, 255, 255, 0.9), inset 0 0 0 1px rgba(255, 255, 255, 0.28), 0 14px 30px -12px rgba(25, 25, 25, 0.45);
+}
+/* windows are opaque paper, as the engine draws them (owner, 2026-10-13: uniform throughout): what is under a window
+   never shows through its content */
+html.shape-se .orbit-panel { background: var(--paper); -webkit-backdrop-filter: none; backdrop-filter: none; }
+/* the boxes inside a compact super's drawing are glass too */
+html.shape-se .ob-mini .obm-box { fill: rgba(255, 255, 255, 0.55); }
+
+/* the sheen: an iridescent light running round the edge, on the super under the pointer and the selected one */
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder), .orbit-title .se-titlesuper)::before {
+  content: ""; position: absolute; inset: 0; z-index: 2; pointer-events: none;
+  border-radius: inherit; corner-shape: inherit; padding: 1.5px;
+  background: conic-gradient(from var(--glass-a), transparent 0deg, rgba(255, 200, 190, 0.32) 30deg, rgba(255, 236, 200, 0.32) 60deg, rgba(205, 238, 222, 0.32) 90deg, rgba(200, 218, 255, 0.34) 120deg, rgba(232, 210, 255, 0.32) 150deg, transparent 190deg, transparent 360deg);   /* pale and faint (owner, 2026-10-13: "very subtle") */
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0); -webkit-mask-composite: xor;
+  mask: linear-gradient(#000 0 0) content-box exclude, linear-gradient(#000 0 0);
+  opacity: 0; transition: opacity 0.9s ease;
+  animation: glass-sheen 6s linear infinite;
+}
+html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:not(.is-holder)).se-sel::before,
+html.shape-se .orbit-title .se-titlesuper.se-sel::before { opacity: 1; }   /* only a selected super lights up (owner, 2026-10-12), never a hovered one */
+@keyframes glass-sheen { to { --glass-a: 360deg; } }
+
+@media (prefers-reduced-motion: reduce) {
+  html.shape-se body::before, html.shape-se :is(.orbit-bubble, .orbit-panel, .se-project, .lv-node, .orbit-title .se-titlesuper)::before { animation: none; }
+}
+/* browsers without backdrop blur: the panes stay paper */
+@supports not ((backdrop-filter: blur(1px)) or (-webkit-backdrop-filter: blur(1px))) {
+  html.shape-se .lv-node:not(.is-holder), html.shape-se .orbit-bubble, html.shape-se .orbit-panel, html.shape-se .orbit-title .se-titlesuper, html.shape-se .se-project { background: var(--paper); }
+}
+
+/* ---- drawn by the engine (super/engine.js, three.js): the page's elements stop painting their own chrome ----
+   (they keep their size, place and behaviour; the engine draws their glass, edges, shadows, wires and ports) */
+.se-gl-canvas { position: fixed; left: 0; top: 0; z-index: 5; pointer-events: none; display: block; }
+html.se-gl body::before { display: none; }
+html.se-gl .om-page-loop, html.se-gl .om-site-loop, html.se-gl .om-lattice, html.se-gl .op-outline path { stroke: transparent !important; fill: transparent !important; }
+html.se-gl :is(.lv-node, .orbit-bubble, .orbit-bubble.is-group, .orbit-bubble.is-group.is-compact, .orbit-panel, .orbit-title .se-titlesuper, .se-project, .lv-palette) {
+  background: transparent !important; border-color: transparent !important; box-shadow: none !important; filter: none !important;
+  -webkit-backdrop-filter: none !important; backdrop-filter: none !important;
+}
+html.se-gl :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node, .orbit-title .se-titlesuper)::before { display: none !important; }
+html.se-gl .lv-node::after, html.se-gl .lv-sp { opacity: 0 !important; }
+html.se-gl .se-port-dot, html.se-gl .orbit-title .sts-p { background: transparent !important; }
+html.se-gl .wire-bed, html.se-gl .wire-flow, html.se-gl .wire-temp { stroke: transparent !important; }
+html.se-gl .wire-term { fill: transparent !important; stroke: transparent !important; }
+
+/* the first paint (super/boot.js): only the light, until the supers have settled; then everything fades in in place */
+html.se-boot body > * { opacity: 0 !important; transition: none !important; }
+html.se-unveil body > * { transition: opacity 0.3s ease !important; }
+html.se-boot body::before, html.se-unveil body::before { display: block !important; }
+
+/* a window covers what lies under it (owner, 2026-10-12: "explore is always on top": with the engine every page
+   element is see-through and its glass is drawn under all of them, so a bubble under a window showed through it):
+   in the engine look a window keeps a paper ground of its own, inside its edge (the engine's edge and shadow show) */
+html.se-gl body .orbit-panel.orbit-panel.orbit-panel { background: var(--paper) !important; background-clip: padding-box !important; }
+
+/* no blue dotted rectangle round a super (owner, 2026-10-13: "remove the blue rectangle dotted line"): the pointer on
+   an edge (wire.js .sl-edge-on), a drop target while dragging (nodes.js .lv-hover) and a bubble under a wire being
+   drawn (orbit.js .wire-target) show no outline; the cursor and the glass's own light say it */
+html.shape-se .sl-edge-on, html.shape-se .lv-hover, html.shape-se .orbit-bubble.wire-target { outline: none !important; }
+/* the panes at night (owner, 2026-10-13: "improve the dark mode experience"): smoked glass, light edges, the text light
+   (super.css, "dark mode, one palette"), not pale panes with pale text */
+html.shape-se.se-night .lv-node:not(.is-holder), html.shape-se.se-night .orbit-bubble, html.shape-se.se-night .orbit-bubble.is-group, html.shape-se.se-night .orbit-bubble.is-group.is-compact,
+html.shape-se.se-night .orbit-title .se-titlesuper, html.shape-se.se-night .se-project, html.shape-se.se-night .lv-palette {
+  background: linear-gradient(180deg, rgba(44, 50, 66, 0.78), rgba(29, 34, 48, 0.66));
+  -webkit-backdrop-filter: blur(24px) saturate(1.3) brightness(0.9); backdrop-filter: blur(24px) saturate(1.3) brightness(0.9);
+  border-color: color-mix(in srgb, var(--ink) 70%, transparent);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.14), inset 0 0 0 1px rgba(255, 255, 255, 0.05), 0 14px 30px -12px rgba(0, 0, 0, 0.7); }
+html.shape-se.se-night .orbit-panel { background: var(--paper); border-color: color-mix(in srgb, var(--ink) 55%, transparent); }
+
+
+/* ================================================================================================================
+   super/requests.css
+   ================================================================================================================ */
+/* super/requests.css: the server request indicator (super/requests.js), bottom left: ink on paper, cobalt while a
+   request is out, the one accent the design language allows (theme.css) */
+.se-req[hidden] { display: none !important; }
+/* a super like every other (owner, 2026-10-13: "privacy choices is a super by itself inside the canvas"): the square at
+   n = 1000 of the controls, the ink edge, the frosted pane and its shadow; with the engine it draws the glass */
+.se-req { position: fixed; left: 12px; bottom: 12px; z-index: 2147483000; display: flex; align-items: center; gap: 8px;
+  height: 48px; padding: 0 16px; border: 1.5px solid var(--ink); border-radius: 4px; corner-shape: superellipse(9.96578);
+  background: color-mix(in srgb, var(--paper, #fff) 62%, transparent); -webkit-backdrop-filter: blur(10px) saturate(1.25); backdrop-filter: blur(10px) saturate(1.25);
+  box-shadow: 0 1px 0 rgba(255, 255, 255, 0.6) inset, 0 6px 14px -8px rgba(20, 24, 34, 0.55);
+  font: 500 14px/1 var(--font, "Geist", system-ui, sans-serif); color: var(--ink); cursor: default; user-select: none; max-width: calc(100vw - 24px); }
+@media (max-width: 699px) { .se-req { height: 36px; padding: 0 12px; font-size: 13px; } }
+html.se-gl .se-req { background: transparent !important; border-color: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+.se-req:focus, .se-req:focus-visible { outline: none; }
+.se-req:focus-visible { border-color: var(--cobalt); }
+.se-req-light { width: 8px; height: 8px; border-radius: 50%; background: var(--graphite); opacity: 0.45; flex: none; transition: background 0.2s, opacity 0.2s; }
+.se-req.is-busy .se-req-light { background: var(--cobalt); opacity: 1; animation: se-req-pulse 0.9s ease-in-out infinite; }
+.se-req.has-ai:not(.is-busy) .se-req-light { background: var(--cobalt); opacity: 0.7; }
+@keyframes se-req-pulse { 50% { transform: scale(1.5); opacity: 0.55; } }
+@media (prefers-reduced-motion: reduce) { .se-req.is-busy .se-req-light { animation: none; } }
+.se-req-sum { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.se-req-card { display: none; position: absolute; left: 0; bottom: calc(100% + 12px); z-index: 2147483000; width: min(560px, calc(100vw - 24px)); max-height: min(60vh, 460px); overflow: auto;
+  padding: 12px 14px; border: 1px solid var(--ink); border-radius: 16px; corner-shape: superellipse(1.6); background: var(--paper);
+  box-shadow: 0 14px 30px -12px rgba(25, 25, 25, 0.45); font: 400 12px/1.45 var(--font-mono, ui-monospace, monospace); cursor: auto; user-select: text; }
+.se-req:hover .se-req-card, .se-req:focus .se-req-card, .se-req:focus-within .se-req-card { display: block; }
+.se-req-card .h { margin: 0 0 4px; font: 600 13px/1.3 var(--font, system-ui); }
+.se-req-card .n { margin: 0 0 8px; color: var(--graphite); }
+.se-req-card .n:last-child { margin: 8px 0 0; }
+.se-req-card ul { list-style: none; margin: 0; padding: 0; }
+.se-req-card li { display: grid; grid-template-columns: 62px 96px 1fr; gap: 0 8px; padding: 4px 0; border-top: 1px solid color-mix(in srgb, var(--ink) 10%, transparent); }
+.se-req-card li .s { grid-column: 3; color: var(--graphite); }
+.se-req-card li .p { overflow-wrap: anywhere; }
+.se-req-card li em { display: block; font-style: normal; color: var(--cobalt); }
+.se-req-card li .k { color: var(--graphite); }
+.se-req-card li.k-ai .k, .se-req-card li.k-sent .k { color: var(--ink); font-weight: 600; }
+.se-req-card li.none { display: block; color: var(--graphite); }
+html.se-night .se-req, html.se-night .se-req-card { color: var(--ink); }   /* the night palette: super.css, "dark mode, one palette" */
+/* everyone but the owner: only the way back to their privacy choices (super/consent.js) */
+.se-req.is-min { cursor: pointer; }
+.se-req.is-min .se-req-light, .se-req.is-min .se-req-card { display: none !important; }
+.se-req.is-min:hover { color: var(--cobalt); }
+
+
+/* ================================================================================================================
+   super/consent.css
+   ================================================================================================================ */
+/* super/consent.css: the first-visit notice (super/consent.js): ink on paper, one cobalt button, Geist */
+.se-consent { position: fixed; inset: 0; z-index: 2147483600; display: grid; place-items: center; padding: 16px;
+  background: color-mix(in srgb, var(--ink) 28%, transparent); -webkit-backdrop-filter: blur(3px); backdrop-filter: blur(3px); }
+.se-consent-card { width: min(560px, 100%); max-height: calc(100vh - 32px); max-height: calc(100dvh - 32px); overflow: auto; padding: 22px 22px 18px;
+  background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: 22px; corner-shape: superellipse(1.6);
+  box-shadow: 0 24px 60px -20px rgba(25, 25, 25, 0.55); font: 400 14px/1.5 var(--font, system-ui, sans-serif); }
+.se-consent h2 { margin: 0 0 6px; font-size: 18px; font-weight: 600; line-height: 1.3; }
+.se-consent h3 { margin: 16px 0 6px; font-size: 13px; font-weight: 600; color: var(--graphite); }
+.se-consent p { margin: 0 0 4px; }
+.se-consent ul { margin: 0; padding-left: 18px; }
+.se-consent li { margin: 2px 0; }
+.se-consent label { display: grid; grid-template-columns: 22px 1fr; gap: 8px; align-items: start; margin: 8px 0; cursor: pointer; }
+.se-consent input[type="checkbox"] { width: 16px; height: 16px; margin: 3px 0 0; accent-color: var(--cobalt); }
+.se-consent b { font-weight: 600; }
+.se-consent-small { margin-top: 12px !important; font-size: 12px; color: var(--graphite); }
+.se-consent-btns { display: flex; flex-wrap: wrap; gap: 8px; justify-content: flex-end; margin-top: 16px; }
+.se-consent-btns button { font: 500 14px/1 var(--font, system-ui, sans-serif); padding: 10px 14px; border-radius: 12px; corner-shape: superellipse(1.6);
+  border: 1px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; }
+.se-consent-btns button.is-main { background: var(--cobalt); border-color: var(--cobalt); color: #fff; }
+.se-consent-btns button:focus-visible, .se-consent input:focus-visible { outline: 2px solid var(--cobalt); outline-offset: 2px; }
+@media (max-width: 480px) { .se-consent-btns button { flex: 1 1 100%; } .se-consent-card { padding: 18px 16px 14px; } }
+/* the request indicator's way back to these choices */
+.se-req-card .se-req-choices { margin-top: 8px; font: 500 12px/1 var(--font-mono, ui-monospace, monospace); padding: 6px 10px; border-radius: 10px;
+  border: 1px solid var(--ink); background: var(--paper); color: var(--ink); cursor: pointer; }
+.se-req-card li.k-blocked .k { color: var(--cobalt); font-weight: 600; }
+.se-consent details { margin-top: 12px; border-top: 1px solid color-mix(in srgb, var(--ink) 12%, transparent); padding-top: 8px; }
+.se-consent summary { cursor: pointer; font-weight: 600; font-size: 13px; }
+.se-consent-list { font-size: 13px; }
+.se-consent-list ul { margin: 4px 0 8px; }
+.se-consent-list span { color: var(--graphite); }
