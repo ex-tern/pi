@@ -30,12 +30,13 @@
     if (t.classList && t.classList.contains("orbit-panel")) return t;  // a window by its blank margin (its content stays native)
     const head = t.closest(".op-head"); if (head) return head.closest(".orbit-panel");
     const pj = t.closest(".se-project:not(.is-open)"); if (pj) return pj;
+    const pv = t.closest(".se-req"); if (pv && !t.closest(".se-req-card")) return pv;   // privacy choices (owner, 2026-10-13: "same as others")
     return null;
   }
   const nameOf = el => el.classList.contains("lv-node") ? ((el.textContent || "").trim().slice(0, 24) || "the super")
     : el.classList.contains("orbit-bubble") ? ((el.querySelector(":scope > .ob-label") || {}).textContent || "the bubble").trim()
     : el.classList.contains("orbit-panel") ? ((el.querySelector(".op-title") || {}).textContent || "the window").trim()
-    : "the project";
+    : el.classList.contains("se-req") ? "Privacy choices" : "the project";
   // every super closes the same way (owner, 2026-10-12: "closing a super should animate like n goes to zero and
   // vanishes", "makes them uniform"): its n glides to 0.3 (a star), it shrinks into its centre and fades, then it goes
   function vanish(el, done) {
@@ -56,6 +57,7 @@
     else if (el.classList.contains("orbit-bubble")) { if (O().gone) O().gone(el.dataset.key); }   // it has vanished already
     else if (el.classList.contains("orbit-panel")) { const k = O().keyOf ? O().keyOf(el) : null; if (k && O().close) O().close(k); }
     else if (el.classList.contains("se-project")) { if (window.SeProject && window.SeProject.remove) window.SeProject.remove(); }
+    else if (el.classList.contains("se-req")) { if (window.SeRequests && window.SeRequests.remove) window.SeRequests.remove(); }   // gone until the app is reset
     const out = document.querySelector(".lv-out"); if (out) out.textContent = "Deleted " + nameOf(el);
   }
   // no confirmation any more (owner, 2026-10-12: "remove these instead add a save icon next to the lock"): an unsaved,

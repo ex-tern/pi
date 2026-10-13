@@ -25,6 +25,7 @@
     if (el.classList.contains("se-titlesuper")) return "title";
     if (el.classList.contains("ob-member")) return el.dataset.key ? "pill:" + el.dataset.key : null;
     if (el.classList.contains("ob-label")) { const b = el.closest(".orbit-bubble"); return b && b.dataset.key ? "name:" + b.dataset.key : null; }
+    if (el.classList.contains("se-req")) return "privacy";             // privacy choices, a super like the others (super/requests.js)
     if (el.dataset && el.dataset.loop) return el.dataset.loop;        // the main and second supers (their lock hosts, below)
     return null;
   }

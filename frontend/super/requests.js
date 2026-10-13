@@ -95,7 +95,32 @@
     el.appendChild(card);
     // the page's own gestures (zoom, wiring, making supers) leave it alone
     ["pointerdown", "dblclick", "wheel", "click", "contextmenu"].forEach(t => el.addEventListener(t, e => e.stopPropagation(), { passive: t !== "click" && t !== "dblclick" && t !== "contextmenu" }));
-    el.addEventListener("click", () => { if (!owner && window.SeConsent) window.SeConsent.open(); });
+    // a click opens the choices, a moment later so that a double click (delete, super/delete.js) does not (its second click
+    // is the double click's, e.detail > 1); a drag moves it
+    let clickT = 0;
+    el.addEventListener("click", e => { if (dragged) { dragged = false; return; } if (e.target.closest(".se-req-card")) return; clearTimeout(clickT); if (e.detail > 1) return; clickT = setTimeout(() => { if (!owner && window.SeConsent && el.isConnected && !el.hidden) window.SeConsent.open(); }, 260); });
+    el.addEventListener("dblclick", () => clearTimeout(clickT), true);
+    el.addEventListener("pointerdown", e => {
+      if (e.button !== 0 || e.target.closest(".se-req-card, button")) return;
+      if (window.SeLock && window.SeLock.isLocked(el)) return;            // locked: it keeps its place
+      const r = el.getBoundingClientRect(); drag = { x0: e.clientX, y0: e.clientY, l: r.left, t: r.top, on: false, id: e.pointerId };
+    });
+    window.addEventListener("pointermove", e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const dx = e.clientX - drag.x0, dy = e.clientY - drag.y0;
+      if (!drag.on && Math.hypot(dx, dy) < 6) return;
+      drag.on = true; el.classList.add("is-dragging");
+      el.style.left = Math.round(drag.l + dx) + "px"; el.style.top = Math.round(drag.t + dy) + "px";
+    }, true);
+    window.addEventListener("pointerup", e => {
+      if (!drag || e.pointerId !== drag.id) return;
+      const d = drag; drag = null; el.classList.remove("is-dragging");
+      if (!d.on) return;
+      dragged = true;
+      const was = moved || { dx: 0, dy: 0 };                             // what the pointer moved it by, added to where it was
+      moved = { dx: Math.round(was.dx + parseFloat(el.style.left) - d.l), dy: Math.round(was.dy + parseFloat(el.style.top) - d.t) };
+      try { localStorage.setItem("se:move:privacy", JSON.stringify(moved)); } catch (_) { /* private mode */ }
+    }, true);
     el.addEventListener("keydown", e => { if (!owner && window.SeConsent && (e.key === "Enter" || e.key === " ")) { e.preventDefault(); window.SeConsent.open(); } });
     el.addEventListener("mouseenter", () => { others(); paint(true); });
     el.addEventListener("focus", () => { others(); paint(true); });
@@ -138,8 +163,13 @@
   // a super by itself inside the main canvas (owner, 2026-10-13: "privacy choices is a super by itself inside the
   // canvas"): at the main super's bottom-left, inside its edge, clear of the conditions bar
   const portAt = pid => { const p = document.querySelector('.se-port[data-pid="' + pid + '"]'); if (!p) return null; const r = p.getBoundingClientRect(); return r.width || r.height ? [r.left + r.width / 2, r.top + r.height / 2] : null; };
+  // moved like any super (owner, 2026-10-13: "this is also movable and deletable, draggable etc., same as others"): kept as
+  // an offset from its own place (se:move:privacy), so it follows the canvas; deleted, it is gone until the app is reset
+  let moved = null, gone = false;
+  try { moved = JSON.parse(localStorage.getItem("se:move:privacy") || "null"); gone = localStorage.getItem("se:gone:privacy") === "1"; } catch (_) { moved = null; }
   function seat() {
     if (!el || el.hidden) return;
+    if (drag) return;                                                     // it follows the pointer while dragged
     const B = 12, w = el.offsetWidth, h = el.offsetHeight, ip = portAt("main/input"), cp = portAt("main/condition");
     let left = B, top = window.innerHeight - B - h;
     if (ip && cp) { left = Math.max(B, ip[0] + 18); top = Math.min(window.innerHeight - B - h, cp[1] - 18 - h); }
@@ -151,22 +181,24 @@
         if (r.left < left + w + 10 && r.bottom > top - 10 && r.top < top + h + 10) top = Math.round(r.top - 14 - h);   // above it
       }
     }
+    if (moved) { left = Math.max(0, Math.min(window.innerWidth - w, left + moved.dx)); top = Math.max(0, Math.min(window.innerHeight - h, top + moved.dy)); }   // where it was dragged to
     const L = Math.round(left) + "px", T = Math.round(top) + "px";
     if (el.style.left !== L) el.style.left = L; if (el.style.top !== T) el.style.top = T; if (el.style.bottom !== "auto") el.style.bottom = "auto";
   }
   setInterval(seat, 300); window.addEventListener("resize", seat);
   // the owner only: asked of the server, with the page's own cookie (the check itself is listed like any request)
-  let owner = false;
+  let owner = false, drag = null, dragged = false;
   async function whoIs() {
     try { const j = await (await window.fetch("/api/auth/session", { cache: "no-store" })).json(); owner = !!(j && j.is_owner === true); } catch (_) { owner = false; }
     // the owner sees the indicator; everyone else only a way back to their privacy choices (super/consent.js)
     if (el) {
-      el.hidden = !owner && !window.SeConsent; el.classList.toggle("is-min", !owner);
+      el.hidden = gone || (!owner && !window.SeConsent); el.classList.toggle("is-min", !owner);
       if (owner) delete el.dataset.ctl; else el.dataset.ctl = "privacy";   // a super with four ports, wireable like the controls
       seat(); paint();
     }
   }
   function boot() { build(); whoIs(); setInterval(whoIs, 30000); }
   if (document.body) boot(); else document.addEventListener("DOMContentLoaded", boot);
-  window.SeRequests = { log: () => log.slice(), inflight: () => inflight, classify, isOwner: () => owner, refresh: whoIs };
+  function remove() { gone = true; if (el) el.hidden = true; try { localStorage.setItem("se:gone:privacy", "1"); } catch (_) { /* private mode */ } }
+  window.SeRequests = { log: () => log.slice(), inflight: () => inflight, classify, isOwner: () => owner, refresh: whoIs, remove };
 })();

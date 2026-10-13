@@ -776,7 +776,7 @@ html.shape-se :is(.orbit-bubble.is-group, .orbit-panel, .se-project, .lv-node:no
 /* the main canvas's controls (top) and conditions (bottom), super/controls.js: two halves either side of the main
    super's sync and condition ports; small glass supers, every one an icon (owner, 2026-10-13: "everything should be
    iconized, both controls and condition"); the padlock and the disk are the ones the supers carried */
-html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 48px; pointer-events: none; --ctl-gap: 60px; color: var(--ink); }
+html.shape-se .se-ctlbar { position: fixed; z-index: 966; width: 0; height: 48px; pointer-events: none; --ctl-gap: 4px; color: var(--ink); }   /* the four together (owner, 2026-10-13) */
 html.shape-se .se-ctl-bottom { transform: translateY(-100%); --ctl-gap: 22px; }
 html.shape-se .se-ctl-half.se-ctl-l { position: absolute; top: 0; right: var(--ctl-gap); }
 html.shape-se .se-ctl-half.se-ctl-r { position: absolute; top: 0; left: var(--ctl-gap); }
@@ -799,9 +799,9 @@ html.shape-se .se-ctl.is-locked .lk-body { fill: currentColor; }
 html.shape-se .se-ctl .sv-body, html.shape-se .se-ctl .sv-label, html.shape-se .se-ctl .sv-slot { stroke-width: 1.2; }
 html.shape-se .se-ctl.is-saved .sv-body { fill: currentColor; }
 html.shape-se .se-ctl.is-chained .ch-link { stroke-width: 2.2; }
-html.shape-se .se-ctl.is-chained { color: var(--cobalt); }
+html.shape-se .se-ctl.is-chained { color: inherit; }                  /* blue means wired, nothing else (owner, 2026-10-13) */
 html.shape-se .se-ctl.is-saved .sv-label, html.shape-se .se-ctl.is-saved .sv-slot { stroke: var(--paper, #fff); }
-html.shape-se .se-ctl.is-on { color: var(--cobalt); border-color: var(--cobalt); }
+html.shape-se .se-ctl.is-on { color: inherit; border-color: inherit; }   /* reset waiting for its second press: no blue (only wired is) */
 html.shape-se .se-ctl:focus-visible, html.shape-se .se-cond:focus-within { outline: none !important; border-color: var(--cobalt); }
 html.shape-se .se-cond { cursor: text; }
 html.shape-se .se-cond-k { display: inline-flex; opacity: 0.8; }
@@ -821,7 +821,7 @@ html.shape-se.se-night :is(.se-ctl, .se-cond, .se-ctl-note) { background: color-
 html.shape-se.se-night .se-cond.is-set .se-cond-k { color: #9aa6ff; }
 html.shape-se.se-night .se-ctl.is-saved .sv-label, html.shape-se.se-night .se-ctl.is-saved .sv-slot { stroke: #1d2230; }
 @media (max-width: 699px) {
-  html.shape-se .se-ctlbar { --ctl-gap: 26px; } html.shape-se .se-ctl-bottom { --ctl-gap: 14px; }
+  html.shape-se .se-ctlbar { --ctl-gap: 4px; } html.shape-se .se-ctl-bottom { --ctl-gap: 14px; }
   html.shape-se .se-ctlbar { height: 36px; }
   html.shape-se .se-ctl, html.shape-se .se-cond { min-width: 36px; height: 36px; padding: 0 5px; }
   html.shape-se .se-ctl svg, html.shape-se .se-cond-k svg { width: 20px; height: 20px; }

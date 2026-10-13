@@ -401,7 +401,7 @@
     if (top || !on() || !document.body) return;
     top = document.createElement("div"); top.className = "se-ctlbar se-ctl-top"; top.setAttribute("role", "toolbar"); top.setAttribute("aria-label", "controls");
     const half = (list, side) => '<div class="se-ctl-half se-ctl-' + side + '">' + list.map(k => '<span class="se-ctl se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + '" role="img" aria-label="' + k + '">' + ICON[k] + "</span>").join("") + "</div>";
-    top.innerHTML = half(CONTROLS.slice(0, 3), "l") + half(CONTROLS.slice(3), "r");
+    top.innerHTML = half(CONTROLS.slice(0, 2), "l") + half(CONTROLS.slice(2), "r");   // together, two either side of the sync port (owner, 2026-10-13: "put all these together")
     bottom = document.createElement("div"); bottom.className = "se-ctlbar se-ctl-bottom"; bottom.setAttribute("role", "toolbar"); bottom.setAttribute("aria-label", "conditions");
     const chip = k => '<label class="se-cond' + (OPS[k] ? " is-op" : "") + '" data-cond="' + k + '" title="' + k + '"><span class="se-cond-k">' + ICON[k] + '</span><input class="se-cond-v" size="1" spellcheck="false" placeholder="' + HINT[k] + '" aria-label="' + k + '"><span class="se-cond-r" aria-live="polite"></span></label>';
     const arrow = k => '<span class="se-ctl se-arrow se-ctl-' + k + '" data-ctl="' + k + '" title="' + k + ' (PiEn decides)" role="button" tabindex="0" aria-label="' + ({ left: "previous suggestion", right: "next suggestion", up: "go out", down: "go in" })[k] + '">' + ICON[k] + "</span>";
@@ -446,7 +446,8 @@
       const show = OPS[k] ? (condValue(k) && (ins(k).length || cond[k]) ? "= " + condValue(k) : "") : k === "timer" && timer.on ? condValue(k) + " s" : "";
       if (r.textContent !== show) r.textContent = show;
     });
-    top.querySelectorAll(".se-ctl").forEach(b => { const w = wiredTo("ctl:" + b.dataset.ctl).length > 0; if (b.classList.contains("is-wired") !== w) b.classList.toggle("is-wired", w); });
+    // blue only while connected (owner, 2026-10-13: "they should be blue if they are connected, only then"): the controls and the arrows
+    [top, bottom].forEach(bar => bar.querySelectorAll(".se-ctl").forEach(b => { const w = wiredTo("ctl:" + b.dataset.ctl).length > 0; if (b.classList.contains("is-wired") !== w) b.classList.toggle("is-wired", w); }));
     const lk = targetsOf("lock")[0], sv = targetsOf("save")[0];
     const L = top.querySelector(".se-ctl-lock"), Sv = top.querySelector(".se-ctl-save");
     const locked = !!lk && isLocked(lk), saved = !!sv && isSaved(sv);
@@ -532,6 +533,7 @@
   function elOfName(n) {
     if (n === "title") return document.querySelector(".orbit-title .se-titlesuper");
     if ((n === "site" || n === "main") && window.SeLock && window.SeLock.loop) return window.SeLock.loop(n);   // the second and main supers' lock hosts
+    if (n === "privacy") return document.querySelector(".se-req");      // privacy choices (super/requests.js)
     if (n.startsWith("pill:")) return document.querySelector('.ob-member[data-key="' + CSS.escape(n.slice(5)) + '"]');
     return window.SeSite && window.SeSite.ownerEl ? window.SeSite.ownerEl(n) : null;
   }
