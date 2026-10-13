@@ -248,6 +248,11 @@
   window.addEventListener("pointerdown", e => { if (e.button === 1 && on()) midDown = true; }, true);
   window.addEventListener("pointerup", e => { if (e.button === 1) midEnd(); }, true);
   window.addEventListener("blur", midEnd);
+  // a pinch (or Ctrl + scroll) never zooms the browser's page, wherever it is (owner, 2026-10-13: on the controls it
+  // zoomed the whole page out): the page has its own zoom; this runs first, so nothing that stops the scroll on its way
+  // (the controls and conditions bars, the request indicator) lets the browser take it
+  window.addEventListener("wheel", e => { if (on() && e.ctrlKey) e.preventDefault(); }, { capture: true, passive: false });
+  ["gesturestart", "gesturechange"].forEach(t => window.addEventListener(t, e => { if (on()) e.preventDefault(); }, { capture: true, passive: false }));   // Safari's pinch
   document.addEventListener("wheel", e => {
     if (!on()) return;
     const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y), now = e.timeStamp || performance.now();
