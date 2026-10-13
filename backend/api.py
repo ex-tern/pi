@@ -4082,7 +4082,7 @@ def compute_piq_emission(pix_score: float, logic_integrity: float, total_papers:
 # nothing real (piQ is minted, not bought), it is gated on a verified identity
 # so it cannot be farmed, and it converts the free tier from a hard wall into
 # an on-ramp.
-NEW_PARTICIPANT_GRANT = 2.0
+NEW_PARTICIPANT_GRANT = 5.0   # five papers at the starting 1.00 piQ fee (it was 2.0 from when the fee was 0.10)
 
 
 def onboarding_grant(base_fee: float = None) -> Dict:
@@ -4134,9 +4134,18 @@ MIN_FEE = 0.001
 # together: leaving the floor at 0.1 while the base is 1.0 would make every
 # short paper cost a tenth of a long one, which is a bigger spread than the
 # actual difference in work.
-MINIMUM_FEE = 1.0               # never below this, whatever the size
+MINIMUM_FEE = 1.0               # the floor at the start; it halves with emission (minimum_fee below)
 FEE_CEILING_MULTIPLE = 5.0      # never more than 5x the minimum
 BASELINE_WORDS = 6000.0         # a typical research article
+
+
+def minimum_fee(total_papers: int = 0) -> float:
+    """The fee floor at the corpus's current difficulty (owner, 2026-10-13: "let the fee halve with emission").
+
+    MINIMUM_FEE at the start, halving with the same factor as emission, so a paper that just qualifies always mints
+    more than it costs: a flat 1.00 floor would have cost more than such a paper mints from about 3,000 papers on.
+    """
+    return round(max(MIN_FEE, MINIMUM_FEE * compute_supply_factor(total_papers)), 6)
 
 
 def size_multiplier(word_count: int) -> float:
@@ -4164,7 +4173,8 @@ def compute_document_fee(word_count: int, total_papers: int = 0,
     difficulty_fee = compute_processing_fee(total_papers, base_fee)
     multiplier = size_multiplier(word_count)
     raw = difficulty_fee * multiplier
-    fee = round(max(MINIMUM_FEE, raw), 4)
+    floor = minimum_fee(total_papers)
+    fee = round(max(floor, raw), 6)
 
     words = max(0, int(word_count or 0))
     if words == 0:
@@ -4180,16 +4190,16 @@ def compute_document_fee(word_count: int, total_papers: int = 0,
 
     return {
         "fee": fee,
-        "minimum": MINIMUM_FEE,
+        "minimum": floor,
         "word_count": words,
         "size_band": band,
         "size_multiplier": round(multiplier, 3),
         "difficulty_fee": difficulty_fee,
-        "at_minimum": fee <= MINIMUM_FEE + 1e-9,
+        "at_minimum": fee <= floor + 1e-9,
         "explanation": (
             f"{fee:.4f} piQ for a {band} ({words:,} words). Longer documents cost more because "
             f"extraction, reference verification and structural analysis all scale with length. "
-            f"The floor is {MINIMUM_FEE:.2f} piQ and the ceiling "
+            f"The floor is {floor:.4g} piQ (it halves with emission) and the ceiling "
             f"{FEE_CEILING_MULTIPLE:.0f}x that."
             if words else
             f"{fee:.4f} piQ. Length was not known in advance, so the minimum fee applies."
@@ -4207,18 +4217,19 @@ def compute_processing_fee(total_papers: int, base_fee: float = BASE_FEE) -> flo
 
 
 def fee_manifest(total_papers: int, base_fee: float = BASE_FEE) -> Dict:
-    fee = max(MINIMUM_FEE, compute_processing_fee(total_papers, base_fee))
+    floor = minimum_fee(total_papers)
+    fee = max(floor, compute_processing_fee(total_papers, base_fee))
     # What a paper exactly at the qualifying threshold nets after the fee.
     floor_pix = compute_quality_threshold(total_papers)
     marginal = (floor_pix / BASE_DIVISOR) * compute_supply_factor(total_papers)
     return {
         "fee": fee,
-        "minimum_fee": MINIMUM_FEE,
+        "minimum_fee": floor,
         "size_scaled": True,
         "size_note": (
             f"This is the fee for a typical article. Longer documents cost proportionally more "
             f"(square-root of length, capped at {FEE_CEILING_MULTIPLE:.0f}x), never less than "
-            f"{MINIMUM_FEE:.2f} piQ."
+            f"{floor:.4g} piQ, a floor that halves with emission."
         ),
         "base_fee": base_fee,
         "supply_factor": round(compute_supply_factor(total_papers), 6),
@@ -4226,16 +4237,9 @@ def fee_manifest(total_papers: int, base_fee: float = BASE_FEE) -> Dict:
         "marginal_paper_nets": round(marginal - fee, 6),
         "sustainable": marginal > fee,
         "note": (
-            (f"The fee scales with the same halving factor as emission, so a paper that just "
-             f"clears the {floor_pix:.1f} piX threshold still nets "
-             f"{marginal - fee:+.4f} piQ. Without this, a flat fee would exceed emission entirely "
-             f"at high corpus sizes and the economy would stall.")
-            if fee <= compute_processing_fee(total_papers, base_fee) + 1e-9 else
-            # the minimum fee holds it above the scaled fee: say so, rather than claim it scales
-            (f"The fee is held at its {MINIMUM_FEE:.2f} piQ minimum, above the scaled fee, so a paper that "
-             f"just clears the {floor_pix:.1f} piX threshold nets {marginal - fee:+.4f} piQ"
-             + ("." if marginal > fee else
-                "; at this corpus size a qualifying paper can cost more than it mints."))
+            f"The fee, its {floor:.4g} piQ floor included, halves with emission, so a paper that just "
+            f"clears the {floor_pix:.1f} piX threshold still nets {marginal - fee:+.4f} piQ. A flat fee "
+            f"would exceed emission at high corpus sizes and the economy would stall."
         ),
     }
 
@@ -21494,7 +21498,7 @@ def architecture_parameters():
 
     return {
         "free_documents": FREE_DOCUMENTS,
-        "minimum_fee": MINIMUM_FEE,
+        "minimum_fee": minimum_fee(corpus),
         "current_fee": resolve_active_fee(),
         "fee_is_size_scaled": True,
         "quality_threshold": round(emission_manifest(corpus)["current_quality_floor"], 1),
