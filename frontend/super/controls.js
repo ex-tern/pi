@@ -21,8 +21,11 @@
 //          folds back to its compact square (a compact one sized by hand to the usual size), the project compacts, a
 //          window folds into its pill, a Super AI super goes back to its usual size, a holder wraps close round what it holds
 //   stop   stops it: asking stops, a window closes, a bubble or the project compacts; the timer stops too
-//   reset  starts the app afresh, as on a first visit (a second press within 3 s; owner, 2026-10-13: "delete this reset
-//          button and instead put the reset in the control icons": the title's wire into the site no longer resets)
+//   reset  brings back a saved state (super/restore.js; owner, 2026-10-13): wired to a super, that super goes back to how
+//          it was when last saved, at once as the wire is made; wired to the main super's condition port or to the logo,
+//          the whole page goes back to its last saved state (saved by the save control on the main or second super, or by
+//          saving the logo). Not wired: the selected super goes back; nothing selected, the app starts afresh as on a first
+//          visit (a second press within 3 s; the title's wire into the site no longer resets)
 // The conditions (a click on one types its value; Enter keeps it, empty clears it; kept as se:cond):
 //   if      open goes ahead only if the value passes: > 5, < 3, = yes, or a word it must contain; wired from a super,
 //           that super's value is tested (wired alone, it must say something true)
@@ -244,6 +247,10 @@
       if (!el || el === "all" || !window.SeChain || !(window.SeLock && window.SeLock.nameOf(el))) return null;
       const now = window.SeChain.isChained(el); window.SeChain.set(el, !now); return (now ? "Unchained " : "Chained ") + nameOf(el);
     }
+    if (k === "save" && el === "all") {                                  // the main loop: a snapshot of the whole page
+      if (!window.SeRestore) return null;
+      window.SeRestore.snapshotPage(); return "Saved the page: a reset wired to the main super's condition or the logo brings it back";
+    }
     el = k === "lock" ? lockable(el) : el; if (!el || el === "all") return null;
     const A = k === "lock" ? window.SeLock : window.SeSave; if (!A) return null;
     if (window.SeLock && !window.SeLock.nameOf(el)) return null;           // not a super that keeps a lock or a save
@@ -258,6 +265,7 @@
     if ((k === "lock" || k === "save" || k === "chain") && s) {
       if (typeof s !== "string") return [s];
       if (k === "lock" && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];
+      if (k === "save") return ["all"];                                   // the main or second super selected: the page
     }
     const w = wiredTo("ctl:" + k).filter(x => !selfWired(x, k));
     if (w.length) return w;
@@ -265,10 +273,53 @@
     if (k === "lock" && s && window.SeLock && window.SeLock.loop) return [window.SeLock.loop(s === "loop" ? "main" : "site")];   // the main or second super: its own lock
     return [null];
   }
+  // ---- reset: back to a saved state (super/restore.js) ----------------------------------------------
+  // the ends wired to the reset control, as wire ends (port:main/condition, title, node:..., k:...)
+  function resetEnds(list) {
+    const pre = "port:ctl:reset/";
+    return (list || []).map(l => { const a = l.a && l.a.h, b = l.b && l.b.h; return a && a.startsWith(pre) ? b : b && b.startsWith(pre) ? a : null; }).filter(Boolean);
+  }
+  const pageEnd = h => h === "port:main/condition" || h === "title";     // the main loop's condition, or the logo
+  function resetOne(el) {
+    const R = window.SeRestore; if (!R || !el || el === "all") return false;
+    if (R.has(el)) return R.restore(el);
+    say(nameOf(el) + " has no saved state yet: save it first"); return false;
+  }
+  function resetPage() {
+    const R = window.SeRestore; if (!R) return false;
+    if (R.hasPage()) return R.restorePage();
+    say("The page has no saved state yet: save the main super or the logo first"); return false;
+  }
+  function resetEnd(h) {
+    if (pageEnd(h)) return resetPage();
+    const el = elOfAnchor(h);
+    return el && el !== "all" && isSuper(el) ? resetOne(el) : false;
+  }
+  function resetWired() {
+    const ends = resetEnds(window.SuperLink && window.SuperLink.links ? window.SuperLink.links() : []);
+    if (!ends.length) return false;
+    if (ends.some(pageEnd)) { resetPage(); return true; }               // the page comes first: it holds everything else
+    ends.forEach(resetEnd); return true;
+  }
+  // making the wire is the reset (owner: "doing this resets the super"): only a wire made now, not one the page had
+  let resetSeen = null;
+  document.addEventListener("superlink:change", () => setTimeout(() => {
+    if (!settled || !window.SuperLink || !window.SuperLink.links) return;
+    const ends = resetEnds(window.SuperLink.links());
+    const fresh = resetSeen ? ends.filter(h => !resetSeen.has(h)) : [];
+    resetSeen = new Set(ends);
+    if (!fresh.length) return;
+    if (fresh.some(pageEnd)) resetPage(); else fresh.forEach(resetEnd);
+  }, 120));
+  setTimeout(() => { if (window.SuperLink && window.SuperLink.links) resetSeen = new Set(resetEnds(window.SuperLink.links())); }, 4200);
+
   let armed = 0;
   function press(k) {
-    if (k === "reset") {                                                // the app starts afresh, as on a first visit; a second press within 3 s
-      const b = top && top.querySelector(".se-ctl-reset");
+    if (k === "reset") {
+      if (resetWired()) return;                                         // wired: what it is wired to goes back to its saved state
+      const s = SS().selected ? SS().selected() : "";
+      if (s && typeof s !== "string" && window.SeRestore) { resetOne(s); return; }
+      const b = top && top.querySelector(".se-ctl-reset");               // nothing: the app starts afresh, as on a first visit; a second press within 3 s
       if (performance.now() < armed) { if (window.SuperLink && window.SuperLink.reset) window.SuperLink.reset(); return; }
       armed = performance.now() + 3000; if (b) { b.classList.add("is-on"); setTimeout(() => b.classList.remove("is-on"), 3000); }
       say("Reset: press again to start the app afresh"); return;

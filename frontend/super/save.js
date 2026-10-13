@@ -23,6 +23,8 @@
   function set(el, v) {
     const name = nameOf(el); if (!name) return;
     el.classList.toggle("is-saved", !!v); store(name, !!v);
+    // saving takes a snapshot the reset control brings back (super/restore.js); the logo's is the whole page's
+    if (v && window.SeRestore) { window.SeRestore.snapshot(el); if (name === "title") window.SeRestore.snapshotPage(); }
     const b = el.querySelector(":scope > .se-save");
     if (b) { b.setAttribute("aria-pressed", String(!!v)); b.setAttribute("aria-label", label(!!v)); }
     const out = document.querySelector(".lv-out"); if (out) out.textContent = (v ? "Saved " : "Unsaved ") + name.replace(/^(node|bubble|win):/, "");
