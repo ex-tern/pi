@@ -85,6 +85,15 @@ try {
     }
     const shareable = key !== null;
     if (String(method).toUpperCase() !== "GET") sharing.clear();      // a write: no answer from before it is reused
+    // a tab in the background asks nothing (owner, 2026-10-13: "poll less, pause when hidden"): a read of the API made
+    // while the page is hidden waits until it is shown again, then goes (shared with any like it)
+    if (shareable && document.visibilityState === "hidden") {
+      const self = this, args = arguments;
+      return new Promise(res => {
+        const go = () => { if (document.visibilityState !== "visible") return; document.removeEventListener("visibilitychange", go); res(window.fetch.apply(self, args)); };
+        document.addEventListener("visibilitychange", go);
+      });
+    }
     if (shareable && sharing.has(key)) return sharing.get(key).then(r => r.clone());
     const e = begin(classify(method, url, init && init.body));
     const p = F.apply(this, arguments).then(r => { done(e, r.status); return r; }, err => { done(e, "failed"); throw err; });
@@ -21495,7 +21504,7 @@ try {
     // the drawing fits the box, centred
     const pad = 0.1, s = Math.min(r.w * (1 - 2 * pad) / W, r.h * (1 - 2 * pad) / H);   // clear of the π corners (a superellipse at n = π needs about 10 %)
     map.style.transform = "translate(" + ((r.w - W * s) / 2).toFixed(1) + "px," + ((r.h - H * s) / 2).toFixed(1) + "px) scale(" + s.toFixed(4) + ")";
-    if (!probed) probeAll();
+    if (!probed && show >= 0.99) probeAll();       // the live values only once the map is open enough to read them
   }
   // closed for good (too small, or dropped outside the inner super) until the app is reset, as a bubble is
   let overAcc = 0, overT = 0;
@@ -21601,7 +21610,11 @@ try {
       }).catch(() => ns.forEach(n => setVal(n.id, "unreachable", "err")));
     });
     clearTimeout(probeT);
-    probeT = setTimeout(() => { probed = false; if (el && el.classList.contains("is-open")) probeAll(); }, 30000);
+    // again in 30 s while the map is open and the page is in view; otherwise the next time it opens
+    probeT = setTimeout(() => {
+      probed = false;
+      if (el && document.visibilityState === "visible" && parseFloat(el.style.getPropertyValue("--pj-show")) >= 0.99) probeAll();
+    }, 30000);
   }
 
   // ------------------------------------------------------------ running it
