@@ -88,13 +88,6 @@ code.wrap { word-break: break-all; }
 .chain-unknown { background: #efefec; color: var(--muted); border-color: var(--border); }
 .chain-unknown .chain-dot { background: var(--faint); }
 
-/* Scilem disabled notice */
-.notice-box {
-  background: var(--warn-bg); border: 1px solid #e2d6b2; color: #5e470e;
-  border-radius: 8px; padding: 10px 11px; font-size: 12px; line-height: 1.55; margin: 8px 0;
-}
-.notice-sub { display: block; margin-top: 7px; color: #6f5410; opacity: 0.9; }
-
 /* Donate */
 .donate-card { background: #f8f8f6; border: 1px solid var(--border); border-radius: 10px; padding: 13px; }
 .donate-title { font-weight: 650; font-size: 0.88rem; margin-bottom: 5px; }
@@ -160,8 +153,6 @@ code.wrap { word-break: break-all; }
 .tab-panel.active { display: block; }
 
 .page-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; flex-wrap: wrap; gap: 10px; }
-.count-badge { background: #191919; color: #ffffff; padding: 6px 16px; border-radius: 20px; font-weight: 600; font-size: 12.5px; }
-.count-badge span { color: #c9c9cf; }
 .lede { font-size: 13.5px; line-height: 1.65; color: #2e2e2b; }
 
 .card { background: var(--card-bg); border: 1px solid var(--border); border-radius: var(--radius); padding: 22px; margin-bottom: 20px; box-shadow: var(--shadow); }
@@ -202,7 +193,6 @@ code.wrap { word-break: break-all; }
 }
 .sidebar-toggle:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .sidebar-toggle-icon { font-size: 17px; line-height: 1; }
-.sidebar-toggle-text { display: none; }
 
 /* The toggle is fixed over the top-left corner, so both columns need
    clearance or it lands on top of the first heading. */
@@ -255,7 +245,6 @@ code.wrap { word-break: break-all; }
     background: rgba(25,25,25,0.38);
   }
   .sidebar-scrim.hidden { display: none; }
-  .sidebar-toggle-text { display: none; }
 }
 
 input[type="text"], input[type="number"], select, input[type="file"] {
@@ -373,9 +362,6 @@ input::placeholder { color: var(--faint); }
 .progress-fill { height: 100%; background: var(--accent); border-radius: 4px; transition: width 0.4s ease; }
 
 .c-dot { display: inline-block; width: 9px; height: 9px; border-radius: 50%; margin-right: 7px; vertical-align: middle; }
-.trend-up { color: var(--success); font-weight: 650; }
-.trend-down { color: var(--danger); font-weight: 650; }
-.trend-flat { color: var(--faint); }
 
 /* ---------- Map of Science ---------- */
 /* Compact by default: controls are collapsed, the canvas is the content. */
@@ -394,45 +380,8 @@ input::placeholder { color: var(--faint); }
   position: sticky; top: 0; z-index: 2; background: #f8f8f6;
   box-shadow: inset 0 -1px 0 var(--border);
 }
-.preset-row { display: grid; grid-template-columns: repeat(2, 1fr); gap: 5px; margin-bottom: 12px; }
-.preset-btn {
-  background: #efefec; border: 1px solid var(--border); border-radius: 7px;
-  padding: 6px 8px; font-size: 11.5px; font-weight: 600; color: var(--muted);
-  cursor: pointer; font-family: inherit;
-}
-.preset-btn:hover { border-color: var(--border-strong); color: var(--text); }
-.preset-btn.active { background: var(--accent); color: #ffffff; border-color: var(--accent); }
-
-/* Unified author/field search — a checklist does not scale with the corpus. */
-.msr-group { font-size: 10px; text-transform: none; letter-spacing: 0.06em;
-  color: var(--faint); padding: 7px 11px 3px; font-weight: 700; }
-.msr-item { display: flex; justify-content: space-between; gap: 10px; padding: 7px 11px;
-  font-size: 12.5px; cursor: pointer; }
-.msr-item:hover, .msr-item.active { background: var(--accent-soft); }
-.msr-count { color: var(--faint); font-size: 11px; }
-.msr-empty { padding: 12px; font-size: 12px; color: var(--faint); text-align: center; }
 
 /* Dual-handle range: two stacked inputs sharing one track. */
-.dual-slider { position: relative; height: 26px; margin: 2px 0 4px; }
-.dual-slider::before {
-  content: ""; position: absolute; left: 0; right: 0; top: 11px; height: 4px;
-  background: #dcdcd8; border-radius: 3px;
-}
-.dual-slider input[type="range"] {
-  position: absolute; left: 0; width: 100%; margin: 0; background: none;
-  pointer-events: none; -webkit-appearance: none; appearance: none; height: 26px;
-}
-.dual-slider input[type="range"]::-webkit-slider-thumb {
-  pointer-events: auto; -webkit-appearance: none; appearance: none;
-  width: 15px; height: 15px; border-radius: 50%; background: var(--accent);
-  border: 2px solid #ffffff; box-shadow: 0 1px 4px rgba(25,25,25,0.22); cursor: pointer;
-}
-.dual-slider input[type="range"]::-moz-range-thumb {
-  pointer-events: auto; width: 15px; height: 15px; border-radius: 50%;
-  background: var(--accent); border: 2px solid #ffffff;
-  box-shadow: 0 1px 4px rgba(25,25,25,0.22); cursor: pointer;
-}
-.dual-slider input[type="range"]::-moz-range-track { background: none; }
 
 .ledger-table .mono { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-size: 11px; }
 .ledger-table td { white-space: nowrap; }
@@ -442,55 +391,6 @@ input::placeholder { color: var(--faint); }
 .addr-item { border: 1px solid var(--border); border-radius: 9px; padding: 10px 12px; background: #fbfbfa; }
 .addr-label { font-weight: 650; font-size: 12.5px; margin-bottom: 5px; display: flex; align-items: center; gap: 7px; }
 .addr-desc { font-size: 11.5px; color: var(--muted); margin-top: 6px; line-height: 1.55; }
-
-/* Collapsed control groups: the map is the content, controls are on demand. */
-.ctl-group { border: 1px solid var(--border); border-radius: 9px; background: #ffffff; }
-.ctl-group > summary {
-  display: flex; align-items: baseline; gap: 10px; padding: 9px 12px; cursor: pointer;
-  list-style: none; font-size: 12.5px; border-radius: 9px;
-}
-.ctl-group > summary::-webkit-details-marker { display: none; }
-.ctl-group > summary::before {
-  content: "›"; color: var(--faint); font-size: 15px; line-height: 1;
-  transition: transform 0.15s ease; display: inline-block; align-self: center;
-}
-.ctl-group[open] > summary::before { transform: rotate(90deg); }
-.ctl-group > summary:hover { background: var(--accent-soft); }
-.ctl-title { font-weight: 650; }
-.ctl-hint { font-size: 11px; color: var(--faint); margin-left: auto; text-align: right; }
-.ctl-body { padding: 4px 12px 12px; border-top: 1px solid #efefec; }
-.ctl-body > .filter-row:first-child { margin-top: 10px; }
-.ctl-subgroup { margin: 8px 0; border: 1px solid var(--border); border-radius: 7px; padding: 7px 9px; }
-.ctl-subgroup > summary { cursor: pointer; font-size: 11.5px; font-weight: 650; color: var(--muted);
-  text-transform: none; letter-spacing: 0.04em; }
-.ctl-subgroup[open] > summary { margin-bottom: 7px; }
-
-
-.mdl-item { display: inline-flex; align-items: center; gap: 6px; font-size: 10.5px; font-weight: 600; color: var(--muted); }
-.mdl-dot { width: 9px; height: 9px; border-radius: 50%; flex-shrink: 0; box-shadow: 0 0 0 1.5px rgba(255,255,255,0.9); }
-
-
-/* Sliders */
-.slider-row { margin-bottom: 11px; }
-.slider-row label {
-  display: flex; justify-content: space-between; align-items: baseline;
-  font-size: 11.5px; font-weight: 650; color: var(--muted);
-  text-transform: none; letter-spacing: 0.04em; margin-bottom: 5px;
-}
-.slider-row output { font-variant-numeric: tabular-nums; color: var(--accent); font-weight: 700; text-transform: none; letter-spacing: 0; }
-.slider-row input[type="range"] {
-  width: 100%; margin: 0; -webkit-appearance: none; appearance: none;
-  height: 4px; border-radius: 3px; background: #dcdcd8; cursor: pointer;
-}
-.slider-row input[type="range"]::-webkit-slider-thumb {
-  -webkit-appearance: none; appearance: none; width: 15px; height: 15px; border-radius: 50%;
-  background: var(--accent); border: 2px solid #ffffff; box-shadow: 0 1px 4px rgba(25,25,25,0.22); cursor: pointer;
-}
-.slider-row input[type="range"]::-moz-range-thumb {
-  width: 15px; height: 15px; border-radius: 50%; background: var(--accent);
-  border: 2px solid #ffffff; box-shadow: 0 1px 4px rgba(25,25,25,0.22); cursor: pointer;
-}
-.fc-count { color: var(--faint); font-size: 10.5px; }
 
 /* Emission difficulty panel */
 .diff-row { display: flex; justify-content: space-between; gap: 8px; padding: 4px 0; font-size: 12px; }
@@ -535,8 +435,6 @@ input::placeholder { color: var(--faint); }
 
 .bar { display: block; height: 6px; background: #efefec; border-radius: 4px; overflow: hidden; }
 .bar-fill { display: block; height: 100%; background: var(--accent); border-radius: 4px; }
-
-.color-box { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
 
 /* The leaderboards fit their column instead of scrolling sideways.
    A ranking is meant to be scanned top-to-bottom; making the reader drag it
@@ -591,9 +489,6 @@ input::placeholder { color: var(--faint); }
   border-top: 1px solid var(--border); color: var(--text);
 }
 .lb-scope { font-weight: 500; color: var(--muted); font-size: 0.86em; }
-.lb-toolbar { display: flex; gap: 8px; margin: 12px 0 0; flex-wrap: wrap; }
-.lb-search { flex: 1; min-width: 150px; margin-bottom: 0; }
-.lb-toolbar .score-input { margin-bottom: 0; }
 
 .sortable-table th[data-sort] { cursor: pointer; user-select: none; position: relative; padding-right: 20px; }
 .sortable-table th[data-sort]:hover { color: var(--accent); }
@@ -637,15 +532,9 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 }
 
 /* ---------- Filters ---------- */
-.filter-panel { border: 1px solid var(--border); border-radius: 10px; padding: 13px; margin-bottom: 12px; background: #fbfbfa; }
-.filter-row { display: flex; align-items: center; gap: 8px; margin-bottom: 9px; flex-wrap: wrap; }
-.filter-row-top { align-items: flex-start; }
-.filter-label { font-size: 11.5px; font-weight: 650; color: var(--muted); min-width: 72px; text-transform: none; letter-spacing: 0.04em; }
+
 .score-input { width: 92px; padding: 7px 9px; border: 1px solid var(--border-strong); border-radius: 7px; font-size: 12.5px; margin-bottom: 0; }
-.field-checklist { display: flex; flex-wrap: wrap; gap: 2px 14px; max-height: 108px; overflow-y: auto; flex: 1; padding: 7px; border: 1px solid var(--border); border-radius: 7px; background: #ffffff; }
-.field-checklist .checkbox-row { margin-bottom: 3px; font-size: 12px; white-space: nowrap; }
 .sidebar-expander select { margin-top: 4px; }
-.legend-row { cursor: pointer; }
 
 /* ---------- Discover ---------- */
 .hot-topics-row { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
@@ -979,7 +868,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   width: 100%; margin-top: 5px; font-weight: 400; color: var(--text);
 }
 .profile-card textarea { resize: vertical; font-family: inherit; font-size: 13px; }
-.profile-optional { font-weight: 400; color: var(--faint); font-size: 11px; }
 .profile-actions { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; margin-top: 16px; }
 .profile-msg { font-size: 12px; color: var(--muted); }
 .profile-msg-ok { color: var(--success); font-weight: 600; }
@@ -1027,10 +915,9 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .buddy-note { font-size: 11.5px; color: var(--faint); line-height: 1.6;
   margin: 14px 0 0; padding-top: 10px; border-top: 1px solid var(--border); }
 .warning-text { color: var(--warn); }
-.buddy-card { border-left: 3px solid var(--accent); }
 
 /* ---- Forecast: delta mode (single assessment) ---- */
-.forecast-delta-table { margin-top: 12px; font-size: 12.5px; }
+
 .trend-up { color: var(--success); font-weight: 600; }
 .trend-down { color: var(--danger); font-weight: 600; }
 .trend-flat { color: var(--faint); }
@@ -1039,14 +926,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 /* ---- Science Map header ---- */
 .arcade-header { display: flex; align-items: center; gap: 18px; margin-bottom: 16px; }
 .arcade-header .arcade-corpus { margin: 0; }
-
-/* ---- Faucet panel ---- */
-.faucet-note { font-size: 11.5px; color: var(--muted); line-height: 1.6; margin: 8px 0; }
-.faucet-warn { color: var(--warn); }
-.faucet-list { list-style: none; padding: 0; margin: 8px 0; }
-.faucet-list li { margin-bottom: 9px; font-size: 12px; }
-.faucet-list a { font-weight: 600; display: block; }
-.faucet-list span { display: block; color: var(--faint); font-size: 11px; line-height: 1.5; }
 
 /* ---- Referral ---- */
 .referral-card { border: 1px solid var(--border); border-radius: var(--radius); padding: 13px; margin-bottom: 12px; }
@@ -1066,9 +945,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .buddy-corpus-meta { font-size: 11.5px; color: var(--faint); margin: 0 0 10px; }
 .buddy-table { font-size: 12px; }
 .buddy-corpus-note { font-size: 12px; color: var(--muted); line-height: 1.6; margin: 10px 0 0; }
-
-/* Horizontal scroll container for tables in narrow side panels. */
-.table-wrap { overflow-x: auto; }
 
 /* ---- Scilem reading picks ---- */
 .buddy-picks { margin-top: 16px; }
@@ -1116,21 +992,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   cursor: grab; user-select: none; flex: 0 0 auto;
 }
 .buddy-bar:active { cursor: grabbing; }
-
-/* riB's face. Blinks on a slow cycle — a mascot with fixed eyes reads as a
-   logo, and the point of a buddy is that it looks like it is paying
-   attention. The transform is on the pupil group only, so a blink costs one
-   composited transform rather than a repaint of the whole head. */
-.rib-face { width: 26px; height: 26px; flex: 0 0 auto; display: block; }
-.rib-face .rib-eyes { transform-origin: 24px 22.4px; animation: ribBlink 6.4s infinite; }
-@keyframes ribBlink {
-  0%, 92%, 100% { transform: scaleY(1); }
-  94%, 96%      { transform: scaleY(0.1); }
-}
-.buddy-float.is-min .rib-face { width: 22px; height: 22px; }
-@media (prefers-reduced-motion: reduce) {
-  .rib-face .rib-eyes { animation: none; }
-}
 
 .buddy-title { font-size: 13px; color: var(--text); }
 .buddy-sub {
@@ -1199,12 +1060,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 .history-table td { vertical-align: top; }
 .hist-title { font-weight: 600; font-size: 12.5px; line-height: 1.4; }
 .hist-meta { font-size: 11px; color: var(--faint); margin-top: 2px; }
-.btn-icon-danger {
-  background: none; border: 1px solid #e6cdc8; color: var(--danger);
-  border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer;
-  font-family: inherit;
-}
-.btn-icon-danger:hover { background: #f8eeec; }
 
 .bug-card { margin-top: 14px; }
 .bug-hint { font-size: 11px; color: var(--faint); margin-top: 6px; line-height: 1.5; }
@@ -1260,7 +1115,7 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   /* Every wide table gets its own scroll container rather than widening the
      page. Horizontal scrolling inside a bounded box is fine; horizontal
      scrolling of the whole document is not. */
-  .table-scroll, .table-wrap {
+  .table-scroll {
     overflow-x: auto; -webkit-overflow-scrolling: touch;
   }
   /* The min-width applies ONLY to tables that sit in a scroll container.
@@ -1271,7 +1126,7 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
      whole layout into a column with dead space beside it. Inside a scroll
      container the floor is what makes columns readable; outside one it is
      just a page-width minimum with no way to scroll to the rest. */
-  .table-scroll .data-table, .table-wrap .data-table { min-width: 520px; }
+  .table-scroll .data-table { min-width: 520px; }
   .data-table { font-size: 12px; }
   /* Unwrapped tables get a floor too, and scroll inside their container.
      Setting `min-width: 0` on these crushed them instead of fixing them: a
@@ -1293,8 +1148,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
   .ex-ctl { width: 100%; }
   .ex-ctl input, .ex-ctl select { min-width: 0; width: 100%; }
   .explorer-toolbar .btn { margin-left: 0; width: 100%; }
-
-  .lb-toolbar { flex-direction: column; align-items: stretch; }
   .run-row { flex-direction: column; align-items: stretch; gap: 8px; }
   .run-row .btn { width: 100%; }
   .profile-actions { flex-wrap: wrap; gap: 8px; }
@@ -1325,7 +1178,6 @@ tbody tr.clickable-row:hover { background: var(--accent-soft); }
 
   /* Touch targets. */
   .btn, .tab-btn, .arcade-tool { min-height: 40px; }
-  .btn-icon-danger { min-height: 32px; padding: 6px 10px; }
 
   code.wrap, .addr-item code { word-break: break-all; }
 
@@ -1562,7 +1414,6 @@ a.btn { text-decoration: none; display: inline-block; }
 .status-reward-none { color: #5e470e; background: var(--warn-bg); border-radius: 6px;
   padding: 7px 9px; margin: 3px 0; line-height: 1.55; }
 .reward-fix { margin-top: 5px; font-size: 11.5px; color: #6f5410; line-height: 1.5; }
-.p-piq-earned { background: var(--success-bg); color: var(--success); }
 .p-piq-none { background: #efefec; color: var(--faint); }
 
 /* --- pi-Dyne forecast modifiers ----------------------------------------- */
@@ -1594,26 +1445,13 @@ a.btn { text-decoration: none; display: inline-block; }
   gap: 10px; margin: -4px 0 12px; font-size: 11.5px;
 }
 .session-who { color: var(--muted); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.btn-link {
-  background: none; border: none; padding: 0; cursor: pointer; font-family: inherit;
-  font-size: 11.5px; font-weight: 600; color: var(--accent); text-decoration: underline;
-  flex-shrink: 0;
-}
-.btn-link:hover { color: var(--danger); }
 
 /* --- Author-published badge and history actions -------------------------- */
-.p-published { background: #eef3ec; color: #2f6b3a; border: 1px solid #cddbc9; }
+
 .hist-actions { display: flex; gap: 5px; flex-wrap: wrap; justify-content: flex-end; }
 /* Held piQ is the full earned figure, coloured rather than split into a
    headline number and a footnote that disagreed with it. */
 .hist-piq-held { color: var(--warn); font-weight: 600; }
-.btn-icon {
-  background: none; border: 1px solid var(--border-strong); color: var(--text);
-  border-radius: 6px; padding: 3px 8px; font-size: 11px; cursor: pointer; font-family: inherit;
-}
-.btn-icon:hover { border-color: var(--accent); color: var(--accent); }
-
-.stat-sub { font-size: 10px; font-weight: 400; color: var(--faint); line-height: 1.4; }
 
 /* --- Review / Publish option cards --------------------------------------- */
 .opt-card { border: 1px solid var(--border); border-radius: 9px; padding: 13px 15px;
@@ -1641,8 +1479,6 @@ a.btn { text-decoration: none; display: inline-block; }
   padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
 .opt-blocked { background: var(--warn-bg); color: #5e470e; border-radius: 8px;
   padding: 10px 12px; font-size: 12.5px; line-height: 1.6; }
-.p-llm-reviewed { background: #efeff3; color: #2f40e8; border: 1px solid #d6d6dc; }
-.p-peer-reviewed { background: #f2ecd8; color: #6f5410; border: 1px solid #e2d6b2; }
 .p-piq-held { background: var(--warn-bg); color: var(--warn); }
 .held-note { color: var(--warn); font-weight: 600; }
 
@@ -1868,15 +1704,11 @@ button.seal { font-family: inherit; cursor: pointer; }
 /* One pill, one number: the total piQ this assessment generated. The colour
    carries the status, so the figure never has to change to say "held". */
 .p-piq-claimed { background: var(--success-bg); color: var(--success); }
-.p-piq-partial { background: #f7f3e8; color: #6f5410; }
 
 /* --- Saved review ---------------------------------------------------------- */
 .review-body { font-size: 12.5px; line-height: 1.65; color: var(--text); }
-.review-meta { font-size: 11px; color: var(--faint); margin-bottom: 10px; }
 .opt-inactive { background: #efefec; color: var(--muted); border-radius: 8px;
   padding: 9px 11px; font-size: 12px; line-height: 1.55; }
-.opt-card-disabled { opacity: 0.62; }
-.badge-link { background: none; border: none; padding: 0; font: inherit; cursor: pointer; }
 
 /* Held piQ on the author leaderboard. Deliberately small, grey and on its own
    line: it is earned but unverified, cannot be spent, and is NOT part of the
@@ -2157,7 +1989,6 @@ button.seal { font-family: inherit; cursor: pointer; }
 /* The help button inside a summary must not swallow the toggle click. */
 .dossier-sec > summary .help-btn { margin-left: 7px; }
 
-
 /* Bootstrapping notice on an engine card. Deliberately quiet — it is a
    qualifier on the numbers above it, not an alert. */
 .engine-tutor {
@@ -2170,7 +2001,6 @@ button.seal { font-family: inherit; cursor: pointer; }
   padding: 4px 7px;
   border-radius: 3px;
 }
-
 
 /* A resubmitted paper resolves to the record that already exists. Called out
    on the card because the alternative — silently showing a stored result as
@@ -2186,11 +2016,9 @@ button.seal { font-family: inherit; cursor: pointer; }
   border-radius: 4px 4px 0 0;
 }
 
-
 /* The fee is not known yet — the last value is still shown rather than being
    replaced by a dash, so it is dimmed to say "stale, not authoritative". */
 .fee-amount.fee-pending { opacity: 0.45; }
-
 
 /* piQ held for papers this person authored but did not submit.
    Hidden until there is something to claim — see the markup note. */
@@ -2218,7 +2046,6 @@ button.seal { font-family: inherit; cursor: pointer; }
 .claimable-paper-meta { display: block; font-size: 10.5px; color: #7a7a74; }
 .claimable-btn { flex: 0 0 auto; font-size: 11px; padding: 3px 8px; }
 
-
 /* The paper being confirmed, quoted back so the answer is given about
    something the person can actually read rather than about a button. */
 .confirm-paper {
@@ -2231,7 +2058,6 @@ button.seal { font-family: inherit; cursor: pointer; }
 .confirm-paper-title { font-weight: 600; font-size: 13.5px; line-height: 1.35; }
 .confirm-paper-authors { margin-top: 3px; font-size: 12px; color: #5c5c57; }
 
-
 .bounty-field {
   display: flex; align-items: center; gap: 7px;
   margin: 9px 0 4px; font-size: 12.5px;
@@ -2243,14 +2069,12 @@ button.seal { font-family: inherit; cursor: pointer; }
 .bounty-unit { color: #5c5c57; font-size: 12px; }
 .bounty-hint { margin: 0 0 6px; }
 
-
 .settle-blockers {
   font-size: 11px; line-height: 1.5; color: #b3261e;
   background: rgba(170, 51, 51, 0.07);
   border-left: 2px solid rgba(170, 51, 51, 0.4);
   padding: 5px 8px; border-radius: 3px;
 }
-
 
 /* --- Owner: piQ grant ---------------------------------------------------- */
 .grant-body { display: flex; flex-direction: column; gap: 8px; margin-top: 8px; }
@@ -2263,7 +2087,6 @@ button.seal { font-family: inherit; cursor: pointer; }
 .grant-msg.ok { color: var(--success); }
 .grant-msg.bad { color: var(--danger); }
 
-
 /* --- Map legend pager ----------------------------------------------------- */
 /* The shared .pagination is sized for a full-width table; this one lives in a
    288px sidebar, so the gap, the buttons and the indicator all come down and
@@ -2272,7 +2095,6 @@ button.seal { font-family: inherit; cursor: pointer; }
 .legend-pagination .btn { font-size: 12px; padding: 2px 8px; line-height: 1.4; min-height: 0; }
 .legend-pagination .page-indicator { font-size: 10.5px; white-space: nowrap; }
 .legend-pagination:empty { display: none; }
-
 
 /* ---------- Lab ---------- */
 .lab-intro { margin: -8px 0 18px; }

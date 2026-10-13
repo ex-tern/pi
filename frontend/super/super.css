@@ -193,7 +193,6 @@ html.shape-se .orbit-nread { display: none; }
 /* no text selection while dragging a wire, a node or a moved panel (Safari needs the prefix) */
 html.sl-dragging, html.sl-dragging *, html.lv-dragging, html.lv-dragging *, html.se-moving, html.se-moving * { -webkit-user-select: none !important; user-select: none !important; }
 
-
 /* the site's super (super/site.js): the inner superellipse round the bubbles, its lattice lines out to the
    main loop, and its four ports */
 .om-site { position: absolute; inset: 0; width: 100%; height: 100%; overflow: visible; pointer-events: none; display: none; }
@@ -245,8 +244,7 @@ html.shape-se .orbit-panel textarea { border-radius: 2.2em; padding: 0.9em 1.3em
 html.shape-se .orbit-panel .result-card, html.shape-se .orbit-panel .llm-card, html.shape-se .orbit-panel .opt-card, html.shape-se .orbit-panel .referral-card,
 html.shape-se .orbit-panel .report-body, html.shape-se .orbit-panel .judge-summary, html.shape-se .orbit-panel .researcher-info,
 html.shape-se .orbit-panel .status-box, html.shape-se .orbit-panel .ok-box, html.shape-se .orbit-panel .warning-box, html.shape-se .orbit-panel .insight-box,
-html.shape-se .orbit-panel .quality-rationale, html.shape-se .orbit-panel .fee-notice, html.shape-se .orbit-panel .est-cost, html.shape-se .orbit-panel .log-box,
-html.shape-se .orbit-panel .filter-panel, html.shape-se .orbit-panel .field-checklist, html.shape-se .orbit-panel .lab-text, html.shape-se .orbit-panel .lab-doc,
+html.shape-se .orbit-panel .quality-rationale, html.shape-se .orbit-panel .fee-notice, html.shape-se .orbit-panel .est-cost, html.shape-se .orbit-panel .log-box, html.shape-se .orbit-panel .lab-text, html.shape-se .orbit-panel .lab-doc,
 html.shape-se .orbit-panel .opt-ok, html.shape-se .orbit-panel .opt-inactive, html.shape-se .orbit-panel .opt-blocked, html.shape-se .orbit-panel .warn-item,
 html.shape-se .modal {
   border-radius: 50%; padding-inline: calc(5% + 12px); padding-block: calc(3% + 10px);
@@ -615,7 +613,6 @@ html.shape-se .is-saved > .se-save { opacity: 1; }
 html.shape-se .is-saved > .se-save .sv-body { fill: var(--ink); }
 html.shape-se .is-saved > .se-save .sv-label, html.shape-se .is-saved > .se-save .sv-slot { stroke: var(--paper); }
 html.shape-se :not(.is-saved) > .se-save { opacity: 0.55; }
-
 
 html.shape-se .se-save { left: calc(50% + 12px); }
 /* a low super (the title, a pill) carries them at its right end instead, at the same size */

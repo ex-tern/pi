@@ -189,14 +189,6 @@
     it.bubble.style.setProperty("--use", [1, 1.1, 1.22, 1.36][it.bubble.dataset.tier]);
   }
 
-  // Every pill has its own look: a size, a typeface and a style, picked from
-  // its name so it is the same on every visit (a pill that changed shape on
-  // each reload would also change place).
-  function hash(str) {
-    let h = 2166136261;
-    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
-    return h >>> 0;
-  }
   // Size says how much is behind a pill: the more complex the card (tools,
   // forms, the emulator, the map, tables, sheer content) the larger it is.
   // Measured from the card itself, remembered at its highest so a card whose
@@ -228,19 +220,8 @@
       const q = ranked.length > 1 ? i / (ranked.length - 1) : 0.5;
       it.q = q;
       // one size for every pill in the simple look; q still sizes the mark
-      it.bubble.style.setProperty("--pz", SIMPLE ? "1" : (0.84 + q * 0.5).toFixed(3));
+      it.bubble.style.setProperty("--pz", "1");
     });
-  }
-  // One calm look for every pill (the page is deliberately simple): the
-  // varied typefaces and styles below are kept but no longer used.
-  const SIMPLE = true;
-  const FONTS = SIMPLE ? ["sans"] : ["sans", "sans", "mono", "serif", "sans-light", "serif-italic"];
-  const STYLES = SIMPLE ? ["outline"] : ["outline", "ink", "soft", "dashed", "cobalt", "square", "underline", "outline"];
-  function setLook(it) {
-    const h = hash(it.key);
-    const b = it.bubble;
-    b.dataset.font = FONTS[(h >>> 4) % FONTS.length];
-    b.dataset.look = STYLES[(h >>> 9) % STYLES.length];
   }
 
   // ------------------------------------------------------------ bubbles
@@ -285,7 +266,6 @@
       it.use = useOf(it);
       it.rank = it.use;                              // fixed for this visit
       setTier(it);
-      setLook(it);
       if (it.href) { b.classList.add("is-link"); b.setAttribute("aria-label", it.title + " (opens in a new tab)"); }
       it.custom = load("orbit:at2:" + it.key);      // {fx, fy}: offset from the mark, as a share of the screen
       it.gone = merged() && !!load("orbit:gone:" + it.key);

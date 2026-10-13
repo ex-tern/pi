@@ -83,7 +83,6 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-super.is-thinking .lv-star { stroke: var(--cobalt); }
 
 /* "?": ask the panel */
-.lv-fn.lv-ask { font-size: 17px; font-weight: 600; }
 .lv-node.lv-ask.is-thinking { border-color: var(--cobalt); color: var(--cobalt); animation: lv-panel-think 1.2s ease-in-out infinite; }
 @keyframes lv-panel-think { 50% { box-shadow: 0 0 0 4px rgba(47, 64, 232, 0.15); } }
 @media (prefers-reduced-motion: reduce) { .lv-node.lv-ask.is-thinking { animation: none; } }
@@ -128,7 +127,6 @@ html.sl-dragging, html.sl-dragging * { cursor: crosshair !important; user-select
 .lv-node.lv-ask, html.shape-se .lv-node.lv-ask { width: 56px; min-width: 56px; height: 56px; min-height: 56px; padding: 0; border: 1.5px solid var(--ink); box-shadow: none; background: var(--paper); }
 .lv-node.lv-super, html.shape-se .lv-node.lv-super { border-color: transparent; background: transparent; }
 .lv-node .lv-glyph svg { width: 28px; height: 28px; stroke: currentColor; stroke-width: 1.5; fill: none; stroke-linecap: round; }
-.lv-node.lv-super .lv-glyph svg { width: 100%; height: 100%; }
 .lv-node.lv-super .lv-star { fill: var(--paper); fill-opacity: 1; stroke: var(--ink); stroke-width: 1.5; vector-effect: non-scaling-stroke; }
 .lv-node.lv-super.is-thinking .lv-star, .lv-node.lv-super.is-grown .lv-star { stroke: var(--cobalt); }
 /* a value, a field or an answer makes the shape grow around it */
@@ -143,7 +141,6 @@ html.shape-se .lv-node.lv-box.is-long[style*="--lv-h"] .lv-glyph { display: bloc
 .lv-node.lv-ask { display: grid; place-items: center; gap: 0; }
 .lv-node.lv-ask .lv-q, .lv-node.lv-ask .lv-ans { display: none; }
 .lv-node.lv-ask.is-asking, html.shape-se .lv-node.lv-ask.is-asking { width: auto; height: auto; display: flex; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px 10px; }
-.lv-node.lv-ask.is-asking .lv-glyph svg { width: 20px; height: 20px; }
 .lv-node.lv-ask.is-asking .lv-q { display: block; }
 .lv-node.lv-ask.is-asking .lv-ans:not(:empty) { display: block; }
 .lv-node.lv-dot.is-loop { background: transparent; }
