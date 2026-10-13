@@ -237,6 +237,14 @@
       }, 260);
     }
   }
+  // the middle button held while scrolling is shift + scroll (owner, 2026-10-13: "middle mouse button is like shift scroll
+  // for scaling"): the shape of the super under the pointer; the browser's middle-click autoscroll is off in the look
+  let midDown = false;
+  const midEnd = () => { midDown = false; };
+  window.addEventListener("mousedown", e => { if (e.button === 1 && on()) { midDown = true; e.preventDefault(); } }, true);
+  window.addEventListener("auxclick", e => { if (e.button === 1 && on()) e.preventDefault(); }, true);
+  window.addEventListener("mouseup", e => { if (e.button === 1) midEnd(); }, true);
+  window.addEventListener("blur", midEnd);
   document.addEventListener("wheel", e => {
     if (!on()) return;
     const x = e.clientX, y = e.clientY, hit = document.elementFromPoint(x, y), now = e.timeStamp || performance.now();
@@ -245,7 +253,7 @@
     // a card, the Live panel or its tab, the palette, a bubble, the title; on bare space inside the inner
     // super, the inner super; anywhere else, the main super (browsers turn a shifted wheel into a sideways
     // delta, so it is read from either axis)
-    if (e.shiftKey && !e.ctrlKey) {
+    if ((e.shiftKey || midDown) && !e.ctrlKey) {
       const dy = (e.deltaY || e.deltaX) * unit;
       e.preventDefault(); e.stopImmediatePropagation();
       const fresh = gesture && now - gesture.t < 500 ? gesture.what : null;
