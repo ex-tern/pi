@@ -829,3 +829,7 @@ html.shape-se .se-port[data-owner^="ctl:"], html.shape-se .se-port[data-owner^="
 html.shape-se .se-ctl.is-wired, html.shape-se .se-cond.is-wired .se-cond-k { color: var(--cobalt); opacity: 1; }
 html.shape-se.se-night .se-ctl.is-wired, html.shape-se.se-night .se-cond.is-wired .se-cond-k { color: #9aa6ff; }
 html.se-gl .se-ctlbar :is(.se-ctl, .se-cond):not(.is-on) { background: transparent !important; border-color: transparent !important; box-shadow: none !important; -webkit-backdrop-filter: none !important; backdrop-filter: none !important; }
+
+/* the site (second super) has no drawn rectangle round it (owner, 2026-10-13): its edge is the glass alone */
+html.shape-se .om-site-loop { stroke: none; }
+html.shape-se.se-sel-site .om-site-loop, html.shape-se.se-sel-site.se-on-site .om-site-loop { stroke: none; }

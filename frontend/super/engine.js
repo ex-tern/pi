@@ -466,7 +466,7 @@ function drawLoops() {
   if (sb && sb.a && window.SeSite) {
     const f = sb.fit || 1, cx = sb.px + (sb.cx - sb.px) * f, cy = sb.py + (sb.cy - sb.py) * f;
     const sel = html.classList.contains("se-sel-site"), hov = false, busy = html.classList.contains("se-site-thinking");
-    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: busy ? tokens.cobalt : skyInk(), edgeW: 1.5, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08 });
+    setPane("site", cx, cy, sb.a * f, sb.b * f, sb.n, { fill: 0.2, edge: busy ? tokens.cobalt : skyInk(), edgeW: busy ? 1.5 : 0, shadow: 1, sheen: sel || busy || hov, order: 2, lift: 0.08   /* no rectangle round the site (owner, 2026-10-13); busy keeps its cobalt edge */ });
   }
 }
 
