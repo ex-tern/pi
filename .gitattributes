@@ -1,0 +1,10 @@
+# GitHub's language bar counts Python and Rust only (owner, 2026-10-14: "only use python and rust languages"). The rest
+# is support: the few lines of JavaScript that hand the WebAssembly the page, the Zotero add-on's script and locale,
+# and the HAL-OS demo's assembly.
+*.js linguist-detectable=false
+*.mjs linguist-detectable=false
+*.asm linguist-detectable=false
+*.ftl linguist-detectable=false
+*.html linguist-detectable=false
+*.css linguist-detectable=false
+*.sh linguist-detectable=false
