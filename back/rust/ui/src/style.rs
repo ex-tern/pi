@@ -375,6 +375,8 @@ border:1.2px solid #2b2b2b;color:var(--ink)}
 .scene,.win-body{cursor:grab}:where(.scene *,.win-body *){cursor:auto}
 .scene.panning,.scene.panning *,html.panning,html.panning *{cursor:grabbing!important}
 html.shift-on,html.shift-on *{cursor:move!important}
+.marquee{position:fixed;z-index:60;border:1.5px dashed var(--accent);background:rgba(47,64,232,.06);border-radius:6px;pointer-events:none}
+.scene .group-box{position:absolute;z-index:1;border:1.5px dashed var(--accent);border-radius:18px;pointer-events:none}
 .tip-lab{font-family:ui-sans-serif,system-ui,sans-serif;font-weight:600;fill:var(--accent);stroke:var(--paper);stroke-width:3px;paint-order:stroke;vector-effect:non-scaling-stroke;opacity:0;pointer-events:none;transition:opacity .12s}
 .app.wire-on .port.hov .tip-lab,.app.wire-on .port:hover .tip-lab{opacity:1}
 .pl{position:absolute;z-index:3;font:600 10px/1 ui-sans-serif,system-ui,sans-serif;color:var(--accent);background:var(--paper);padding:2px 4px;border-radius:5px;white-space:nowrap;opacity:0;pointer-events:none;transition:opacity .12s}

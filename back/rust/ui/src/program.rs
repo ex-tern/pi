@@ -827,6 +827,11 @@ fn prog_remove(id: usize) {
     if s.prog.sel == Some(id) {
         s.prog.sel = None;
     }
+    for g in s.groups.iter_mut() {
+        g.retain(|x| *x != id);
+    }
+    s.groups.retain(|g| g.len() >= 2);
+    groups_save();
     prog_save();
 }
 

@@ -443,6 +443,11 @@ fn board_update(a: u16, v: String) {
         canvas_wheel(&v);
         return;
     }
+    if a == 90 {
+        // the right button held and dragged on the canvas: a box that selects, and groups (owner, 2026-10-14)
+        marquee_update(&v);
+        return;
+    }
     if a == 52 {
         canvas_pan_begin(&v);
         return;

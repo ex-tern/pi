@@ -34,6 +34,16 @@ function fileList(list) {
   return out.join("\n");
 }
 const safe = (f, d) => { try { return f(); } catch (_) { return d; } };
+// a right-button box just drawn: the menu its release would open, and the double right click it would count, are not
+let rdragAt = 0;
+addEventListener("contextmenu", (e) => {
+  const t = e.target instanceof Element ? e.target : null;
+  if (!t || !t.closest(".scene") || t.closest("input, textarea")) return;
+  // on the canvas the right button draws (a super, a box), never the browser's menu
+  e.preventDefault();
+  // where the menu comes with the button's release (Windows), it is the box's own: not a right click
+  if (Date.now() - rdragAt < 80) e.stopPropagation();
+}, true);
 
 const host = {
   create: (p, l) => {
@@ -93,6 +103,20 @@ const host = {
         if (t - last < 450) { last = 0; const r = (n.querySelector(".win-in") || n).getBoundingClientRect(); send(id, k, (e.clientX - r.left) + "," + (e.clientY - r.top)); } else last = t;
       });
     }
+    // the right button held and dragged: a box (x0, y0, x1, y1, phase: 0 moving, 1 let go) that selects and groups
+    else if (k === "rsel") n.addEventListener("pointerdown", (e) => {
+      if (e.button !== 2 || e.target.closest("input, textarea")) return;
+      const x0 = e.clientX, y0 = e.clientY; let on = false;
+      const mv = (ev) => {
+        if (!on && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 6) return;
+        on = true; rdragAt = Date.now(); send(id, k, x0 + "," + y0 + "," + ev.clientX + "," + ev.clientY + ",0");
+      };
+      const up = (ev) => {
+        removeEventListener("pointermove", mv); removeEventListener("pointerup", up);
+        if (on) { rdragAt = Date.now(); send(id, k, x0 + "," + y0 + "," + ev.clientX + "," + ev.clientY + ",1"); }
+      };
+      addEventListener("pointermove", mv); addEventListener("pointerup", up);
+    });
     // a canvas super's inside is canvas too: you draw in it (not on its name)
     else if (k === "dbl") n.addEventListener("dblclick", (e) => { const sol = e.target.closest("[data-solid]"); if (!sol || (sol.classList.contains("u-canvas") && !e.target.closest("input"))) { e.preventDefault(); const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } });
     else if (k === "dbl2") {
@@ -102,7 +126,8 @@ const host = {
         if (sol && !(sol.classList.contains("u-canvas") && !e.target.closest("input"))) return;
         e.preventDefault();
         const t = Date.now();
-        if (t - last < 450) { last = 0; const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } else last = t;
+        // two right clicks with no box drawn between them
+        if (t - last < 450 && last > rdragAt) { last = 0; const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } else last = t;
       });
     }
     // a key typed into something that is not a field (the HAL-OS screen): it goes only there

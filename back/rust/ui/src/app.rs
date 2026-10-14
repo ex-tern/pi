@@ -291,6 +291,10 @@ struct State {
     undo_at: f64,
     /// when the last press on the canvas was let go (its click comes after)
     drag_end_at: f64,
+    /// a box being drawn with the right button held, in screen px: x0, y0, x1, y1
+    marquee: Option<(f64, f64, f64, f64)>,
+    /// supers and sparkles grouped by a right-button box: each group moves as one
+    groups: Vec<Vec<usize>>,
     /// icons Super AI drew from supers' names, kept in this browser too
     ai_icons: BTreeMap<String, Vec<String>>,
     /// names whose icon could not be drawn this visit: they keep their initials
@@ -473,6 +477,8 @@ pub fn start() {
         undo: Vec::new(),
         undo_at: 0.0,
         drag_end_at: 0.0,
+        marquee: None,
+        groups: Vec::new(),
         ai_icons: BTreeMap::new(),
         icon_failed: Vec::new(),
         icon_want: Vec::new(),
@@ -560,6 +566,7 @@ pub fn start() {
     }
     st().pzoom = host::store_get("piii:pzoom").and_then(|v| v.parse::<f64>().ok()).filter(|z| z.is_finite() && *z > 0.0).unwrap_or(1.0);
     prog_load();
+    groups_load();
     wires_load();
     // the canvas starts empty (owner, 2026-10-14: "delete all these things"): no example program, and the one kept in
     // this browser from before is cleared, once

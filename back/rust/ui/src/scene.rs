@@ -525,7 +525,9 @@ fn lock_target_free(s: &State) -> Option<bool> {
 fn relock_except(main: Option<usize>, node: Option<usize>, win: bool) {
     let s = st();
     let before = s.free.len();
-    s.free.retain(|x| Some(*x) == main);
+    // what is grouped with the one being selected stays as it is, with it
+    let keep: Vec<usize> = main.map(|m| group_with(s, m)).unwrap_or_default();
+    s.free.retain(|x| Some(*x) == main || keep.contains(x));
     if s.free.len() != before {
         layout_save();
     }
@@ -589,6 +591,13 @@ fn lock_toggle() {
         }
     };
     let open = flip(&mut s.free, id);
+    // a group locks and unlocks as one
+    for m in group_with(s, id) {
+        s.free.retain(|x| *x != m);
+        if open {
+            s.free.push(m);
+        }
+    }
     layout_save();
     note(if open { format!("Unlocked: {} can be moved and resized", name_of(id)) } else { format!("Locked in place: {}", name_of(id)) });
 }
@@ -1233,6 +1242,24 @@ fn scene_view(s: &State, mini: bool) -> N {
     for n in order {
         stage = stage.kid(unode_view(s, n, rect(&g, n.id), mini));
     }
+    // the selected super's group, outlined
+    if !mini {
+        if let Some(sel) = s.prog.sel {
+            let members = group_with(s, sel);
+            if !members.is_empty() {
+                let (mut l, mut t, mut r, mut b) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+                for id in members.iter().chain(core::iter::once(&sel)) {
+                    let (x, y, w, h) = rect(&g, *id);
+                    l = l.min(x);
+                    t = t.min(y);
+                    r = r.max(x + w);
+                    b = b.max(y + h);
+                }
+                let pad = 10.0 / g.k.max(0.05);
+                stage = stage.kid(el("div").cls("group-box").style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", l - pad, t - pad, r - l + 2.0 * pad, b - t + 2.0 * pad)));
+            }
+        }
+    }
     stage = stage.kid(ports_svg);
     if mini {
         let (w, h) = float_size();
@@ -1271,6 +1298,11 @@ fn scene_view(s: &State, mini: bool) -> N {
         .on("bgdown", Msg::TV(Tool::Grid, 52))
         .kid(el("div").cls("frame"))
         .kid(stage)
+        .on("rsel", Msg::TV(Tool::Grid, 90))
+        .kid_if(s.marquee.is_some(), || {
+            let (x0, y0, x1, y1) = s.marquee.unwrap_or_default();
+            el("div").cls("marquee").style(format!("left:{:.0}px;top:{:.0}px;width:{:.0}px;height:{:.0}px", x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs())).into()
+        })
         .kid_if(!s.note.is_empty(), || el("div").cls("wire-note").attr("role", "status").text(s.note.clone()).into())
         // no footer line on the canvas (owner, 2026-10-14: "delete this")
         .into()
@@ -1690,6 +1722,15 @@ fn begin_drag(id: usize, at: &str) {
         if how == 0 {
             let inside = unode_inside(s, id);
             ids.extend(inside);
+            // and a group moves as one
+            for m in group_with(s, id) {
+                if !ids.contains(&m) {
+                    ids.push(m);
+                    ids.extend(unode_inside(s, m).into_iter().filter(|x| *x != id));
+                }
+            }
+            ids.sort_unstable();
+            ids.dedup();
         }
     }
     let start = ids.iter().map(|i| (*i, pos_of(s, *i))).collect();
@@ -2206,7 +2247,7 @@ pub fn on_resize() {
 
 /// What undo keeps of the canvas: its supers and sparkles, their sizes, the wires, and the layout (its view, pan and
 /// zoom, left out: moving the view is not a change to undo).
-const UNDO_KEYS: [&str; 4] = ["piii:program", "piii:program-sizes", "piii:wires2", "piii:layout2"];
+const UNDO_KEYS: [&str; 5] = ["piii:program", "piii:program-sizes", "piii:wires2", "piii:layout2", "piii:groups"];
 
 /// The layout's parts undo leaves as they are now: the view (pan, zoom), the locks and the chain.
 fn keeps_now(i: usize) -> bool {
@@ -2284,12 +2325,103 @@ fn undo() {
     s.wire_sel = None;
     s.held_port = None;
     prog_load();
+    groups_load();
     wires_load();
     layout_load();
     // the next change starts a step of its own
     st().undo_at = 0.0;
     note("Undone".to_string());
     render();
+}
+
+// ---------------------------------------------------------------------------------------------- grouping
+
+/// The others grouped with a super or sparkle (none when it is in no group).
+fn group_with(s: &State, id: usize) -> Vec<usize> {
+    s.groups.iter().find(|g| g.contains(&id)).map(|g| g.iter().copied().filter(|x| *x != id).collect()).unwrap_or_default()
+}
+
+fn groups_save() {
+    let out: Vec<String> = st().groups.iter().map(|g| g.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")).collect();
+    host::store_set("piii:groups", &out.join(";"));
+}
+
+fn groups_load() {
+    let s = st();
+    s.groups = host::store_get("piii:groups")
+        .unwrap_or_default()
+        .split(';')
+        .map(|g| g.split(',').filter_map(|x| x.parse::<usize>().ok()).filter(|x| is_unode(*x)).collect::<Vec<usize>>())
+        .filter(|g| g.len() >= 2)
+        .collect();
+}
+
+/// The right button held and dragged on the canvas (owner, 2026-10-14: "hold right click to select and group supers
+/// and sparkles"): "x0,y0,x1,y1,phase" in screen px; while it moves (phase 0) the box is drawn; let go (1), what lies
+/// in it is selected, and two or more are grouped, to move, lock and unlock as one. Boxing exactly a group again
+/// takes the group apart.
+fn marquee_update(v: &str) {
+    let n: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+    if n.len() < 5 {
+        return;
+    }
+    let s = st();
+    let (x0, y0, x1, y1) = (n[0], n[1], n[2], n[3]);
+    if n[4] == 0.0 {
+        s.marquee = Some((x0, y0, x1, y1));
+        return;
+    }
+    s.marquee = None;
+    let g = geo(s);
+    let (l, r) = ((x0.min(x1) - g.ox) / g.k, (x0.max(x1) - g.ox) / g.k);
+    let (t, b) = ((y0.min(y1) - g.oy) / g.k, (y0.max(y1) - g.oy) / g.k);
+    // what has its middle in the box
+    let mut picked: Vec<usize> = s
+        .prog
+        .nodes
+        .iter()
+        .map(|n| n.id)
+        .filter(|id| {
+            let (x, y, w, h) = rect(&g, *id);
+            let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+            cx >= l && cx <= r && cy >= t && cy <= b
+        })
+        .collect();
+    picked.sort_unstable();
+    match picked.len() {
+        0 => {}
+        1 => {
+            relock_except(Some(picked[0]), None, false);
+            let s = st();
+            s.sup_pick = None;
+            s.prog.sel = Some(picked[0]);
+        }
+        k => {
+            let s = st();
+            let same = s.groups.iter().position(|g| {
+                let mut g = g.clone();
+                g.sort_unstable();
+                g == picked
+            });
+            if let Some(i) = same {
+                s.groups.remove(i);
+                note(format!("Ungrouped: {} apart again", k));
+            } else {
+                for gr in s.groups.iter_mut() {
+                    gr.retain(|x| !picked.contains(x));
+                }
+                s.groups.retain(|gr| gr.len() >= 2);
+                s.groups.push(picked.clone());
+                note(format!("Grouped {}: they move, lock and unlock as one. Box them again to ungroup", k));
+            }
+            undo_mark();
+            groups_save();
+            relock_except(Some(picked[0]), None, false);
+            let s = st();
+            s.sup_pick = None;
+            s.prog.sel = Some(picked[0]);
+        }
+    }
 }
 
 fn layout_save() {
@@ -2382,6 +2514,8 @@ fn activate(id: usize, member: Option<u8>) {
             // and clears the canvas: what was drawn on it goes, the example too (owner, 2026-10-14: "reset button should
             // clear the canvas")
             program_clear();
+            st().groups.clear();
+            groups_save();
             st().example_on = false;
             host::store_del("piii:example");
             layer().clear();
