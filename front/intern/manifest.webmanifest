@@ -1,0 +1,17 @@
+{
+  "id": "/intern/",
+  "name": "Intern: Assist Diagnosis",
+  "short_name": "Intern",
+  "description": "Patients and their files, cases with a de-identified differential, and colleagues to message and call. Patient data stays on this device.",
+  "start_url": "/intern/",
+  "scope": "/intern/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#f6f6f4",
+  "theme_color": "#2f40e8",
+  "categories": ["medical", "productivity"],
+  "icons": [
+    { "src": "/intern/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any maskable" },
+    { "src": "/intern/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}

@@ -27444,7 +27444,7 @@ app.include_router(intern_build_router(
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "front")
 
-def rust_loader() -> str:
+def rust_loader(intern: bool = False) -> str:
     """The document every page address gets: the front end is Rust (back/rust/ui, built to front/app/ui.wasm).
 
     A browser has to be handed a document before it will run anything, so this is the least one can be: a
@@ -27456,6 +27456,19 @@ def rust_loader() -> str:
     for name in ("host.js", "ui.wasm"):
         with open(os.path.join(_FRONTEND_DIR, "app", name), "rb") as fh:
             h.update(fh.read())
+    if intern:
+        # Intern as an app of its own (owner, 2026-10-15: "a new page ... like an iPhone app or Android app"): the
+        # same program, which sees /intern/ and shows only Intern; installable from the browser's menu ("Add to Home
+        # Screen"), full screen, and it opens without a network (the service worker keeps its files)
+        return ('<!doctype html><html lang="en"><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">'
+                '<title>Intern</title><meta name="theme-color" content="#2f40e8">'
+                '<meta name="apple-mobile-web-app-capable" content="yes"><meta name="mobile-web-app-capable" content="yes">'
+                '<meta name="apple-mobile-web-app-status-bar-style" content="default"><meta name="apple-mobile-web-app-title" content="Intern">'
+                '<link rel="icon" href="/intern/icon-192.png"><link rel="apple-touch-icon" href="/intern/apple-touch-icon.png">'
+                '<link rel="manifest" href="/intern/manifest.webmanifest">'
+                f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script>'
+                '<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/intern/sw.js",{scope:"/intern/"}).catch(function(){});</script></html>')
     return ('<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Piii Lab</title>'
             '<meta name="theme-color" content="#f7f5ef"><link rel="icon" href="/icon.svg">'
@@ -27484,13 +27497,24 @@ if os.path.isdir(_FRONTEND_DIR):
             headers["X-Robots-Tag"] = "noindex, nofollow"
         return HTMLResponse(doc, headers=headers)
 
+    @app.get("/intern", include_in_schema=False)
+    @app.get("/intern/", include_in_schema=False)
+    def _serve_intern(request: Request):
+        """Intern, the app: installable on a phone's home screen."""
+        try:
+            doc = rust_loader(intern=True)
+        except OSError:
+            raise HTTPException(status_code=404, detail="The front end is not built.")
+        return HTMLResponse(doc, headers={"Cache-Control": "no-cache"})
+
     # python:3.11-slim has no /etc/mime.types to fall back on, so the types the site serves are registered
     # explicitly rather than left to whatever the container happens to know (WebAssembly must be
     # application/wasm).
     import mimetypes
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("application/wasm", ".wasm")
-    mimetypes.add_type("font/woff2", ".woff2")   # the self-hosted Geist typeface
+    mimetypes.add_type("font/woff2", ".woff2")
+    mimetypes.add_type("application/manifest+json", ".webmanifest")   # the self-hosted Geist typeface
     mimetypes.add_type("application/x-xpinstall", ".xpi")   # the Zotero plugin (frontend/zotero/scholarpi.xpi)
 
     # Mounted after the routes above, which answer the page addresses.

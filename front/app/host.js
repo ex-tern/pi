@@ -527,6 +527,8 @@ const zoomBy = (dy, x, y) => W.zoomed(dy, x, y);
 addEventListener("wheel", (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!(e.ctrlKey || e.metaKey) && t && t.closest(".rail")) return;
+  // Intern, the app, is a page that scrolls like any other
+  if (document.querySelector(".iapp")) return;
   e.preventDefault(); e.stopPropagation();
   const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
   if (dy) zoomBy(dy, e.clientX, e.clientY);

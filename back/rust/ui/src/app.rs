@@ -268,6 +268,8 @@ struct State {
     peek: bool,
     peek_next: bool,
     routed: bool,
+    /// at /intern/: only Intern, as an app of its own
+    app_mode: bool,
     /// the super a single click selected (owner, 2026-10-14: "one click selects a super, double click opens it")
     sup_pick: Option<usize>,
     /// the open window's size when it was resized by its corner (or the middle button on its head)
@@ -467,6 +469,7 @@ pub fn start() {
         peek: false,
         peek_next: false,
         routed: false,
+        app_mode: false,
         sup_pick: None,
         win_size: None,
         win_drag: None,
@@ -848,7 +851,7 @@ fn render() {
     prog_ai_flush();
     hal_paint();
     let s = st();
-    let t = match s.page {
+    let t = if s.app_mode { "Intern" } else { match s.page {
         Page::Home => "piii lab",
         Page::Group(_) | Page::Item(_, _) => "piii lab",
         Page::Map => "piii lab · Project",
@@ -859,7 +862,7 @@ fn render() {
         Page::Library => "ScholarPi · Library",
         Page::Account => "ScholarPi · Account",
         Page::Paper => "ScholarPi · Dossier",
-    };
+    } };
     host::set_title(t);
 }
 
@@ -878,6 +881,15 @@ fn route() {
     // goes to the bare canvas after that
     let first = !s.routed;
     s.routed = true;
+    // Intern, the app (owner, 2026-10-15): /intern/ shows nothing else, whatever follows the #
+    if href.split('#').next().unwrap_or("").contains("/intern") {
+        s.app_mode = true;
+        if let Some((g, m)) = GROUPS.iter().enumerate().find_map(|(g, x)| x.members.iter().position(|m| matches!(m.1, Target::Tool(Tool::Intern))).map(|m| (g as u8, m as u8))) {
+            s.page = Page::Item(g, m);
+            s.item_key = (g, m);
+        }
+        return;
+    }
     match parts.next().unwrap_or("") {
         "" if first && !href.contains('#') => {
             host::replace_url("#/explore");
@@ -1748,6 +1760,9 @@ fn save_consent(c: [bool; 3]) {
 fn view(s: &State) -> N {
     if s.gate {
         return gate_view(s);
+    }
+    if s.app_mode {
+        return el("div").cls("app intern-app-root").kid(intern_app_view(s)).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into();
     }
     // the sidebar and the controls are on top of every view, always (owner, 2026-10-14: "both sidebar and top icons are
     // always on top. Always.")

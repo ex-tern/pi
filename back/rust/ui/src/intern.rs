@@ -568,9 +568,56 @@ fn intern_view(s: &State) -> N {
     el("div")
         .cls("tool intern")
         .kid(el("p").cls("lede").text("Assist Diagnosis: patients and their files, cases with a differential from the Super AI panel, and colleagues to message and call."))
+        .kid(el("p").cls("intern-applink").kid(el("a").attr("href", "/intern/").attr("target", "_blank").attr("rel", "noopener").text("Open Intern as an app ↗")).kid(txt(" On a phone, then choose Add to Home Screen (iPhone: Share; Android: the ⋮ menu).")))
         .kid(call_view(i))
         .kid(tabs)
         .kid(body)
+        .into()
+}
+
+/// Intern as an app (at /intern/): a title bar, the tab's content, and the tabs along the bottom, as on a phone.
+fn intern_app_view(s: &State) -> N {
+    let i = &s.intern;
+    const ICONS: [&str; 5] = [
+        // patients, cases, doctors, chat, profile
+        "M16 20v-1a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v1M9 11a4 4 0 1 0 0-8a4 4 0 0 0 0 8zM22 20v-1a4 4 0 0 0-3-3.9M16 3.1a4 4 0 0 1 0 7.8",
+        "M14 3H6a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V9zM14 3v6h6M12 12v6M9 15h6",
+        "M5 3v6a5 5 0 0 0 10 0V3M10 14v2a5 5 0 0 0 10 0v-3M20 13a2 2 0 1 0 0-4a2 2 0 0 0 0 4z",
+        "M21 12a8 8 0 0 1-11.8 7L4 20l1.1-4.6A8 8 0 1 1 21 12z",
+        "M12 12a4 4 0 1 0 0-8a4 4 0 0 0 0 8zM4 21a8 8 0 0 1 16 0",
+    ];
+    let body = match i.tab {
+        0 => patients_view(i),
+        1 => cases_view(i),
+        2 => doctors_view(s),
+        3 => chat_view(s),
+        _ => intern_profile_view(s),
+    };
+    el("div")
+        .cls("iapp")
+        .kid(
+            el("header")
+                .cls("iapp-top")
+                .kid(el("b").text(INTERN_TABS[i.tab as usize % INTERN_TABS.len()]))
+                .kid(el("span").cls("iapp-brand").text("Intern")),
+        )
+        .kid(el("main").cls("iapp-main tool intern").kid(call_view(i)).kid(body))
+        .kid(el("nav").cls("iapp-tabs").attr("role", "tablist").kids(INTERN_TABS.iter().enumerate().map(|(k, t)| -> N {
+            el("button")
+                .attr("type", "button")
+                .attr("role", "tab")
+                .attr("aria-selected", if i.tab as usize == k { "true" } else { "false" })
+                .cls_if(i.tab as usize == k, "on")
+                .on("click", Msg::T(Tool::Intern, 1, k.to_string()))
+                .kid(
+                    el("svg:svg")
+                        .attr("viewBox", "0 0 24 24")
+                        .attr("aria-hidden", "true")
+                        .kid(el("svg:path").attr("d", ICONS[k])),
+                )
+                .kid(el("span").text(*t))
+                .into()
+        })))
         .into()
 }
 
@@ -703,7 +750,7 @@ fn case_file(i: &Intern, c: &ICase) -> N {
 
 fn need_doctor(s: &State) -> Option<N> {
     if !signed_in(s) {
-        return Some(el("p").cls("hint").kid(txt("Sign in (ORCID or a wallet) to find colleagues, message and call them. ")).kid(el("a").attr("href", "#/account").text("Sign in")).into());
+        return Some(el("p").cls("hint").kid(txt("Sign in (ORCID or a wallet) to find colleagues, message and call them. ")).kid(el("a").attr("href", if s.app_mode { "/#/account" } else { "#/account" }).text("Sign in")).into());
     }
     let i = &s.intern;
     match i.me.data.as_ref() {
@@ -869,6 +916,19 @@ fn call_view(i: &Intern) -> N {
 }
 
 const INTERN_CSS: &str = "\
+.intern-app-root{position:fixed;inset:0;background:var(--paper)}\
+.iapp{position:fixed;inset:0;display:flex;flex-direction:column;background:var(--paper);overscroll-behavior:none}\
+.iapp-top{flex:none;display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top) + 12px) 18px 10px;border-bottom:1px solid var(--line);background:var(--paper)}\
+.iapp-top b{font-size:22px;letter-spacing:-.01em}.iapp-brand{color:var(--accent);font-weight:600;font-size:14px}\
+.iapp-main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 24px;touch-action:pan-y}\
+.iapp-main .lede{display:none}\
+.iapp-tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--card);padding:6px 4px calc(env(safe-area-inset-bottom) + 6px)}\
+.iapp-tabs button{border:0;background:none;display:grid;justify-items:center;gap:3px;padding:4px 0;font:inherit;font-size:11px;color:var(--muted);cursor:pointer}\
+.iapp-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\
+.iapp-tabs button.on{color:var(--accent)}\
+.iapp-top,.iapp-tabs{border-radius:0!important;clip-path:none!important;-webkit-mask:none!important;mask:none!important;border-left:0;border-right:0}\
+.intern-applink{margin:-4px 0 12px;font-size:14px}\
+@media (min-width:700px){.iapp{max-width:560px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}}\
 .intern-tabs{margin-top:6px;overflow-x:auto;max-width:100%;scrollbar-width:none}\
 .intern-bar{align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}.intern-bar .input{flex:1;min-width:160px}\
 .intern-list{display:grid;gap:10px}.intern-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;cursor:pointer;width:100%;padding:12px 14px}\
