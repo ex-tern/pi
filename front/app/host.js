@@ -256,7 +256,124 @@ function give(token, bytes, w, h) {
   if (bytes.length) new Uint8Array(W.memory.buffer, p, bytes.length).set(bytes);
   W.pixels(token, p, bytes.length, w, h);
 }
+// ------------------------------------------------------------------------------------------- Intern's calls
+const RTC = { state: "idle", peer: "", name: "", video: false, muted: false, error: "", pc: null, local: null, remote: null, offer: null, early: [], after: 0, polling: false };
+const rtcApi = (path, body) => {
+  const tok = safe(() => localStorage.getItem("sp_token"), null), h = { "Content-Type": "application/json" };
+  if (tok) h.Authorization = "Bearer " + tok;
+  return fetch(path, body ? { method: "POST", headers: h, body: JSON.stringify(body), credentials: "same-origin" } : { headers: h, credentials: "same-origin" });
+};
+const rtcSend = (kind, data) => rtcApi("/api/intern/signal", { to: RTC.peer, kind, data: typeof data === "string" ? data : JSON.stringify(data || {}) }).catch(() => {});
+const rtcShow = () => {
+  const l = document.getElementById("intern-local"), r = document.getElementById("intern-remote");
+  if (l && RTC.local && l.srcObject !== RTC.local) { l.srcObject = RTC.local; l.muted = true; }
+  if (r && RTC.remote && r.srcObject !== RTC.remote) r.srcObject = RTC.remote;
+  let au = document.getElementById("intern-audio");
+  if (RTC.remote && !RTC.video) {
+    if (!au) { au = Object.assign(document.createElement("audio"), { id: "intern-audio", autoplay: true }); au.hidden = true; document.body.appendChild(au); }
+    if (au.srcObject !== RTC.remote) au.srcObject = RTC.remote;
+  } else if (au && !RTC.remote) au.remove();
+};
+const rtcStop = (state, error) => {
+  if (RTC.pc) { try { RTC.pc.close(); } catch (_) {} }
+  if (RTC.local) RTC.local.getTracks().forEach((t) => t.stop());
+  Object.assign(RTC, { pc: null, local: null, remote: null, offer: null, early: [], muted: false, state: state || "ended", error: error || "" });
+  const au = document.getElementById("intern-audio"); if (au) au.remove();
+};
+const rtcPc = async () => {
+  RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: RTC.video });
+  const pc = new RTCPeerConnection({ iceServers: [{ urls: "stun:stun.l.google.com:19302" }] });
+  RTC.local.getTracks().forEach((t) => pc.addTrack(t, RTC.local));
+  pc.onicecandidate = (e) => { if (e.candidate) rtcSend("ice", e.candidate.toJSON()); };
+  pc.ontrack = (e) => { RTC.remote = e.streams[0] || new MediaStream([e.track]); rtcShow(); };
+  pc.onconnectionstatechange = () => {
+    if (pc.connectionState === "connected") { RTC.state = "connected"; rtcShow(); }
+    else if (pc.connectionState === "failed") rtcStop("ended", "the connection failed");
+  };
+  RTC.pc = pc;
+  return pc;
+};
+const rtcIce = async (c) => { try { await RTC.pc.addIceCandidate(c); } catch (_) {} };
+async function rtcGot(s) {
+  let d = {}; try { d = JSON.parse(s.data || "{}"); } catch (_) {}
+  if (s.kind === "offer") {
+    if (RTC.state !== "idle" && RTC.state !== "ended") { RTC.peer === s.from || rtcApi("/api/intern/signal", { to: s.from, kind: "decline", data: "{}" }); return; }
+    Object.assign(RTC, { state: "ringing", peer: s.from, name: s.name || "", video: !!d.video, offer: d, error: "", early: [] });
+  } else if (s.from !== RTC.peer) return;
+  else if (s.kind === "answer" && RTC.pc) { await RTC.pc.setRemoteDescription({ type: "answer", sdp: d.sdp }); for (const c of RTC.early) await rtcIce(c); RTC.early = []; }
+  else if (s.kind === "ice") { if (RTC.pc && RTC.pc.remoteDescription) await rtcIce(d); else RTC.early.push(d); }
+  else if (s.kind === "hangup") rtcStop("ended", "");
+  else if (s.kind === "decline") rtcStop("ended", "declined");
+}
+async function rtcPoll() {
+  try {
+    const r = await rtcApi("/api/intern/signals?after=" + RTC.after);
+    if (r.status === 401 || r.status === 403) { RTC.polling = false; return; }
+    if (r.ok) { const j = await r.json(); RTC.after = j.last || RTC.after; for (const s of j.signals || []) await rtcGot(s); }
+  } catch (_) {}
+  setTimeout(rtcPoll, RTC.state === "idle" || RTC.state === "ended" ? 2500 : 900);
+}
+function rtc(a) {
+  const cmd = a[0];
+  if (cmd === "listen") { if (!RTC.polling) { RTC.polling = true; rtcPoll(); } return "1"; }
+  if (cmd === "state") { rtcShow(); return JSON.stringify({ state: RTC.state, name: RTC.name, video: RTC.video, muted: RTC.muted, error: RTC.error }); }
+  if (cmd === "call") {
+    if (!(navigator.mediaDevices && window.RTCPeerConnection)) { Object.assign(RTC, { state: "ended", error: "this browser cannot make calls" }); return "1"; }
+    if (RTC.state !== "idle" && RTC.state !== "ended") return null;
+    Object.assign(RTC, { state: "calling", peer: a[1], video: a[2] === "1", name: a[3] || "", error: "", early: [] });
+    (async () => {
+      try {
+        const pc = await rtcPc(), o = await pc.createOffer();
+        await pc.setLocalDescription(o);
+        rtcSend("offer", { sdp: o.sdp, video: RTC.video });
+      } catch (e) { rtcStop("ended", String((e && e.message) || e)); }
+    })();
+    if (!RTC.polling) { RTC.polling = true; rtcPoll(); }
+    return "1";
+  }
+  if (cmd === "accept" && RTC.state === "ringing") {
+    (async () => {
+      try {
+        const pc = await rtcPc();
+        await pc.setRemoteDescription({ type: "offer", sdp: RTC.offer.sdp });
+        for (const c of RTC.early) await rtcIce(c); RTC.early = [];
+        const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
+        rtcSend("answer", { sdp: ans.sdp });
+        RTC.state = "connected";
+      } catch (e) { rtcSend("hangup"); rtcStop("ended", String((e && e.message) || e)); }
+    })();
+    return "1";
+  }
+  if (cmd === "hangup") {
+    if (RTC.state === "ended") { RTC.state = "idle"; RTC.error = ""; return "1"; }
+    if (RTC.state !== "idle") rtcSend(RTC.state === "ringing" ? "decline" : "hangup");
+    rtcStop("idle", "");
+    return "1";
+  }
+  if (cmd === "mute" && RTC.local) { RTC.muted = !RTC.muted; RTC.local.getAudioTracks().forEach((t) => (t.enabled = !RTC.muted)); return "1"; }
+  return null;
+}
+
 const ops = {
+  // a chosen picture, shrunk to fit max × max and handed back as a JPEG data: URL (kept in the browser only)
+  imgurl: (a) => {
+    const [token, file, max] = a.split("\t").map(Number);
+    (async () => {
+      try {
+        const bmp = await createImageBitmap(files[file]);
+        const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
+        const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
+        const cv = Object.assign(document.createElement("canvas"), { width: w, height: h });
+        cv.getContext("2d").drawImage(bmp, 0, 0, w, h);
+        if (bmp.close) bmp.close();
+        give(token, enc.encode(cv.toDataURL("image/jpeg", 0.82)), w, h);
+      } catch (_) { give(token, new Uint8Array(0), 0, 0); }
+    })();
+    return "1";
+  },
+  // Intern's calls: WebRTC between two doctors, the offer, answer and candidates passed through /api/intern/signal.
+  // listen | state | call\tkey\tvideo\tname | accept | hangup | mute
+  rtc: (a) => rtc(a.split("\t")),
   // the browser's Ethereum wallet: token, method, params (JSON); the answer comes back as {"ok": …} or {"err": code, "msg": …}
   eth: (a) => {
     const [token, method, params] = a.split("\t"), w = window.ethereum;

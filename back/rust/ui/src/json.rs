@@ -14,6 +14,12 @@ pub enum Value {
     Obj(Vec<(String, Value)>),
 }
 
+impl Default for Value {
+    fn default() -> Self {
+        Value::Null
+    }
+}
+
 pub static NULL: Value = Value::Null;
 
 impl Value {

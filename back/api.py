@@ -27221,6 +27221,225 @@ app.include_router(super_icons_build_router(
 
 
 # ---------------------------------------------------------------------------
+# Intern: Assist Diagnosis, on the web (owner, 2026-10-14: "write the whole assist diagnosis intern app on the web app
+# itself"). Patients and their files never reach this server: they stay in the doctor's browser. What lives here is
+# what needs two people: doctors' profiles (to be found), their messages, and the signals that set up a call between
+# two browsers (the call itself goes browser to browser). A case sent for a differential is stripped of what could
+# identify the patient, here as well as in the page, and goes to the Super AI panel only with the doctor's consent.
+# ---------------------------------------------------------------------------
+INTERN_TEXT_MAX = 2000
+INTERN_SIGNAL_MAX = 20000
+INTERN_CASE_MAX = 6000
+INTERN_ONLINE_SECONDS = 60
+INTERN_SIGNAL_TTL = 120
+_INTERN_SIGNAL_KINDS = ("offer", "answer", "ice", "hangup", "decline")
+
+_DEID_RULES = [
+    (re.compile(r"[\w.+-]+@[\w-]+(\.[\w-]+)+"), "[email]"),
+    (re.compile(r"https?://\S+|www\.\S+", re.I), "[link]"),
+    (re.compile(r"\b\d{1,4}[-/.]\d{1,2}[-/.]\d{1,4}\b"), "[date]"),
+    (re.compile(r"(?<![\w.])\+?\d[\d\s().-]{6,}\d"), "[number]"),
+    (re.compile(r"\b[A-Z]{1,3}\d{5,}\b|\b\d{5,}\b"), "[id]"),
+]
+
+
+def intern_deidentify(text: str) -> str:
+    """A case as it may leave the site: addresses, links, dates, phone and record numbers taken out."""
+    out = str(text or "")[:INTERN_CASE_MAX]
+    for rx, sub in _DEID_RULES:
+        out = rx.sub(sub, out)
+    return out.strip()
+
+
+def intern_diagnosis_question(case: str) -> str:
+    return ("A doctor asks for help with a case. Give a short differential diagnosis: the most likely diagnoses in "
+            "order, each with the one finding that supports it, then the next tests or questions that would tell "
+            "them apart, and any red flag that needs urgent care. This supports a doctor's judgement and is not a "
+            "diagnosis.\n\nCASE:\n" + case)
+
+
+def _intern_db(path: str):
+    c = sqlite3.connect(path, timeout=10)
+    c.execute("CREATE TABLE IF NOT EXISTS doctors (key TEXT PRIMARY KEY, name TEXT NOT NULL, specialty TEXT, place TEXT,"
+              " bio TEXT, listed INTEGER NOT NULL DEFAULT 1, seen REAL NOT NULL DEFAULT 0)")
+    c.execute("CREATE TABLE IF NOT EXISTS messages (id INTEGER PRIMARY KEY AUTOINCREMENT, frm TEXT NOT NULL,"
+              " to_ TEXT NOT NULL, text TEXT NOT NULL, at REAL NOT NULL)")
+    c.execute("CREATE INDEX IF NOT EXISTS messages_pair ON messages (frm, to_, id)")
+    c.execute("CREATE TABLE IF NOT EXISTS signals (id INTEGER PRIMARY KEY AUTOINCREMENT, frm TEXT NOT NULL,"
+              " to_ TEXT NOT NULL, kind TEXT NOT NULL, data TEXT NOT NULL, at REAL NOT NULL)")
+    return c
+
+
+def _clean(v, n: int) -> str:
+    return "".join(ch for ch in str(v or "") if ch.isprintable() or ch == "\n")[:n].strip()
+
+
+def intern_build_router(db_path: str, who: Callable[[Request], str], rate_limit: Callable[[Request], None],
+                        panel: Callable[[str], Dict], allowed: Callable[[Request], bool] = lambda r: True,
+                        now: Callable[[], float] = time.time) -> APIRouter:
+    """`who(request)` is the signed-in doctor's key (or raises); `panel(question)` asks the Super AI panel."""
+    router = APIRouter(prefix="/api/intern", tags=["intern"])
+
+    def db():
+        return _intern_db(db_path)
+
+    def doctor_row(r) -> Dict:
+        return {"key": r[0], "name": r[1], "specialty": r[2] or "", "place": r[3] or "", "bio": r[4] or "",
+                "listed": bool(r[5]), "online": now() - (r[6] or 0) < INTERN_ONLINE_SECONDS}
+
+    def me_row(c, key: str):
+        return c.execute("SELECT key, name, specialty, place, bio, listed, seen FROM doctors WHERE key = ?", (key,)).fetchone()
+
+    def seen(c, key: str) -> None:
+        c.execute("UPDATE doctors SET seen = ? WHERE key = ?", (now(), key))
+
+    @router.get("/me")
+    def me(request: Request):
+        key = who(request)
+        with db() as c:
+            r = me_row(c, key)
+            if r:
+                seen(c, key)
+        return {"key": key, "doctor": doctor_row(r) if r else None}
+
+    @router.put("/me")
+    def save_me(body: Dict[str, Any], request: Request):
+        key = who(request)
+        name = _clean(body.get("name"), 80)
+        if len(name) < 2:
+            raise HTTPException(status_code=400, detail="Write your name: colleagues find you by it.")
+        vals = (name, _clean(body.get("specialty"), 80), _clean(body.get("place"), 80), _clean(body.get("bio"), 500),
+                1 if body.get("listed", True) else 0, now(), key)
+        with db() as c:
+            if me_row(c, key):
+                c.execute("UPDATE doctors SET name=?, specialty=?, place=?, bio=?, listed=?, seen=? WHERE key=?", vals)
+            else:
+                c.execute("INSERT INTO doctors (name, specialty, place, bio, listed, seen, key) VALUES (?,?,?,?,?,?,?)", vals)
+            return {"doctor": doctor_row(me_row(c, key))}
+
+    @router.delete("/me")
+    def delete_me(request: Request):
+        key = who(request)
+        with db() as c:
+            c.execute("DELETE FROM doctors WHERE key = ?", (key,))
+            c.execute("DELETE FROM messages WHERE frm = ? OR to_ = ?", (key, key))
+            c.execute("DELETE FROM signals WHERE frm = ? OR to_ = ?", (key, key))
+        return {"deleted": True}
+
+    def need_doctor(c, key: str) -> None:
+        if not me_row(c, key):
+            raise HTTPException(status_code=403, detail="Make your doctor's profile first.")
+
+    @router.get("/doctors")
+    def doctors(request: Request, q: str = ""):
+        key = who(request)
+        words = [w for w in (q or "").lower().split() if w][:5]
+        with db() as c:
+            rows = c.execute("SELECT key, name, specialty, place, bio, listed, seen FROM doctors WHERE listed = 1 AND key != ?"
+                             " ORDER BY seen DESC LIMIT 500", (key,)).fetchall()
+        out = [doctor_row(r) for r in rows]
+        if words:
+            out = [d for d in out if all(w in (d["name"] + " " + d["specialty"] + " " + d["place"]).lower() for w in words)]
+        return {"doctors": out[:100]}
+
+    @router.get("/conversations")
+    def conversations(request: Request):
+        key = who(request)
+        with db() as c:
+            rows = c.execute(
+                "SELECT CASE WHEN frm = ? THEN to_ ELSE frm END AS peer, MAX(id) FROM messages WHERE frm = ? OR to_ = ?"
+                " GROUP BY peer ORDER BY MAX(id) DESC LIMIT 100", (key, key, key)).fetchall()
+            out = []
+            for peer, last in rows:
+                m = c.execute("SELECT frm, text, at FROM messages WHERE id = ?", (last,)).fetchone()
+                d = me_row(c, peer)
+                out.append({"key": peer, "name": d[1] if d else "A doctor who left", "online": bool(d) and now() - (d[6] or 0) < INTERN_ONLINE_SECONDS,
+                            "last": m[1][:140], "mine": m[0] == key, "at": m[2], "id": last})
+        return {"conversations": out}
+
+    @router.get("/messages")
+    def messages(request: Request, peer: str = "", after: int = 0):
+        key = who(request)
+        with db() as c:
+            seen(c, key)
+            rows = c.execute("SELECT id, frm, text, at FROM messages WHERE ((frm = ? AND to_ = ?) OR (frm = ? AND to_ = ?)) AND id > ?"
+                             " ORDER BY id DESC LIMIT 200", (key, peer, peer, key, max(0, int(after)))).fetchall()
+        return {"messages": [{"id": r[0], "mine": r[1] == key, "text": r[2], "at": r[3]} for r in reversed(rows)]}
+
+    @router.post("/messages")
+    def send(body: Dict[str, Any], request: Request):
+        key = who(request)
+        rate_limit(request)
+        text = _clean(body.get("text"), INTERN_TEXT_MAX)
+        to = str(body.get("to") or "")
+        if not text:
+            raise HTTPException(status_code=400, detail="Write a message first.")
+        with db() as c:
+            need_doctor(c, key)
+            if not me_row(c, to) or to == key:
+                raise HTTPException(status_code=404, detail="No such doctor.")
+            cur = c.execute("INSERT INTO messages (frm, to_, text, at) VALUES (?,?,?,?)", (key, to, text, now()))
+            seen(c, key)
+            return {"id": cur.lastrowid}
+
+    @router.post("/signal")
+    def signal(body: Dict[str, Any], request: Request):
+        key = who(request)
+        kind = str(body.get("kind") or "")
+        to = str(body.get("to") or "")
+        data = str(body.get("data") or "")[:INTERN_SIGNAL_MAX]
+        if kind not in _INTERN_SIGNAL_KINDS:
+            raise HTTPException(status_code=400, detail="Unknown signal.")
+        with db() as c:
+            need_doctor(c, key)
+            if not me_row(c, to) or to == key:
+                raise HTTPException(status_code=404, detail="No such doctor.")
+            c.execute("DELETE FROM signals WHERE at < ?", (now() - INTERN_SIGNAL_TTL,))
+            cur = c.execute("INSERT INTO signals (frm, to_, kind, data, at) VALUES (?,?,?,?,?)", (key, to, kind, data, now()))
+            return {"id": cur.lastrowid}
+
+    @router.get("/signals")
+    def signals(request: Request, after: int = 0):
+        key = who(request)
+        with db() as c:
+            seen(c, key)
+            rows = c.execute("SELECT s.id, s.frm, s.kind, s.data, d.name FROM signals s LEFT JOIN doctors d ON d.key = s.frm"
+                             " WHERE s.to_ = ? AND s.id > ? AND s.at > ? ORDER BY s.id LIMIT 100",
+                             (key, max(0, int(after)), now() - INTERN_SIGNAL_TTL)).fetchall()
+            last = c.execute("SELECT COALESCE(MAX(id), 0) FROM signals").fetchone()[0]
+        return {"signals": [{"id": r[0], "from": r[1], "kind": r[2], "data": r[3], "name": r[4] or ""} for r in rows],
+                "last": last}
+
+    @router.post("/diagnose")
+    def diagnose(body: Dict[str, Any], request: Request):
+        if not body.get("consent"):
+            raise HTTPException(status_code=400, detail="Tick that the case may go to outside AI models first.")
+        if not allowed(request):
+            raise HTTPException(status_code=403, detail=WHY["ext"])
+        case = intern_deidentify(body.get("case"))
+        if len(case) < 20:
+            raise HTTPException(status_code=400, detail="Describe the case first: the presentation, history and findings.")
+        rate_limit(request)
+        res = panel(intern_diagnosis_question(case))
+        return {"sent": case, "text": panel_text(res), **res}
+
+    return router
+
+
+def _intern_who(request: Request) -> str:
+    ident = require_identity(request)
+    return _profile_key(ident.get("wallet", ""), ident.get("orcid", ""))
+
+
+app.include_router(intern_build_router(
+    db_path=os.path.join(BASE_DIR, "intern.db"),
+    who=_intern_who,
+    rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="intern"),
+    panel=lambda q: run_panel(q, "", _super_jurors(), _super_ask_juror, _super_judge),
+    allowed=lambda request: not declined(request, "ext")))
+
+
+# ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "front")

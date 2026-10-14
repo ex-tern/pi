@@ -58,7 +58,7 @@ const T_NF: u32 = 20;
 /// What a tool's window shows.
 fn tool_view(s: &State, t: Tool) -> N {
     match t {
-        Tool::Intern => intern_view(),
+        Tool::Intern => intern_view(s),
         Tool::Unigyro => unigyro_view(),
         Tool::Md => md_view(s),
         Tool::Frenzy => frenzy_view(s),
@@ -132,6 +132,9 @@ fn tool_load(t: Tool) {
     if t == Tool::Hal {
         hal_load();
     }
+    if t == Tool::Intern {
+        intern_load();
+    }
     tools2_load(t);
 }
 
@@ -139,6 +142,8 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
     let s = st();
     if t == Tool::Md {
         put(&mut s.t.md, v, err);
+    } else if t == Tool::Intern {
+        intern_apply(what, v, err);
     } else if t == Tool::Rev {
         rev_apply(what, v, err);
     } else if t == Tool::Learn {
@@ -177,6 +182,7 @@ fn tool_update(t: Tool, a: u16, v: String) {
         Tool::Learn => learn_update(a, v),
         Tool::Hal => hal_update(a, v),
         Tool::Grid => board_update(a, v),
+        Tool::Intern => intern_update(a, v),
         _ => tools2_update(t, a, v),
     }
 }
@@ -194,22 +200,6 @@ fn ext_link(href: &str, label: &str) -> N {
 }
 
 // ---------------------------------------------------------------------------------------------- Intern
-
-fn intern_view() -> N {
-    el("div")
-        .cls("tool intern")
-        .kid(el("p").cls("lede").text("An AI electronic health record for doctors: an iOS app."))
-        .kid(
-            el("ul")
-                .cls("points")
-                .kid(el("li").kid(el("b").text("Records and chat. ")).kid(txt("Patient records with a built-in messaging interface.")))
-                .kid(el("li").kid(el("b").text("Calls and notifications. ")).kid(txt("Calling and push notifications through Azure Communication Services.")))
-                .kid(el("li").kid(el("b").text("Sync and sign-in. ")).kid(txt("Firebase for accounts, storage and real-time data."))),
-        )
-        .kid(el("p").cls("hint").text("Intern runs on iPhone and iPad (iOS 13 or later), not in the browser, so it is not live here."))
-        .kid(el("p").kid(el("a").cls("btn").attr("href", "https://github.com/in-tern/Intern").attr("target", "_blank").attr("rel", "noopener").text("Source on GitHub ↗")))
-        .into()
-}
 
 // ---------------------------------------------------------------------------------------------- Unigyro
 

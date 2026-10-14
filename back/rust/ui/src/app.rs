@@ -10,7 +10,7 @@ use crate::host;
 use crate::json::{self, Value};
 use crate::mem::Global;
 use crate::sha256;
-use crate::text::{bytes, clean_doi, date, fragment, num, plural, query, url_encode};
+use crate::text::{bytes, clean_doi, date, date_of_epoch, fragment, num, plural, query, url_encode};
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -339,6 +339,7 @@ struct State {
     ledger: Ledger,
     learn: Learn,
     hal: Hal,
+    intern: Intern,
     boards: Vec<Board>,
     board_drag: Option<BoardDrag>,
     /// the program drawn on the canvas (program.rs)
@@ -373,7 +374,7 @@ pub fn start() {
     host::append_child(shape, rule_node);
     host::append_child(head, shape);
     let tools = host::create_el("style");
-    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS));
+    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS, INTERN_CSS));
     host::append_child(tools, tools_css);
     host::append_child(head, tools);
     let meta = host::create_el("meta");
@@ -510,6 +511,7 @@ pub fn start() {
         ledger: Ledger::default(),
         learn: Learn::default(),
         hal: Hal::default(),
+        intern: Intern::default(),
         boards: Vec::new(),
         board_drag: None,
         prog: Prog::default(),
@@ -803,6 +805,7 @@ pub fn on_timer(token: u32) {
             }
         }
         T_NF => frenzy_tick(),
+        T_INTERN => intern_timer(),
         T_JOBS => jobs_tick(),
         T_HAL => {
             if !hal_tick() {
@@ -3473,6 +3476,7 @@ include!("learn.rs");
 include!("hal.rs");
 include!("board.rs");
 include!("dossier.rs");
+include!("intern.rs");
 
 /// Save, lock, chain and reset, floating over an open super as they sit on the canvas.
 fn ctl_bar(s: &State) -> N {

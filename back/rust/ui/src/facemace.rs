@@ -390,6 +390,11 @@ fn face_next() {
 
 /// Pixels arrived (w = 0: the file could not be read).
 pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
+    if token >= INTERN_TOKEN {
+        intern_photo(token - INTERN_TOKEN, data);
+        render();
+        return;
+    }
     if token >= HAL_TOKEN {
         hal_pixels(token, data, w, h);
         render();
