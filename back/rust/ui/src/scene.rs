@@ -2133,14 +2133,53 @@ fn canvas_zoom(v: &str) {
     // the design point under the pointer, before
     let d = ((px - g0.ox) / g0.k - s.pan.0, (py - g0.oy) / g0.k - s.pan.1);
     let f = libm_exp(-dy * 0.0015);
-    let z = s.zoom * f;
-    if !(z.is_finite() && z > 1e-300 && z < 1e300) {
+    let z = zoom_within(s.zoom, f, canvas_zoom_limits(s));
+    if !(z.is_finite() && z > 1e-300 && z < 1e300) || z == s.zoom {
         return;
     }
     s.zoom = z;
     let g1 = geo(s);
     s.pan = ((px - g1.ox) / g1.k - d.0, (py - g1.oy) / g1.k - d.1);
     layout_save();
+}
+
+/// A zoom step by `f` from `z`, kept within (lo, hi): a step that would go past a limit stops at it, and from outside
+/// the limits (a super just made bigger, a drawing just cleared) only a step back towards them is taken.
+fn zoom_within(z: f64, f: f64, (lo, hi): (f64, f64)) -> f64 {
+    let n = z * f;
+    if f > 1.0 && n > hi {
+        z.max(hi)
+    } else if f < 1.0 && n < lo {
+        z.min(lo)
+    } else {
+        n
+    }
+}
+
+/// How far the canvas zooms, in proportion to what is drawn on it (owner, 2026-10-14: "use proportional zoom
+/// limits"): out until the whole drawing is a tenth of the window, in until the smallest super or sparkle fills it.
+/// With nothing drawn, a quarter to four times the start. As factors of the zoom (1 = the start).
+fn canvas_zoom_limits(s: &State) -> (f64, f64) {
+    let g = geo(s);
+    let base = g.k / s.zoom.max(1e-300);
+    let m = host::vw().min(host::vh()).max(1.0);
+    let rects: Vec<Rect> = s.prog.nodes.iter().map(|n| rect(&g, n.id)).filter(|r| r.2 > 0.0 && r.3 > 0.0).collect();
+    if rects.is_empty() {
+        return (0.25, 4.0);
+    }
+    let (mut l, mut t, mut r, mut b) = (f64::MAX, f64::MAX, f64::MIN, f64::MIN);
+    let mut small = f64::MAX;
+    for (x, y, w, h) in &rects {
+        l = l.min(*x);
+        t = t.min(*y);
+        r = r.max(x + w);
+        b = b.max(y + h);
+        small = small.min(w.max(*h));
+    }
+    let all = (r - l).max(b - t).max(1e-9);
+    let hi = m / small.max(1e-9) / base;
+    let lo = (0.1 * m / all / base).min(hi * 0.1);
+    (lo, hi)
 }
 
 fn libm_exp(x: f64) -> f64 {

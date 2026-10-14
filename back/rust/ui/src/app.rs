@@ -742,7 +742,7 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             canvas_zoom(&format!("{},{},{}", dy, x, y));
         }
     } else {
-        let z = if dy == 0.0 { 1.0 } else { (s.pzoom * libm_exp(-dy * 0.0015)).clamp(0.2, 5.0) };
+        let z = if dy == 0.0 { 1.0 } else { zoom_within(s.pzoom, libm_exp(-dy * 0.0015), page_zoom_limits(s)) };
         s.pzoom = z;
         host::store_set("piii:pzoom", &format!("{:.4}", z));
     }
