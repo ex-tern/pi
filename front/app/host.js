@@ -35,7 +35,7 @@ function fileList(list) {
 }
 const safe = (f, d) => { try { return f(); } catch (_) { return d; } };
 // a right-button box just drawn: the menu its release would open, and the double right click it would count, are not
-let rdragAt = 0;
+let rdragAt = 0, tapAt = 0, touchAt = 0;
 addEventListener("contextmenu", (e) => {
   const t = e.target instanceof Element ? e.target : null;
   if (!t || !t.closest(".scene") || t.closest("input, textarea")) return;
@@ -68,7 +68,9 @@ const host = {
     // a press: x, y, then how: 0 a click, 1 shift + click (drags), 2 the middle button (resizes)
     else if (k === "pdown") n.addEventListener("pointerdown", (e) => {
       if (e.button === 1) e.preventDefault();
-      if (e.button === 0 || e.button === 1) send(id, k, e.clientX + "," + e.clientY + "," + (e.button === 1 ? 2 : e.shiftKey ? 1 : 0));
+      // the corner grip of a selected super resizes, as the middle button does (a finger has neither)
+      const grip = e.target.closest && e.target.closest("[data-resize]");
+      if (e.button === 0 || e.button === 1) send(id, k, e.clientX + "," + e.clientY + "," + (e.button === 1 || grip ? 2 : e.shiftKey ? 1 : 0));
     });
     // a double click (left: "dbl", right: "dbl2") on the node itself, not on anything marked data-solid inside it
     // the pointer over a surface that draws itself (the map): x, y within it, and its width and height
@@ -118,13 +120,53 @@ const host = {
       addEventListener("pointermove", mv); addEventListener("pointerup", up);
     });
     // a canvas super's inside is canvas too: you draw in it (not on its name)
-    else if (k === "dbl") n.addEventListener("dblclick", (e) => { const sol = e.target.closest("[data-solid]"); if (!sol || (sol.classList.contains("u-canvas") && !e.target.closest("input"))) { e.preventDefault(); const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } });
+    else if (k === "dbl") {
+      n.addEventListener("dblclick", (e) => { if (Date.now() - tapAt < 700) return; const sol = e.target.closest("[data-solid]"); if (!sol || (sol.classList.contains("u-canvas") && !e.target.closest("input"))) { e.preventDefault(); const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } });
+      // a finger (a phone has no right button): a double tap draws a sparkle, a long press a super, and a long
+      // press then a drag a box that selects and groups; a plain drag pans, two fingers zoom
+      let lastTap = 0, lx = 0, ly = 0;
+      n.addEventListener("pointerdown", (e) => {
+        if (e.pointerType !== "touch" || !e.isPrimary) return;
+        touchAt = Date.now();
+        const sol = e.target.closest("[data-solid]");
+        if (sol && !(sol.classList.contains("u-canvas") && !e.target.closest("input"))) return;
+        const x0 = e.clientX, y0 = e.clientY; let moved = false, long = false, boxing = false;
+        const timer = setTimeout(() => {
+          if (moved) return;
+          long = true;
+          if (capturing) W.pointer(2, x0, y0);
+          if (navigator.vibrate) navigator.vibrate(12);
+        }, 550);
+        const mv = (ev) => {
+          if (ev.pointerId !== e.pointerId) return;
+          const d = Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0);
+          if (!long) { if (d > 10) moved = true; return; }
+          if (d > 8) { boxing = true; rdragAt = Date.now(); send(id, "rsel", x0 + "," + y0 + "," + ev.clientX + "," + ev.clientY + ",0"); }
+        };
+        const up = (ev) => {
+          if (ev.pointerId !== e.pointerId) return;
+          clearTimeout(timer);
+          removeEventListener("pointermove", mv); removeEventListener("pointerup", up); removeEventListener("pointercancel", up);
+          if (ev.type === "pointercancel") return;
+          const r = n.getBoundingClientRect(), at = ev.clientX + "," + ev.clientY + "," + (ev.clientX - r.left) + "," + (ev.clientY - r.top);
+          if (boxing) { rdragAt = Date.now(); send(id, "rsel", x0 + "," + y0 + "," + ev.clientX + "," + ev.clientY + ",1"); return; }
+          if (long) { tapAt = Date.now(); send(id, "dbl2", at); return; }
+          if (moved) return;
+          const t = Date.now();
+          if (t - lastTap < 320 && Math.abs(ev.clientX - lx) + Math.abs(ev.clientY - ly) < 30) { lastTap = 0; tapAt = t; send(id, "dbl", at); }
+          else { lastTap = t; lx = ev.clientX; ly = ev.clientY; }
+        };
+        addEventListener("pointermove", mv); addEventListener("pointerup", up); addEventListener("pointercancel", up);
+      });
+    }
     else if (k === "dbl2") {
       let last = 0;
       n.addEventListener("contextmenu", (e) => {
         const sol = e.target.closest("[data-solid]");
         if (sol && !(sol.classList.contains("u-canvas") && !e.target.closest("input"))) return;
         e.preventDefault();
+        // a long press of a finger is a super already: its menu event is not a right click
+        if (Date.now() - touchAt < 1500) return;
         const t = Date.now();
         // two right clicks with no box drawn between them
         if (t - last < 450 && last > rdragAt) { last = 0; const r = n.getBoundingClientRect(); send(id, k, e.clientX + "," + e.clientY + "," + (e.clientX - r.left) + "," + (e.clientY - r.top)); } else last = t;

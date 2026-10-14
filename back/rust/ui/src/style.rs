@@ -163,7 +163,7 @@ tr.now td{background:var(--accent-soft)}
 .spin{display:inline-block;width:12px;height:12px;border:2px solid var(--line2);border-top-color:var(--accent);border-radius:50%;
 animation:sp .8s linear infinite;vertical-align:-1px;margin-right:8px}
 @keyframes sp{to{transform:rotate(360deg)}}
-.consent{position:fixed;left:16px;right:16px;bottom:16px;z-index:20;max-width:560px;margin:0 auto;background:var(--card);
+.consent{position:fixed;left:16px;right:16px;bottom:16px;z-index:2147483600;max-width:560px;margin:0 auto;background:var(--card);
 border:1px solid var(--line2);border-radius:18px;padding:18px 20px;box-shadow:0 12px 40px rgba(20,20,30,.16)}
 .opt{display:flex;gap:10px;align-items:flex-start;padding:8px 0;cursor:pointer}
 .opt .s{color:var(--muted);font-size:13px}
@@ -403,7 +403,7 @@ html.shift-on,html.shift-on *{cursor:move!important}
 /* no scroll bar anywhere, ever; everything still scrolls (owner, 2026-10-14) */
 *{scrollbar-width:none;-ms-overflow-style:none}*::-webkit-scrollbar{display:none;width:0;height:0}
 .wire-note.page-note{position:fixed;left:50%;right:auto;bottom:24px;transform:translateX(-50%);z-index:2147483001;max-width:calc(100vw - 32px)}
-@media (max-width:699px){.wire-note.page-note{bottom:auto;top:12px}}
+@media (max-width:699px){.wire-note,.wire-note.page-note{bottom:auto;top:12px;left:12px;right:12px;max-width:none}}
 .stage>.sx.under-bar{visibility:hidden}
 .bar-pts{pointer-events:none}.bar-pts .pt{pointer-events:auto;cursor:pointer}
 .hold-face{position:absolute;inset:6px;z-index:1;cursor:pointer;touch-action:none}

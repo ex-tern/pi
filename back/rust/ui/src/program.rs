@@ -1053,7 +1053,14 @@ fn sparkle_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
                 .kid(el("svg:path").attr("d", star(0.0, 0.0, 43.0))),
         )
         .kid_if(!v.is_empty(), || el("span").cls("sp-val").text(v.clone()).into())
+        .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
+}
+
+/// The corner of a selected, unlocked super or sparkle: dragged, it resizes, with a finger too (a phone has no Shift
+/// and no middle button).
+fn grip() -> N {
+    el("span").cls("u-grip").attr("data-resize", "1").attr("title", "Drag to resize").attr("aria-hidden", "true").into()
 }
 
 /// Grown half as big again as it was made (by area): a super is a canvas, an empty one to draw in (owner, 2026-10-14:
@@ -1129,6 +1136,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
         )
         // an empty super shows what arrives at it, so a result can land in one
         .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").text(if shown.is_empty() { kind_name(&k).to_string() } else { shown }).into())
+        .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
 
@@ -1190,6 +1198,8 @@ const PROG_CSS: &str = "\
 .sparkle svg{display:block}.sparkle path{fill:none;stroke:var(--ink);stroke-width:calc(1.5px * var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}.sparkle.sel path{fill:none;stroke:var(--accent)}.sx.unode.sparkle.sel{outline:0}\
 .sp-val{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:11.5px;color:var(--magenta);font-weight:600;white-space:nowrap}\
 .sx.unode.sel{outline:2px solid var(--accent);outline-offset:3px}\
+.u-grip{position:absolute;right:calc(3px / var(--k, 1));bottom:calc(3px / var(--k, 1));width:calc(16px / var(--k, 1));height:calc(16px / var(--k, 1));box-sizing:border-box;border:calc(2px / var(--k, 1)) solid var(--accent);background:#fff;border-radius:calc(4px / var(--k, 1));cursor:nwse-resize;touch-action:none;z-index:3}\
+@media (pointer:coarse){.u-grip{width:calc(26px / var(--k, 1));height:calc(26px / var(--k, 1))}}\
 .sx.unode.u-canvas{justify-content:flex-start;align-items:flex-start;padding:12px 14px;border-radius:18px}\
 .sx.unode.u-canvas .u-text,.sx.unode.u-canvas.empty .u-text{width:auto;field-sizing:content;min-width:5ch;max-width:100%;border:1.5px solid #2b2b2b;border-radius:9px;padding:1px 7px;background:#fff;text-align:left}\
 .sx.unode.u-canvas .u-val{margin-top:auto;align-self:flex-end;max-width:100%}\

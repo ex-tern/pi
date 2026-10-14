@@ -854,7 +854,9 @@ fn geo_box(s: &State, w: f64, h: f64, narrow: bool) -> Geo {
 fn geo_zoom(s: &State, w: f64, h: f64, narrow: bool, zoom: f64) -> Geo {
     let (b, dw, dh) = base(narrow);
     let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
-    let k = (w / dw).min(h / dh).max(0.2) * zoom;
+    // on a phone the canvas is drawn at its own size, so what is drawn is as big under a finger as on a screen
+    // (owner, 2026-10-14: "make the app mobile friendly")
+    let k = if narrow { zoom } else { (w / dw).min(h / dh).max(0.2) * zoom };
     let ox = (w - dw * k) / 2.0;
     let oy = (h - dh * k) / 2.0;
     let mut rects = b;
