@@ -354,7 +354,11 @@ function rtc(a) {
   return null;
 }
 
+// what the last press was made with: a finger ("touch"), a mouse or a pen
+let lastPointer = "mouse";
+addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse"; }, true);
 const ops = {
+  ptr: () => lastPointer,
   // a chosen picture, shrunk to fit max × max and handed back as a JPEG data: URL (kept in the browser only)
   imgurl: (a) => {
     const [token, file, max] = a.split("\t").map(Number);

@@ -10,7 +10,7 @@ Live at https://www.piii.app/
 - **Built in Rust.** The site is Rust compiled to WebAssembly, with no HTML files, no frameworks and no dependencies: `core` and `alloc` only. It draws every view, word and style itself. A few lines of JavaScript (`front/app/host.js`) lend it the page.
 - **Science first.** The lab's first instrument is **ScholarPi**, which assesses research papers. A panel of independent AI models reads a manuscript. Deterministic checks audit its references, reproducibility and integrity. It is scored on eight open criteria (the **piX** index), and the report shows what holds it back. Each assessment is recorded on a Proof-of-Research ledger and earns **piQ**, a soulbound token.
 - **Open and accountable.** The rubric and every weight are published (`/api/rubric`). The h-index and venue prestige are reported but never scored. Nothing optional happens before you choose (`/api/cookies`).
-- **More instruments.** Lab, Library and Connect hold the tools still being rewritten in Rust: HAL-OS, Unigyro, FaceMace, the Map of Science, Neuro Frenzy and the MD plan.
+- **More instruments.** Lab, Library and Connect hold the tools still being rewritten in Rust: HAL-OS, Unigyro, Face Mace, the Map of Science, Neuro Frenzy and the MD plan.
 
 ## The canvas
 

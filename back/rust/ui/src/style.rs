@@ -144,6 +144,9 @@ a.t:hover{color:var(--accent);text-decoration:none}
 .find .ft{font-weight:500}
 .find .fa{color:var(--muted);font-size:13.5px;margin-top:2px}
 .stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px}
+.ledger-peek{margin-bottom:18px;padding:14px 16px;position:relative}.ledger-peek h3{margin:0;font-size:15px}
+.ledger-peek .peek-body{max-height:190px;overflow:hidden;margin-top:8px;-webkit-mask-image:linear-gradient(#000 55%,transparent);mask-image:linear-gradient(#000 55%,transparent)}
+.ledger-peek .peek-more{display:inline-flex;margin-top:4px}
 .stat{background:var(--card);border:1px solid var(--line);border-radius:var(--r);padding:14px 16px}
 .stat b{display:block;font-size:22px;font-weight:600;letter-spacing:-.02em;font-variant-numeric:tabular-nums}
 .stat span{color:var(--muted);font-size:13px}
@@ -444,4 +447,14 @@ color:var(--paper);font-size:16px;line-height:1}
 .win{max-width:calc(100vw - 100px);max-height:calc(100vh - 24px)}
 .focus.peek .win{max-width:calc((100vw - 100px) * .85 - 12px);max-height:calc(85vh - 12px)}
 @media (max-width:699px){.scene.floating{top:auto;right:12px;bottom:76px}.win{left:8px;bottom:136px;min-width:0;max-width:calc(100vw - 16px);max-height:calc(100vh - 144px)}}
+/* phones (owner, 2026-10-15): the controls on top, and a window fills all the screen between them and the rail */
+@media (max-width:699px){
+ .ctl-bar{top:8px!important;bottom:auto!important;gap:8px}
+ .ctl-bar .pl,.ctl-bar .tip{display:none!important}
+ .win,.focus.peek .win{left:0!important;right:0!important;top:62px!important;bottom:64px!important;width:auto!important;height:auto!important;
+  min-width:0!important;min-height:0!important;max-width:none!important;max-height:none!important;border-radius:0!important;border-left:0!important;border-right:0!important;box-shadow:none!important}
+ .scene.floating{display:none!important}
+ .canvas{padding-top:64px}
+ .wire-note,.wire-note.page-note{top:66px!important;bottom:auto!important;left:12px!important;right:12px!important;transform:none!important;max-width:none!important;height:auto!important}
+}
 "#;

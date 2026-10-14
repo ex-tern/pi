@@ -66,6 +66,8 @@ pub struct Intern {
     prof_msg: String,
     call: Value,
     ticking: bool,
+    /// a delete pressed once: pressed again (within a few seconds), it is done
+    arm: Option<(u16, f64)>,
 }
 
 const INTERN_TABS: [&str; 5] = ["Patients", "Cases", "Doctors", "Chat", "Profile"];
@@ -349,6 +351,16 @@ fn intern_update(a: u16, v: String) {
     let signed = signed_in(s);
     let i = &mut s.intern;
     let now = host::now();
+    // deleting takes two presses, so that a stray tap deletes nothing
+    if matches!(a, 21 | 38 | 66) {
+        if !matches!(i.arm, Some((k, at)) if k == a && now - at < 4000.0) {
+            i.arm = Some((a, now));
+            return;
+        }
+        i.arm = None;
+    } else {
+        i.arm = None;
+    }
     match a {
         1 => {
             i.tab = v.parse().unwrap_or(0);
@@ -530,6 +542,13 @@ fn intern_update(a: u16, v: String) {
 
 // ---------------------------------------------------------------------------------------------- the view
 
+fn armed(i: &Intern, a: u16, label: &str) -> String {
+    match i.arm {
+        Some((k, at)) if k == a && host::now() - at < 4000.0 => "Press again to delete".to_string(),
+        _ => label.to_string(),
+    }
+}
+
 fn when(ms: f64) -> String {
     date_of_epoch(ms / 1000.0)
 }
@@ -625,7 +644,7 @@ fn patient_file(i: &Intern, p: &IPatient) -> N {
         .kid(el("h4").text("Cases"))
         .kid(el("div").cls("chips").kids(cases.iter().map(|c| -> N { el("button").attr("type", "button").cls("chip").on("click", Msg::T(Tool::Intern, 31, c.id.to_string())).text(if c.title.is_empty() { "Untitled case".to_string() } else { c.title.clone() }).into() })))
         .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 30, p.id.to_string())).text("New case for this patient"))
-        .kid(el("p").kid(el("button").attr("type", "button").cls("btn danger").on("dblclick", Msg::T(Tool::Intern, 21, String::new())).attr("title", "Double click to delete").text("Delete this patient (double click)")))
+        .kid(el("p").kid(el("button").attr("type", "button").cls("btn danger").on("click", Msg::T(Tool::Intern, 21, String::new())).text(armed(i, 21, "Delete this patient"))))
         .into()
 }
 
@@ -678,7 +697,7 @@ fn case_file(i: &Intern, c: &ICase) -> N {
         .kid(el("button").attr("type", "button").cls("btn primary").attr_if(i.diag_busy, "disabled", "").on("click", Msg::T(Tool::Intern, 37, String::new())).text(if i.diag_busy { "Asking the panel…" } else { "Ask for a differential" }))
         .kid_if(i.diag_err.is_some(), || el("p").cls("err-box").text(i.diag_err.clone().unwrap_or_default()).into())
         .kid_if(!c.result.is_empty(), || el("div").cls("card intern-result").kid(markdown(&c.result)).kid(el("p").cls("hint").text("Support for your judgement, not a diagnosis.")).into())
-        .kid(el("p").kid(el("button").attr("type", "button").cls("btn danger").on("dblclick", Msg::T(Tool::Intern, 38, String::new())).attr("title", "Double click to delete").text("Delete this case (double click)")))
+        .kid(el("p").kid(el("button").attr("type", "button").cls("btn danger").on("click", Msg::T(Tool::Intern, 38, String::new())).text(armed(i, 38, "Delete this case"))))
         .into()
 }
 
@@ -808,7 +827,7 @@ fn intern_profile_view(s: &State) -> N {
         .kid(el("label").cls("intern-consent").kid(el("input").attr("type", "checkbox").prop("checked", if i.listed { "1" } else { "0" }).on("change", Msg::T(Tool::Intern, 64, String::new()))).kid(txt(" List me in Doctors")))
         .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Intern, 65, String::new())).text(if has { "Save" } else { "Make my profile" }))
         .kid(el("p").cls("hint").text(i.prof_msg.clone()))
-        .kid_if(has, || el("button").attr("type", "button").cls("btn danger").on("dblclick", Msg::T(Tool::Intern, 66, String::new())).text("Delete my profile and messages (double click)").into())
+        .kid_if(has, || el("button").attr("type", "button").cls("btn danger").on("click", Msg::T(Tool::Intern, 66, String::new())).text(armed(i, 66, "Delete my profile and messages")).into())
         .into()
 }
 
@@ -850,7 +869,7 @@ fn call_view(i: &Intern) -> N {
 }
 
 const INTERN_CSS: &str = "\
-.intern-tabs{margin-top:6px}\
+.intern-tabs{margin-top:6px;overflow-x:auto;max-width:100%;scrollbar-width:none}\
 .intern-bar{align-items:center;gap:10px;flex-wrap:wrap;margin:6px 0 12px}.intern-bar .input{flex:1;min-width:160px}\
 .intern-list{display:grid;gap:10px}.intern-item{display:flex;flex-direction:column;align-items:flex-start;gap:2px;text-align:left;cursor:pointer;width:100%;padding:12px 14px}\
 .intern-form{display:grid;gap:10px;margin-bottom:14px;padding:14px}.ifield{display:grid;gap:4px}.ifield span{font-size:13px;color:var(--muted)}\

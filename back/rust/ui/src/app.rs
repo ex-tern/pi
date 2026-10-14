@@ -267,6 +267,7 @@ struct State {
     /// what is open was opened by a double click on the canvas: it takes 70% of it, the canvas live around it
     peek: bool,
     peek_next: bool,
+    routed: bool,
     /// the super a single click selected (owner, 2026-10-14: "one click selects a super, double click opens it")
     sup_pick: Option<usize>,
     /// the open window's size when it was resized by its corner (or the middle button on its head)
@@ -465,6 +466,7 @@ pub fn start() {
         last_tap: (usize::MAX, None, 0.0),
         peek: false,
         peek_next: false,
+        routed: false,
         sup_pick: None,
         win_size: None,
         win_drag: None,
@@ -872,7 +874,15 @@ fn route() {
     s.ppan = (0.0, 0.0);
     // the start page is the canvas, with the sidebar and the controls over it (owner, 2026-10-14: "this should be the
     // start page"); before, it was the Tools super, open
+    // the site opens on Explore (owner, 2026-10-15: "make the Explore as a default page of start page"); π still
+    // goes to the bare canvas after that
+    let first = !s.routed;
+    s.routed = true;
     match parts.next().unwrap_or("") {
+        "" if first && !href.contains('#') => {
+            host::replace_url("#/explore");
+            return route();
+        }
         "" => s.page = Page::Home,
         "map" => s.page = Page::Map,
         "g" => {
@@ -901,19 +911,19 @@ fn route() {
         "live" => s.page = Page::Live,
         // the old page's addresses
         "leaderboard" | "leaderboards" => {
-            host::replace_url("#/i/1/2");
+            host::replace_url(&member_href("Leaderboards"));
             return route();
         }
         "learn" => {
-            host::replace_url("#/i/2/8");
+            host::replace_url(&member_href("Learn to program"));
             return route();
         }
         "whitepaper" => {
-            host::replace_url("#/i/2/2");
+            host::replace_url(&member_href("Whitepaper"));
             return route();
         }
         "explorer" | "ledger" => {
-            host::replace_url("#/i/1/4");
+            host::replace_url(&member_href("Proof-of-Research Ledger Explorer"));
             return route();
         }
         "confirm" => {
@@ -1059,6 +1069,9 @@ fn load() {
             }
         }
         Page::Explore => {
+            if s.tab != Tab::Journal {
+                ledger_load(Tool::Ledger);
+            }
             if s.summary.needed() {
                 s.summary.busy = true;
                 request(Want::Summary, "GET", "/api/analytics/summary", "", 0);
@@ -2925,7 +2938,6 @@ fn explore_page(s: &State) -> N {
             (Tab::Recent, "Latest", "#/explore"),
             (Tab::Papers, "Top papers", "#/explore/papers"),
             (Tab::Authors, "Authors", "#/explore/authors"),
-            (Tab::Journal, "Journal", "#/explore/journal"),
         ],
     );
     let search: N = if t == Tab::Journal {
@@ -2953,6 +2965,10 @@ fn explore_page(s: &State) -> N {
         Tab::Authors => author_list(d.get("rankings").arr()),
         Tab::Journal => journal_list(d.get("entries").arr()),
     });
+    // the journal lives in the Library now (owner, 2026-10-15: "put that journal in the library")
+    if t == Tab::Journal {
+        return el("div").kid(head("The journal", "Papers published here, reviewed, or waiting for a reviewer.")).kid(list).into();
+    }
     el("div")
         .kid(head(
             "Explore",
@@ -2960,9 +2976,42 @@ fn explore_page(s: &State) -> N {
              the authors behind them.",
         ))
         .kid(stats)
+        .kid(ledger_peek(s))
         .kid(tabs)
         .kid(search)
         .kid(list)
+        .into()
+}
+
+/// The newest blocks of the Proof-of-Research ledger, partly shown, fading into a link to the whole explorer (owner,
+/// 2026-10-15: "make a proof of research ledger explorer partly shown").
+fn ledger_peek(s: &State) -> N {
+    let rows: N = match s.ledger.ex.data.as_ref() {
+        None if s.ledger.ex.err.is_some() => el("p").cls("hint").text("The ledger could not be read just now.").into(),
+        None => spinner("Reading the ledger…"),
+        Some(d) if d.get("records").arr().is_empty() => el("p").cls("hint").text("No blocks yet: the first assessment starts the chain.").into(),
+        Some(d) => el("div").cls("table-scroll").kid(
+            el("table")
+                .cls("data-table ledger-table")
+                .kid(el("thead").kid(el("tr").kid(el("th").cls("num").text("Block")).kid(el("th").text("Manuscript")).kid(el("th").text("Block hash")).kid(el("th").cls("num").text("piX")).kid(el("th").text("Date"))))
+                .kid(el("tbody").kids(d.get("records").arr().iter().take(6).map(|r| -> N {
+                    let h = r.get("eval_hash").text();
+                    let bh = r.get("block_hash").text();
+                    el("tr")
+                        .kid(el("td").cls("num mono").text(r.get("block_height").text().or_text("—")))
+                        .kid(el("td").kid(el("a").attr("href", format!("#/paper/{}", h)).text(r.get("title").str().chars().take(60).collect::<String>().or_text("Untitled"))))
+                        .kid(el("td").kid(el("code").cls("mono").text(if bh.is_empty() { "—".to_string() } else { format!("{}…", bh.chars().take(10).collect::<String>()) })))
+                        .kid(el("td").cls("num strong").text(num(r.any(&["score", "final_score"]).f(), 1)))
+                        .kid(el("td").cls("hint").text(r.get("timestamp").str().chars().take(10).collect::<String>()))
+                        .into()
+                }))),
+        ).into(),
+    };
+    el("section")
+        .cls("card ledger-peek")
+        .kid(el("div").cls("spread").kid(el("h3").text("Proof-of-Research ledger")).kid(chain_badge(s)))
+        .kid(el("div").cls("peek-body").kid(rows))
+        .kid(el("a").cls("btn peek-more").attr("href", member_href("Proof-of-Research Ledger Explorer")).text("Open the ledger explorer →"))
         .into()
 }
 

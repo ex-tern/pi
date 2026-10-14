@@ -626,7 +626,7 @@ fn face_view(s: &State) -> N {
     let strict = if f.strict == 0.0 { 75.0 } else { f.strict };
     let mut root = el("div")
         .cls("tool fm")
-        .kid(el("p").cls("lede").kid(txt("Sort photos by face. Choose a folder or some photos: FaceMace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
+        .kid(el("p").cls("lede").kid(txt("Sort photos by face. Choose a folder or some photos: Face Mace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
         .kid(
             el("div")
                 .cls("fm-drop")

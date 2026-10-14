@@ -699,7 +699,7 @@ const GROUPS: [Group; 6] = [
         members: &[
             ("Assess Manuscripts [Pi]", Target::Hash("#/assess")),
             ("Assist Diagnosis [Intern]", Target::Tool(Tool::Intern)),
-            ("FaceMace", Target::Tool(Tool::Face)),
+            ("Face Mace", Target::Tool(Tool::Face)),
             // moved here from Explore (owner, 2026-10-14: "put super AI in tools")
             ("Super AI", Target::Tool(Tool::Ask)),
             // from the Library (owner, 2026-10-14: "put RiBD in tools")
@@ -710,7 +710,6 @@ const GROUPS: [Group; 6] = [
         sup: S_EXPLORE,
         title: "Explore",
         members: &[
-            ("The journal", Target::Hash("#/explore/journal")),
             ("Leaderboards", Target::Tool(Tool::Board)),
             ("Proof-of-Research Ledger Explorer", Target::Tool(Tool::Ledger)),
             ("Recent assessments", Target::Tool(Tool::Recent)),
@@ -731,6 +730,8 @@ const GROUPS: [Group; 6] = [
             ("Learn to program", Target::Tool(Tool::Learn)),
             // from Connect (owner, 2026-10-14: "put assessment results in the library")
             ("Assessment results", Target::Hash("#/assess")),
+            // from Explore (owner, 2026-10-15: "put that journal in the library")
+            ("The journal", Target::Hash("#/explore/journal")),
         ],
     },
     Group {
@@ -2127,8 +2128,9 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
             } else if !d.moved && d.id == S_RESET {
                 // reset is held, not clicked: let go early and nothing happens
                 reset_hold_end(true);
-            } else if !d.moved && is_unode(d.id) && d.free && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && !unode(s, d.id).map(unode_is_canvas).unwrap_or(false) {
-                // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14)
+            } else if !d.moved && is_unode(d.id) && d.free && !touching() && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && !unode(s, d.id).map(unode_is_canvas).unwrap_or(false) {
+                // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14); not
+                // with a finger, where a double tap is too easy to make by accident (owner, 2026-10-15)
                 s.last_tap = (usize::MAX, None, 0.0);
                 s.free.retain(|i| *i != d.id);
                 s.locked.retain(|i| *i != d.id);
@@ -2820,7 +2822,7 @@ const MAP: [MapNode; 41] = [
     mn("learn", "SuperAI", "lab", 268.0, 470.0, 104.0, 44.0, "@Learn to program", "learn to program"),
     mn("hal", "HAL-OS", "lab", 392.0, 470.0, 104.0, 44.0, "@HAL-OS", "x86 · ternary net"),
     mn("quvi", "QuVI", "lab", 516.0, 470.0, 104.0, 44.0, "@QuVI", "quantum circuits"),
-    mn("face", "FaceMace", "lab", 640.0, 470.0, 104.0, 44.0, "@FaceMace", "faces, sorted"),
+    mn("face", "Face Mace", "lab", 640.0, 470.0, 104.0, 44.0, "@Face Mace", "faces, sorted"),
     mn("map", "Map of Science", "lab", 764.0, 470.0, 104.0, 44.0, "@The Global Map of Science", "and its game"),
     mn("frenzy", "Neuro Frenzy", "lab", 888.0, 470.0, 92.0, 44.0, "@Neuro Frenzy", ""),
     // what it runs on
@@ -2955,4 +2957,9 @@ fn map_page() -> N {
         .kid(head("Project", "The whole project as one super's inside: one prompt to every engine, the assessment from manuscript to ledger, the lab's tools in the browser, what it all runs on, and the site. Click a box to open it."))
         .kid(el("div").cls("map-wrap").kid(svg))
         .into()
+}
+
+/// The last press was a finger's.
+fn touching() -> bool {
+    host::call("ptr", "").as_deref() == Some("touch")
 }
