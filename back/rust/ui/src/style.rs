@@ -413,7 +413,10 @@ html.shift-on,html.shift-on *{cursor:move!important}
 .sx.icon{display:grid!important;place-items:center;padding:0!important;background:#fff;overflow:hidden}
 .icon-g{display:grid;place-items:center;width:100%;height:100%;font:600 30px/1 'Geist',system-ui,sans-serif;color:var(--ink);letter-spacing:.02em}
 .icon-g svg{width:min(56%,64px);height:auto;max-height:70%}
-.bnode.icon{display:grid;place-items:center}.bnode.icon .icon-g{font-size:22px}
+/* an icon fits its box however small it is made: no padding to spill out of, the mark scaled to the box (owner,
+   2026-10-14: "this is a bug?") */
+.bnode.icon{display:grid;place-items:center;padding:0;overflow:hidden;container-type:size}.bnode.icon .icon-g{font-size:min(22px,55cqh,30cqw)}
+.bnode.icon .icon-g svg{width:min(56%,64px,70cqh);max-height:70%}
 .sx.picked,.bnode.picked{outline:3px solid var(--accent);outline-offset:3px;box-shadow:0 0 0 7px var(--accent-soft)}
 /* wiring: the pointer says what a click will do (owner, 2026-10-14: "improve the wiring experience with pointer change") */
 .ports-svg .port.out{cursor:crosshair}
