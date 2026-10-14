@@ -402,9 +402,17 @@ fn ctl_wired(s: &State, ctl: usize) -> bool {
 /// "all canvases are locked by default"; "locking makes canvas at place and can't be draggable or resizable"). One is
 /// unlocked by selecting it and clicking the lock, and locked again the same way (`s.free` holds the unlocked ones).
 fn locked(s: &State, id: usize) -> bool {
-    // every super, icon or canvas, is locked until it is selected and the lock is clicked (owner, 2026-10-14: "every
-    // super is locked by default")
+    // on the π canvas what you draw starts unlocked, and stays so until it is locked (owner, 2026-10-14: "only in pi
+    // canvas the default lock is off"); everything else is locked until it is selected and the lock is clicked
+    if is_unode(id) {
+        return s.locked.contains(&id);
+    }
     !s.free.contains(&id)
+}
+
+fn locked_save() {
+    let out: Vec<String> = st().locked.iter().map(|x| x.to_string()).collect();
+    host::store_set("piii:locked", &out.join(","));
 }
 
 /// A super under this share of the window's width or height, as drawn now, is an icon; at or over both, a canvas (owner,
@@ -590,6 +598,19 @@ fn lock_toggle() {
             return;
         }
     };
+    if is_unode(id) {
+        // on the π canvas the lock is off until it is turned on: the list holds the locked ones
+        let open = !flip(&mut s.locked, id);
+        for m in group_with(s, id) {
+            s.locked.retain(|x| *x != m);
+            if !open {
+                s.locked.push(m);
+            }
+        }
+        locked_save();
+        note(if open { format!("Unlocked: {} can be moved and resized", name_of(id)) } else { format!("Locked in place: {}", name_of(id)) });
+        return;
+    }
     let open = flip(&mut s.free, id);
     // a group locks and unlocks as one
     for m in group_with(s, id) {
@@ -1178,7 +1199,9 @@ fn scene_view(s: &State, mini: bool) -> N {
 
     let mut stage = el("div")
         .cls("stage")
-        .style(format!("transform:translate({:.1}px,{:.1}px) scale({:.4})", g.ox, g.oy, g.k))
+        // its scale as --k too: a sparkle's line (drawn in screen px) is as thick as a super's border, which scales
+        // with the stage (owner, 2026-10-14: "thickness of the lines should be same")
+        .style(format!("transform:translate({:.1}px,{:.1}px) scale({:.4});--k:{:.4}", g.ox, g.oy, g.k, g.k))
         .kid(wires);
     for id in 0..NSUP {
         if id == S_SITE || is_gone(id) {
@@ -2098,6 +2121,8 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
                 // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14)
                 s.last_tap = (usize::MAX, None, 0.0);
                 s.free.retain(|i| *i != d.id);
+                s.locked.retain(|i| *i != d.id);
+                locked_save();
                 prog_remove(d.id);
                 layout_save();
             } else if !d.moved && (is_ctl_super(d.id) || matches!(d.id, S_TITLE | S_RUN | S_CLEAR) || is_unode(d.id)) {
@@ -2516,6 +2541,8 @@ fn activate(id: usize, member: Option<u8>) {
             program_clear();
             st().groups.clear();
             groups_save();
+            st().locked.clear();
+            locked_save();
             st().example_on = false;
             host::store_del("piii:example");
             layer().clear();

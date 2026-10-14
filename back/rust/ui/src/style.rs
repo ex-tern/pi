@@ -396,9 +396,9 @@ html.shift-on,html.shift-on *{cursor:move!important}
 .win,.win-in{user-select:none;-webkit-user-select:none}.win-in{position:relative}.win-in input,.win-in textarea{user-select:text;-webkit-user-select:text}
 .page-layer{position:absolute;left:0;top:0;width:0;height:0;overflow:visible;z-index:6}
 .layer-node{position:absolute;width:88px;height:88px;box-sizing:border-box;display:grid;place-items:center}
-.layer-spark svg{display:block}.layer-spark path{fill:none;stroke:var(--ink);stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linejoin:round}
+.layer-spark svg{display:block}.layer-spark path{fill:none;stroke:var(--ink);stroke-width:1.5px;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 .layer-super{background:#fff;border:1.5px solid #2b2b2b;padding:8px}
-.layer-in{width:100%;border:1.2px solid #9a9a95;background:#fbfbf9;padding:7px 4px;font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;text-align:center;outline:none}.layer-in:focus{border-color:var(--accent)}
+.layer-in{width:100%;border:1.5px solid #9a9a95;background:#fbfbf9;padding:7px 4px;font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;text-align:center;outline:none}.layer-in:focus{border-color:var(--accent)}
 .win.picked .win-head{cursor:grab}
 /* no scroll bar anywhere, ever; everything still scrolls (owner, 2026-10-14) */
 *{scrollbar-width:none;-ms-overflow-style:none}*::-webkit-scrollbar{display:none;width:0;height:0}

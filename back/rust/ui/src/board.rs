@@ -853,9 +853,9 @@ const BOARD_CSS: &str = "\
 .board .bnode{position:absolute;z-index:2;box-sizing:border-box;cursor:grab;touch-action:none}\
 .board .bnode.member{min-height:0}\
 .board .board-ports{position:absolute;left:0;top:0;z-index:4;overflow:visible;pointer-events:none}\
-.board .bspark svg{display:block}.board .bspark svg path{fill:none;stroke:var(--ink);stroke-width:2.2;vector-effect:non-scaling-stroke;stroke-linejoin:round}.bspark.picked svg path{stroke:var(--accent)}\
-.board .buser{display:flex;align-items:center;padding:8px;background:#fff;border:1.6px solid var(--ink);border-radius:18px}\
-.board .buser-in{width:100%;border:1.2px solid #9a9a95;background:#fbfbf9;padding:7px 4px;font:inherit;font-size:15px;text-align:center;outline:none;cursor:text}.board .buser-in:focus{border-color:var(--accent)}\
+.board .bspark svg{display:block}.board .bspark svg path{fill:none;stroke:var(--ink);stroke-width:1.5px;vector-effect:non-scaling-stroke;stroke-linejoin:round}.bspark.picked svg path{stroke:var(--accent)}\
+.board .buser{display:flex;align-items:center;padding:8px;background:#fff;border:1.5px solid var(--ink);border-radius:18px}\
+.board .buser-in{width:100%;border:1.5px solid #9a9a95;background:#fbfbf9;padding:7px 4px;font:inherit;font-size:15px;text-align:center;outline:none;cursor:text}.board .buser-in:focus{border-color:var(--accent)}\
 .board-bar{margin-top:10px;justify-content:space-between}\
 .board .buser.u-canvas.empty .buser-in{display:none}.board .buser.u-canvas{align-items:flex-start;padding:12px 14px}.board .buser.u-canvas .buser-in{width:auto;field-sizing:content;min-width:5ch;max-width:100%;border:1.5px solid var(--ink);border-radius:9px;padding:1px 7px;background:#fff;text-align:left}\
 ";
