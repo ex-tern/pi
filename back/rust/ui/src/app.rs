@@ -270,6 +270,8 @@ struct State {
     routed: bool,
     /// at /intern/: only Intern, as an app of its own
     app_mode: bool,
+    /// which tool is the app: Intern at /intern/, Face Mace at /facemace/ (and in the desktop program)
+    app_tool: Option<Tool>,
     /// the super a single click selected (owner, 2026-10-14: "one click selects a super, double click opens it")
     sup_pick: Option<usize>,
     /// the open window's size when it was resized by its corner (or the middle button on its head)
@@ -470,6 +472,7 @@ pub fn start() {
         peek_next: false,
         routed: false,
         app_mode: false,
+        app_tool: None,
         sup_pick: None,
         win_size: None,
         win_drag: None,
@@ -851,7 +854,7 @@ fn render() {
     prog_ai_flush();
     hal_paint();
     let s = st();
-    let t = if s.app_mode { "Intern" } else { match s.page {
+    let t = if s.app_mode { if s.app_tool == Some(Tool::Face) { "Face Mace" } else { "Intern" } } else { match s.page {
         Page::Home => "piii lab",
         Page::Group(_) | Page::Item(_, _) => "piii lab",
         Page::Map => "piii lab · Project",
@@ -882,9 +885,12 @@ fn route() {
     let first = !s.routed;
     s.routed = true;
     // Intern, the app (owner, 2026-10-15): /intern/ shows nothing else, whatever follows the #
-    if href.split('#').next().unwrap_or("").contains("/intern") {
+    let base = href.split('#').next().unwrap_or("");
+    let app = if base.contains("/intern") { Some(Tool::Intern) } else if base.contains("/facemace") { Some(Tool::Face) } else { None };
+    if let Some(tool) = app {
         s.app_mode = true;
-        if let Some((g, m)) = GROUPS.iter().enumerate().find_map(|(g, x)| x.members.iter().position(|m| matches!(m.1, Target::Tool(Tool::Intern))).map(|m| (g as u8, m as u8))) {
+        s.app_tool = Some(tool);
+        if let Some((g, m)) = GROUPS.iter().enumerate().find_map(|(g, x)| x.members.iter().position(|m| matches!(m.1, Target::Tool(t) if t == tool)).map(|m| (g as u8, m as u8))) {
             s.page = Page::Item(g, m);
             s.item_key = (g, m);
         }
@@ -1762,7 +1768,12 @@ fn view(s: &State) -> N {
         return gate_view(s);
     }
     if s.app_mode {
-        return el("div").cls("app intern-app-root").kid(intern_app_view(s)).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into();
+        let inner = if s.app_tool == Some(Tool::Face) {
+            el("div").cls("iapp").kid(el("header").cls("iapp-top").kid(el("b").text("Face Mace")).kid(el("span").cls("iapp-brand").text("on this device"))).kid(el("main").cls("iapp-main").kid(tool_view(s, Tool::Face))).into()
+        } else {
+            intern_app_view(s)
+        };
+        return el("div").cls("app intern-app-root").kid(inner).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into();
     }
     // the sidebar and the controls are on top of every view, always (owner, 2026-10-14: "both sidebar and top icons are
     // always on top. Always.")

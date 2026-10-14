@@ -921,7 +921,7 @@ const INTERN_CSS: &str = "\
 .iapp-top{flex:none;display:flex;align-items:baseline;justify-content:space-between;gap:12px;padding:calc(env(safe-area-inset-top) + 12px) 18px 10px;border-bottom:1px solid var(--line);background:var(--paper)}\
 .iapp-top b{font-size:22px;letter-spacing:-.01em}.iapp-brand{color:var(--accent);font-weight:600;font-size:14px}\
 .iapp-main{flex:1;overflow-y:auto;-webkit-overflow-scrolling:touch;padding:14px 16px 24px;touch-action:pan-y}\
-.iapp-main .lede{display:none}\
+.iapp-main.intern .lede{display:none}\
 .iapp-tabs{flex:none;display:grid;grid-template-columns:repeat(5,1fr);border-top:1px solid var(--line);background:var(--card);padding:6px 4px calc(env(safe-area-inset-bottom) + 6px)}\
 .iapp-tabs button{border:0;background:none;display:grid;justify-items:center;gap:3px;padding:4px 0;font:inherit;font-size:11px;color:var(--muted);cursor:pointer}\
 .iapp-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\

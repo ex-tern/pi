@@ -1,0 +1,55 @@
+name: Face Mace for Windows
+
+# Builds Face Mace's desktop program (back/rust/facemace-desktop) on Windows and publishes it as FaceMace.exe on the
+# "facemace-windows" release, where the site's Download button points.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "back/rust/facemace-desktop/**"
+      - "front/app/**"
+      - "front/facemace/**"
+      - ".github/workflows/facemace-windows.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: facemace-windows
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Build
+        working-directory: back/rust/facemace-desktop
+        run: cargo build --release --locked
+
+      - name: Check it answers
+        shell: bash
+        run: |
+          FACEMACE_NO_BROWSER=1 back/rust/facemace-desktop/target/release/facemace.exe 8791 &
+          sleep 3
+          curl -sf http://127.0.0.1:8791/facemace/ | grep -q "Face Mace"
+          curl -sf -o /dev/null http://127.0.0.1:8791/app/ui.wasm
+          cp back/rust/facemace-desktop/target/release/facemace.exe FaceMace.exe
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: FaceMace-windows
+          path: FaceMace.exe
+
+      - name: Publish
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release delete facemace-windows --yes --cleanup-tag || true
+          gh release create facemace-windows FaceMace.exe \
+            --title "Face Mace for Windows" \
+            --notes "Sorts photos by face, on your computer: double-click FaceMace.exe and it opens in your browser. No photo leaves the computer; close its window to quit. Built from ${GITHUB_SHA::7}." \
+            --latest=false

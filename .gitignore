@@ -34,3 +34,4 @@ back/rust/ui/target/
 
 # rustc type-length dumps
 *.long-type-*.txt
+back/rust/facemace-desktop/target/

@@ -27444,7 +27444,7 @@ app.include_router(intern_build_router(
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "front")
 
-def rust_loader(intern: bool = False) -> str:
+def rust_loader(intern: bool = False, facemace: bool = False) -> str:
     """The document every page address gets: the front end is Rust (back/rust/ui, built to front/app/ui.wasm).
 
     A browser has to be handed a document before it will run anything, so this is the least one can be: a
@@ -27469,6 +27469,12 @@ def rust_loader(intern: bool = False) -> str:
                 '<link rel="manifest" href="/intern/manifest.webmanifest">'
                 f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script>'
                 '<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/intern/sw.js",{scope:"/intern/"}).catch(function(){});</script></html>')
+    if facemace:
+        # Face Mace alone: the same page the desktop program (back/rust/facemace-desktop) serves
+        return ('<!doctype html><html lang="en"><meta charset="utf-8">'
+                '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Face Mace</title>'
+                '<link rel="icon" href="/icon.svg">'
+                f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script></html>')
     return ('<!doctype html><html lang="en"><meta charset="utf-8">'
             '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Piii Lab</title>'
             '<meta name="theme-color" content="#f7f5ef"><link rel="icon" href="/icon.svg">'
@@ -27496,6 +27502,16 @@ if os.path.isdir(_FRONTEND_DIR):
         if IS_EXPERIMENTAL:
             headers["X-Robots-Tag"] = "noindex, nofollow"
         return HTMLResponse(doc, headers=headers)
+
+    @app.get("/facemace", include_in_schema=False)
+    @app.get("/facemace/", include_in_schema=False)
+    def _serve_facemace(request: Request):
+        """Face Mace alone, as in its desktop program."""
+        try:
+            doc = rust_loader(facemace=True)
+        except OSError:
+            raise HTTPException(status_code=404, detail="The front end is not built.")
+        return HTMLResponse(doc, headers={"Cache-Control": "no-cache"})
 
     @app.get("/intern", include_in_schema=False)
     @app.get("/intern/", include_in_schema=False)

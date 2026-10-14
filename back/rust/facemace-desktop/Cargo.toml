@@ -1,0 +1,14 @@
+[package]
+name = "facemace"
+version = "0.1.0"
+edition = "2021"
+description = "Face Mace for the desktop: sorts photos by face on this computer. The site's Face Mace, served from inside this program to the browser on 127.0.0.1 only; no photo leaves the computer."
+license-file = "../../LICENSES/LicenseRef-PiTechLab-Proprietary.txt"
+
+# No dependencies: the standard library only.
+[dependencies]
+
+[profile.release]
+opt-level = "s"
+lto = true
+strip = true

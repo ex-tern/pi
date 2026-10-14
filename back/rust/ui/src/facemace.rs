@@ -627,6 +627,15 @@ fn face_view(s: &State) -> N {
     let mut root = el("div")
         .cls("tool fm")
         .kid(el("p").cls("lede").kid(txt("Sort photos by face. Choose a folder or some photos: Face Mace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
+        // the desktop program (owner, 2026-10-15: "a downloadable version of FaceMace in .exe file for Windows"),
+        // built by GitHub on Windows from back/rust/facemace-desktop
+        .kid_if(!s.app_mode, || {
+            el("p")
+                .cls("fm-get")
+                .kid(el("a").cls("btn").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").text("Download for Windows (.exe)"))
+                .kid(txt(" Runs on its own, without the site or a network."))
+                .into()
+        })
         .kid(
             el("div")
                 .cls("fm-drop")
