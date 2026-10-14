@@ -1,4 +1,4 @@
-# piii lab
+# pi lab
 
 A science lab you work in by drawing. Everything is a **super**, a box with four ports, and supers are joined by **wires**. What a super holds opens to fill the canvas, and the rest of the lab waits as icons beside it.
 
