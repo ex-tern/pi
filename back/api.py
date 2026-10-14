@@ -33,6 +33,7 @@ import random
 import re
 import requests
 import secrets
+import socket
 import shutil
 import smtplib
 import sqlite3
@@ -2601,17 +2602,17 @@ def _concepts() -> Dict[str, Dict]:
                 "weighted more heavily than baseline."
             ),
         },
-        "coara": {
-            "patterns": [r"\bcoara\b", r"\bdora\b", r"\bfair\b", r"\brra\b", r"h.?index", r"compliance"],
+        "responsible": {
+            "patterns": [r"\bdora\b", r"\bfair\b", r"\brra\b", r"h.?index", r"compliance"],
             "answer": (
-                "Pi-Index is aligned with CoARA and DORA. Two consequences you can check:\n\n"
+                "Pi-Index follows the commitments of responsible research assessment. Two consequences "
+                "you can check:\n\n"
                 "Every quantitative indicator is published with its methodology — the full rubric, "
                 "including every weight, is at `/api/rubric`, and each criterion declares how much "
                 "of it is decided by verifiable text analysis rather than model opinion.\n\n"
                 "The **h-index and i10-index are reported but deliberately excluded from scoring**. "
-                "CoARA's first commitment names the h-index specifically: it measures career stage "
-                "and field citation culture as much as quality. Letting it move a manuscript's "
-                "score would contradict the framework's central claim."
+                "The h-index measures career stage and field citation culture as much as quality. "
+                "Letting it move a manuscript's score would contradict the framework's central claim."
             ),
         },
     }
@@ -2730,8 +2731,8 @@ def _cloud_answer(question: str, grounding: str) -> Optional[str]:
 
 CAPABILITIES = (
     "I can explain piX and piQ, the scoring rubric, the processing fee, how the model panel "
-    "reaches a judgement, the integrity and reference checks, minting difficulty, and CoARA "
-    "alignment. With a linked wallet or ORCID I can also read your balance and your assessments."
+    "reaches a judgement, the integrity and reference checks, minting difficulty, and responsible "
+    "assessment. With a linked wallet or ORCID I can also read your balance and your assessments."
 )
 
 
@@ -3853,7 +3854,7 @@ def authorship_challenge_build_message(code: str, title: str, masked: str) -> Di
         f"If this was NOT you, ignore this email. No code, no claim — nothing happens,\n"
         f"and no piQ is transferred to anyone. You do not need to reply or take any\n"
         f"action.\n\n"
-        f"ScholarPi assesses manuscripts against CoARA-aligned reporting criteria.\n"
+        f"ScholarPi assesses manuscripts against open, science-aligned reporting criteria.\n"
     )
     return {"subject": subject, "body": body}
 
@@ -4131,7 +4132,7 @@ def compute_piq_emission(pix_score: float, logic_integrity: float, total_papers:
 # The economy was regressive: piQ funds assessment and is earned by scoring
 # well, so the researchers most able to use the system were those already
 # producing well-resourced work. A newcomer without institutional support —
-# precisely the constituency CoARA and the open-science literature care about —
+# precisely the constituency the open-science literature cares about —
 # hit the wall first and had no route out.
 #
 # Linking a verified ORCID now grants a one-time starting balance. It costs
@@ -4506,7 +4507,7 @@ def publication_fee(pix_score: float = 0.0) -> Dict:
 # The fee is a BOUNTY, not a badge price. It is held when the request opens and
 # paid to whoever completes the review — so the money buys someone's time, not
 # a claim about quality. A badge that could be bought outright would be exactly
-# the purchasable credibility that DORA and CoARA exist to oppose, and it would
+# the purchasable credibility that DORA exists to oppose, and it would
 # be worth nothing to a reader the moment they understood how it was obtained.
 # The FLOOR on a review bounty, not a fixed price.
 #
@@ -4917,7 +4918,7 @@ def enforce_database_schema(conn: sqlite3.Connection):
         # credibility claim, which is the thing this framework argues against.
         "publish_kind": "TEXT DEFAULT 'author'",
         # Real h-index / i10-index from OpenAlex. Reported as author context;
-        # excluded from scoring per CoARA.
+        # excluded from scoring (they measure career stage, not the work).
         "author_metrics": "TEXT DEFAULT '{}'",
         # Difficulty-adjusted emission record: what was minted and why.
         "emission_record": "TEXT DEFAULT '{}'",
@@ -9027,6 +9028,70 @@ def fetch_semantic_scholar_pdf(title_or_doi):
         pass
     return None
 
+# Manuscript URLs come from visitors (Discover, a pasted link) and from third-party metadata, and the server fetches
+# them. So a fetch goes only to http(s) on public addresses, every redirect is checked the same way, and the body is
+# read in pieces up to a cap, rather than whole into memory. Before this, any URL was fetched, redirects followed,
+# which let a visitor reach the deployment's private network and hand it endless bodies.
+MAX_FETCH_BYTES = int(float(os.getenv("MAX_FETCH_MB", str(max(MAX_UPLOAD_MB, 50)))) * 1024 * 1024)
+
+
+def public_url(url: str) -> bool:
+    """True when `url` is http(s) and every address its host resolves to is a public one."""
+    try:
+        parts = urllib.parse.urlsplit(url)
+    except ValueError:
+        return False
+    if parts.scheme not in ("http", "https") or not parts.hostname:
+        return False
+    try:
+        port = parts.port or (443 if parts.scheme == "https" else 80)
+        infos = socket.getaddrinfo(parts.hostname, port, proto=socket.IPPROTO_TCP)
+    except (OSError, ValueError, UnicodeError):
+        return False
+    if not infos:
+        return False
+    for info in infos:
+        try:
+            addr = ipaddress.ip_address(info[4][0].split("%", 1)[0])
+        except ValueError:
+            return False
+        if getattr(addr, "ipv4_mapped", None):
+            addr = addr.ipv4_mapped
+        if not addr.is_global or addr.is_multicast:
+            return False
+    return True
+
+
+def fetch_public(session, url: str, headers: dict = None, timeout: float = 15, max_bytes: int = None,
+                 redirects: int = 5):
+    """GET a public URL, checking every hop; (response, body) or (None, None). The body stops at `max_bytes`."""
+    max_bytes = max_bytes or MAX_FETCH_BYTES
+    for _ in range(redirects + 1):
+        if not public_url(url):
+            logging.info("Fetch refused, not a public http(s) address: %s", url[:200])
+            return None, None
+        res = session.get(url, headers=headers, timeout=timeout, allow_redirects=False, stream=True)
+        if res.is_redirect or res.status_code in (301, 302, 303, 307, 308):
+            nxt = res.headers.get("Location", "")
+            res.close()
+            if not nxt:
+                return None, None
+            url = urllib.parse.urljoin(url, nxt)
+            continue
+        declared = res.headers.get("Content-Length", "")
+        if declared.isdigit() and int(declared) > max_bytes:
+            res.close()
+            return None, None
+        body = bytearray()
+        for chunk in res.iter_content(chunk_size=65536):
+            body.extend(chunk)
+            if len(body) > max_bytes:
+                res.close()
+                return None, None
+        return res, bytes(body)
+    return None, None
+
+
 def download_pdf(pdf_url):
     if not pdf_url:
         return None
@@ -9055,14 +9120,17 @@ def download_pdf(pdf_url):
         "Connection": "keep-alive",
     }
 
-    try:
-        session = requests.Session()
-        res = session.get(pdf_url, headers=headers, timeout=15, allow_redirects=True)
+    def is_pdf(res, content):
         content_type = res.headers.get("Content-Type", "").lower()
-        if res.status_code == 200 and (
-            b"%PDF" in res.content[:10] or "application/pdf" in content_type
-        ):
-            return res.content
+        return res.status_code == 200 and (b"%PDF" in content[:10] or "application/pdf" in content_type)
+
+    try:
+        res, content = fetch_public(requests.Session(), pdf_url, headers=headers, timeout=15)
+        if res is not None and is_pdf(res, content):
+            return content
+        if res is None:
+            # refused (not public, too large) or a dead end; a browser-like client would get no further
+            return None
     except Exception:
         pass
 
@@ -9071,12 +9139,9 @@ def download_pdf(pdf_url):
             scraper = cloudscraper.create_scraper(
                 browser={"browser": "chrome", "platform": "windows", "desktop": True}
             )
-            res = scraper.get(pdf_url, timeout=20, allow_redirects=True)
-            content_type = res.headers.get("Content-Type", "").lower()
-            if res.status_code == 200 and (
-                b"%PDF" in res.content[:10] or "application/pdf" in content_type
-            ):
-                return res.content
+            res, content = fetch_public(scraper, pdf_url, timeout=20)
+            if res is not None and is_pdf(res, content):
+                return content
         except Exception:
             pass
 
@@ -10418,7 +10483,7 @@ improve, because nothing stated which signals fed which criterion. And nobody
 could audit the score, because the rubric existed only as arithmetic buried in
 a function body.
 
-CoARA's transparency commitment requires that quantitative indicators be
+Responsible assessment requires that quantitative indicators be
 published with their methodology. That is not satisfiable when the methodology
 is an undocumented magic number.
 
@@ -11052,12 +11117,12 @@ def fetch_topic_diversity_for_doi(doi: str) -> Dict:
 #
 # Real values are now fetched from OpenAlex. A deliberate design decision
 # follows, and it is worth stating plainly: **these metrics are reported but do
-# not contribute to piX.** CoARA's first commitment is to abandon inappropriate
-# use of publication-based metrics, naming the h-index specifically, because it
+# not contribute to piX.** Responsible assessment abandons inappropriate use of
+# publication-based metrics, the h-index first among them, because it
 # measures career stage and field citation culture as much as quality — a
 # mid-career biomedical researcher and a brilliant early-career mathematician
 # are not comparable on it. Letting it move a manuscript's score would
-# contradict the framework's core claim while advertising CoARA alignment.
+# contradict the framework's core claim.
 #
 # They appear in the dossier as *author context*, which is what they are
 # legitimately good for: situating a body of work, never grading a paper.
@@ -11107,7 +11172,7 @@ def fetch_author_metrics(author_name: str) -> Dict:
                     "orcid": a.get("orcid"),
                     "affiliation": (inst or {}).get("display_name"),
                     "note": (
-                        "Reported as author context only. Per CoARA, publication-based metrics such "
+                        "Reported as author context only. Publication-based metrics such "
                         "as the h-index are not used to score this manuscript: they reflect career "
                         "stage and field citation culture, not the quality of the work under review."
                     ),
@@ -15767,10 +15832,10 @@ The critical separation
 These are NOT score inputs, and nothing here feeds back into piX. That is
 deliberate and it is the whole reason this can exist at all.
 
-ScholarPi is CoARA-aligned: venue prestige, h-index, team size and author
+ScholarPi assesses the work, not the author: venue prestige, h-index, team size and author
 seniority are explicitly excluded from assessment, because they measure career
 stage and field citation culture rather than the quality of the work. Letting
-them influence a score would reproduce exactly the bias CoARA exists to
+them influence a score would reproduce exactly the bias responsible assessment exists to
 dismantle.
 
 But they *do* influence reception, and a researcher pretending otherwise is
@@ -16026,7 +16091,7 @@ def diagnostics_build_report(payload: Dict, profile: Optional[Dict] = None) -> D
         "disclaimer": (
             "Visibility factors — venue, team size, author profile — are reported here because "
             "they affect how work is received. They are deliberately excluded from the piX "
-            "score itself, in line with CoARA: they reflect career stage and field culture, "
+            "score itself: they reflect career stage and field culture, "
             "not the quality of this manuscript."
         ),
     }
@@ -16186,7 +16251,8 @@ behind the password: a hidden site should not leak its scripts either.
 
 gate_COOKIE = "pi_gate"
 MAX_AGE = 60 * 60 * 24 * 30          # a month, then the password is asked again
-OPEN = ("/api/gate", "/api/health", "/robots.txt")
+OPEN = ("/api/gate", "/api/health", "/robots.txt", "/icon.svg", "/manifest.webmanifest")
+OPEN_PREFIXES = ("/app/", "/fonts/")   # the front end itself, which draws the password field
 
 
 def password() -> str:
@@ -16206,7 +16272,7 @@ def passes(request: Request, secret: str) -> bool:
     pw = password()
     if not pw:
         return True
-    if request.url.path in OPEN:
+    if request.url.path in OPEN or request.url.path.startswith(OPEN_PREFIXES):
         return True
     got = request.cookies.get(gate_COOKIE) or ""
     return bool(got) and hmac.compare_digest(got, token(pw, secret))
@@ -16228,40 +16294,13 @@ def wants_html(request: Request) -> bool:
     return request.method == "GET" and "text/html" in (request.headers.get("accept") or "")
 
 
-PAGE = """<!doctype html>
-<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
-<meta name="robots" content="noindex, nofollow"><title>Pi Tech Lab</title>
-<style>
-  html { background: #f6f6f4; color: #191919; font: 15px/1.5 Geist, "Geist Variable", system-ui, sans-serif; }
-  body { margin: 0; min-height: 100vh; display: grid; place-items: center; }
-  form { display: grid; gap: 12px; width: min(320px, calc(100vw - 32px)); text-align: center; }
-  .pi { width: 56px; height: 56px; border: 1.5px solid #191919; border-radius: 50%; corner-shape: superellipse(1.6515);
-        display: grid; place-items: center; margin: 0 auto 6px; font-size: 24px; }
-  p { margin: 0; color: #6b6b67; }
-  input { font: inherit; padding: 10px 14px; border: 1px solid #c9c9c4; border-radius: 999px; background: #fff; color: inherit; text-align: center; outline: none; }
-  input:focus { border-color: #2f40e8; box-shadow: 0 0 0 3px rgba(47, 64, 232, 0.15); }
-  button { font: inherit; padding: 10px 18px; border: 0; border-radius: 999px; background: #191919; color: #fff; cursor: pointer; }
-  .no { color: #b4574f; min-height: 1.5em; }
-</style></head>
-<body><form method="post" autocomplete="off">
-  <div class="pi" aria-hidden="true">&pi;</div>
-  <p>This copy of Pi Tech Lab is private.</p>
-  <input type="password" name="password" aria-label="Password" autofocus required>
-  <button type="submit">Enter</button>
-  <div class="no" aria-live="polite">__MSG__</div>
-</form>
-<script>
-document.querySelector("form").addEventListener("submit", async e => {
-  e.preventDefault();
-  const no = document.querySelector(".no"), pw = document.querySelector("input").value;
-  const r = await fetch("/api/gate", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ password: pw }) }).catch(() => null);
-  if (r && r.ok) location.reload(); else { no.textContent = "That is not it."; document.querySelector("input").select(); }
-});
-</script></body></html>"""
-
-
 def page(msg: str = "") -> HTMLResponse:
-    return HTMLResponse(PAGE.replace("__MSG__", msg), status_code=401, headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"})
+    """The site itself, answered 401: the Rust app sees the deployment is private and asks for the password."""
+    try:
+        doc = rust_loader()
+    except OSError:
+        doc = "This deployment is private."
+    return HTMLResponse(doc, status_code=401, headers={"Cache-Control": "no-store", "X-Robots-Tag": "noindex, nofollow"})
 
 
 def gate_install(app, secret_of: Callable[[], str]):
@@ -21704,7 +21743,7 @@ def architecture_parameters():
 def get_rubric():
     """Publish the scoring rubric.
 
-    CoARA's transparency commitment requires quantitative indicators be
+    Responsible assessment requires quantitative indicators be
     published with their methodology. Exposing the rubric as data — rather
     than leaving it implicit in code — is what makes every score auditable.
     """
@@ -22163,7 +22202,7 @@ def arcade_finish(payload: ArcadeRun, request: Request):
 # ==============================================================================================================
 # routes/explorer.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
-"""routes/explorer.py: the ledger explorer and dossiers (FAIR, CoARA). Split from api.py; see DESIGN.md section 5."""
+"""routes/explorer.py: the ledger explorer and dossiers (FAIR). Split from api.py; see DESIGN.md section 5."""
 
 explorer_router = APIRouter()
 
@@ -22481,7 +22520,7 @@ CRITERION_DEFINITIONS = {
 
 
 def build_fair_dossier(d: dict) -> dict:
-    """Assemble a self-describing, CoARA-aligned assessment record."""
+    """Assemble a self-describing assessment record."""
     integrity = d.get("integrity") or {}
     ref_audit = d.get("reference_audit") or {}
     authorship = d.get("authorship_signal") or {}
@@ -22495,7 +22534,6 @@ def build_fair_dossier(d: dict) -> dict:
     return {
         "@context": {
             "schema": "https://schema.org/",
-            "coara": "https://www.coara.org/agreement/the-commitments/",
             "eosc": "https://eosc.eu/interoperability-framework/",
         },
         "schema_version": DOSSIER_SCHEMA_VERSION,
@@ -22517,7 +22555,7 @@ def build_fair_dossier(d: dict) -> dict:
         },
         "assessment": {
             "framework": "Pi-Index",
-            "alignment": ["CoARA", "DORA", "RRA"],
+            "alignment": ["DORA", "RRA"],
             "composite_score_piX": d.get("score"),
             "logic_integrity": d.get("logic_integrity"),
             "piq_minted": d.get("piq"),
@@ -22532,7 +22570,7 @@ def build_fair_dossier(d: dict) -> dict:
                 for cid in CRITERION_DEFINITIONS
             ],
         },
-        # CoARA asks that quantitative indicators be published with their
+        # Quantitative indicators are published with their
         # provenance and limitations, not as bare numbers.
         "qualitative_basis": {
             "final_judge": judge.get("final_judge_label"),
@@ -22634,111 +22672,6 @@ def dossier_by_doi(doi: str = Query(..., min_length=4, max_length=200)):
         "integrity_flag": (dossier.get("integrity") or {}).get("compromised", False),
         "dossier_url": f"/api/dossier/{dossier['eval_hash']}/fair",
     }
-
-
-@explorer_router.get("/api/dossier/{eval_hash}/coara.html", response_class=HTMLResponse)
-def coara_dossier_html(eval_hash: str):
-    """Printable CoARA/DORA dossier for inclusion in evaluation portfolios."""
-    conn = get_db_connection()
-    try:
-        row = conn.execute(
-            f"SELECT {restrict_to_existing_columns(conn, EXPLORER_COLUMNS)} FROM papers_assessment p WHERE p.eval_hash = ?", (eval_hash,)
-        ).fetchone()
-    finally:
-        conn.close()
-    if not row:
-        raise HTTPException(status_code=404, detail="Record not found.")
-
-    d = build_dossier_from_row(row)
-    fair = build_fair_dossier(d)
-    judge = d.get("judge_metadata") or {}
-    integrity = d.get("integrity") or {}
-
-    def esc(v):
-        return (str(v) if v is not None else "—").replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
-
-    rows = "".join(
-        f"<tr><td><strong>{c['id']}</strong></td><td>{esc(c['name'])}"
-        f"<div class='def'>{esc(c['definition'])}</div></td>"
-        f"<td class='num'>{c['score']:.1f}</td></tr>"
-        for c in fair["assessment"]["criteria"]
-    )
-    warn_html = "".join(f"<li>{esc(w)}</li>" for w in d.get("warnings", [])) or "<li>None raised.</li>"
-    jurors = ", ".join(fair["qualitative_basis"]["juror_models"] or []) or "—"
-
-    integrity_banner = ""
-    if integrity.get("compromised"):
-        integrity_banner = (
-            "<div class='alert'><strong>Research integrity alert.</strong> This manuscript was found to "
-            "contain content designed to manipulate an automated reviewer. Logic integrity was set to "
-            "0.0 and no piQ was minted.</div>"
-        )
-
-    return HTMLResponse(f"""<!DOCTYPE html><html lang="en"><head><meta charset="utf-8">
-<title>CoARA Assessment Dossier — {esc(d.get('title'))}</title>
-<style>
- body{{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;max-width:820px;
-   margin:40px auto;padding:0 24px;color:#0f172a;line-height:1.6}}
- h1{{font-size:1.5rem;margin-bottom:4px}} h2{{font-size:1.05rem;margin-top:28px;
-   border-bottom:1px solid #e2e8f0;padding-bottom:6px}}
- .sub{{color:#64748b;margin-bottom:20px}}
- table{{width:100%;border-collapse:collapse;font-size:13px;margin-top:10px}}
- th,td{{text-align:left;padding:8px 10px;border-bottom:1px solid #f1f5f9;vertical-align:top}}
- th{{background:#f8fafc;font-size:11px;text-transform:uppercase;letter-spacing:.05em;color:#64748b}}
- .num{{text-align:right;font-variant-numeric:tabular-nums;font-weight:600}}
- .def{{color:#64748b;font-size:11.5px;margin-top:2px}}
- .kv{{display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #f1f5f9;font-size:13px}}
- .kv span:first-child{{color:#64748b}}
- .alert{{background:#fef2f2;border:1px solid #fecaca;border-left:4px solid #dc2626;color:#7f1d1d;
-   padding:12px 14px;border-radius:6px;margin:16px 0;font-size:13px}}
- .note{{background:#f8fafc;border:1px solid #e2e8f0;border-radius:6px;padding:12px 14px;
-   font-size:12px;color:#475569;margin-top:12px}}
- code{{background:#f1f5f9;padding:2px 5px;border-radius:4px;font-size:11px;word-break:break-all}}
- ul{{padding-left:20px;font-size:13px}} li{{margin-bottom:6px}}
- @media print{{body{{margin:0}} h2{{page-break-after:avoid}}}}
-</style></head><body>
-<h1>{esc(d.get('title'))}</h1>
-<div class="sub">{esc(d.get('author_name'))}</div>
-{integrity_banner}
-
-<h2>Assessment Summary</h2>
-<div class="kv"><span>Composite pi-Index (piX)</span><strong>{safe_float(d.get('score'),0):.1f} / 100</strong></div>
-<div class="kv"><span>Logic integrity</span><strong>{safe_float(d.get('logic_integrity'),0):.1f} / 100</strong></div>
-<div class="kv"><span>pi-Quotient minted</span><strong>{safe_float(d.get('piq'),0):.2f} piQ</strong></div>
-<div class="kv"><span>Assessed</span><strong>{esc(d.get('timestamp'))}</strong></div>
-
-<h2>Qualitative Basis</h2>
-<p style="font-size:13px">CoARA requires quantitative indicators be published with their provenance.
-This assessment was adjudicated by <strong>{esc(judge.get('final_judge_label'))}</strong> over the
-independent evaluations of {esc(jurors)}.</p>
-<div class="kv"><span>Independent external jurors</span><strong>{esc(judge.get('external_juror_count'))}</strong></div>
-<div class="kv"><span>Judgement quality</span><strong>{esc(judge.get('tier'))}</strong></div>
-<div class="kv"><span>Inter-model agreement</span><strong>{esc(judge.get('inter_model_agreement'))}</strong></div>
-<div class="note">{esc(judge.get('rationale'))}</div>
-
-<h2>Criteria Assessment</h2>
-<table><thead><tr><th>ID</th><th>Criterion</th><th class="num">Score</th></tr></thead><tbody>{rows}</tbody></table>
-
-<h2>Open Science Indicators</h2>
-<div class="kv"><span>MDAR adherence</span><strong>{safe_float(d.get('mdar_score'),0)*100:.1f}%</strong></div>
-<div class="kv"><span>Valid RRIDs detected</span><strong>{esc(d.get('rrid_count'))}</strong></div>
-<div class="kv"><span>Reproducibility signal</span><strong>{safe_float(d.get('repro_score'),0)*100:.1f}%</strong></div>
-
-<h2>Processing Warnings</h2>
-<ul>{warn_html}</ul>
-
-<h2>Verification</h2>
-<div class="kv"><span>Evaluation hash</span><code>{esc(d.get('eval_hash'))}</code></div>
-<div class="kv"><span>zk-SNARK proof</span><code>{esc(d.get('zk_proof'))}</code></div>
-<div class="kv"><span>Transaction</span><code>{esc(d.get('tx_hash'))}</code></div>
-
-<h2>Limitations</h2>
-<ul>{''.join(f'<li>{esc(l)}</li>' for l in fair['limitations'])}</ul>
-
-<div class="note">Machine-readable equivalent: <code>/api/dossier/{esc(eval_hash)}/fair</code> ·
-Schema <code>{DOSSIER_SCHEMA_VERSION}</code> · Licensed CC BY 4.0.<br>
-Pi-Index is decision support aligned with CoARA and DORA. It does not replace peer review.</div>
-</body></html>""")
 
 
 @explorer_router.get("/api/explorer/tx-url")
@@ -24350,6 +24283,75 @@ class WalletVerifyRequest(BaseModel):
     signature: Optional[str] = None
 
 
+# Sign-in nonces. The message a wallet signs is written here, on the server, around a nonce that is stored and
+# accepted exactly once, for the address it was issued to, within SIGN_IN_NONCE_TTL. Before this the browser wrote
+# the message itself and the server checked only that the address had signed *something*, so any signature a
+# wallet had ever made, on any site, signed it in here, the owner's included.
+SIGN_IN_NONCE_TTL = int(os.getenv("SIGN_IN_NONCE_TTL", "600"))
+
+
+def _sign_in_nonces(conn):
+    conn.execute("CREATE TABLE IF NOT EXISTS auth_nonces (nonce TEXT PRIMARY KEY, address TEXT NOT NULL, "
+                 "message TEXT NOT NULL, expires_at REAL NOT NULL)")
+    return conn
+
+
+def issue_sign_in_message(address: str, request: Request) -> str:
+    """The exact text this address must sign to sign in (EIP-4361 layout), with a fresh single-use nonce."""
+    origin = _request_origin(request) or "https://www.piii.app"
+    domain = origin.split("://", 1)[-1]
+    nonce = secrets.token_hex(16)
+    now = datetime.now(timezone.utc)
+    iso = lambda t: t.strftime("%Y-%m-%dT%H:%M:%SZ")
+    message = (
+        f"{domain} wants you to sign in with your Ethereum account:\n{address}\n\n"
+        f"Sign in to piii lab. This request does not cost anything or move any funds.\n\n"
+        f"URI: {origin}\nVersion: 1\nChain ID: 11155111\nNonce: {nonce}\n"
+        f"Issued At: {iso(now)}\nExpiration Time: {iso(now + timedelta(seconds=SIGN_IN_NONCE_TTL))}"
+    )
+    conn = _sign_in_nonces(get_db_connection())
+    try:
+        conn.execute("DELETE FROM auth_nonces WHERE expires_at < ?", (time.time(),))
+        conn.execute("INSERT INTO auth_nonces (nonce, address, message, expires_at) VALUES (?, ?, ?, ?)",
+                     (nonce, address.lower(), message, time.time() + SIGN_IN_NONCE_TTL))
+        conn.commit()
+    finally:
+        conn.close()
+    return message
+
+
+def consume_sign_in_message(address: str, message: str) -> bool:
+    """True once, for a message this server issued to this address and that has not expired."""
+    m = re.search(r"^Nonce: ([0-9a-f]{32})$", message or "", re.M)
+    if not m:
+        return False
+    conn = _sign_in_nonces(get_db_connection())
+    try:
+        row = conn.execute("SELECT address, message, expires_at FROM auth_nonces WHERE nonce = ?",
+                           (m.group(1),)).fetchone()
+        # deleted before anything else is checked, so a nonce is spent by its first use, right or wrong
+        gone = conn.execute("DELETE FROM auth_nonces WHERE nonce = ?", (m.group(1),)).rowcount
+        conn.commit()
+    finally:
+        conn.close()
+    if not row or gone != 1:
+        return False
+    stored_address, stored_message, expires_at = row
+    return (stored_address == address.lower() and hmac.compare_digest(stored_message, message)
+            and float(expires_at) >= time.time())
+
+
+@auth_router.get("/api/auth/wallet/nonce")
+def wallet_nonce(request: Request, address: str = Query(default="")):
+    """The message to sign in with: issued here, valid once, for ten minutes."""
+    check_rate_limit(get_client_ip(request), bucket="auth-nonce")
+    if not core_w3.is_address(address):
+        raise HTTPException(status_code=400, detail="Not a valid Ethereum address.")
+    clean_wallet = core_w3.to_checksum_address(address)
+    return {"address": clean_wallet, "message": issue_sign_in_message(clean_wallet, request),
+            "expires_in": SIGN_IN_NONCE_TTL}
+
+
 @auth_router.post("/api/auth/wallet/verify")
 def verify_wallet(req: WalletVerifyRequest, request: Request):
     # An authentication surface, and ECDSA recovery is not free. Unlimited
@@ -24361,13 +24363,19 @@ def verify_wallet(req: WalletVerifyRequest, request: Request):
     clean_wallet = core_w3.to_checksum_address(req.address)
     authenticated = False
     if req.signature and req.message:
+        if not consume_sign_in_message(clean_wallet, req.message):
+            add_log(f"Wallet sign-in refused, message not issued here or already used: {clean_wallet}")
+            return {
+                "address": clean_wallet, "authenticated": False, "token": "",
+                "detail": ("This sign-in message was not issued by this site, has expired or was already used. "
+                           "Start signing in again."),
+            }
         try:
-            decoded_msg = urllib.parse.unquote(req.message)
-            signable_msg = encode_defunct(text=decoded_msg)
+            signable_msg = encode_defunct(text=req.message)
             recovered = core_w3.eth.account.recover_message(signable_msg, signature=req.signature)
             authenticated = recovered.lower() == clean_wallet.lower()
         except Exception as e:
-            add_log(f"SIWE signature verification fallback: {e}")
+            add_log(f"SIWE signature verification failed: {e}")
     if not authenticated:
         # An unsigned "link" proves nothing and now grants nothing. Returning a
         # session here would recreate the exact hole this replaces.
@@ -24581,6 +24589,7 @@ def orcid_callback(request: Request, code: Optional[str] = None, state: Optional
                 "redirect_uri": resolve_orcid_redirect_uri(request),
             },
             headers={"Accept": "application/json"},
+            timeout=15,
         )
         if res.status_code == 200:
             data = res.json()
@@ -26560,31 +26569,6 @@ def stats_count():
 
 
 # ==============================================================================================================
-# shape.py (was its own module; LicenseRef-PiTechLab-Proprietary)
-# ==============================================================================================================
-"""The look a deployment serves: SCHOLARPI_SHAPE=superellipse stamps the superellipse look into index.html.
-
-The look is decided before the first paint, by the inline script at the top of index.html (orbit-on, and
-shape-se on se.* / super.* host names or ?shape=se). A deployment that sets SCHOLARPI_SHAPE=superellipse on
-another host name used to tell the page through /api/build after it had loaded, by which time the modules
-that lay out a first visit (super/nodes.js, live.js, super/logo.js) had decided for the round look, so a
-first-time visitor got a round-look page in superellipse clothes: no central super, no port wires, Live
-docked. The class is stamped into the document on the way out instead (api.py _versioned_index).
-"""
-
-SUPERELLIPSE = "superellipse"
-_ROUND = 'h.classList.add("orbit-on");'
-_SE = 'h.classList.add("orbit-on","shape-se");'
-
-
-def stamp(html: str, shape: str) -> str:
-    """index.html as served: with shape-se decided up front when the deployment's shape is superellipse."""
-    if (shape or "").strip().lower() == SUPERELLIPSE:
-        return html.replace(_ROUND, _SE, 1)
-    return html
-
-
-# ==============================================================================================================
 # super_engine.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
 """super_engine.py -- the Super Neural Engine: one prompt, every engine.
@@ -27117,118 +27101,180 @@ app.include_router(super_engine_build_router(
 
 
 # ---------------------------------------------------------------------------
+# Super AI icons: when a super shrinks to an icon, Super AI draws its icon from its name (owner, 2026-10-14). The
+# judge model is asked for a small line drawing as SVG path data only; the paths are checked character by character
+# and the page builds the <svg> itself, so nothing the model writes is ever run or inserted as markup. Icons are kept
+# on disk, so each name is drawn once for every visitor.
+# ---------------------------------------------------------------------------
+ICON_NAME_MAX = 48
+ICON_MAX_PATHS = 6
+ICON_PATH_MAX = 400
+ICON_NEW_PER_REQUEST = 3
+_ICON_PATH_RE = re.compile(r"^[MmLlHhVvCcSsQqTtAaZz0-9.,\-\s]+$")
+_ICON_LOCK = threading.Lock()
+
+
+def icon_name(raw) -> str:
+    """A super's name as the icon key: printable, single-spaced, at most 48 characters."""
+    name = " ".join("".join(ch for ch in str(raw or "") if ch.isprintable()).split())
+    return name[:ICON_NAME_MAX]
+
+
+def icon_paths(reply) -> Optional[List[str]]:
+    """The paths of a model's icon reply, or None when they are not plain path data in a 24 x 24 box."""
+    paths = reply.get("paths") if isinstance(reply, dict) else None
+    if not isinstance(paths, list) or not paths:
+        return None
+    out = []
+    for d in paths[:ICON_MAX_PATHS]:
+        d = " ".join(str(d or "").split())
+        if not d or len(d) > ICON_PATH_MAX or not _ICON_PATH_RE.match(d) or d[0] not in "Mm":
+            return None
+        nums = [float(x) for x in re.findall(r"-?\d*\.?\d+", d)]
+        if any(abs(v) > 48 for v in nums):
+            return None
+        out.append(d)
+    return out
+
+
+def icon_prompt(name: str) -> str:
+    return ("Draw a simple, recognisable line icon for a button labelled " + json.dumps(name) + ". "
+            "Use a 24 x 24 grid, stroke only (no fill), in the style of Lucide or Feather icons: one to five SVG "
+            "paths with absolute commands (M, L, H, V, C, Q, A, Z) and coordinates between 2 and 22. "
+            'Reply with JSON only: {"paths": ["M...", "..."]}')
+
+
+def _icons_file() -> str:
+    return os.path.join(BASE_DIR, "super_icons.json")
+
+
+def icons_load() -> Dict[str, List[str]]:
+    try:
+        with open(_icons_file(), "r", encoding="utf-8") as fh:
+            data = json.load(fh)
+        return {k: v for k, v in data.items() if isinstance(k, str) and icon_paths({"paths": v})}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def icons_store(name: str, paths: List[str]) -> None:
+    with _ICON_LOCK:
+        data = icons_load()
+        data[name] = paths
+        tmp = _icons_file() + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as fh:
+            json.dump(data, fh)
+        os.replace(tmp, _icons_file())
+
+
+def super_icons_build_router(draw: Callable[[str], Optional[List[str]]], rate_limit: Callable[[Request], None],
+                             load: Callable[[], Dict[str, List[str]]] = icons_load,
+                             store: Callable[[str, List[str]], None] = icons_store,
+                             allowed: Callable[[Request], bool] = lambda r: True) -> APIRouter:
+    router = APIRouter(prefix="/api/super", tags=["super"])
+
+    @router.post("/icons")
+    def icons(body: Dict[str, Any], request: Request):
+        names = []
+        for raw in (body.get("names") or [])[:24] if isinstance(body, dict) else []:
+            n = icon_name(raw)
+            if n and n not in names:
+                names.append(n)
+        have = load()
+        out = {n: have[n] for n in names if n in have}
+        missing = [n for n in names if n not in out]
+        failed: List[str] = []
+        if missing and not allowed(request):
+            return {"icons": out, "pending": [], "failed": missing}
+        todo = missing[:ICON_NEW_PER_REQUEST]
+        if todo:
+            rate_limit(request)
+            with concurrent.futures.ThreadPoolExecutor(max_workers=len(todo)) as pool:
+                drawn = list(pool.map(lambda n: (n, draw(n)), todo))
+            for n, paths in drawn:
+                if paths:
+                    out[n] = paths
+                    try:
+                        store(n, paths)
+                    except OSError as e:
+                        logging.warning("Super icons: could not keep %r: %s", n, e)
+                else:
+                    failed.append(n)
+        return {"icons": out, "pending": missing[ICON_NEW_PER_REQUEST:], "failed": failed}
+
+    return router
+
+
+def _super_draw_icon(name: str) -> Optional[List[str]]:
+    try:
+        return icon_paths(_super_judge(icon_prompt(name)) or {})
+    except Exception as e:                               # noqa: BLE001 -- a failed drawing leaves the initials
+        logging.warning("Super icons: drawing %r failed: %s", name, e)
+        return None
+
+
+app.include_router(super_icons_build_router(
+    draw=_super_draw_icon,
+    rate_limit=lambda request: check_rate_limit(get_client_ip(request), bucket="sp-icons"),
+    # the judge is an outside model: not for a visitor who said no to outside providers
+    allowed=lambda request: not declined(request, "ext")))
+
+
+# ---------------------------------------------------------------------------
 # 9. Serve the frontend (single-page static app)
 # ---------------------------------------------------------------------------
 _FRONTEND_DIR = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "front")
 
-# Asset versions are derived from file mtimes, not maintained by hand.
-#
-# index.html references its assets as `app.js?v=16`. That integer was edited
-# manually on each release, and when it was forgotten — which is the normal
-# outcome for a number a human has to remember to change — every returning
-# browser kept serving the previously cached JS and CSS. The symptom is
-# indistinguishable from the code being broken: fixes ship, the deployment is
-# correct, and the user sees the old behaviour with no error anywhere.
-#
-# Rewriting the query string from the file's modification time removes the
-# step. Change a file, its version changes; do not, and the browser cache
-# stays valid. Done on the way out rather than by editing the file on disk, so
-# the source stays readable and nothing has to be regenerated at build time.
-_ASSET_QUERY = re.compile(r'\b(?P<file>[\w./-]+\.(?:js|css))\?v=[\w.]+')
+def rust_loader() -> str:
+    """The document every page address gets: the front end is Rust (back/rust/ui, built to front/app/ui.wasm).
 
+    A browser has to be handed a document before it will run anything, so this is the least one can be: a
+    character set, a viewport and the script that starts the WebAssembly. Every view, word and style is drawn by
+    the Rust code. The version is the content of the two files, so a new build is fetched at once and an
+    unchanged one comes from the cache.
+    """
+    h = hashlib.sha256()
+    for name in ("host.js", "ui.wasm"):
+        with open(os.path.join(_FRONTEND_DIR, "app", name), "rb") as fh:
+            h.update(fh.read())
+    return ('<!doctype html><html lang="en"><meta charset="utf-8">'
+            '<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no"><title>Piii Lab</title>'
+            '<meta name="theme-color" content="#f7f5ef"><link rel="icon" href="/icon.svg">'
+            '<link rel="manifest" href="/manifest.webmanifest">'
+            f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script></html>')
 
-def _asset_version(filename: str) -> str:
-    try:
-        return str(int(os.path.getmtime(os.path.join(_FRONTEND_DIR, filename))))
-    except OSError:
-        # Unknown file: leave the cache-buster alone rather than invent one
-        # that changes on every request and defeats caching entirely.
-        return ""
-
-
-def _versioned_index() -> str:
-    with open(os.path.join(_FRONTEND_DIR, "index.html"), "r", encoding="utf-8") as fh:
-        html = fh.read()
-
-    def sub(match):
-        version = _asset_version(match.group("file"))
-        return f"{match.group('file')}?v={version}" if version else match.group(0)
-
-    return stamp(_ASSET_QUERY.sub(sub, html), os.getenv("SCHOLARPI_SHAPE", ""))
-
-
-_INDEX_GZ: Dict[str, bytes] = {}
 
 if os.path.isdir(_FRONTEND_DIR):
     @app.get("/", include_in_schema=False)
     @app.get("/index.html", include_in_schema=False)
-    def _serve_index(request: Request):
-        """index.html, the whole front end in one file, with asset versions stamped from the files on disk.
-
-        It carries every script and style now (owner, 2026-10-13: "merge everything in front end into one thing"),
-        so it is no longer no-store: a browser keeps it and asks each time whether it changed (no-cache + an ETag
-        of its content), and an unchanged page answers 304 with no body. Sent gzipped when the browser accepts it
-        (about a quarter of its size), compressed once per version.
-        """
-        try:
-            html = _versioned_index()
-        except OSError:
-            raise HTTPException(status_code=404, detail="Frontend is not available.")
-        body = html.encode("utf-8")
-        etag = '"' + hashlib.sha256(body).hexdigest()[:24] + '"'
-        headers = {"Cache-Control": "no-cache", "ETag": etag, "Vary": "Accept-Encoding"}
-        if IS_EXPERIMENTAL:
-            headers["X-Robots-Tag"] = "noindex, nofollow"
-        if etag in [t.strip() for t in request.headers.get("if-none-match", "").split(",")]:
-            return Response(status_code=304, headers=headers)
-        if "gzip" in request.headers.get("accept-encoding", "").lower():
-            packed = _INDEX_GZ.get(etag)
-            if packed is None:
-                import gzip
-                packed = gzip.compress(body, compresslevel=6, mtime=0)
-                _INDEX_GZ.clear()                       # only the current version is worth keeping
-                _INDEX_GZ[etag] = packed
-            return Response(packed, media_type="text/html; charset=utf-8",
-                            headers={**headers, "Content-Encoding": "gzip"})
-        return HTMLResponse(body, headers=headers)
-
     @app.get("/app", include_in_schema=False)
     @app.get("/app/", include_in_schema=False)
-    def _serve_rust_app():
-        """The front end written in Rust (back/rust/ui, built to front/app/ui.wasm).
+    @app.get("/confirm", include_in_schema=False)
+    @app.get("/confirm/", include_in_schema=False)
+    def _serve_index(request: Request):
+        """The site (owner, 2026-10-14: "remove all html and rewrite everything in rust only").
 
-        A browser has to be handed a document before it will run anything, so this is the least one can be: a
-        character set, a viewport and the script that starts the WebAssembly. Every view is drawn by the Rust code.
+        /confirm/?t=… is the permission link sent by email: the Rust app reads the token from the address.
         """
-        h = hashlib.sha256()
-        for name in ("host.js", "ui.wasm"):
-            try:
-                with open(os.path.join(_FRONTEND_DIR, "app", name), "rb") as fh:
-                    h.update(fh.read())
-            except OSError:
-                raise HTTPException(status_code=404, detail="The Rust front end is not built.")
-        doc = ('<!doctype html><html lang="en"><meta charset="utf-8">'
-               '<meta name="viewport" content="width=device-width,initial-scale=1"><title>ScholarPi</title>'
-               '<link rel="icon" href="/icon.svg">'
-               f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script></html>')
+        try:
+            doc = rust_loader()
+        except OSError:
+            raise HTTPException(status_code=404, detail="The front end is not built.")
         headers = {"Cache-Control": "no-cache"}
         if IS_EXPERIMENTAL:
             headers["X-Robots-Tag"] = "noindex, nofollow"
         return HTMLResponse(doc, headers=headers)
 
-    # The Lab boots HAL-OS in the browser with v86, which is an ES module
-    # (.mjs) plus WebAssembly. Browsers refuse a module script served with a
-    # non-JavaScript MIME type, and python:3.11-slim has no /etc/mime.types to
-    # fall back on, so the two types are registered explicitly rather than
-    # left to whatever the container happens to know.
+    # python:3.11-slim has no /etc/mime.types to fall back on, so the types the site serves are registered
+    # explicitly rather than left to whatever the container happens to know (WebAssembly must be
+    # application/wasm).
     import mimetypes
     mimetypes.add_type("text/javascript", ".mjs")
     mimetypes.add_type("application/wasm", ".wasm")
     mimetypes.add_type("font/woff2", ".woff2")   # the self-hosted Geist typeface
     mimetypes.add_type("application/x-xpinstall", ".xpi")   # the Zotero plugin (frontend/zotero/scholarpi.xpi)
 
-    # Mounted after the routes above so "/" resolves to the stamped index
-    # rather than to the raw file on disk.
+    # Mounted after the routes above, which answer the page addresses.
     app.mount("/", StaticFiles(directory=_FRONTEND_DIR, html=True), name="frontend")
 
 

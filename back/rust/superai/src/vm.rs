@@ -20,8 +20,8 @@
 //!
 //! Registers and memory are unbounded (a map from names and from numbers), jumps are conditional: with them it can
 //! compute anything a Turing machine can, within a step budget (a million instructions) so a page never hangs.
-use crate::json::Json;
-use crate::lang::{apply, op_of, Value};
+use super::json::Json;
+use super::lang::{apply, op_of, Value};
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};

@@ -30,3 +30,7 @@ front/hal/build.json
 # Rust build output
 back/rust/*/target/
 back/rust/ui/target/
+/Untitled
+
+# rustc type-length dumps
+*.long-type-*.txt

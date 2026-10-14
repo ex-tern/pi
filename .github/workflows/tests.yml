@@ -33,7 +33,7 @@ jobs:
           GEMINI_API_KEY: ""
 
   rust:
-    # the Rust side of the site: the SuperAI language and the constants (π, e, φ, γ), both built to WebAssembly
+    # the Rust side of the site: the front end (built to WebAssembly), the SuperAI language and the constants
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -43,3 +43,8 @@ jobs:
       - name: Numbers
         working-directory: back/rust/numbers
         run: cargo test -q
+      - name: Front end
+        working-directory: back/rust/ui
+        run: |
+          rustup target add wasm32-unknown-unknown
+          cargo build --release --target wasm32-unknown-unknown

@@ -27,7 +27,7 @@
 //! by any wire gives the operation: 3 and 5 wired in, + attached, is 8); anything else becomes a
 //! question for the engines, which the page asks and hands back as `answers`.
 
-use crate::json::Json;
+use super::json::Json;
 use alloc::collections::BTreeMap;
 use alloc::format;
 use alloc::string::{String, ToString};
@@ -52,10 +52,10 @@ pub fn num_text(v: f64) -> String {
     if v.is_infinite() {
         return if v > 0.0 { "Infinity".into() } else { "-Infinity".into() };
     }
-    if v == crate::math::trunc(v) && v.abs() < 1e15 {
+    if v == super::math::trunc(v) && v.abs() < 1e15 {
         return format!("{}", v as i64);
     }
-    if v == crate::math::trunc(v) {
+    if v == super::math::trunc(v) {
         return format!("{}", v);
     }
     format!("{:.3}", v)
@@ -183,14 +183,14 @@ pub fn apply_nums(op: Op, xs: &[f64]) -> Value {
         Op::And => Value::Bool(xs.iter().all(|x| *x != 0.0)),
         Op::Or => Value::Bool(xs.iter().any(|x| *x != 0.0)),
         Op::Not => Value::Bool(xs[0] == 0.0),
-        Op::Round => Value::Num(crate::math::round(xs[0])),
-        Op::Floor => Value::Num(crate::math::floor(xs[0])),
+        Op::Round => Value::Num(super::math::round(xs[0])),
+        Op::Floor => Value::Num(super::math::floor(xs[0])),
         _ => Value::Num(xs[1..].iter().fold(xs[0], |a, &b| match op {
             Op::Mul => a * b,
             Op::Add => a + b,
             Op::Sub => a - b,
             Op::Div => a / b,
-            Op::Pow => crate::math::pow(a, b),
+            Op::Pow => super::math::pow(a, b),
             Op::Rem => a % b,
             Op::Min => if b < a { b } else { a },
             Op::Max => if b > a { b } else { a },

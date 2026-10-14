@@ -18,7 +18,7 @@
 //!
 //! Values: numbers, "quoted text", bare words (text), null/true/false, JSON in [ ] or { }, and comma lists (`1,2` or `0.5,`).
 //! An attribute with no `=` is true. Every line that cannot be read is an error with its line number.
-use crate::json::{self, Json};
+use super::json::{self, Json};
 use alloc::format;
 use alloc::string::{String, ToString};
 use alloc::vec;

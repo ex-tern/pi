@@ -9,8 +9,13 @@ use alloc::collections::BTreeMap;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+/// A message that takes in what happened (a pointer's place).
+pub trait Fill {
+    fn fill(self, v: String) -> Self;
+}
+
 pub enum Handler<M> {
-    /// The same message whatever happened.
+    /// The same message whatever happened (a message that wants it is filled in: `Fill`).
     Msg(M),
     /// A message made from the node's value (an input's text, a checkbox's "1"/"0", chosen files).
     Val(fn(String) -> M),
@@ -77,6 +82,9 @@ impl<M> El<M> {
     pub fn style(self, v: impl Into<String>) -> Self {
         self.attr("style", v)
     }
+    pub fn on_if(self, cond: bool, kind: &'static str, m: M) -> Self {
+        if cond { self.on(kind, m) } else { self }
+    }
     pub fn on(mut self, kind: &'static str, m: M) -> Self {
         self.on.push((kind, Handler::Msg(m)));
         self
@@ -137,7 +145,7 @@ pub struct Dom<M> {
     handlers: BTreeMap<u32, Vec<(&'static str, Handler<M>)>>,
 }
 
-impl<M: Clone> Dom<M> {
+impl<M: Clone + Fill> Dom<M> {
     pub fn new(root: u32) -> Self {
         Dom { root, tree: None, handlers: BTreeMap::new() }
     }
@@ -160,7 +168,7 @@ impl<M: Clone> Dom<M> {
         let hs = self.handlers.get(&id)?;
         let (_, h) = hs.iter().find(|(k, _)| *k == kind)?;
         Some(match h {
-            Handler::Msg(m) => m.clone(),
+            Handler::Msg(m) => m.clone().fill(value),
             Handler::Val(f) => f(value),
         })
     }

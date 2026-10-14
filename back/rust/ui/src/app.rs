@@ -1,10 +1,11 @@
 //! ScholarPi: the state, what changes it, and the views.
 //!
-//! Pages are addressed by the fragment: #/assess (the start), #/explore[/papers|/authors|/journal], #/library,
-//! #/account, #/paper/<hash>. Every change goes through `update`, after which the whole view is built again and
-//! `Dom` patches the page.
+//! The page is a canvas of supers around the π mark (#/). Opening one (#/assess, #/explore[/papers|/authors|
+//! /journal], #/live, #/library, #/account, #/paper/<hash>, #/confirm/<token>) makes it fill the canvas, and every
+//! other super turns into an icon in the rail at the side (along the bottom on a phone); π in the rail goes back.
+//! Every change goes through `update`, after which the whole view is built again and `Dom` patches the page.
 
-use crate::dom::{Node, el, txt};
+use crate::dom::{El, Node, el, txt};
 use crate::host;
 use crate::json::{self, Value};
 use crate::mem::Global;
@@ -19,6 +20,12 @@ type N = Node<Msg>;
 
 #[derive(Clone, Copy, PartialEq)]
 enum Page {
+    Home,
+    Group(u8),
+    Item(u8, u8),
+    Map,
+    Live,
+    Confirm,
     Assess,
     Explore,
     Library,
@@ -64,6 +71,41 @@ enum Msg {
     SignIn,
     SignOut,
     Retry,
+    Close(usize),
+    GatePw(String),
+    GateEnter,
+    ConfirmName(String),
+    ConfirmNote(String),
+    ConfirmAnswer(bool),
+    Print,
+    PDown(usize, String),
+    FloatDown(String),
+    /// A double click on the bare canvas: left makes a sparkle, right (true) a super.
+    Dbl(bool, String),
+    PMember(u8),
+    Activate(u8),
+    WireSel(u8),
+    WireDel(u8),
+    Port(usize, u8),
+    /// a press on a tip (x, y, how): a wire starts, and follows the drag to where it is let go
+    PortDown(usize, u8, String),
+    /// A tool's action, with what was typed or chosen (tools.rs).
+    T(Tool, u16, String),
+    /// A tool's action that takes in the event's value (a field's text).
+    TV(Tool, u16),
+}
+
+impl crate::dom::Fill for Msg {
+    fn fill(self, v: String) -> Self {
+        match self {
+            Msg::PDown(id, _) => Msg::PDown(id, v),
+            Msg::PortDown(id, t, _) => Msg::PortDown(id, t, v),
+            Msg::FloatDown(_) => Msg::FloatDown(v),
+            Msg::Dbl(b, _) => Msg::Dbl(b, v),
+            Msg::TV(t, a) => Msg::T(t, a, v),
+            m => m,
+        }
+    }
 }
 
 #[derive(Clone, PartialEq)]
@@ -83,6 +125,15 @@ enum Want {
     Login,
     Stream,
     Visit,
+    Live,
+    Fair(String),
+    Request(String),
+    Answer,
+    Gate,
+    Item(u8, u8),
+    Tool(Tool, u8),
+    Icons,
+    ProgAi(String),
 }
 
 /// Something fetched: nothing yet, on its way, here, or failed.
@@ -163,6 +214,129 @@ struct State {
     pending: BTreeMap<u32, Pending>,
     next_req: u32,
     ticking: bool,
+    // the canvas: what is open, in the order it was opened (the page in use is one of them)
+    open: Vec<(Page, String)>,
+    live: Slot,
+    fair: Slot,
+    pi: String,
+    pi_shown: usize,
+    // a private deployment's password
+    gate: bool,
+    gate_pw: String,
+    gate_err: Option<String>,
+    // a permission request (/confirm/?t=…)
+    ctoken: String,
+    req: Slot,
+    c_name: String,
+    c_note: String,
+    c_sent: Option<Value>,
+    c_err: Option<String>,
+    c_busy: bool,
+    // the canvas: where supers were moved, the view, lock and chain, a drag under way
+    offs: [(f64, f64); NSUP],
+    /// how much each super was grown or shrunk by the middle button
+    sizes: [(f64, f64); NSUP],
+    /// the canvas's zoom (1 = fits the window)
+    zoom: f64,
+    pan: (f64, f64),
+    /// every canvas is locked: it stays where it is and keeps its size. A super, a program node, the floating canvas or
+    /// the open window is unlocked by selecting it and clicking the lock (owner, 2026-10-14: "to unlock a canvas, you
+    /// have to first select it and select the lock to unlock it"). These are the main canvas's unlocked ones.
+    free: Vec<usize>,
+    float_free: bool,
+    win_free: bool,
+    /// the floating canvas or the open window selected by a click, for the lock
+    float_pick: bool,
+    win_pick: bool,
+    chained: bool,
+    dirty: bool,
+    drag: Option<Drag>,
+    pend_member: Option<u8>,
+    item: Slot,
+    item_key: (u8, u8),
+    wires: Vec<WireT>,
+    passes: Vec<PassT>,
+    held_port: Option<(usize, Tip)>,
+    /// where the floating canvas was dragged to (left, top in px), and a drag of it under way
+    float_at: Option<(f64, f64)>,
+    float_drag: Option<FloatDrag>,
+    /// the floating canvas grown by a click (owner, 2026-10-14: "clicking grows the canvas")
+    float_big: bool,
+    /// the last single click on a super, to tell a double click (id, member, time)
+    last_tap: (usize, Option<u8>, f64),
+    /// what is open was opened by a double click on the canvas: it takes 70% of it, the canvas live around it
+    peek: bool,
+    peek_next: bool,
+    /// the super a single click selected (owner, 2026-10-14: "one click selects a super, double click opens it")
+    sup_pick: Option<usize>,
+    /// the open window's size when it was resized by its corner (or the middle button on its head)
+    win_size: Option<(f64, f64)>,
+    win_drag: Option<(f64, f64, f64, f64, u8)>,
+    pend_at: (f64, f64),
+    wire_sel: Option<usize>,
+    wiring: Option<Wiring>,
+    note: String,
+    /// the open page's zoom (the canvas has its own)
+    pzoom: f64,
+    /// how far the open page has been panned (px); back to 0 when another page opens
+    ppan: (f64, f64),
+    /// the example program is on the canvas (put there by its sidebar icon; hidden again on the next visit)
+    example_on: bool,
+    /// wiring is on (the + on the bar): every tip shows and wires; off, tips stay out of the way
+    wire_mode: bool,
+    /// when a locked super was last pulled at: the lock blinks for a moment
+    lock_blink: f64,
+    /// the canvas as it was before each change, newest last: the undo button steps back through them
+    undo: Vec<String>,
+    undo_at: f64,
+    /// when the last press on the canvas was let go (its click comes after)
+    drag_end_at: f64,
+    /// icons Super AI drew from supers' names, kept in this browser too
+    ai_icons: BTreeMap<String, Vec<String>>,
+    /// names whose icon could not be drawn this visit: they keep their initials
+    icon_failed: Vec<String>,
+    /// names shown as icons that have no drawing yet
+    icon_want: Vec<String>,
+    icon_busy: bool,
+    icon_sent: Vec<String>,
+    icons_loaded: bool,
+    /// sparkles (0) and supers (1) drawn on pages, by the page's address: kind, x, y, label
+    layers: BTreeMap<String, Vec<(u8, f64, f64, String)>>,
+    /// where the open window has been moved to (px from its place), once unlocked
+    win_off: (f64, f64),
+    /// a pan of the canvas by dragging its bare background: press x, y and the pan then
+    pan_drag: Option<(f64, f64, (f64, f64))>,
+    /// a wire dragged out of a tip on the canvas: where the press began; and when a tip was last pressed (the click that
+    /// follows a press is the press's own, not a second one)
+    port_drag: Option<(f64, f64)>,
+    port_press: f64,
+    /// a wire dragged out of a tip on a super's canvas: board, press x, y, and the tip's place on the board
+    bwire: Option<(usize, f64, f64, f64, f64)>,
+    /// the reset button held down since this time; held long enough, it resets (owner, 2026-10-14: "holding this button
+    /// resets it")
+    reset_hold: Option<f64>,
+    /// that hold began on the floating controls, whose release comes through the pointer capture
+    reset_cap: bool,
+    /// when the note was set: an older note's timer does not clear a newer one
+    note_at: f64,
+    /// the tools that were JavaScript (tools.rs)
+    t: Tools,
+    t2: Tools2,
+    quvi: Quvi,
+    face: Face,
+    smap: SciMap,
+    studio: Studio,
+    scim: Scim,
+    modal: Option<Modal>,
+    rev: Rev,
+    owner: Owner,
+    ledger: Ledger,
+    learn: Learn,
+    hal: Hal,
+    boards: Vec<Board>,
+    board_drag: Option<BoardDrag>,
+    /// the program drawn on the canvas (program.rs)
+    prog: Prog,
 }
 
 static STATE: Global<Option<State>> = Global::new(None);
@@ -170,6 +344,10 @@ static DOM: Global<Option<crate::dom::Dom<Msg>>> = Global::new(None);
 
 const T_POW: u32 = 1;
 const T_TICK: u32 = 2;
+const T_PI: u32 = 3;
+const T_LIVE: u32 = 4;
+const T_NOTE: u32 = 5;
+const T_RESET: u32 = 6;
 
 fn st() -> &'static mut State {
     STATE.get().as_mut().expect("started")
@@ -183,6 +361,15 @@ pub fn start() {
     let css = host::create_text(crate::style::CSS);
     host::append_child(style, css);
     host::append_child(head, style);
+    let shape = host::create_el("style");
+    let rule = crate::style::shape_css();
+    let rule_node = host::create_text(&rule);
+    host::append_child(shape, rule_node);
+    host::append_child(head, shape);
+    let tools = host::create_el("style");
+    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS));
+    host::append_child(tools, tools_css);
+    host::append_child(head, tools);
     let meta = host::create_el("meta");
     host::set_attr(meta, "name", "theme-color");
     host::set_attr(meta, "content", "#f7f5ef");
@@ -193,7 +380,7 @@ pub fn start() {
 
     let consent = read_consent();
     let mut s = State {
-        page: Page::Assess,
+        page: Page::Home,
         paper: String::new(),
         tab: Tab::Recent,
         consent,
@@ -232,6 +419,91 @@ pub fn start() {
         pending: BTreeMap::new(),
         next_req: 1,
         ticking: false,
+        open: Vec::new(),
+        live: Slot::default(),
+        fair: Slot::default(),
+        pi: crate::pi::digits(400),
+        pi_shown: 2,
+        gate: false,
+        gate_pw: String::new(),
+        gate_err: None,
+        ctoken: String::new(),
+        req: Slot::default(),
+        c_name: String::new(),
+        c_note: String::new(),
+        c_sent: None,
+        c_err: None,
+        c_busy: false,
+        offs: [(0.0, 0.0); NSUP],
+        sizes: [(0.0, 0.0); NSUP],
+        zoom: 1.0,
+        pan: (0.0, 0.0),
+        free: Vec::new(),
+        float_free: false,
+        win_free: false,
+        float_pick: false,
+        win_pick: false,
+        chained: true,
+        dirty: false,
+        drag: None,
+        pend_member: None,
+        item: Slot::default(),
+        item_key: (255, 255),
+        wires: Vec::new(),
+        passes: Vec::new(),
+        held_port: None,
+        float_at: None,
+        float_drag: None,
+        float_big: false,
+        last_tap: (usize::MAX, None, 0.0),
+        peek: false,
+        peek_next: false,
+        sup_pick: None,
+        win_size: None,
+        win_drag: None,
+        pend_at: (0.0, 0.0),
+        wire_sel: None,
+        wiring: None,
+        note: String::new(),
+        pzoom: 1.0,
+        ppan: (0.0, 0.0),
+        example_on: false,
+        wire_mode: false,
+        lock_blink: 0.0,
+        undo: Vec::new(),
+        undo_at: 0.0,
+        drag_end_at: 0.0,
+        ai_icons: BTreeMap::new(),
+        icon_failed: Vec::new(),
+        icon_want: Vec::new(),
+        icon_busy: false,
+        icon_sent: Vec::new(),
+        icons_loaded: false,
+        layers: BTreeMap::new(),
+        win_off: (0.0, 0.0),
+        pan_drag: None,
+        port_drag: None,
+        port_press: 0.0,
+        bwire: None,
+        reset_hold: None,
+        reset_cap: false,
+        note_at: 0.0,
+        t: Tools::default(),
+        t2: Tools2::default(),
+        quvi: Quvi::default(),
+        face: Face::default(),
+        smap: SciMap::default(),
+        studio: Studio::default(),
+        scim: Scim::default(),
+        modal: None,
+        rev: Rev::default(),
+        owner: Owner::default(),
+        ledger: Ledger::default(),
+        learn: Learn::default(),
+        hal: Hal::default(),
+        boards: Vec::new(),
+        board_drag: None,
+        prog: Prog::default(),
     };
 
     // Coming back from ORCID: the callback sends ?orcid=…&orcid_name=…&token=… (or ?orcid_error=…).
@@ -252,10 +524,18 @@ pub fn start() {
             host::store_set("sp_wallet", &w);
         }
     }
-    if !params.is_empty() {
+    let mut confirm_to: Option<String> = None;
+    if href.split(['?', '#']).next().unwrap_or("").contains("/confirm") {
+        confirm_to = p("t");
+    }
+    if !params.is_empty() || confirm_to.is_some() {
         let path = href.split(['?', '#']).next().unwrap_or("").to_string();
         let path = path.splitn(4, '/').nth(3).map(|x| format!("/{}", x)).unwrap_or_else(|| "/".to_string());
-        let frag = fragment(&href);
+        let path = if path.starts_with("/confirm") { "/".to_string() } else { path };
+        let frag = match &confirm_to {
+            Some(t) => format!("/confirm/{}", url_encode(t)),
+            None => fragment(&href).to_string(),
+        };
         host::replace_url(&if frag.is_empty() { path } else { format!("{}#{}", path, frag) });
     }
     s.token = host::store_get("sp_token").unwrap_or_default();
@@ -263,13 +543,48 @@ pub fn start() {
     s.wallet = host::store_get("sp_wallet").unwrap_or_default();
     s.name = host::store_get("sp_researcher_name").unwrap_or_default();
     *STATE.get() = Some(s);
+    results_load();
+    if let Some(v) = host::store_get("piii:win") {
+        let n: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+        if n.len() == 2 {
+            st().win_size = Some((n[0], n[1]));
+        }
+    }
+    layout_load();
+    float_load();
+    if let Some(v) = host::store_get("piii:winoff") {
+        let n: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+        if n.len() == 2 {
+            st().win_off = (n[0], n[1]);
+        }
+    }
+    st().pzoom = host::store_get("piii:pzoom").and_then(|v| v.parse::<f64>().ok()).filter(|z| z.is_finite() && *z > 0.0).unwrap_or(1.0);
+    prog_load();
+    wires_load();
+    // the canvas starts empty (owner, 2026-10-14: "delete all these things"): no example program, and the one kept in
+    // this browser from before is cleared, once
+    if host::store_get("piii:canvas-cleared").is_none() {
+        program_clear();
+        host::store_set("piii:canvas-cleared", "1");
+    }
+    // the example is hidden by default (owner, 2026-10-14: "hide this as a default"): shown last time, gone this time
+    if host::store_get("piii:example").is_some() {
+        program_clear();
+        host::store_del("piii:example");
+    }
 
     route();
     let s = st();
     if s.login_err.is_some() {
         s.page = Page::Account;
+        open_win(Page::Account, "");
     }
+    host::timer(400, T_PI);
     request(Want::Session, "GET", "/api/auth/session", "", 0);
+    request(Want::Tool(Tool::Perf, 6), "GET", "/api/pien/model", "", 0);
+    if signed_in(st()) {
+        jobs_watch(true);
+    }
     request(Want::Emission, "GET", "/api/emission", "", 0);
     request(Want::Trial, "GET", "/api/trial/status", "", 0);
     if st().consent.map(|c| c[0]).unwrap_or(false) {
@@ -295,6 +610,145 @@ pub fn on_nav() {
     render();
 }
 
+/// A press anywhere bare on the open window selects it, for the lock (owner, 2026-10-14: "clicking everywhere can make
+/// it movable").
+pub fn on_page_press() {
+    let s = st();
+    if !s.win_pick {
+        relock_except(None, None, true);
+    }
+    let s = st();
+    s.win_pick = true;
+    s.float_pick = false;
+    s.sup_pick = None;
+    if let Page::Group(g) = s.page {
+        board(g as usize).picked = None;
+    }
+    render();
+}
+
+/// A drag on the open window's bare background: unlocked, the window moves; locked, what it shows pans.
+pub fn on_page_pan(dx: f64, dy: f64) {
+    let s = st();
+    if s.win_free {
+        s.win_off = (s.win_off.0 + dx, s.win_off.1 + dy);
+        host::store_set("piii:winoff", &format!("{:.0},{:.0}", s.win_off.0, s.win_off.1));
+    } else {
+        s.ppan = (s.ppan.0 + dx, s.ppan.1 + dy);
+    }
+    render();
+}
+
+/// The page now open, as the key of what is drawn on it.
+fn layer_key() -> String {
+    let href = host::href();
+    format!("piii:layer:{}", fragment(&href))
+}
+
+/// What is drawn on the open page (loaded from this browser the first time).
+fn layer() -> &'static mut Vec<(u8, f64, f64, String)> {
+    let key = layer_key();
+    let s = st();
+    if !s.layers.contains_key(&key) {
+        let mut v = Vec::new();
+        if let Some(t) = host::store_get(&key) {
+            for l in t.lines() {
+                let f: Vec<&str> = l.splitn(4, '\t').collect();
+                if let [k, x, y, label] = f.as_slice() {
+                    if let (Ok(k), Ok(x), Ok(y)) = (k.parse::<u8>(), x.parse::<f64>(), y.parse::<f64>()) {
+                        v.push((k, x, y, label.to_string()));
+                    }
+                }
+            }
+        }
+        s.layers.insert(key.clone(), v);
+    }
+    st().layers.get_mut(&key).unwrap()
+}
+
+fn layer_save() {
+    let key = layer_key();
+    let out: String = layer().iter().map(|(k, x, y, l)| format!("{}\t{:.0}\t{:.0}\t{}\n", k, x, y, l.replace(['\t', '\n'], " "))).collect();
+    host::store_set(&key, &out);
+}
+
+/// A double click on an open page: a sparkle (kind 0) or, by a double right click, a super (1), centred there.
+pub fn layer_add(kind: u8, at: &str) {
+    let n: Vec<f64> = at.split(',').filter_map(|x| x.parse().ok()).collect();
+    let z = st().pzoom.max(0.01);
+    let (x, y) = (n.first().copied().unwrap_or(0.0) / z - 44.0, n.get(1).copied().unwrap_or(0.0) / z - 44.0);
+    // left and right of the page's column are canvas too; above its top is the window's head, so it lands just below
+    layer().push((kind, x, y.max(0.0), String::new()));
+    layer_save();
+}
+
+/// What is drawn on the open page, over what it shows (it pans and zooms with it).
+fn layer_view() -> N {
+    let items = layer();
+    if items.is_empty() {
+        return txt("");
+    }
+    el("div")
+        .cls("page-layer")
+        .kids(items.iter().enumerate().map(|(i, (k, x, y, label))| -> N {
+            let base = el("div").cls("layer-node").attr("data-layer", "1").attr("data-solid", "1").style(format!("left:{:.0}px;top:{:.0}px", x, y));
+            if *k == 0 {
+                base.cls("layer-spark")
+                    .kid(el("svg:svg").attr("viewBox", "-44 -44 88 88").attr("width", "100%").attr("height", "100%").kid(el("svg:path").attr("d", sparkle(0.0, 0.0, 43.0))))
+                    .into()
+            } else {
+                base.cls("layer-super")
+                    .kid(el("input").cls("layer-in").attr("type", "text").attr("aria-label", "This super's name").prop("value", label.clone()).on("input", Msg::TV(Tool::Grid, 3000 + i as u16)))
+                    .kid(ports())
+                    .into()
+            }
+        }))
+        .into()
+}
+
+/// Takes the program (its nodes and their wires) off the canvas.
+fn program_clear() {
+    let s = st();
+    s.prog.nodes.clear();
+    s.prog.sel = None;
+    s.wires.retain(|w| !is_unode(w.0) && !is_unode(w.1));
+    s.passes.retain(|p| !is_unode(p.0) && !is_unode(p.2));
+    prog_save();
+}
+
+/// The example icon: shows "count to 10" on the canvas, or hides it again.
+fn example_toggle() {
+    let s = st();
+    if s.example_on {
+        program_clear();
+        st().example_on = false;
+        host::store_del("piii:example");
+    } else {
+        example_load(0);
+        st().example_on = true;
+        host::store_set("piii:example", "1");
+    }
+    host::go("#/");
+}
+
+/// Zoom, from anywhere: the canvas when it is what is shown, else the open page. 0 puts it back to 1.
+pub fn on_zoom(dy: f64, x: f64, y: f64) {
+    let s = st();
+    if s.page == Page::Home || s.peek {
+        if dy == 0.0 {
+            s.zoom = 1.0;
+            layout_save();
+        } else {
+            canvas_zoom(&format!("{},{},{}", dy, x, y));
+        }
+    } else {
+        let z = if dy == 0.0 { 1.0 } else { (s.pzoom * libm_exp(-dy * 0.0015)).clamp(0.2, 5.0) };
+        s.pzoom = z;
+        host::store_set("piii:pzoom", &format!("{:.4}", z));
+    }
+    render();
+}
+
 pub fn on_timer(token: u32) {
     let s = st();
     match token {
@@ -312,6 +766,49 @@ pub fn on_timer(token: u32) {
             if s.running {
                 tick();
             }
+        }
+        T_PI => {
+            if s.pi_shown < 120 {
+                s.pi_shown += 1;
+                host::timer(if s.pi_shown < 12 { 160 } else { 90 }, T_PI);
+            }
+        }
+        T_RESET => {
+            if let Some(t0) = s.reset_hold {
+                if host::now() - t0 >= RESET_HOLD_MS - 60.0 {
+                    s.reset_hold = None;
+                    if s.reset_cap {
+                        s.reset_cap = false;
+                        host::capture(false);
+                    }
+                    activate(S_RESET, None);
+                    note("Reset".to_string());
+                }
+            }
+        }
+        T_NOTE => {
+            if host::now() - s.note_at >= 2500.0 {
+                s.note.clear();
+            }
+        }
+        T_NF => frenzy_tick(),
+        T_JOBS => jobs_tick(),
+        T_HAL => {
+            if !hal_tick() {
+                return;
+            }
+        }
+        T_LOGS => logs_tick(),
+        T_MAP => {
+            map_frame();
+            return;
+        }
+        T_LIVE => {
+            if matches!(s.page, Page::Home | Page::Live) && !s.live.busy {
+                s.live.busy = true;
+                request(Want::Live, "GET", "/api/live", "", 0);
+            }
+            host::timer(30000, T_LIVE);
         }
         _ => {}
     }
@@ -331,8 +828,16 @@ fn render() {
     if let Some(d) = DOM.get().as_mut() {
         d.render(view);
     }
+    icons_flush();
+    prog_ai_flush();
+    hal_paint();
     let s = st();
     let t = match s.page {
+        Page::Home => "piii lab",
+        Page::Group(_) | Page::Item(_, _) => "piii lab",
+        Page::Map => "piii lab · Project",
+        Page::Live => "ScholarPi · Live",
+        Page::Confirm => "ScholarPi · Permission request",
         Page::Assess => "ScholarPi · Assess a manuscript",
         Page::Explore => "ScholarPi · Explore",
         Page::Library => "ScholarPi · Library",
@@ -347,7 +852,66 @@ fn route() {
     let frag = fragment(&href).trim_start_matches('/').to_string();
     let mut parts = frag.split('/');
     let s = st();
+    // a window over the page belongs to the page it was opened on
+    s.modal = None;
+    s.peek = core::mem::take(&mut s.peek_next);
+    s.ppan = (0.0, 0.0);
+    // the start page is the canvas, with the sidebar and the controls over it (owner, 2026-10-14: "this should be the
+    // start page"); before, it was the Tools super, open
     match parts.next().unwrap_or("") {
+        "" => s.page = Page::Home,
+        "map" => s.page = Page::Map,
+        "g" => {
+            let g: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(0);
+            s.page = if (g as usize) < GROUPS.len() { Page::Group(g) } else { Page::Home };
+        }
+        "i" => {
+            let g: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(255);
+            let m: u8 = parts.next().and_then(|v| v.parse().ok()).unwrap_or(255);
+            // an item that is another page (Live, the journal, your account) opens that page
+            if let Some((_, Target::Hash(h))) = GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)) {
+                host::replace_url(h);
+                s.peek_next = s.peek;
+                return route();
+            }
+            if GROUPS.get(g as usize).map(|x| (m as usize) < x.members.len()).unwrap_or(false) {
+                if s.item_key != (g, m) {
+                    s.item.reset();
+                    s.item_key = (g, m);
+                }
+                s.page = Page::Item(g, m);
+            } else {
+                s.page = Page::Home;
+            }
+        }
+        "live" => s.page = Page::Live,
+        // the old page's addresses
+        "leaderboard" | "leaderboards" => {
+            host::replace_url("#/i/1/2");
+            return route();
+        }
+        "learn" => {
+            host::replace_url("#/i/2/8");
+            return route();
+        }
+        "whitepaper" => {
+            host::replace_url("#/i/2/2");
+            return route();
+        }
+        "explorer" | "ledger" => {
+            host::replace_url("#/i/1/4");
+            return route();
+        }
+        "confirm" => {
+            let t = crate::text::url_decode(parts.next().unwrap_or(""));
+            if t != s.ctoken {
+                s.req.reset();
+                s.c_sent = None;
+                s.c_err = None;
+            }
+            s.ctoken = t;
+            s.page = Page::Confirm;
+        }
         "explore" => {
             s.page = Page::Explore;
             s.tab = match parts.next().unwrap_or("") {
@@ -363,22 +927,121 @@ fn route() {
             let h = parts.next().unwrap_or("").to_string();
             if h != s.paper {
                 s.dossier.reset();
+                s.fair.reset();
             }
             s.paper = h;
             s.page = Page::Paper;
         }
         _ => s.page = Page::Assess,
     }
+    let arg = match s.page {
+        Page::Paper => s.paper.clone(),
+        Page::Confirm => s.ctoken.clone(),
+        _ => String::new(),
+    };
+    if s.page != Page::Home {
+        open_win(s.page, &arg);
+    }
+    // PiEN learns which window was opened
+    if s.page != Page::Home {
+        let key = match s.page {
+            Page::Item(g, m) => GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)).map(|x| x.0.to_string()).unwrap_or_default(),
+            Page::Paper => "A paper".to_string(),
+            p => super_name(s, p, ""),
+        };
+        pien_learn(&key);
+    }
+    let s = st();
+    // a tool whose window is no longer the page stops what it runs
+    let on_tool = match s.page {
+        Page::Item(g, m) => matches!(GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)), Some((_, Target::Tool(_)))),
+        _ => false,
+    };
+    if !on_tool {
+        tools_leave();
+    }
+}
+
+/// Puts a window among the open ones (a few papers at most: the oldest goes first).
+fn open_win(page: Page, arg: &str) {
+    let s = st();
+    if s.open.iter().any(|(p, a)| *p == page && a == arg) {
+        return;
+    }
+    if page == Page::Paper && s.open.iter().filter(|(p, _)| *p == Page::Paper).count() >= 4 {
+        if let Some(i) = s.open.iter().position(|(p, _)| *p == Page::Paper) {
+            s.open.remove(i);
+        }
+    }
+    s.open.push((page, arg.to_string()));
+}
+
+fn hash_of(page: Page, arg: &str) -> String {
+    match page {
+        Page::Home => "#/".to_string(),
+        Page::Group(g) => format!("#/g/{}", g),
+        Page::Item(g, m) => format!("#/i/{}/{}", g, m),
+        Page::Map => "#/map".to_string(),
+        Page::Live => "#/live".to_string(),
+        Page::Confirm => format!("#/confirm/{}", url_encode(arg)),
+        Page::Assess => "#/assess".to_string(),
+        Page::Explore => "#/explore".to_string(),
+        Page::Library => "#/library".to_string(),
+        Page::Account => "#/account".to_string(),
+        Page::Paper => format!("#/paper/{}", arg),
+    }
 }
 
 /// Fetches what the current page shows and does not have yet.
 fn load() {
     let s = st();
+    if s.gate {
+        return;
+    }
     match s.page {
+        Page::Home | Page::Live => {
+            if s.live.needed() {
+                s.live.busy = true;
+                request(Want::Live, "GET", "/api/live", "", 0);
+                host::timer(30000, T_LIVE);
+            }
+            if s.page == Page::Home && s.summary.needed() {
+                s.summary.busy = true;
+                request(Want::Summary, "GET", "/api/analytics/summary", "", 0);
+            }
+        }
+        Page::Group(_) | Page::Map => {}
+        Page::Item(g, m) => {
+            if let Some((_, Target::Tool(t))) = GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)) {
+                tool_load(*t);
+            }
+            if let Some((_, Target::Data(url, _))) = GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)) {
+                if s.item.needed() {
+                    s.item.busy = true;
+                    let u = if *url == "/api/profile" || *url == "/api/assessments/claimable" {
+                        format!("{}?{}", url, ident_query(s))
+                    } else {
+                        url.to_string()
+                    };
+                    request(Want::Item(g, m), "GET", &u, "", 0);
+                }
+            }
+        }
+        Page::Confirm => {
+            if s.req.needed() && !s.ctoken.is_empty() {
+                s.req.busy = true;
+                request(Want::Request(s.ctoken.clone()), "GET", &format!("/api/consent/r/{}", url_encode(&s.ctoken)), "", 0);
+            }
+        }
         Page::Assess => {
             if s.mode == Mode::Find && s.topics.needed() {
                 s.topics.busy = true;
                 request(Want::Topics, "GET", "/api/discover/hot-topics", "", 0);
+            }
+            if signed_in(s) && s.piq.needed() {
+                s.piq.busy = true;
+                let u = format!("/api/user/piq-total?{}", ident_query(s));
+                request(Want::Piq, "GET", &u, "", 0);
             }
         }
         Page::Explore => {
@@ -404,6 +1067,11 @@ fn load() {
                     let u = format!("/api/user/piq-total?{}", ident_query(s));
                     request(Want::Piq, "GET", &u, "", 0);
                 }
+                if s.rev.claimable.needed() {
+                    s.rev.claimable.busy = true;
+                    let u = format!("/api/assessments/claimable?{}", ident_query(s));
+                    request(Want::Tool(Tool::Rev, 21), "GET", &u, "", 0);
+                }
                 if s.mine.needed() {
                     s.mine.busy = true;
                     let u = format!("/api/assessments/mine?limit=100&{}", ident_query(s));
@@ -417,6 +1085,7 @@ fn load() {
                 let u = format!("/api/explorer/dossier/{}", url_encode(&s.paper));
                 request(Want::Dossier(s.paper.clone()), "GET", &u, "", 0);
             }
+
         }
     }
 }
@@ -481,6 +1150,20 @@ pub fn on_fetch(req: u32, status: u32, chunk: String, done: bool) {
     } else {
         Some(error_text(p.status, parsed.as_ref()))
     };
+    if p.status == 401 && p.want != Want::Gate && err.as_deref() == Some("This deployment is private.") {
+        s.gate = true;
+        render();
+        return;
+    }
+    if p.want == Want::Gate {
+        if p.status == 204 || p.status == 200 {
+            host::go("/");
+        } else {
+            st().gate_err = Some("That is not it.".to_string());
+        }
+        render();
+        return;
+    }
     apply(p.want, parsed.unwrap_or(Value::Null), err);
     render();
 }
@@ -523,6 +1206,12 @@ fn apply(want: Want, v: Value, err: Option<String>) {
                 host::store_del("sp_token");
             }
             put(&mut s.session, v, err);
+            // A tool that is open may only now know who is looking (the owner's panels wait for this).
+            if let Page::Item(g, m) = s.page {
+                if let Some((_, Target::Tool(t))) = GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)) {
+                    tool_load(*t);
+                }
+            }
         }
         Want::Summary => put(&mut s.summary, v, err),
         Want::Tab(t) => put(&mut s.tabs[t as usize], v, err),
@@ -541,6 +1230,9 @@ fn apply(want: Want, v: Value, err: Option<String>) {
         }
         Want::Dossier(h) => {
             if h == s.paper {
+                if err.is_none() {
+                    tx_load(&v);
+                }
                 put(&mut s.dossier, v, err);
             }
         }
@@ -575,6 +1267,33 @@ fn apply(want: Want, v: Value, err: Option<String>) {
             fail_run(&err.unwrap_or_else(|| "The assessment could not start.".to_string()));
         }
         Want::Visit => {}
+        Want::Live => put(&mut s.live, v, err),
+        Want::Fair(h) => {
+            if h == s.paper {
+                put(&mut s.fair, v, err);
+            }
+        }
+        Want::Request(t) => {
+            if t == s.ctoken {
+                put(&mut s.req, v, err);
+            }
+        }
+        Want::Answer => {
+            s.c_busy = false;
+            match err {
+                Some(e) => s.c_err = Some(e),
+                None => s.c_sent = Some(v),
+            }
+        }
+        Want::Gate => {}
+        Want::Item(g, m) => {
+            if s.item_key == (g, m) {
+                put(&mut s.item, v, err);
+            }
+        }
+        Want::Tool(t, w) => tool_apply(t, w, v, err),
+        Want::Icons => icons_apply(v, err),
+        Want::ProgAi(q) => prog_ai_apply(q, v, err),
     }
 }
 
@@ -753,6 +1472,7 @@ fn stream_line(line: &str) {
         "result" => {
             let item = v.get("item").clone();
             s.results.insert(0, item);
+            results_save();
         }
         "download_error" => {
             s.log.push((Line::Err, format!("Could not get the paper for {}.", v.any(&["title", "doi"]).str())));
@@ -772,6 +1492,8 @@ fn stream_line(line: &str) {
 fn update(msg: Msg) {
     let s = st();
     match msg {
+        Msg::T(t, a, v) => tool_update(t, a, v),
+        Msg::TV(t, a) => tool_update(t, a, String::new()),
         Msg::Mode(m) => {
             s.mode = m;
             s.form_err = None;
@@ -826,6 +1548,7 @@ fn update(msg: Msg) {
             s.log.clear();
             s.results.clear();
             s.failed.clear();
+            results_save();
         }
         Msg::Q(v) => s.q = v,
         Msg::Search => load_tab(s.tab),
@@ -852,10 +1575,93 @@ fn update(msg: Msg) {
             s.name.clear();
             s.piq.reset();
             s.mine.reset();
+            s.rev.claimable.reset();
+            // a new identity: RiBD forgets the previous one's picks, and the free trial is asked again
+            s.studio.selection.clear();
             request(Want::Session, "GET", "/api/auth/session", "", 0);
+            request(Want::Trial, "GET", "/api/trial/status", "", 0);
         }
+        Msg::Close(i) => {
+            if i < s.open.len() {
+                let (page, arg) = s.open.remove(i);
+                let current = page == s.page
+                    && match page {
+                        Page::Paper => arg == s.paper,
+                        Page::Confirm => arg == s.ctoken,
+                        _ => true,
+                    };
+                if current {
+                    let to = s.open.last().map(|(p, a)| hash_of(*p, a)).unwrap_or_else(|| "#/".to_string());
+                    host::go(&to);
+                }
+            }
+        }
+        Msg::GatePw(v) => s.gate_pw = v,
+        Msg::GateEnter => {
+            s.gate_err = None;
+            let body = format!("{{\"password\":{}}}", json::quote(&s.gate_pw));
+            request(Want::Gate, "POST", "/api/gate", &body, 0);
+        }
+        Msg::ConfirmName(v) => s.c_name = v,
+        Msg::ConfirmNote(v) => s.c_note = v,
+        Msg::ConfirmAnswer(yes) => {
+            s.c_err = None;
+            if s.c_name.trim().chars().count() < 2 {
+                s.c_err = Some("Write your name: it records who answered.".to_string());
+            } else if !s.c_busy {
+                s.c_busy = true;
+                let body = format!(
+                    "{{\"decision\":\"{}\",\"name\":{},\"note\":{}}}",
+                    if yes { "granted" } else { "declined" },
+                    json::quote(s.c_name.trim()),
+                    json::quote(s.c_note.trim())
+                );
+                request(Want::Answer, "POST", &format!("/api/consent/r/{}", url_encode(&s.ctoken)), &body, 0);
+            }
+        }
+        Msg::Print => host::print(),
+        Msg::PDown(id, xy) => begin_drag(id, &xy),
+        Msg::FloatDown(xy) => float_begin(&xy),
+        Msg::Dbl(sup, xy) => canvas_add(sup, &xy),
+        Msg::PMember(m) => s.pend_member = Some(m),
+        Msg::Activate(id) => activate(id as usize, None),
+        Msg::Port(id, t) => {
+            // the click a press makes is already handled by the press (keyboard clicks still come here)
+            if s.wire_mode && host::now() - s.port_press > 500.0 {
+                if let Some(tip) = Tip::of(t) {
+                    port_click(id, tip);
+                }
+            }
+        }
+        Msg::PortDown(id, t, xy) => {
+            if !s.wire_mode {
+                return;
+            }
+            if let Some(tip) = Tip::of(t) {
+                port_press(id, tip, &xy);
+            }
+        }
+        Msg::WireSel(i) => {
+            if i == 255 && s.held_port.is_some() {
+                s.held_port = None;
+                host::capture(false);
+            }
+            // a click on the bare canvas lets the selection go (the click that just selected a super bubbles here too)
+            // and selects the main canvas, which can always be selected (owner, 2026-10-14): what was selected before
+            // locks again, as when any other super is selected
+            if i == 255 && host::now() - s.last_tap.2 > 120.0 && s.drag.is_none() && host::now() - s.drag_end_at > 150.0 {
+                s.sup_pick = None;
+                s.prog.sel = None;
+                relock_except(None, None, false);
+            }
+            s.wire_sel = if i == 255 || s.wire_sel == Some(i as usize) { None } else { Some(i as usize) };
+            if s.wire_sel.is_some() {
+                note("Wire selected: press Delete to remove it".to_string());
+            }
+        }
+        Msg::WireDel(i) => remove_link(i as usize),
         Msg::Retry => {
-            for slot in [&mut s.summary, &mut s.rubric, &mut s.dossier, &mut s.piq, &mut s.mine, &mut s.topics] {
+            for slot in [&mut s.summary, &mut s.rubric, &mut s.dossier, &mut s.piq, &mut s.mine, &mut s.topics, &mut s.live, &mut s.req, &mut s.item] {
                 if slot.err.is_some() {
                     slot.reset();
                 }
@@ -913,66 +1719,642 @@ fn save_consent(c: [bool; 3]) {
 // ------------------------------------------------------------------------------------------------- views
 
 fn view(s: &State) -> N {
-    let page = match s.page {
-        Page::Assess => assess_page(s),
-        Page::Explore => explore_page(s),
-        Page::Library => library_page(s),
-        Page::Account => account_page(s),
-        Page::Paper => paper_page(s),
+    if s.gate {
+        return gate_view(s);
+    }
+    // the sidebar and the controls are on top of every view, always (owner, 2026-10-14: "both sidebar and top icons are
+    // always on top. Always.")
+    let body: N = if s.page == Page::Home {
+        el("div").cls("focus home").kid(canvas_view(s)).kid(rail(s)).kid(ctl_bar(s)).into()
+    } else {
+        let page = match s.page {
+            Page::Assess => assess_page(s),
+            Page::Explore => explore_page(s),
+            Page::Library => library_page(s),
+            Page::Account => account_page(s),
+            Page::Paper => paper_page(s),
+            Page::Live => live_page(s),
+            Page::Confirm => confirm_page(s),
+            Page::Group(g) => group_board(g as usize),
+            Page::Item(g, m) => item_page(s, g as usize, m as usize),
+            Page::Map => map_page(),
+            Page::Home => txt(""),
+        };
+        // the canvas's controls float over every page (owner, 2026-10-14: "keep these supers floating over the whole
+        // website always")
+        // what is open takes 70% of the canvas, which stays live around it (owner, 2026-10-14: "double clicking
+        // anything opens it to 70% of the canvas"); on a phone it still takes the screen
+        if s.peek && host::vw() >= 700.0 {
+            el("div").cls("focus peek").kid(scene_view(s, false)).kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).into()
+        } else {
+            // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back
+            el("div").cls("focus").kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).into()
+        }
     };
-    el("div")
-        .cls("app")
-        .kid(header(s))
-        .kid(el("main").kid(page))
-        .kid(footer())
-        .kid_if(s.consent_open, || consent_panel(s))
+    // the canvas shows its own note; elsewhere it floats over the page, so the lock's answers are always seen
+    let page_note = s.page != Page::Home && !s.peek && !s.note.is_empty();
+    el("div").cls("app").cls_if(s.wire_mode, "wire-on").kid(body).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
+}
+
+
+fn super_name(s: &State, page: Page, arg: &str) -> String {
+    match page {
+        Page::Home => "Everything".to_string(),
+        Page::Assess => "Assess".to_string(),
+        Page::Explore => "Explore".to_string(),
+        Page::Live => "Live".to_string(),
+        Page::Library => "Library".to_string(),
+        Page::Account => {
+            if signed_in(s) && !s.name.is_empty() {
+                s.name.clone()
+            } else if signed_in(s) {
+                "Account".to_string()
+            } else {
+                "Sign in".to_string()
+            }
+        }
+        Page::Paper => {
+            let t = if arg == s.paper {
+                s.dossier.data.as_ref().map(|d| d.get("title").str().to_string()).unwrap_or_default()
+            } else {
+                String::new()
+            };
+            if t.is_empty() { "A paper".to_string() } else { t }
+        }
+        Page::Confirm => "Permission request".to_string(),
+        Page::Group(g) => GROUPS.get(g as usize).map(|x| x.title).unwrap_or("").to_string(),
+        Page::Item(g, m) => GROUPS.get(g as usize).and_then(|x| x.members.get(m as usize)).map(|x| x.0).unwrap_or("").to_string(),
+        Page::Map => "Project".to_string(),
+    }
+}
+
+/// An icon: two letters for a name (one word: its first two; more: their initials).
+fn glyph(name: &str) -> String {
+    let words: Vec<&str> = name.split([' ', ':', '-', '/']).filter(|w| w.chars().any(|c| c.is_alphanumeric())).collect();
+    match words.len() {
+        0 => "·".to_string(),
+        1 => {
+            let mut c = words[0].chars();
+            let a = c.next().map(|x| x.to_uppercase().to_string()).unwrap_or_default();
+            let b = c.next().map(|x| x.to_lowercase().to_string()).unwrap_or_default();
+            format!("{}{}", a, b)
+        }
+        _ => words.iter().take(2).filter_map(|w| w.chars().next()).flat_map(|c| c.to_uppercase()).collect(),
+    }
+}
+
+fn is_current(s: &State, page: Page, arg: &str) -> bool {
+    page == s.page
+        && match page {
+            Page::Paper => arg == s.paper,
+            Page::Confirm => arg == s.ctoken,
+            _ => true,
+        }
+}
+
+/// A super's icon: a line drawing for each kind; a paper shows its title's initials, so several can be told apart.
+// ---------------------------------------------------------------------------------------------- icons by Super AI
+
+/// The icon of a super shrunk to one: Super AI draws it from the super's name (owner, 2026-10-14: "icons are generated
+/// by Super AI"); until the drawing arrives, or if it cannot be made, the name's initials.
+fn ai_mark(name: &str) -> N {
+    icons_load();
+    let s = st();
+    if let Some(paths) = s.ai_icons.get(name) {
+        return el("svg:svg")
+            .cls("ai-icon")
+            .attr("viewBox", "0 0 24 24")
+            .attr("width", "20")
+            .attr("height", "20")
+            .attr("fill", "none")
+            .attr("stroke", "currentColor")
+            .attr("stroke-width", "1.8")
+            .attr("stroke-linecap", "round")
+            .attr("stroke-linejoin", "round")
+            .attr("aria-hidden", "true")
+            .kids(paths.iter().map(|d| -> N { el("svg:path").attr("d", d.clone()).into() }))
+            .into();
+    }
+    if !name.trim().is_empty() && !s.icon_failed.iter().any(|n| n == name) && !s.icon_want.iter().any(|n| n == name) {
+        s.icon_want.push(name.to_string());
+    }
+    txt(glyph(name))
+}
+
+/// Path data made only of the characters a path is drawn with (the server checks too; this is the page's own check).
+fn plain_path(d: &str) -> bool {
+    !d.is_empty() && d.len() <= 400 && d.starts_with(['M', 'm']) && d.chars().all(|c| "MmLlHhVvCcSsQqTtAaZz0123456789.,- ".contains(c))
+}
+
+fn icons_load() {
+    let s = st();
+    if s.icons_loaded {
+        return;
+    }
+    s.icons_loaded = true;
+    let Some(v) = host::store_get("piii:icons") else { return };
+    for line in v.lines() {
+        if let Some((name, rest)) = line.split_once('\t') {
+            let paths: Vec<String> = rest.split('\u{1f}').filter(|d| plain_path(d)).map(|d| d.to_string()).collect();
+            if !paths.is_empty() {
+                s.ai_icons.insert(name.to_string(), paths);
+            }
+        }
+    }
+}
+
+fn icons_save() {
+    let out: String = st().ai_icons.iter().map(|(n, p)| format!("{}\t{}\n", n.replace(['\t', '\n'], " "), p.join("\u{1f}"))).collect();
+    host::store_set("piii:icons", &out);
+}
+
+/// After a render: ask Super AI for the icons that are showing without a drawing, a few at a time.
+fn icons_flush() {
+    let s = st();
+    if s.icon_busy || s.icon_want.is_empty() {
+        return;
+    }
+    let names: Vec<String> = s.icon_want.iter().take(24).cloned().collect();
+    s.icon_busy = true;
+    s.icon_sent = names.clone();
+    let body = format!("{{\"names\":[{}]}}", names.iter().map(|n| json::quote(n)).collect::<Vec<_>>().join(","));
+    request(Want::Icons, "POST", "/api/super/icons", &body, 0);
+}
+
+fn icons_apply(v: Value, err: Option<String>) {
+    let s = st();
+    s.icon_busy = false;
+    let sent = core::mem::take(&mut s.icon_sent);
+    if err.is_some() {
+        // no drawing this visit (too many asked, or the server said no): initials, and no asking again
+        s.icon_want.retain(|n| !sent.contains(n));
+        s.icon_failed.extend(sent);
+        return;
+    }
+    let mut got = false;
+    for (name, paths) in v.get("icons").entries() {
+        let p: Vec<String> = paths.arr().iter().map(|d| d.str().to_string()).filter(|d| plain_path(d)).collect();
+        if !p.is_empty() {
+            s.ai_icons.insert(name.clone(), p);
+            got = true;
+        }
+        s.icon_want.retain(|n| n != name);
+    }
+    for f in v.get("failed").arr() {
+        let f = f.str().to_string();
+        s.icon_want.retain(|n| *n != f);
+        s.icon_failed.push(f);
+    }
+    // what the server will draw next time stays wanted; anything it did not mention is let go
+    let pending: Vec<String> = v.get("pending").arr().iter().map(|x| x.str().to_string()).collect();
+    s.icon_want.retain(|n| pending.contains(n) || !sent.contains(n));
+    if got {
+        icons_save();
+    }
+}
+
+fn mark_of(page: Page, name: &str) -> N {
+    let d: &[&str] = match page {
+        Page::Home => return txt("π"),
+        Page::Paper | Page::Item(_, _) => return ai_mark(name),
+        Page::Group(g) => match GROUPS.get(g as usize).map(|x| x.sup).unwrap_or(0) {
+            S_TOOLS => &["M14.7 6.3a4 4 0 0 0-5.4 5.4L3 18l3 3 6.3-6.3a4 4 0 0 0 5.4-5.4l-2.5 2.5-2.4-.6-.6-2.4z"],
+            S_EXPLORE => &["M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13z", "M20 20l-4.8-4.8"],
+            S_LIBRARY => &["M4 4h5v16H4z", "M9 4h5v16H9z", "M14.5 6.2l4.3-1.2 3.4 13.5-4.3 1.2z"],
+            S_INSIGHT => &["M3 12h4l3-7 4 14 3-7h4"],
+            S_LAB => &["M9 3h6", "M10 3v6L4.5 19a1.5 1.5 0 0 0 1.3 2h12.4a1.5 1.5 0 0 0 1.3-2L14 9V3", "M7 15h10"],
+            _ => &["M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8z", "M4 21c1.6-4 4.6-6 8-6s6.4 2 8 6"],
+        },
+        Page::Map => &["M4 5h5v5H4z", "M15 5h5v5h-5z", "M9.5 17h5v4h-5z", "M9 7.5h6", "M6.5 10v3.5H12V17", "M17.5 10v3.5H12"],
+        Page::Assess => &["M7 3h7l4 4v14H7z", "M14 3v4h4", "M9.5 14.5l2 2 4-4.5"],
+        Page::Explore => &["M10.5 4a6.5 6.5 0 1 1 0 13a6.5 6.5 0 1 1 0-13z", "M20 20l-4.8-4.8"],
+        Page::Live => &["M3 12h4l2.5-6 5 12 2.5-6h4"],
+        Page::Library => &["M4 4h5v16H4z", "M9 4h5v16H9z", "M14.5 6.2l4.3-1.2 3.4 13.5-4.3 1.2z"],
+        Page::Account => &["M12 4a4 4 0 1 1 0 8a4 4 0 1 1 0-8z", "M4 21c1.6-4 4.6-6 8-6s6.4 2 8 6"],
+        Page::Confirm => &["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M9 12l2.2 2.2L15.5 10"],
+    };
+    el("svg:svg")
+        .attr("viewBox", "0 0 24 24")
+        .attr("width", "20")
+        .attr("height", "20")
+        .attr("fill", "none")
+        .attr("stroke", "currentColor")
+        .attr("stroke-width", "1.8")
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .attr("aria-hidden", "true")
+        .kids(d.iter().map(|x| -> N { el("svg:path").attr("d", *x).into() }))
         .into()
 }
 
-fn header(s: &State) -> N {
-    let link = |href: &str, label: &str, on: bool| -> N {
-        el("a").attr("href", href).cls_if(on, "on").text(label).into()
+fn rail(s: &State) -> N {
+    // on the canvas, an icon's tips are real: they are the tips of the super pinned under it
+    let tips = |pin: Option<usize>| -> N {
+        match pin {
+            Some(id) if s.page == Page::Home && host::vw() >= 700.0 => bar_ports(id),
+            _ => ports(),
+        }
     };
-    let acct = if signed_in(s) {
-        if s.name.is_empty() { "Account".to_string() } else { s.name.split(' ').next().unwrap_or("Account").to_string() }
-    } else {
-        "Sign in".to_string()
+    let icon = |page: Page, arg: &str| -> N {
+        let name = super_name(s, page, arg);
+        let open = s.open.iter().any(|(p, a)| *p == page && a == arg);
+        el("a")
+            .cls("ric")
+            .attr("draggable", "false")
+            .cls_if(open, "open")
+            .cls_if(is_current(s, page, arg), "on")
+            .attr("href", hash_of(page, arg))
+            .attr("aria-label", name.clone())
+            .kid(el("span").cls("g").kid(mark_of(page, &name)))
+            .kid(el("span").cls("tip").text(name))
+            .kid(tips(match page {
+                Page::Group(g) if (g as usize) < GROUPS.len() => Some(RAIL[1 + g as usize]),
+                Page::Map => Some(RAIL[7]),
+                _ => None,
+            }))
+            .into()
     };
-    el("header")
-        .cls("top")
+    // the top part scrolls (with no bar); privacy, cookies and the API stay put at the foot (owner, 2026-10-14)
+    let mut r = el("div").cls("rscroll").kid(
+        el("a")
+            .cls("ric home")
+            .attr("draggable", "false")
+            .attr("href", "#/")
+            .attr("aria-label", "Back to the canvas")
+            // π drawn as a line icon, like every other one in the sidebar (owner, 2026-10-14: "make the pi icon same as
+            // other icon")
+            .kid(el("span").cls("g").kid(
+                el("svg:svg")
+                    .attr("viewBox", "0 0 24 24")
+                    .attr("width", "20")
+                    .attr("height", "20")
+                    .attr("fill", "none")
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "1.8")
+                    .attr("stroke-linecap", "round")
+                    .attr("stroke-linejoin", "round")
+                    .attr("aria-hidden", "true")
+                    .kid(el("svg:path").attr("d", "M4.5 7.5c.6-1.6 1.8-2.5 3.5-2.5h11.5"))
+                    .kid(el("svg:path").attr("d", "M9.5 5c0 5.5-.8 10.5-3 14"))
+                    .kid(el("svg:path").attr("d", "M15.5 5c-.4 4.5-.3 9 .6 12.2.4 1.3 1.6 1.8 3.4 1.1")),
+            ))
+            .kid(el("span").cls("tip").text("piii lab"))
+            .kid(tips(Some(RAIL[0]))),
+    );
+    // no rule under π (owner, 2026-10-14: "delete this divider")
+    let tops = [Page::Group(0), Page::Group(1), Page::Group(2), Page::Group(3), Page::Group(4), Page::Group(5), Page::Map];
+    for p in tops {
+        r = r.kid(icon(p, ""));
+    }
+    // the example program: a click puts "count to 10" on the canvas and goes there (owner, 2026-10-14: "make this an
+    // example and put it in the side icon")
+    r = r.kid(
+        el("button")
+            .attr("type", "button")
+            .cls("ric")
+            .attr("aria-label", "Example: count to 10")
+            .on("click", Msg::T(Tool::Ledger, 52, String::new()))
+            .kid(el("span").cls("g").kid(
+                el("svg:svg")
+                    .attr("viewBox", "0 0 24 24")
+                    .attr("width", "20")
+                    .attr("height", "20")
+                    .attr("fill", "none")
+                    .attr("stroke", "currentColor")
+                    .attr("stroke-width", "1.8")
+                    .attr("stroke-linecap", "round")
+                    .attr("stroke-linejoin", "round")
+                    .attr("aria-hidden", "true")
+                    .kid(el("svg:path").attr("d", "M3 6h5v4H3z"))
+                    .kid(el("svg:path").attr("d", "M3 14h5v4H3z"))
+                    .kid(el("svg:path").attr("d", "M16 10h5v4h-5z"))
+                    .kid(el("svg:path").attr("d", "M8 8c4 0 4 4 8 4M8 16c4 0 4-4 8-4")),
+            ))
+            .kid(el("span").cls("tip").text("Example: count to 10"))
+            .kid(ports()),
+    );
+    let extra: Vec<&(Page, String)> = s.open.iter().filter(|(p, _)| !tops.contains(p)).collect();
+    if !extra.is_empty() {
+        r = r.kid(el("span").cls("rsep"));
+        for (p, a) in extra {
+            r = r.kid(icon(*p, a));
+        }
+    }
+    // at the foot of the sidebar: privacy choices, cookies and the API, as icons (owner, 2026-10-14: "move this to
+    // sidebar as icon")
+    let mark = |d: &[&str]| -> N {
+        el("svg:svg")
+            .attr("viewBox", "0 0 24 24")
+            .attr("width", "20")
+            .attr("height", "20")
+            .attr("fill", "none")
+            .attr("stroke", "currentColor")
+            .attr("stroke-width", "1.8")
+            .attr("stroke-linecap", "round")
+            .attr("stroke-linejoin", "round")
+            .attr("aria-hidden", "true")
+            .kids(d.iter().map(|x| -> N { el("svg:path").attr("d", *x).into() }))
+            .into()
+    };
+    let foot = |e: El<Msg>, name: &str, d: &[&str], pin: usize| -> N {
+        e.cls("ric").attr("aria-label", name).kid(el("span").cls("g").kid(mark(d))).kid(el("span").cls("tip").text(name)).kid(tips(Some(pin))).into()
+    };
+    let mut f = el("div").cls("rfoot");
+    f = f.kid(foot(
+        el("button").attr("type", "button").on("click", Msg::ConsentOpen),
+        "Privacy choices",
+        &["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M12 10.5v3.5"],
+        RAIL[8],
+    ));
+    f = f.kid(foot(
+        el("button").attr("type", "button").on("click", Msg::T(Tool::Ledger, 50, String::new())),
+        "Cookies",
+        &["M21 12a9 9 0 1 1-9-9 3 3 0 0 0 3 3 3 3 0 0 0 3 3 3 3 0 0 0 3 3z", "M8.5 10.5h.01", "M14 15h.01", "M9 15.5h.01"],
+        RAIL[9],
+    ));
+    f = f.kid(foot(
+        el("button").attr("type", "button").on("click", Msg::T(Tool::Ledger, 51, String::new())),
+        "API",
+        &["M8 7l-5 5 5 5", "M16 7l5 5-5 5"],
+        RAIL[10],
+    ));
+    el("nav").cls("rail").attr("aria-label", "Everything else").kid(r).kid(f).into()
+}
+
+fn window_frame(s: &State, content: N) -> N {
+    // no close button (owner, 2026-10-14): π, in the rail or on the floating canvas, goes back to the canvas
+    let arg = match s.page {
+        Page::Paper => s.paper.as_str(),
+        Page::Confirm => s.ctoken.as_str(),
+        _ => "",
+    };
+    let mut size = s.win_size.map(|(w, h)| format!("width:{:.0}px;height:{:.0}px;", w, h)).unwrap_or_default();
+    if s.win_off != (0.0, 0.0) {
+        size.push_str(&format!("transform:translate({:.0}px,{:.0}px)", s.win_off.0, s.win_off.1));
+    }
+    el("section")
+        .cls("win")
+        .cls_if(s.win_pick, "picked")
+        .attr_if(!size.is_empty(), "style", size)
+        .attr("aria-label", super_name(s, s.page, arg))
+        // a double click anywhere on the window draws a sparkle, a double right click a super: its head, its margins
+        // and under its content are canvas too (owner, 2026-10-14: "outside Connect is also canvas")
+        .on("pdbl", Msg::TV(Tool::Grid, 80))
+        .on("pdbl2", Msg::TV(Tool::Grid, 81))
         .kid(
             el("div")
-                .cls("top-in")
+                .cls("win-head")
+                .attr("title", if s.win_free { "Unlocked: drag its edges to resize it" } else { "Click here, then the lock, to unlock the window's size" })
+                .on("pdown", Msg::TV(Tool::Grid, 62))
+                .on("click", Msg::TV(Tool::Grid, 65))
+                .kid(el("span").cls("win-title tag").text(super_name(s, s.page, arg))),
+        )
+        .kid(el("div").cls("win-body").kid(
+            el("div")
+                .cls("win-in")
+                .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("zoom:{:.4};transform:translate({:.1}px,{:.1}px)", s.pzoom, s.ppan.0 / s.pzoom, s.ppan.1 / s.pzoom))
+                .kid(content)
+                .kid(layer_view()),
+        ))
+        .kid_if(s.win_free, || el("div").cls("win-grip c").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 60)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())
+        .kid_if(s.win_free, || el("div").cls("win-grip r").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 63)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())
+        .kid_if(s.win_free, || el("div").cls("win-grip b").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 64)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())
+        .kid(ports())
+        .into()
+}
+
+fn gate_view(s: &State) -> N {
+    el("div")
+        .cls("gate")
+        .kid(
+            el("div")
+                .cls("gate-in")
+                .kid(el("div").cls("mark-big small").text("π"))
+                .kid(el("p").cls("hint").text("This copy of Piii Lab is private."))
                 .kid(
-                    el("a")
-                        .cls("brand")
-                        .attr("href", "#/assess")
-                        .kid(el("span").cls("mark").text("π"))
-                        .kid(el("span").text("ScholarPi")),
+                    el("input")
+                        .cls("input")
+                        .attr("type", "password")
+                        .attr("aria-label", "Password")
+                        .attr("autocomplete", "current-password")
+                        .prop("value", s.gate_pw.clone())
+                        .on_val("input", Msg::GatePw)
+                        .on("enter", Msg::GateEnter),
                 )
-                .kid(
-                    el("nav")
-                        .cls("nav")
-                        .kid(link("#/assess", "Assess", s.page == Page::Assess))
-                        .kid(link("#/explore", "Explore", s.page == Page::Explore || s.page == Page::Paper))
-                        .kid(link("#/library", "Library", s.page == Page::Library))
-                        .kid(link("#/account", &acct, s.page == Page::Account)),
-                ),
+                .kid(el("button").cls("btn primary").text("Enter").on("click", Msg::GateEnter))
+                .kid(el("div").cls("gate-no").attr("aria-live", "polite").text(s.gate_err.clone().unwrap_or_default())),
         )
         .into()
 }
 
+fn live_page(s: &State) -> N {
+    let body = slot_view(&s.live, "Loading…", |d| {
+        let idle = d.get("idle");
+        let status = if idle.get("working_now").truthy() {
+            "Assessing a paper on its own right now."
+        } else if idle.get("enabled").truthy() {
+            "Quiet. Papers are assessed when people submit them, and on their own when nobody is using the site."
+        } else {
+            "Papers are assessed when people submit them."
+        };
+        let rows = d.get("latest").arr();
+        let list: N = if rows.is_empty() {
+            empty("Nothing assessed yet.")
+        } else {
+            el("div")
+                .cls("list")
+                .kids(rows.iter().map(|r| -> N {
+                    let field = r.get("field").str();
+                    let score = el("div").cls("score").text(num(r.get("score").f(), 1)).kid(el("small").text("piX"));
+                    if r.get("auto").truthy() {
+                        el("div")
+                            .cls("item")
+                            .kid(
+                                el("div")
+                                    .cls("grow")
+                                    .kid(
+                                        el("a")
+                                            .cls("t")
+                                            .attr("href", format!("#/paper/{}", r.get("eval_hash").str()))
+                                            .text(r.get("title").str().to_string().or_untitled()),
+                                    )
+                                    .kid(el("div").cls("s").text(format!(
+                                        "Assessed on its own · {} · {}",
+                                        if field.is_empty() { "open research" } else { field },
+                                        date(r.get("at"))
+                                    ))),
+                            )
+                            .kid(score)
+                            .into()
+                    } else {
+                        el("div")
+                            .cls("item")
+                            .kid(
+                                el("div")
+                                    .cls("grow")
+                                    .kid(el("div").cls("t").text(format!(
+                                        "A paper in {}",
+                                        if field.is_empty() { "an unlisted field" } else { field }
+                                    )))
+                                    .kid(el("div").cls("s").text(format!(
+                                        "Submitted by {} · {}",
+                                        if r.get("signed_in").truthy() { "a signed-in researcher" } else { "a visitor" },
+                                        r.get("date").str()
+                                    ))),
+                            )
+                            .kid(score)
+                            .into()
+                    }
+                }))
+                .into()
+        };
+        el("div")
+            .cls("stack")
+            .kid(
+                el("div")
+                    .cls("card")
+                    .kid(el("p").style("font-weight:500").text(status))
+                    .kid(el("p").cls("hint").style("margin-top:4px").text(format!(
+                        "{} assessed today · {} in total",
+                        num(d.get("today").f(), 0),
+                        num(d.get("total").f(), 0)
+                    ))),
+            )
+            .kid(list)
+            .into()
+    });
+    el("div")
+        .kid(head(
+            "Live",
+            "What Piii Lab is doing now. Papers people submit stay private here: only their field and score are shown.",
+        ))
+        .kid(body)
+        .into()
+}
+
+fn confirm_page(s: &State) -> N {
+    let body = slot_view(&s.req, "Loading the request…", |r| {
+        let terms = r.get("terms").arr();
+        let requester = r.get("requester").str();
+        let mut card = el("div").cls("card").kid(el("h2").text(r.get("title").str())).kid(
+            el("p").cls("hint").style("margin-top:4px").text(format!(
+                "From {} to {}{}",
+                if requester.is_empty() { "Piii Lab" } else { requester },
+                r.get("recipient").str(),
+                if r.get("created_at").is_null() { String::new() } else { format!(" · {}", date(r.get("created_at"))) }
+            )),
+        );
+        let work = r.get("work").str();
+        if !work.is_empty() {
+            card = card.kid(el("p").style("margin-top:12px").kid(el("strong").text("Work: ")).text(work));
+        }
+        let msg = r.get("message").str();
+        if !msg.is_empty() {
+            card = card.kid(el("p").style("margin-top:10px;white-space:pre-wrap").text(msg));
+        }
+        if !terms.is_empty() {
+            card = card.kid(el("h3").style("margin-top:16px").text("What you would allow")).kid(
+                el("ul").style("margin:6px 0 0;padding-left:20px").kids(terms.iter().map(|t| -> N {
+                    let text = match t {
+                        Value::Str(x) => x.clone(),
+                        _ => t.any(&["text", "label", "title", "term"]).str().to_string(),
+                    };
+                    el("li").style("margin:4px 0").text(text).into()
+                })),
+            );
+        }
+        let mut col = el("div").cls("stack").kid(card);
+        if let Some(done) = &s.c_sent {
+            let granted = done.get("decision").str() == "granted";
+            return col
+                .kid(
+                    el("div")
+                        .cls("card")
+                        .kid(el("h2").text(if granted { "Permission granted" } else { "Permission declined" }))
+                        .kid(
+                            el("p")
+                                .cls("hint")
+                                .style("margin-top:6px")
+                                .text(format!("Recorded {}. Your receipt: ", done.get("answered_at").str()))
+                                .kid(el("code").text(done.get("receipt").str())),
+                        ),
+                )
+                .into();
+        }
+        let prev = r.get("answer");
+        if !prev.is_null() {
+            col = col.kid(el("div").cls("note").text(format!(
+                "Already answered: {} by {} on {}. You can answer again; the latest answer counts.",
+                prev.get("decision").str(),
+                prev.get("name").str(),
+                prev.get("answered_at").str()
+            )));
+        }
+        if r.get("closed").truthy() {
+            return col.kid(el("div").cls("note").text("This request has been closed by its sender.")).into();
+        }
+        col.kid(
+            el("div")
+                .cls("card")
+                .kid(el("h3").text("Your answer"))
+                .kid(
+                    el("input")
+                        .cls("input")
+                        .style("margin-top:10px")
+                        .attr("type", "text")
+                        .attr("aria-label", "Your name")
+                        .attr("placeholder", "Your name")
+                        .attr("autocomplete", "name")
+                        .prop("value", s.c_name.clone())
+                        .on_val("input", Msg::ConfirmName),
+                )
+                .kid(
+                    el("textarea")
+                        .cls("input")
+                        .style("margin-top:8px;min-height:84px;resize:vertical")
+                        .attr("aria-label", "A note (optional)")
+                        .attr("placeholder", "A note (optional)")
+                        .prop("value", s.c_note.clone())
+                        .on_val("input", Msg::ConfirmNote),
+                )
+                .kid_if(s.c_err.is_some(), || {
+                    el("div").cls("err-box").style("margin-top:10px").text(s.c_err.clone().unwrap_or_default()).into()
+                })
+                .kid(
+                    el("div")
+                        .cls("row")
+                        .style("margin-top:12px")
+                        .kid(
+                            el("button")
+                                .cls("btn primary")
+                                .attr_if(s.c_busy, "disabled", "")
+                                .text("Grant permission")
+                                .on("click", Msg::ConfirmAnswer(true)),
+                        )
+                        .kid(el("button").cls("btn").attr_if(s.c_busy, "disabled", "").text("Decline").on("click", Msg::ConfirmAnswer(false))),
+                ),
+        )
+        .into()
+    });
+    el("div")
+        .kid(head(
+            "Permission request",
+            "Someone asks for your permission. Your answer, your name and the time are recorded, and you get a receipt.",
+        ))
+        .kid(body)
+        .into()
+}
+
+
+#[allow(dead_code)]
 fn footer() -> N {
     el("footer")
         .cls("foot")
         .kid(
             el("div")
                 .cls("foot-in")
-                .kid(el("span").text("Piii Lab · ScholarPi"))
-                .kid(el("button").text("Privacy choices").on("click", Msg::ConsentOpen))
-                .kid(el("a").attr("href", "/api/cookies").attr("target", "_blank").text("Cookies"))
-                .kid(el("a").attr("href", "/docs").attr("target", "_blank").text("API"))
-                .kid(el("a").attr("href", "/").text("Classic site")),
+                // privacy choices, cookies and the API are icons in the sidebar now (owner, 2026-10-14)
+                .kid(el("span").text("Piii Lab · ScholarPi")),
         )
         .into()
 }
@@ -998,7 +2380,7 @@ fn consent_panel(s: &State) -> N {
         .kid(el("h2").text("Your privacy choices"))
         .kid(
             el("p").cls("hint").style("margin:6px 0 8px").text(
-                "Nothing optional happens until you choose. You can change this any time from the footer.",
+                "Nothing optional happens until you choose. You can change this any time from the shield in the sidebar.",
             ),
         )
         .kid(opt(0, "Count my visit", "A pseudonymous key from your address, for the visitor totals."))
@@ -1198,9 +2580,13 @@ fn assess_page(s: &State) -> N {
     let fee_note = {
         let fee = s.emission.data.as_ref().map(|e| e.get("fee").get("fee").f());
         if signed_in(s) {
-            match fee {
-                Some(f) => format!("{} piQ per paper, charged from your balance.", num(f, 2)),
-                None => String::new(),
+            let bal = s.piq.data.as_ref().map(|p| (p.get("balance").f(), p.get("papers_affordable").f() as i64, p.get("unproven_note").text()));
+            match (fee, bal) {
+                (_, Some((_, _, note))) if !note.is_empty() => note,
+                (Some(f), Some((b, _, _))) if b < f => format!("{} piQ per paper. Your balance, {} piQ, is below it: earn piQ by having your own manuscripts assessed or by winning a run on the Map of Science.", num(f, 2), num(b, 2)),
+                (Some(f), Some((b, n, _))) => format!("{} piQ per paper. Balance {} piQ — covers {} paper{}.", num(f, 2), num(b, 2), n, if n == 1 { "" } else { "s" }),
+                (Some(f), None) => format!("{} piQ per paper, charged from your balance.", num(f, 2)),
+                _ => String::new(),
             }
         } else {
             match &s.trial.data {
@@ -1215,10 +2601,11 @@ fn assess_page(s: &State) -> N {
     };
 
     let mut col = el("div")
-        .kid(head(
+        .kid(head_help(
             "Assess a manuscript",
             "A panel of independent AI models reads the paper, deterministic checks audit its references and \
              reproducibility, and it is scored on eight open criteria: the piX index.",
+            "assess",
         ))
         .kid(
             el("div")
@@ -1282,8 +2669,8 @@ fn assess_page(s: &State) -> N {
                 }))),
         );
     }
-    for item in &s.results {
-        col = col.kid(result_card(item));
+    for (i, item) in s.results.iter().enumerate() {
+        col = col.kid(result_card(item, i));
     }
     if !s.failed.is_empty() {
         col = col.kid(
@@ -1374,12 +2761,83 @@ fn find_view(s: &State) -> N {
     v.into()
 }
 
-fn result_card(d: &Value) -> N {
+const RESULTS_KEY: &str = "sp_results";
+const RESULTS_MAX: usize = 40;
+
+/// The results of this browser's assessments survive a reload (app.js persistResults / loadPersistedResults).
+fn results_save() {
+    let s = st();
+    let mut out = String::from("[");
+    for (i, r) in s.results.iter().take(RESULTS_MAX).enumerate() {
+        if i > 0 {
+            out.push(',');
+        }
+        json::write(r, &mut out);
+    }
+    out.push(']');
+    host::store_set(RESULTS_KEY, &out);
+}
+
+fn results_load() {
+    if let Some(v) = host::store_get(RESULTS_KEY).and_then(|t| json::parse(&t)) {
+        st().results = v.arr().iter().take(RESULTS_MAX).cloned().collect();
+    }
+}
+
+/// Why a paper earned what it earned, in one sentence: the pipeline's own explanation.
+fn reward_explanation(d: &Value) -> String {
+    let em = d.get("emission");
+    let at = em.get("attribution");
+    let minted = d.get("piq").f();
+    if minted > 0.0 {
+        return at.get("reason").text().or_text(&format!("{:.2} piQ minted.", minted));
+    }
+    if d.get("curation").get("awarded").f() > 0.0 {
+        return d.get("curation").get("reason").text();
+    }
+    if !at.get("verified").truthy() {
+        let how = at.get("how_to_verify").text();
+        return format!("{}{}", at.get("reason").text().or_text("Authorship could not be verified."), if how.is_empty() { String::new() } else { format!(" {}", how) });
+    }
+    em.get("reason").text().or_text("This paper did not meet the minting threshold.")
+}
+
+/// The piQ pill: always the total the assessment earned (minted plus held); the word and colour say where it sits.
+fn piq_pill(d: &Value) -> N {
+    let first = |vals: [&Value; 3]| vals.iter().find_map(|v| v.num()).unwrap_or(0.0);
+    let em = d.get("emission");
+    let minted = first([d.get("piq"), d.get("piq_minted"), em.get("minted")]);
+    let held = first([d.get("escrowed"), d.get("piq_escrowed"), em.get("escrowed")]);
+    let total = minted + held;
+    let why = reward_explanation(d);
+    if total <= 0.0 {
+        return el("span").cls("pill").attr("title", format!("No piQ was earned for this assessment. {}", why)).text("piQ 0.00").into();
+    }
+    if held > 0.0 {
+        return el("span")
+            .cls("pill warn")
+            .attr("title", format!("{:.2} piQ earned in total. {:.2} is held until authorship is verified{}. {}", total, held, if minted > 0.0 { format!(", {:.2} is already claimed", minted) } else { String::new() }, why))
+            .text(format!("piQ {:.2} held", total))
+            .into();
+    }
+    el("span").cls("pill good").attr("title", format!("{:.2} piQ earned and claimed to your balance. {}", total, why)).text(format!("piQ {:.2}", total)).into()
+}
+
+fn result_card(d: &Value, idx: usize) -> N {
     let hash = d.any(&["eval_hash", "hash"]).str().to_string();
-    let total = d.get("piq").f() + d.get("escrowed").f();
     let diag = d.get("diagnostics");
+    let mut pills = alloc::vec![piq_pill(d)];
+    pills.extend(paper_pills(d, 0.0));
+    pills.extend(badges(d));
+    if !d.get("reads").is_null() && d.get("reads").f() > 0.0 {
+        pills.push(el("span").cls("pill").attr("title", "How often the paper was opened or downloaded here").text(format!("{} reads", d.get("reads").text())).into());
+    }
     let mut card = el("div")
         .cls("card")
+        .cls_if(d.get("duplicate").truthy(), "dup")
+        .kid_if(d.get("duplicate").truthy(), || {
+            el("div").cls("note").text("Already assessed — this is the existing record for this work, not a second one. Its reviews, publication state and ledger entry are unchanged, and the processing fee was returned.").into()
+        })
         .kid(
             el("div")
                 .cls("res-head")
@@ -1391,7 +2849,7 @@ fn result_card(d: &Value) -> N {
                 )
                 .kid(score_big(d.get("score").f())),
         )
-        .kid(el("div").cls("pills").style("margin-top:12px").kids(paper_pills(d, total)))
+        .kid(el("div").cls("pills").style("margin-top:12px").kids(pills))
         .kid(bars(d));
     if diag.get("available").truthy() {
         let headline = diag.get("headline").str();
@@ -1407,12 +2865,15 @@ fn result_card(d: &Value) -> N {
                 .into()
         }));
     }
+    let mut bar = el("div").cls("row").style("margin-top:16px");
     if !hash.is_empty() {
-        card = card.kid(
-            el("div").style("margin-top:16px").kid(el("a").attr("href", format!("#/paper/{}", hash)).text("Open the full dossier →")),
-        );
+        bar = bar
+            .kid(el("a").cls("btn small primary").attr("href", format!("#/paper/{}", hash)).text("Full report and dossier"))
+            .kid(act_btn("Suggest defense", "defense", &hash, ""))
+            .kid_if(signed_in(st()), || act_btn("Remove", "remove", &hash, "danger"));
     }
-    card.into()
+    bar = bar.kid(el("button").attr("type", "button").cls("btn small ghost").attr("title", "Hide this card. The assessment stays in the ledger.").on("click", Msg::T(Tool::Grid, 70, format!("{}", idx))).text("Dismiss"));
+    card.kid(bar).into()
 }
 
 trait OrDefault {
@@ -1595,8 +3056,10 @@ fn journal_list(rows: &[Value]) -> N {
 // ---- A paper's dossier
 
 fn paper_page(s: &State) -> N {
-    let body = slot_view(&s.dossier, "Loading the dossier…", dossier_view);
-    el("div").kid(el("a").cls("back").attr("href", "#/explore").text("← Explore")).kid(body).into()
+    let body = slot_view(&s.dossier, "Loading the dossier…", |d| {
+        el("div").cls("stack").kid_if(!badges(d).is_empty(), || el("div").cls("row").kids(badges(d)).into()).kid(dossier_view(d)).kid_if(signed_in(st()), || authorship_actions(d)).into()
+    });
+    el("div").kid(body).into()
 }
 
 fn dossier_view(d: &Value) -> N {
@@ -1628,8 +3091,22 @@ fn dossier_view(d: &Value) -> N {
                     .kid(score_big(d.get("score").f())),
             )
             .kid(el("div").cls("pills").style("margin-top:12px").kids(paper_pills(d, 0.0)))
-            .kid(bars(d)),
+            .kid(bars(d))
+            .kid(el("div").cls("row").style("margin-top:10px").kid(download_button(d))),
     );
+    // warnings first: the most important thing to surface
+    let warnings = d.get("warnings").arr();
+    col = col.kid(if warnings.is_empty() {
+        el("div").cls("card").kid(el("h2").style("margin-bottom:6px").text("Processing warnings")).kid(el("div").cls("ok-box").text("No warnings were raised during processing. All extraction, model-panel and ledger stages completed as expected."))
+    } else {
+        el("div").cls("card").kid(el("h2").style("margin-bottom:6px").text("Processing warnings")).kid(el("ul").style("margin:0;padding-left:20px").kids(warnings.iter().map(|w| -> N { el("li").text(w.str().replace("**", "")).into() })))
+    });
+    if let Some(p) = diagnostics_panel(d) {
+        col = col.kid(p);
+    }
+    if let Some(p) = integrity_panel(d) {
+        col = col.kid(p);
+    }
 
     // piQ
     let mut kv: Vec<(String, String)> = Vec::new();
@@ -1659,8 +3136,21 @@ fn dossier_view(d: &Value) -> N {
             .kid(el("dl").cls("kv").kids(kv.into_iter().flat_map(|(k, v)| [el("dt").text(k).into(), el("dd").text(v).into()]))),
     );
 
-    // The criteria in full.
+    // The criteria in full; older records have only their scores
     let crit = d.get("criteria_breakdown").arr();
+    if crit.is_empty() {
+        let detail = d.get("criteria_detail").arr();
+        let rows: Vec<(String, String, f64)> = if !detail.is_empty() {
+            detail.iter().map(|c| (c.get("id").text(), c.get("title").text(), c.get("score").f())).collect()
+        } else {
+            d.get("scores_dict").entries().iter().map(|(k, v)| (k.clone(), String::new(), v.f())).collect()
+        };
+        if !rows.is_empty() {
+            col = col.kid(el("div").cls("card").kid(el("h2").style("margin-bottom:12px").text("The eight criteria")).kid(el("table").cls("data-table").kid(el("tbody").kids(rows.iter().map(|(id, t, sc)| -> N {
+                el("tr").kid(el("td").kid(el("b").text(id.chars().take(2).collect::<String>()))).kid(el("td").text(if t.is_empty() { id.get(3..).unwrap_or("").replace('_', " ") } else { t.clone() })).kid(el("td").cls("n").text(format!("{:.1}", sc))).into()
+            })))));
+        }
+    }
     if !crit.is_empty() {
         col = col.kid(
             el("div").cls("card").kid(el("h2").style("margin-bottom:12px").text("The eight criteria")).kids(crit.iter().map(|c| -> N {
@@ -1675,6 +3165,7 @@ fn dossier_view(d: &Value) -> N {
                     .cls("crit")
                     .kid(el("div").cls("spread").kid(el("h3").text(c.get("label").str())).kid(el("b").text(num(c.get("score").f(), 0))))
                     .kid(el("p").cls("hint").style("margin-top:4px").text(c.get("definition").str()))
+                    .kid_if(!c.get("override").str().is_empty(), || el("p").cls("override").text(c.get("override").text()).into())
                     .kid_if(!gap_text.is_empty(), || el("p").style("margin-top:6px;font-size:14px").text(format!("Largest gap: {}", gap_text)).into())
                     .kid_if(!contribs.is_empty(), || {
                         el("div")
@@ -1686,6 +3177,7 @@ fn dossier_view(d: &Value) -> N {
                                     .kid(el("tbody").kids(contribs.iter().map(|x| -> N {
                                         let desc = x.get("description").str();
                                         el("tr")
+                                            .cls_if(!x.get("signal").str().is_empty() && x.get("signal").str() == gap.str(), "gap")
                                             .kid(el("td").text(if desc.is_empty() { x.get("signal").str() } else { desc }))
                                             .kid(el("td").cls("n").text(num(x.get("value").f(), 2)))
                                             .kid(el("td").cls("n").text(format!("{} / {}", num(x.get("points").f(), 1), num(x.get("max_points").f(), 1))))
@@ -1699,79 +3191,15 @@ fn dossier_view(d: &Value) -> N {
         );
     }
 
-    // The panel.
-    let models = meta.get("participating_models").arr();
-    let rationale = meta.get("rationale").str();
-    if !models.is_empty() || !rationale.is_empty() {
-        col = col.kid(
-            el("div")
-                .cls("card")
-                .kid(el("h2").style("margin-bottom:8px").text("The panel"))
-                .kid_if(!rationale.is_empty(), || el("p").style("margin-bottom:10px").text(rationale).into())
-                .kid(el("div").cls("pills").kids(models.iter().map(|m| -> N {
-                    el("span").cls("pill").text(format!("{} · {}", m.get("label").str(), m.get("role").str())).into()
-                })))
-                .kid_if(!meta.get("failed_models").arr().is_empty(), || {
-                    el("p").cls("hint").style("margin-top:8px").text(format!(
-                        "Did not respond: {}",
-                        meta.get("failed_models").arr().iter().map(|m| m.get("label").str()).collect::<Vec<_>>().join(", ")
-                    ))
-                    .into()
-                }),
-        );
+    if let Some(p) = judge_panel(d) {
+        col = col.kid(p);
     }
-
-    // References.
-    let ra = d.get("reference_audit");
-    if !ra.is_null() && ra.get("verdict").str() != "not_assessed" {
-        let sm = ra.get("summary");
-        col = col.kid(
-            el("div")
-                .cls("card")
-                .kid(el("h2").style("margin-bottom:10px").text("References"))
-                .kid(el("dl").cls("kv").kids([
-                    el("dt").text("Checked against OpenAlex and Crossref").into(),
-                    el("dd").text(ra.get("checked").text()).into(),
-                    el("dt").text("Verified").into(),
-                    el("dd").text(ra.get("verified").text()).into(),
-                    el("dt").text("Not found").into(),
-                    el("dd").text(ra.get("unverified").text()).into(),
-                    el("dt").text("Fabricated").into(),
-                    el("dd").text(ra.get("fabricated").text()).into(),
-                    el("dt").text("Total references").into(),
-                    el("dd").text(sm.get("total").text()).into(),
-                    el("dt").text("Median year").into(),
-                    el("dd").text(sm.get("median_year").text()).into(),
-                ])),
-        );
-    }
-
-    let warnings = d.get("warnings").arr();
-    if !warnings.is_empty() {
-        col = col.kid(
-            el("div")
-                .cls("card")
-                .kid(el("h2").style("margin-bottom:6px").text("Warnings"))
-                .kid(el("ul").style("margin:0;padding-left:20px").kids(warnings.iter().map(|w| -> N { el("li").text(w.str()).into() }))),
-        );
-    }
-
     let report = d.get("evidence_report_text").str();
     if !report.trim().is_empty() {
         col = col.kid(el("div").cls("card").kid(el("h2").text("Evidence report")).kid(markdown(report)));
     }
 
-    let mut links = el("div").cls("row");
-    links = links.kid(el("a").attr("href", format!("/api/dossier/{}/fair", hash)).attr("target", "_blank").text("FAIR record"));
-    links = links.kid(el("a").attr("href", format!("/api/dossier/{}/coara.html", hash)).attr("target", "_blank").text("CoARA summary"));
-    if d.get("has_file").truthy() {
-        links = links.kid(el("a").attr("href", format!("/api/papers/{}/file", hash)).attr("target", "_blank").text("Manuscript"));
-    }
-    let ex = d.get("explorer_url").str();
-    if !ex.is_empty() {
-        links = links.kid(el("a").attr("href", ex).attr("target", "_blank").attr("rel", "noopener").text("On chain"));
-    }
-    col = col.kid(el("div").cls("card").kid(links));
+    col = col.kids(record_panels(st(), d));
     col.into()
 }
 
@@ -1781,15 +3209,9 @@ fn markdown(src: &str) -> N {
     let mut list: Vec<N> = Vec::new();
     let mut para = String::new();
     fn inline(s: &str) -> Vec<N> {
-        let mut v: Vec<N> = Vec::new();
-        for (i, part) in s.split("**").enumerate() {
-            if part.is_empty() {
-                continue;
-            }
-            if i % 2 == 1 { v.push(el("strong").text(part).into()) } else { v.push(txt(part)) }
-        }
-        v
+        rich(s)
     }
+    let mut table: Vec<N> = Vec::new();
     let flush_para = |para: &mut String, out: &mut Vec<N>| {
         if !para.trim().is_empty() {
             out.push(el("p").kids(inline(para.trim())).into());
@@ -1801,11 +3223,37 @@ fn markdown(src: &str) -> N {
             out.push(el("ul").kids(core::mem::take(list)).into());
         }
     };
+    let flush_table = |table: &mut Vec<N>, out: &mut Vec<N>| {
+        if !table.is_empty() {
+            out.push(el("table").kid(el("tbody").kids(core::mem::take(table))).into());
+        }
+    };
     for line in src.lines() {
         let t = line.trim();
+        if !t.starts_with('|') {
+            flush_table(&mut table, &mut out);
+        }
+        let compact: String = t.chars().filter(|c| !c.is_whitespace()).collect();
         if t.is_empty() {
             flush_para(&mut para, &mut out);
             flush_list(&mut list, &mut out);
+        } else if t.starts_with('|') {
+            flush_para(&mut para, &mut out);
+            flush_list(&mut list, &mut out);
+            // a separator row carries no content
+            if t.chars().all(|c| "|-: ".contains(c)) {
+                continue;
+            }
+            let cells: Vec<&str> = t.trim_matches('|').split('|').map(|c| c.trim()).collect();
+            table.push(el("tr").kids(cells.iter().map(|c| -> N { el("td").kids(inline(c)).into() })).into());
+        } else if compact.len() >= 3 && (compact.chars().all(|c| c == '-') || compact.chars().all(|c| c == '*') || compact.chars().all(|c| c == '_')) {
+            flush_para(&mut para, &mut out);
+            flush_list(&mut list, &mut out);
+            out.push(el("hr").into());
+        } else if let Some(q) = t.strip_prefix('>') {
+            flush_para(&mut para, &mut out);
+            flush_list(&mut list, &mut out);
+            out.push(el("blockquote").kids(inline(q.trim())).into());
         } else if let Some(h) = t.strip_prefix('#') {
             flush_para(&mut para, &mut out);
             flush_list(&mut list, &mut out);
@@ -1823,6 +3271,7 @@ fn markdown(src: &str) -> N {
     }
     flush_para(&mut para, &mut out);
     flush_list(&mut list, &mut out);
+    flush_table(&mut table, &mut out);
     el("div").cls("md").kids(out).into()
 }
 
@@ -1929,7 +3378,6 @@ fn library_page(s: &State) -> N {
                         .cls("list")
                         .kid(link("/ScholarPi_Whitepaper.pdf", "Whitepaper", "The design of the index, the panel and the ledger (PDF)."))
                         .kid(link("/zotero/scholarpi.xpi", "Zotero plugin", "Shows each paper's piX in your Zotero library. Zotero 7: Tools → Plugins → Install from file."))
-                        .kid(link("/docs", "API reference", "Every endpoint, for building on ScholarPi."))
                         .kid(link("/api/cookies", "Cookies and storage", "Everything this site keeps in your browser, and why.")),
                 ),
         )
@@ -1952,7 +3400,7 @@ fn account_page(s: &State) -> N {
         if let Some(e) = &s.login_err {
             card = card.kid(el("div").cls("err-box").style("margin-top:14px").text(e.clone()));
         }
-        col = col.kid(card);
+        col = col.kid(card).kid(wallet_card(s));
         if let Some(t) = &s.trial.data {
             col = col.kid(el("div").cls("card").kid(el("h3").text("Free trial")).kid(el("p").cls("hint").style("margin-top:4px").text(format!(
                 "{} of {} papers left without signing in. {}",
@@ -1990,16 +3438,66 @@ fn account_page(s: &State) -> N {
             .kid(stat(p.get("papers_affordable").text(), "papers you can afford"))
             .into()
     }));
-    col = col.kid(el("h2").style("margin:8px 0 12px").text("Your assessments")).kid(slot_view(&s.mine, "Loading your assessments…", |m| {
-        let rows = m.get("assessments").arr();
-        if rows.is_empty() {
-            return empty("None yet. Assess a paper and it will appear here.");
-        }
-        paper_list(rows, "timestamp", "author_name")
-    }));
+    col = col.kid(claimable_view(s)).kid(el("h2").style("margin:8px 0 12px").text("Your assessments")).kid(history_view(s));
     col.into()
 }
 
 fn short(w: &str) -> String {
     if w.len() > 12 { format!("{}…{}", &w[..6], &w[w.len() - 4..]) } else { w.to_string() }
+}
+
+include!("scene.rs");
+include!("tools.rs");
+include!("program.rs");
+include!("tools2.rs");
+include!("quvi.rs");
+include!("facemace.rs");
+include!("sciencemap.rs");
+include!("studio.rs");
+include!("reviews.rs");
+include!("owner.rs");
+include!("ledger.rs");
+include!("help.rs");
+include!("learn.rs");
+include!("hal.rs");
+include!("board.rs");
+include!("dossier.rs");
+
+/// Save, lock, chain and reset, floating over an open super as they sit on the canvas.
+fn ctl_bar(s: &State) -> N {
+    el("div")
+        .cls("ctl-bar")
+        .attr("role", "toolbar")
+        .attr("aria-label", "The canvas's controls")
+        .kids(BAR.iter().map(|&id| -> N {
+            el("button")
+                .attr("type", "button")
+                .cls("ric ctlb")
+                .attr("title", sup_label(id))
+                .attr("aria-label", sup_label(id))
+                .cls_if(id == S_RESET && s.reset_hold.is_some(), "holding")
+                .cls_if(id == S_SAVE && s.wire_mode, "on")
+                .attr_if(id == S_SAVE, "aria-pressed", if s.wire_mode { "true" } else { "false" })
+                .cls_if(id == S_LOCK && host::now() - s.lock_blink < 1500.0, "blink")
+                .on_if(id != S_RESET, "click", Msg::Activate(id as u8))
+                .kid_if(id == S_RESET, || el("span").cls("hold-face").on("pdown", Msg::TV(Tool::Grid, 66)).into())
+                .kid(control_icon(id, s))
+                .kid(if s.page == Page::Home { bar_ports(id) } else { ports() })
+                .into()
+        }))
+        .into()
+}
+
+/// The + on the bar: wiring on, or off (a wire being made is let go).
+fn wire_mode_toggle() {
+    let s = st();
+    s.wire_mode = !s.wire_mode;
+    if !s.wire_mode {
+        s.held_port = None;
+        s.port_drag = None;
+        if let Page::Group(g) = s.page {
+            board(g as usize).held = None;
+        }
+        host::capture(false);
+    }
 }

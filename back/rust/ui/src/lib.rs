@@ -18,8 +18,10 @@ mod dom;
 mod host;
 mod json;
 mod mem;
+mod pi;
 mod sha256;
 mod style;
+mod superai;
 mod text;
 
 use alloc::string::String;
@@ -54,6 +56,24 @@ pub extern "C" fn ret(len: usize) -> *mut u8 {
     host::ret_buffer(len)
 }
 
+/// A press on an open page's bare background or head: the window is selected.
+#[unsafe(no_mangle)]
+pub extern "C" fn page_pressed() {
+    app::on_page_press();
+}
+
+/// An open page dragged by its bare background: by (dx, dy) px.
+#[unsafe(no_mangle)]
+pub extern "C" fn panned(dx: f64, dy: f64) {
+    app::on_page_pan(dx, dy);
+}
+
+/// Zoom asked for anywhere (a pinch, Ctrl/⌘ and the wheel, Ctrl/⌘ +, − or 0): deltaY (0 resets), and the point.
+#[unsafe(no_mangle)]
+pub extern "C" fn zoomed(dy: f64, x: f64, y: f64) {
+    app::on_zoom(dy, x, y);
+}
+
 #[unsafe(no_mangle)]
 pub extern "C" fn start() {
     app::start();
@@ -77,6 +97,32 @@ pub extern "C" fn fetched(req: u32, status: u32, p: *mut u8, l: usize, done: u32
 #[unsafe(no_mangle)]
 pub extern "C" fn timer(token: u32) {
     app::on_timer(token);
+}
+
+/// The window changed size.
+#[unsafe(no_mangle)]
+pub extern "C" fn resized() {
+    app::on_resize();
+}
+
+/// The pointer moved (phase 0), was let go (1) or was taken away (2) while a super is being dragged.
+#[unsafe(no_mangle)]
+pub extern "C" fn pointer(phase: u32, x: f64, y: f64) {
+    app::on_pointer(phase, x, y);
+}
+
+/// A key that edits the canvas (Delete, Backspace, Escape), pressed outside any field.
+#[unsafe(no_mangle)]
+pub extern "C" fn keyed(kp: *mut u8, kl: usize) -> u32 {
+    let key = take(kp, kl);
+    app::on_key(&key) as u32
+}
+
+/// Bytes the host was asked for (a picture's pixels, w × h; a file's contents): w = 0 means it could not be read.
+#[unsafe(no_mangle)]
+pub extern "C" fn pixels(token: u32, p: *mut u8, len: usize, w: u32, h: u32) {
+    let data = if len > 0 { unsafe { Vec::from_raw_parts(p, len, len) } } else { Vec::new() };
+    app::on_pixels(token, data, w, h);
 }
 
 /// The address changed (a link to #/… was followed, or back or forward).

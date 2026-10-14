@@ -39,8 +39,15 @@ def reset_state():
 
 
 def valid_pdf(size=8192):
-    body = b"%PDF-1.7\n/Pages 1 0 R\n" + b"x" * size
-    return body
+    """A real one-page PDF, padded past the size floor: validate_upload opens the file, so bytes that only look
+    like a PDF no longer pass."""
+    import fitz
+    doc = fitz.open()
+    doc.new_page().insert_text((72, 72), "A manuscript. " + "x" * 40)
+    doc.set_metadata({"subject": "x" * size})
+    data = doc.tobytes()
+    doc.close()
+    return data
 
 
 # --------------------------------------------------------------------------
@@ -225,7 +232,7 @@ def test_a_pdf_without_page_structure_is_rejected():
     ok, reason = abuse_guard.validate_upload("broken.pdf", b"%PDF-1.7\n" + b"z" * 9000,
                                              25 * 1024 * 1024)
     assert not ok
-    assert "page structure" in reason
+    assert "could not be opened" in reason
 
 
 # --------------------------------------------------------------------------
