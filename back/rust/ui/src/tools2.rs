@@ -298,9 +298,118 @@ fn perf_view(s: &State) -> N {
         .kid(el("p").cls("lede").text("Four engines learn from how the lab is used. Here is how each one is doing."))
         .kid(el("div").cls("perf-cards").kids(cards))
         .kid_if(idle_line.is_some(), || el("p").cls("hint").text(idle_line.clone().unwrap_or_default()).into())
-        .kid(el("section").cls("card").kid(el("h3").text("What happens next")).kid(el("p").text(next)))
+        .kid(el("section").cls("card").kid(el("h3").text("What happens next")).kid(el("p").text(next)).kid(forecast_charts(fc)))
         .kid(pien_panel(s))
         .kid(el("details").cls("perf-more").kid(el("summary").text("Show the detailed forecast")).kid(data_view(fc, 0)))
+        .into()
+}
+
+// ---------------------------------------------------------------------------------------------- the forecast, drawn
+
+const FC_COLORS: [&str; 8] = ["#2f40e8", "#d9480f", "#2b8a3e", "#ae3ec9", "#1098ad", "#e8590c", "#5c940d", "#c2255c"];
+
+/// The PiDN forecast as pictures (owner, 2026-10-15: "the forecast prediction should have visual diagrams"): each
+/// criterion's weight over the last ledger blocks with the forecast as a dashed step, and where each one is heading
+/// against equal weighting (1.0).
+fn forecast_charts(fc: &Value) -> N {
+    let crit = fc.get("criteria").arr();
+    if crit.is_empty() {
+        return txt("");
+    }
+    let keys = ["C1", "C2", "C3", "C4", "C5", "C6", "C7", "C8"];
+    let next_w = |c: &Value| if c.get("weight").is_null() { c.get("current").f() } else { c.get("weight").f() };
+    let now_w = |c: &Value| if !c.get("current_weight").is_null() { c.get("current_weight").f() } else if !c.get("current").is_null() { c.get("current").f() } else { 1.0 };
+    // the series: the recorded blocks, then the forecast; with no history yet, the genesis weighting then the next one
+    let hist = fc.get("history").arr();
+    let mut cols: Vec<(String, [f64; 8], bool)> = Vec::new();
+    if hist.is_empty() {
+        cols.push(("Genesis".into(), [1.0; 8], false));
+        let mut w = [1.0; 8];
+        for (k, c) in crit.iter().take(8).enumerate() {
+            w[k] = now_w(c);
+        }
+        cols.push(("Now".into(), w, false));
+    } else {
+        for h in hist {
+            let mut w = [1.0; 8];
+            for (k, key) in keys.iter().enumerate() {
+                w[k] = h.get(key).f();
+            }
+            cols.push((format!("#{}", h.get("block").text()), w, false));
+        }
+    }
+    let fp = fc.get("forecast");
+    if !fp.is_null() {
+        let mut w = [1.0; 8];
+        for (k, key) in keys.iter().enumerate() {
+            w[k] = fp.get(key).f();
+        }
+        cols.push(("Next".into(), w, true));
+    }
+    let (mut lo, mut hi) = (1.0f64, 1.0f64);
+    for (_, w, _) in &cols {
+        for v in w {
+            lo = lo.min(*v);
+            hi = hi.max(*v);
+        }
+    }
+    let span = (hi - lo).max(0.2);
+    let (lo, hi) = (lo - span * 0.15, hi + span * 0.15);
+    let (w, h, l, r, t, b) = (640.0, 240.0, 44.0, 16.0, 14.0, 30.0);
+    let x = |i: usize| l + (w - l - r) * if cols.len() > 1 { i as f64 / (cols.len() - 1) as f64 } else { 0.5 };
+    let y = |v: f64| t + (h - t - b) * (1.0 - (v - lo) / (hi - lo));
+    let mut line = el("svg:svg").cls("fc-svg").attr("viewBox", format!("0 0 {} {}", w, h)).attr("role", "img").attr("aria-label", "Each criterion's weight over the last ledger blocks, and the forecast");
+    // the grid: four levels, and 1.0 (equal weighting) drawn darker
+    for k in 0..=4 {
+        let v = lo + (hi - lo) * k as f64 / 4.0;
+        line = line
+            .kid(el("svg:line").attr("x1", format!("{:.1}", l)).attr("x2", format!("{:.1}", w - r)).attr("y1", format!("{:.1}", y(v))).attr("y2", format!("{:.1}", y(v))).cls("fc-grid"))
+            .kid(el("svg:text").attr("x", format!("{:.1}", l - 6.0)).attr("y", format!("{:.1}", y(v) + 4.0)).attr("text-anchor", "end").cls("fc-tick").text(format!("{:.2}", v)));
+    }
+    line = line.kid(el("svg:line").attr("x1", format!("{:.1}", l)).attr("x2", format!("{:.1}", w - r)).attr("y1", format!("{:.1}", y(1.0))).attr("y2", format!("{:.1}", y(1.0))).cls("fc-base"));
+    // the forecast's band
+    if cols.last().map(|c| c.2).unwrap_or(false) && cols.len() > 1 {
+        let x0 = (x(cols.len() - 2) + x(cols.len() - 1)) / 2.0;
+        line = line.kid(el("svg:rect").attr("x", format!("{:.1}", x0)).attr("y", format!("{:.1}", t)).attr("width", format!("{:.1}", w - r - x0)).attr("height", format!("{:.1}", h - t - b)).cls("fc-band"));
+    }
+    for (i, (lab, _, f)) in cols.iter().enumerate() {
+        line = line.kid(el("svg:text").attr("x", format!("{:.1}", x(i))).attr("y", format!("{:.1}", h - 10.0)).attr("text-anchor", "middle").cls(if *f { "fc-tick fc-next" } else { "fc-tick" }).text(lab.clone()));
+    }
+    for k in 0..8 {
+        let solid_n = cols.iter().filter(|c| !c.2).count();
+        let pts: Vec<String> = cols.iter().enumerate().take(solid_n).map(|(i, c)| format!("{:.1},{:.1}", x(i), y(c.1[k]))).collect();
+        if pts.len() > 1 {
+            line = line.kid(el("svg:polyline").attr("points", pts.join(" ")).attr("stroke", FC_COLORS[k]).cls("fc-line"));
+        }
+        if solid_n < cols.len() && solid_n > 0 {
+            let a = solid_n - 1;
+            line = line.kid(el("svg:line").attr("x1", format!("{:.1}", x(a))).attr("y1", format!("{:.1}", y(cols[a].1[k]))).attr("x2", format!("{:.1}", x(a + 1))).attr("y2", format!("{:.1}", y(cols[a + 1].1[k]))).attr("stroke", FC_COLORS[k]).cls("fc-line fc-dash"));
+        }
+        for (i, c) in cols.iter().enumerate() {
+            line = line.kid(el("svg:circle").attr("cx", format!("{:.1}", x(i))).attr("cy", format!("{:.1}", y(c.1[k]))).attr("r", if c.2 { "4" } else { "2.5" }).attr("fill", if c.2 { "#fff" } else { FC_COLORS[k] }).attr("stroke", FC_COLORS[k]).cls("fc-dot").kid(el("svg:title").text(format!("{} · {}: {:.3}", crit.get(k).map(|c| c.get("title").text()).unwrap_or_default(), c.0, c.1[k]))));
+        }
+    }
+    // where each criterion is heading, against equal weighting
+    let deltas: Vec<f64> = crit.iter().take(8).map(|c| next_w(c) - 1.0).collect();
+    let m = deltas.iter().fold(0.05f64, |a, d| a.max(d.abs()));
+    let bars = el("div").cls("fc-bars").kids(crit.iter().take(8).enumerate().map(|(k, c)| -> N {
+        let d = deltas[k];
+        let pct = (d.abs() / m * 50.0).min(50.0);
+        let ch = next_w(c) - now_w(c);
+        el("div")
+            .cls("fc-row")
+            .kid(el("span").cls("fc-name").kid(el("i").style(format!("background:{}", FC_COLORS[k]))).kid(txt(c.get("title").text())))
+            .kid(el("span").cls("fc-track").kid(el("b").cls(if d >= 0.0 { "up" } else { "down" }).style(if d >= 0.0 { format!("left:50%;width:{:.1}%;background:{}", pct, FC_COLORS[k]) } else { format!("right:50%;width:{:.1}%;background:{}", pct, FC_COLORS[k]) })))
+            .kid(el("span").cls("fc-val").text(format!("{:.3}{}", next_w(c), if ch > 0.0005 { " ▲" } else if ch < -0.0005 { " ▼" } else { "" })))
+            .into()
+    }));
+    el("div")
+        .cls("fc-charts")
+        .kid(el("h4").text(if fp.is_null() { "The weighting so far" } else { "Weights over the last blocks, and the forecast (dashed)" }))
+        .kid(line)
+        .kid(el("h4").text(if fp.is_null() { "Each criterion against equal weighting (1.0)" } else { "Next epoch: each criterion against equal weighting (1.0)" }))
+        .kid(bars)
+        .kid(el("p").cls("hint").text("The eight weights always add up to 8: above 1.0 a criterion counts more than the others, below 1.0 less. ▲ and ▼ mark the change the forecast expects."))
         .into()
 }
 
@@ -1114,6 +1223,15 @@ fn tools2_update(t: Tool, a: u16, v: String) {
 }
 
 const TOOLS2_CSS: &str = "\
+.fc-charts{margin-top:14px}.fc-charts h4{margin:14px 0 6px;font-size:14px}\
+.fc-svg{width:100%;height:auto;display:block}.fc-grid{stroke:var(--line);stroke-width:1}.fc-base{stroke:#888;stroke-width:1.2;stroke-dasharray:3 3}\
+.fc-tick{font-size:11px;fill:var(--muted)}.fc-next{fill:var(--accent);font-weight:600}.fc-band{fill:var(--accent);opacity:.06}\
+.fc-line{fill:none;stroke-width:2;stroke-linejoin:round;stroke-linecap:round}.fc-dash{stroke-dasharray:6 5}.fc-dot{stroke-width:1.5}\
+.fc-bars{display:grid;gap:6px}.fc-row{display:grid;grid-template-columns:minmax(120px,190px) 1fr 64px;gap:10px;align-items:center;font-size:13px}\
+.fc-name{display:flex;gap:6px;align-items:center;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.fc-name i{flex:none;width:10px;height:10px;border-radius:50%}\
+.fc-track{position:relative;height:12px;background:linear-gradient(90deg,transparent calc(50% - 1px),#888 calc(50% - 1px),#888 calc(50% + 1px),transparent calc(50% + 1px)),var(--line);border-radius:6px}\
+.fc-track b{position:absolute;top:2px;bottom:2px;border-radius:4px;min-width:2px}.fc-val{text-align:right;font-variant-numeric:tabular-nums}\
+@media (max-width:699px){.fc-row{grid-template-columns:110px 1fr 58px;gap:6px;font-size:12px}}\
 .arch-flow{list-style:none;padding:0;margin:16px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}\
 .arch-step{width:100%;height:100%;text-align:left;border:1.4px solid #2b2b2b;background:#fff;padding:10px 12px;font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:3px}\
 .arch-step[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}\
