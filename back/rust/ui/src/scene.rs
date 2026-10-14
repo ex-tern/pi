@@ -723,7 +723,6 @@ const GROUPS: [Group; 6] = [
             ("The Global Map of Science", Target::Tool(Tool::Map)),
             ("Whitepaper", Target::Tool(Tool::Whitepaper)),
             ("Architecture", Target::Tool(Tool::Arch)),
-            ("SciM Assistant", Target::Tool(Tool::Scim)),
             ("Capabilities", Target::Words(
                 "siM is the lab's own assistant model. riB learns which papers are worth reading. piD forecasts from the \
                  ledger. PiEn learns how the site is used. Super AI joins them, with Llama, Mistral, Qwen, Gemini and \
@@ -782,6 +781,15 @@ const GROUPS: [Group; 6] = [
         ],
     },
 ];
+
+/// Where a group member is opened, found by its name (the map's links follow members as they move between groups).
+fn member_href(name: &str) -> String {
+    GROUPS
+        .iter()
+        .enumerate()
+        .find_map(|(gi, g)| g.members.iter().position(|m| m.0 == name).map(|m| format!("#/i/{}/{}", gi, m)))
+        .unwrap_or_else(|| "#/".to_string())
+}
 
 fn group_of(sup: usize) -> Option<usize> {
     GROUPS.iter().position(|g| g.sup == sup)
@@ -2779,50 +2787,50 @@ const fn mn(id: &'static str, label: &'static str, kind: &'static str, x: f64, y
 // every engine, the assessment from manuscript to ledger, the lab's own tools, and what it all runs on.
 const MAP: [MapNode; 41] = [
     // one prompt, every engine
-    mn("prompt", "Prompt", "in", 20.0, 120.0, 150.0, 64.0, "#/i/1/3", ""),
-    mn("superai", "Super AI", "ai", 210.0, 128.0, 96.0, 48.0, "#/i/1/3", ""),
-    mn("sim", "siM", "lab", 350.0, 20.0, 74.0, 40.0, "#/i/2/4", "SciM"),
-    mn("rib", "riB", "lab", 350.0, 76.0, 74.0, 40.0, "#/i/2/0", "RiBD"),
-    mn("pid", "piD", "lab", 350.0, 132.0, 74.0, 40.0, "#/i/1/7", "forecast"),
-    mn("pien", "PiEn", "lab", 350.0, 188.0, 74.0, 40.0, "#/i/1/7", "next step"),
+    mn("prompt", "Prompt", "in", 20.0, 120.0, 150.0, 64.0, "@Super AI", ""),
+    mn("superai", "Super AI", "ai", 210.0, 128.0, 96.0, 48.0, "@Super AI", ""),
+    mn("sim", "siM", "lab", 350.0, 20.0, 74.0, 40.0, "@Super AI", "SciM"),
+    mn("rib", "riB", "lab", 350.0, 76.0, 74.0, 40.0, "@RiBD", "RiBD"),
+    mn("pid", "piD", "lab", 350.0, 132.0, 74.0, 40.0, "@Performance", "forecast"),
+    mn("pien", "PiEn", "lab", 350.0, 188.0, 74.0, 40.0, "@Performance", "next step"),
     mn("llama", "Llama", "out", 470.0, 8.0, 74.0, 40.0, "", ""),
     mn("mistral", "Mistral", "out", 470.0, 58.0, 74.0, 40.0, "", ""),
     mn("qwen", "Qwen", "out", 470.0, 108.0, 74.0, 40.0, "", ""),
     mn("gemini", "Gemini", "out", 470.0, 158.0, 74.0, 40.0, "", ""),
     mn("deepseek", "DeepSeek", "out", 470.0, 208.0, 74.0, 40.0, "", ""),
     mn("judge", "Judge", "judge", 600.0, 108.0, 74.0, 40.0, "", ""),
-    mn("answer", "Answer", "sink", 720.0, 70.0, 160.0, 118.0, "#/i/1/3", ""),
+    mn("answer", "Answer", "sink", 720.0, 70.0, 160.0, 118.0, "@Super AI", ""),
     mn("live", "Live", "site", 906.0, 20.0, 74.0, 40.0, "#/live", ""),
-    mn("traffic", "Analytics", "site", 906.0, 200.0, 74.0, 40.0, "#/i/1/6", ""),
+    mn("traffic", "Analytics", "site", 906.0, 200.0, 74.0, 40.0, "@Analytics", ""),
     // the assessment
     mn("manuscript", "Manuscript", "in", 20.0, 330.0, 92.0, 46.0, "#/assess", ""),
-    mn("extract", "Extract", "step", 132.0, 333.0, 88.0, 40.0, "#/i/2/3", "PDF → text"),
-    mn("integrity", "Integrity", "step", 238.0, 333.0, 88.0, 40.0, "#/i/2/3", "MDAR · RRID"),
-    mn("jurors", "Jurors", "step", 344.0, 333.0, 88.0, 40.0, "#/i/2/3", ""),
-    mn("verdict", "Verdict", "judge", 450.0, 333.0, 88.0, 40.0, "#/i/2/3", "the judge"),
-    mn("pix", "piX", "step", 556.0, 333.0, 88.0, 40.0, "#/i/2/2", ""),
+    mn("extract", "Extract", "step", 132.0, 333.0, 88.0, 40.0, "@Architecture", "PDF → text"),
+    mn("integrity", "Integrity", "step", 238.0, 333.0, 88.0, 40.0, "@Architecture", "MDAR · RRID"),
+    mn("jurors", "Jurors", "step", 344.0, 333.0, 88.0, 40.0, "@Architecture", ""),
+    mn("verdict", "Verdict", "judge", 450.0, 333.0, 88.0, 40.0, "@Architecture", "the judge"),
+    mn("pix", "piX", "step", 556.0, 333.0, 88.0, 40.0, "@Whitepaper", ""),
     mn("piq", "piQ", "step", 662.0, 333.0, 88.0, 40.0, "#/library", ""),
-    mn("ledger", "Ledger", "step", 768.0, 333.0, 88.0, 40.0, "#/i/1/4", ""),
-    mn("explorer", "Explorer", "sink", 874.0, 333.0, 106.0, 40.0, "#/i/1/4", ""),
+    mn("ledger", "Ledger", "step", 768.0, 333.0, 88.0, 40.0, "@Proof-of-Research Ledger Explorer", ""),
+    mn("explorer", "Explorer", "sink", 874.0, 333.0, 106.0, 40.0, "@Proof-of-Research Ledger Explorer", ""),
     // the lab: what runs here, in the browser
     mn("canvas", "Canvas", "lab", 20.0, 470.0, 104.0, 44.0, "#/", "supers · wires"),
     mn("program", "Program", "lab", 144.0, 470.0, 104.0, 44.0, "#/", "dataflow"),
-    mn("learn", "SuperAI", "lab", 268.0, 470.0, 104.0, 44.0, "#/i/2/8", "learn to program"),
-    mn("hal", "HAL-OS", "lab", 392.0, 470.0, 104.0, 44.0, "#/i/3/1", "x86 · ternary net"),
-    mn("quvi", "QuVI", "lab", 516.0, 470.0, 104.0, 44.0, "#/i/3/0", "quantum circuits"),
-    mn("face", "FaceMace", "lab", 640.0, 470.0, 104.0, 44.0, "#/i/0/2", "faces, sorted"),
-    mn("map", "Map of Science", "lab", 764.0, 470.0, 104.0, 44.0, "#/i/2/1", "and its game"),
-    mn("frenzy", "Neuro Frenzy", "lab", 888.0, 470.0, 92.0, 44.0, "#/i/2/6", ""),
+    mn("learn", "SuperAI", "lab", 268.0, 470.0, 104.0, 44.0, "@Learn to program", "learn to program"),
+    mn("hal", "HAL-OS", "lab", 392.0, 470.0, 104.0, 44.0, "@HAL-OS", "x86 · ternary net"),
+    mn("quvi", "QuVI", "lab", 516.0, 470.0, 104.0, 44.0, "@QuVI", "quantum circuits"),
+    mn("face", "FaceMace", "lab", 640.0, 470.0, 104.0, 44.0, "@FaceMace", "faces, sorted"),
+    mn("map", "Map of Science", "lab", 764.0, 470.0, 104.0, 44.0, "@The Global Map of Science", "and its game"),
+    mn("frenzy", "Neuro Frenzy", "lab", 888.0, 470.0, 92.0, 44.0, "@Neuro Frenzy", ""),
     // what it runs on
     mn("browser", "Browser", "in", 20.0, 610.0, 92.0, 44.0, "", ""),
     mn("host", "host.js", "step", 132.0, 612.0, 88.0, 40.0, "", "DOM · fetch"),
     mn("wasm", "ui.wasm", "ai", 240.0, 612.0, 110.0, 40.0, "", "Rust, no_std"),
     mn("api", "API", "step", 400.0, 612.0, 100.0, 40.0, "", "Python · FastAPI"),
     mn("db", "SQLite", "step", 540.0, 612.0, 88.0, 40.0, "", "corpus · piQ"),
-    mn("chain", "Sepolia", "step", 668.0, 612.0, 88.0, 40.0, "#/i/1/4", "settlement"),
+    mn("chain", "Sepolia", "step", 668.0, 612.0, 88.0, 40.0, "@Proof-of-Research Ledger Explorer", "settlement"),
     mn("providers", "Model providers", "out", 796.0, 612.0, 110.0, 40.0, "", ""),
     mn("orcid", "ORCID", "out", 926.0, 612.0, 54.0, 40.0, "#/account", ""),
-    mn("owner", "Owner", "sink", 926.0, 560.0, 54.0, 30.0, "#/i/4/5", ""),
+    mn("owner", "Owner", "sink", 926.0, 560.0, 54.0, 30.0, "@Owner console", ""),
 ];
 
 const MAP_WIRES: [(&str, &str); 36] = [
@@ -2917,7 +2925,9 @@ fn map_page() -> N {
             gnode = gnode.kid(el("svg:text").cls("m-note").attr("x", format!("{}", n.x + n.w / 2.0)).attr("y", format!("{}", n.y + n.h / 2.0 + 13.0)).attr("text-anchor", "middle").text(n.note));
         }
         if !n.opens.is_empty() {
-            let a = el("svg:a").attr("href", n.opens).cls("m-link");
+            // "@name" opens the group member of that name, wherever it is now kept
+            let href = n.opens.strip_prefix('@').map(member_href).unwrap_or_else(|| n.opens.to_string());
+            let a = el("svg:a").attr("href", href).cls("m-link");
             let a = if n.opens.starts_with('/') { a.attr("target", "_blank") } else { a };
             svg = svg.kid(a.kid(gnode));
         } else {

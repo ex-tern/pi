@@ -51,7 +51,8 @@ const USH: f64 = 88.0;
 fn board_key(gi: usize) -> String {
     // Tools, Explore, the Library, the Lab and Connect changed members (2026-10-14): their old layouts would put supers
     // in each other's places
-    if gi <= 4 { format!("piii:board:{}:b", gi) } else { format!("piii:board:{}", gi) }
+    // and the Library again when SciM went into Super AI
+    if gi == 2 { format!("piii:board:{}:c", gi) } else if gi <= 4 { format!("piii:board:{}:b", gi) } else { format!("piii:board:{}", gi) }
 }
 
 fn board(gi: usize) -> &'static mut Board {

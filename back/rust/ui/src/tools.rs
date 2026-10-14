@@ -69,7 +69,13 @@ fn tool_view(s: &State, t: Tool) -> N {
         Tool::Analytics => analytics_view(s),
         Tool::Private => private_view(s),
         Tool::Requests => requests_view(s),
-        Tool::Ask => ask_view(s),
+        // the SciM assistant is part of Super AI (owner, 2026-10-14: "merge SciM assistant into Super AI"): every
+        // engine at once above, the lab's own assistant on your data and the method below
+        Tool::Ask => el("div")
+            .kid(ask_view(s))
+            .kid(el("h3").cls("ask-scim-h").text("SciM: your data and the method"))
+            .kid(scim_view(s))
+            .into(),
         Tool::Quvi => quvi_view(s),
         Tool::Face => face_view(s),
         Tool::Map => map_view(s),
@@ -108,7 +114,7 @@ fn tool_load(t: Tool) {
     if matches!(t, Tool::Profile | Tool::Buddy) {
         studio_load();
     }
-    if t == Tool::Scim {
+    if matches!(t, Tool::Scim | Tool::Ask) {
         scim_load();
     }
     if t == Tool::Bug {

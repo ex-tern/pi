@@ -681,4 +681,5 @@ const SCIM_CSS: &str = "\
 .chat-src{display:block;margin-top:4px;font-size:11.5px;color:var(--muted)}\
 .chat-form input{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line2);background:#fff}\
 .scim .chips{margin:6px 0 10px}\
+.ask-scim-h{margin:28px 0 4px;font-size:17px}\
 ";
