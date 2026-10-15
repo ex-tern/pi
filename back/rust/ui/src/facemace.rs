@@ -541,10 +541,10 @@ struct FaceResult {
 }
 
 /// The version, and its name, raised with every change pushed (owner, 2026-10-15: "write the version name for each
-/// push"); shown at the foot of Face Mace, and the Windows program and its installer carry the same (the build reads
-/// it from here)
-pub const FM_VERSION: &str = "1.2.0";
-pub const FM_VERSION_NAME: &str = "Visitors by address";
+/// push"); not shown in the page (owner, 2026-10-15: "delete this"), but the Windows program, its installer and
+/// release carry it (the build reads it from here), and every commit names it
+pub const FM_VERSION: &str = "1.2.1";
+pub const FM_VERSION_NAME: &str = "Quiet footer";
 
 const FACE_TOKEN: u32 = 1_000_000;
 /// photos at a time, online
@@ -4090,7 +4090,6 @@ fn face_view(s: &State) -> N {
                     el("div")
                         .cls("fm-gets")
                         .kid(el("a").cls("fm-get").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace-Setup.exe").attr("rel", "noopener").attr("title", "Installs Face Mace: Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed").text("Install for Windows ↓"))
-                        .kid(el("a").cls("fm-get-alt").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").attr("title", "Runs without installing").text("or the .exe alone"))
                         .into()
                 }),
         )
@@ -4493,7 +4492,6 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
             root = root.kid(el("p").kid(more));
         }
     }
-    root = root.kid(el("p").cls("fm-version").text(format!("Face Mace {} “{}” · {}", FM_VERSION, FM_VERSION_NAME, if f.full { "for Windows" } else { "online, light" })));
     root.into()
 }
 
