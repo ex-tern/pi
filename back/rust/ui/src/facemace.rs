@@ -412,6 +412,32 @@ pub struct Face {
     recent: Vec<(usize, [f32; 4])>,
     viewer: Option<(usize, Option<usize>)>,
     viewer_url: String,
+    /// getting surer, without end (owner, 2026-10-15: "the app runs constantly working in chunks to help face mace
+    /// get surer, should never finish"): turned off; going now; the round; this round's photos to look at again,
+    /// closer (least sure first), and how far; the photo being looked at again, and how many are left in this chunk;
+    /// how closely each photo has been looked at (1: in more detail and in four parts, 2: more still, in nine); faces
+    /// found by looking again; photos looked at again; how sure it was when it began; people put together; the
+    /// people learned (each one's centre and most typical faces), which lead every count after
+    no_keep: bool,
+    refining: bool,
+    ref_round: usize,
+    ref_queue: Vec<usize>,
+    ref_k: usize,
+    redo: Option<usize>,
+    ref_left: usize,
+    deep: BTreeMap<usize, u8>,
+    ref_found: usize,
+    ref_looked: usize,
+    ref_from: Option<f64>,
+    ref_merged: usize,
+    ref_timer: bool,
+    learned: Vec<(usize, Vec<Vec<f32>>)>,
+    /// YuNet on parts of the photo (the whole first), what it found in them, and a face's description waiting for
+    /// its mirror image's (the two are averaged)
+    ml_tiles: Vec<[f64; 4]>,
+    ml_tile: usize,
+    ml_acc: Vec<([f64; 14], f64)>,
+    ml_flip: Option<Vec<f32>>,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -480,6 +506,9 @@ struct FaceResult {
 }
 
 const FACE_TOKEN: u32 = 1_000_000;
+const T_FACE: u32 = 35;
+/// photos looked at again between two counts
+const REF_CHUNK: usize = 12;
 const ML_TOKEN: u32 = 6_000_000;
 const YN: usize = 640;
 const ZIP_TOKEN: u32 = 2_000_000;
@@ -566,9 +595,22 @@ fn face_update(a: u16, v: String) {
 }
 
 fn face_update_inner(a: u16, v: String) {
+    if matches!(a, 1 | 3 | 12 | 17) {
+        refine_stop();
+    }
     let s = st();
     let f = &mut s.face;
     match a {
+        36 => {
+            f.no_keep = !f.no_keep;
+            face_remember();
+            if st().face.no_keep {
+                refine_stop();
+            } else {
+                refine_maybe_start();
+            }
+        }
+        37 => refine_start(),
         1 => {
             let mut list: Vec<(u32, f64, String)> = v
                 .lines()
@@ -582,6 +624,8 @@ fn face_update_inner(a: u16, v: String) {
                 .collect();
             list.sort_by(|a, b| a.2.cmp(&b.2));
             f.files = list;
+            f.deep.clear();
+            f.learned.clear();
             f.faces.clear();
             f.pics.clear();
             f.boxes.clear();
@@ -601,6 +645,7 @@ fn face_update_inner(a: u16, v: String) {
         }
         2 => {
             f.strict = v.parse().unwrap_or(75.0);
+            f.learned.clear();
             face_remember();
         }
         3 => {
@@ -893,6 +938,12 @@ fn face_update_inner(a: u16, v: String) {
         // Stop: scanning, reading dates, packing or saving, whichever is going on
         11 => {
             f.cache_wait = false;
+            if f.refining {
+                refine_stop();
+                let f = &mut st().face;
+                f.msg = "Stopped getting surer. Go on getting surer starts it again.".into();
+            }
+            let f = &mut st().face;
             if f.running {
                 f.running = false;
                 f.stopped = true;
@@ -974,7 +1025,7 @@ fn f32_hex(s: &str) -> Vec<f32> {
 fn scan_put(i: usize) {
     let f = &st().face;
     let (Some(faces), Some(pic)) = (f.faces.get(i), f.pics.get(i)) else { return };
-    let kind = if f.quick { "q" } else if f.ml == 2 { "1" } else { return };
+    let kind = if f.quick { "q" } else if f.ml == 2 { match f.deep.get(&i) { Some(2) => "3", Some(1) => "2", _ => "1" } } else { return };
     let p = match pic {
         Some((h, w, ht, m)) => format!("{:016x}{:016x}{:016x}{:016x},{},{},{}", h[0], h[1], h[2], h[3], w, ht, m),
         None => "-".to_string(),
@@ -994,7 +1045,7 @@ fn scan_got(text: &str) {
         return;
     }
     let parts: Vec<&str> = text.splitn(4, ';').collect();
-    let usable = parts.len() >= 3 && (parts[0] == "1" || (parts[0] == "q" && f.quick));
+    let usable = parts.len() >= 3 && (matches!(parts[0], "1" | "2" | "3") || (parts[0] == "q" && f.quick));
     if !usable {
         // not kept (or only a fingerprint where faces are needed): scanned now
         face_next();
@@ -1009,6 +1060,15 @@ fn scan_got(text: &str) {
     };
     let faces = if parts[2] == "x" { None } else if f.quick { Some(Vec::new()) } else { Some(parts[2].split(',').filter(|x| !x.is_empty()).map(f32_hex).filter(|e| e.len() == 128).collect()) };
     f.cache_hits += 1;
+    match parts[0] {
+        "2" => {
+            f.deep.insert(f.faces.len(), 1);
+        }
+        "3" => {
+            f.deep.insert(f.faces.len(), 2);
+        }
+        _ => {}
+    }
     let bx: Vec<[f32; 4]> = parts.get(3).map(|t| t.split('|').filter_map(|b| { let v: Vec<f32> = b.split(',').filter_map(|x| x.parse().ok()).collect(); if v.len() == 4 { Some([v[0], v[1], v[2], v[3]]) } else { None } }).collect()).unwrap_or_default();
     let n = faces.as_ref().map(|v: &Vec<Vec<f32>>| v.len()).unwrap_or(0);
     f.boxes.push(if bx.len() == n { bx } else { Vec::new() });
@@ -1092,6 +1152,11 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
     }
     let f = &mut st().face;
     let i = (token - FACE_TOKEN) as usize;
+    if f.redo == Some(i) && !f.running {
+        refine_pixels(i, data, w as usize, h as usize);
+        render();
+        return;
+    }
     if i != f.at || !f.running {
         return;
     }
@@ -1245,14 +1310,26 @@ fn dup_check(f: &Face, i: usize, idx: &mut BTreeMap<(u8, u64), Vec<usize>>) -> O
 /// The photo into YuNet's input: 640 × 640, BGR, 0–255, the picture scaled to fit at the top left.
 fn ml_detect_start(_img: &Grey) {
     let f = &mut st().face;
+    if f.ml_tiles.is_empty() {
+        f.ml_tiles.push([0.0, 0.0, f.cur_w as f64, f.cur_h as f64]);
+    }
+    f.ml_tile = 0;
+    f.ml_acc.clear();
+    ml_detect_tile();
+}
+
+/// YuNet on one part of the photo (the whole, or, looking closer, a part of it shown as big as the whole).
+fn ml_detect_tile() {
+    let f = &mut st().face;
     let (w, h) = (f.cur_w, f.cur_h);
-    let k = YN as f64 / w.max(h) as f64;
-    let (nw, nh) = ((round_f(w as f64 * k) as usize).min(YN), (round_f(h as f64 * k) as usize).min(YN));
+    let t = f.ml_tiles.get(f.ml_tile).copied().unwrap_or([0.0, 0.0, w as f64, h as f64]);
+    let k = YN as f64 / t[2].max(t[3]).max(1.0);
+    let (nw, nh) = ((round_f(t[2] * k) as usize).min(YN), (round_f(t[3] * k) as usize).min(YN));
     f.ml_in.clear();
     f.ml_in.resize(3 * YN * YN, 0.0);
     for y in 0..nh {
         for x in 0..nw {
-            let (r, g, b) = bilinear(&f.cur, w, h, (x as f64 + 0.5) / k - 0.5, (y as f64 + 0.5) / k - 0.5);
+            let (r, g, b) = bilinear(&f.cur, w, h, t[0] + (x as f64 + 0.5) / k - 0.5, t[1] + (y as f64 + 0.5) / k - 0.5);
             let p = y * YN + x;
             f.ml_in[p] = b;
             f.ml_in[YN * YN + p] = g;
@@ -1455,13 +1532,45 @@ fn ml_align(face: &[f64; 14]) {
 /// An engine answered: YuNet's faces (stage 0) or one face's SFace description (stage 1).
 fn ml_got(data: Vec<u8>) {
     let f = &mut st().face;
-    if !f.running {
+    if !f.running && f.redo.is_none() {
         return;
     }
     let floats: Vec<f32> = data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
     if f.ml_stage == 0 {
-        let k = YN as f64 / f.cur_w.max(f.cur_h).max(1) as f64;
-        let yn = yunet_decode(&floats, k);
+        let (w, h) = (f.cur_w as f64, f.cur_h as f64);
+        let t = f.ml_tiles.get(f.ml_tile).copied().unwrap_or([0.0, 0.0, w, h]);
+        let k = YN as f64 / t[2].max(t[3]).max(1.0);
+        let whole = t[2] >= w - 0.5 && t[3] >= h - 0.5;
+        for (mut face, sc) in yunet_decode(&floats, k) {
+            face[0] += t[0];
+            face[1] += t[1];
+            for m in 0..5 {
+                face[4 + 2 * m] += t[0];
+                face[5 + 2 * m] += t[1];
+            }
+            // in a part, a face cut by the part's edge (not the photo's) is left to the part that has all of it
+            if !whole {
+                let cut = |a: f64, b: f64, lo: f64, hi: f64, full: f64| (lo > 0.5 && a < lo + 2.0) || (hi < full - 0.5 && b > hi - 2.0);
+                if cut(face[0], face[0] + face[2], t[0], t[0] + t[2], w) || cut(face[1], face[1] + face[3], t[1], t[1] + t[3], h) {
+                    continue;
+                }
+            }
+            f.ml_acc.push((face, sc));
+        }
+        f.ml_tile += 1;
+        if f.ml_tile < f.ml_tiles.len() {
+            ml_detect_tile();
+            return;
+        }
+        let mut acc = core::mem::take(&mut f.ml_acc);
+        f.ml_tiles.clear();
+        acc.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(core::cmp::Ordering::Equal));
+        let mut yn: Vec<([f64; 14], f64)> = Vec::new();
+        for c in acc {
+            if yn.iter().all(|k| iou(&k.0[..4], &c.0[..4]) < 0.3) {
+                yn.push(c);
+            }
+        }
         let faces = ml_ensemble(yn);
         let f = &mut st().face;
         f.ml_faces = faces;
@@ -1471,9 +1580,35 @@ fn ml_got(data: Vec<u8>) {
         }
         ml_next_face();
     } else {
-        if floats.len() == 128 {
-            let n = floats.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>().sqrt_c().max(1e-9);
-            f.ml_embs.push(floats.iter().map(|v| (*v as f64 / n) as f32).collect());
+        let unit = |v: &[f32]| -> Vec<f32> {
+            let n = v.iter().map(|x| (*x as f64) * (*x as f64)).sum::<f64>().sqrt_c().max(1e-9);
+            v.iter().map(|x| (*x as f64 / n) as f32).collect()
+        };
+        let e = if floats.len() == 128 { Some(unit(&floats)) } else { None };
+        // looking closer: the face is described again from its mirror image, and the two averaged (steadier)
+        if f.redo.is_some() && f.ml_flip.is_none() {
+            if let Some(e) = e {
+                f.ml_flip = Some(e);
+                let n = 112 * 112;
+                for c in 0..3 {
+                    for v in 0..112 {
+                        for u in 0..56 {
+                            f.ml_in.swap(c * n + v * 112 + u, c * n + v * 112 + 111 - u);
+                        }
+                    }
+                }
+                f.ml_stage = 1;
+                ml_run("sface", &[1, 3, 112, 112]);
+                return;
+            }
+        }
+        let e = match (f.ml_flip.take(), e) {
+            (Some(a), Some(b)) => Some(unit(&a.iter().zip(b.iter()).map(|(x, y)| x + y).collect::<Vec<f32>>())),
+            (Some(a), None) => Some(a),
+            (None, b) => b,
+        };
+        if let Some(e) = e {
+            f.ml_embs.push(e);
             let b = f.ml_cur_box;
             f.ml_boxes.push(b);
         }
@@ -1499,6 +1634,13 @@ fn ml_photo_done() {
     let f = &mut st().face;
     let embs = core::mem::take(&mut f.ml_embs);
     let bx = core::mem::take(&mut f.ml_boxes);
+    f.ml_tiles.clear();
+    f.ml_flip = None;
+    if let Some(i) = f.redo {
+        f.cur.clear();
+        refine_photo_done(i, Some((embs, bx)));
+        return;
+    }
     let i_now = f.faces.len();
     for b in &bx {
         f.recent.push((i_now, *b));
@@ -1520,9 +1662,339 @@ fn ml_photo_done() {
     }
 }
 
+// ------------------------------------------------------------------------------------- getting surer, without end
+
+/// After the sort, unless turned off: the work goes on, a chunk at a time, until Stop.
+fn refine_maybe_start() {
+    let f = &st().face;
+    let ok = !f.no_keep && !f.running && !f.rename_only && !f.quick && !f.stopped && !f.files.is_empty() && f.faces.len() == f.files.len() && f.result.as_ref().map(|r| r.done).unwrap_or(false);
+    if ok {
+        refine_start();
+    }
+}
+
+fn refine_start() {
+    let f = &mut st().face;
+    if f.refining || f.running || f.files.is_empty() || f.faces.len() != f.files.len() || f.rename_only {
+        return;
+    }
+    f.refining = true;
+    f.ref_round = 0;
+    f.ref_found = 0;
+    f.ref_looked = 0;
+    f.ref_merged = 0;
+    f.ref_from = f.result.as_ref().and_then(|r| r.overall);
+    f.msg.clear();
+    refine_build();
+    refine_later(300);
+    face_wake_sync();
+}
+
+fn refine_stop() {
+    let f = &mut st().face;
+    if !f.refining {
+        return;
+    }
+    f.refining = false;
+    if f.redo.take().is_some() {
+        f.cur.clear();
+        f.ml_faces.clear();
+        f.ml_embs.clear();
+        f.ml_boxes.clear();
+        f.ml_tiles.clear();
+        f.ml_acc.clear();
+        f.ml_flip = None;
+    }
+    f.ref_queue.clear();
+    f.ref_k = 0;
+    face_wake_sync();
+}
+
+fn refine_later(ms: u32) {
+    let f = &mut st().face;
+    if !f.ref_timer {
+        f.ref_timer = true;
+        host::timer(ms, T_FACE);
+    }
+}
+
+/// How closely this round looks: 1 (in more detail, and in four parts), 2 (more still, in nine); after that the
+/// rounds only sort everyone again with what was learned.
+fn refine_level(f: &Face) -> u8 {
+    (f.ref_round + 1).min(2) as u8
+}
+
+/// This round's photos: those not yet looked at so closely, the ones with no face found first, then the least sure.
+fn refine_build() {
+    let f = &mut st().face;
+    f.ref_queue.clear();
+    f.ref_k = 0;
+    if f.ml != 2 || f.ref_round >= 2 {
+        return;
+    }
+    let lvl = refine_level(f);
+    let mut least: BTreeMap<usize, f64> = BTreeMap::new();
+    let mut dup: alloc::collections::BTreeSet<usize> = alloc::collections::BTreeSet::new();
+    if let Some(r) = &f.result {
+        for ((_, i), p) in r.photo_conf.iter() {
+            let e = least.entry(*i).or_insert(1.0);
+            if *p < *e {
+                *e = *p;
+            }
+        }
+        dup.extend(r.dups.iter().map(|d| d.0));
+    }
+    let mut q: Vec<(f64, usize)> = Vec::new();
+    for (i, hs) in f.faces.iter().enumerate() {
+        let Some(hs) = hs else { continue };
+        if dup.contains(&i) || face_is_video(&f.files[i].2) || f.deep.get(&i).copied().unwrap_or(0) >= lvl {
+            continue;
+        }
+        let pri = if hs.is_empty() { -1.0 } else { least.get(&i).copied().unwrap_or(0.5) };
+        q.push((pri, i));
+    }
+    q.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal).then(a.1.cmp(&b.1)));
+    f.ref_queue = q.into_iter().map(|x| x.1).collect();
+}
+
+pub fn refine_tick() {
+    let f = &mut st().face;
+    f.ref_timer = false;
+    if !f.refining || f.running || f.redo.is_some() {
+        return;
+    }
+    if f.ref_k < f.ref_queue.len() {
+        f.ref_left = REF_CHUNK;
+        refine_next_photo();
+    } else {
+        refine_chunk_end();
+    }
+}
+
+/// The next photo of the chunk, decoded bigger than for the first scan.
+fn refine_next_photo() {
+    let f = &mut st().face;
+    let Some(&i) = f.ref_queue.get(f.ref_k) else {
+        refine_chunk_end();
+        return;
+    };
+    f.ref_k += 1;
+    f.redo = Some(i);
+    let size = if refine_level(f) == 1 { 1280 } else { 1920 };
+    if host::call("rgba", &format!("{}\t{}\t{}", FACE_TOKEN + i as u32, f.files[i].0, size)).is_none() {
+        refine_photo_done(i, None);
+    }
+}
+
+/// A photo to look at again arrived, bigger: the cascade on it (halved when big), then YuNet on the whole and on
+/// overlapping parts, each shown to it as big as a whole photo, so that small faces are seen.
+fn refine_pixels(i: usize, data: Vec<u8>, w: usize, h: usize) {
+    let f = &mut st().face;
+    if w == 0 || h == 0 || f.ml != 2 {
+        refine_photo_done(i, None);
+        return;
+    }
+    let mut g = alloc::vec![0u8; w * h];
+    for k in 0..w * h {
+        let p = k * 4;
+        if p + 2 < data.len() {
+            g[k] = ((data[p] as u32 * 299 + data[p + 1] as u32 * 587 + data[p + 2] as u32 * 114 + 500) / 1000) as u8;
+        }
+    }
+    let haar: Vec<[f64; 4]> = match &f.cascade {
+        None => Vec::new(),
+        Some(c) if w * h > 1_000_000 => {
+            let (hw, hh) = (w / 2, h / 2);
+            let mut s2 = alloc::vec![0u8; hw * hh];
+            for y in 0..hh {
+                for x in 0..hw {
+                    let a = |xx: usize, yy: usize| g[yy * w + xx] as u32;
+                    s2[y * hw + x] = ((a(2 * x, 2 * y) + a(2 * x + 1, 2 * y) + a(2 * x, 2 * y + 1) + a(2 * x + 1, 2 * y + 1) + 2) / 4) as u8;
+                }
+            }
+            detect(&Grey { g: s2, w: hw, h: hh }, c).into_iter().map(|b| [b[0] * 2.0, b[1] * 2.0, b[2] * 2.0, b[3] * 2.0]).collect()
+        }
+        Some(c) => detect(&Grey { g: g.clone(), w, h }, c),
+    };
+    let img = Grey { g: Vec::new(), w, h };
+    f.cur = data;
+    f.cur_w = w;
+    f.cur_h = h;
+    f.cur_haar = haar;
+    f.cur_pic = None;
+    f.ml_flip = None;
+    let n = refine_level(f) as usize + 1;
+    let s = if n == 2 { 0.6 } else { 0.45 };
+    let (wf, hf) = (w as f64, h as f64);
+    let mut tiles = alloc::vec![[0.0, 0.0, wf, hf]];
+    for r in 0..n {
+        for c in 0..n {
+            let (x, y) = (c as f64 * (1.0 - s) / (n - 1) as f64, r as f64 * (1.0 - s) / (n - 1) as f64);
+            tiles.push([x * wf, y * hf, s * wf, s * hf]);
+        }
+    }
+    f.ml_tiles = tiles;
+    ml_detect_start(&img);
+}
+
+fn iou4(a: &[f32; 4], b: &[f32; 4]) -> f64 {
+    let a = [a[0] as f64, a[1] as f64, a[2] as f64, a[3] as f64];
+    let b = [b[0] as f64, b[1] as f64, b[2] as f64, b[3] as f64];
+    iou(&a, &b)
+}
+
+/// A photo looked at again: its faces now are the ones found this time (described better), with any found before
+/// and not this time kept as well, so a photo never loses a face by being looked at again.
+fn refine_photo_done(i: usize, new: Option<(Vec<Vec<f32>>, Vec<[f32; 4]>)>) {
+    let f = &mut st().face;
+    f.redo = None;
+    if !f.refining {
+        return;
+    }
+    let lvl = refine_level(f);
+    if let (Some((embs, bx)), Some(Some(old))) = (new, f.faces.get(i).cloned()) {
+        let ob = f.boxes.get(i).cloned().unwrap_or_default();
+        let (mut ne, mut nb) = (embs, bx);
+        if ob.len() == old.len() {
+            for (k, o) in old.iter().enumerate() {
+                if nb.iter().all(|b| iou4(b, &ob[k]) < 0.3) {
+                    ne.push(o.clone());
+                    nb.push(ob[k]);
+                }
+            }
+        } else if ne.len() < old.len() {
+            ne = old.clone();
+            nb = ob.clone();
+        }
+        if ne.len() > old.len() {
+            f.ref_found += ne.len() - old.len();
+        }
+        for b in &nb {
+            f.recent.push((i, *b));
+        }
+        let keep = f.recent.len().saturating_sub(14);
+        f.recent.drain(..keep);
+        if nb.len() != ne.len() {
+            nb.clear();
+        }
+        f.faces[i] = Some(ne);
+        if i < f.boxes.len() {
+            f.boxes[i] = nb;
+        }
+    }
+    f.deep.insert(i, lvl);
+    f.ref_looked += 1;
+    scan_put(i);
+    let f = &mut st().face;
+    f.ref_left = f.ref_left.saturating_sub(1);
+    if f.ref_left > 0 && f.ref_k < f.ref_queue.len() {
+        refine_next_photo();
+    } else {
+        refine_chunk_end();
+    }
+}
+
+/// A chunk done: what was learned is put to use, everyone is sorted again (the results and the folder follow), and
+/// the next chunk is due; a round done starts the next; past the closest look, a new count every few seconds.
+fn refine_chunk_end() {
+    if !st().face.refining {
+        return;
+    }
+    refine_learn();
+    face_compute(true);
+    let f = &mut st().face;
+    if f.ref_k >= f.ref_queue.len() {
+        f.ref_round += 1;
+        refine_build();
+    }
+    let f = &st().face;
+    refine_later(if f.ref_queue.is_empty() { 6000 } else { 250 });
+}
+
+/// Each person as learned from the result so far: their centre (from photos with one face, the surest), and their
+/// twenty faces nearest it; two people whose centres are as close as one person's photos are put together (unless
+/// one has a name or was answered for: then it is left to the person sorting).
+fn refine_learn() {
+    let f = &mut st().face;
+    let Some(r) = &f.result else { return };
+    let mut people: Vec<(usize, Vec<f32>, Vec<(f64, Vec<f32>)>, usize)> = Vec::new();
+    for (k, idx) in &r.groups {
+        let Some(id) = k.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()) else { continue };
+        let ok = |i: &usize| !f.reject.contains(&(*i, id));
+        let ones: Vec<&Vec<f32>> = idx.iter().filter(|i| ok(i)).filter_map(|&i| f.faces.get(i).and_then(|x| x.as_ref())).filter(|hs| hs.len() == 1).map(|hs| &hs[0]).collect();
+        if ones.is_empty() {
+            continue;
+        }
+        let dim = ones[0].len();
+        let emb = dim == 128;
+        let mut c = alloc::vec![0f64; dim];
+        for h in &ones {
+            for (a, b) in c.iter_mut().zip(h.iter()) {
+                *a += *b as f64;
+            }
+        }
+        if emb {
+            let n = c.iter().map(|v| v * v).sum::<f64>().sqrt_c().max(1e-9);
+            c.iter_mut().for_each(|v| *v /= n);
+        } else {
+            c.iter_mut().for_each(|v| *v /= ones.len() as f64);
+        }
+        let cf: Vec<f32> = c.iter().map(|v| *v as f32).collect();
+        let thr = face_thr(f.strict, emb);
+        let mut cands: Vec<(f64, Vec<f32>)> = Vec::new();
+        for &i in idx.iter().filter(|i| ok(i)) {
+            let Some(Some(hs)) = f.faces.get(i) else { continue };
+            if let Some((d, h)) = hs.iter().map(|h| (face_dist(h, &cf), h)).min_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal)) {
+                if d < thr {
+                    cands.push((d, h.clone()));
+                }
+            }
+        }
+        cands.sort_by(|a, b| a.0.partial_cmp(&b.0).unwrap_or(core::cmp::Ordering::Equal));
+        cands.truncate(20);
+        if cands.len() >= 2 {
+            people.push((id, cf, cands, idx.len()));
+        }
+    }
+    people.sort_by(|a, b| b.3.cmp(&a.3));
+    let mut alive = alloc::vec![true; people.len()];
+    let named = |id: usize| f.names.get(&format!("Person_{}", id)).map(|n| !n.trim().is_empty()).unwrap_or(false);
+    let answered = |id: usize| f.confirm.values().any(|&p| p == id) || f.imported.iter().any(|q| q.0 == id);
+    let mut merged = 0usize;
+    for b in 1..people.len() {
+        if people[b].1.len() != 128 || named(people[b].0) || answered(people[b].0) {
+            continue;
+        }
+        let thr = face_thr(f.strict, true);
+        for a in 0..b {
+            if !alive[a] || people[a].1.len() != 128 {
+                continue;
+            }
+            if face_dist(&people[a].1, &people[b].1) < thr * 0.55 {
+                alive[b] = false;
+                let extra = people[b].2.clone();
+                let room = 20usize.saturating_sub(people[a].2.len()).max(6);
+                people[a].2.extend(extra.into_iter().take(room));
+                merged += 1;
+                break;
+            }
+        }
+    }
+    let learned: Vec<(usize, Vec<Vec<f32>>)> = people
+        .into_iter()
+        .zip(alive)
+        .filter(|(_, a)| *a)
+        .map(|((id, c, cands, _), _)| (id, core::iter::once(c).chain(cands.into_iter().map(|x| x.1)).collect()))
+        .collect();
+    let f = &mut st().face;
+    f.ref_merged += merged;
+    f.learned = learned;
+}
+
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
 fn face_finish() {
     face_finish_inner();
+    refine_maybe_start();
     face_wake_sync();
 }
 
@@ -1586,7 +2058,7 @@ fn people_json(f: &Face, max: usize, places: usize) -> (String, usize) {
 /// What is kept between visits on this device: the settings, and (unless turned off) the people and their names.
 fn face_remember() {
     let f = &st().face;
-    host::store_set("facemace:settings", &format!("{}\t{}\t{}\t{}\t{}", f.strict, f.dedupe as u8, f.by_date as u8, f.part_size, f.forget as u8));
+    host::store_set("facemace:settings", &format!("{}\t{}\t{}\t{}\t{}\t{}", f.strict, f.dedupe as u8, f.by_date as u8, f.part_size, f.forget as u8, f.no_keep as u8));
     if f.forget {
         host::store_del("facemace:people");
         return;
@@ -1612,6 +2084,7 @@ fn face_restore() {
             f.by_date = p[2] == "1";
             f.part_size = p[3].parse().unwrap_or(0);
             f.forget = p[4] == "1";
+            f.no_keep = p.get(5) == Some(&"1");
         }
     }
     if let Some(v) = host::store_get("facemace:work").and_then(|t| json::parse(&t)) {
@@ -1878,7 +2351,7 @@ fn dup_answer_inner(m: &str) {
 
 /// Whether Face Mace is working on something (scanning, reading dates, packing, saving or deleting).
 fn face_busy(f: &Face) -> bool {
-    f.running || f.pre_dating || f.date_k < f.date_list.len() || f.msg.starts_with("Packing") || f.out_asked > f.out_saved || f.dup_msg.ends_with("…")
+    f.running || f.refining || f.pre_dating || f.date_k < f.date_list.len() || f.msg.starts_with("Packing") || f.out_asked > f.out_saved || f.dup_msg.ends_with("…")
 }
 
 /// The computer is kept awake while Face Mace works, and let sleep again when it is done.
@@ -2002,6 +2475,20 @@ fn face_compute(done: bool) {
                 }
             }
             None => seed.push((p, alloc::vec![h.clone()])),
+        }
+    }
+    // the people learned while getting surer: their centre and most typical faces lead the count (room is left
+    // for twenty more faces each, so a person can still take in a new look)
+    for (id, ex) in f.learned.iter() {
+        match seed.iter_mut().find(|q| q.0 == *id) {
+            Some(q) => {
+                for e in ex {
+                    if q.1.len() < 20 {
+                        q.1.push(e.clone());
+                    }
+                }
+            }
+            None => seed.push((*id, ex.iter().take(20).cloned().collect())),
         }
     }
     let mut cl = Clusters::seeded(&seed);
@@ -3258,6 +3745,7 @@ fn face_view(s: &State) -> N {
                         .kid(el("output").text(format!("{}", strict as i64))),
                 )
                 .kid(el("p").cls("hint").text("Lower is stricter: more people, each with fewer photos. Higher groups more together. Faces are found once, so trying another strictness is quick."))
+                .kid(check(!f.no_keep, 36, "Keep getting surer after the sort", "It never finishes: after the sort it goes on, a few photos at a time, looking again more closely (in more detail, and in parts of each photo) at those it is least sure of or found no face in, then sorting everyone again with what it learned. The results and the folder follow as it goes. Stop ends it."))
                 .kid(check(!f.no_wake, 34, "Keep the computer awake while it works", "Windows (or the Mac) does not go to sleep in the middle of a long sort; it can again when Face Mace is done."))
                 .kid(check(f.dedupe, 9, "Delete duplicates", "A photo or video that is there twice (copied, saved again or resized) is kept once, the biggest. Your original folder is not changed."))
                 .kid(
@@ -3350,6 +3838,40 @@ fn face_view(s: &State) -> N {
                 .kid(el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * (if f.pre_dating { f.date_k } else { f.at }) as f64 / total as f64))))
                 .kid(el("p").cls("hint").text(if f.pre_dating { format!("Reading when each was taken: {} of {}…", f.date_k + 1, f.files.len()) } else if f.awake && face_ready(f) { format!("Scanning {} of {}… (keeping the computer awake)", f.at + 1, f.files.len()) } else if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
         );
+    }
+    // getting surer: what it is doing, how far, what it found, how sure it is now (and Stop)
+    if f.refining {
+        let total = f.ref_queue.len();
+        let now = f.result.as_ref().and_then(|r| r.overall);
+        let pct = |p: f64| format!("{:.0}%", (p * 100.0).clamp(0.0, 100.0));
+        let mut said: Vec<String> = Vec::new();
+        said.push(format!("{} photos looked at again", f.ref_looked));
+        if f.ref_found > 0 {
+            said.push(format!("{} more faces found", f.ref_found));
+        }
+        if let Some(n) = now {
+            said.push(match f.ref_from { Some(a) if (n - a).abs() >= 0.005 => format!("sure {} (it was {})", pct(n), pct(a)), _ => format!("sure {}", pct(n)) });
+        }
+        if f.ref_merged > 0 {
+            said.push(format!("{} people put together", f.ref_merged));
+        }
+        root = root.kid(
+            el("div")
+                .cls("fm-refine")
+                .kid(el("div").cls("row").kid(el("b").text(format!("Getting surer · round {}", f.ref_round + 1))).kid(el("span").cls("hint").text(" it does not finish; Stop ends it")).kid(el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop")))
+                .kid_if(total > 0, || el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * f.ref_k as f64 / total.max(1) as f64))).into())
+                .kid(el("p").cls("hint").text(if total > 0 {
+                    format!("Looking again, {}, at photo {} of {} (no face found or least sure first)", if refine_level(f) == 1 { "in more detail and in four parts" } else { "in still more detail and in nine parts" }, f.ref_k.min(total), total)
+                } else {
+                    "Every photo looked at as closely as it can: sorting everyone again with what it learned, every few seconds".to_string()
+                }))
+                .kid(el("p").text(said.join(" · ")))
+                .kid_if(!f.recent.is_empty(), || {
+                    el("div").cls("fm-now fm-now-in").kids(f.recent.iter().rev().take(10).map(|(i, b)| -> N { el("span").cls("fm-now-i").kid(face_bubble(f, *i, *b, None, 44, &f.files[*i].2)).into() })).into()
+                }),
+        );
+    } else if !f.running && !f.rename_only && !f.files.is_empty() && f.faces.len() == f.files.len() && f.result.as_ref().map(|r| r.done).unwrap_or(false) {
+        root = root.kid(el("div").cls("fm-refine-off row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 37, String::new())).text("Go on getting surer")).kid(el("span").cls("hint").text("Looks again, closer, at the photos it is least sure of, and sorts everyone again, until Stop.")));
     }
     // packing a ZIP, reading dates or saving into the folder can be stopped too
     let busy = (f.date_k < f.date_list.len()) || f.msg.starts_with("Packing") || f.out_asked > f.out_saved;
@@ -3622,6 +4144,7 @@ const FACE_CSS: &str = "\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\
 .fm-progress{margin:14px 0}\
+.fm-refine{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--accent,#3b82f6) 6%,transparent)}.fm-refine .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fm-refine .row .btn{margin-left:auto}.fm-refine p{margin:6px 0}.fm-refine .md-bar{margin:8px 0}.fm-now-in{margin:4px 0 0;padding:4px 2px}.fm-refine-off{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}\
 .fm-group{margin:16px 0}.fm-group h3{margin:0 0 8px}\
 .fm-thumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.fm-thumbs img{width:88px;height:88px;object-fit:cover;border:1px solid var(--line)}\
 .fm-more{font-size:13px;color:var(--muted);padding:0 8px}\

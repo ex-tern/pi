@@ -814,6 +814,7 @@ pub fn on_timer(token: u32) {
         }
         T_NF => frenzy_tick(),
         T_INTERN => intern_timer(),
+        T_FACE => refine_tick(),
         T_JOBS => jobs_tick(),
         T_HAL => {
             if !hal_tick() {
