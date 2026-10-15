@@ -334,7 +334,8 @@ fn face_apply(v: Value, err: Option<String>) {
 
 fn face_is_img(name: &str) -> bool {
     let n = name.to_lowercase();
-    n.ends_with(".jpg") || n.ends_with(".jpeg") || n.ends_with(".png")
+    // HEIC/HEIF: an iPhone's photos (owner, 2026-10-15: "add HEIC format too")
+    n.ends_with(".jpg") || n.ends_with(".jpeg") || n.ends_with(".png") || n.ends_with(".heic") || n.ends_with(".heif")
 }
 
 fn face_update(a: u16, v: String) {
@@ -686,6 +687,9 @@ fn stamp_of_ms(ms: f64) -> u64 {
 
 /// When a JPEG was taken, from its EXIF (DateTimeOriginal, else DateTime): "YYYY:MM:DD hh:mm:ss" as a stamp.
 fn exif_date(b: &[u8]) -> Option<u64> {
+    if b.len() >= 12 && &b[4..8] == b"ftyp" {
+        return heif_exif(b).and_then(exif_tiff);
+    }
     if b.len() < 4 || b[0] != 0xFF || b[1] != 0xD8 {
         return None;
     }
@@ -700,6 +704,87 @@ fn exif_date(b: &[u8]) -> Option<u64> {
             return exif_tiff(b.get(p + 10..(p + 2 + len).min(b.len()))?);
         }
         p += 2 + len;
+    }
+    None
+}
+
+/// The boxes of an ISO media file (HEIC/HEIF) inside `b`: (type, content).
+fn bmff_boxes(b: &[u8]) -> Vec<([u8; 4], &[u8])> {
+    let mut out = Vec::new();
+    let mut p = 0usize;
+    while p + 8 <= b.len() {
+        let mut size = u32::from_be_bytes([b[p], b[p + 1], b[p + 2], b[p + 3]]) as u64;
+        let kind = [b[p + 4], b[p + 5], b[p + 6], b[p + 7]];
+        let mut head = 8usize;
+        if size == 1 && p + 16 <= b.len() {
+            size = u64::from_be_bytes([b[p + 8], b[p + 9], b[p + 10], b[p + 11], b[p + 12], b[p + 13], b[p + 14], b[p + 15]]);
+            head = 16;
+        } else if size == 0 {
+            size = (b.len() - p) as u64;
+        }
+        if size < head as u64 || p as u64 + size > b.len() as u64 {
+            break;
+        }
+        out.push((kind, &b[p + head..p + size as usize]));
+        p += size as usize;
+    }
+    out
+}
+
+/// A HEIC's EXIF block (the TIFF part): the "Exif" item named in iinf, found through iloc.
+fn heif_exif(b: &[u8]) -> Option<&[u8]> {
+    let meta = bmff_boxes(b).into_iter().find(|x| &x.0 == b"meta")?.1;
+    let kids = bmff_boxes(meta.get(4..)?);
+    let be = |s: &[u8], o: usize, n: usize| -> Option<u64> { let x = s.get(o..o + n)?; Some(x.iter().fold(0u64, |a, v| (a << 8) | *v as u64)) };
+    // iinf: which item is the EXIF
+    let iinf = kids.iter().find(|x| &x.0 == b"iinf")?.1;
+    let start = if iinf.first() == Some(&0) { 6 } else { 8 };
+    let mut exif_id = None;
+    for (k, infe) in bmff_boxes(iinf.get(start..)?) {
+        if &k != b"infe" || infe.len() < 12 {
+            continue;
+        }
+        let v = infe[0];
+        let (id, t) = if v >= 3 { (be(infe, 4, 4)?, infe.get(10..14)?) } else if v == 2 { (be(infe, 4, 2)?, infe.get(8..12)?) } else { continue };
+        if t == b"Exif" {
+            exif_id = Some(id);
+        }
+    }
+    let exif_id = exif_id?;
+    // iloc: where it is
+    let iloc = kids.iter().find(|x| &x.0 == b"iloc")?.1;
+    let v = *iloc.first()?;
+    let (os, ls) = ((iloc.get(4)? >> 4) as usize, (iloc.get(4)? & 15) as usize);
+    let (bs, is) = ((iloc.get(5)? >> 4) as usize, if v >= 1 { (iloc.get(5)? & 15) as usize } else { 0 });
+    let mut p = 6usize;
+    let n = if v < 2 { let n = be(iloc, p, 2)?; p += 2; n } else { let n = be(iloc, p, 4)?; p += 4; n };
+    for _ in 0..n.min(10_000) {
+        let id = if v < 2 { let x = be(iloc, p, 2)?; p += 2; x } else { let x = be(iloc, p, 4)?; p += 4; x };
+        let method = if v >= 1 { let m = be(iloc, p, 2)? & 15; p += 2; m } else { 0 };
+        p += 2; // data reference index
+        let base = if bs > 0 { be(iloc, p, bs)? } else { 0 };
+        p += bs;
+        let ext = be(iloc, p, 2)?;
+        p += 2;
+        let mut first: Option<(u64, u64)> = None;
+        for _ in 0..ext {
+            p += is;
+            let off = if os > 0 { be(iloc, p, os)? } else { 0 };
+            p += os;
+            let len = if ls > 0 { be(iloc, p, ls)? } else { 0 };
+            p += ls;
+            if first.is_none() {
+                first = Some((off, len));
+            }
+        }
+        if id == exif_id && method == 0 {
+            let (off, len) = first?;
+            let at = (base + off) as usize;
+            let data = b.get(at..at + len as usize)?;
+            // four bytes: how far into the item the TIFF header starts
+            let skip = be(data, 0, 4)? as usize;
+            return data.get(4 + skip..);
+        }
     }
     None
 }
@@ -826,7 +911,7 @@ fn face_view(s: &State) -> N {
                     el("div")
                         .cls("row")
                         .kid(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
-                        .kid(el("label").cls("btn").kid(txt("Choose photos")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,image/jpeg,image/png").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
+                        .kid(el("label").cls("btn").kid(txt("Choose photos")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
                 )
                 .kid(el("p").cls("hint").text(if f.files.is_empty() { f.msg.clone() } else { format!("{} photo{} ready", f.files.len(), if f.files.len() == 1 { "" } else { "s" }) })),
         )

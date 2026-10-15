@@ -1,0 +1,7 @@
+HEIC/HEIF decoding for Face Mace
+
+libheif-bundle.mjs is libheif-js 1.23.5 (https://github.com/catdad-experiments/libheif-js), an Emscripten
+WebAssembly build of libheif (https://github.com/strukturag/libheif) with libde265, unmodified. It is licensed
+under the GNU Lesser General Public License v3.0 (LICENSE-libheif.txt, LICENSE-libheif-js.txt); its source is at
+the addresses above. Face Mace loads it as a separate file, only when a HEIC or HEIF photo is chosen, and you may
+replace it with your own build of the same library.

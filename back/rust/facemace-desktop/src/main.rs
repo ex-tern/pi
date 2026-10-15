@@ -15,6 +15,8 @@ const CASCADE: &[u8] = include_bytes!("../../../../front/facemace/cascade.json")
 const GEIST: &[u8] = include_bytes!("../../../../front/fonts/Geist-Variable.woff2");
 const GEIST_MONO: &[u8] = include_bytes!("../../../../front/fonts/GeistMono-Variable.woff2");
 const ICON: &[u8] = include_bytes!("../../../../front/icon.svg");
+/// libheif (LGPL-3.0, front/facemace/heic/NOTICE.txt): decodes HEIC photos where the browser cannot
+const HEIC: &[u8] = include_bytes!("../../../../front/facemace/heic/libheif-bundle.mjs");
 
 /// The one document: like the site's, but it opens on Face Mace alone.
 const PAGE: &str = concat!(
@@ -60,6 +62,7 @@ fn answer(mut s: TcpStream) {
         ("GET", "/fonts/Geist-Variable.woff2") => ("200 OK", "font/woff2", GEIST),
         ("GET", "/fonts/GeistMono-Variable.woff2") => ("200 OK", "font/woff2", GEIST_MONO),
         ("GET", "/icon.svg") => ("200 OK", "image/svg+xml", ICON),
+        ("GET", "/facemace/heic/libheif-bundle.mjs") => ("200 OK", "text/javascript; charset=utf-8", HEIC),
         // the site's server is not here: its questions get a plain "not here"
         (_, p) if p.starts_with("/api/") => ("404 Not Found", "application/json", b"{\"detail\":\"Face Mace runs on its own here: no server.\"}"),
         _ => ("404 Not Found", "text/plain; charset=utf-8", b"Not here."),

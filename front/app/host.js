@@ -386,6 +386,29 @@ function rtc(a) {
 // what the last press was made with: a finger ("touch"), a mouse or a pen
 let lastPointer = "mouse";
 addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse"; }, true);
+// HEIC/HEIF (an iPhone's photos): Safari decodes them itself; elsewhere libheif (WebAssembly, LGPL, loaded from
+// /facemace/heic/ only when such a photo is chosen) does. A small JPEG of each is kept as its thumbnail.
+const isHeic = (f) => /\.(heic|heif)$/i.test(f.name || "") || /image\/hei[cf]/i.test(f.type || "");
+let heicLib = null;
+const heicThumbs = {};
+async function decodeImage(f, idx) {
+  try { return await createImageBitmap(f); } catch (e) { if (!isHeic(f)) throw e; }
+  if (!heicLib) heicLib = (await import("/facemace/heic/libheif-bundle.mjs")).default();
+  const imgs = new heicLib.HeifDecoder().decode(new Uint8Array(await f.arrayBuffer()));
+  if (!imgs || !imgs.length) throw new Error("no image in this HEIC file");
+  const im = imgs[0], w = im.get_width(), h = im.get_height();
+  const id = new ImageData(w, h);
+  await new Promise((res, rej) => im.display(id, (r) => (r ? res() : rej(new Error("HEIC could not be decoded")))));
+  for (const x of imgs) { try { x.free(); } catch (_) {} }
+  const cv = Object.assign(document.createElement("canvas"), { width: w, height: h });
+  cv.getContext("2d").putImageData(id, 0, 0);
+  if (idx != null && !heicThumbs[idx]) {
+    const k = Math.min(1, 240 / Math.max(w, h)), t = Object.assign(document.createElement("canvas"), { width: Math.round(w * k), height: Math.round(h * k) });
+    t.getContext("2d").drawImage(cv, 0, 0, t.width, t.height);
+    heicThumbs[idx] = t.toDataURL("image/jpeg", 0.8);
+  }
+  return cv;
+}
 const ops = {
   ptr: () => lastPointer,
   // Intern: notices. notify: title, body, tag (shown only when the app is not in front); notify-ask asks once and
@@ -445,12 +468,12 @@ const ops = {
     return "1";
   },
   copy: (a) => { navigator.clipboard && navigator.clipboard.writeText(a).catch(() => {}); return "1"; },
-  // a chosen picture, decoded by the browser and shrunk to fit max × max: its RGBA pixels
+  // a chosen picture, decoded by the browser (HEIC/HEIF too: see decodeImage) and shrunk to fit max × max: its RGBA pixels
   rgba: (a) => {
     const [token, file, max] = a.split("\t").map(Number);
     (async () => {
       try {
-        const bmp = await createImageBitmap(files[file]);
+        const bmp = await decodeImage(files[file], file);
         const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
         const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
         const cv = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
@@ -486,7 +509,7 @@ const ops = {
     return "1";
   },
   // a chosen file, as an address the page can show
-  fileurl: (a) => (files[+a] ? URL.createObjectURL(files[+a]) : ""),
+  fileurl: (a) => (heicThumbs[+a] || (files[+a] ? URL.createObjectURL(files[+a]) : "")),
   // a chosen file's date (when it was last changed, in ms): Face Mace's fallback when a photo has no camera date
   filetime: (a) => (files[+a] ? String(files[+a].lastModified || 0) : "0"),
   audio: (a) => {
