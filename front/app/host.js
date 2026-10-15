@@ -447,7 +447,25 @@ async function decodeImage(f, idx) {
 // 6_000_000 ("ok", "error …") and the results of a run on 6_000_001.
 let ml = null;
 const ML_OUT = ["cls_8", "cls_16", "cls_32", "obj_8", "obj_16", "obj_32", "bbox_8", "bbox_16", "bbox_32", "kps_8", "kps_16", "kps_32"];
+// they run in a worker of their own (front/facemace/ml/worker.mjs), so the page keeps answering the mouse while they
+// work; where a module worker cannot start, on the page as before
+let mlWorker = null, mlSeq = 0;
+const mlWait = new Map();
+function mlAsk(msg, transfer) {
+  return new Promise((res, rej) => { const id = ++mlSeq; mlWait.set(id, { res, rej }); mlWorker.postMessage({ ...msg, id }, transfer || []); });
+}
 async function mlLoad() {
+  try {
+    mlWorker = new Worker("/facemace/ml/worker.mjs", { type: "module" });
+    mlWorker.onmessage = (e) => { const w = mlWait.get(e.data.id); if (!w) return; mlWait.delete(e.data.id); if (e.data.error) w.rej(new Error(e.data.error)); else w.res(e.data); };
+    mlWorker.onerror = (e) => { for (const w of mlWait.values()) w.rej(new Error((e && e.message) || "the engine worker stopped")); mlWait.clear(); };
+    await mlAsk({ kind: "load" });
+    ml = { worker: true };
+    return;
+  } catch (_) {
+    if (mlWorker) { try { mlWorker.terminate(); } catch (_) {} }
+    mlWorker = null;
+  }
   const ort = await import("/facemace/ml/ort.wasm.min.mjs");
   ort.env.wasm.wasmPaths = "/facemace/ml/";
   ort.env.wasm.numThreads = 1;
@@ -457,6 +475,7 @@ async function mlLoad() {
   ml = { ort, yunet, sface };
 }
 async function mlRun(model, data, dims) {
+  if (ml.worker) return (await mlAsk({ kind: "run", model, data, dims }, [data.buffer])).out;
   const t = new ml.ort.Tensor("float32", data, dims);
   if (model === "yunet") {
     const r = await ml.yunet.run({ input: t });

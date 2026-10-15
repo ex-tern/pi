@@ -26,6 +26,7 @@ const HEIC: &[u8] = include_bytes!("../../../../front/facemace/heic/libheif-bund
 /// the neural face engines (front/facemace/ml/NOTICE.txt): the second profile cascade, ONNX Runtime, YuNet, SFace
 const PROFILE: &[u8] = include_bytes!("../../../../front/facemace/cascade-profile.json");
 const ORT_MJS: &[u8] = include_bytes!("../../../../front/facemace/ml/ort.wasm.min.mjs");
+const ML_WORKER: &[u8] = include_bytes!("../../../../front/facemace/ml/worker.mjs");
 const ORT_GLUE: &[u8] = include_bytes!("../../../../front/facemace/ml/ort-wasm-simd-threaded.mjs");
 const ORT_WASM: &[u8] = include_bytes!("../../../../front/facemace/ml/ort-wasm-simd-threaded.wasm");
 const YUNET: &[u8] = include_bytes!("../../../../front/facemace/ml/yunet.onnx");
@@ -130,6 +131,7 @@ fn answer(mut s: TcpStream) {
         ("GET", "/facemace/heic/libheif-bundle.mjs") => ("200 OK", "text/javascript; charset=utf-8", HEIC),
         ("GET", "/facemace/cascade-profile.json") => ("200 OK", "application/json", PROFILE),
         ("GET", "/facemace/ml/ort.wasm.min.mjs") => ("200 OK", "text/javascript; charset=utf-8", ORT_MJS),
+        ("GET", "/facemace/ml/worker.mjs") => ("200 OK", "text/javascript; charset=utf-8", ML_WORKER),
         ("GET", "/facemace/ml/ort-wasm-simd-threaded.mjs") => ("200 OK", "text/javascript; charset=utf-8", ORT_GLUE),
         ("GET", "/facemace/ml/ort-wasm-simd-threaded.wasm") => ("200 OK", "application/wasm", ORT_WASM),
         ("GET", "/facemace/ml/yunet.onnx") => ("200 OK", "application/octet-stream", YUNET),

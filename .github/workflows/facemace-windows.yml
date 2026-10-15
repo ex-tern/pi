@@ -44,7 +44,12 @@ jobs:
         shell: bash
         run: |
           choco install innosetup -y --no-progress
-          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" //DMyVersion=1.0.${{ github.run_number }} back/rust/facemace-desktop/installer.iss
+          # the version is Face Mace's own (FM_VERSION in back/rust/ui/src/facemace.rs), raised with every change
+          VERSION=$(sed -n 's/.*const FM_VERSION: &str = "\([^"]*\)".*/\1/p' back/rust/ui/src/facemace.rs)
+          NAME=$(sed -n 's/.*const FM_VERSION_NAME: &str = "\([^"]*\)".*/\1/p' back/rust/ui/src/facemace.rs)
+          echo "FM_VERSION=$VERSION" >> "$GITHUB_ENV"
+          echo "FM_VERSION_NAME=$NAME" >> "$GITHUB_ENV"
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" //DMyVersion=$VERSION back/rust/facemace-desktop/installer.iss
           ls -la dist
           cp dist/FaceMace-Setup.exe FaceMace-Setup.exe
 
@@ -86,6 +91,6 @@ jobs:
         run: |
           gh release delete facemace-windows --yes --cleanup-tag || true
           gh release create facemace-windows FaceMace-Setup.exe FaceMace.exe \
-            --title "Face Mace for Windows" \
-            --notes "Sorts photos and videos by face, on your computer. FaceMace-Setup.exe installs it (Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed). FaceMace.exe runs without installing. It opens in your browser and quits a minute after its page is closed; no photo leaves the computer. Version 1.0.${{ github.run_number }}, built from ${GITHUB_SHA::7}." \
+            --title "Face Mace for Windows ${FM_VERSION} “${FM_VERSION_NAME}”" \
+            --notes "Sorts photos and videos by face, on your computer. FaceMace-Setup.exe installs it (Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed). FaceMace.exe runs without installing. It opens in your browser and quits a minute after its page is closed; no photo leaves the computer. Version ${FM_VERSION} “${FM_VERSION_NAME}”, built from ${GITHUB_SHA::7}." \
             --latest=false

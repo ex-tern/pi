@@ -40,6 +40,15 @@ fn sqrt_f(x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }
+    // a first guess from the exponent halved (within a few per cent), then Newton's step: five give full precision
+    // (it was up to sixty from x / 2, which Face Mace's face finder paid once per window)
+    if x.is_finite() && x >= f64::MIN_POSITIVE {
+        let mut g = f64::from_bits((x.to_bits() >> 1) + 0x1ff7_a3be_a91d_9b1b);
+        for _ in 0..5 {
+            g = 0.5 * (g + x / g);
+        }
+        return g;
+    }
     let mut g = if x > 1.0 { x / 2.0 } else { 1.0 };
     for _ in 0..60 {
         let n = 0.5 * (g + x / g);

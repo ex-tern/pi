@@ -815,6 +815,7 @@ pub fn on_timer(token: u32) {
         T_NF => frenzy_tick(),
         T_INTERN => intern_timer(),
         T_FACE => refine_tick(),
+        T_FACE_ARM => {}
         T_JOBS => jobs_tick(),
         T_HAL => {
             if !hal_tick() {
@@ -889,6 +890,8 @@ fn route() {
     let base = href.split('#').next().unwrap_or("");
     // Face Mace on the desktop is at facemace.localhost (owner, 2026-10-15: "make the address bar only say facemace")
     let host_part = base.split("://").nth(1).unwrap_or("").split(['/', ':']).next().unwrap_or("");
+    // the full Face Mace is the Windows program's (facemace.localhost); online it is the lighter one
+    s.face.full = host_part.starts_with("facemace.");
     let app = if base.contains("/intern") { Some(Tool::Intern) } else if base.contains("/facemace") || host_part.starts_with("facemace.") { Some(Tool::Face) } else { None };
     if let Some(tool) = app {
         s.app_mode = true;

@@ -80,13 +80,24 @@ fn rsum(t: &[f64], ww: usize, x: usize, y: usize, w: usize, h: usize) -> f64 {
 }
 
 fn detect(img: &Grey, c: &Haar) -> Vec<[f64; 4]> {
+    detect_from(img, c, 0)
+}
+
+/// The cascade from windows of `min` pixels up (smaller ones, the most numerous, are not looked at).
+fn detect_from(img: &Grey, c: &Haar, min: usize) -> Vec<[f64; 4]> {
     let (ii, sq, ww) = integrals(img);
     let mut found: Vec<[f64; 4]> = Vec::new();
     let mut s = 1.0f64;
+    while (round_f(c.w as f64 * s) as usize) < min {
+        s *= 1.1;
+    }
     while round_f(c.w as f64 * s) as usize <= img.w.min(img.h) {
         let win = round_f(c.w as f64 * s) as usize;
         // the cascade at this scale; the first weight re-balanced so a flat patch still sums to zero, as OpenCV does
-        let sc: Vec<(f64, Vec<(Vec<(usize, usize, usize, usize, f64)>, f64, f64, f64)>)> = c
+        // the cascade at this scale, each rectangle as its four corners' offsets in the integral image (so a window
+        // at (x, y) reads them from y·ww + x, with nothing else worked out per window); the first weight re-balanced
+        // so a flat patch still sums to zero, as OpenCV does
+        let sc: Vec<(f64, Vec<(Vec<((usize, usize, usize, usize, f64), (usize, usize))>, f64, f64, f64)>)> = c
             .stages
             .iter()
             .map(|(thr, trees)| {
@@ -103,6 +114,7 @@ fn detect(img: &Grey, c: &Haar) -> Vec<[f64; 4]> {
                                 let acc: f64 = rr[1..].iter().map(|q| (q.2 * q.3) as f64 * q.4).sum();
                                 rr[0].4 = -acc / (rr[0].2 * rr[0].3) as f64;
                             }
+                            let rr = rr.into_iter().map(|(rx, ry, rw, rh, wt)| ((ry * ww + rx, ry * ww + rx + rw, (ry + rh) * ww + rx, (ry + rh) * ww + rx + rw, wt), (rx + rw, ry + rh))).collect();
                             (rr, *t, *l, *r)
                         })
                         .collect(),
@@ -111,26 +123,34 @@ fn detect(img: &Grey, c: &Haar) -> Vec<[f64; 4]> {
             .collect();
         let step = (round_f(2.0 * s) as usize).max(1);
         let inv = 1.0 / (win * win) as f64;
+        let (o_tr, o_bl, o_br) = (win, win * ww, win * ww + win);
+        // how far right and down a rectangle reaches (rounding can take one past the window): windows from which
+        // every rectangle stays in the photo need no check; the others leave out what falls outside, as before
+        let reach_x = sc.iter().flat_map(|st_| st_.1.iter()).flat_map(|t| t.0.iter()).map(|q| q.1.0).max().unwrap_or(win);
+        let reach_y = sc.iter().flat_map(|st_| st_.1.iter()).flat_map(|t| t.0.iter()).map(|q| q.1.1).max().unwrap_or(win);
         let mut y = 0;
         while y + win <= img.h {
             let mut x = 0;
             while x + win <= img.w {
-                let sum = rsum(&ii, ww, x, y, win, win);
-                let sqs = rsum(&sq, ww, x, y, win, win);
+                let b = y * ww + x;
+                let sum = ii[b + o_br] - ii[b + o_tr] - ii[b + o_bl] + ii[b];
+                let sqs = sq[b + o_br] - sq[b + o_tr] - sq[b + o_bl] + sq[b];
                 let mean = sum * inv;
                 let v = sqs * inv - mean * mean;
                 let std = if v > 0.0 { sqrt_f(v) } else { 1.0 };
+                let tstd = std / inv;
+                let inside = x + reach_x <= img.w && y + reach_y <= img.h;
                 let mut pass = true;
                 for (thr, trees) in &sc {
                     let mut stv = 0.0;
                     for (rr, t, l, r) in trees {
                         let mut f = 0.0;
-                        for q in rr {
-                            if x + q.0 + q.2 <= img.w && y + q.1 + q.3 <= img.h {
-                                f += q.4 * rsum(&ii, ww, x + q.0, y + q.1, q.2, q.3);
+                        for (q, (ex, ey)) in rr {
+                            if inside || (x + ex <= img.w && y + ey <= img.h) {
+                                f += q.4 * (ii[b + q.3] - ii[b + q.1] - ii[b + q.2] + ii[b + q.0]);
                             }
                         }
-                        stv += if f * inv < t * std { *l } else { *r };
+                        stv += if f < t * tstd { *l } else { *r };
                     }
                     if stv < *thr {
                         pass = false;
@@ -447,6 +467,12 @@ pub struct Face {
     /// only the people named are saved (owner, 2026-10-15: "add a scan for only named person option"): everyone is
     /// still found (so that more can be named), but what is written and downloaded is only their photos
     only_named: bool,
+    /// the full Face Mace (the Windows program, at facemace.localhost) or the online one, lighter (owner, 2026-10-15:
+    /// "online version is limited version, with 100 photos only and lighter"): a hundred photos at a time, the light
+    /// engine only (OpenCV's cascade and LBPH: nothing big to download), and no getting surer without end
+    pub full: bool,
+    /// Reset asked for once (when): a second click within a few seconds resets
+    reset_armed: f64,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -514,8 +540,17 @@ struct FaceResult {
     done: bool,
 }
 
+/// The version, and its name, raised with every change pushed (owner, 2026-10-15: "write the version name for each
+/// push"); shown at the foot of Face Mace, and the Windows program and its installer carry the same (the build reads
+/// it from here)
+pub const FM_VERSION: &str = "1.1.0";
+pub const FM_VERSION_NAME: &str = "Light online";
+
 const FACE_TOKEN: u32 = 1_000_000;
+/// photos at a time, online
+const ONLINE_MAX: usize = 100;
 const T_FACE: u32 = 35;
+const T_FACE_ARM: u32 = 36;
 /// photos looked at again between two counts
 const REF_CHUNK: usize = 12;
 const ML_TOKEN: u32 = 6_000_000;
@@ -620,6 +655,15 @@ fn face_update_inner(a: u16, v: String) {
             }
         }
         37 => refine_start(),
+        39 => {
+            let now = host::now();
+            if now - f.reset_armed < 4000.0 {
+                face_reset();
+            } else {
+                f.reset_armed = now;
+                host::timer(4100, T_FACE_ARM);
+            }
+        }
         38 => {
             f.only_named = !f.only_named;
             face_remember();
@@ -639,15 +683,33 @@ fn face_update_inner(a: u16, v: String) {
             // the same file chosen again (same place, same size) is not added twice
             list.retain(|x| !f.files.iter().any(|y| y.2 == x.2 && y.1 == x.1));
             list.sort_by(|a, b| a.2.cmp(&b.2));
+            // online: a hundred at a time
+            let mut cut = 0usize;
+            if !f.full {
+                let room = ONLINE_MAX.saturating_sub(f.files.len());
+                if list.len() > room {
+                    cut = list.len() - room;
+                    list.truncate(room);
+                }
+                if list.is_empty() && cut > 0 {
+                    f.msg = format!("The online Face Mace takes {} photos at a time: take some out, or install Face Mace for Windows for any number.", ONLINE_MAX);
+                    return;
+                }
+            }
             if list.is_empty() {
                 f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { "Nothing new there: those are already chosen.".into() };
                 return;
             }
             let label = source_label(&list);
+            let over = if cut > 0 { format!(" The online Face Mace takes {} at a time: {} more were left out (Face Mace for Windows takes any number).", ONLINE_MAX, cut) } else { String::new() };
             if f.files.is_empty() {
                 let n = list.len();
                 face_set_files(list);
-                st().face.sources = alloc::vec![(label, 0, n)];
+                let f = &mut st().face;
+                f.sources = alloc::vec![(label, 0, n)];
+                if cut > 0 {
+                    f.msg = over.trim_start().to_string();
+                }
             } else {
                 // added to those already chosen: a sort done goes on with the new ones only
                 let (start, n) = (f.files.len(), list.len());
@@ -658,7 +720,7 @@ fn face_update_inner(a: u16, v: String) {
                 }
                 work_apply_pending();
                 let f = &mut st().face;
-                f.msg = format!("Added {}: {} more, {} in all.", label, n, f.files.len());
+                f.msg = format!("Added {}: {} more, {} in all.{}", label, n, f.files.len(), over);
             }
         }
         19 => {
@@ -718,6 +780,9 @@ fn face_update_inner(a: u16, v: String) {
                 f.pics.clear();
             f.boxes.clear();
                 f.at = 0;
+                if f.ml == 0 && !f.full {
+                    f.ml = 3;
+                }
                 if f.ml == 0 {
                     f.ml = 1;
                     host::call("ml-load", "");
@@ -1020,6 +1085,34 @@ fn face_update_inner(a: u16, v: String) {
         }
         _ => {}
     }
+}
+
+/// Face Mace as it was when first opened (owner, 2026-10-15: "reset button resets the app"): all work stopped,
+/// the photos, people, names, answers and settings let go, and what it kept in this browser cleared. Only the
+/// engines already loaded stay (so the next sort does not wait for them).
+fn face_reset() {
+    refine_stop();
+    host::call("zip-stop", "");
+    host::call("save-stop", "");
+    host::call("wake", "0");
+    host::call("kvclear", "");
+    for k in ["facemace:work", "facemace:people", "facemace:settings"] {
+        host::store_del(k);
+    }
+    let old = core::mem::take(&mut st().face);
+    let f = &mut st().face;
+    f.full = old.full;
+    f.ml = old.ml;
+    f.ml_err = old.ml_err;
+    f.cascade = old.cascade;
+    f.cascade_busy = old.cascade_busy;
+    f.profile = old.profile;
+    f.profile_busy = old.profile_busy;
+    f.profile_tried = old.profile_tried;
+    f.ref_timer = old.ref_timer;
+    f.restored = true;
+    f.strict = 75.0;
+    f.msg = "Reset: Face Mace is as new.".into();
 }
 
 /// What a set of files added is called: its folder (the first part of their paths), or the file, or how many.
@@ -1572,23 +1665,34 @@ fn ml_ensemble(yn: Vec<([f64; 14], f64)>) -> Vec<[f64; 14]> {
 /// The profile cascade on the photo and on its mirror image (it knows faces turned one way only).
 fn profile_boxes(f: &Face) -> Vec<[f64; 4]> {
     let Some(c) = &f.profile else { return Vec::new() };
-    let (w, h) = (f.cur_w, f.cur_h);
+    // on a photo no bigger than 640 (a big one, looked at closer, would hold the page up for seconds)
+    let k = (f.cur_w.max(f.cur_h) + 639) / 640;
+    let k = k.max(1);
+    let (w, h) = (f.cur_w / k, f.cur_h / k);
+    if w == 0 || h == 0 {
+        return Vec::new();
+    }
     let mut g = alloc::vec![0u8; w * h];
-    for k in 0..w * h {
-        let p = k * 4;
-        if p + 2 < f.cur.len() {
-            g[k] = ((f.cur[p] as u32 * 299 + f.cur[p + 1] as u32 * 587 + f.cur[p + 2] as u32 * 114 + 500) / 1000) as u8;
+    for y in 0..h {
+        for x in 0..w {
+            let p = ((y * k) * f.cur_w + x * k) * 4;
+            if p + 2 < f.cur.len() {
+                g[y * w + x] = ((f.cur[p] as u32 * 299 + f.cur[p + 1] as u32 * 587 + f.cur[p + 2] as u32 * 114 + 500) / 1000) as u8;
+            }
         }
     }
-    let mut out: Vec<[f64; 4]> = detect(&Grey { g: g.clone(), w, h }, c);
+    let kf = k as f64;
+    // a profile face is only used from 40 pixels up (ml_ensemble): smaller windows are not looked at
+    let min = 0usize;
+    let mut out: Vec<[f64; 4]> = detect_from(&Grey { g: g.clone(), w, h }, c, min).into_iter().map(|b| [b[0] * kf, b[1] * kf, b[2] * kf, b[3] * kf]).collect();
     let mut m = alloc::vec![0u8; w * h];
     for y in 0..h {
         for x in 0..w {
             m[y * w + x] = g[y * w + (w - 1 - x)];
         }
     }
-    for b in detect(&Grey { g: m, w, h }, c) {
-        out.push([w as f64 - b[0] - b[2], b[1], b[2], b[3]]);
+    for b in detect_from(&Grey { g: m, w, h }, c, min) {
+        out.push([(w as f64 - b[0] - b[2]) * kf, b[1] * kf, b[2] * kf, b[3] * kf]);
     }
     out
 }
@@ -1774,7 +1878,7 @@ fn refine_maybe_start() {
 
 fn refine_start() {
     let f = &mut st().face;
-    if f.refining || f.running || f.files.is_empty() || f.faces.len() != f.files.len() || f.rename_only {
+    if !f.full || f.refining || f.running || f.files.is_empty() || f.faces.len() != f.files.len() || f.rename_only {
         return;
     }
     f.refining = true;
@@ -1903,16 +2007,24 @@ fn refine_pixels(i: usize, data: Vec<u8>, w: usize, h: usize) {
     }
     let haar: Vec<[f64; 4]> = match &f.cascade {
         None => Vec::new(),
-        Some(c) if w * h > 1_000_000 => {
-            let (hw, hh) = (w / 2, h / 2);
+        Some(c) if w.max(h) > 800 => {
+            // the cascade only confirms YuNet's less sure faces: on the photo shrunk to 800 at most (quick)
+            let k = (w.max(h) + 799) / 800;
+            let (hw, hh) = (w / k, h / k);
             let mut s2 = alloc::vec![0u8; hw * hh];
             for y in 0..hh {
                 for x in 0..hw {
-                    let a = |xx: usize, yy: usize| g[yy * w + xx] as u32;
-                    s2[y * hw + x] = ((a(2 * x, 2 * y) + a(2 * x + 1, 2 * y) + a(2 * x, 2 * y + 1) + a(2 * x + 1, 2 * y + 1) + 2) / 4) as u8;
+                    let mut t = 0u32;
+                    for dy in 0..k {
+                        for dx in 0..k {
+                            t += g[(y * k + dy) * w + x * k + dx] as u32;
+                        }
+                    }
+                    s2[y * hw + x] = (t / (k * k) as u32) as u8;
                 }
             }
-            detect(&Grey { g: s2, w: hw, h: hh }, c).into_iter().map(|b| [b[0] * 2.0, b[1] * 2.0, b[2] * 2.0, b[3] * 2.0]).collect()
+            let kf = k as f64;
+            detect(&Grey { g: s2, w: hw, h: hh }, c).into_iter().map(|b| [b[0] * kf, b[1] * kf, b[2] * kf, b[3] * kf]).collect()
         }
         Some(c) => detect(&Grey { g: g.clone(), w, h }, c),
     };
@@ -2517,7 +2629,7 @@ fn part_zip(k: usize) {
 /// Working in parts: after each part the work pauses (Next part goes on); true when it paused.
 fn part_break() -> bool {
     let f = &mut st().face;
-    if f.part_size == 0 || f.at == 0 || f.at >= f.files.len() || f.at % f.part_size != 0 {
+    if f.part_size == 0 || !f.full || f.at == 0 || f.at >= f.files.len() || f.at % f.part_size != 0 {
         return false;
     }
     let start = f.at - f.part_size;
@@ -3370,6 +3482,9 @@ fn predate_done() {
         face_next();
         return;
     }
+    if f.ml == 0 && !f.full {
+        f.ml = 3;
+    }
     if f.ml == 0 {
         f.ml = 1;
         host::call("ml-load", "");
@@ -3952,12 +4067,26 @@ fn face_view(s: &State) -> N {
     };
     let mut root = el("div")
         .cls("tool fm")
+        // a working pointer while it works (owner, 2026-10-15: "add a loading pointer"); everything can still be clicked
+        .cls_if(face_busy(f) || f.ml == 1, "fm-busy")
         .kid(
             el("div")
                 .cls("fm-intro")
+                .kid({
+                    let armed = host::now() - f.reset_armed < 4000.0;
+                    el("button").attr("type", "button").cls("btn fm-reset").cls_if(armed, "armed").attr("title", "Stops everything and starts Face Mace afresh: the photos, people, names, answers and settings, and what it kept in this browser").on("click", Msg::T(Tool::Face, 39, String::new())).text(if armed { "Click again to reset everything" } else { "Reset" })
+                })
                 .kid(el("p").cls("lede").kid(txt("Sort photos and videos by face: Face Mace finds the faces, learns who is who and groups everything by person. ")).kid(el("b").text("It all happens on this device; nothing is uploaded.")))
                 // the desktop program (owner, 2026-10-15), built by GitHub on Windows from back/rust/facemace-desktop
-                .kid_if(!s.app_mode, || {
+                // online, the lighter one: what it does and what the program does more
+                .kid_if(!f.full, || {
+                    el("p")
+                        .cls("fm-lite")
+                        .kid(el("b").text("Online, the light version: "))
+                        .kid(txt(format!("up to {} photos at a time, with the light face engine. Face Mace for Windows takes any number, with the stronger neural engines, and keeps getting surer without end.", ONLINE_MAX)))
+                        .into()
+                })
+                .kid_if(!f.full, || {
                     el("div")
                         .cls("fm-gets")
                         .kid(el("a").cls("fm-get").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace-Setup.exe").attr("rel", "noopener").attr("title", "Installs Face Mace: Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed").text("Install for Windows ↓"))
@@ -4002,6 +4131,7 @@ fn face_view(s: &State) -> N {
                                 .kid_if(f.sources.len() > 1 || !f.files.is_empty(), || el("button").attr("type", "button").cls("btn fm-src-clear").attr_if(f.running, "disabled", "").on("click", Msg::T(Tool::Face, 19, String::new())).text("Start over").into())
                                 .into()
                         })
+                        .kid_if(!f.files.is_empty() && f.result.is_none() && !f.running && !f.msg.is_empty(), || el("p").cls("hint fm-note").text(f.msg.clone()).into())
                         .kid_if(!ready.is_empty(), || el("p").cls("fm-ready").cls_if(!f.files.is_empty(), "ok").text(ready.clone()).into()),
                 ),
         )
@@ -4017,7 +4147,7 @@ fn face_view(s: &State) -> N {
                         .kid(el("output").text(format!("{}", strict as i64))),
                 )
                 .kid(el("p").cls("hint").text("Lower is stricter: more people, each with fewer photos. Higher groups more together. Faces are found once, so trying another strictness is quick."))
-                .kid(check(!f.no_keep, 36, "Keep getting surer after the sort", "It never finishes: after the sort it goes on, a few photos at a time, looking again more closely (in more detail, and in parts of each photo) at those it is least sure of or found no face in, then sorting everyone again with what it learned. The results and the folder follow as it goes. Stop ends it."))
+                .kid_if(f.full, || check(!f.no_keep, 36, "Keep getting surer after the sort", "It never finishes: after the sort it goes on, a few photos at a time, looking again more closely (in more detail, and in parts of each photo) at those it is least sure of or found no face in, then sorting everyone again with what it learned. The results and the folder follow as it goes. Stop ends it."))
                 .kid(check(f.only_named, 38, "Only the people named", "Everyone is still found (so that you can name more), but only the photos of people with a name are saved into the folder or the ZIP: name someone, or have them remembered from last time, and their photos follow. Photos of no one named are left out."))
                 .kid(check(!f.no_wake, 34, "Keep the computer awake while it works", "Windows (or the Mac) does not go to sleep in the middle of a long sort; it can again when Face Mace is done."))
                 .kid(check(f.dedupe, 9, "Delete duplicates", "A photo or video that is there twice (copied, saved again or resized) is kept once, the biggest. Your original folder is not changed."))
@@ -4037,12 +4167,12 @@ fn face_view(s: &State) -> N {
             el("section")
                 .cls("card fm-step")
                 .kid(step("3", "Output"))
-                .kid(
+                .kid_if(f.full, || 
                     el("label")
                         .cls("fm-parts")
                         .kid(el("span").kid(el("b").text("Work in parts of ")))
                         .kid(el("input").cls("input").attr("type", "number").attr("min", "0").attr("step", "100").attr("placeholder", "all").attr("aria-label", "Files per part").prop("value", if f.part_size == 0 { String::new() } else { f.part_size.to_string() }).on("input", Msg::TV(Tool::Face, 13)))
-                        .kid(el("span").cls("hint").text("files. It pauses after each part (Next part goes on), and each part can be downloaded on its own. Empty: all at once.")),
+                        .kid(el("span").cls("hint").text("files. It pauses after each part (Next part goes on), and each part can be downloaded on its own. Empty: all at once.")).into(),
                 )
                 .kid(check(f.by_date, 5, "Rename by date", "Numbered in the order they were taken, then who is in them and the year, Persian and Gregorian: 0000001-Anna-1382-2004.jpg, in folders of a thousand."))
                 .kid({
@@ -4143,7 +4273,7 @@ fn face_view(s: &State) -> N {
                     el("div").cls("fm-now fm-now-in").kids(f.recent.iter().rev().take(10).map(|(i, b)| -> N { el("span").cls("fm-now-i").kid(face_bubble(f, *i, *b, None, 44, &f.files[*i].2)).into() })).into()
                 }),
         );
-    } else if !f.running && !f.rename_only && !f.files.is_empty() && f.faces.len() == f.files.len() && f.result.as_ref().map(|r| r.done).unwrap_or(false) {
+    } else if f.full && !f.running && !f.rename_only && !f.files.is_empty() && f.faces.len() == f.files.len() && f.result.as_ref().map(|r| r.done).unwrap_or(false) {
         root = root.kid(el("div").cls("fm-refine-off row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 37, String::new())).text("Go on getting surer")).kid(el("span").cls("hint").text("Looks again, closer, at the photos it is least sure of, and sorts everyone again, until Stop.")));
     }
     // packing a ZIP, reading dates or saving into the folder can be stopped too
@@ -4363,6 +4493,7 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
             root = root.kid(el("p").kid(more));
         }
     }
+    root = root.kid(el("p").cls("fm-version").text(format!("Face Mace {} “{}” · {}", FM_VERSION, FM_VERSION_NAME, if f.full { "for Windows" } else { "online, light" })));
     root.into()
 }
 
@@ -4418,6 +4549,10 @@ const FACE_CSS: &str = "\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\
 .fm-progress{margin:14px 0}\
+.fm-version{margin:28px 0 4px;text-align:center;font-size:12px;color:var(--muted)}\
+.fm-busy,.fm-busy *{cursor:progress}.fm-busy input[type=text],.fm-busy input:not([type]),.fm-busy textarea{cursor:text}\
+.fm-intro{position:relative}.fm-reset{float:right;margin:0 0 6px 10px;padding:4px 12px;font-size:13px}.fm-reset.armed{border-color:#c0392b;color:#c0392b}\
+.fm-lite{font-size:14px;margin:8px 0 4px;padding:8px 12px;border-radius:10px;border:1px solid var(--line);color:var(--muted)}.fm-lite b{color:var(--ink)}\
 .fm-unsaved{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:999px;padding:1px 8px}\
 .fm-sources{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0;justify-content:center}.fm-src{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 10px;border:1px solid var(--line);border-radius:999px;font-size:13px}.fm-src-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}.fm-src small{color:var(--muted)}.fm-src-x{border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:999px}.fm-src-x:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 8%,transparent)}.fm-src-clear{padding:4px 10px;font-size:13px}\
 .fm-refine{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--accent,#3b82f6) 6%,transparent)}.fm-refine .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fm-refine .row .btn{margin-left:auto}.fm-refine p{margin:6px 0}.fm-refine .md-bar{margin:8px 0}.fm-now-in{margin:4px 0 0;padding:4px 2px}.fm-refine-off{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}\
