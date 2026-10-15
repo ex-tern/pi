@@ -456,7 +456,7 @@ async function mlRun(model, data, dims) {
 }
 
 // the folder Face Mace saves into, and what waits to be written there
-let outDir = null, outQ = [], outBusy = false, outSaved = 0;
+let outDir = null, outQ = [], outBusy = false, outSaved = 0, zipStop = false;
 async function outRun() {
   outBusy = true;
   try {
@@ -488,7 +488,9 @@ async function zipFiles(name, list) {
   const le = (n, b) => { const a = new Uint8Array(b); let v = BigInt(n); for (let i = 0; i < b; i++) { a[i] = Number(v & 255n); v >>= 8n; } return a; };
   const cat = (...xs) => { const n = xs.reduce((a, x) => a + x.length, 0), o = new Uint8Array(n); let p = 0; for (const x of xs) { o.set(x, p); p += x.length; } return o; };
   const d = new Date(), dosT = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dosD = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  zipStop = false;
   for (let k = 0; k < list.length; k++) {
+    if (zipStop) { tell("error stopped"); return; }
     const [path, idx] = list[k], file = files[idx];
     if (!file) continue;
     const nm = enc.encode(path), size = file.size, crc = await crcOf(file);
@@ -652,6 +654,9 @@ const ops = {
     mlRun(model, data, d.split(",").map(Number)).then((out) => give(6000001, new Uint8Array(out.buffer, out.byteOffset, out.byteLength), 1, 1), (e) => give(6000001, new Uint8Array(0), 0, 0));
     return "1";
   },
+  // Face Mace's Stop: what waits to be written into the folder is dropped, and a ZIP being made is given up
+  "save-stop": () => { outQ = []; return "1"; },
+  "zip-stop": () => { zipStop = true; return "1"; },
   // a ZIP of chosen files: its name, then a line "path\tfile" for each
   zip: (a) => {
     const [name, ...lines] = a.split("\n");

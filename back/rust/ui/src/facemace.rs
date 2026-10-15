@@ -349,6 +349,10 @@ pub struct Face {
     ml_embs: Vec<Vec<f32>>,
     ml_stage: u8,
     engines_used: String,
+    /// stopped part way (owner, 2026-10-15: "add a stop button"): Sort goes on from where it was
+    stopped: bool,
+    /// thumbnails made so far (file → address), so the live view does not make them again
+    thumb_cache: BTreeMap<usize, String>,
 }
 
 struct FaceResult {
@@ -361,6 +365,12 @@ struct FaceResult {
     thumbs: Vec<(usize, String)>,
     /// (left out, the one kept)
     dups: Vec<(usize, usize)>,
+    /// how sure the recognition is (owner, 2026-10-15: "add how much accuracy in recognizing a person"): per
+    /// group, and per photo in a group; and over everything
+    conf: Vec<f64>,
+    photo_conf: BTreeMap<(usize, usize), f64>,
+    overall: Option<f64>,
+    done: bool,
 }
 
 const FACE_TOKEN: u32 = 1_000_000;
@@ -462,6 +472,8 @@ fn face_update(a: u16, v: String) {
             f.faces.clear();
             f.pics.clear();
             f.result = None;
+            f.stopped = false;
+            f.thumb_cache.clear();
             f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
         2 => f.strict = v.parse().unwrap_or(75.0),
@@ -469,6 +481,17 @@ fn face_update(a: u16, v: String) {
             if f.files.is_empty() || f.running {
                 return;
             }
+            if f.stopped && !f.faces.is_empty() && f.faces.len() < f.files.len() {
+                // stopped part way: go on from the next one
+                f.stopped = false;
+                f.running = true;
+                f.at = f.faces.len();
+                if face_ready(f) {
+                    face_next();
+                }
+                return;
+            }
+            f.stopped = false;
             f.running = true;
             f.started = host::now();
             f.live_known.clear();
@@ -524,6 +547,30 @@ fn face_update(a: u16, v: String) {
             host::download("Face Mace duplicates.txt", "text/plain", format!("Duplicates Face Mace left out ({}): delete these from the original folder if you wish.\n\n{}\n", lines.len(), lines.join("\n")).as_bytes());
         }
         5 => f.by_date = !f.by_date,
+        // Stop: scanning, reading dates, packing or saving, whichever is going on
+        11 => {
+            if f.running {
+                f.running = false;
+                f.stopped = true;
+                f.cur.clear();
+                f.ml_faces.clear();
+                f.ml_embs.clear();
+                face_compute(true);
+                let f = &mut st().face;
+                f.msg = format!("Stopped after {} of {}. Sort by face goes on from there.", f.faces.len(), f.files.len());
+            }
+            let f = &mut st().face;
+            if f.date_k < f.date_list.len() {
+                f.date_list.clear();
+                f.date_k = 0;
+                f.msg = "Stopped.".into();
+            }
+            host::call("zip-stop", "");
+            host::call("save-stop", "");
+            if f.out_asked > f.out_saved {
+                f.out_asked = f.out_saved;
+            }
+        }
         // a name for the person of group a - 1000
         a if a >= 1000 => {
             let Some(k) = f.result.as_ref().and_then(|r| r.groups.get((a - 1000) as usize)).map(|g| g.0.clone()) else { return };
@@ -634,6 +681,8 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
     f.faces.push(found);
     f.pics.push(pic);
     live_save(f.faces.len() - 1);
+    face_preview();
+    let f = &mut st().face;
     f.at += 1;
     face_next();
     render();
@@ -970,6 +1019,7 @@ fn ml_photo_done() {
     f.pics.push(f.cur_pic.take());
     f.cur.clear();
     live_save(f.faces.len() - 1);
+    face_preview();
     let f = &mut st().face;
     f.at += 1;
     face_next();
@@ -977,8 +1027,31 @@ fn ml_photo_done() {
 
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
 fn face_finish() {
+    face_compute(true);
+    st().face.running = false;
+}
+
+/// While scanning, the result so far, so people and their photos show up as they are found.
+fn face_preview() {
+    let f = &st().face;
+    let n = f.faces.len();
+    let step = if n < 100 { 1 } else if n < 1000 { 5 } else { 25 };
+    if n % step == 0 {
+        face_compute(false);
+    }
+}
+
+/// How sure a match is, 0–1: SFace's cosine against OpenCV's threshold (0.363 is even odds; 0.6 is 94%), LBPH's
+/// distance against the strictness.
+fn match_conf(d: f64, emb: bool, strict: f64) -> f64 {
+    let z = if emb { ((1.0 - d) - 0.363) * 12.0 } else { (strict - d) / (strict * 0.15).max(1.0) };
+    1.0 / (1.0 + exp_f(-z))
+}
+
+fn face_compute(done: bool) {
     let f = &mut st().face;
     let mut known: Vec<(usize, &Vec<f32>)> = Vec::new();
+    let mut owner: Vec<usize> = Vec::new();
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     let (mut none, mut unreadable, mut next, mut nfaces) = (Vec::new(), 0usize, 1usize, 0usize);
     let mut dups: Vec<(usize, usize)> = Vec::new();
@@ -1025,6 +1098,7 @@ fn face_finish() {
                 next - 1
             };
             known.push((id, h));
+            owner.push(i);
             let g = groups.entry(id).or_default();
             if !g.contains(&i) {
                 g.push(i);
@@ -1035,19 +1109,79 @@ fn face_finish() {
     if !none.is_empty() {
         out.push(("No_Faces_Detected".to_string(), none));
     }
-    // thumbnails: the first twelve of each group, as object URLs of the files themselves
+    // how sure: each face against its person's average (the group's own centre), as a probability
+    let mut conf: Vec<f64> = Vec::new();
+    let mut photo_conf: BTreeMap<(usize, usize), f64> = BTreeMap::new();
+    let (mut all_sum, mut all_n) = (0.0f64, 0usize);
+    for (gi, (k, idx)) in out.iter().enumerate() {
+        if k == "No_Faces_Detected" {
+            conf.push(0.0);
+            continue;
+        }
+        let id: usize = k.trim_start_matches("Person_").parse().unwrap_or(0);
+        let mine: Vec<(usize, &Vec<f32>)> = known.iter().zip(owner.iter()).filter(|((pid, _), _)| *pid == id).map(|((_, h), i)| (*i, *h)).collect();
+        if mine.is_empty() {
+            conf.push(0.0);
+            continue;
+        }
+        let dim = mine[0].1.len();
+        let emb = dim == 128;
+        let mut c = alloc::vec![0f64; dim];
+        for (_, h) in &mine {
+            for (a, b) in c.iter_mut().zip(h.iter()) {
+                *a += *b as f64;
+            }
+        }
+        if emb {
+            let n = c.iter().map(|v| v * v).sum::<f64>().sqrt_c().max(1e-9);
+            c.iter_mut().for_each(|v| *v /= n);
+        } else {
+            c.iter_mut().for_each(|v| *v /= mine.len() as f64);
+        }
+        let cf: Vec<f32> = c.iter().map(|v| *v as f32).collect();
+        let (mut sum, mut cnt) = (0.0, 0usize);
+        for (i, h) in &mine {
+            // a person seen once is as sure as their single face is clear: a full match with itself is not news
+            let p = if mine.len() == 1 { 0.0 } else { match_conf(face_dist(h, &cf), emb, f.strict) };
+            if mine.len() > 1 {
+                sum += p;
+                cnt += 1;
+                let e = photo_conf.entry((gi, *i)).or_insert(0.0);
+                if p > *e {
+                    *e = p;
+                }
+            }
+        }
+        let g = if cnt > 0 { sum / cnt as f64 } else { 0.0 };
+        if cnt > 0 {
+            all_sum += sum;
+            all_n += cnt;
+        }
+        conf.push(g);
+        let _ = idx;
+    }
+    // thumbnails: the first twelve of each group, as object URLs of the files themselves (made once)
     let mut thumbs = Vec::new();
     let dup_list: Vec<usize> = dups.iter().map(|d| d.0).collect();
     for idx in out.iter().map(|g| &g.1).chain(core::iter::once(&dup_list)) {
         for &i in idx.iter().take(12) {
-            if !thumbs.iter().any(|(j, _)| *j == i) {
-                let url = host::call("fileurl", &format!("{}", f.files[i].0)).unwrap_or_default();
+            if !thumbs.iter().any(|(j, _): &(usize, String)| *j == i) {
+                let url = match f.thumb_cache.get(&i) {
+                    Some(u) => u.clone(),
+                    None => {
+                        let u = host::call("fileurl", &format!("{}", f.files[i].0)).unwrap_or_default();
+                        if !u.is_empty() {
+                            f.thumb_cache.insert(i, u.clone());
+                        }
+                        u
+                    }
+                };
                 thumbs.push((i, url));
             }
         }
     }
-    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups });
-    f.running = false;
+    let overall = if all_n > 0 { Some(all_sum / all_n as f64) } else { None };
+    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done });
 }
 
 // ---------------------------------------------------------------------------------------------- the ZIP (stored, as the original's folders)
@@ -1214,6 +1348,8 @@ fn zip_progress(m: &str) {
     let f = &mut st().face;
     f.msg = if let Some(n) = m.strip_prefix("done ") {
         format!("Downloaded {} files.", n)
+    } else if m == "error stopped" {
+        "Stopped.".to_string()
     } else if let Some(e) = m.strip_prefix("error ") {
         format!("The ZIP could not be made: {}", e)
     } else {
@@ -1777,7 +1913,8 @@ fn face_view(s: &State) -> N {
         .kid(
             el("div")
                 .cls("fm-go")
-                .kid(el("button").attr("type", "button").cls("btn primary fm-sort").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text(if f.running { "Sorting…" } else { "Sort by face" }))
+                .kid(el("button").attr("type", "button").cls("btn primary fm-sort").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text(if f.running { "Sorting…" } else if f.stopped { "Go on sorting" } else { "Sort by face" }))
+                .kid_if(f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into())
                 .kid_if(f.files.is_empty(), || el("span").cls("hint").text("Choose photos or videos first.").into()),
         );
     if f.running {
@@ -1789,7 +1926,11 @@ fn face_view(s: &State) -> N {
                 .kid(el("p").cls("hint").text(if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
         );
     }
+    // packing a ZIP, reading dates or saving into the folder can be stopped too
+    let busy = (f.date_k < f.date_list.len()) || f.msg.starts_with("Packing") || f.out_asked > f.out_saved;
     if let Some(r) = &f.result {
+        let pct = |p: f64| format!("{:.0}%", (p * 100.0).clamp(0.0, 100.0));
+        let sure_cls = |p: f64| if p >= 0.9 { "hi" } else if p >= 0.7 { "mid" } else { "lo" };
         let label = |k: &str| if k == "No_Faces_Detected" { "No faces found".to_string() } else { k.replace('_', " ") };
         root = root
             .kid(
@@ -1798,9 +1939,12 @@ fn face_view(s: &State) -> N {
                     .kid(el("div").kid(el("b").text(format!("{}", f.files.len()))).kid(el("span").text("files")))
                     .kid(el("div").kid(el("b").text(format!("{}", r.people))).kid(el("span").text("people found")))
                     .kid(el("div").kid(el("b").text(format!("{}", r.faces))).kid(el("span").text("faces")))
+                    .kid(el("div").kid(el("b").text(r.overall.map(|p| pct(p)).unwrap_or_else(|| "—".into()))).kid(el("span").text("recognition confidence")))
                     .kid(el("div").kid(el("b").text(format!("{:.1} s", r.ms / 1000.0))).kid(el("span").text(format!("at strictness {}", r.strict as i64)))),
             )
-            .kid(el("div").cls("row fm-actions").kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid_if(!r.done, || el("p").cls("fm-live").text(format!("Live: {} of {} looked at so far", f.faces.len(), f.files.len())).into())
+            .kid_if(r.done && r.overall.is_some(), || el("p").cls("hint").text("Confidence is how closely each face matches the others of its person: 50% is the line between the same and someone else, above 90% is a clear match. A person seen only once has no figure.").into())
+            .kid(el("div").cls("row fm-actions").kid_if(busy && !f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into()).kid(el("button").attr("type", "button").cls("btn primary").attr_if(!r.done, "disabled", "").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
             .kid_if(!f.engines_used.is_empty(), || {
                 el("p").cls("hint").text(format!("Engines: {}{}.", f.engines_used, if f.ml == 3 && !f.ml_err.is_empty() { format!(" (the neural ones could not start here: {})", f.ml_err) } else { String::new() })).into()
@@ -1826,6 +1970,10 @@ fn face_view(s: &State) -> N {
                         el("div")
                             .cls("fm-head")
                             .kid(el("h3").text(format!("{} · {} photo{}", f.names.get(k).cloned().unwrap_or_else(|| label(k)), idx.len(), if idx.len() == 1 { "" } else { "s" })))
+                            .kid_if(r.conf.get(gi).copied().unwrap_or(0.0) > 0.0, || {
+                                let c = r.conf[gi];
+                                el("span").cls("fm-sure").cls(sure_cls(c)).attr("title", "How surely these are one person").text(format!("{} sure", pct(c))).into()
+                            })
                             .kid_if(k != "No_Faces_Detected", || {
                                 el("input")
                                     .cls("input fm-name")
@@ -1842,11 +1990,14 @@ fn face_view(s: &State) -> N {
                             .cls("fm-thumbs")
                             .kids(idx.iter().take(12).map(|i| -> N {
                                 let url = r.thumbs.iter().find(|(j, _)| j == i).map(|x| x.1.clone()).unwrap_or_default();
-                                if url.is_empty() {
-                                    el("span").cls("fm-tile").attr("title", f.files[*i].2.clone()).text(face_ext(&f.files[*i].2).to_uppercase()).into()
+                                let pc = r.photo_conf.get(&(gi, *i)).copied();
+                                let title = match pc { Some(p) => format!("{} · {} match", f.files[*i].2, pct(p)), None => f.files[*i].2.clone() };
+                                let pic: N = if url.is_empty() {
+                                    el("span").cls("fm-tile").text(face_ext(&f.files[*i].2).to_uppercase()).into()
                                 } else {
-                                    el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("title", f.files[*i].2.clone()).attr("src", url).into()
-                                }
+                                    el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("src", url).into()
+                                };
+                                el("span").cls("fm-th").attr("title", title).kid(pic).kid_if(pc.is_some(), || el("em").cls(sure_cls(pc.unwrap_or(0.0))).text(pct(pc.unwrap_or(0.0))).into()).into()
                             }))
                             .kid_if(idx.len() > 12, || el("span").cls("fm-more").text(format!("+{}", idx.len() - 12)).into()),
                     ),
@@ -1866,6 +2017,10 @@ const FACE_CSS: &str = "\
 .fm-option{display:grid!important;grid-template-columns:auto 1fr;gap:10px;align-items:start;margin:0!important;cursor:pointer}.fm-option>span{display:grid;gap:2px}.fm-option b{font-weight:600}\
 .fm-go{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.fm-sort{min-width:180px;min-height:44px;font-size:15px}\
 .fm-actions{align-items:center;gap:12px;margin:12px 0}\
+.fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
+.fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
+.fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\
+.fm-th{position:relative;display:inline-block}.fm-th em{position:absolute;right:3px;bottom:3px;font:600 10.5px/1 inherit;font-style:normal;padding:2px 4px;background:rgba(0,0,0,.72);color:#fff}.fm-th em.mid{background:#b06000}.fm-th em.lo{background:#c92a2a}\
 @media (max-width:699px){.fm-intro{flex-direction:column}}\
 .fm-drop{border:1.5px dashed var(--line2);background:#fff;padding:18px;margin:14px 0;text-align:center}\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
