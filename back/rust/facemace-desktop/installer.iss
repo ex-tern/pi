@@ -39,7 +39,6 @@ CloseApplications=yes
 UsePreviousAppDir=yes
 UsePreviousTasks=yes
 DisableDirPage=auto
-DisableReadyPage=auto
 VersionInfoVersion={#MyVersion}
 
 [Languages]
