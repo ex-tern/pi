@@ -1695,63 +1695,91 @@ fn exif_tiff(t: &[u8]) -> Option<u64> {
 fn face_view(s: &State) -> N {
     let f = &s.face;
     let strict = if f.strict == 0.0 { 75.0 } else { f.strict };
+    let can = host::call("canpick", "").as_deref() == Some("1");
+    let step = |n: &str, title: &str| -> N { el("div").cls("fm-step-h").kid(el("span").cls("fm-n").text(n.to_string())).kid(el("h3").text(title.to_string())).into() };
+    let check = |on: bool, a: u16, title: &str, more: &str| -> N {
+        el("label")
+            .cls("fm-option")
+            .kid(el("input").attr("type", "checkbox").prop("checked", if on { "1" } else { "0" }).on("change", Msg::T(Tool::Face, a, String::new())))
+            .kid(el("span").kid(el("b").text(title.to_string())).kid(el("span").cls("hint").text(more.to_string())))
+            .into()
+    };
+    let ready = if f.files.is_empty() { f.msg.clone() } else {
+        let v = f.files.iter().filter(|x| face_is_video(&x.2)).count();
+        let p = f.files.len() - v;
+        let mut parts = Vec::new();
+        if p > 0 { parts.push(format!("{} photo{}", p, if p == 1 { "" } else { "s" })); }
+        if v > 0 { parts.push(format!("{} video{}", v, if v == 1 { "" } else { "s" })); }
+        format!("{} ready", parts.join(" and "))
+    };
     let mut root = el("div")
         .cls("tool fm")
-        .kid(el("p").cls("lede").kid(txt("Sort photos and videos by face. Choose a folder or some files: Face Mace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
-        // the desktop program (owner, 2026-10-15: "a downloadable version of FaceMace in .exe file for Windows"),
-        // built by GitHub on Windows from back/rust/facemace-desktop
-        .kid_if(!s.app_mode, || {
-            el("p")
-                .cls("fm-get")
-                .kid(el("a").cls("btn").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").text("Download for Windows (.exe)"))
-                .kid(txt(" Runs on its own, without the site or a network."))
-                .into()
-        })
         .kid(
             el("div")
-                .cls("fm-drop")
-                .on("drop", Msg::TV(Tool::Face, 1))
-                .kid(el("p").text("Drop photos here"))
+                .cls("fm-intro")
+                .kid(el("p").cls("lede").kid(txt("Sort photos and videos by face: Face Mace finds the faces, learns who is who and groups everything by person. ")).kid(el("b").text("It all happens on this device; nothing is uploaded.")))
+                // the desktop program (owner, 2026-10-15), built by GitHub on Windows from back/rust/facemace-desktop
+                .kid_if(!s.app_mode, || el("a").cls("fm-get").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").text("Windows app (.exe) ↓").into()),
+        )
+        .kid(
+            el("section")
+                .cls("card fm-step")
+                .kid(step("1", "Photos and videos"))
                 .kid(
                     el("div")
-                        .cls("row")
-                        .kid(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
-                        .kid(el("label").cls("btn").kid(txt("Choose photos")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
+                        .cls("fm-drop")
+                        .on("drop", Msg::TV(Tool::Face, 1))
+                        .kid(el("p").cls("fm-drop-t").text("Drop a folder or files here"))
+                        .kid(el("p").cls("hint").text("JPG, PNG, HEIC and videos (MP4, MOV, MKV, WebM, AVI and more)"))
+                        .kid(
+                            el("div")
+                                .cls("row")
+                                .kid(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
+                                .kid(el("label").cls("btn").kid(txt("Choose files")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
+                        )
+                        .kid_if(!ready.is_empty(), || el("p").cls("fm-ready").cls_if(!f.files.is_empty(), "ok").text(ready.clone()).into()),
+                ),
+        )
+        .kid(
+            el("section")
+                .cls("card fm-step")
+                .kid(step("2", "Sorting"))
+                .kid(
+                    el("label")
+                        .cls("fm-slider")
+                        .kid(el("span").text("Match strictness"))
+                        .kid(el("input").attr("type", "range").attr("min", "40").attr("max", "120").attr("aria-label", "Match strictness").prop("value", format!("{}", strict as i64)).on("input", Msg::TV(Tool::Face, 2)))
+                        .kid(el("output").text(format!("{}", strict as i64))),
                 )
-                .kid(el("p").cls("hint").text(if f.files.is_empty() { f.msg.clone() } else { format!("{} photo{} ready", f.files.len(), if f.files.len() == 1 { "" } else { "s" }) })),
+                .kid(el("p").cls("hint").text("Lower is stricter: more people, each with fewer photos. Higher groups more together. Faces are found once, so trying another strictness is quick."))
+                .kid(check(f.dedupe, 9, "Delete duplicates", "A photo or video that is there twice (copied, saved again or resized) is kept once, the biggest. Your original folder is not changed.")),
+        )
+        .kid(
+            el("section")
+                .cls("card fm-step")
+                .kid(step("3", "Output"))
+                .kid(check(f.by_date, 5, "Rename by date", "Numbered in the order they were taken, then who is in them and the year, Persian and Gregorian: 0000001-Anna-1382-2004.jpg, in folders of a thousand."))
+                .kid({
+                    let mut d = el("div").cls("fm-out");
+                    d = match &f.out_dir {
+                        Some(n) => d
+                            .kid(el("p").kid(txt("Saving into ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": the renamed files, as soon as their names are known." } else { ": each photo into its person's folder as soon as it is scanned." })))
+                            .kid_if(f.out_asked > 0, || el("p").cls("hint").text(format!("{} of {} saved", f.out_saved, f.out_asked)).into())
+                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 8, String::new())).text("Stop saving to the folder")),
+                        None if can => d
+                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 7, String::new())).text("Save into a folder as it works…"))
+                            .kid(el("p").cls("hint").text("Or download a ZIP when it is done.")),
+                        None => d.kid(el("p").cls("hint").text("The result downloads as a ZIP. (Saving straight into a folder needs Chrome or Edge.)")),
+                    };
+                    d.kid_if(!f.out_msg.is_empty(), || el("p").cls("hint warn").text(f.out_msg.clone()).into())
+                }),
         )
         .kid(
             el("div")
-                .cls("fm-settings")
-                .kid(
-                    el("label")
-                        .kid(txt(format!("Match strictness {} ", strict as i64)))
-                        .kid(el("input").attr("type", "range").attr("min", "40").attr("max", "120").prop("value", format!("{}", strict as i64)).on("input", Msg::TV(Tool::Face, 2))),
-                )
-                .kid(el("p").cls("hint").text("Lower is stricter (more people, each photo set smaller); higher is looser (more photos grouped together). Faces are found once, so trying another strictness is quick."))
-                .kid(
-                    el("label")
-                        .cls("fm-option")
-                        .kid(el("input").attr("type", "checkbox").prop("checked", if f.dedupe { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 9, String::new())))
-                        .kid(txt(" Delete duplicates: a photo or video that is there twice (copied, saved again or resized) is kept once, everywhere Face Mace saves. Your original folder is not changed.")),
-                ),
-        )
-        .kid({
-            let can = host::call("canpick", "").as_deref() == Some("1");
-            let mut d = el("div").cls("fm-out");
-            d = match &f.out_dir {
-                Some(n) => d
-                    .kid(el("p").kid(txt("Saving into the new folder ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": the renamed files, as soon as their names are known." } else { ": each photo into its person's folder as soon as it is scanned." })))
-                    .kid_if(f.out_asked > 0, || el("p").cls("hint").text(format!("{} of {} saved", f.out_saved, f.out_asked)).into())
-                    .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 8, String::new())).text("Stop saving to the folder")),
-                None if can => d
-                    .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 7, String::new())).text("Save into a folder as they are done…"))
-                    .kid(el("span").cls("hint").text(" Pick where: a new folder is made there, and filled while Face Mace works.")),
-                None => d.kid(el("p").cls("hint").text("Saving straight into a folder needs Chrome or Edge; here the result downloads as a ZIP.")),
-            };
-            d.kid_if(!f.out_msg.is_empty(), || el("p").cls("hint warn").text(f.out_msg.clone()).into())
-        })
-        .kid(el("button").attr("type", "button").cls("btn primary").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text("Sort by face"));
+                .cls("fm-go")
+                .kid(el("button").attr("type", "button").cls("btn primary fm-sort").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text(if f.running { "Sorting…" } else { "Sort by face" }))
+                .kid_if(f.files.is_empty(), || el("span").cls("hint").text("Choose photos or videos first.").into()),
+        );
     if f.running {
         let total = f.files.len().max(1);
         root = root.kid(
@@ -1767,18 +1795,12 @@ fn face_view(s: &State) -> N {
             .kid(
                 el("div")
                     .cls("md-stats")
-                    .kid(el("div").kid(el("b").text(format!("{}", f.files.len()))).kid(el("span").text("photos")))
+                    .kid(el("div").kid(el("b").text(format!("{}", f.files.len()))).kid(el("span").text("files")))
                     .kid(el("div").kid(el("b").text(format!("{}", r.people))).kid(el("span").text("people found")))
                     .kid(el("div").kid(el("b").text(format!("{}", r.faces))).kid(el("span").text("faces")))
                     .kid(el("div").kid(el("b").text(format!("{:.1} s", r.ms / 1000.0))).kid(el("span").text(format!("at strictness {}", r.strict as i64)))),
             )
-            .kid(
-                el("label")
-                    .cls("fm-option")
-                    .kid(el("input").attr("type", "checkbox").prop("checked", if f.by_date { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 5, String::new())))
-                    .kid(txt(" Rename the photos and videos by date: numbered in the order they were taken, then who is in them and the year, Persian and Gregorian (0000001-Anna-1382-2004.jpg, 0000002-unknown-1403-2024.mp4), in folders of a thousand (0000001-0001000, 0001001-0002000, …)")),
-            )
-            .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid(el("div").cls("row fm-actions").kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
             .kid_if(!f.engines_used.is_empty(), || {
                 el("p").cls("hint").text(format!("Engines: {}{}.", f.engines_used, if f.ml == 3 && !f.ml_err.is_empty() { format!(" (the neural ones could not start here: {})", f.ml_err) } else { String::new() })).into()
@@ -1835,6 +1857,16 @@ fn face_view(s: &State) -> N {
 }
 
 const FACE_CSS: &str = "\
+.fm-intro{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:16px}.fm-intro .lede{margin:0}\
+.fm-get{flex:none;font-size:13px;font-weight:600;padding:6px 12px;border:1px solid var(--line2);background:#fff;white-space:nowrap}.fm-get:hover{border-color:var(--ink);text-decoration:none}\
+.fm-step{margin-bottom:12px;display:grid;gap:10px}.fm-step-h{display:flex;align-items:center;gap:10px}.fm-step-h h3{margin:0;font-size:16px}\
+.fm-n{width:24px;height:24px;display:grid;place-items:center;background:var(--ink);color:#fff;font:600 12px/1 inherit;flex:none}\
+.fm-drop-t{font-weight:600;margin:0 0 2px}.fm-ready{margin:10px 0 0;font-size:14px;color:var(--muted)}.fm-ready.ok{color:#2b8a3e;font-weight:600}\
+.fm-slider{display:grid;grid-template-columns:auto 1fr auto;gap:12px;align-items:center;max-width:520px}.fm-slider input{width:100%}.fm-slider output{font-variant-numeric:tabular-nums;font-weight:600;min-width:2.5ch;text-align:right}\
+.fm-option{display:grid!important;grid-template-columns:auto 1fr;gap:10px;align-items:start;margin:0!important;cursor:pointer}.fm-option>span{display:grid;gap:2px}.fm-option b{font-weight:600}\
+.fm-go{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.fm-sort{min-width:180px;min-height:44px;font-size:15px}\
+.fm-actions{align-items:center;gap:12px;margin:12px 0}\
+@media (max-width:699px){.fm-intro{flex-direction:column}}\
 .fm-drop{border:1.5px dashed var(--line2);background:#fff;padding:18px;margin:14px 0;text-align:center}\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\

@@ -457,4 +457,25 @@ color:var(--paper);font-size:16px;line-height:1}
  .canvas{padding-top:64px}
  .wire-note,.wire-note.page-note{top:66px!important;bottom:auto!important;left:12px!important;right:12px!important;transform:none!important;max-width:none!important;height:auto!important}
 }
+/* the polish layer (owner, 2026-10-15: "enhance the ui over all pro"): one focus ring, themed controls, steady
+   buttons, cards with a little depth, readable line lengths, and tools as wide as every other page */
+.head .eyebrow{display:block;font:600 11.5px/1 "Geist Mono",ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
+.head h1{letter-spacing:-.02em}
+h2,h3{letter-spacing:-.01em}
+.win-in .tool,.tool.tool{max-width:none}
+.tool>.lede,.tool>p,.lede{max-width:72ch}
+input[type=checkbox],input[type=radio],input[type=range],progress{accent-color:var(--accent)}
+input[type=checkbox],input[type=radio]{width:16px;height:16px;flex:none;margin:2px 0 0;cursor:pointer}
+input[type=range]{cursor:pointer}
+:where(a,button,input,select,textarea,summary,label,[tabindex]):focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+.card{box-shadow:0 1px 0 rgba(20,20,30,.03),0 10px 24px -20px rgba(20,20,30,.35)}
+.btn{min-height:38px;display:inline-flex;align-items:center;justify-content:center;gap:8px;transition:border-color .15s,background .15s,transform .1s}
+.btn:active:not(:disabled){transform:translateY(1px)}
+.btn:hover:not(:disabled){border-color:var(--ink)}
+.btn.primary:disabled{background:#c9c7bf;border-color:#c9c7bf;color:#fff;opacity:1}
+.hint{line-height:1.55}
+.input{transition:border-color .15s,box-shadow .15s}.input:focus{border-color:var(--ink);box-shadow:0 0 0 3px rgba(47,64,232,.12)}
+.perf-cards{grid-template-columns:repeat(auto-fit,minmax(200px,1fr))}
+.err-box{border-left:3px solid var(--bad,#c92a2a)}
+::selection{background:rgba(47,64,232,.18)}
 "#;

@@ -2701,7 +2701,8 @@ fn item_page(s: &State, gi: usize, m: usize) -> N {
         Target::Tool(t) => tool_view(s, *t),
         _ => txt(""),
     };
-    el("div").kid(head(name, GROUPS[gi].title)).kid(body).into()
+    // the group as a small label over the title, not as a sentence under it (owner, 2026-10-15: "enhance the ui")
+    el("div").kid(el("div").cls("head").kid(el("span").cls("eyebrow").text(GROUPS[gi].title)).kid(el("h1").text(*name))).kid(body).into()
 }
 
 /// What an endpoint answered, laid out: names and values; lists of records as rows.
