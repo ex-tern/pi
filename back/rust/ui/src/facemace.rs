@@ -444,6 +444,9 @@ pub struct Face {
     /// a named person's own folder (owner, 2026-10-15: "if a person is named, a folder in that name is created with
     /// all the pictures of that person ... renamed"): (file, person) → where its copy is in the folder
     named_written: BTreeMap<(usize, usize), String>,
+    /// only the people named are saved (owner, 2026-10-15: "add a scan for only named person option"): everyone is
+    /// still found (so that more can be named), but what is written and downloaded is only their photos
+    only_named: bool,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -617,6 +620,11 @@ fn face_update_inner(a: u16, v: String) {
             }
         }
         37 => refine_start(),
+        38 => {
+            f.only_named = !f.only_named;
+            face_remember();
+            live_relabel();
+        }
         1 => {
             let mut list: Vec<(u32, f64, String)> = v
                 .lines()
@@ -989,9 +997,6 @@ fn face_update_inner(a: u16, v: String) {
         }
         // a name settled (the field left): their files already renamed into the folder take it
         a if a >= 3000 => {
-            if !f.live_rename {
-                return;
-            }
             let Some(p) = f.result.as_ref().and_then(|r| r.groups.get((a - 3000) as usize)).and_then(|g| g.0.strip_prefix("Person_")).and_then(|x| x.parse::<usize>().ok()) else { return };
             let n: String = v.chars().take(60).collect();
             let k = format!("Person_{}", p);
@@ -2153,7 +2158,7 @@ fn people_json(f: &Face, max: usize, places: usize) -> (String, usize) {
 /// What is kept between visits on this device: the settings, and (unless turned off) the people and their names.
 fn face_remember() {
     let f = &st().face;
-    host::store_set("facemace:settings", &format!("{}\t{}\t{}\t{}\t{}\t{}", f.strict, f.dedupe as u8, f.by_date as u8, f.part_size, f.forget as u8, f.no_keep as u8));
+    host::store_set("facemace:settings", &format!("{}\t{}\t{}\t{}\t{}\t{}\t{}", f.strict, f.dedupe as u8, f.by_date as u8, f.part_size, f.forget as u8, f.no_keep as u8, f.only_named as u8));
     if f.forget {
         host::store_del("facemace:people");
         return;
@@ -2180,6 +2185,7 @@ fn face_restore() {
             f.part_size = p[3].parse().unwrap_or(0);
             f.forget = p[4] == "1";
             f.no_keep = p.get(5) == Some(&"1");
+            f.only_named = p.get(6) == Some(&"1");
         }
     }
     if let Some(v) = host::store_get("facemace:work").and_then(|t| json::parse(&t)) {
@@ -2494,6 +2500,10 @@ fn part_zip(k: usize) {
         }
     } else if let Some(r) = &f.result {
         for (g, idx) in &r.groups {
+            if !group_kept(f, g) {
+                continue;
+            }
+            let g = &group_folder(f, g);
             let mut used = Vec::new();
             for &i in idx.iter().filter(|&&i| i >= a && i < b) {
                 let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
@@ -2892,7 +2902,17 @@ fn live_relabel() {
             let new = renamed_path(*n, &if f.rename_only { String::new() } else { label_of(f, &people) }, f.file_when.get(*i).copied().unwrap_or(0), &f.files[*i].2);
             moves.push((*i, path.clone(), new, people));
         }
+        let mut gone: Vec<usize> = Vec::new();
         for (i, old, new, people) in moves {
+            if f.only_named && !people.iter().any(|p| person_folder(f, *p).is_some()) {
+                // only the people named: a file nobody named is in any more is taken out of the folder
+                if let Some(e) = f.live_written.get_mut(&i) {
+                    e.1 = people;
+                }
+                host::call("rmfile", &old);
+                gone.push(i);
+                continue;
+            }
             if new != old {
                 host::call("mvfile", &format!("{}\t{}", old, new));
             }
@@ -2906,16 +2926,41 @@ fn live_relabel() {
         for i in all {
             named_sync(i);
         }
+        let f = &mut st().face;
+        for i in gone {
+            f.live_written.remove(&i);
+        }
+        // only the people named: files with someone named now, not written yet, are written (with the next numbers)
+        if f.only_named && !f.rename_only {
+            let mut add: Vec<(usize, Vec<usize>)> = Vec::new();
+            for (i, ks) in member.iter() {
+                if f.live_written.contains_key(i) || *i >= f.files.len() {
+                    continue;
+                }
+                let people: Vec<usize> = ks.iter().filter_map(|k| k.strip_prefix("Person_")).filter_map(|x| x.parse().ok()).collect();
+                if people.iter().any(|p| person_folder(f, *p).is_some()) {
+                    add.push((*i, people));
+                }
+            }
+            for (i, people) in add {
+                live_rename_write(i, &people);
+            }
+        }
         return;
     }
     // person folders: named after the person once named
-    let folder = |k: &str| f.names.get(k).map(|n| file_safe(n)).filter(|n| !n.is_empty()).unwrap_or_else(|| k.to_string());
     let mut jobs: Vec<(usize, Vec<String>)> = Vec::new();
-    for (i, have) in f.sorted_written.iter() {
-        let base = have.first().and_then(|p| p.rsplit('/').next()).unwrap_or("photo").to_string();
-        let want: Vec<String> = member.get(i).map(|v| v.iter().map(|k| format!("{}/{}", folder(k), base)).collect()).unwrap_or_default();
-        if &want != have {
-            jobs.push((*i, want));
+    let mut files: Vec<usize> = f.sorted_written.keys().copied().collect();
+    if f.only_named {
+        // files with someone named now, not written yet
+        files.extend(member.keys().copied().filter(|i| !f.sorted_written.contains_key(i)));
+    }
+    for i in files {
+        let have = f.sorted_written.get(&i).cloned().unwrap_or_default();
+        let base = have.first().and_then(|p| p.rsplit('/').next()).map(|x| x.to_string()).unwrap_or_else(|| f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string());
+        let want: Vec<String> = member.get(&i).map(|v| v.iter().filter(|k| group_kept(f, k)).map(|k| format!("{}/{}", group_folder(f, k), base)).collect()).unwrap_or_default();
+        if want != have {
+            jobs.push((i, want));
         }
     }
     for (i, want) in jobs {
@@ -2944,7 +2989,10 @@ fn face_zip() {
     if f.by_date {
         // every photo and video once; named when its date is known
         let mut seen: Vec<usize> = Vec::new();
-        for (_, idx) in &r.groups {
+        for (k, idx) in &r.groups {
+            if !group_kept(f, k) {
+                continue;
+            }
             for &i in idx {
                 if !seen.contains(&i) {
                     seen.push(i);
@@ -2960,6 +3008,10 @@ fn face_zip() {
     }
     let mut want = Vec::new();
     for (k, idx) in &r.groups {
+        if !group_kept(f, k) {
+            continue;
+        }
+        let k = &group_folder(f, k);
         let mut used: Vec<String> = Vec::new();
         for &i in idx {
             let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").replace(['\t', '\n'], " ");
@@ -3025,14 +3077,23 @@ fn live_save(i: usize) {
         }
     }
     if f.live_rename {
+        if f.only_named && !people.iter().any(|p| person_folder(f, *p).is_some()) {
+            return;
+        }
         live_rename_write(i, &people);
         return;
+    }
+    if f.only_named {
+        people.retain(|p| person_folder(f, *p).is_some());
+        if people.is_empty() {
+            return;
+        }
     }
     let groups: Vec<String> = if people.is_empty() { alloc::vec!["No_Faces_Detected".to_string()] } else { people.iter().map(|p| format!("Person_{}", p)).collect() };
     let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
     for g in groups {
         let name = unique_in(f.live_used.entry(g.clone()).or_default(), &base);
-        let path = format!("{}/{}", g, name);
+        let path = format!("{}/{}", group_folder(f, &g), name);
         f.sorted_written.entry(i).or_default().push(path.clone());
         out_save(&path, f.files[i].0);
     }
@@ -3050,10 +3111,16 @@ fn face_save_sorted() {
     let Some(r) = &f.result else { return };
     let mut list: Vec<(String, u32)> = Vec::new();
     for (k, idx) in &r.groups {
+        if !group_kept(f, k) {
+            continue;
+        }
+        let dir = group_folder(f, k);
         let mut used = Vec::new();
         for &i in idx {
             let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
-            list.push((format!("{}/{}", k, unique_in(&mut used, &base)), f.files[i].0));
+            let path = format!("{}/{}", dir, unique_in(&mut used, &base));
+            f.sorted_written.entry(i).or_default().push(path.clone());
+            list.push((path, f.files[i].0));
         }
     }
     for (p, h) in list {
@@ -3331,6 +3398,16 @@ fn live_rename_write(i: usize, people: &[usize]) {
 /// The folder a named person has of their own, by their name: copies of their files, named as in Renamed_by_date
 /// (0000005-Eileen Collins-1397-2019.jpg). A file written already follows: renamed, moved or taken out as the
 /// names and who is in it change.
+/// A group's folder: its person's name once named, else as it is (Person_3, No_Faces_Detected).
+fn group_folder(f: &Face, k: &str) -> String {
+    f.names.get(k).map(|n| file_safe(n)).filter(|n| !n.is_empty()).unwrap_or_else(|| k.to_string())
+}
+
+/// Whether a group is saved: always, or (only the people named) when it is a person who has a name.
+fn group_kept(f: &Face, k: &str) -> bool {
+    !f.only_named || (k.starts_with("Person_") && f.names.get(k).map(|n| !n.trim().is_empty()).unwrap_or(false))
+}
+
 fn person_folder(f: &Face, p: usize) -> Option<String> {
     f.names.get(&format!("Person_{}", p)).map(|n| file_safe(n)).filter(|n| !n.is_empty())
 }
@@ -3941,6 +4018,7 @@ fn face_view(s: &State) -> N {
                 )
                 .kid(el("p").cls("hint").text("Lower is stricter: more people, each with fewer photos. Higher groups more together. Faces are found once, so trying another strictness is quick."))
                 .kid(check(!f.no_keep, 36, "Keep getting surer after the sort", "It never finishes: after the sort it goes on, a few photos at a time, looking again more closely (in more detail, and in parts of each photo) at those it is least sure of or found no face in, then sorting everyone again with what it learned. The results and the folder follow as it goes. Stop ends it."))
+                .kid(check(f.only_named, 38, "Only the people named", "Everyone is still found (so that you can name more), but only the photos of people with a name are saved into the folder or the ZIP: name someone, or have them remembered from last time, and their photos follow. Photos of no one named are left out."))
                 .kid(check(!f.no_wake, 34, "Keep the computer awake while it works", "Windows (or the Mac) does not go to sleep in the middle of a long sort; it can again when Face Mace is done."))
                 .kid(check(f.dedupe, 9, "Delete duplicates", "A photo or video that is there twice (copied, saved again or resized) is kept once, the biggest. Your original folder is not changed."))
                 .kid(
@@ -4202,6 +4280,7 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                                 face_bubble(f, ai, ab, Some(gi), 48, &format!("{} — open the photo", f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| label(k))))
                             })
                             .kid(el("h3").text(format!("{} · {} photo{}", f.names.get(k).cloned().unwrap_or_else(|| label(k)), idx.len(), if idx.len() == 1 { "" } else { "s" })))
+                            .kid_if(!group_kept(f, k), || el("span").cls("fm-unsaved").attr("title", "Only the people named are saved: give a name to save these").text("not saved").into())
                             .kid_if(r.conf.get(gi).copied().unwrap_or(0.0) > 0.0, || {
                                 let c = r.conf[gi];
                                 el("span").cls("fm-sure").cls(sure_cls(c)).attr("title", "How surely these are one person").text(format!("{} sure", pct(c))).into()
@@ -4339,6 +4418,7 @@ const FACE_CSS: &str = "\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\
 .fm-progress{margin:14px 0}\
+.fm-unsaved{font-size:12px;color:var(--muted);border:1px dashed var(--line);border-radius:999px;padding:1px 8px}\
 .fm-sources{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0;justify-content:center}.fm-src{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 10px;border:1px solid var(--line);border-radius:999px;font-size:13px}.fm-src-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}.fm-src small{color:var(--muted)}.fm-src-x{border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:999px}.fm-src-x:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 8%,transparent)}.fm-src-clear{padding:4px 10px;font-size:13px}\
 .fm-refine{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--accent,#3b82f6) 6%,transparent)}.fm-refine .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fm-refine .row .btn{margin-left:auto}.fm-refine p{margin:6px 0}.fm-refine .md-bar{margin:8px 0}.fm-now-in{margin:4px 0 0;padding:4px 2px}.fm-refine-off{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}\
 .fm-group{margin:16px 0}.fm-group h3{margin:0 0 8px}\
