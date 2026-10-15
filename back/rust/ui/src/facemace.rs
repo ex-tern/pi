@@ -320,6 +320,8 @@ pub struct Face {
     out_asked: usize,
     out_saved: usize,
     out_msg: String,
+    /// the folder picker is open (the box shows ticked until it answers)
+    out_picking: bool,
     /// sorting into it as each photo is scanned: the faces known so far (person, histogram), the next person's
     /// number, the names already used in each person's folder
     live_clusters: Clusters,
@@ -661,7 +663,9 @@ fn face_update_inner(a: u16, v: String) {
         7 => {
             f.out_msg.clear();
             let day = date_of_epoch(host::now() / 1000.0).replace(' ', "-");
+            f.out_picking = true;
             if host::call("pickdir", &format!("Face Mace {}", day)).is_none() {
+                f.out_picking = false;
                 f.out_msg = "This browser cannot save into a folder (Chrome and Edge can): use the ZIP instead.".into();
             }
         }
@@ -2471,6 +2475,9 @@ fn out_answer(m: &str) {
 
 fn out_answer_inner(m: &str) {
     let f = &mut st().face;
+    if m.starts_with("dir ") || m.starts_with("error ") {
+        f.out_picking = false;
+    }
     if let Some(n) = m.strip_prefix("dir ") {
         f.out_dir = Some(n.to_string());
         f.out_asked = 0;
@@ -3278,16 +3285,22 @@ fn face_view(s: &State) -> N {
                 )
                 .kid(check(f.by_date, 5, "Rename by date", "Numbered in the order they were taken, then who is in them and the year, Persian and Gregorian: 0000001-Anna-1382-2004.jpg, in folders of a thousand."))
                 .kid({
+                    let on = f.out_dir.is_some() || f.out_picking;
                     let mut d = el("div").cls("fm-out");
-                    d = match &f.out_dir {
-                        Some(n) => d
-                            .kid(el("p").kid(txt("Saving into ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": each file renamed as soon as it is looked at (the dates are read first). Name a person and their files are renamed there too." } else { ": each photo into its person's folder as soon as it is scanned." })))
-                            .kid_if(f.out_asked > 0, || el("p").cls("hint").text(format!("{} of {} saved", f.out_saved, f.out_asked)).into())
-                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 8, String::new())).text("Stop saving to the folder")),
-                        None if can => d
-                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 7, String::new())).text("Save into a folder as it works…"))
-                            .kid(el("p").cls("hint").text("Or download a ZIP when it is done.")),
-                        None => d.kid(el("p").cls("hint").text("The result downloads as a ZIP. (Saving straight into a folder needs Chrome or Edge.)")),
+                    d = if can {
+                        let more = match &f.out_dir {
+                            Some(_) => if f.by_date { "Each file is renamed into it as soon as it is looked at (the dates are read first). Name a person and their files are renamed there too." } else { "Each photo goes into its person's folder as soon as it is scanned." },
+                            None => "Choose a folder; each photo goes into it as soon as it is done. Otherwise download a ZIP when it is done.",
+                        };
+                        d.kid(check(on, if f.out_dir.is_some() { 8 } else { 7 }, "Save into a folder as it works", more))
+                            .kid_if(f.out_dir.is_some(), || {
+                                el("p").cls("hint fm-out-at")
+                                    .kid(txt("Folder: ")).kid(el("b").text(f.out_dir.clone().unwrap_or_default()))
+                                    .kid(txt(if f.out_asked > 0 { format!(" · {} of {} saved", f.out_saved, f.out_asked) } else { String::new() }))
+                                    .into()
+                            })
+                    } else {
+                        d.kid(el("p").cls("hint").text("The result downloads as a ZIP. (Saving straight into a folder needs Chrome or Edge.)"))
                     };
                     d.kid_if(!f.out_msg.is_empty(), || el("p").cls("hint warn").text(f.out_msg.clone()).into())
                 }),
