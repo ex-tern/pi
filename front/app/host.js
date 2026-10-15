@@ -461,7 +461,17 @@ async function outRun() {
   outBusy = true;
   try {
     while (outQ.length && outDir) {
-      const [path, idx] = outQ.shift(), parts = path.split("/").filter(Boolean), name = parts.pop();
+      const job = outQ.shift();
+      if (job.mv) {
+        // a file already written, renamed in place (a person named after their photos were saved)
+        const [from, to] = job.mv, fp = from.split("/").filter(Boolean), tp = to.split("/").filter(Boolean), oldName = fp.pop(), newName = tp.pop();
+        let d = outDir; for (const p of fp) d = await d.getDirectoryHandle(p, { create: true });
+        const fh = await d.getFileHandle(oldName);
+        if (typeof fh.move === "function") await fh.move(newName);
+        else { const data = await fh.getFile(), nh = await d.getFileHandle(newName, { create: true }), w = await nh.createWritable(); await w.write(data); await w.close(); await d.removeEntry(oldName); }
+        continue;
+      }
+      const [path, idx] = job, parts = path.split("/").filter(Boolean), name = parts.pop();
       let d = outDir;
       for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
       const fh = await d.getFileHandle(name, { create: true }), w = await fh.createWritable();
@@ -656,6 +666,14 @@ const ops = {
   },
   // Face Mace's Stop: what waits to be written into the folder is dropped, and a ZIP being made is given up
   "save-stop": () => { outQ = []; return "1"; },
+  // a file written into the folder, renamed: "from\tto" (paths in the folder, same place, new name)
+  mvfile: (a) => {
+    if (!outDir) return null;
+    const [from, to] = a.split("\t");
+    outQ.push({ mv: [from, to] });
+    if (!outBusy) outRun();
+    return "1";
+  },
   "zip-stop": () => { zipStop = true; return "1"; },
   // a ZIP of chosen files: its name, then a line "path\tfile" for each
   zip: (a) => {

@@ -357,6 +357,14 @@ pub struct Face {
     /// only looked at for duplicates (quick), and nobody's name goes into the file names
     rename_only: bool,
     quick: bool,
+    /// renamed into the folder while it works (owner, 2026-10-15: "show the renamed pictures in the folder that's
+    /// selected real time"): the dates are read first, the files put in that order, and each is written with its
+    /// number as soon as it is looked at; a person named later has their files renamed in the folder
+    pre_dating: bool,
+    live_rename: bool,
+    live_no: u64,
+    file_when: Vec<u64>,
+    live_written: BTreeMap<usize, (u64, Vec<usize>, String)>,
 }
 
 struct FaceResult {
@@ -498,6 +506,12 @@ fn face_update(a: u16, v: String) {
             f.stopped = false;
             f.rename_only = false;
             f.quick = false;
+            f.live_rename = false;
+            if f.by_date && f.out_dir.is_some() && f.faces.len() != f.files.len() {
+                f.started = host::now();
+                predate_start();
+                return;
+            }
             f.running = true;
             f.started = host::now();
             f.live_known.clear();
@@ -560,7 +574,12 @@ fn face_update(a: u16, v: String) {
             f.rename_only = true;
             f.by_date = true;
             f.stopped = false;
+            f.live_rename = false;
             f.started = host::now();
+            if f.out_dir.is_some() {
+                predate_start();
+                return;
+            }
             f.live_known.clear();
             f.live_idx.clear();
             f.faces.clear();
@@ -592,6 +611,10 @@ fn face_update(a: u16, v: String) {
                 f.msg = format!("Stopped after {} of {}. Sort by face goes on from there.", f.faces.len(), f.files.len());
             }
             let f = &mut st().face;
+            if f.pre_dating {
+                f.pre_dating = false;
+                f.running = false;
+            }
             if f.date_k < f.date_list.len() {
                 f.date_list.clear();
                 f.date_k = 0;
@@ -602,6 +625,21 @@ fn face_update(a: u16, v: String) {
             if f.out_asked > f.out_saved {
                 f.out_asked = f.out_saved;
             }
+        }
+        // a name settled (the field left): their files already renamed into the folder take it
+        a if a >= 3000 => {
+            if !f.live_rename {
+                return;
+            }
+            let Some(p) = f.result.as_ref().and_then(|r| r.groups.get((a - 3000) as usize)).and_then(|g| g.0.strip_prefix("Person_")).and_then(|x| x.parse::<usize>().ok()) else { return };
+            let n: String = v.chars().take(60).collect();
+            let k = format!("Person_{}", p);
+            if n.trim().is_empty() {
+                f.names.remove(&k);
+            } else {
+                f.names.insert(k, n);
+            }
+            live_rename_person(p);
         }
         // a name for the person of group a - 1000
         a if a >= 1000 => {
@@ -1073,6 +1111,11 @@ fn face_finish() {
     face_compute(true);
     let f = &mut st().face;
     f.running = false;
+    if f.live_rename {
+        f.quick = false;
+        f.msg = format!("Renamed into the folder as it went: {} files.", f.live_no);
+        return;
+    }
     if f.rename_only {
         f.quick = false;
         face_zip();
@@ -1106,7 +1149,8 @@ fn face_compute(done: bool) {
     if f.dedupe {
         // the biggest file of each set is the one kept (normally the original; a copy made smaller is let go)
         let mut order: Vec<usize> = (0..f.faces.len()).collect();
-        order.sort_by(|&a, &b| f.files[b].1.partial_cmp(&f.files[a].1).unwrap_or(core::cmp::Ordering::Equal).then_with(|| f.files[a].2.cmp(&f.files[b].2)));
+        // renamed as it went: the first of each set was the one written (they come in date order)
+        if !f.live_rename { order.sort_by(|&a, &b| f.files[b].1.partial_cmp(&f.files[a].1).unwrap_or(core::cmp::Ordering::Equal).then_with(|| f.files[a].2.cmp(&f.files[b].2))); }
         let mut idx = BTreeMap::new();
         for i in order {
             if let Some(j) = dup_check(f, i, &mut idx) {
@@ -1295,7 +1339,7 @@ fn unique_in(used: &mut Vec<String>, base: &str) -> String {
 /// uses (so the folder matches the result).
 fn live_save(i: usize) {
     let f = &mut st().face;
-    if f.out_dir.is_none() || f.by_date {
+    if f.out_dir.is_none() || (f.by_date && !f.live_rename) {
         return;
     }
     if f.dedupe {
@@ -1306,7 +1350,12 @@ fn live_save(i: usize) {
             return;
         }
     }
-    let Some(Some(hs)) = f.faces.get(i).cloned() else { return };
+    let hs = match f.faces.get(i).cloned() {
+        Some(Some(hs)) => hs,
+        // unreadable: still renamed, as unknown
+        Some(None) if f.live_rename => Vec::new(),
+        _ => return,
+    };
     let mut people: Vec<usize> = Vec::new();
     for h in hs.iter() {
         let mut best = 0usize;
@@ -1328,6 +1377,10 @@ fn live_save(i: usize) {
         if !people.contains(&id) {
             people.push(id);
         }
+    }
+    if f.live_rename {
+        live_rename_write(i, &people);
+        return;
     }
     let groups: Vec<String> = if people.is_empty() { alloc::vec!["No_Faces_Detected".to_string()] } else { people.iter().map(|p| format!("Person_{}", p)).collect() };
     let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
@@ -1519,9 +1572,124 @@ fn date_got(data: Vec<u8>) {
     }
 }
 
+/// Renamed_by_date/0000001-0001000/0000001-Anna-1382-2004.jpg: the number, who (may be empty), the years.
+fn renamed_path(n: u64, who: &str, when: u64, name: &str) -> String {
+    let ext = face_ext(name);
+    let ext = if ext.is_empty() || ext.len() > 5 { "jpg".to_string() } else { ext };
+    let years = years_of(when).map(|(p, g)| format!("-{}-{}", p, g)).unwrap_or_default();
+    let first = (n - 1) / 1000 * 1000 + 1;
+    format!("Renamed_by_date/{:07}-{:07}/{:07}{}{}.{}", first, first + 999, n, if who.is_empty() { String::new() } else { format!("-{}", who) }, years, ext)
+}
+
+/// Who is in a photo, for its name: the people named so far; "unknown" when nobody in it is named.
+fn label_of(f: &Face, people: &[usize]) -> String {
+    let mut names: Vec<String> = Vec::new();
+    for p in people {
+        if let Some(n) = f.names.get(&format!("Person_{}", p)).map(|n| file_safe(n)).filter(|n| !n.is_empty()) {
+            if !names.contains(&n) {
+                names.push(n);
+            }
+        }
+    }
+    if names.is_empty() { "unknown".to_string() } else { names.join("-") }
+}
+
+/// The dates are all read before anything is looked at (when renaming into a folder): the files are put in that
+/// order, so each can be written with its number as soon as it is done.
+fn predate_start() {
+    let f = &mut st().face;
+    f.pre_dating = true;
+    f.running = true;
+    f.date_list = (0..f.files.len()).collect();
+    f.date_k = 0;
+    f.dates.clear();
+    f.msg = "Reading when each was taken…".to_string();
+    date_begin();
+}
+
+fn predate_done() {
+    let f = &mut st().face;
+    f.pre_dating = false;
+    let mut items: Vec<(u64, usize)> = f.dates.iter().map(|(i, w)| (*w, *i)).collect();
+    items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| f.files[a.1].2.cmp(&f.files[b.1].2)));
+    f.files = items.iter().map(|(_, i)| f.files[*i].clone()).collect();
+    f.file_when = items.iter().map(|(w, _)| *w).collect();
+    f.thumb_cache.clear();
+    f.faces.clear();
+    f.pics.clear();
+    f.live_rename = true;
+    f.live_no = 0;
+    f.live_written.clear();
+    f.live_known.clear();
+    f.live_next = 1;
+    f.live_idx.clear();
+    f.at = 0;
+    f.msg.clear();
+    if f.rename_only && !f.dedupe {
+        // nothing to look at: each written now, in order
+        for i in 0..f.files.len() {
+            live_rename_write(i, &[]);
+        }
+        let f = &mut st().face;
+        let all: Vec<usize> = (0..f.files.len()).collect();
+        f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: host::now() - f.started, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true });
+        f.running = false;
+        return;
+    }
+    if f.rename_only {
+        f.quick = true;
+        face_next();
+        return;
+    }
+    if f.ml == 0 {
+        f.ml = 1;
+        host::call("ml-load", "");
+    }
+    face_load();
+    if face_ready(f) {
+        face_next();
+    }
+}
+
+/// One file, renamed into the folder now: the next number, who is in it as far as is known.
+fn live_rename_write(i: usize, people: &[usize]) {
+    let f = &mut st().face;
+    f.live_no += 1;
+    let n = f.live_no;
+    let who = if f.rename_only { String::new() } else { label_of(f, people) };
+    let path = renamed_path(n, &who, f.file_when.get(i).copied().unwrap_or(0), &f.files[i].2);
+    let h = f.files[i].0;
+    f.live_written.insert(i, (n, people.to_vec(), path.clone()));
+    out_save(&path, h);
+}
+
+/// A person was named: their files already in the folder take the name.
+fn live_rename_person(p: usize) {
+    let f = &mut st().face;
+    let mut moves: Vec<(usize, String, String)> = Vec::new();
+    for (i, (n, people, path)) in f.live_written.iter() {
+        if people.contains(&p) {
+            let new = renamed_path(*n, &label_of(f, people), f.file_when.get(*i).copied().unwrap_or(0), &f.files[*i].2);
+            if &new != path {
+                moves.push((*i, path.clone(), new));
+            }
+        }
+    }
+    for (i, old, new) in moves {
+        host::call("mvfile", &format!("{}\t{}", old, new));
+        if let Some(e) = f.live_written.get_mut(&i) {
+            e.2 = new;
+        }
+    }
+}
+
 /// Every file dated: numbered in that order and named after who is in it.
 fn date_done() {
     let f = &mut st().face;
+    if f.pre_dating {
+        predate_done();
+        return;
+    }
     let labels = face_labels(f);
     let mut items: Vec<(u64, String, usize)> = f.dates.iter().map(|(i, w)| (*w, f.files[*i].2.clone(), *i)).collect();
     items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
@@ -1950,7 +2118,7 @@ fn face_view(s: &State) -> N {
                     let mut d = el("div").cls("fm-out");
                     d = match &f.out_dir {
                         Some(n) => d
-                            .kid(el("p").kid(txt("Saving into ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": the renamed files, as soon as their names are known." } else { ": each photo into its person's folder as soon as it is scanned." })))
+                            .kid(el("p").kid(txt("Saving into ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": each file renamed as soon as it is looked at (the dates are read first). Name a person and their files are renamed there too." } else { ": each photo into its person's folder as soon as it is scanned." })))
                             .kid_if(f.out_asked > 0, || el("p").cls("hint").text(format!("{} of {} saved", f.out_saved, f.out_asked)).into())
                             .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 8, String::new())).text("Stop saving to the folder")),
                         None if can => d
@@ -1974,8 +2142,8 @@ fn face_view(s: &State) -> N {
         root = root.kid(
             el("div")
                 .cls("fm-progress")
-                .kid(el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * f.at as f64 / total as f64))))
-                .kid(el("p").cls("hint").text(if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
+                .kid(el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * (if f.pre_dating { f.date_k } else { f.at }) as f64 / total as f64))))
+                .kid(el("p").cls("hint").text(if f.pre_dating { format!("Reading when each was taken: {} of {}…", f.date_k + 1, f.files.len()) } else if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
         );
     }
     // packing a ZIP, reading dates or saving into the folder can be stopped too
@@ -1996,7 +2164,7 @@ fn face_view(s: &State) -> N {
             )
             .kid_if(!r.done, || el("p").cls("fm-live").text(format!("Live: {} of {} looked at so far", f.faces.len(), f.files.len())).into())
             .kid_if(r.done && r.overall.is_some(), || el("p").cls("hint").text("Confidence is how closely each face matches the others of its person: 50% is the line between the same and someone else, above 90% is a clear match. A person seen only once has no figure.").into())
-            .kid(el("div").cls("row fm-actions").kid_if(busy && !f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into()).kid(el("button").attr("type", "button").cls("btn primary").attr_if(!r.done, "disabled", "").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid(el("div").cls("row fm-actions").kid_if(busy && !f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into()).kid(el("button").attr("type", "button").cls("btn primary").attr_if(!r.done, "disabled", "").on("click", Msg::T(Tool::Face, 4, String::new())).attr_if(f.live_rename, "disabled", "").text(match (f.by_date, f.out_dir.is_some()) { _ if f.live_rename => "Renamed into the folder as it went", (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
             .kid_if(!f.engines_used.is_empty(), || {
                 el("p").cls("hint").text(format!("Engines: {}{}.", f.engines_used, if f.ml == 3 && !f.ml_err.is_empty() { format!(" (the neural ones could not start here: {})", f.ml_err) } else { String::new() })).into()
@@ -2034,6 +2202,7 @@ fn face_view(s: &State) -> N {
                                     .attr("aria-label", format!("Name for {}", label(k)))
                                     .prop("value", f.names.get(k).cloned().unwrap_or_default())
                                     .on("input", Msg::TV(Tool::Face, 1000 + gi as u16))
+                                    .on("change", Msg::TV(Tool::Face, 3000 + gi as u16))
                                     .into()
                             }),
                     )
