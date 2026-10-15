@@ -381,6 +381,11 @@ pub struct Face {
     merge: BTreeMap<usize, usize>,
     expanded: alloc::collections::BTreeSet<usize>,
     sorted_written: BTreeMap<usize, Vec<String>>,
+    /// saving (owner, 2026-10-15: "add some saving capabilities"): people and settings remembered on this device
+    /// (unless turned off), and the answers of a saved work file waiting for its photos to be chosen
+    forget: bool,
+    restored: bool,
+    pending: Vec<(String, u64, usize, bool)>,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -451,6 +456,7 @@ const YN: usize = 640;
 const ZIP_TOKEN: u32 = 2_000_000;
 
 fn face_load() {
+    face_restore();
     let s = st();
     if s.face.strict == 0.0 {
         s.face.strict = 75.0;
@@ -548,11 +554,14 @@ fn face_update(a: u16, v: String) {
             f.thumb_cache.clear();
             f.confirm.clear();
             f.reject.clear();
-            f.merge.clear();
             f.sorted_written.clear();
+            work_apply_pending();
             f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
-        2 => f.strict = v.parse().unwrap_or(75.0),
+        2 => {
+            f.strict = v.parse().unwrap_or(75.0);
+            face_remember();
+        }
         3 => {
             if f.files.is_empty() || f.running {
                 return;
@@ -620,6 +629,7 @@ fn face_update(a: u16, v: String) {
         }
         9 => {
             f.dedupe = !f.dedupe;
+            face_remember();
             // faces and fingerprints are kept: the result is worked out again at once
             if f.result.is_some() && f.faces.len() == f.files.len() && !f.running {
                 face_finish();
@@ -630,7 +640,10 @@ fn face_update(a: u16, v: String) {
             let lines: Vec<String> = r.dups.iter().map(|(d, k)| format!("{}\tthe same as\t{}", f.files[*d].2, f.files[*k].2)).collect();
             host::download("Face Mace duplicates.txt", "text/plain", format!("Duplicates Face Mace left out ({}): delete these from the original folder if you wish.\n\n{}\n", lines.len(), lines.join("\n")).as_bytes());
         }
-        5 => f.by_date = !f.by_date,
+        5 => {
+            f.by_date = !f.by_date;
+            face_remember();
+        }
         // the person sorting: yes, this is them / no / move to / merge / all their photos
         20 | 21 | 22 | 23 | 24 => {
             let nums: Vec<usize> = v.split('\t').filter_map(|x| x.parse().ok()).collect();
@@ -670,7 +683,23 @@ fn face_update(a: u16, v: String) {
                 face_compute(true);
             }
         }
-        13 => f.part_size = v.trim().parse::<usize>().unwrap_or(0).min(1_000_000),
+        // saving
+        30 => {
+            f.forget = !f.forget;
+            face_remember();
+        }
+        31 => {
+            host::store_del("facemace:people");
+            f.imported.clear();
+            f.live_clusters = Clusters::default();
+            f.msg = "The people remembered on this device are forgotten.".into();
+        }
+        32 => work_save(),
+        33 => list_csv(),
+        13 => {
+            f.part_size = v.trim().parse::<usize>().unwrap_or(0).min(1_000_000);
+            face_remember();
+        }
         14 => f.show_all = !f.show_all,
         // the people found, saved as a file (their names and up to forty faces each, as numbers: no pictures)
         16 => {
@@ -1286,12 +1315,181 @@ fn face_preview() {
 }
 
 /// People saved before, loaded: they are matched first, and their names go into the results and file names.
+/// The people found, as JSON: their names and up to `max` faces each (as numbers; no pictures).
+fn people_json(f: &Face, max: usize, places: usize) -> (String, usize) {
+    let mut list: Vec<(usize, Vec<Vec<f32>>)> = f.last_people.clone();
+    for p in &f.imported {
+        if !list.iter().any(|q| q.0 == p.0) {
+            list.push(p.clone());
+        }
+    }
+    let people: Vec<String> = list
+        .iter()
+        .filter(|p| p.1.first().map(|e| e.len() == 128).unwrap_or(false))
+        .map(|(id, ex)| {
+            let faces: Vec<String> = ex.iter().take(max).map(|e| format!("[{}]", e.iter().map(|v| format!("{:.*}", places, v)).collect::<Vec<_>>().join(","))).collect();
+            format!("{{\"id\":{},\"name\":{},\"faces\":[{}]}}", id, json::quote(f.names.get(&format!("Person_{}", id)).map(|s| s.as_str()).unwrap_or("")), faces.join(","))
+        })
+        .collect();
+    (format!("[{}]", people.join(",")), people.len())
+}
+
+/// What is kept between visits on this device: the settings, and (unless turned off) the people and their names.
+fn face_remember() {
+    let f = &st().face;
+    host::store_set("facemace:settings", &format!("{}\t{}\t{}\t{}\t{}", f.strict, f.dedupe as u8, f.by_date as u8, f.part_size, f.forget as u8));
+    if f.forget {
+        host::store_del("facemace:people");
+        return;
+    }
+    let (people, n) = people_json(f, 10, 3);
+    if n > 0 {
+        host::store_set("facemace:people", &format!("{{\"facemace_people\":1,\"engine\":\"sface\",\"people\":{}}}", people));
+    }
+}
+
+/// On opening Face Mace: the settings and the people remembered last time.
+fn face_restore() {
+    let f = &mut st().face;
+    if f.restored {
+        return;
+    }
+    f.restored = true;
+    if let Some(t) = host::store_get("facemace:settings") {
+        let p: Vec<&str> = t.split('\t').collect();
+        if p.len() >= 5 {
+            f.strict = p[0].parse().unwrap_or(75.0);
+            f.dedupe = p[1] == "1";
+            f.by_date = p[2] == "1";
+            f.part_size = p[3].parse().unwrap_or(0);
+            f.forget = p[4] == "1";
+        }
+    }
+    if !f.forget {
+        if let Some(t) = host::store_get("facemace:people") {
+            people_import(&t);
+            let f = &mut st().face;
+            if !f.imported.is_empty() {
+                f.msg = format!("{} people remembered from last time.", f.imported.len());
+            }
+        }
+    }
+}
+
+/// Everything about this work, as a file to open again later (here or elsewhere): settings, people and names, and
+/// every answer given (by file name and size, since the photos are chosen again).
+fn work_save() {
+    let f = &mut st().face;
+    let key = |i: usize| (f.files[i].2.clone(), f.files[i].1 as u64);
+    let mut answers: Vec<String> = Vec::new();
+    for (&i, &p) in f.confirm.iter() {
+        if i < f.files.len() {
+            let (n, z) = key(i);
+            answers.push(format!("[{},{},{},1]", json::quote(&n), z, p));
+        }
+    }
+    for &(i, p) in f.reject.iter() {
+        if i < f.files.len() {
+            let (n, z) = key(i);
+            answers.push(format!("[{},{},{},0]", json::quote(&n), z, p));
+        }
+    }
+    let merges: Vec<String> = f.merge.iter().map(|(a, b)| format!("[{},{}]", a, b)).collect();
+    let names: Vec<String> = f.names.iter().map(|(k, v)| format!("{}:{}", json::quote(k), json::quote(v))).collect();
+    let (people, n) = people_json(f, 40, 4);
+    let body = format!(
+        "{{\"facemace_work\":1,\"facemace_people\":1,\"saved\":{:.0},\"settings\":{{\"strict\":{},\"dedupe\":{},\"by_date\":{},\"part_size\":{}}},\"people\":{},\"names\":{{{}}},\"answers\":[{}],\"merges\":[{}],\"files\":{}}}",
+        host::now(),
+        f.strict,
+        f.dedupe,
+        f.by_date,
+        f.part_size,
+        people,
+        names.join(","),
+        answers.join(","),
+        merges.join(","),
+        f.files.len()
+    );
+    let day = date_of_epoch(host::now() / 1000.0).replace(' ', "-");
+    host::download(&format!("Face Mace work {}.json", day), "application/json", body.as_bytes());
+    f.msg = format!("Work saved: {} people, {} answers. Open it next time after choosing the same photos.", n, answers.len());
+}
+
+/// A saved work file's answers, put on the photos chosen now (matched by name and size).
+fn work_apply_pending() {
+    let f = &mut st().face;
+    if f.pending.is_empty() || f.files.is_empty() {
+        return;
+    }
+    let pending = core::mem::take(&mut f.pending);
+    let mut hit = 0;
+    for (name, size, p, yes) in pending.iter() {
+        if let Some(i) = f.files.iter().position(|x| &x.2 == name && x.1 as u64 == *size) {
+            hit += 1;
+            if *yes {
+                f.confirm.insert(i, *p);
+            } else {
+                f.reject.insert((i, *p));
+            }
+        }
+    }
+    f.msg = format!("{} of {} saved answers matched these photos.", hit, pending.len());
+}
+
+/// Every file, who is in it, how sure, and its new name: a list to open in a spreadsheet.
+fn list_csv() {
+    let f = &st().face;
+    let Some(r) = &f.result else { return };
+    let q = |x: &str| format!("\"{}\"", x.replace('"', "\"\""));
+    let mut who: BTreeMap<usize, Vec<(String, Option<f64>)>> = BTreeMap::new();
+    for (gi, (k, idx)) in r.groups.iter().enumerate() {
+        let name = if k.starts_with("Person_") { f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| k.replace('_', " ")) } else { k.replace('_', " ") };
+        for &i in idx {
+            let c = if f.confirm.get(&i).map(|p| format!("Person_{}", p)) == Some(k.clone()) { Some(1.0) } else { r.photo_conf.get(&(gi, i)).copied() };
+            who.entry(i).or_default().push((name.clone(), c));
+        }
+    }
+    let dups: BTreeMap<usize, usize> = r.dups.iter().copied().collect();
+    let mut lines = alloc::vec!["file,people,confidence,new name,note".to_string()];
+    for (i, file) in f.files.iter().enumerate().take(f.faces.len().max(if f.live_rename { f.files.len() } else { 0 })) {
+        let w = who.get(&i);
+        let people = w.map(|v| v.iter().map(|x| x.0.clone()).collect::<Vec<_>>().join("; ")).unwrap_or_default();
+        let conf = w.and_then(|v| v.iter().filter_map(|x| x.1).fold(None, |a: Option<f64>, b| Some(a.map_or(b, |a| a.max(b))))).map(|c| format!("{:.0}%", c * 100.0)).unwrap_or_default();
+        let new = f.live_written.get(&i).map(|e| e.2.rsplit('/').next().unwrap_or("").to_string()).unwrap_or_default();
+        let note = if let Some(k) = dups.get(&i) { format!("duplicate of {}", f.files[*k].2) } else if f.confirm.contains_key(&i) { "confirmed".to_string() } else { String::new() };
+        lines.push(format!("{},{},{},{},{}", q(&file.2), q(&people), conf, q(&new), q(&note)));
+    }
+    host::download("Face Mace list.csv", "text/csv", lines.join("\r\n").as_bytes());
+}
+
 fn people_import(text: &str) {
     let f = &mut st().face;
     let Some(v) = json::parse(text).filter(|v| v.get("facemace_people").f() >= 1.0) else {
-        f.msg = "That file is not a Face Mace people file.".into();
+        f.msg = "That file is not a Face Mace people or work file.".into();
         return;
     };
+    // a work file: its settings, names, merges and answers too
+    if v.get("facemace_work").f() >= 1.0 {
+        let st_ = v.get("settings");
+        f.strict = st_.get("strict").f().max(40.0).min(120.0);
+        f.dedupe = st_.get("dedupe").truthy();
+        f.by_date = st_.get("by_date").truthy();
+        f.part_size = st_.get("part_size").f() as usize;
+        if let Value::Obj(kv) = v.get("names") {
+            for (k, n) in kv {
+                f.names.insert(k.clone(), n.text());
+            }
+        }
+        f.merge.clear();
+        for m in v.get("merges").arr() {
+            let a = m.arr();
+            if let (Some(x), Some(y)) = (a.first(), a.get(1)) {
+                f.merge.insert(x.f() as usize, y.f() as usize);
+            }
+        }
+        f.pending = v.get("answers").arr().iter().filter_map(|a| { let a = a.arr(); Some((a.first()?.text(), a.get(1)?.f() as u64, a.get(2)?.f() as usize, a.get(3)?.f() >= 1.0)) }).collect();
+        work_apply_pending();
+    }
     let mut people: Vec<(usize, Vec<Vec<f32>>)> = Vec::new();
     for p in v.get("people").arr() {
         let id = p.get("id").f() as usize;
@@ -1308,7 +1506,8 @@ fn people_import(text: &str) {
     let n = people.len();
     f.imported = people;
     f.live_clusters = Clusters::seeded(&f.imported);
-    f.msg = format!("Loaded {} people: they are recognized in these photos and named in the results.", n);
+    let waiting = f.pending.len();
+    f.msg = if waiting > 0 { format!("Loaded {} people; {} answers wait for their photos to be chosen.", n, waiting) } else { format!("Loaded {} people: they are recognized in these photos and named in the results.", n) };
     if f.result.is_some() && f.faces.len() == f.files.len() && !f.running {
         face_compute(true);
     }
@@ -1667,6 +1866,7 @@ fn face_compute(done: bool) {
     f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done, review });
     if done {
         live_relabel();
+        face_remember();
     }
 }
 
@@ -2554,7 +2754,7 @@ fn face_view(s: &State) -> N {
                 .kid(
                     el("div")
                         .cls("fm-people")
-                        .kid(el("span").kid(el("b").text("People you know")).kid(el("span").cls("hint").text(if f.imported.is_empty() { " Load a people file saved before, and they are recognized and named here too.".to_string() } else { format!(" {} loaded from a file.", f.imported.len()) })))
+                        .kid(el("span").kid(el("b").text("People you know")).kid(el("span").cls("hint").text(if f.imported.is_empty() { " Load a people file saved before, and they are recognized and named here too.".to_string() } else { format!(" {} known: remembered on this device or loaded from a file.", f.imported.len()) })))
                         .kid(
                             el("div")
                                 .cls("row")
@@ -2589,6 +2789,21 @@ fn face_view(s: &State) -> N {
                     };
                     d.kid_if(!f.out_msg.is_empty(), || el("p").cls("hint warn").text(f.out_msg.clone()).into())
                 }),
+        )
+        .kid(
+            el("section")
+                .cls("card fm-step")
+                .kid(step("4", "Saving"))
+                .kid(check(!f.forget, 30, "Remember people on this device", "Who you have named, and their faces as numbers (no pictures), so they are recognized next time. Kept in this browser only."))
+                .kid(
+                    el("div")
+                        .cls("row fm-save")
+                        .kid(el("button").attr("type", "button").cls("btn").attr_if(f.result.is_none(), "disabled", "").on("click", Msg::T(Tool::Face, 32, String::new())).text("Save work"))
+                        .kid(el("label").cls("btn").kid(txt("Open saved work…")).kid(el("input").attr("type", "file").attr("accept", ".json,application/json").attr("hidden", "").on("files", Msg::TV(Tool::Face, 17))))
+                        .kid(el("button").attr("type", "button").cls("btn").attr_if(f.result.is_none(), "disabled", "").on("click", Msg::T(Tool::Face, 33, String::new())).text("Save list (CSV)"))
+                        .kid_if(!f.forget && !f.imported.is_empty(), || el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 31, String::new())).text("Forget remembered people").into()),
+                )
+                .kid(el("p").cls("hint").text("Save work keeps people, names, your answers and settings in one file: open it after choosing the same photos to go on where you were.")),
         )
         .kid(
             el("div")
@@ -2806,6 +3021,7 @@ const FACE_CSS: &str = "\
 .fm-merge{max-width:170px;padding:5px 8px;font-size:13px}\
 .fm-review{margin:14px 0}.fm-qs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.fm-q{display:grid;gap:6px;justify-items:start}.fm-q img,.fm-q .fm-tile{width:100%;height:auto;aspect-ratio:1;object-fit:cover}.fm-q p{margin:0;font-size:13.5px}\
 .fm-yes:hover:not(:disabled){background:#2b8a3e;border-color:#2b8a3e;color:#fff}.fm-no:hover:not(:disabled){background:#c92a2a;border-color:#c92a2a;color:#fff}\
+.fm-save{gap:8px;flex-wrap:wrap}\
 .fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\
