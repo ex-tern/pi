@@ -386,6 +386,13 @@ pub struct Face {
     forget: bool,
     restored: bool,
     pending: Vec<(String, u64, usize, bool)>,
+    /// duplicates, asked about (owner, 2026-10-15: "duplicate to ask for user to delete or not delete"): kept after
+    /// all, to delete, already moved aside or deleted; whether the folder was opened so that it can be changed
+    dup_keep: alloc::collections::BTreeSet<usize>,
+    dup_del: alloc::collections::BTreeSet<usize>,
+    dup_gone: alloc::collections::BTreeSet<usize>,
+    src_folder: bool,
+    dup_msg: String,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -555,6 +562,11 @@ fn face_update(a: u16, v: String) {
             f.confirm.clear();
             f.reject.clear();
             f.sorted_written.clear();
+            f.dup_keep.clear();
+            f.dup_del.clear();
+            f.dup_gone.clear();
+            f.dup_msg.clear();
+            f.src_folder = false;
             work_apply_pending();
             f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
@@ -681,6 +693,51 @@ fn face_update(a: u16, v: String) {
             }
             if !f.running {
                 face_compute(true);
+            }
+        }
+        // duplicates: keep, delete, all of them, and doing it
+        40 | 41 => {
+            let Ok(i) = v.parse::<usize>() else { return };
+            if a == 40 {
+                f.dup_del.remove(&i);
+                f.dup_keep.insert(i);
+                dup_kept_written(i);
+            } else {
+                f.dup_keep.remove(&i);
+                f.dup_del.insert(i);
+            }
+            if a == 40 && !f.running {
+                face_compute(true);
+            }
+        }
+        42 | 43 => {
+            let ids: Vec<usize> = f.result.as_ref().map(|r| r.dups.iter().map(|d| d.0).filter(|i| !f.dup_gone.contains(i)).collect()).unwrap_or_default();
+            for i in ids {
+                if a == 42 {
+                    f.dup_del.remove(&i);
+                    f.dup_keep.insert(i);
+                    dup_kept_written(i);
+                } else {
+                    f.dup_del.insert(i);
+                }
+            }
+            if a == 42 && !f.running {
+                face_compute(true);
+            }
+        }
+        44 | 45 => {
+            let ids: Vec<String> = f.dup_del.iter().filter(|i| !f.dup_gone.contains(i)).map(|i| f.files[*i].0.to_string()).collect();
+            if ids.is_empty() {
+                return;
+            }
+            f.dup_msg = "Asking for permission to change the folder…".into();
+            if host::call("srcdel", &format!("{}\t{}", if a == 44 { "move" } else { "delete" }, ids.join(","))).is_none() {
+                f.dup_msg = "This folder cannot be changed from here: download the list and delete them there.".into();
+            }
+        }
+        18 => {
+            if host::call("pickfolder", "").is_none() {
+                f.msg = "This browser cannot open a folder that way: use Choose files, or drop the folder here.".into();
             }
         }
         // saving
@@ -858,6 +915,12 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             date_got(data);
         } else if token == ZIP_TOKEN + 2 {
             out_answer(&String::from_utf8(data).unwrap_or_default());
+        } else if token == ZIP_TOKEN + 5 {
+            // a folder opened with access: its files, as the file picker gives them
+            face_update(1, String::from_utf8(data).unwrap_or_default());
+            st().face.src_folder = true;
+        } else if token == ZIP_TOKEN + 6 {
+            dup_answer(&String::from_utf8(data).unwrap_or_default());
         } else if token == ZIP_TOKEN + 4 {
             people_import(&String::from_utf8(data).unwrap_or_default());
         } else {
@@ -1513,6 +1576,36 @@ fn people_import(text: &str) {
     }
 }
 
+/// A duplicate kept after all: when renaming or sorting into the folder as it went, it is written there now too.
+fn dup_kept_written(i: usize) {
+    let f = &mut st().face;
+    if f.out_dir.is_none() || f.live_written.contains_key(&i) || f.sorted_written.contains_key(&i) {
+        return;
+    }
+    if f.live_rename {
+        live_rename_write(i, &[]);
+    } else if !f.by_date && i < f.faces.len() {
+        let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
+        let path = format!("No_Faces_Detected/{}", base);
+        f.sorted_written.insert(i, alloc::vec![path.clone()]);
+        out_save(&path, f.files[i].0);
+    }
+}
+
+/// The folder answered: duplicates moved aside or deleted (or why not).
+fn dup_answer(m: &str) {
+    let f = &mut st().face;
+    if let Some(n) = m.strip_prefix("progress ") {
+        f.dup_msg = format!("{} done…", n);
+    } else if let Some(n) = m.strip_prefix("done ") {
+        let done: Vec<usize> = f.dup_del.iter().copied().collect();
+        f.dup_gone.extend(done);
+        f.dup_msg = format!("{} duplicate{} taken out of your folder.", n, if n == "1" { "" } else { "s" });
+    } else if let Some(e) = m.strip_prefix("error ") {
+        f.dup_msg = format!("Nothing was changed: {}", e);
+    }
+}
+
 /// A number for a person made by hand ("Move to: a new person").
 fn new_person_id(f: &Face) -> usize {
     let mut m = f.imported.iter().map(|p| p.0).max().unwrap_or(0);
@@ -1593,7 +1686,9 @@ fn face_compute(done: bool) {
         let mut idx = BTreeMap::new();
         for i in order {
             if let Some(j) = dup_check(f, i, &mut idx) {
-                dups.push((i, j));
+                if !f.dup_keep.contains(&i) {
+                    dups.push((i, j));
+                }
             }
         }
         dups.sort_by(|a, b| f.files[a.0].2.cmp(&f.files[b.0].2));
@@ -1823,7 +1918,7 @@ fn face_compute(done: bool) {
     }
     // thumbnails: the first twelve of each group, as object URLs of the files themselves (made once)
     let mut thumbs = Vec::new();
-    let dup_list: Vec<usize> = dups.iter().map(|d| d.0).collect();
+    let dup_list: Vec<usize> = dups.iter().flat_map(|d| [d.0, d.1]).take(120).collect();
     let expanded: Vec<bool> = out.iter().map(|g| g.0.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()).map(|p| f.expanded.contains(&p)).unwrap_or(false)).collect();
     for (gk, idx) in out.iter().map(|g| &g.1).chain(core::iter::once(&dup_list)).enumerate() {
         let take = if expanded.get(gk).copied().unwrap_or(false) { 600 } else { 12 };
@@ -2738,7 +2833,12 @@ fn face_view(s: &State) -> N {
                         .kid(
                             el("div")
                                 .cls("row")
-                                .kid(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
+                                .kid(if can {
+                                    // opened with the browser's folder access: duplicates can then be taken out of it when asked
+                                    el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 18, String::new())).text("Choose a folder").into()
+                                } else {
+                                    N::from(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
+                                })
                                 .kid(el("label").cls("btn").kid(txt("Choose files")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
                         )
                         .kid_if(!ready.is_empty(), || el("p").cls("fm-ready").cls_if(!f.files.is_empty(), "ok").text(ready.clone()).into()),
@@ -2863,15 +2963,52 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
             })
             .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into())
             .kid_if(!r.dups.is_empty(), || {
+                let open: Vec<&(usize, usize)> = r.dups.iter().filter(|d| !f.dup_gone.contains(&d.0)).collect();
+                let marked = f.dup_del.iter().filter(|i| !f.dup_gone.contains(i)).count();
+                let thumb = |i: usize| -> N {
+                    let url = r.thumbs.iter().find(|(j, _)| *j == i).map(|x| x.1.clone()).or_else(|| f.thumb_cache.get(&i).cloned()).unwrap_or_default();
+                    if url.is_empty() { el("span").cls("fm-tile").text(face_ext(&f.files[i].2).to_uppercase()).into() } else { el("img").attr("loading", "lazy").attr("alt", f.files[i].2.clone()).attr("src", url).into() }
+                };
                 el("section")
-                    .cls("fm-group fm-dups")
-                    .kid(el("div").cls("fm-head").kid(el("h3").text(format!("Duplicates left out · {}", r.dups.len()))).kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 10, String::new())).text("Download the list")))
-                    .kid(el("p").cls("hint").text("Each is the same picture as one kept. A browser cannot delete files from your folders: the list says which ones to delete there, if you want to."))
-                    .kid(el("div").cls("fm-thumbs").kids(r.dups.iter().take(12).map(|(d, k)| -> N {
-                        let url = r.thumbs.iter().find(|(j, _)| j == d).map(|x| x.1.clone()).unwrap_or_default();
-                        let title = format!("{} (the same as {})", f.files[*d].2, f.files[*k].2);
-                        if url.is_empty() { el("span").cls("fm-tile").attr("title", title).text(face_ext(&f.files[*d].2).to_uppercase()).into() } else { el("img").attr("loading", "lazy").attr("alt", title.clone()).attr("title", title).attr("src", url).into() }
-                    })).kid_if(r.dups.len() > 12, || el("span").cls("fm-more").text(format!("+{}", r.dups.len() - 12)).into()))
+                    .cls("card fm-dups")
+                    .kid(
+                        el("div")
+                            .cls("fm-head")
+                            .kid(el("h3").text(format!("Duplicates · {}", r.dups.len())))
+                            .kid(el("span").cls("hint").text("Each is the same picture as one kept. Keep it, or delete it?"))
+                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 42, String::new())).text("Keep all"))
+                            .kid(el("button").attr("type", "button").cls("btn fm-no").on("click", Msg::T(Tool::Face, 43, String::new())).text("Delete all")),
+                    )
+                    .kid(el("div").cls("fm-dlist").kids(open.iter().take(60).map(|(d, k)| -> N {
+                        let del = f.dup_del.contains(d);
+                        el("div")
+                            .cls("fm-dup")
+                            .cls_if(del, "del")
+                            .kid(el("figure").kid(thumb(*d)).kid(el("figcaption").attr("title", f.files[*d].2.clone()).text(f.files[*d].2.rsplit('/').next().unwrap_or("").to_string())))
+                            .kid(el("span").cls("fm-eq").text("="))
+                            .kid(el("figure").cls("kept").kid(thumb(*k)).kid(el("figcaption").attr("title", f.files[*k].2.clone()).text(format!("kept: {}", f.files[*k].2.rsplit('/').next().unwrap_or("")))))
+                            .kid(
+                                el("div")
+                                    .cls("fm-dup-a")
+                                    .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 40, d.to_string())).text("Keep"))
+                                    .kid(el("button").attr("type", "button").cls("btn fm-no").cls_if(del, "on").on("click", Msg::T(Tool::Face, 41, d.to_string())).text(if del { "To delete ✓" } else { "Delete" })),
+                            )
+                            .into()
+                    })))
+                    .kid_if(open.len() > 60, || el("p").cls("hint").text(format!("and {} more (Keep all and Delete all count them too)", open.len() - 60)).into())
+                    .kid(
+                        el("div")
+                            .cls("row fm-dup-go")
+                            .kid_if(f.src_folder, || el("button").attr("type", "button").cls("btn primary").attr_if(marked == 0, "disabled", "").on("click", Msg::T(Tool::Face, 44, String::new())).text(format!("Move {} to a Duplicates folder", marked)).into())
+                            .kid_if(f.src_folder, || el("button").attr("type", "button").cls("btn fm-no").attr_if(marked == 0, "disabled", "").on("click", Msg::T(Tool::Face, 45, String::new())).text(format!("Delete {} for good", marked)).into())
+                            .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 10, String::new())).text("Download the list")),
+                    )
+                    .kid(el("p").cls("hint").text(if f.src_folder {
+                        "Moving puts them in a \"Duplicates (Face Mace)\" folder inside yours, to check before you empty it; deleting cannot be undone. The browser asks before changing the folder. Either way they are left out of what Face Mace saves."
+                    } else {
+                        "To delete them in your folder from here, open it with Choose a folder (Chrome or Edge). Until then they are only left out of what Face Mace saves, and the list says which they are."
+                    }))
+                    .kid_if(!f.dup_msg.is_empty(), || el("p").cls("fm-ready ok").text(f.dup_msg.clone()).into())
                     .into()
             });
         // the people, for "Move to" and "Merge into"
@@ -3029,6 +3166,12 @@ const FACE_CSS: &str = "\
 .fm-review{margin:14px 0}.fm-qs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.fm-q{display:grid;gap:6px;justify-items:start}.fm-q img,.fm-q .fm-tile{width:100%;height:auto;aspect-ratio:1;object-fit:cover}.fm-q p{margin:0;font-size:13.5px}\
 .fm-yes:hover:not(:disabled){background:#2b8a3e;border-color:#2b8a3e;color:#fff}.fm-no:hover:not(:disabled){background:#c92a2a;border-color:#c92a2a;color:#fff}\
 .fm-save{gap:8px;flex-wrap:wrap}\
+.fm-dups{margin:14px 0;display:grid;gap:10px}.fm-dlist{display:grid;gap:8px}\
+.fm-dup{display:grid;grid-template-columns:96px auto 96px 1fr;gap:10px;align-items:center;padding:8px;border:1px solid var(--line)}.fm-dup.del{border-color:#c92a2a;background:#fff5f5}\
+.fm-dup figure{margin:0;display:grid;gap:3px}.fm-dup img,.fm-dup .fm-tile{width:96px;height:72px;object-fit:cover}.fm-dup figcaption{font-size:11.5px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:96px}\
+.fm-eq{font-weight:700;color:var(--muted)}.fm-dup-a{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.fm-no.on{background:#c92a2a;color:#fff;border-color:#c92a2a}\
+.fm-dup-go{gap:8px;flex-wrap:wrap}\
+@media (max-width:699px){.fm-dup{grid-template-columns:72px auto 72px;}.fm-dup-a{grid-column:1/-1;justify-content:flex-start}.fm-dup img,.fm-dup .fm-tile{width:72px;height:56px}}\
 .fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\

@@ -455,6 +455,22 @@ async function mlRun(model, data, dims) {
   return r.fc1.data;
 }
 
+// The folder Face Mace reads from, opened with the browser's folder access (Chrome, Edge), so that duplicates can be
+// moved aside or deleted there when the person says so: where each chosen file lives (its folder and name).
+let srcRoot = null;
+const srcAt = {};
+const MEDIA = /\.(jpe?g|png|heic|heif|mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i;
+async function srcWalk(dir, pre, out) {
+  for await (const [n, h] of dir.entries()) {
+    if (h.kind === "directory") { if (n !== "Duplicates (Face Mace)") await srcWalk(h, pre + n + "/", out); }
+    else if (MEDIA.test(n)) out.push([pre + n, await h.getFile(), dir, n]);
+  }
+}
+async function srcFree(dir, name) {
+  let n = name, k = 1;
+  for (;;) { try { await dir.getFileHandle(n); k++; const dot = name.lastIndexOf("."); n = dot > 0 ? name.slice(0, dot) + " (" + k + ")" + name.slice(dot) : name + " (" + k + ")"; } catch (_) { return n; } }
+}
+
 // the folder Face Mace saves into, and what waits to be written there
 let outDir = null, outQ = [], outBusy = false, outSaved = 0, zipStop = false;
 async function outRun() {
@@ -670,6 +686,42 @@ const ops = {
   },
   // Face Mace's Stop: what waits to be written into the folder is dropped, and a ZIP being made is given up
   "save-stop": () => { outQ = []; return "1"; },
+  // a folder to read from, with access kept (the list comes back on token 2_000_005, as the file picker's)
+  pickfolder: () => {
+    if (typeof window.showDirectoryPicker !== "function") return null;
+    window.showDirectoryPicker({ mode: "read", id: "facemace-src" }).then(async (root) => {
+      const found = []; await srcWalk(root, "", found);
+      srcRoot = root;
+      const lines = found.map(([path, file, dir, name]) => { const i = files.length; files.push(file); srcAt[i] = [dir, name]; return i + "\t" + file.size + "\t" + path.replace(/[\t\n]/g, " "); });
+      give(2000005, enc.encode(lines.join("\n")), 1, 1);
+    }, () => {});
+    return "1";
+  },
+  // duplicates out of the folder read from: "move" (into its "Duplicates (Face Mace)" folder) or "delete", then
+  // the files (comma separated); "done n" or "error …" on token 2_000_006
+  srcdel: (a) => {
+    const [mode, list] = a.split("\t"), ids = (list || "").split(",").filter(Boolean).map(Number);
+    if (!srcRoot) return null;
+    const perm = srcRoot.requestPermission({ mode: "readwrite" });
+    (async () => {
+      if ((await perm) !== "granted") throw new Error("permission to change the folder was not given");
+      let n = 0;
+      const aside = mode === "move" ? await srcRoot.getDirectoryHandle("Duplicates (Face Mace)", { create: true }) : null;
+      for (const i of ids) {
+        const at = srcAt[i]; if (!at) continue;
+        const [dir, name] = at;
+        if (aside) {
+          const fh = await dir.getFileHandle(name), free = await srcFree(aside, name);
+          if (typeof fh.move === "function") await fh.move(aside, free);
+          else { const data = await fh.getFile(), nh = await aside.getFileHandle(free, { create: true }), w = await nh.createWritable(); await w.write(data); await w.close(); await dir.removeEntry(name); }
+        } else await dir.removeEntry(name);
+        delete srcAt[i]; n++;
+        give(2000006, enc.encode("progress " + n), 1, 1);
+      }
+      give(2000006, enc.encode("done " + n), 1, 1);
+    })().catch((e) => give(2000006, enc.encode("error " + ((e && e.message) || e)), 1, 1));
+    return "1";
+  },
   // a file written into the folder, renamed: "from\tto" (paths in the folder, same place, new name)
   rmfile: (a) => {
     if (!outDir) return null;
