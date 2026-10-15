@@ -543,8 +543,8 @@ struct FaceResult {
 /// The version, and its name, raised with every change pushed (owner, 2026-10-15: "write the version name for each
 /// push"); shown at the foot of Face Mace, and the Windows program and its installer carry the same (the build reads
 /// it from here)
-pub const FM_VERSION: &str = "1.1.0";
-pub const FM_VERSION_NAME: &str = "Light online";
+pub const FM_VERSION: &str = "1.2.0";
+pub const FM_VERSION_NAME: &str = "Visitors by address";
 
 const FACE_TOKEN: u32 = 1_000_000;
 /// photos at a time, online

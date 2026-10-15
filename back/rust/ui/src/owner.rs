@@ -34,6 +34,12 @@ pub struct Owner {
     reset_armed: bool,
     reset_msg: String,
     reset_done: Option<Value>,
+    // visitors by address (owner, 2026-10-15: "detailed analytics for the owner only, to the IP address, and how much
+    // that IP used"): the list over the days chosen, and the one address opened
+    ips: Slot,
+    ip_days: u32,
+    ip_one: Slot,
+    ip_sel: String,
 }
 
 const T_LOGS: u32 = 32;
@@ -70,6 +76,8 @@ fn owner_load() {
     get(&mut st().owner.bugs, 2, format!("/api/bug-report/list?{}&limit=50", q));
     get(&mut st().owner.storage, 3, format!("/api/admin/storage?{}", q));
     get(&mut st().owner.settle, 4, format!("/api/admin/settlement?{}", q));
+    let days = if st().owner.ip_days == 0 { 30 } else { st().owner.ip_days };
+    get(&mut st().owner.ips, 11, format!("/api/admin/ips?{}&days={}", q, days));
     get(&mut st().owner.logs, 5, "/api/logs".to_string());
     host::timer(4000, T_LOGS);
 }
@@ -141,6 +149,8 @@ fn owner_apply(t: Tool, w: u8, v: Value, err: Option<String>) {
             owner_load();
         }
         (Tool::Owner, 9) => put(&mut o.reset, v, err),
+        (Tool::Owner, 11) => put(&mut o.ips, v, err),
+        (Tool::Owner, 12) => put(&mut o.ip_one, v, err),
         (Tool::Owner, 10) => {
             o.reset_armed = false;
             match err {
@@ -260,6 +270,25 @@ fn owner_update(t: Tool, a: u16, v: String) {
         (Tool::Owner, 13) => {
             o.reset.reset();
             o.reset_done = None;
+        }
+        (Tool::Owner, 14) => {
+            o.ip_days = v.parse().unwrap_or(30);
+            o.ips.reset();
+            owner_load();
+        }
+        (Tool::Owner, 15) => {
+            o.ip_sel = v.clone();
+            o.ip_one.reset();
+            o.ip_one.busy = true;
+            request(Want::Tool(Tool::Owner, 12), "GET", &format!("/api/admin/ips/one?{}&ip={}", q, url_encode(&v)), "", 0);
+        }
+        (Tool::Owner, 16) => {
+            o.ip_sel.clear();
+            o.ip_one.reset();
+        }
+        (Tool::Owner, 17) => {
+            o.ips.reset();
+            owner_load();
         }
         _ => {}
     }
@@ -455,11 +484,13 @@ fn owner_view(s: &State) -> N {
                 .into()
         })
     };
+    let ips = ips_view(o);
     let section = |title: &str, body: N| -> N { el("section").cls("card owner-sec").kid(el("h3").text(title.to_string())).kid(body).into() };
     el("div")
         .cls("tool owner")
         .kid(el("p").cls("lede").text("The owner's console. Everything here is re-checked by the server against your signed session."))
         .kid(section("Deployment", stats))
+        .kid(section("Visitors by address", ips))
         .kid(section("Reported reviews", reports))
         .kid(section("Messages", bugs))
         .kid(section("Grant piQ", grant.into()))
@@ -470,10 +501,84 @@ fn owner_view(s: &State) -> N {
         .into()
 }
 
+fn bytes_h(b: f64) -> String {
+    if b >= 1e9 { format!("{:.1} GB", b / 1e9) } else if b >= 1e6 { format!("{:.1} MB", b / 1e6) } else if b >= 1e3 { format!("{:.0} kB", b / 1e3) } else { format!("{} B", b as i64) }
+}
+
+/// Each address (of visitors who ticked "Count my visit"): how much it used and what; one opened, day by day.
+fn ips_view(o: &Owner) -> N {
+    let days = if o.ip_days == 0 { 30 } else { o.ip_days };
+    let pick = el("div").cls("row ip-days").kid(el("span").cls("hint").text("Last")).kids([1u32, 7, 30, 90].iter().map(|d| -> N {
+        el("button").attr("type", "button").cls("btn small").cls_if(*d == days, "primary").on("click", Msg::T(Tool::Owner, 14, d.to_string())).text(if *d == 1 { "day".to_string() } else { format!("{} days", d) }).into()
+    })).kid(el("button").attr("type", "button").cls("btn small").on("click", Msg::T(Tool::Owner, 17, String::new())).text("Refresh"));
+    let list = slot_view(&o.ips, "Loading…", |d| {
+        let t = d.get("totals");
+        let rows = d.get("ips").arr();
+        let head = el("p").cls("hint").text(format!("{} address{} · {} requests · {} page views · {} sent. Only visitors who ticked “Count my visit” are recorded; kept {} days; seen by you only.", num(t.get("addresses").f(), 0), if t.get("addresses").f() == 1.0 { "" } else { "es" }, num(t.get("requests").f(), 0), num(t.get("views").f(), 0), bytes_h(t.get("bytes").f()), d.get("retention_days").text()));
+        if rows.is_empty() {
+            return el("div").kid(head).kid(el("p").cls("hint").text("Nobody recorded in this time.")).into();
+        }
+        el("div")
+            .kid(head)
+            .kid(
+                el("div").cls("ip-wrap").kid(
+                    el("table")
+                        .cls("data-table ip-table")
+                        .kid(el("thead").kid(el("tr").kid(el("th").text("Address")).kid(el("th").text("Requests")).kid(el("th").text("Page views")).kid(el("th").text("Sent")).kid(el("th").text("Days")).kid(el("th").text("Last seen")).kid(el("th").text("Most used"))))
+                        .kid(el("tbody").kids(rows.iter().map(|x| -> N {
+                            let ip = x.get("ip").text();
+                            let top: Vec<String> = x.get("top").arr().iter().take(3).map(|t| format!("{} ×{}", t.get("path").text(), t.get("hits").text())).collect();
+                            el("tr")
+                                .cls_if(o.ip_sel == ip, "sel")
+                                .kid(el("td").kid(el("button").attr("type", "button").cls("linkish").attr("title", x.get("ua").text()).on("click", Msg::T(Tool::Owner, 15, ip.clone())).text(ip.clone())))
+                                .kid(el("td").text(num(x.get("requests").f(), 0)))
+                                .kid(el("td").text(num(x.get("views").f(), 0)))
+                                .kid(el("td").text(bytes_h(x.get("bytes").f())))
+                                .kid(el("td").text(x.get("days").text()))
+                                .kid(el("td").text(x.get("last").str().chars().take(16).collect::<String>()))
+                                .kid(el("td").cls("ip-top").text(top.join(" · ")))
+                                .into()
+                        }))),
+                ),
+            )
+            .into()
+    });
+    let one: N = if o.ip_sel.is_empty() {
+        el("span").into()
+    } else {
+        slot_view(&o.ip_one, "Loading the address…", |d| {
+            el("div")
+                .cls("ip-one card")
+                .kid(el("div").cls("pc-head").kid(el("b").text(d.get("ip").text())).kid(el("button").attr("type", "button").cls("btn small").on("click", Msg::T(Tool::Owner, 16, String::new())).text("Close")))
+                .kid_if(!d.get("ua").str().is_empty(), || el("p").cls("hint").text(d.get("ua").text()).into())
+                .kid(el("h4").text("Day by day"))
+                .kid(el("table").cls("data-table").kid(el("thead").kid(el("tr").kid(el("th").text("Day")).kid(el("th").text("Requests")).kid(el("th").text("Pages")).kid(el("th").text("API")).kid(el("th").text("Page views")).kid(el("th").text("Sent")).kid(el("th").text("From–to (UTC)")))).kid(el("tbody").kids(d.get("days").arr().iter().map(|x| -> N {
+                    el("tr")
+                        .kid(el("td").text(x.get("day").text()))
+                        .kid(el("td").text(num(x.get("requests").f(), 0)))
+                        .kid(el("td").text(num(x.get("pages").f(), 0)))
+                        .kid(el("td").text(num(x.get("api").f(), 0)))
+                        .kid(el("td").text(num(x.get("views").f(), 0)))
+                        .kid(el("td").text(bytes_h(x.get("bytes").f())))
+                        .kid(el("td").text(format!("{}–{}", x.get("first").str().get(11..16).unwrap_or(""), x.get("last").str().get(11..16).unwrap_or(""))))
+                        .into()
+                }))))
+                .kid(el("h4").text("What it used"))
+                .kid(el("table").cls("data-table").kid(el("tbody").kids(d.get("paths").arr().iter().map(|x| -> N {
+                    el("tr").kid(el("td").cls("ip-path").text(x.get("path").text())).kid(el("td").text(num(x.get("hits").f(), 0))).kid(el("td").cls("hint").text(x.get("last").str().chars().take(16).collect::<String>())).into()
+                }))))
+                .into()
+        })
+    };
+    el("div").kid(pick).kid(list).kid(one).into()
+}
+
 const OWNER_CSS: &str = "\
 .owner-sec{margin:12px 0}.owner-sec h3{margin:0 0 8px}\
 .owner-item{margin:8px 0}.owner-item.warn{border-left:3px solid var(--warn)}\
 .owner-logs{max-height:320px;font-size:12px}\
 .reset-row{align-items:flex-start;margin:8px 0}\
+.ip-days{gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px}.ip-wrap{overflow-x:auto}.ip-table td,.ip-table th{white-space:nowrap}.ip-table td.ip-top{white-space:normal;font-size:12px;color:var(--muted);min-width:220px}.ip-table tr.sel td{background:color-mix(in srgb,var(--accent,#3b82f6) 8%,transparent)}\
+.linkish{border:0;background:none;padding:0;font:inherit;color:var(--accent,#2563eb);cursor:pointer;text-decoration:underline}.ip-one{margin-top:12px}.ip-one h4{margin:12px 0 6px}.ip-path{font-family:var(--mono,monospace);font-size:12px;word-break:break-all}\
 .bug textarea,.bug input,.bug select,.owner input,.owner select{font:inherit;padding:7px 9px;border:1px solid var(--line2);background:#fff}\
 ";

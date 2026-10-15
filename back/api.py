@@ -54,6 +54,7 @@ from eth_account.messages import encode_defunct
 from fastapi import (APIRouter, BackgroundTasks, Depends, FastAPI, File, Form, HTTPException, Query, Request,
     UploadFile)
 from fastapi.middleware.cors import CORSMiddleware
+from starlette.concurrency import run_in_threadpool
 from fastapi.responses import (FileResponse, HTMLResponse, JSONResponse, PlainTextResponse, RedirectResponse,
     Response, StreamingResponse)
 from fastapi.staticfiles import StaticFiles
@@ -4801,6 +4802,22 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         last_seen DATETIME DEFAULT CURRENT_TIMESTAMP,
                         visits INTEGER DEFAULT 1)""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_site_visits_last ON site_visits(last_seen)")
+    # Per-address use, for the owner only (owner, 2026-10-15: "detailed analytics for the owner only, to the IP
+    # address, and how much that IP used; keep a simple analytics for public"). Unlike site_visits this keeps the
+    # address itself, so it is bounded on every side: only visitors who ticked "Count my visit" are recorded (the
+    # consent cookie is read on each request), rows older than IP_RETENTION_DAYS (90) are deleted, and nothing here
+    # is served except to the owner's signed session. The public numbers stay the hashed counts above.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS ip_usage (
+                        ip TEXT NOT NULL, day TEXT NOT NULL,
+                        requests INTEGER DEFAULT 0, pages INTEGER DEFAULT 0, api INTEGER DEFAULT 0,
+                        views INTEGER DEFAULT 0, bytes INTEGER DEFAULT 0, ua TEXT DEFAULT '',
+                        first_at DATETIME, last_at DATETIME,
+                        PRIMARY KEY (ip, day))""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_usage_day ON ip_usage(day)")
+    cursor.execute("""CREATE TABLE IF NOT EXISTS ip_paths (
+                        ip TEXT NOT NULL, path TEXT NOT NULL, hits INTEGER DEFAULT 0, last_at DATETIME,
+                        PRIMARY KEY (ip, path))""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_paths_last ON ip_paths(last_at)")
     cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
                         account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
                         goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
@@ -6060,8 +6077,8 @@ RESET_GROUPS = {
     },
     "visits": {
         "label": "Visitor counts",
-        "detail": "The unique-visitor tally shown in Analytics.",
-        "tables": ["site_visits"],
+        "detail": "The unique-visitor tally shown in Analytics, and the owner's per-address use.",
+        "tables": ["site_visits", "ip_usage", "ip_paths"],
         "order": 80,
         "destroys": "visitor statistics",
     },
@@ -7650,6 +7667,152 @@ def visitor_stats() -> dict:
         "week": int(row[3] or 0),
         "month": int(row[4] or 0),
     }
+
+
+# ---------------------------------------------------------------------------
+# Per-address use (owner only; see the ip_usage table for what is kept and why)
+# ---------------------------------------------------------------------------
+IP_RETENTION_DAYS = max(1, int(os.getenv("IP_RETENTION_DAYS", "90") or 90))
+_IP_LOCK = threading.Lock()
+_IP_DAYS: Dict[tuple, dict] = {}
+_IP_PATHS: Dict[tuple, list] = {}
+_IP_STATE = {"flushed": 0.0, "purged": 0.0}
+_ID_SEGMENT = re.compile(r"^(?:\d{3,}|[0-9a-fA-F]{16,}|0x[0-9a-fA-F]{8,}|[0-9]{4}-[0-9]{4}-[0-9]{4}-[0-9]{3}[0-9Xx]|[A-Za-z0-9_-]{24,})$")
+
+
+def ip_consented(cookie: str) -> bool:
+    """Whether the visitor ticked "Count my visit" (the pi_consent cookie: v1.c1.l?.e?)."""
+    parts = (cookie or "").split(".")
+    return len(parts) >= 2 and parts[0] == "v1" and parts[1] == "c1"
+
+
+def ip_path_label(method: str, path: str) -> str:
+    """A request as something countable: ids and tokens in the path become :id, so one route is one row."""
+    segs = [(":id" if _ID_SEGMENT.match(x) else x) for x in (path or "/").split("/")]
+    label = "/".join(segs)[:120] or "/"
+    return f"{method} {label}" if label.startswith("/api/") else label
+
+
+def ip_kind(path: str) -> str:
+    if path.startswith("/api/"):
+        return "api"
+    last = path.rsplit("/", 1)[-1]
+    return "page" if (not last or "." not in last or last.endswith(".html")) else "asset"
+
+
+def ip_note(ip: str, label: str, kind: str, nbytes: int, ua: str) -> None:
+    """Count one request (or one view of a page of the app) for an address. In memory; ip_flush writes it."""
+    if not ip or ip == "unknown":
+        return
+    now = datetime.now(timezone.utc)
+    day, at = now.strftime("%Y-%m-%d"), now.strftime("%Y-%m-%d %H:%M:%S")
+    with _IP_LOCK:
+        d = _IP_DAYS.setdefault((ip, day), {"requests": 0, "pages": 0, "api": 0, "views": 0, "bytes": 0, "ua": "", "first": at, "last": at})
+        if kind == "view":
+            d["views"] += 1
+        else:
+            d["requests"] += 1
+            if kind in ("page", "api"):
+                d[kind] += 1
+        d["bytes"] += max(0, int(nbytes or 0))
+        d["last"] = at
+        if ua:
+            d["ua"] = ua[:200]
+        if kind != "asset":
+            pth = _IP_PATHS.setdefault((ip, label), [0, at])
+            pth[0] += 1
+            pth[1] = at
+
+
+def ip_flush(force: bool = False) -> None:
+    """Write what was counted (at most every ten seconds, or now), and delete what is past its keeping."""
+    now = time.time()
+    if not force and now - _IP_STATE["flushed"] < 10:
+        return
+    with _IP_LOCK:
+        days, paths = dict(_IP_DAYS), dict(_IP_PATHS)
+        _IP_DAYS.clear()
+        _IP_PATHS.clear()
+        _IP_STATE["flushed"] = now
+    purge = now - _IP_STATE["purged"] > 3600
+    if not days and not paths and not purge:
+        return
+    conn = get_db_connection()
+    try:
+        for (ip, day), d in days.items():
+            conn.execute(
+                """INSERT INTO ip_usage (ip, day, requests, pages, api, views, bytes, ua, first_at, last_at)
+                   VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                   ON CONFLICT(ip, day) DO UPDATE SET
+                       requests = requests + excluded.requests, pages = pages + excluded.pages,
+                       api = api + excluded.api, views = views + excluded.views, bytes = bytes + excluded.bytes,
+                       ua = CASE WHEN excluded.ua <> '' THEN excluded.ua ELSE ua END,
+                       last_at = excluded.last_at""",
+                (ip, day, d["requests"], d["pages"], d["api"], d["views"], d["bytes"], d["ua"], d["first"], d["last"]))
+        for (ip, label), (hits, at) in paths.items():
+            conn.execute(
+                """INSERT INTO ip_paths (ip, path, hits, last_at) VALUES (?, ?, ?, ?)
+                   ON CONFLICT(ip, path) DO UPDATE SET hits = hits + excluded.hits, last_at = excluded.last_at""",
+                (ip, label, hits, at))
+        if purge:
+            _IP_STATE["purged"] = now
+            cut = (datetime.now(timezone.utc) - timedelta(days=IP_RETENTION_DAYS)).strftime("%Y-%m-%d")
+            conn.execute("DELETE FROM ip_usage WHERE day < ?", (cut,))
+            conn.execute("DELETE FROM ip_paths WHERE last_at < ?", (cut,))
+        conn.commit()
+    except sqlite3.Error as e:
+        logging.debug("Could not record per-address use: %s", e)
+    finally:
+        conn.close()
+
+
+def ip_list(days: int = 30, limit: int = 300) -> dict:
+    """Every address seen in the last `days` days, the busiest first, with how much it used and what."""
+    ip_flush(force=True)
+    days = max(1, min(int(days or 30), IP_RETENTION_DAYS))
+    since = (datetime.now(timezone.utc) - timedelta(days=days - 1)).strftime("%Y-%m-%d")
+    conn = get_db_connection()
+    try:
+        rows = conn.execute(
+            """SELECT ip, SUM(requests), SUM(pages), SUM(api), SUM(views), SUM(bytes), COUNT(*), MIN(first_at),
+                      MAX(last_at), (SELECT ua FROM ip_usage u2 WHERE u2.ip = u.ip ORDER BY day DESC LIMIT 1)
+               FROM ip_usage u WHERE day >= ? GROUP BY ip
+               ORDER BY SUM(requests) + SUM(views) DESC LIMIT ?""", (since, max(1, min(int(limit or 300), 2000)))).fetchall()
+        out = []
+        for r_ in rows:
+            top = conn.execute("SELECT path, hits FROM ip_paths WHERE ip = ? ORDER BY hits DESC LIMIT 5", (r_[0],)).fetchall()
+            out.append({"ip": r_[0], "requests": int(r_[1] or 0), "pages": int(r_[2] or 0), "api": int(r_[3] or 0),
+                        "views": int(r_[4] or 0), "bytes": int(r_[5] or 0), "days": int(r_[6] or 0),
+                        "first": r_[7], "last": r_[8], "ua": r_[9] or "",
+                        "top": [{"path": t[0], "hits": int(t[1] or 0)} for t in top]})
+        tot = conn.execute("""SELECT COUNT(DISTINCT ip), COALESCE(SUM(requests),0), COALESCE(SUM(views),0), COALESCE(SUM(bytes),0)
+                              FROM ip_usage WHERE day >= ?""", (since,)).fetchone()
+    except sqlite3.Error as e:
+        logging.debug("Per-address use unavailable: %s", e)
+        return {"days": days, "retention_days": IP_RETENTION_DAYS, "ips": [], "totals": {}}
+    finally:
+        conn.close()
+    return {"days": days, "retention_days": IP_RETENTION_DAYS, "ips": out,
+            "totals": {"addresses": int(tot[0] or 0), "requests": int(tot[1] or 0), "views": int(tot[2] or 0), "bytes": int(tot[3] or 0)}}
+
+
+def ip_detail(ip: str) -> dict:
+    """One address: its use day by day, and everything it used (most first)."""
+    ip_flush(force=True)
+    conn = get_db_connection()
+    try:
+        days = conn.execute("""SELECT day, requests, pages, api, views, bytes, first_at, last_at, ua FROM ip_usage
+                              WHERE ip = ? ORDER BY day DESC""", (ip,)).fetchall()
+        paths = conn.execute("SELECT path, hits, last_at FROM ip_paths WHERE ip = ? ORDER BY hits DESC LIMIT 200", (ip,)).fetchall()
+    except sqlite3.Error as e:
+        logging.debug("Per-address detail unavailable: %s", e)
+        days, paths = [], []
+    finally:
+        conn.close()
+    return {"ip": ip, "retention_days": IP_RETENTION_DAYS,
+            "days": [{"day": d[0], "requests": d[1], "pages": d[2], "api": d[3], "views": d[4], "bytes": d[5], "first": d[6], "last": d[7]} for d in days],
+            "ua": days[0][8] if days else "",
+            "paths": [{"path": x[0], "hits": x[1], "last": x[2]} for x in paths]}
 
 
 # ---------------------------------------------------------------------------
@@ -18203,6 +18366,22 @@ async def _track_activity(request: Request, call_next):
     return response
 
 
+@app.middleware("http")
+async def _ip_usage(request: Request, call_next):
+    """Per-address use, for the owner (ip_note): only for visitors who ticked "Count my visit"."""
+    response = await call_next(request)
+    try:
+        if ip_consented(request.cookies.get("pi_consent", "")) and request.url.path != "/api/hit":
+            path = request.url.path
+            ip_note(get_client_ip(request), ip_path_label(request.method, path), ip_kind(path),
+                    int(response.headers.get("content-length") or 0), request.headers.get("user-agent", ""))
+            if time.time() - _IP_STATE["flushed"] >= 10:
+                await run_in_threadpool(ip_flush)
+    except Exception as e:  # counting must never break a page
+        logging.debug("Per-address use not noted: %s", e)
+    return response
+
+
 @app.on_event("startup")
 def on_startup():
     global _STATE_RESTORED
@@ -20009,6 +20188,20 @@ def admin_reset(payload: ResetRequest, request: Request):
                if payload.clear_files and files_removed >= 0 else "")
             + " This cannot be undone."),
     }
+
+
+@admin_router.get("/api/admin/ips")
+def admin_ips(request: Request, wallet: str = Query(default=""), days: int = Query(default=30), limit: int = Query(default=300)):
+    """Owner only: each address seen (of visitors who ticked "Count my visit"), how much it used and what."""
+    require_owner(request, wallet)
+    return ip_list(days, limit)
+
+
+@admin_router.get("/api/admin/ips/one")
+def admin_ip_one(request: Request, ip: str = Query(...), wallet: str = Query(default="")):
+    """Owner only: one address, day by day, and everything it used."""
+    require_owner(request, wallet)
+    return ip_detail(ip.strip()[:64])
 
 
 @admin_router.get("/api/admin/overview")
@@ -26469,6 +26662,23 @@ def register_visit(request: Request):
     record_visit(key)
     record(get_db_connection, key)      # the daily series (traffic.py)
     return visitor_stats()
+
+
+class HitIn(BaseModel):
+    view: str = ""
+
+
+@visits_router.post("/api/hit")
+def register_hit(payload: HitIn, request: Request):
+    """A page of the app opened (the app changes page without asking the server): counted for the owner's
+    per-address view, and only for a visitor who ticked "Count my visit"."""
+    if not ip_consented(request.cookies.get("pi_consent", "")):
+        return {"ok": False}
+    view = (payload.view or "").strip()[:120] or "/"
+    view = "/".join((":id" if _ID_SEGMENT.match(x) else x) for x in view.split("/"))
+    ip_note(get_client_ip(request), f"view {view}", "view", 0, request.headers.get("user-agent", ""))
+    ip_flush()
+    return {"ok": True}
 
 
 class RibFeedback(BaseModel):

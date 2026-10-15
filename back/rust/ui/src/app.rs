@@ -177,6 +177,8 @@ struct State {
     consent: Option<[bool; 3]>,
     draft: [bool; 3],
     consent_open: bool,
+    /// the last page of the app counted for the owner's per-address view (only with "Count my visit")
+    last_view: String,
     // who you are
     token: String,
     orcid: String,
@@ -398,6 +400,7 @@ pub fn start() {
         consent,
         draft: consent.unwrap_or([true, true, true]),
         consent_open: consent.is_none(),
+        last_view: String::new(),
         token: String::new(),
         orcid: String::new(),
         wallet: String::new(),
@@ -888,6 +891,16 @@ fn route() {
     s.routed = true;
     // Intern, the app (owner, 2026-10-15): /intern/ shows nothing else, whatever follows the #
     let base = href.split('#').next().unwrap_or("");
+    // the page opened, for the owner's per-address view: only for visitors who ticked "Count my visit"
+    if s.consent.map(|c| c[0]).unwrap_or(false) {
+        let path = base.split("://").nth(1).and_then(|x| x.find('/').map(|k| &x[k..])).unwrap_or("/");
+        let path = path.split('?').next().unwrap_or("/");
+        let view = match href.split_once('#') { Some((_, h)) => format!("{}#{}", path, h.split('?').next().unwrap_or("")), None => path.to_string() };
+        if view != s.last_view {
+            s.last_view = view.clone();
+            request(Want::Tool(Tool::Owner, 99), "POST", "/api/hit", &format!("{{\"view\":{}}}", json::quote(&view)), 0);
+        }
+    }
     // Face Mace on the desktop is at facemace.localhost (owner, 2026-10-15: "make the address bar only say facemace")
     let host_part = base.split("://").nth(1).unwrap_or("").split(['/', ':']).next().unwrap_or("");
     // the full Face Mace is the Windows program's (facemace.localhost); online it is the lighter one
@@ -2442,7 +2455,7 @@ fn consent_panel(s: &State) -> N {
                 "Nothing optional happens until you choose. You can change this any time from the shield in the sidebar.",
             ),
         )
-        .kid(opt(0, "Count my visit", "A pseudonymous key from your address, for the visitor totals."))
+        .kid(opt(0, "Count my visit", "For the visitor totals (a pseudonymous key from your address), and for the site's owner only: your address and what you open here, kept 90 days."))
         .kid(opt(1, "Help the model learn", "Lets the in-house model learn from how papers are scored."))
         .kid(opt(
             2,
