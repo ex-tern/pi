@@ -389,9 +389,32 @@ addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse";
 // HEIC/HEIF (an iPhone's photos): Safari decodes them itself; elsewhere libheif (WebAssembly, LGPL, loaded from
 // /facemace/heic/ only when such a photo is chosen) does. A small JPEG of each is kept as its thumbnail.
 const isHeic = (f) => /\.(heic|heif)$/i.test(f.name || "") || /image\/hei[cf]/i.test(f.type || "");
+const isVideo = (f) => /^video\//i.test(f.type || "") || /\.(mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i.test(f.name || "");
 let heicLib = null;
 const heicThumbs = {};
+const thumbOf = (cv, idx) => {
+  if (idx == null || heicThumbs[idx]) return;
+  const k = Math.min(1, 240 / Math.max(cv.width, cv.height)), t = Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(cv.width * k)), height: Math.max(1, Math.round(cv.height * k)) });
+  t.getContext("2d").drawImage(cv, 0, 0, t.width, t.height);
+  heicThumbs[idx] = t.toDataURL("image/jpeg", 0.8);
+};
+// a video: one frame, a second in (or halfway through a shorter one), where Face Mace looks for faces
+async function videoFrame(f, idx) {
+  const url = URL.createObjectURL(f), v = document.createElement("video");
+  Object.assign(v, { muted: true, playsInline: true, preload: "auto", src: url });
+  const wait = (ev) => new Promise((res, rej) => { const t = setTimeout(() => rej(new Error("this video could not be read")), 20000); v.addEventListener(ev, () => { clearTimeout(t); res(); }, { once: true }); v.addEventListener("error", () => { clearTimeout(t); rej(new Error("this video's format cannot be played here")); }, { once: true }); });
+  try {
+    await wait("loadedmetadata");
+    const p = wait("seeked"); v.currentTime = Math.min(1, (isFinite(v.duration) && v.duration > 0 ? v.duration : 2) / 2); await p;
+    if (!v.videoWidth) throw new Error("no picture in this video");
+    const cv = Object.assign(document.createElement("canvas"), { width: v.videoWidth, height: v.videoHeight });
+    cv.getContext("2d").drawImage(v, 0, 0);
+    thumbOf(cv, idx);
+    return cv;
+  } finally { v.removeAttribute("src"); v.load(); URL.revokeObjectURL(url); }
+}
 async function decodeImage(f, idx) {
+  if (isVideo(f)) return videoFrame(f, idx);
   try { return await createImageBitmap(f); } catch (e) { if (!isHeic(f)) throw e; }
   if (!heicLib) heicLib = (await import("/facemace/heic/libheif-bundle.mjs")).default();
   const imgs = new heicLib.HeifDecoder().decode(new Uint8Array(await f.arrayBuffer()));
@@ -402,12 +425,62 @@ async function decodeImage(f, idx) {
   for (const x of imgs) { try { x.free(); } catch (_) {} }
   const cv = Object.assign(document.createElement("canvas"), { width: w, height: h });
   cv.getContext("2d").putImageData(id, 0, 0);
-  if (idx != null && !heicThumbs[idx]) {
-    const k = Math.min(1, 240 / Math.max(w, h)), t = Object.assign(document.createElement("canvas"), { width: Math.round(w * k), height: Math.round(h * k) });
-    t.getContext("2d").drawImage(cv, 0, 0, t.width, t.height);
-    heicThumbs[idx] = t.toDataURL("image/jpeg", 0.8);
-  }
+  thumbOf(cv, idx);
   return cv;
+}
+
+// the folder Face Mace saves into, and what waits to be written there
+let outDir = null, outQ = [], outBusy = false, outSaved = 0;
+async function outRun() {
+  outBusy = true;
+  try {
+    while (outQ.length && outDir) {
+      const [path, idx] = outQ.shift(), parts = path.split("/").filter(Boolean), name = parts.pop();
+      let d = outDir;
+      for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
+      const fh = await d.getFileHandle(name, { create: true }), w = await fh.createWritable();
+      await w.write(files[idx]); await w.close();
+      outSaved++;
+      give(2000002, enc.encode("saved " + outSaved), 1, 1);
+    }
+  } catch (e) { outQ = []; give(2000002, enc.encode("error " + ((e && e.message) || e)), 1, 1); }
+  outBusy = false;
+}
+
+// ZIP, built from the chosen files where they are (a Blob of the files themselves: nothing is copied into memory),
+// stored, with ZIP64 so neither a file nor the whole is held to 4 GB or 65 535 entries. Progress goes back on token
+// 2_000_001 ("k/n", then "done n" or "error …").
+const CRC_T = (() => { const t = new Uint32Array(256); for (let n = 0; n < 256; n++) { let c = n; for (let k = 0; k < 8; k++) c = c & 1 ? 0xEDB88320 ^ (c >>> 1) : c >>> 1; t[n] = c >>> 0; } return t; })();
+async function crcOf(file) {
+  let c = 0xFFFFFFFF; const r = file.stream().getReader();
+  for (;;) { const { done, value } = await r.read(); if (done) break; for (let i = 0; i < value.length; i++) c = CRC_T[(c ^ value[i]) & 255] ^ (c >>> 8); }
+  return (c ^ 0xFFFFFFFF) >>> 0;
+}
+async function zipFiles(name, list) {
+  const tell = (m) => give(2000001, enc.encode(m), 1, 1);
+  const parts = [], central = []; let off = 0;
+  const le = (n, b) => { const a = new Uint8Array(b); let v = BigInt(n); for (let i = 0; i < b; i++) { a[i] = Number(v & 255n); v >>= 8n; } return a; };
+  const cat = (...xs) => { const n = xs.reduce((a, x) => a + x.length, 0), o = new Uint8Array(n); let p = 0; for (const x of xs) { o.set(x, p); p += x.length; } return o; };
+  const d = new Date(), dosT = (d.getHours() << 11) | (d.getMinutes() << 5) | (d.getSeconds() >> 1), dosD = ((d.getFullYear() - 1980) << 9) | ((d.getMonth() + 1) << 5) | d.getDate();
+  for (let k = 0; k < list.length; k++) {
+    const [path, idx] = list[k], file = files[idx];
+    if (!file) continue;
+    const nm = enc.encode(path), size = file.size, crc = await crcOf(file);
+    const x64 = cat(le(1, 2), le(16, 2), le(size, 8), le(size, 8));
+    const local = cat(le(0x04034b50, 4), le(45, 2), le(0x0800, 2), le(0, 2), le(dosT, 2), le(dosD, 2), le(crc, 4), le(0xFFFFFFFF, 4), le(0xFFFFFFFF, 4), le(nm.length, 2), le(x64.length, 2), nm, x64);
+    const c64 = cat(le(1, 2), le(24, 2), le(size, 8), le(size, 8), le(off, 8));
+    central.push(cat(le(0x02014b50, 4), le(45, 2), le(45, 2), le(0x0800, 2), le(0, 2), le(dosT, 2), le(dosD, 2), le(crc, 4), le(0xFFFFFFFF, 4), le(0xFFFFFFFF, 4), le(nm.length, 2), le(c64.length, 2), le(0, 2), le(0, 2), le(0, 2), le(0, 4), le(0xFFFFFFFF, 4), nm, c64));
+    parts.push(local, file); off += local.length + size;
+    if (k % 20 === 0 || k === list.length - 1) tell((k + 1) + "/" + list.length);
+  }
+  const cd = cat(...central), cdOff = off, n = central.length;
+  const z64 = cat(le(0x06064b50, 4), le(44, 8), le(45, 2), le(45, 2), le(0, 4), le(0, 4), le(n, 8), le(n, 8), le(cd.length, 8), le(cdOff, 8));
+  const loc = cat(le(0x07064b50, 4), le(0, 4), le(cdOff + cd.length, 8), le(1, 4));
+  const end = cat(le(0x06054b50, 4), le(0, 2), le(0, 2), le(0xFFFF, 2), le(0xFFFF, 2), le(0xFFFFFFFF, 4), le(0xFFFFFFFF, 4), le(0, 2));
+  const blob = new Blob([...parts, cd, z64, loc, end], { type: "application/zip" }), u = URL.createObjectURL(blob);
+  const a = Object.assign(document.createElement("a"), { href: u, download: name });
+  document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 600000);
+  tell("done " + n);
 }
 const ops = {
   ptr: () => lastPointer,
@@ -509,9 +582,47 @@ const ops = {
     return "1";
   },
   // a chosen file, as an address the page can show
-  fileurl: (a) => (heicThumbs[+a] || (files[+a] ? URL.createObjectURL(files[+a]) : "")),
+  fileurl: (a) => (heicThumbs[+a] || (files[+a] && !isVideo(files[+a]) ? URL.createObjectURL(files[+a]) : "")),
+  // part of a chosen file: token, file, start, length (Face Mace reads where a photo or video says it was taken)
+  slice: (a) => {
+    const [token, idx, start, len] = a.split("\t").map(Number), f = files[idx];
+    if (!f) return null;
+    f.slice(start, start + len).arrayBuffer().then((b) => give(token, new Uint8Array(b), 1, 1), () => give(token, new Uint8Array(0), 0, 0));
+    return "1";
+  },
+  // a folder on this computer to save into (Chrome, Edge): a new folder of the given name is made in the one picked;
+  // the answer comes back on token 2_000_002 ("dir <name>" or "error …"). canpick says whether the browser can.
+  canpick: () => (typeof window.showDirectoryPicker === "function" ? "1" : "0"),
+  pickdir: (a) => {
+    if (typeof window.showDirectoryPicker !== "function") return null;
+    window.showDirectoryPicker({ mode: "readwrite", id: "facemace" }).then(async (root) => {
+      let name = a || "Face Mace", n = 1;
+      for (;;) { try { await root.getDirectoryHandle(n === 1 ? name : name + " (" + n + ")"); n++; } catch (_) { break; } }
+      name = n === 1 ? name : name + " (" + n + ")";
+      outDir = await root.getDirectoryHandle(name, { create: true }); outQ = []; outSaved = 0;
+      give(2000002, enc.encode("dir " + name), 1, 1);
+    }, (e) => give(2000002, enc.encode("error " + ((e && e.name === "AbortError") ? "cancelled" : (e && e.message) || e)), 1, 1));
+    return "1";
+  },
+  // a chosen file into that folder (as soon as it is asked: one at a time, in order): "path\tfile"; "saved n" or
+  // "error …" comes back on token 2_000_002
+  save: (a) => {
+    if (!outDir) return null;
+    const t = a.lastIndexOf("\t");
+    outQ.push([a.slice(0, t), +a.slice(t + 1)]);
+    if (!outBusy) outRun();
+    return "1";
+  },
+  // a ZIP of chosen files: its name, then a line "path\tfile" for each
+  zip: (a) => {
+    const [name, ...lines] = a.split("\n");
+    zipFiles(name, lines.filter(Boolean).map((l) => { const t = l.lastIndexOf("\t"); return [l.slice(0, t), +l.slice(t + 1)]; })).catch((e) => give(2000001, enc.encode("error " + ((e && e.message) || e)), 1, 1));
+    return "1";
+  },
   // a chosen file's date (when it was last changed, in ms): Face Mace's fallback when a photo has no camera date
   filetime: (a) => (files[+a] ? String(files[+a].lastModified || 0) : "0"),
+  // how far this computer's clock is ahead of UTC at a moment (ms since 1970), in ms: a video's UTC date made local
+  tzoff: (a) => String(-new Date(+a || 0).getTimezoneOffset() * 60000),
   audio: (a) => {
     const [cmd, url, ls, ll] = a.split("\t");
     const AC = window.AudioContext || window.webkitAudioContext;

@@ -286,12 +286,27 @@ pub struct Face {
     result: Option<FaceResult>,
     msg: String,
     zip: Vec<(String, Vec<u8>)>,
-    zip_want: Vec<(String, u32)>,
     /// names given to the people found (by group, "Person_3" → "Anna")
     names: BTreeMap<String, String>,
     /// the ZIP as one folder of copies renamed by date: 0000001-Anna.jpg, 0000002-unknown.jpg, …
     by_date: bool,
-    zip_by_date: bool,
+    /// reading when each one was taken: the files in turn (k), what is being read of the current one
+    date_list: Vec<usize>,
+    date_k: usize,
+    date_step: u8,
+    date_pos: u64,
+    dates: Vec<(usize, u64)>,
+    /// a folder on this computer the results are written into as they come (owner, 2026-10-15: "add uploading
+    /// pictures as they get processed to a new folder real time"): its name, how many are written, what went wrong
+    out_dir: Option<String>,
+    out_asked: usize,
+    out_saved: usize,
+    out_msg: String,
+    /// sorting into it as each photo is scanned: the faces known so far (person, histogram), the next person's
+    /// number, the names already used in each person's folder
+    live_known: Vec<(usize, Vec<f32>)>,
+    live_next: usize,
+    live_used: BTreeMap<String, Vec<String>>,
 }
 
 struct FaceResult {
@@ -332,10 +347,21 @@ fn face_apply(v: Value, err: Option<String>) {
     }
 }
 
+fn face_ext(name: &str) -> String {
+    name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).unwrap_or_default()
+}
+
+/// The videos Face Mace takes (owner, 2026-10-15: "add renaming different video formats too"): faces are looked for
+/// on one frame where the browser can play it; renamed whatever happens.
+const FACE_VIDEO: [&str; 15] = ["mp4", "m4v", "mov", "3gp", "3g2", "avi", "mkv", "webm", "wmv", "mts", "m2ts", "mpg", "mpeg", "flv", "ogv"];
+
+fn face_is_video(name: &str) -> bool {
+    FACE_VIDEO.contains(&face_ext(name).as_str())
+}
+
 fn face_is_img(name: &str) -> bool {
-    let n = name.to_lowercase();
     // HEIC/HEIF: an iPhone's photos (owner, 2026-10-15: "add HEIC format too")
-    n.ends_with(".jpg") || n.ends_with(".jpeg") || n.ends_with(".png") || n.ends_with(".heic") || n.ends_with(".heif")
+    matches!(face_ext(name).as_str(), "jpg" | "jpeg" | "png" | "heic" | "heif") || face_is_video(name)
 }
 
 fn face_update(a: u16, v: String) {
@@ -357,7 +383,7 @@ fn face_update(a: u16, v: String) {
             f.files = list;
             f.faces.clear();
             f.result = None;
-            f.msg = if f.files.is_empty() { "No JPG or PNG files found there.".into() } else { String::new() };
+            f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
         2 => f.strict = v.parse().unwrap_or(75.0),
         3 => {
@@ -366,6 +392,16 @@ fn face_update(a: u16, v: String) {
             }
             f.running = true;
             f.started = host::now();
+            f.live_known.clear();
+            f.live_next = 1;
+            f.live_used.clear();
+            // faces already found for these files: sorted again at once, then written to the folder from the result
+            let rescan = f.faces.len() == f.files.len();
+            if rescan && f.out_dir.is_some() && !f.by_date {
+                face_finish();
+                face_save_sorted();
+                return;
+            }
             if f.faces.len() == f.files.len() {
                 face_finish();
             } else {
@@ -379,6 +415,17 @@ fn face_update(a: u16, v: String) {
             }
         }
         4 => face_zip(),
+        7 => {
+            f.out_msg.clear();
+            let day = date_of_epoch(host::now() / 1000.0).replace(' ', "-");
+            if host::call("pickdir", &format!("Face Mace {}", day)).is_none() {
+                f.out_msg = "This browser cannot save into a folder (Chrome and Edge can): use the ZIP instead.".into();
+            }
+        }
+        8 => {
+            f.out_dir = None;
+            f.out_msg.clear();
+        }
         5 => f.by_date = !f.by_date,
         // a name for the person of group a - 1000
         a if a >= 1000 => {
@@ -423,7 +470,13 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         return;
     }
     if token >= ZIP_TOKEN {
-        zip_got(token - ZIP_TOKEN, data);
+        if token == ZIP_TOKEN {
+            date_got(data);
+        } else if token == ZIP_TOKEN + 2 {
+            out_answer(&String::from_utf8(data).unwrap_or_default());
+        } else {
+            zip_progress(&String::from_utf8(data).unwrap_or_default());
+        }
         render();
         return;
     }
@@ -433,7 +486,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         return;
     }
     let found = if w == 0 || h == 0 {
-        None
+        if face_is_video(&f.files[i].2) { Some(Vec::new()) } else { None }
     } else {
         let (w, h) = (w as usize, h as usize);
         let mut g = alloc::vec![0u8; w * h];
@@ -457,6 +510,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         )
     };
     f.faces.push(found);
+    live_save(f.faces.len() - 1);
     f.at += 1;
     face_next();
     render();
@@ -524,29 +578,28 @@ fn face_finish() {
 fn face_zip() {
     let f = &mut st().face;
     let Some(r) = &f.result else { return };
-    let mut want = Vec::new();
-    f.zip_by_date = f.by_date;
     if f.by_date {
-        // every photo once (the name is given when its date is known, after it is read): "#index" for now
+        // every photo and video once; named when its date is known
         let mut seen: Vec<usize> = Vec::new();
         for (_, idx) in &r.groups {
             for &i in idx {
                 if !seen.contains(&i) {
                     seen.push(i);
-                    want.push((format!("#{}", i), f.files[i].0));
                 }
             }
         }
-        f.zip.clear();
-        f.zip_want = want;
-        f.msg = "Packing…".to_string();
-        zip_next();
+        f.date_list = seen;
+        f.date_k = 0;
+        f.dates.clear();
+        f.msg = "Reading when each was taken…".to_string();
+        date_begin();
         return;
     }
+    let mut want = Vec::new();
     for (k, idx) in &r.groups {
         let mut used: Vec<String> = Vec::new();
         for &i in idx {
-            let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
+            let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").replace(['\t', '\n'], " ");
             let mut name = base.clone();
             let mut n = 1;
             while used.contains(&name) {
@@ -560,45 +613,365 @@ fn face_zip() {
             want.push((format!("Auto_Sorted_Faces/{}/{}", k, name), f.files[i].0));
         }
     }
-    f.zip.clear();
-    f.zip_want = want;
-    f.msg = "Packing…".to_string();
-    zip_next();
+    zip_start("Auto_Sorted_Faces.zip", want);
 }
 
-fn zip_next() {
-    let f = &mut st().face;
-    let i = f.zip.len();
-    if i >= f.zip_want.len() {
-        let (folder, n) = if f.zip_by_date {
-            face_rename_by_date();
-            ("Renamed_by_date", st().face.zip.len())
-        } else {
-            ("Auto_Sorted_Faces", f.zip.len())
+/// A unique file name for `base` among those already in a folder.
+fn unique_in(used: &mut Vec<String>, base: &str) -> String {
+    let base = base.replace(['\t', '\n', '/', '\\'], " ");
+    let mut name = base.clone();
+    let mut n = 1;
+    while used.contains(&name) {
+        n += 1;
+        name = match base.rsplit_once('.') {
+            Some((a, e)) => format!("{} ({}).{}", a, n, e),
+            None => format!("{} ({})", base, n),
         };
-        let f = &mut st().face;
-        // a ZIP holds at most 65 535 files: more go in parts
-        let parts: Vec<&[(String, Vec<u8>)]> = f.zip.chunks(60_000).collect();
-        for (k, part) in parts.iter().enumerate() {
-            let bytes = zip_build(part);
-            let name = if parts.len() == 1 { format!("{}.zip", folder) } else { format!("{}-part{}.zip", folder, k + 1) };
-            host::download(&name, "application/zip", &bytes);
-        }
-        f.msg = format!("Downloaded {} files{}.", n, if parts.len() > 1 { format!(" in {} ZIPs", parts.len()) } else { String::new() });
-        f.zip.clear();
-        return;
     }
-    host::call("bytes", &format!("{}\t{}", ZIP_TOKEN + i as u32, f.zip_want[i].1));
+    used.push(name.clone());
+    name
 }
 
-fn zip_got(i: u32, data: Vec<u8>) {
+/// One photo, just scanned: into its person's folder at once, by the same discover-as-you-go rule face_finish
+/// uses (so the folder matches the result).
+fn live_save(i: usize) {
     let f = &mut st().face;
-    if i as usize != f.zip.len() {
+    if f.out_dir.is_none() || f.by_date {
         return;
     }
-    let path = f.zip_want[i as usize].0.clone();
-    f.zip.push((path, data));
-    zip_next();
+    let Some(Some(hs)) = f.faces.get(i).cloned() else { return };
+    let mut people: Vec<usize> = Vec::new();
+    for h in hs.iter() {
+        let mut best = 0usize;
+        let mut best_d = f64::INFINITY;
+        for (id, k) in &f.live_known {
+            let d = chi2(h, k);
+            if d < best_d {
+                best_d = d;
+                best = *id;
+            }
+        }
+        let id = if best > 0 && best_d < f.strict {
+            best
+        } else {
+            f.live_next += 1;
+            f.live_next - 1
+        };
+        f.live_known.push((id, h.clone()));
+        if !people.contains(&id) {
+            people.push(id);
+        }
+    }
+    let groups: Vec<String> = if people.is_empty() { alloc::vec!["No_Faces_Detected".to_string()] } else { people.iter().map(|p| format!("Person_{}", p)).collect() };
+    let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
+    for g in groups {
+        let name = unique_in(f.live_used.entry(g.clone()).or_default(), &base);
+        out_save(&format!("{}/{}", g, name), f.files[i].0);
+    }
+}
+
+fn out_save(path: &str, handle: u32) {
+    let f = &mut st().face;
+    f.out_asked += 1;
+    host::call("save", &format!("{}\t{}", path, handle));
+}
+
+/// The whole result into the folder (a strictness tried again, without scanning).
+fn face_save_sorted() {
+    let f = &mut st().face;
+    let Some(r) = &f.result else { return };
+    let mut list: Vec<(String, u32)> = Vec::new();
+    for (k, idx) in &r.groups {
+        let mut used = Vec::new();
+        for &i in idx {
+            let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
+            list.push((format!("{}/{}", k, unique_in(&mut used, &base)), f.files[i].0));
+        }
+    }
+    for (p, h) in list {
+        out_save(&p, h);
+    }
+}
+
+fn out_answer(m: &str) {
+    let f = &mut st().face;
+    if let Some(n) = m.strip_prefix("dir ") {
+        f.out_dir = Some(n.to_string());
+        f.out_asked = 0;
+        f.out_saved = 0;
+        f.out_msg.clear();
+    } else if let Some(n) = m.strip_prefix("saved ") {
+        f.out_saved = n.parse().unwrap_or(f.out_saved);
+    } else if let Some(e) = m.strip_prefix("error ") {
+        if e == "cancelled" {
+            return;
+        }
+        f.out_msg = format!("Saving into the folder stopped: {}", e);
+    }
+}
+
+/// The ZIP is made by the browser from the files themselves (host "zip"), so a set of any size, videos included,
+/// never has to fit in this program's memory.
+fn zip_start(name: &str, want: Vec<(String, u32)>) {
+    let f = &mut st().face;
+    let mut list = String::from(name);
+    for (p, h) in &want {
+        list.push('\n');
+        list.push_str(p);
+        list.push('\t');
+        list.push_str(&h.to_string());
+    }
+    f.msg = format!("Packing {} files…", want.len());
+    host::call("zip", &list);
+}
+
+fn zip_progress(m: &str) {
+    let f = &mut st().face;
+    f.msg = if let Some(n) = m.strip_prefix("done ") {
+        format!("Downloaded {} files.", n)
+    } else if let Some(e) = m.strip_prefix("error ") {
+        format!("The ZIP could not be made: {}", e)
+    } else {
+        format!("Packing {}…", m)
+    };
+}
+
+// ---------------------------------------------------------------------------------------------- when each was taken
+
+const DATE_HEAD: u64 = 262_144;
+
+fn date_ask(i: usize, start: u64, len: u64) {
+    let h = st().face.files[i].0;
+    host::call("slice", &format!("{}\t{}\t{}\t{}", ZIP_TOKEN, h, start, len));
+}
+
+fn date_begin() {
+    let f = &mut st().face;
+    if f.date_k >= f.date_list.len() {
+        date_done();
+        return;
+    }
+    let i = f.date_list[f.date_k];
+    f.date_step = 0;
+    f.date_pos = 0;
+    if f.date_k % 25 == 0 {
+        f.msg = format!("Reading when each was taken: {} of {}…", f.date_k + 1, f.date_list.len());
+    }
+    date_ask(i, 0, DATE_HEAD);
+}
+
+fn date_finish(when: Option<u64>) {
+    let f = &mut st().face;
+    let i = f.date_list[f.date_k];
+    let when = when.unwrap_or_else(|| {
+        let ms: f64 = host::call("filetime", &format!("{}", f.files[i].0)).and_then(|t| t.parse().ok()).unwrap_or(0.0);
+        local_stamp(ms)
+    });
+    f.dates.push((i, when));
+    f.date_k += 1;
+    date_begin();
+}
+
+/// A part of the current file arrived: its start (step 0), a box header further on (1), the movie's header box (2)
+/// or a HEIC's EXIF item (3).
+fn date_got(data: Vec<u8>) {
+    let f = &mut st().face;
+    let Some(&i) = f.date_list.get(f.date_k) else { return };
+    let (name, size) = (f.files[i].2.clone(), f.files[i].1 as u64);
+    let ext = face_ext(&name);
+    match f.date_step {
+        0 => match ext.as_str() {
+            "heic" | "heif" => match heif_exif_at(&data) {
+                Some((at, len)) if at + len <= data.len() => date_finish(exif_item(&data[at..at + len])),
+                Some((at, len)) => {
+                    f.date_step = 3;
+                    date_ask(i, at as u64, len.min(1 << 20) as u64);
+                }
+                None => date_finish(None),
+            },
+            "mp4" | "m4v" | "mov" | "3gp" | "3g2" => {
+                // the boxes at the top: moov (the movie's header) may come after gigabytes of data
+                let mut p = 0usize;
+                loop {
+                    let Some((kind, sz, _)) = box_head(&data, p) else {
+                        if (p as u64) < size && p > 0 {
+                            f.date_step = 1;
+                            f.date_pos = p as u64;
+                            date_ask(i, p as u64, 16);
+                        } else {
+                            date_finish(None);
+                        }
+                        return;
+                    };
+                    if &kind == b"moov" {
+                        if p as u64 + sz <= data.len() as u64 {
+                            date_finish(moov_date(&data[p..p + sz as usize]));
+                        } else {
+                            f.date_step = 2;
+                            date_ask(i, p as u64, sz.min(32 << 20));
+                        }
+                        return;
+                    }
+                    if sz < 8 {
+                        date_finish(None);
+                        return;
+                    }
+                    p = match p.checked_add(sz as usize) { Some(x) => x, None => { date_finish(None); return; } };
+                    if p as u64 >= size {
+                        date_finish(None);
+                        return;
+                    }
+                    if p >= data.len() {
+                        f.date_step = 1;
+                        f.date_pos = p as u64;
+                        date_ask(i, p as u64, 16);
+                        return;
+                    }
+                }
+            }
+            "mkv" | "webm" => date_finish(mkv_date(&data)),
+            "avi" => date_finish(avi_date(&data)),
+            _ if face_is_video(&name) => date_finish(None),
+            _ => date_finish(exif_date(&data)),
+        },
+        1 => match box_head(&data, 0) {
+            Some((kind, sz, _)) if &kind == b"moov" => {
+                f.date_step = 2;
+                date_ask(i, f.date_pos, sz.min(32 << 20));
+            }
+            Some((_, sz, _)) if sz >= 8 && f.date_pos + sz < size => {
+                f.date_pos += sz;
+                date_ask(i, f.date_pos, 16);
+            }
+            _ => date_finish(None),
+        },
+        2 => date_finish(moov_date(&data)),
+        _ => date_finish(exif_item(&data)),
+    }
+}
+
+/// Every file dated: numbered in that order and named after who is in it.
+fn date_done() {
+    let f = &mut st().face;
+    let labels = face_labels(f);
+    let mut items: Vec<(u64, String, usize)> = f.dates.iter().map(|(i, w)| (*w, f.files[*i].2.clone(), *i)).collect();
+    items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    let want: Vec<(String, u32)> = items
+        .into_iter()
+        .enumerate()
+        .map(|(k, (when, name, i))| {
+            let ext = face_ext(&name);
+            let ext = if ext.is_empty() || ext.len() > 5 { "jpg".to_string() } else { ext };
+            let who = labels.get(&i).map(|l| l.join("-")).unwrap_or_else(|| "unknown".into());
+            // then the year, Persian (Solar Hijri) and Gregorian (owner, 2026-10-15: "0000001-unknown-1382-2004")
+            let years = years_of(when).map(|(p, g)| format!("-{}-{}", p, g)).unwrap_or_default();
+            (format!("Renamed_by_date/{:07}-{}{}.{}", k + 1, who, years, ext), f.files[i].0)
+        })
+        .collect();
+    if f.out_dir.is_some() {
+        f.msg = format!("Saving {} files into the folder…", want.len());
+        for (p, h) in want {
+            out_save(&p, h);
+        }
+        return;
+    }
+    zip_start("Renamed_by_date.zip", want);
+}
+
+/// A box of an ISO media file at `p`: its type, its whole size, the size of its header.
+fn box_head(b: &[u8], p: usize) -> Option<([u8; 4], u64, usize)> {
+    let h = b.get(p..p + 8)?;
+    let kind = [h[4], h[5], h[6], h[7]];
+    let sz = u32::from_be_bytes([h[0], h[1], h[2], h[3]]) as u64;
+    if sz == 1 {
+        let x = b.get(p + 8..p + 16)?;
+        return Some((kind, u64::from_be_bytes([x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]]), 16));
+    }
+    Some((kind, if sz == 0 { u64::MAX / 2 } else { sz }, 8))
+}
+
+fn find(h: &[u8], n: &[u8]) -> Option<usize> {
+    if n.is_empty() || h.len() < n.len() {
+        return None;
+    }
+    (0..=h.len() - n.len()).find(|&k| &h[k..k + n.len()] == n)
+}
+
+/// "YYYY-MM-DDThh:mm:ss" (or with ':' between the date's parts) at `k`, as a stamp.
+fn iso_at(b: &[u8], k: usize) -> Option<u64> {
+    let s = b.get(k..k + 19)?;
+    let d = |a: usize, n: usize| -> Option<u64> { let t = core::str::from_utf8(&s[a..a + n]).ok()?; if t.bytes().all(|c| c.is_ascii_digit()) { t.parse().ok() } else { None } };
+    if !(s[4] == b'-' || s[4] == b':') || !(s[10] == b'T' || s[10] == b' ') {
+        return None;
+    }
+    let y = d(0, 4)?;
+    if !(1900..2200).contains(&y) {
+        return None;
+    }
+    Some(stamp(y, d(5, 2)?, d(8, 2)?, d(11, 2)?, d(14, 2)?, d(17, 2)?))
+}
+
+/// When a movie (MP4, MOV, 3GP) was made: a phone's local creation date where it wrote one
+/// (com.apple.quicktime.creationdate), otherwise the movie header's creation time (UTC).
+fn moov_date(m: &[u8]) -> Option<u64> {
+    if let Some(k) = find(m, b"com.apple.quicktime.creationdate") {
+        let from = find(&m[k..], b"ilst").map(|x| k + x).unwrap_or(k);
+        for j in from..m.len().saturating_sub(19) {
+            if m[j].is_ascii_digit() {
+                if let Some(v) = iso_at(m, j) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    let j = find(m, b"mvhd")?;
+    let v = *m.get(j + 4)?;
+    let secs = if v == 1 {
+        let x = m.get(j + 8..j + 16)?;
+        u64::from_be_bytes([x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]])
+    } else {
+        let x = m.get(j + 8..j + 12)?;
+        u32::from_be_bytes([x[0], x[1], x[2], x[3]]) as u64
+    };
+    // seconds since 1904
+    let unix = secs.checked_sub(2_082_844_800)?;
+    if unix < 86_400 {
+        return None;
+    }
+    Some(local_stamp(unix as f64 * 1000.0))
+}
+
+/// Matroska / WebM: the segment's DateUTC (nanoseconds since 2001).
+fn mkv_date(b: &[u8]) -> Option<u64> {
+    let mut from = 0;
+    while let Some(k) = find(&b[from..], &[0x44, 0x61, 0x88]).map(|x| from + x) {
+        if let Some(x) = b.get(k + 3..k + 11) {
+            let ns = i64::from_be_bytes([x[0], x[1], x[2], x[3], x[4], x[5], x[6], x[7]]);
+            let unix = ns / 1_000_000_000 + 978_307_200;
+            if unix > 86_400 {
+                return Some(local_stamp(unix as f64 * 1000.0));
+            }
+        }
+        from = k + 1;
+    }
+    None
+}
+
+/// AVI: the IDIT chunk ("Mon Mar 10 15:04:43 2008", or "2008:03:10 15:04:43").
+fn avi_date(b: &[u8]) -> Option<u64> {
+    let k = find(b, b"IDIT")? + 8;
+    let s = core::str::from_utf8(b.get(k..(k + 40).min(b.len()))?).ok()?.trim_matches(char::from(0)).trim().to_string();
+    if let Some(v) = iso_at(s.as_bytes(), 0) {
+        return Some(v);
+    }
+    let p: Vec<&str> = s.split_whitespace().collect();
+    if p.len() < 5 {
+        return None;
+    }
+    let months = ["jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"];
+    let m = months.iter().position(|x| p[1].to_lowercase().starts_with(x))? as u64 + 1;
+    let t: Vec<u64> = p[3].split(':').filter_map(|x| x.parse().ok()).collect();
+    Some(stamp(p[4].parse().ok()?, m, p[2].parse().ok()?, *t.first()?, *t.get(1)?, *t.get(2).unwrap_or(&0)))
 }
 
 /// Who is in each photo, as its file name will say: the names given, "unknown" for a face not named or a photo
@@ -631,37 +1004,42 @@ fn file_safe(n: &str) -> String {
     t.split_whitespace().collect::<Vec<_>>().join(" ").trim_matches('.').to_string()
 }
 
-/// The photos in the order they were taken, numbered from 0000001 (to 1000000 and on), each named after who is in
-/// it: 0000001-Anna.jpg, 0000002-Anna-Marco.jpg, 0000003-unknown.jpg (owner, 2026-10-15).
-fn face_rename_by_date() {
-    let f = &mut st().face;
-    let labels = face_labels(f);
-    let mut items: Vec<(u64, String, usize, Vec<u8>)> = core::mem::take(&mut f.zip)
-        .into_iter()
-        .filter_map(|(tag, data)| {
-            let i: usize = tag.strip_prefix('#')?.parse().ok()?;
-            let when = exif_date(&data).unwrap_or_else(|| {
-                let ms: f64 = host::call("filetime", &format!("{}", f.files[i].0)).and_then(|t| t.parse().ok()).unwrap_or(0.0);
-                stamp_of_ms(ms)
-            });
-            Some((when, f.files[i].2.clone(), i, data))
-        })
-        .collect();
-    items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    f.zip = items
-        .into_iter()
-        .enumerate()
-        .map(|(k, (_, name, i, data))| {
-            let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).filter(|e| e.len() <= 5 && !e.contains('/')).unwrap_or_else(|| "jpg".into());
-            let who = labels.get(&i).map(|l| l.join("-")).unwrap_or_else(|| "unknown".into());
-            (format!("Renamed_by_date/{:07}-{}.{}", k + 1, who, ext), data)
-        })
-        .collect();
+/// A stamp's year in the Persian (Solar Hijri) calendar and in the Gregorian one: 2004-01-15 is (1382, 2004),
+/// 2004-03-25 (1383, 2004). None for a file with no date at all.
+fn years_of(st_: u64) -> Option<(u64, u64)> {
+    let gy = st_ / 10_000_000_000;
+    let gm = st_ / 100_000_000 % 100;
+    let gd = st_ / 1_000_000 % 100;
+    if gy < 700 || !(1..=12).contains(&gm) || !(1..=31).contains(&gd) {
+        return None;
+    }
+    // the usual Gregorian to Jalali conversion (the 33-year cycle arithmetic)
+    let g_d_m: [i64; 12] = [0, 31, 59, 90, 120, 151, 181, 212, 243, 273, 304, 334];
+    let (gy, gm, gd) = (gy as i64, gm as i64, gd as i64);
+    let gy2 = if gm > 2 { gy + 1 } else { gy };
+    let mut days = 355_666 + 365 * gy + (gy2 + 3) / 4 - (gy2 + 99) / 100 + (gy2 + 399) / 400 + gd + g_d_m[(gm - 1) as usize];
+    let mut jy = -1595 + 33 * (days / 12_053);
+    days %= 12_053;
+    jy += 4 * (days / 1461);
+    days %= 1461;
+    if days > 365 {
+        jy += (days - 1) / 365;
+    }
+    Some((jy.max(0) as u64, gy as u64))
 }
 
 /// YYYYMMDDhhmmss as one number, so photo dates sort.
 fn stamp(y: u64, mo: u64, d: u64, h: u64, mi: u64, s: u64) -> u64 {
     ((((y * 100 + mo) * 100 + d) * 100 + h) * 100 + mi) * 100 + s
+}
+
+/// A moment (ms since 1970) as a stamp in this computer's local time, as the camera's own dates are.
+fn local_stamp(ms: f64) -> u64 {
+    if ms <= 0.0 {
+        return 0;
+    }
+    let off: f64 = host::call("tzoff", &format!("{:.0}", ms)).and_then(|t| t.parse().ok()).unwrap_or(0.0);
+    stamp_of_ms(ms + off)
 }
 
 /// A file's time (ms since 1970, UTC) as a stamp.
@@ -688,7 +1066,8 @@ fn stamp_of_ms(ms: f64) -> u64 {
 /// When a JPEG was taken, from its EXIF (DateTimeOriginal, else DateTime): "YYYY:MM:DD hh:mm:ss" as a stamp.
 fn exif_date(b: &[u8]) -> Option<u64> {
     if b.len() >= 12 && &b[4..8] == b"ftyp" {
-        return heif_exif(b).and_then(exif_tiff);
+        let (at, len) = heif_exif_at(b)?;
+        return exif_item(b.get(at..at + len)?);
     }
     if b.len() < 4 || b[0] != 0xFF || b[1] != 0xD8 {
         return None;
@@ -731,8 +1110,14 @@ fn bmff_boxes(b: &[u8]) -> Vec<([u8; 4], &[u8])> {
     out
 }
 
-/// A HEIC's EXIF block (the TIFF part): the "Exif" item named in iinf, found through iloc.
-fn heif_exif(b: &[u8]) -> Option<&[u8]> {
+/// A HEIC's EXIF item: four bytes saying how far in its TIFF header starts, then the EXIF.
+fn exif_item(d: &[u8]) -> Option<u64> {
+    let skip = u32::from_be_bytes([*d.first()?, *d.get(1)?, *d.get(2)?, *d.get(3)?]) as usize;
+    exif_tiff(d.get(4 + skip..)?)
+}
+
+/// Where a HEIC's EXIF item is (offset, length in the file): the "Exif" item named in iinf, found through iloc.
+fn heif_exif_at(b: &[u8]) -> Option<(usize, usize)> {
     let meta = bmff_boxes(b).into_iter().find(|x| &x.0 == b"meta")?.1;
     let kids = bmff_boxes(meta.get(4..)?);
     let be = |s: &[u8], o: usize, n: usize| -> Option<u64> { let x = s.get(o..o + n)?; Some(x.iter().fold(0u64, |a, v| (a << 8) | *v as u64)) };
@@ -779,11 +1164,7 @@ fn heif_exif(b: &[u8]) -> Option<&[u8]> {
         }
         if id == exif_id && method == 0 {
             let (off, len) = first?;
-            let at = (base + off) as usize;
-            let data = b.get(at..at + len as usize)?;
-            // four bytes: how far into the item the TIFF header starts
-            let skip = be(data, 0, 4)? as usize;
-            return data.get(4 + skip..);
+            return Some(((base + off) as usize, len as usize));
         }
     }
     None
@@ -820,71 +1201,6 @@ fn exif_tiff(t: &[u8]) -> Option<u64> {
     ifd0.iter().find(|e| e.0 == 0x0132).and_then(|e| text_at(e.1))
 }
 
-fn crc32(b: &[u8]) -> u32 {
-    let mut c: u32 = 0xFFFF_FFFF;
-    for &x in b {
-        c ^= x as u32;
-        for _ in 0..8 {
-            c = if c & 1 != 0 { 0xEDB8_8320 ^ (c >> 1) } else { c >> 1 };
-        }
-    }
-    c ^ 0xFFFF_FFFF
-}
-
-fn zip_build(files: &[(String, Vec<u8>)]) -> Vec<u8> {
-    let mut out: Vec<u8> = Vec::new();
-    let mut central: Vec<u8> = Vec::new();
-    let u16le = |v: &mut Vec<u8>, x: u16| v.extend_from_slice(&x.to_le_bytes());
-    let u32le = |v: &mut Vec<u8>, x: u32| v.extend_from_slice(&x.to_le_bytes());
-    for (path, data) in files {
-        let off = out.len() as u32;
-        let name = path.as_bytes();
-        let crc = crc32(data);
-        u32le(&mut out, 0x0403_4b50);
-        u16le(&mut out, 20);
-        u16le(&mut out, 0x0800);
-        u16le(&mut out, 0);
-        u16le(&mut out, 0);
-        u16le(&mut out, 0x21);
-        u32le(&mut out, crc);
-        u32le(&mut out, data.len() as u32);
-        u32le(&mut out, data.len() as u32);
-        u16le(&mut out, name.len() as u16);
-        u16le(&mut out, 0);
-        out.extend_from_slice(name);
-        out.extend_from_slice(data);
-        u32le(&mut central, 0x0201_4b50);
-        u16le(&mut central, 20);
-        u16le(&mut central, 20);
-        u16le(&mut central, 0x0800);
-        u16le(&mut central, 0);
-        u16le(&mut central, 0);
-        u16le(&mut central, 0x21);
-        u32le(&mut central, crc);
-        u32le(&mut central, data.len() as u32);
-        u32le(&mut central, data.len() as u32);
-        u16le(&mut central, name.len() as u16);
-        for _ in 0..4 {
-            u16le(&mut central, 0);
-        }
-        u32le(&mut central, 0);
-        u32le(&mut central, off);
-        central.extend_from_slice(name);
-    }
-    let cd_off = out.len() as u32;
-    let cd_size = central.len() as u32;
-    out.extend_from_slice(&central);
-    u32le(&mut out, 0x0605_4b50);
-    u16le(&mut out, 0);
-    u16le(&mut out, 0);
-    u16le(&mut out, files.len() as u16);
-    u16le(&mut out, files.len() as u16);
-    u32le(&mut out, cd_size);
-    u32le(&mut out, cd_off);
-    u16le(&mut out, 0);
-    out
-}
-
 // ---------------------------------------------------------------------------------------------- the view
 
 fn face_view(s: &State) -> N {
@@ -892,7 +1208,7 @@ fn face_view(s: &State) -> N {
     let strict = if f.strict == 0.0 { 75.0 } else { f.strict };
     let mut root = el("div")
         .cls("tool fm")
-        .kid(el("p").cls("lede").kid(txt("Sort photos by face. Choose a folder or some photos: Face Mace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
+        .kid(el("p").cls("lede").kid(txt("Sort photos and videos by face. Choose a folder or some files: Face Mace finds the faces, learns who is who, and groups the photos by person. ")).kid(el("b").text("Everything happens on this device; no photo is uploaded.")))
         // the desktop program (owner, 2026-10-15: "a downloadable version of FaceMace in .exe file for Windows"),
         // built by GitHub on Windows from back/rust/facemace-desktop
         .kid_if(!s.app_mode, || {
@@ -911,7 +1227,7 @@ fn face_view(s: &State) -> N {
                     el("div")
                         .cls("row")
                         .kid(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
-                        .kid(el("label").cls("btn").kid(txt("Choose photos")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
+                        .kid(el("label").cls("btn").kid(txt("Choose photos")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
                 )
                 .kid(el("p").cls("hint").text(if f.files.is_empty() { f.msg.clone() } else { format!("{} photo{} ready", f.files.len(), if f.files.len() == 1 { "" } else { "s" }) })),
         )
@@ -925,6 +1241,21 @@ fn face_view(s: &State) -> N {
                 )
                 .kid(el("p").cls("hint").text("Lower is stricter (more people, each photo set smaller); higher is looser (more photos grouped together). Faces are found once, so trying another strictness is quick.")),
         )
+        .kid({
+            let can = host::call("canpick", "").as_deref() == Some("1");
+            let mut d = el("div").cls("fm-out");
+            d = match &f.out_dir {
+                Some(n) => d
+                    .kid(el("p").kid(txt("Saving into the new folder ")).kid(el("b").text(n.clone())).kid(txt(if f.by_date { ": the renamed files, as soon as their names are known." } else { ": each photo into its person's folder as soon as it is scanned." })))
+                    .kid_if(f.out_asked > 0, || el("p").cls("hint").text(format!("{} of {} saved", f.out_saved, f.out_asked)).into())
+                    .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 8, String::new())).text("Stop saving to the folder")),
+                None if can => d
+                    .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 7, String::new())).text("Save into a folder as they are done…"))
+                    .kid(el("span").cls("hint").text(" Pick where: a new folder is made there, and filled while Face Mace works.")),
+                None => d.kid(el("p").cls("hint").text("Saving straight into a folder needs Chrome or Edge; here the result downloads as a ZIP.")),
+            };
+            d.kid_if(!f.out_msg.is_empty(), || el("p").cls("hint warn").text(f.out_msg.clone()).into())
+        })
         .kid(el("button").attr("type", "button").cls("btn primary").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text("Sort by face"));
     if f.running {
         let total = f.files.len().max(1);
@@ -950,10 +1281,10 @@ fn face_view(s: &State) -> N {
                 el("label")
                     .cls("fm-option")
                     .kid(el("input").attr("type", "checkbox").prop("checked", if f.by_date { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 5, String::new())))
-                    .kid(txt(" Rename the photos by date: numbered in the order they were taken, then who is in them (0000001-Anna.jpg, 0000002-unknown.jpg), all in one folder")),
+                    .kid(txt(" Rename the photos and videos by date: numbered in the order they were taken, then who is in them and the year, Persian and Gregorian (0000001-Anna-1382-2004.jpg, 0000002-unknown-1403-2024.mp4), all in one folder")),
             )
-            .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(if f.by_date { "Download renamed (ZIP)" } else { "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
-            .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the camera's (EXIF) where the photo has one, otherwise the file's.").into())
+            .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
             .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into());
         for (gi, (k, idx)) in r.groups.iter().enumerate() {
             root = root.kid(
@@ -979,7 +1310,11 @@ fn face_view(s: &State) -> N {
                             .cls("fm-thumbs")
                             .kids(idx.iter().take(12).map(|i| -> N {
                                 let url = r.thumbs.iter().find(|(j, _)| j == i).map(|x| x.1.clone()).unwrap_or_default();
-                                el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("title", f.files[*i].2.clone()).attr("src", url).into()
+                                if url.is_empty() {
+                                    el("span").cls("fm-tile").attr("title", f.files[*i].2.clone()).text(face_ext(&f.files[*i].2).to_uppercase()).into()
+                                } else {
+                                    el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("title", f.files[*i].2.clone()).attr("src", url).into()
+                                }
                             }))
                             .kid_if(idx.len() > 12, || el("span").cls("fm-more").text(format!("+{}", idx.len() - 12)).into()),
                     ),
@@ -998,5 +1333,7 @@ const FACE_CSS: &str = "\
 .fm-thumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.fm-thumbs img{width:88px;height:88px;object-fit:cover;border:1px solid var(--line)}\
 .fm-more{font-size:13px;color:var(--muted);padding:0 8px}\
 .fm-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}.fm-head h3{margin:0}.fm-name{max-width:220px;padding:6px 10px}\
+.fm-tile{width:88px;height:88px;display:grid;place-items:center;border:1px solid var(--line);background:#222;color:#fff;font-size:12px;font-weight:600}\
+.fm-out{margin:10px 0 14px;display:grid;gap:6px;justify-items:start}.fm-out p{margin:0}\
 .fm-option{display:flex;gap:8px;align-items:flex-start;margin:12px 0 8px;font-size:14px}\
 ";
