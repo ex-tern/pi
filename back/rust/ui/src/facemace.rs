@@ -727,6 +727,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             // renaming only: the fingerprint for duplicates is all that is needed
             f.faces.push(Some(Vec::new()));
             f.pics.push(pic);
+            live_save(f.faces.len() - 1);
             face_preview();
             let f = &mut st().face;
             f.at += 1;
