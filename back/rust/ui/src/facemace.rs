@@ -541,10 +541,10 @@ struct FaceResult {
 }
 
 /// The version, and its name, raised with every change pushed (owner, 2026-10-15: "write the version name for each
-/// push"); not shown in the page (owner, 2026-10-15: "delete this"), but the Windows program, its installer and
-/// release carry it (the build reads it from here), and every commit names it
-pub const FM_VERSION: &str = "1.2.1";
-pub const FM_VERSION_NAME: &str = "Quiet footer";
+/// push"); the page shows the number and the edition only, the name is in the commits and the Windows release (the
+/// build reads both from here)
+pub const FM_VERSION: &str = "1.2.2";
+pub const FM_VERSION_NAME: &str = "Edition shown";
 
 const FACE_TOKEN: u32 = 1_000_000;
 /// photos at a time, online
@@ -4492,6 +4492,9 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
             root = root.kid(el("p").kid(more));
         }
     }
+    // the version and the edition only (owner, 2026-10-15: "keep the version number shown only, and edition whether
+    // light or full for Windows")
+    root = root.kid(el("p").cls("fm-version").text(format!("Face Mace {} · {}", FM_VERSION, if f.full { "Full edition for Windows" } else { "Light edition (online)" })));
     root.into()
 }
 
