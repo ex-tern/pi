@@ -24511,6 +24511,7 @@ def _orcid_unstate(state: Optional[str]):
     if not state:
         return "", ""
     wallet_part, _, enc = state.partition("~")
+    enc = enc.split("~")[0]
     origin = ""
     if enc:
         try:
@@ -24520,8 +24521,19 @@ def _orcid_unstate(state: Optional[str]):
     return wallet_part, origin
 
 
+# The apps of their own a sign-in may return to (Intern, installed on a phone, must come back into itself rather
+# than to the site): a fixed list, so `state` can never name an arbitrary path.
+_ORCID_RETURN_APPS = {"intern": "/intern/"}
+
+
+def _orcid_app_path(state: Optional[str]) -> str:
+    """The app path a sign-in started from, if it was one of _ORCID_RETURN_APPS ("" otherwise)."""
+    parts = (state or "").split("~")
+    return _ORCID_RETURN_APPS.get(parts[2], "") if len(parts) > 2 else ""
+
+
 @auth_router.get("/api/auth/orcid/login-url")
-def orcid_login_url(request: Request, wallet: Optional[str] = None):
+def orcid_login_url(request: Request, wallet: Optional[str] = None, app: str = ""):
     if not ORCID_CLIENT_ID or not ORCID_CLIENT_SECRET:
         raise HTTPException(
             status_code=503,
@@ -24531,6 +24543,8 @@ def orcid_login_url(request: Request, wallet: Optional[str] = None):
     start = _request_origin(request)
     state_payload = _orcid_state(wallet if wallet and core_w3.is_address(wallet) else "none",
                                  start if _orcid_return_allowed(start, request) else "")
+    if app in _ORCID_RETURN_APPS:
+        state_payload = f"{state_payload}{'' if '~' in state_payload else '~'}~{app}"
     redirect_uri = resolve_orcid_redirect_uri(request)
     url = (
         f"https://orcid.org/oauth/authorize?client_id={ORCID_CLIENT_ID}"
@@ -24571,6 +24585,8 @@ def resolve_frontend_origin(request: Request) -> str:
 def orcid_callback(request: Request, code: Optional[str] = None, state: Optional[str] = None):
     wallet_part, back = _orcid_unstate(state)
     frontend = back if _orcid_return_allowed(back, request) else resolve_frontend_origin(request)
+    # back into the app the sign-in started from (its fixed path), else the site's start
+    frontend = frontend.rstrip("/") + (_orcid_app_path(state).rstrip("/") or "")
     wallet_qs = ""
     if wallet_part and wallet_part != "none" and core_w3.is_address(wallet_part):
         wallet_qs = f"&wallet={core_w3.to_checksum_address(wallet_part)}"
@@ -27403,10 +27419,13 @@ def intern_build_router(db_path: str, who: Callable[[Request], str], rate_limit:
         key = who(request)
         with db() as c:
             seen(c, key)
+            # the newest id first, then only what is at or below it: a signal written between the two reads is
+            # then picked up by the next poll instead of being skipped over
+            top = c.execute("SELECT COALESCE(MAX(id), 0) FROM signals").fetchone()[0]
             rows = c.execute("SELECT s.id, s.frm, s.kind, s.data, d.name FROM signals s LEFT JOIN doctors d ON d.key = s.frm"
-                             " WHERE s.to_ = ? AND s.id > ? AND s.at > ? ORDER BY s.id LIMIT 100",
-                             (key, max(0, int(after)), now() - INTERN_SIGNAL_TTL)).fetchall()
-            last = c.execute("SELECT COALESCE(MAX(id), 0) FROM signals").fetchone()[0]
+                             " WHERE s.to_ = ? AND s.id > ? AND s.id <= ? AND s.at > ? ORDER BY s.id LIMIT 100",
+                             (key, max(0, int(after)), top, now() - INTERN_SIGNAL_TTL)).fetchall()
+            last = rows[-1][0] if len(rows) == 100 else top
         return {"signals": [{"id": r[0], "from": r[1], "kind": r[2], "data": r[3], "name": r[4] or ""} for r in rows],
                 "last": last}
 

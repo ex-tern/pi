@@ -89,3 +89,32 @@ def test_a_case_leaves_deidentified_and_only_with_consent(tmp_path):
     assert c.post("/api/intern/diagnose", json={"case": "short", "consent": True}).status_code == 400
     blocked, _ = make(tmp_path, allowed=False)
     assert blocked.post("/api/intern/diagnose", json={"case": case, "consent": True}).status_code == 403
+
+
+def test_signals_never_skip_past_a_full_page(tmp_path):
+    c, _ = make(tmp_path)
+    for k, n in (("orcid:a", "Dr A"), ("orcid:b", "Dr B")):
+        c.put("/api/intern/me", json={"name": n}, headers=as_(k))
+    for i in range(130):
+        c.post("/api/intern/signal", json={"to": "orcid:b", "kind": "ice", "data": str(i)}, headers=as_("orcid:a"))
+    got, after = [], 0
+    for _ in range(3):
+        r = c.get(f"/api/intern/signals?after={after}", headers=as_("orcid:b")).json()
+        got += [s["data"] for s in r["signals"]]
+        after = r["last"]
+    assert got == [str(i) for i in range(130)]
+
+
+def test_orcid_sign_in_returns_into_the_intern_app():
+    from starlette.requests import Request as R
+    req = R({"type": "http", "method": "GET", "path": "/", "headers": [(b"host", b"pitechlab.com"), (b"x-forwarded-proto", b"https")],
+             "query_string": b"", "server": ("pitechlab.com", 443), "scheme": "https"})
+    state = api._orcid_state("none", "https://pitechlab.com") + "~intern"
+    assert api._orcid_app_path(state) == "/intern/"
+    assert api._orcid_unstate(state) == ("none", "https://pitechlab.com")
+    r = api.orcid_callback(req, code=None, state=state)
+    assert r.headers["location"] == "https://pitechlab.com/intern/?orcid_error=missing_code"
+    # an app not on the list is ignored, and no app means the site's start
+    assert api._orcid_app_path(api._orcid_state("none", "https://pitechlab.com") + "~evil") == ""
+    r = api.orcid_callback(req, code=None, state=api._orcid_state("none", "https://pitechlab.com"))
+    assert r.headers["location"] == "https://pitechlab.com/?orcid_error=missing_code"

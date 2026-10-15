@@ -274,11 +274,35 @@ const rtcShow = () => {
     if (au.srcObject !== RTC.remote) au.srcObject = RTC.remote;
   } else if (au && !RTC.remote) au.remove();
 };
+// the page is told at once when the call changes (Intern's token 5_999_999), instead of at its next look
+const rtcPing = () => { try { give(5999999, enc.encode("rtc"), 1, 1); } catch (_) {} };
+// a ring while a call waits to be answered: two short tones every two seconds, and the phone buzzes
+let ringTimer = 0;
+const ring = (on) => {
+  clearInterval(ringTimer); ringTimer = 0;
+  if (!on) return;
+  const beep = () => {
+    try { ops.tone("880\t880\t180\tsine\t0.06"); setTimeout(() => ops.tone("660\t660\t220\tsine\t0.06"), 240); } catch (_) {}
+    if (navigator.vibrate) navigator.vibrate([200, 100, 200]);
+  };
+  beep(); ringTimer = setInterval(beep, 2000);
+};
+// a notice on the phone or the desktop, when the app is not in front (or always, if asked)
+function notify(title, body, tag, always) {
+  if (!("Notification" in window) || Notification.permission !== "granted") return false;
+  if (!always && !document.hidden) return false;
+  const o = { body: body || "", tag: tag || "intern", icon: "/intern/icon-192.png", badge: "/intern/icon-192.png", renotify: true };
+  const show = (reg) => { if (reg && reg.showNotification) reg.showNotification(title, o); else { try { new Notification(title, o); } catch (_) {} } };
+  if (navigator.serviceWorker && navigator.serviceWorker.getRegistration) navigator.serviceWorker.getRegistration().then(show, () => show(null)); else show(null);
+  return true;
+}
 const rtcStop = (state, error) => {
+  ring(false);
   if (RTC.pc) { try { RTC.pc.close(); } catch (_) {} }
   if (RTC.local) RTC.local.getTracks().forEach((t) => t.stop());
   Object.assign(RTC, { pc: null, local: null, remote: null, offer: null, early: [], muted: false, state: state || "ended", error: error || "" });
   const au = document.getElementById("intern-audio"); if (au) au.remove();
+  rtcPing();
 };
 const rtcPc = async () => {
   RTC.local = await navigator.mediaDevices.getUserMedia({ audio: true, video: RTC.video });
@@ -287,7 +311,7 @@ const rtcPc = async () => {
   pc.onicecandidate = (e) => { if (e.candidate) rtcSend("ice", e.candidate.toJSON()); };
   pc.ontrack = (e) => { RTC.remote = e.streams[0] || new MediaStream([e.track]); rtcShow(); };
   pc.onconnectionstatechange = () => {
-    if (pc.connectionState === "connected") { RTC.state = "connected"; rtcShow(); }
+    if (pc.connectionState === "connected") { RTC.state = "connected"; ring(false); rtcShow(); rtcPing(); }
     else if (pc.connectionState === "failed") rtcStop("ended", "the connection failed");
   };
   RTC.pc = pc;
@@ -299,6 +323,9 @@ async function rtcGot(s) {
   if (s.kind === "offer") {
     if (RTC.state !== "idle" && RTC.state !== "ended") { RTC.peer === s.from || rtcApi("/api/intern/signal", { to: s.from, kind: "decline", data: "{}" }); return; }
     Object.assign(RTC, { state: "ringing", peer: s.from, name: s.name || "", video: !!d.video, offer: d, error: "", early: [] });
+    ring(true);
+    notify((s.name || "A colleague") + " is calling", d.video ? "Video call: open Intern to answer" : "Call: open Intern to answer", "intern-call");
+    rtcPing();
   } else if (s.from !== RTC.peer) return;
   else if (s.kind === "answer" && RTC.pc) { await RTC.pc.setRemoteDescription({ type: "answer", sdp: d.sdp }); for (const c of RTC.early) await rtcIce(c); RTC.early = []; }
   else if (s.kind === "ice") { if (RTC.pc && RTC.pc.remoteDescription) await rtcIce(d); else RTC.early.push(d); }
@@ -321,6 +348,7 @@ function rtc(a) {
     if (!(navigator.mediaDevices && window.RTCPeerConnection)) { Object.assign(RTC, { state: "ended", error: "this browser cannot make calls" }); return "1"; }
     if (RTC.state !== "idle" && RTC.state !== "ended") return null;
     Object.assign(RTC, { state: "calling", peer: a[1], video: a[2] === "1", name: a[3] || "", error: "", early: [] });
+    rtcPing();
     (async () => {
       try {
         const pc = await rtcPc(), o = await pc.createOffer();
@@ -332,6 +360,7 @@ function rtc(a) {
     return "1";
   }
   if (cmd === "accept" && RTC.state === "ringing") {
+    ring(false);
     (async () => {
       try {
         const pc = await rtcPc();
@@ -339,7 +368,7 @@ function rtc(a) {
         for (const c of RTC.early) await rtcIce(c); RTC.early = [];
         const ans = await pc.createAnswer(); await pc.setLocalDescription(ans);
         rtcSend("answer", { sdp: ans.sdp });
-        RTC.state = "connected";
+        RTC.state = "connected"; rtcPing();
       } catch (e) { rtcSend("hangup"); rtcStop("ended", String((e && e.message) || e)); }
     })();
     return "1";
@@ -359,6 +388,16 @@ let lastPointer = "mouse";
 addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse"; }, true);
 const ops = {
   ptr: () => lastPointer,
+  // Intern: notices. notify: title, body, tag (shown only when the app is not in front); notify-ask asks once and
+  // hands the answer back on token 5_999_998; notify-state is "granted", "denied", "default" or "unsupported"
+  notify: (a) => { const [t, b, tag] = a.split("\t"); return notify(t, b, tag, false) ? "1" : "0"; },
+  "notify-state": () => ("Notification" in window ? Notification.permission : "unsupported"),
+  "notify-ask": () => {
+    if (!("Notification" in window)) return "unsupported";
+    Promise.resolve(Notification.requestPermission()).then((p) => give(5999998, enc.encode(String(p)), 1, 1), () => give(5999998, enc.encode("denied"), 1, 1));
+    return "1";
+  },
+  hidden: () => (document.hidden ? "1" : "0"),
   // a chosen picture, shrunk to fit max × max and handed back as a JPEG data: URL (kept in the browser only)
   imgurl: (a) => {
     const [token, file, max] = a.split("\t").map(Number);

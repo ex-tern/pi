@@ -20,8 +20,9 @@ struct IPatient {
     added: f64,
     /// (when, text), oldest first
     notes: Vec<(f64, String)>,
-    /// pictures as data: URLs (JPEG, at most 900 px across)
-    photos: Vec<String>,
+    /// pictures: (id, data: URL); each kept under its own key (intern:ph:<id>), written once, so the patients'
+    /// list stays small and a full storage loses a photo, never the list
+    photos: Vec<(u32, String)>,
 }
 
 #[derive(Clone, Default)]
@@ -68,6 +69,16 @@ pub struct Intern {
     ticking: bool,
     /// a delete pressed once: pressed again (within a few seconds), it is done
     arm: Option<(u16, f64)>,
+    /// notices: "granted", "denied", "default" or "unsupported"
+    notify: String,
+    /// per colleague, the newest message read
+    seen: BTreeMap<String, u64>,
+    /// the newest message already announced, and whether the conversations were looked at once
+    notified: u64,
+    primed: bool,
+    ticks: u32,
+    /// what a backup, a restore or a photo said
+    store_msg: String,
 }
 
 const INTERN_TABS: [&str; 5] = ["Patients", "Cases", "Doctors", "Chat", "Profile"];
@@ -85,7 +96,7 @@ fn intern_save() {
         .iter()
         .map(|p| {
             let notes: Vec<String> = p.notes.iter().map(|(at, t)| format!("[{:.0},{}]", at, json::quote(t))).collect();
-            let photos: Vec<String> = p.photos.iter().map(|u| json::quote(u)).collect();
+            let photos: Vec<String> = p.photos.iter().map(|(id, _)| id.to_string()).collect();
             format!(
                 "{{\"id\":{},\"name\":{},\"born\":{},\"sex\":{},\"added\":{:.0},\"notes\":[{}],\"photos\":[{}]}}",
                 p.id,
@@ -119,43 +130,82 @@ fn intern_save() {
     host::store_set("intern:next", &i.next.to_string());
 }
 
+fn parse_patient(p: &Value) -> IPatient {
+    IPatient {
+        id: p.get("id").f() as u32,
+        name: p.get("name").text(),
+        born: p.get("born").text(),
+        sex: p.get("sex").text(),
+        added: p.get("added").f(),
+        notes: p.get("notes").arr().iter().map(|n| (n.arr().first().map(|x| x.f()).unwrap_or(0.0), n.arr().get(1).map(|x| x.text()).unwrap_or_default())).collect(),
+        photos: Vec::new(),
+    }
+}
+
+fn parse_case(c: &Value) -> ICase {
+    ICase {
+        id: c.get("id").f() as u32,
+        patient: if c.get("patient").is_null() { None } else { Some(c.get("patient").f() as u32) },
+        title: c.get("title").text(),
+        text: c.get("text").text(),
+        at: c.get("at").f(),
+        sent: c.get("sent").text(),
+        result: c.get("result").text(),
+    }
+}
+
+/// A photo into its own storage entry; false when the browser's storage is full.
+fn photo_keep(id: u32, url: &str) -> bool {
+    let k = format!("intern:ph:{}", id);
+    host::store_set(&k, url);
+    host::store_get(&k).map(|v| v.len() == url.len()).unwrap_or(false)
+}
+
 fn intern_load() {
     let s = st();
     if !s.intern.loaded {
         s.intern.loaded = true;
         let i = &mut s.intern;
+        let mut migrate: Vec<(usize, String)> = Vec::new();
         if let Some(v) = host::store_get("intern:patients").and_then(|t| json::parse(&t)) {
-            i.patients = v
-                .arr()
-                .iter()
-                .map(|p| IPatient {
-                    id: p.get("id").f() as u32,
-                    name: p.get("name").text(),
-                    born: p.get("born").text(),
-                    sex: p.get("sex").text(),
-                    added: p.get("added").f(),
-                    notes: p.get("notes").arr().iter().map(|n| (n.arr().first().map(|x| x.f()).unwrap_or(0.0), n.arr().get(1).map(|x| x.text()).unwrap_or_default())).collect(),
-                    photos: p.get("photos").arr().iter().map(|u| u.text()).filter(|u| u.starts_with("data:image/")).collect(),
-                })
-                .collect();
+            for (k, p) in v.arr().iter().enumerate() {
+                let mut pt = parse_patient(p);
+                for ph in p.get("photos").arr() {
+                    match ph {
+                        // the first version kept the pictures inside the list: moved out on the first load
+                        Value::Str(u) if u.starts_with("data:image/") => migrate.push((k, u.clone())),
+                        Value::Num(n) => {
+                            if let Some(u) = host::store_get(&format!("intern:ph:{}", *n as u32)).filter(|u| u.starts_with("data:image/")) {
+                                pt.photos.push((*n as u32, u));
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+                i.patients.push(pt);
+            }
         }
         if let Some(v) = host::store_get("intern:cases").and_then(|t| json::parse(&t)) {
-            i.cases = v
-                .arr()
-                .iter()
-                .map(|c| ICase {
-                    id: c.get("id").f() as u32,
-                    patient: if c.get("patient").is_null() { None } else { Some(c.get("patient").f() as u32) },
-                    title: c.get("title").text(),
-                    text: c.get("text").text(),
-                    at: c.get("at").f(),
-                    sent: c.get("sent").text(),
-                    result: c.get("result").text(),
-                })
-                .collect();
+            i.cases = v.arr().iter().map(parse_case).collect();
         }
-        let top = i.patients.iter().map(|p| p.id).chain(i.cases.iter().map(|c| c.id)).max().unwrap_or(0);
+        let top = i.patients.iter().map(|p| p.id).chain(i.cases.iter().map(|c| c.id)).chain(i.patients.iter().flat_map(|p| p.photos.iter().map(|x| x.0))).max().unwrap_or(0);
         i.next = host::store_get("intern:next").and_then(|v| v.parse().ok()).unwrap_or(0).max(top + 1);
+        for (k, u) in migrate {
+            let id = i.next;
+            i.next += 1;
+            if photo_keep(id, &u) {
+                i.patients[k].photos.push((id, u));
+            }
+        }
+        if let Some(t) = host::store_get("intern:seen") {
+            for line in t.lines() {
+                if let Some((k, v)) = line.split_once('\t') {
+                    i.seen.insert(k.to_string(), v.parse().unwrap_or(0));
+                }
+            }
+        }
+        i.notify = host::call("notify-state", "").unwrap_or_else(|| "unsupported".into());
+        intern_save();
     }
     // the parts that need the server: who you are as a doctor, your conversations
     if signed_in(s) {
@@ -187,7 +237,31 @@ fn intern_timer() {
     if let Some(v) = host::call("rtc", "state").and_then(|t| json::parse(&t)) {
         s.intern.call = v;
     }
-    if signed_in(s) && s.intern.me.data.as_ref().map(|d| !d.get("doctor").is_null()).unwrap_or(false) {
+    s.intern.ticks = s.intern.ticks.wrapping_add(1);
+    // signed in or out since (a wallet signs in without reloading the page)
+    if signed_in(s) && s.intern.me.needed() {
+        s.intern.me.busy = true;
+        request(Want::Tool(Tool::Intern, 0), "GET", "/api/intern/me", "", 0);
+    } else if !signed_in(s) && (s.intern.me.data.is_some() || s.intern.conv.data.is_some()) {
+        let i = &mut s.intern;
+        i.me = Slot::default();
+        i.conv = Slot::default();
+        i.doctors = Slot::default();
+        i.peer = None;
+        i.msgs.clear();
+        i.primed = false;
+    }
+    let doctor = signed_in(s) && s.intern.me.data.as_ref().map(|d| !d.get("doctor").is_null()).unwrap_or(false);
+    if doctor {
+        host::call("rtc", "listen");
+        // new messages are looked for every ten seconds whatever is open, so the Chat tab shows them and a notice
+        // can say so
+        if !(s.intern.tab == 3 && s.intern.peer.is_none()) && s.intern.ticks % 4 == 0 && !s.intern.conv.busy {
+            s.intern.conv.busy = true;
+            request(Want::Tool(Tool::Intern, 3), "GET", "/api/intern/conversations", "", 0);
+        }
+    }
+    if doctor {
         if s.intern.tab == 3 {
             if let Some((k, _)) = s.intern.peer.clone() {
                 let after = s.intern.msgs.last().map(|m| m.0).unwrap_or(0);
@@ -279,13 +353,23 @@ fn intern_apply(w: u8, v: Value, err: Option<String>) {
             }
         },
         2 => put(&mut i.doctors, v, err),
-        3 => put(&mut i.conv, v, err),
+        3 => {
+            put(&mut i.conv, v, err);
+            intern_conv_check();
+        }
         4 => {
             if err.is_none() {
                 for m in v.get("messages").arr() {
                     let id = m.get("id").f() as u64;
                     if !i.msgs.iter().any(|x| x.0 == id) {
                         i.msgs.push((id, m.get("mine").truthy(), m.get("text").text(), m.get("at").f()));
+                    }
+                }
+                // what is shown is read
+                if let (Some((k, _)), Some(top)) = (i.peer.clone(), i.msgs.iter().map(|m| m.0).max()) {
+                    if i.seen.get(&k).copied().unwrap_or(0) < top {
+                        i.seen.insert(k, top);
+                        seen_save(i);
                     }
                 }
             }
@@ -331,17 +415,160 @@ fn intern_apply(w: u8, v: Value, err: Option<String>) {
     }
 }
 
-/// A picture chosen for a patient's file, back from host.js as a data: URL.
-fn intern_photo(token: u32, data: Vec<u8>) {
-    let url = String::from_utf8(data).unwrap_or_default();
-    if !url.starts_with("data:image/") {
+/// What host.js hands back on Intern's tokens: the call changed (999_999), the answer to "allow notices?"
+/// (999_998), a backup file to restore (999_997), or a picture for a patient's file (the patient's id).
+fn intern_pixels(token: u32, data: Vec<u8>) {
+    let text = String::from_utf8(data).unwrap_or_default();
+    let i = &mut st().intern;
+    match token {
+        999_999 => {
+            if let Some(v) = host::call("rtc", "state").and_then(|t| json::parse(&t)) {
+                i.call = v;
+            }
+        }
+        999_998 => i.notify = text,
+        999_997 => intern_restore(&text),
+        _ => {
+            if !text.starts_with("data:image/") {
+                return;
+            }
+            let id = i.next;
+            if let Some(p) = i.patients.iter_mut().find(|p| p.id == token) {
+                if photo_keep(id, &text) {
+                    p.photos.push((id, text));
+                    i.next += 1;
+                    i.store_msg.clear();
+                    intern_save();
+                } else {
+                    host::store_del(&format!("intern:ph:{}", id));
+                    i.store_msg = "This browser's storage is full: the photo was not kept. Save a backup, then remove some photos.".into();
+                }
+            }
+        }
+    }
+}
+
+fn seen_save(i: &Intern) {
+    let t: Vec<String> = i.seen.iter().map(|(k, v)| format!("{}\t{}", k, v)).collect();
+    host::store_set("intern:seen", &t.join("\n"));
+}
+
+/// Conversations with a message from the colleague not read yet.
+fn intern_unread(i: &Intern) -> usize {
+    i.conv.data.as_ref().map(|d| d.get("conversations").arr().iter().filter(|c| !c.get("mine").truthy() && c.get("id").f() as u64 > i.seen.get(&c.get("key").text()).copied().unwrap_or(0)).count()).unwrap_or(0)
+}
+
+/// New messages since the last look: a notice for each colleague who wrote, unless that chat is open in front.
+fn intern_conv_check() {
+    let i = &mut st().intern;
+    let Some(d) = i.conv.data.as_ref() else { return };
+    let incoming: Vec<(String, String, String, u64)> = d
+        .get("conversations")
+        .arr()
+        .iter()
+        .filter(|c| !c.get("mine").truthy())
+        .map(|c| (c.get("key").text(), c.get("name").text(), c.get("last").text(), c.get("id").f() as u64))
+        .collect();
+    let top = incoming.iter().map(|c| c.3).max().unwrap_or(0);
+    if !i.primed {
+        // what was there before the app opened is not news
+        i.primed = true;
+        i.notified = i.notified.max(top);
         return;
     }
-    let i = &mut st().intern;
-    if let Some(p) = i.patients.iter_mut().find(|p| p.id == token) {
-        p.photos.push(url);
-        intern_save();
+    let front = host::call("hidden", "").as_deref() == Some("0");
+    for (key, name, last, id) in &incoming {
+        let reading = front && i.tab == 3 && i.peer.as_ref().map(|p| &p.0 == key).unwrap_or(false);
+        if *id > i.notified && *id > i.seen.get(key).copied().unwrap_or(0) && !reading {
+            host::call("notify", &format!("{}\t{}\tintern-msg", if name.is_empty() { "A colleague" } else { name }, last.replace(['\t', '\n'], " ")));
+        }
     }
+    i.notified = i.notified.max(top);
+}
+
+/// Everything kept in this browser, as one file.
+fn intern_backup() -> String {
+    let i = &st().intern;
+    let pats: Vec<String> = i
+        .patients
+        .iter()
+        .map(|p| {
+            let notes: Vec<String> = p.notes.iter().map(|(at, t)| format!("[{:.0},{}]", at, json::quote(t))).collect();
+            let photos: Vec<String> = p.photos.iter().map(|(_, u)| json::quote(u)).collect();
+            format!(
+                "{{\"id\":{},\"name\":{},\"born\":{},\"sex\":{},\"added\":{:.0},\"notes\":[{}],\"photos\":[{}]}}",
+                p.id,
+                json::quote(&p.name),
+                json::quote(&p.born),
+                json::quote(&p.sex),
+                p.added,
+                notes.join(","),
+                photos.join(",")
+            )
+        })
+        .collect();
+    format!(
+        "{{\"intern_backup\":1,\"saved\":{:.0},\"patients\":[{}],\"cases\":{}}}",
+        host::now(),
+        pats.join(","),
+        host::store_get("intern:cases").unwrap_or_else(|| "[]".into())
+    )
+}
+
+/// A backup file read back: what is not here yet is added (a patient or case already here is left as it is).
+fn intern_restore(text: &str) {
+    let i = &mut st().intern;
+    let Some(v) = json::parse(text).filter(|v| v.get("intern_backup").f() >= 1.0) else {
+        i.store_msg = "That file is not an Intern backup.".into();
+        return;
+    };
+    let mut map: BTreeMap<u32, u32> = BTreeMap::new();
+    let (mut np, mut nc, mut lost) = (0, 0, 0);
+    for p in v.get("patients").arr() {
+        let mut pt = parse_patient(p);
+        if let Some(have) = i.patients.iter().find(|x| x.name == pt.name && (x.added - pt.added).abs() < 1.0) {
+            map.insert(pt.id, have.id);
+            continue;
+        }
+        let old = pt.id;
+        pt.id = i.next;
+        i.next += 1;
+        map.insert(old, pt.id);
+        for u in p.get("photos").arr().iter().map(|u| u.text()).filter(|u| u.starts_with("data:image/")) {
+            let id = i.next;
+            i.next += 1;
+            if photo_keep(id, &u) {
+                pt.photos.push((id, u));
+            } else {
+                host::store_del(&format!("intern:ph:{}", id));
+                lost += 1;
+            }
+        }
+        i.patients.push(pt);
+        np += 1;
+    }
+    for c in v.get("cases").arr() {
+        let mut cs = parse_case(c);
+        if i.cases.iter().any(|x| x.title == cs.title && (x.at - cs.at).abs() < 1.0) {
+            continue;
+        }
+        cs.id = i.next;
+        i.next += 1;
+        cs.patient = cs.patient.and_then(|p| map.get(&p).copied());
+        i.cases.push(cs);
+        nc += 1;
+    }
+    i.patients.sort_by(|a, b| b.added.partial_cmp(&a.added).unwrap_or(core::cmp::Ordering::Equal));
+    i.cases.sort_by(|a, b| b.at.partial_cmp(&a.at).unwrap_or(core::cmp::Ordering::Equal));
+    i.store_msg = format!(
+        "Restored {} patient{} and {} case{}{}.",
+        np,
+        if np == 1 { "" } else { "s" },
+        nc,
+        if nc == 1 { "" } else { "s" },
+        if lost > 0 { format!("; {} photo{} did not fit in this browser's storage", lost, if lost == 1 { "" } else { "s" }) } else { String::new() }
+    );
+    intern_save();
 }
 
 // ---------------------------------------------------------------------------------------------- what is done
@@ -406,6 +633,11 @@ fn intern_update(a: u16, v: String) {
         }
         21 => {
             if let Some(id) = i.open.take() {
+                for p in i.patients.iter().filter(|p| p.id == id) {
+                    for (ph, _) in &p.photos {
+                        host::store_del(&format!("intern:ph:{}", ph));
+                    }
+                }
                 i.patients.retain(|p| p.id != id);
                 for c in i.cases.iter_mut().filter(|c| c.patient == Some(id)) {
                     c.patient = None;
@@ -417,7 +649,7 @@ fn intern_update(a: u16, v: String) {
             if let Some(id) = i.open {
                 for line in v.lines() {
                     if let Some(h) = line.split('\t').next().and_then(|h| h.parse::<u32>().ok()) {
-                        host::call("imgurl", &format!("{}\t{}\t900", INTERN_TOKEN + id, h));
+                        host::call("imgurl", &format!("{}\t{}\t720", INTERN_TOKEN + id, h));
                     }
                 }
             }
@@ -426,9 +658,22 @@ fn intern_update(a: u16, v: String) {
             let k: usize = v.parse().unwrap_or(usize::MAX);
             if let Some(p) = i.open.and_then(|id| i.patients.iter_mut().find(|p| p.id == id)) {
                 if k < p.photos.len() {
-                    p.photos.remove(k);
+                    let (id, _) = p.photos.remove(k);
+                    host::store_del(&format!("intern:ph:{}", id));
                     intern_save();
                 }
+            }
+        }
+        // a backup: saved as a file, or read back from one
+        24 => {
+            let data = intern_backup();
+            let day = date_of_epoch(now / 1000.0);
+            host::download(&format!("intern-backup-{}.json", day.replace(' ', "-")), "application/json", data.as_bytes());
+            i.store_msg = "Backup saved: keep the file somewhere safe (it holds patients' data).".into();
+        }
+        25 => {
+            if let Some(h) = v.lines().next().and_then(|l| l.split('\t').next()).and_then(|h| h.parse::<u32>().ok()) {
+                host::call("bytes", &format!("{}\t{}", INTERN_TOKEN + 999_997, h));
             }
         }
         // cases
@@ -458,6 +703,15 @@ fn intern_update(a: u16, v: String) {
             }
         }
         36 => i.consent = !i.consent,
+        // the linked patient's notes, into the case
+        39 => {
+            let Some(cid) = i.case_open else { return };
+            let notes = i.cases.iter().find(|c| c.id == cid).and_then(|c| c.patient).and_then(|pid| i.patients.iter().find(|p| p.id == pid)).map(|p| p.notes.iter().map(|(_, t)| format!("- {}", t)).collect::<Vec<_>>().join("\n")).unwrap_or_default();
+            if let (false, Some(c)) = (notes.is_empty(), i.cases.iter_mut().find(|c| c.id == cid)) {
+                c.text = format!("{}{}From the file:\n{}", c.text.trim_end(), if c.text.trim().is_empty() { "" } else { "\n\n" }, notes).chars().take(6000).collect();
+                intern_save();
+            }
+        }
         37 => {
             let Some(c) = i.case_open.and_then(|id| i.cases.iter().find(|c| c.id == id)).cloned() else { return };
             if !i.consent {
@@ -520,6 +774,19 @@ fn intern_update(a: u16, v: String) {
             request(Want::Tool(Tool::Intern, 1), "PUT", "/api/intern/me", &body, 0);
         }
         66 => request(Want::Tool(Tool::Intern, 7), "DELETE", "/api/intern/me", "", 0),
+        67 => {
+            if let Some(r) = host::call("notify-ask", "") {
+                if r != "1" {
+                    i.notify = r;
+                }
+            }
+        }
+        // sign in with ORCID, coming back into the app
+        68 => {
+            st().login_err = None;
+            let w = host::store_get("sp_wallet").unwrap_or_default();
+            request(Want::Login, "GET", &format!("/api/auth/orcid/login-url?app=intern&wallet={}", url_encode(&w)), "", 0);
+        }
         // calls (host.js does the call; the page shows it)
         70 => {
             host::call("rtc", &format!("call\t{}", v));
@@ -556,7 +823,8 @@ fn when(ms: f64) -> String {
 fn intern_view(s: &State) -> N {
     let i = &s.intern;
     let tabs = el("div").cls("seg intern-tabs").attr("role", "tablist").kids(INTERN_TABS.iter().enumerate().map(|(k, t)| -> N {
-        el("button").attr("type", "button").attr("role", "tab").cls_if(i.tab as usize == k, "on").on("click", Msg::T(Tool::Intern, 1, k.to_string())).text(*t).into()
+        let n = if k == 3 { intern_unread(i) } else { 0 };
+        el("button").attr("type", "button").attr("role", "tab").cls_if(i.tab as usize == k, "on").on("click", Msg::T(Tool::Intern, 1, k.to_string())).text(if n > 0 { format!("{} ({})", t, n) } else { t.to_string() }).into()
     }));
     let body = match i.tab {
         0 => patients_view(i),
@@ -616,6 +884,7 @@ fn intern_app_view(s: &State) -> N {
                         .kid(el("svg:path").attr("d", ICONS[k])),
                 )
                 .kid(el("span").text(*t))
+                .kid_if(k == 3 && intern_unread(i) > 0, || el("em").cls("iapp-badge").text(intern_unread(i).to_string()).into())
                 .into()
         })))
         .into()
@@ -648,8 +917,19 @@ fn patients_view(i: &Intern) -> N {
                 .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Intern, 18, String::new())).text("Add")),
         );
     }
+    let backup = el("div")
+        .cls("card intern-backup")
+        .kid(el("b").text("Backup"))
+        .kid(el("p").cls("hint").text("Patients and cases live only in this browser: clearing it, or losing the phone, loses them. Save a backup file now and then; restore it here or on another device."))
+        .kid(
+            el("div")
+                .cls("row")
+                .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 24, String::new())).text("Save a backup"))
+                .kid(el("label").cls("btn").kid(txt("Restore a backup")).kid(el("input").attr("type", "file").attr("accept", ".json,application/json").attr("hidden", "").on("files", Msg::TV(Tool::Intern, 25)))),
+        )
+        .kid_if(!i.store_msg.is_empty(), || el("p").cls("hint").text(i.store_msg.clone()).into());
     if list.is_empty() {
-        return root.kid(el("p").cls("hint").text(if i.patients.is_empty() { "No patients yet." } else { "No patient by that name." })).into();
+        return root.kid(el("p").cls("hint").text(if i.patients.is_empty() { "No patients yet." } else { "No patient by that name." })).kid(backup).into();
     }
     root.kid(el("div").cls("intern-list").kids(list.iter().map(|p| -> N {
         let age = patient_age(p).map(|a| format!("{} y", a)).unwrap_or_default();
@@ -661,6 +941,7 @@ fn patients_view(i: &Intern) -> N {
             .kid(el("span").cls("hint").text([age, p.sex.clone(), format!("{} notes", p.notes.len())].iter().filter(|x| !x.is_empty()).cloned().collect::<Vec<_>>().join(" · ")))
             .into()
     })))
+    .kid(backup)
     .into()
 }
 
@@ -681,13 +962,14 @@ fn patient_file(i: &Intern, p: &IPatient) -> N {
                 .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Intern, 20, String::new())).text("Add the note")),
         )
         .kid(el("h4").text("Photos"))
-        .kid(el("div").cls("intern-photos").kids(p.photos.iter().enumerate().map(|(k, u)| -> N {
+        .kid(el("div").cls("intern-photos").kids(p.photos.iter().enumerate().map(|(k, (_, u))| -> N {
             el("figure")
                 .kid(el("img").attr("src", u.clone()).attr("alt", format!("Photo {}", k + 1)))
                 .kid(el("button").attr("type", "button").cls("chip").on("click", Msg::T(Tool::Intern, 23, k.to_string())).text("Remove"))
                 .into()
         })))
         .kid(el("label").cls("btn").kid(txt("Add photos")).kid(el("input").attr("type", "file").attr("accept", "image/*").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Intern, 22))))
+        .kid_if(!i.store_msg.is_empty(), || el("p").cls("hint warn").text(i.store_msg.clone()).into())
         .kid(el("h4").text("Cases"))
         .kid(el("div").cls("chips").kids(cases.iter().map(|c| -> N { el("button").attr("type", "button").cls("chip").on("click", Msg::T(Tool::Intern, 31, c.id.to_string())).text(if c.title.is_empty() { "Untitled case".to_string() } else { c.title.clone() }).into() })))
         .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 30, p.id.to_string())).text("New case for this patient"))
@@ -736,6 +1018,9 @@ fn case_file(i: &Intern, c: &ICase) -> N {
                     .kids(i.patients.iter().map(|p| -> N { el("option").attr("value", p.id.to_string()).prop("selected", if c.patient == Some(p.id) { "true" } else { "" }).text(p.name.clone()).into() })),
             ),
         )
+        .kid_if(c.patient.and_then(|p| patient_by(i, p)).map(|p| !p.notes.is_empty()).unwrap_or(false), || {
+            el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 39, String::new())).text("Add the patient's notes to the case").into()
+        })
         .kid(el("label").cls("ifield").kid(el("span").text("The case")).kid(el("textarea").cls("input").attr("rows", "9").attr("placeholder", "Presentation, history, examination, results so far…").prop("value", c.text.clone()).on("input", Msg::TV(Tool::Intern, 34))))
         .kid(el("h4").text("Differential diagnosis"))
         .kid(el("p").cls("hint").text("What would be sent (the patient's name and birth date out; the server also takes out dates, numbers, emails and links):"))
@@ -748,7 +1033,24 @@ fn case_file(i: &Intern, c: &ICase) -> N {
         .into()
 }
 
+fn intern_sign_in(s: &State) -> N {
+    el("div")
+        .kid(
+            el("div")
+                .cls("card intern-form")
+                .kid(el("h3").text("Sign in"))
+                .kid(el("p").cls("hint").text("To find colleagues, message and call them. Patients and cases work without signing in, and stay on this device either way."))
+                .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Intern, 68, String::new())).text("Sign in with ORCID"))
+                .kid_if(s.login_err.is_some(), || el("p").cls("err-box").text(s.login_err.clone().unwrap_or_default()).into()),
+        )
+        .kid(wallet_card(s))
+        .into()
+}
+
 fn need_doctor(s: &State) -> Option<N> {
+    if !signed_in(s) && s.app_mode {
+        return Some(intern_sign_in(s));
+    }
     if !signed_in(s) {
         return Some(el("p").cls("hint").kid(txt("Sign in (ORCID or a wallet) to find colleagues, message and call them. ")).kid(el("a").attr("href", if s.app_mode { "/#/account" } else { "#/account" }).text("Sign in")).into());
     }
@@ -819,9 +1121,11 @@ fn chat_view(s: &State) -> N {
                     el("p").cls("hint").text("No conversations yet: find a colleague in Doctors.").into()
                 } else {
                     el("div").cls("intern-list").kids(cs.iter().map(|c| -> N {
+                        let unread = !c.get("mine").truthy() && c.get("id").f() as u64 > i.seen.get(&c.get("key").text()).copied().unwrap_or(0);
                         el("button")
                             .attr("type", "button")
                             .cls("card intern-item")
+                            .cls_if(unread, "unread")
                             .on("click", Msg::T(Tool::Intern, 52, format!("{}\t{}", c.get("key").text(), c.get("name").text())))
                             .kid(el("b").text(c.get("name").text()))
                             .kid(el("span").cls("hint").text(format!("{}{}", if c.get("mine").truthy() { "You: " } else { "" }, c.get("last").text())))
@@ -844,7 +1148,10 @@ fn chat_view(s: &State) -> N {
                 .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 70, format!("{}\t1\t{}", key, name))).text("Video")),
         )
         .kid(el("p").cls("hint").text("Do not write anything that identifies a patient here: messages are kept on the server."))
-        .kid(el("div").cls("chat").attr("aria-live", "polite").kids(i.msgs.iter().map(|(_, mine, t, _)| -> N { el("div").cls("chat-msg").cls(if *mine { "you" } else { "ai" }).text(t.clone()).into() })))
+        // newest at the bottom, and the list kept scrolled there (column-reverse)
+        .kid(el("div").cls("chat intern-thread").attr("aria-live", "polite").kids(i.msgs.iter().rev().map(|(_, mine, t, at)| -> N {
+            el("div").cls("chat-msg").cls(if *mine { "you" } else { "ai" }).attr("title", when(*at * 1000.0)).text(t.clone()).into()
+        })))
         .kid(
             el("div")
                 .cls("row chat-form")
@@ -875,6 +1182,19 @@ fn intern_profile_view(s: &State) -> N {
         .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Intern, 65, String::new())).text(if has { "Save" } else { "Make my profile" }))
         .kid(el("p").cls("hint").text(i.prof_msg.clone()))
         .kid_if(has, || el("button").attr("type", "button").cls("btn danger").on("click", Msg::T(Tool::Intern, 66, String::new())).text(armed(i, 66, "Delete my profile and messages")).into())
+        .kid(
+            el("div")
+                .cls("intern-notices")
+                .kid(el("b").text("Notifications"))
+                .kid(el("p").cls("hint").text(match i.notify.as_str() {
+                    "granted" => "On: a message or a call shows a notification when Intern is not in front.",
+                    "denied" => "Blocked in this browser's settings: allow notifications for this site there to turn them on.",
+                    "unsupported" => "This browser cannot show notifications. On an iPhone, add Intern to the Home Screen and open it from there.",
+                    _ => "Off. Turn them on to hear about messages and calls when Intern is not in front.",
+                }))
+                .kid_if(i.notify == "default", || el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Intern, 67, String::new())).text("Turn on notifications").into()),
+        )
+        .kid_if(s.app_mode, || el("p").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::SignOut).text("Sign out")).into())
         .into()
 }
 
@@ -926,6 +1246,10 @@ const INTERN_CSS: &str = "\
 .iapp-tabs button{border:0;background:none;display:grid;justify-items:center;gap:3px;padding:4px 0;font:inherit;font-size:11px;color:var(--muted);cursor:pointer}\
 .iapp-tabs svg{width:24px;height:24px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\
 .iapp-tabs button.on{color:var(--accent)}\
+.iapp-tabs button{position:relative}.iapp-badge{position:absolute;top:0;left:calc(50% + 6px);min-width:18px;height:18px;padding:0 5px;border-radius:9px;background:#d9480f;color:#fff;font:600 11px/18px inherit;font-style:normal}\
+.intern-item.unread b::after{content:\"\";display:inline-block;width:8px;height:8px;border-radius:50%;background:#d9480f;margin-left:8px;vertical-align:middle}\
+.intern-thread{flex-direction:column-reverse}\
+.intern-backup{display:grid;gap:6px;margin-top:16px;padding:12px 14px}.intern-notices{display:grid;gap:4px;margin-top:14px;padding-top:12px;border-top:1px solid var(--line)}\
 .iapp-top,.iapp-tabs{border-radius:0!important;clip-path:none!important;-webkit-mask:none!important;mask:none!important;border-left:0;border-right:0}\
 .intern-applink{margin:-4px 0 12px;font-size:14px}\
 @media (min-width:700px){.iapp{max-width:560px;margin:0 auto;border-left:1px solid var(--line);border-right:1px solid var(--line)}}\

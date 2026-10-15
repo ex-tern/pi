@@ -342,7 +342,7 @@ border-radius:0 0 0 6px}
 .member{position:relative;display:flex;flex-direction:column;align-items:flex-start;gap:8px;min-height:96px;padding:16px;background:#fff;
 border:1.2px solid #2b2b2b;color:var(--ink)}
 .member:hover{text-decoration:none;border-color:var(--accent)}
-.member .tag{font-size:14px;white-space:normal}
+.member .tag{font-size:14px;white-space:normal;border:0;background:none;padding:0;border-radius:0;box-shadow:none}
 .m-note{color:var(--muted);font-size:13px}
 .map-wrap{overflow-x:auto;border:1px solid #d6d6d1;background:#fff;padding:12px}
 .map{display:block;width:100%;min-width:760px;height:auto}
