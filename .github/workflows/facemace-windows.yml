@@ -56,6 +56,22 @@ jobs:
           if (-not (Test-Path $exe)) { throw "not installed at $exe" }
           Write-Host "installed: $exe"
 
+      # installing again over it, while it runs, updates it in place (one install, the program replaced, running)
+      - name: Check installing again updates it
+        shell: pwsh
+        run: |
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Face Mace\FaceMace.exe'
+          $env:FACEMACE_NO_BROWSER = '1'
+          $old = Start-Process -FilePath $exe -PassThru
+          Start-Sleep -Seconds 3
+          $p = Start-Process -FilePath .\FaceMace-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' -Wait -PassThru
+          if ($p.ExitCode -ne 0) { throw "installing again failed: exit $($p.ExitCode)" }
+          if (Get-Process -Id $old.Id -ErrorAction SilentlyContinue) { throw "the running Face Mace was not closed" }
+          $keys = Get-ChildItem 'HKCU:\Software\Microsoft\Windows\CurrentVersion\Uninstall' | Where-Object { (Get-ItemProperty $_.PSPath).DisplayName -eq 'Face Mace' }
+          if (@($keys).Count -ne 1) { throw "expected one install, found $(@($keys).Count)" }
+          Write-Host "updated in place: $exe, version $((Get-ItemProperty $keys[0].PSPath).DisplayVersion)"
+          taskkill /IM FaceMace.exe /F 2>$null; exit 0
+
       - uses: actions/upload-artifact@v4
         with:
           name: FaceMace-windows

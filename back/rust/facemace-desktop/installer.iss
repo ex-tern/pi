@@ -32,6 +32,15 @@ WizardStyle=modern
 ArchitecturesAllowed=x64compatible
 ArchitecturesInstallIn64BitMode=x64compatible
 CloseApplications=yes
+; installing again (a newer FaceMace-Setup.exe, or the same one) updates it in place: the same AppId finds the
+; earlier install, its folder and choices are used again (no folder question), a Face Mace still running is
+; closed first so its program can be replaced, and what Face Mace remembers (people, answers, scans: kept by the
+; browser for facemace.localhost) is not touched (owner, 2026-10-15: "reinstalling on same path updates it")
+UsePreviousAppDir=yes
+UsePreviousTasks=yes
+DisableDirPage=auto
+DisableReadyPage=auto
+VersionInfoVersion={#MyVersion}
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
@@ -53,6 +62,18 @@ Name: "{autodesktop}\Face Mace"; Filename: "{app}\FaceMace.exe"; Tasks: desktopi
 
 [Run]
 Filename: "{app}\FaceMace.exe"; Description: "{cm:LaunchProgram,Face Mace}"; Flags: nowait postinstall skipifsilent
+
+[Code]
+// a Face Mace still running (it has no window: it serves the page) is stopped, so FaceMace.exe can be replaced
+function PrepareToInstall(var NeedsRestart: Boolean): String;
+var
+  Code: Integer;
+begin
+  Exec(ExpandConstant('{cmd}'), '/C taskkill /IM FaceMace.exe /F', '', SW_HIDE, ewWaitUntilTerminated, Code);
+  Sleep(600);
+  Result := '';
+end;
+
 
 [UninstallRun]
 Filename: "{cmd}"; Parameters: "/C taskkill /IM FaceMace.exe /F"; Flags: runhidden; RunOnceId: "StopFaceMace"
