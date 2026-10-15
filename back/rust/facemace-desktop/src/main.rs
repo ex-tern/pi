@@ -17,6 +17,13 @@ const GEIST_MONO: &[u8] = include_bytes!("../../../../front/fonts/GeistMono-Vari
 const ICON: &[u8] = include_bytes!("../../../../front/icon.svg");
 /// libheif (LGPL-3.0, front/facemace/heic/NOTICE.txt): decodes HEIC photos where the browser cannot
 const HEIC: &[u8] = include_bytes!("../../../../front/facemace/heic/libheif-bundle.mjs");
+/// the neural face engines (front/facemace/ml/NOTICE.txt): the second profile cascade, ONNX Runtime, YuNet, SFace
+const PROFILE: &[u8] = include_bytes!("../../../../front/facemace/cascade-profile.json");
+const ORT_MJS: &[u8] = include_bytes!("../../../../front/facemace/ml/ort.wasm.min.mjs");
+const ORT_GLUE: &[u8] = include_bytes!("../../../../front/facemace/ml/ort-wasm-simd-threaded.mjs");
+const ORT_WASM: &[u8] = include_bytes!("../../../../front/facemace/ml/ort-wasm-simd-threaded.wasm");
+const YUNET: &[u8] = include_bytes!("../../../../front/facemace/ml/yunet.onnx");
+const SFACE: &[u8] = include_bytes!("../../../../front/facemace/ml/sface.onnx");
 
 /// The one document: like the site's, but it opens on Face Mace alone.
 const PAGE: &str = concat!(
@@ -63,6 +70,12 @@ fn answer(mut s: TcpStream) {
         ("GET", "/fonts/GeistMono-Variable.woff2") => ("200 OK", "font/woff2", GEIST_MONO),
         ("GET", "/icon.svg") => ("200 OK", "image/svg+xml", ICON),
         ("GET", "/facemace/heic/libheif-bundle.mjs") => ("200 OK", "text/javascript; charset=utf-8", HEIC),
+        ("GET", "/facemace/cascade-profile.json") => ("200 OK", "application/json", PROFILE),
+        ("GET", "/facemace/ml/ort.wasm.min.mjs") => ("200 OK", "text/javascript; charset=utf-8", ORT_MJS),
+        ("GET", "/facemace/ml/ort-wasm-simd-threaded.mjs") => ("200 OK", "text/javascript; charset=utf-8", ORT_GLUE),
+        ("GET", "/facemace/ml/ort-wasm-simd-threaded.wasm") => ("200 OK", "application/wasm", ORT_WASM),
+        ("GET", "/facemace/ml/yunet.onnx") => ("200 OK", "application/octet-stream", YUNET),
+        ("GET", "/facemace/ml/sface.onnx") => ("200 OK", "application/octet-stream", SFACE),
         // the site's server is not here: its questions get a plain "not here"
         (_, p) if p.starts_with("/api/") => ("404 Not Found", "application/json", b"{\"detail\":\"Face Mace runs on its own here: no server.\"}"),
         _ => ("404 Not Found", "text/plain; charset=utf-8", b"Not here."),

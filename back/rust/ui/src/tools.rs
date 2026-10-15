@@ -159,7 +159,7 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
     } else if t == Tool::Map {
         map_apply(what, v, err);
     } else if t == Tool::Face {
-        face_apply(v, err);
+        face_apply(what, v, err);
     } else if t == Tool::Quvi {
         put(&mut s.quvi.features, v, err);
     } else {

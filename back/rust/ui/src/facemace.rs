@@ -258,6 +258,24 @@ fn lbph(src: &[f64]) -> Vec<f32> {
     hist
 }
 
+/// How far apart two faces are, and whether that is the same person at this strictness: SFace descriptions (128
+/// numbers, unit length) by cosine (OpenCV's threshold 0.363 at the default strictness), LBPH histograms by
+/// chi-square, as before. A lower strictness is stricter for both.
+fn face_dist(a: &[f32], b: &[f32]) -> f64 {
+    if a.len() != b.len() {
+        return f64::INFINITY;
+    }
+    if a.len() == 128 {
+        let dot: f64 = a.iter().zip(b).map(|(x, y)| (*x as f64) * (*y as f64)).sum();
+        return 1.0 - dot;
+    }
+    chi2(a, b)
+}
+
+fn face_thr(strict: f64, emb: bool) -> f64 {
+    if emb { 1.0 - (0.363 + (75.0 - strict) * 0.004).clamp(0.15, 0.7) } else { strict }
+}
+
 fn chi2(a: &[f32], b: &[f32]) -> f64 {
     let mut d = 0.0f64;
     for i in 0..a.len() {
@@ -312,6 +330,25 @@ pub struct Face {
     dedupe: bool,
     pics: Vec<Option<([u64; 4], usize, usize, u8)>>,
     live_idx: BTreeMap<(u8, u64), Vec<usize>>,
+    /// the neural engines (owner, 2026-10-15: "improve the face detection engine using many opensource engines"):
+    /// 0 not asked, 1 loading, 2 ready, 3 not available (the cascades and LBPH are used, as before)
+    ml: u8,
+    ml_err: String,
+    profile: Option<Haar>,
+    profile_busy: bool,
+    profile_tried: bool,
+    /// the photo being worked on: its pixels, size, the frontal cascade's boxes, the faces to describe, and what
+    /// they gave
+    cur: Vec<u8>,
+    cur_w: usize,
+    cur_h: usize,
+    cur_haar: Vec<[f64; 4]>,
+    cur_pic: Option<([u64; 4], usize, usize, u8)>,
+    ml_in: Vec<f32>,
+    ml_faces: Vec<[f64; 14]>,
+    ml_embs: Vec<Vec<f32>>,
+    ml_stage: u8,
+    engines_used: String,
 }
 
 struct FaceResult {
@@ -327,6 +364,8 @@ struct FaceResult {
 }
 
 const FACE_TOKEN: u32 = 1_000_000;
+const ML_TOKEN: u32 = 6_000_000;
+const YN: usize = 640;
 const ZIP_TOKEN: u32 = 2_000_000;
 
 fn face_load() {
@@ -338,19 +377,51 @@ fn face_load() {
         s.face.cascade_busy = true;
         request(Want::Tool(Tool::Face, 0), "GET", "/facemace/cascade.json", "", 0);
     }
+    if s.face.profile.is_none() && !s.face.profile_busy && !s.face.profile_tried {
+        s.face.profile_busy = true;
+        request(Want::Tool(Tool::Face, 1), "GET", "/facemace/cascade-profile.json", "", 0);
+    }
 }
 
-fn face_apply(v: Value, err: Option<String>) {
+/// Everything needed to start scanning has come (or failed to): the cascades, and the neural engines' answer.
+fn face_ready(f: &Face) -> bool {
+    f.cascade.is_some() && !f.profile_busy && f.ml >= 2
+}
+
+fn face_apply(what: u8, v: Value, err: Option<String>) {
     let f = &mut st().face;
-    f.cascade_busy = false;
-    match err {
-        Some(e) => f.msg = format!("The face model could not be loaded: {}", e),
-        None => {
-            f.cascade = haar_of(&v);
-            if f.running {
-                face_next();
-            }
+    if what == 1 {
+        f.profile_busy = false;
+        f.profile_tried = true;
+        if err.is_none() {
+            f.profile = haar_of(&v);
         }
+    } else {
+        f.cascade_busy = false;
+        match err {
+            Some(e) => {
+                f.msg = format!("The face model could not be loaded: {}", e);
+                return;
+            }
+            None => f.cascade = haar_of(&v),
+        }
+    }
+    if f.running && f.at == 0 && f.faces.is_empty() && face_ready(f) {
+        face_next();
+    }
+}
+
+/// The neural engines' answer: loaded, or not available here (then the cascades and LBPH do the work).
+fn ml_loaded(m: &str) {
+    let f = &mut st().face;
+    if m == "ok" {
+        f.ml = 2;
+    } else {
+        f.ml = 3;
+        f.ml_err = m.trim_start_matches("error ").to_string();
+    }
+    if f.running && f.at == 0 && f.faces.is_empty() && face_ready(f) {
+        face_next();
     }
 }
 
@@ -417,10 +488,14 @@ fn face_update(a: u16, v: String) {
                 f.faces.clear();
                 f.pics.clear();
                 f.at = 0;
-                if f.cascade.is_some() {
+                if f.ml == 0 {
+                    f.ml = 1;
+                    host::call("ml-load", "");
+                }
+                face_load();
+                f.engines_used = String::new();
+                if face_ready(f) {
                     face_next();
-                } else {
-                    face_load();
                 }
             }
         }
@@ -476,6 +551,15 @@ fn face_next() {
 
 /// Pixels arrived (w = 0: the file could not be read).
 pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
+    if token >= ML_TOKEN {
+        if token == ML_TOKEN {
+            ml_loaded(&String::from_utf8(data).unwrap_or_default());
+        } else {
+            ml_got(data);
+        }
+        render();
+        return;
+    }
     if token >= INTERN_TOKEN {
         intern_pixels(token - INTERN_TOKEN, data);
         render();
@@ -523,6 +607,19 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         let mean = (img.g.iter().map(|&v| v as u64).sum::<u64>() / (img.g.len().max(1) as u64)) as u8;
         pic = Some((pic_hash(&img), w, h, mean));
         let boxes = f.cascade.as_ref().map(|c| detect(&img, c)).unwrap_or_default();
+        if f.ml == 2 {
+            // the neural way: YuNet looks, the cascades check it, SFace describes (ml_got goes on from here)
+            f.cur = data;
+            f.cur_w = w;
+            f.cur_h = h;
+            f.cur_haar = boxes;
+            f.cur_pic = pic;
+            ml_detect_start(&img);
+            return;
+        }
+        if f.engines_used.is_empty() {
+            f.engines_used = "OpenCV Haar cascade (frontal) and LBPH".into();
+        }
         Some(
             boxes
                 .iter()
@@ -615,6 +712,269 @@ fn dup_check(f: &Face, i: usize, idx: &mut BTreeMap<(u8, u64), Vec<usize>>) -> O
     None
 }
 
+// ---------------------------------------------------------------------------------------------- the neural engines
+
+/// The photo into YuNet's input: 640 × 640, BGR, 0–255, the picture scaled to fit at the top left.
+fn ml_detect_start(_img: &Grey) {
+    let f = &mut st().face;
+    let (w, h) = (f.cur_w, f.cur_h);
+    let k = YN as f64 / w.max(h) as f64;
+    let (nw, nh) = ((round_f(w as f64 * k) as usize).min(YN), (round_f(h as f64 * k) as usize).min(YN));
+    f.ml_in.clear();
+    f.ml_in.resize(3 * YN * YN, 0.0);
+    for y in 0..nh {
+        for x in 0..nw {
+            let (r, g, b) = bilinear(&f.cur, w, h, (x as f64 + 0.5) / k - 0.5, (y as f64 + 0.5) / k - 0.5);
+            let p = y * YN + x;
+            f.ml_in[p] = b;
+            f.ml_in[YN * YN + p] = g;
+            f.ml_in[2 * YN * YN + p] = r;
+        }
+    }
+    f.ml_stage = 0;
+    ml_run("yunet", &[1, 3, YN, YN]);
+}
+
+fn ml_run(model: &str, dims: &[usize]) {
+    let f = &st().face;
+    let d: Vec<String> = dims.iter().map(|x| x.to_string()).collect();
+    if host::call("infer", &format!("{}\t{}\t{}\t{}", model, f.ml_in.as_ptr() as usize, f.ml_in.len(), d.join(","))).is_none() {
+        // the engine is gone: this photo with no faces, and the rest the old way
+        st().face.ml = 3;
+        ml_photo_done();
+    }
+}
+
+/// A pixel of RGBA `p` (w × h) at (x, y), bilinear, black outside.
+fn bilinear(p: &[u8], w: usize, h: usize, x: f64, y: f64) -> (f32, f32, f32) {
+    let (x0, y0) = (floor_f(x), floor_f(y));
+    let (fx, fy) = (x - x0, y - y0);
+    let px = |xi: f64, yi: f64| -> [f64; 3] {
+        if xi < 0.0 || yi < 0.0 || xi >= w as f64 || yi >= h as f64 {
+            return [0.0; 3];
+        }
+        let o = (yi as usize * w + xi as usize) * 4;
+        if o + 2 >= p.len() {
+            return [0.0; 3];
+        }
+        [p[o] as f64, p[o + 1] as f64, p[o + 2] as f64]
+    };
+    let (a, b, c, d) = (px(x0, y0), px(x0 + 1.0, y0), px(x0, y0 + 1.0), px(x0 + 1.0, y0 + 1.0));
+    let mut o = [0f32; 3];
+    for i in 0..3 {
+        o[i] = (a[i] * (1.0 - fx) * (1.0 - fy) + b[i] * fx * (1.0 - fy) + c[i] * (1.0 - fx) * fy + d[i] * fx * fy) as f32;
+    }
+    (o[0], o[1], o[2])
+}
+
+fn iou(a: &[f64], b: &[f64]) -> f64 {
+    let (x1, y1) = (a[0].max(b[0]), a[1].max(b[1]));
+    let (x2, y2) = ((a[0] + a[2]).min(b[0] + b[2]), (a[1] + a[3]).min(b[1] + b[3]));
+    let i = (x2 - x1).max(0.0) * (y2 - y1).max(0.0);
+    let u = a[2] * a[3] + b[2] * b[3] - i;
+    if u > 0.0 { i / u } else { 0.0 }
+}
+
+/// YuNet's output (its twelve tensors, one after the other) as faces: box and five landmarks in the photo's
+/// pixels, and a score.
+fn yunet_decode(o: &[f32], k: f64) -> Vec<([f64; 14], f64)> {
+    let mut out: Vec<([f64; 14], f64)> = Vec::new();
+    let strides = [8usize, 16, 32];
+    let n: Vec<usize> = strides.iter().map(|s| (YN / s) * (YN / s)).collect();
+    let total: usize = n.iter().sum();
+    if o.len() < total * 16 {
+        return out;
+    }
+    let (mut cls, mut obj, mut bb, mut kp) = (0usize, total, 2 * total, 6 * total);
+    for (si, &s) in strides.iter().enumerate() {
+        let cols = YN / s;
+        for i in 0..n[si] {
+            let sc = ((o[cls + i].clamp(0.0, 1.0) * o[obj + i].clamp(0.0, 1.0)) as f64).sqrt_c();
+            if sc >= 0.45 {
+                let (r, c) = ((i / cols) as f64, (i % cols) as f64);
+                let b = &o[bb + i * 4..bb + i * 4 + 4];
+                let (cx, cy) = ((c + b[0] as f64) * s as f64, (r + b[1] as f64) * s as f64);
+                let (bw, bh) = (exp_f(b[2] as f64) * s as f64, exp_f(b[3] as f64) * s as f64);
+                let mut f = [0f64; 14];
+                f[0] = (cx - bw / 2.0) / k;
+                f[1] = (cy - bh / 2.0) / k;
+                f[2] = bw / k;
+                f[3] = bh / k;
+                for m in 0..5 {
+                    f[4 + 2 * m] = (o[kp + i * 10 + 2 * m] as f64 + c) * s as f64 / k;
+                    f[5 + 2 * m] = (o[kp + i * 10 + 2 * m + 1] as f64 + r) * s as f64 / k;
+                }
+                out.push((f, sc));
+            }
+        }
+        cls += n[si];
+        obj += n[si];
+        bb += n[si] * 4;
+        kp += n[si] * 10;
+    }
+    out.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(core::cmp::Ordering::Equal));
+    let mut keep: Vec<([f64; 14], f64)> = Vec::new();
+    for c in out {
+        if keep.iter().all(|k| iou(&k.0[..4], &c.0[..4]) < 0.3) {
+            keep.push(c);
+        }
+    }
+    keep
+}
+
+/// Landmarks where they usually are in a face's box (SFace's template, scaled): for a face only a cascade found.
+fn landmarks_of_box(b: &[f64; 4]) -> [f64; 14] {
+    let t = [(0.342, 0.462), (0.657, 0.460), (0.500, 0.641), (0.371, 0.825), (0.631, 0.824)];
+    let mut f = [0f64; 14];
+    f[..4].copy_from_slice(b);
+    for (m, (rx, ry)) in t.iter().enumerate() {
+        f[4 + 2 * m] = b[0] + rx * b[2];
+        f[5 + 2 * m] = b[1] + ry * b[3];
+    }
+    f
+}
+
+/// What the engines saw, put together: YuNet's sure faces; its less sure ones a cascade also found; faces both
+/// cascades (frontal and profile) found; and, when nothing else was found, a profile face (a face turned aside).
+fn ml_ensemble(yn: Vec<([f64; 14], f64)>) -> Vec<[f64; 14]> {
+    let f = &st().face;
+    let mut out: Vec<[f64; 14]> = Vec::new();
+    for (face, sc) in &yn {
+        let confirmed = f.cur_haar.iter().any(|h| iou(h, &face[..4]) >= 0.3);
+        if *sc >= 0.7 || confirmed {
+            out.push(*face);
+        }
+    }
+    let profile: Vec<[f64; 4]> = if out.is_empty() { profile_boxes(f) } else { Vec::new() };
+    for h in &f.cur_haar {
+        if out.iter().any(|o| iou(&o[..4], h) >= 0.3) {
+            continue;
+        }
+        if profile.iter().any(|p| iou(p, h) >= 0.3) {
+            out.push(landmarks_of_box(h));
+        }
+    }
+    if out.is_empty() {
+        for p in profile.iter().filter(|p| p[2] >= 40.0) {
+            if out.iter().all(|o| iou(&o[..4], p) < 0.3) {
+                out.push(landmarks_of_box(p));
+            }
+        }
+    }
+    out.retain(|o| o[2] >= 20.0 && o[3] >= 20.0);
+    out
+}
+
+/// The profile cascade on the photo and on its mirror image (it knows faces turned one way only).
+fn profile_boxes(f: &Face) -> Vec<[f64; 4]> {
+    let Some(c) = &f.profile else { return Vec::new() };
+    let (w, h) = (f.cur_w, f.cur_h);
+    let mut g = alloc::vec![0u8; w * h];
+    for k in 0..w * h {
+        let p = k * 4;
+        if p + 2 < f.cur.len() {
+            g[k] = ((f.cur[p] as u32 * 299 + f.cur[p + 1] as u32 * 587 + f.cur[p + 2] as u32 * 114 + 500) / 1000) as u8;
+        }
+    }
+    let mut out: Vec<[f64; 4]> = detect(&Grey { g: g.clone(), w, h }, c);
+    let mut m = alloc::vec![0u8; w * h];
+    for y in 0..h {
+        for x in 0..w {
+            m[y * w + x] = g[y * w + (w - 1 - x)];
+        }
+    }
+    for b in detect(&Grey { g: m, w, h }, c) {
+        out.push([w as f64 - b[0] - b[2], b[1], b[2], b[3]]);
+    }
+    out
+}
+
+/// A face, aligned on its landmarks to SFace's 112 × 112 template (a similarity transform, least squares), as RGB.
+fn ml_align(face: &[f64; 14]) {
+    let f = &mut st().face;
+    let t = [(38.2946, 51.6963), (73.5318, 51.5014), (56.0252, 71.7366), (41.5493, 92.3655), (70.7299, 92.2041)];
+    let src: Vec<(f64, f64)> = (0..5).map(|m| (face[4 + 2 * m], face[5 + 2 * m])).collect();
+    let (ms, md) = (
+        (src.iter().map(|p| p.0).sum::<f64>() / 5.0, src.iter().map(|p| p.1).sum::<f64>() / 5.0),
+        (t.iter().map(|p| p.0).sum::<f64>() / 5.0, t.iter().map(|p| p.1).sum::<f64>() / 5.0),
+    );
+    let (mut num_a, mut num_b, mut den) = (0.0, 0.0, 0.0);
+    for m in 0..5 {
+        let (xs, ys) = (src[m].0 - ms.0, src[m].1 - ms.1);
+        let (xd, yd) = (t[m].0 - md.0, t[m].1 - md.1);
+        num_a += xs * xd + ys * yd;
+        num_b += xs * yd - ys * xd;
+        den += xs * xs + ys * ys;
+    }
+    let (a, b) = if den > 0.0 { (num_a / den, num_b / den) } else { (1.0, 0.0) };
+    let (tx, ty) = (md.0 - (a * ms.0 - b * ms.1), md.1 - (b * ms.0 + a * ms.1));
+    let n2 = (a * a + b * b).max(1e-12);
+    f.ml_in.clear();
+    f.ml_in.resize(3 * 112 * 112, 0.0);
+    for v in 0..112 {
+        for u in 0..112 {
+            let (dx, dy) = (u as f64 - tx, v as f64 - ty);
+            let (sx, sy) = ((a * dx + b * dy) / n2, (-b * dx + a * dy) / n2);
+            let (r, g, bl) = bilinear(&f.cur, f.cur_w, f.cur_h, sx, sy);
+            let p = v * 112 + u;
+            f.ml_in[p] = r;
+            f.ml_in[112 * 112 + p] = g;
+            f.ml_in[2 * 112 * 112 + p] = bl;
+        }
+    }
+}
+
+/// An engine answered: YuNet's faces (stage 0) or one face's SFace description (stage 1).
+fn ml_got(data: Vec<u8>) {
+    let f = &mut st().face;
+    if !f.running {
+        return;
+    }
+    let floats: Vec<f32> = data.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect();
+    if f.ml_stage == 0 {
+        let k = YN as f64 / f.cur_w.max(f.cur_h).max(1) as f64;
+        let yn = yunet_decode(&floats, k);
+        let faces = ml_ensemble(yn);
+        let f = &mut st().face;
+        f.ml_faces = faces;
+        f.ml_embs.clear();
+        if f.engines_used.is_empty() {
+            f.engines_used = "YuNet, OpenCV Haar cascades (frontal and profile), SFace".into();
+        }
+        ml_next_face();
+    } else {
+        if floats.len() == 128 {
+            let n = floats.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>().sqrt_c().max(1e-9);
+            f.ml_embs.push(floats.iter().map(|v| (*v as f64 / n) as f32).collect());
+        }
+        ml_next_face();
+    }
+}
+
+fn ml_next_face() {
+    let f = &mut st().face;
+    if let Some(face) = f.ml_faces.pop() {
+        ml_align(&face);
+        st().face.ml_stage = 1;
+        ml_run("sface", &[1, 3, 112, 112]);
+    } else {
+        ml_photo_done();
+    }
+}
+
+/// The photo is done: its faces' descriptions are kept, and the next one is asked for.
+fn ml_photo_done() {
+    let f = &mut st().face;
+    let embs = core::mem::take(&mut f.ml_embs);
+    f.faces.push(Some(embs));
+    f.pics.push(f.cur_pic.take());
+    f.cur.clear();
+    live_save(f.faces.len() - 1);
+    let f = &mut st().face;
+    f.at += 1;
+    face_next();
+}
+
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
 fn face_finish() {
     let f = &mut st().face;
@@ -652,13 +1012,13 @@ fn face_finish() {
             let mut best = 0usize;
             let mut best_d = f64::INFINITY;
             for (id, k) in &known {
-                let d = chi2(h, k);
+                let d = face_dist(h, k);
                 if d < best_d {
                     best_d = d;
                     best = *id;
                 }
             }
-            let id = if best > 0 && best_d < f.strict {
+            let id = if best > 0 && best_d < face_thr(f.strict, h.len() == 128) {
                 best
             } else {
                 next += 1;
@@ -770,13 +1130,13 @@ fn live_save(i: usize) {
         let mut best = 0usize;
         let mut best_d = f64::INFINITY;
         for (id, k) in &f.live_known {
-            let d = chi2(h, k);
+            let d = face_dist(h, k);
             if d < best_d {
                 best_d = d;
                 best = *id;
             }
         }
-        let id = if best > 0 && best_d < f.strict {
+        let id = if best > 0 && best_d < face_thr(f.strict, h.len() == 128) {
             best
         } else {
             f.live_next += 1;
@@ -1398,7 +1758,7 @@ fn face_view(s: &State) -> N {
             el("div")
                 .cls("fm-progress")
                 .kid(el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * f.at as f64 / total as f64))))
-                .kid(el("p").cls("hint").text(if f.cascade.is_none() { "Loading the face model…".to_string() } else { format!("Scanning photo {} of {}…", f.at + 1, f.files.len()) })),
+                .kid(el("p").cls("hint").text(if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
         );
     }
     if let Some(r) = &f.result {
@@ -1420,6 +1780,9 @@ fn face_view(s: &State) -> N {
             )
             .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
+            .kid_if(!f.engines_used.is_empty(), || {
+                el("p").cls("hint").text(format!("Engines: {}{}.", f.engines_used, if f.ml == 3 && !f.ml_err.is_empty() { format!(" (the neural ones could not start here: {})", f.ml_err) } else { String::new() })).into()
+            })
             .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into())
             .kid_if(!r.dups.is_empty(), || {
                 el("section")

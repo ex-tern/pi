@@ -429,6 +429,32 @@ async function decodeImage(f, idx) {
   return cv;
 }
 
+// Face Mace's neural engines (front/facemace/ml, NOTICE.txt): YuNet finds faces and their landmarks, SFace describes
+// an aligned face, both run by ONNX Runtime (WebAssembly), loaded when a sort starts. Answers come back on token
+// 6_000_000 ("ok", "error …") and the results of a run on 6_000_001.
+let ml = null;
+const ML_OUT = ["cls_8", "cls_16", "cls_32", "obj_8", "obj_16", "obj_32", "bbox_8", "bbox_16", "bbox_32", "kps_8", "kps_16", "kps_32"];
+async function mlLoad() {
+  const ort = await import("/facemace/ml/ort.wasm.min.mjs");
+  ort.env.wasm.wasmPaths = "/facemace/ml/";
+  ort.env.wasm.numThreads = 1;
+  ort.env.logLevel = "error";
+  const opt = { executionProviders: ["wasm"], graphOptimizationLevel: "all", logSeverityLevel: 3 };
+  const [yunet, sface] = await Promise.all([ort.InferenceSession.create("/facemace/ml/yunet.onnx", opt), ort.InferenceSession.create("/facemace/ml/sface.onnx", opt)]);
+  ml = { ort, yunet, sface };
+}
+async function mlRun(model, data, dims) {
+  const t = new ml.ort.Tensor("float32", data, dims);
+  if (model === "yunet") {
+    const r = await ml.yunet.run({ input: t });
+    const parts = ML_OUT.map((k) => r[k].data), n = parts.reduce((a, p) => a + p.length, 0), out = new Float32Array(n);
+    let o = 0; for (const p of parts) { out.set(p, o); o += p.length; }
+    return out;
+  }
+  const r = await ml.sface.run({ data: t });
+  return r.fc1.data;
+}
+
 // the folder Face Mace saves into, and what waits to be written there
 let outDir = null, outQ = [], outBusy = false, outSaved = 0;
 async function outRun() {
@@ -611,6 +637,19 @@ const ops = {
     const t = a.lastIndexOf("\t");
     outQ.push([a.slice(0, t), +a.slice(t + 1)]);
     if (!outBusy) outRun();
+    return "1";
+  },
+  "ml-load": () => {
+    if (ml) { give(6000000, enc.encode("ok"), 1, 1); return "1"; }
+    mlLoad().then(() => give(6000000, enc.encode("ok"), 1, 1), (e) => give(6000000, enc.encode("error " + ((e && e.message) || e)), 1, 1));
+    return "1";
+  },
+  // a model run on floats in the program's memory: model, pointer, count, dims (comma separated)
+  infer: (a) => {
+    const [model, p, n, d] = a.split("\t");
+    if (!ml) return null;
+    const data = new Float32Array(W.memory.buffer, +p, +n).slice();
+    mlRun(model, data, d.split(",").map(Number)).then((out) => give(6000001, new Uint8Array(out.buffer, out.byteOffset, out.byteLength), 1, 1), (e) => give(6000001, new Uint8Array(0), 0, 0));
     return "1";
   },
   // a ZIP of chosen files: its name, then a line "path\tfile" for each

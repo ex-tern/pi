@@ -1,0 +1,14 @@
+Face Mace's face engines
+
+- YuNet (face_detection_yunet_2023mar.onnx, as yunet.onnx): a small convolutional face detector with five landmarks,
+  by Shiqi Yu et al., from the OpenCV model zoo (https://github.com/opencv/opencv_zoo). MIT License:
+  LICENSE-YuNet.txt.
+- SFace (face_recognition_sface_2021dec_int8.onnx, as sface.onnx): a face recognition network giving a 128-number
+  description of an aligned face, by Yaoyao Zhong et al., from the OpenCV model zoo. Apache License 2.0:
+  LICENSE-SFace.txt.
+- ONNX Runtime Web 1.20.1 (ort.wasm.min.mjs, ort-wasm-simd-threaded.mjs/.wasm), which runs both in the browser, by
+  Microsoft. MIT License: LICENSE-onnxruntime.txt.
+- OpenCV's Haar cascades (../cascade.json: frontal face; ../cascade-profile.json: profile face), Intel License
+  Agreement for OpenCV (BSD-style): ../CASCADE-LICENSE.txt.
+
+All run on this device; no photo leaves it. The files are unmodified.
