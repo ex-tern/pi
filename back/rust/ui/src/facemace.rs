@@ -307,6 +307,11 @@ pub struct Face {
     live_known: Vec<(usize, Vec<f32>)>,
     live_next: usize,
     live_used: BTreeMap<String, Vec<String>>,
+    /// leaving out duplicates (owner, 2026-10-15: "add delete duplicates option"): per file, a picture hash (256
+    /// bits) and the decoded size; the live index while scanning
+    dedupe: bool,
+    pics: Vec<Option<([u64; 4], usize, usize, u8)>>,
+    live_idx: BTreeMap<(u8, u64), Vec<usize>>,
 }
 
 struct FaceResult {
@@ -317,6 +322,8 @@ struct FaceResult {
     ms: f64,
     strict: f64,
     thumbs: Vec<(usize, String)>,
+    /// (left out, the one kept)
+    dups: Vec<(usize, usize)>,
 }
 
 const FACE_TOKEN: u32 = 1_000_000;
@@ -382,6 +389,7 @@ fn face_update(a: u16, v: String) {
             list.sort_by(|a, b| a.2.cmp(&b.2));
             f.files = list;
             f.faces.clear();
+            f.pics.clear();
             f.result = None;
             f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
@@ -395,6 +403,7 @@ fn face_update(a: u16, v: String) {
             f.live_known.clear();
             f.live_next = 1;
             f.live_used.clear();
+            f.live_idx.clear();
             // faces already found for these files: sorted again at once, then written to the folder from the result
             let rescan = f.faces.len() == f.files.len();
             if rescan && f.out_dir.is_some() && !f.by_date {
@@ -406,6 +415,7 @@ fn face_update(a: u16, v: String) {
                 face_finish();
             } else {
                 f.faces.clear();
+                f.pics.clear();
                 f.at = 0;
                 if f.cascade.is_some() {
                     face_next();
@@ -425,6 +435,18 @@ fn face_update(a: u16, v: String) {
         8 => {
             f.out_dir = None;
             f.out_msg.clear();
+        }
+        9 => {
+            f.dedupe = !f.dedupe;
+            // faces and fingerprints are kept: the result is worked out again at once
+            if f.result.is_some() && f.faces.len() == f.files.len() && !f.running {
+                face_finish();
+            }
+        }
+        10 => {
+            let Some(r) = &f.result else { return };
+            let lines: Vec<String> = r.dups.iter().map(|(d, k)| format!("{}\tthe same as\t{}", f.files[*d].2, f.files[*k].2)).collect();
+            host::download("Face Mace duplicates.txt", "text/plain", format!("Duplicates Face Mace left out ({}): delete these from the original folder if you wish.\n\n{}\n", lines.len(), lines.join("\n")).as_bytes());
         }
         5 => f.by_date = !f.by_date,
         // a name for the person of group a - 1000
@@ -485,6 +507,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
     if i != f.at || !f.running {
         return;
     }
+    let mut pic = None;
     let found = if w == 0 || h == 0 {
         if face_is_video(&f.files[i].2) { Some(Vec::new()) } else { None }
     } else {
@@ -497,6 +520,8 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             }
         }
         let img = Grey { g, w, h };
+        let mean = (img.g.iter().map(|&v| v as u64).sum::<u64>() / (img.g.len().max(1) as u64)) as u8;
+        pic = Some((pic_hash(&img), w, h, mean));
         let boxes = f.cascade.as_ref().map(|c| detect(&img, c)).unwrap_or_default();
         Some(
             boxes
@@ -510,10 +535,84 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         )
     };
     f.faces.push(found);
+    f.pics.push(pic);
     live_save(f.faces.len() - 1);
     f.at += 1;
     face_next();
     render();
+}
+
+/// A picture's fingerprint: the difference hash on a 16 × 16 grid (256 bits). The same photo copied, saved again
+/// or resized gives the same, or almost the same, bits; different photos differ in many.
+fn pic_hash(img: &Grey) -> [u64; 4] {
+    let (gw, gh) = (17usize, 16usize);
+    let mut cell = [0f64; 17 * 16];
+    for cy in 0..gh {
+        for cx in 0..gw {
+            let (x0, x1) = (cx * img.w / gw, ((cx + 1) * img.w / gw).max(cx * img.w / gw + 1).min(img.w));
+            let (y0, y1) = (cy * img.h / gh, ((cy + 1) * img.h / gh).max(cy * img.h / gh + 1).min(img.h));
+            let (mut sum, mut n) = (0f64, 0f64);
+            for y in y0..y1 {
+                for x in x0..x1 {
+                    sum += img.g[y * img.w + x] as f64;
+                    n += 1.0;
+                }
+            }
+            cell[cy * gw + cx] = if n > 0.0 { sum / n } else { 0.0 };
+        }
+    }
+    let mut h = [0u64; 4];
+    for cy in 0..gh {
+        for cx in 0..16 {
+            let bit = cy * 16 + cx;
+            if cell[cy * gw + cx] > cell[cy * gw + cx + 1] {
+                h[bit / 64] |= 1 << (bit % 64);
+            }
+        }
+    }
+    h
+}
+
+/// Whether file i is a duplicate of one seen before it (which one), adding it to the index when it is not: the
+/// same picture (at most 15 of 256 bits apart, the same shape and brightness; copies measured 0 to 8 apart,
+/// different photos over 100), or for a video with no picture read, the same type and the same size to the byte.
+fn dup_check(f: &Face, i: usize, idx: &mut BTreeMap<(u8, u64), Vec<usize>>) -> Option<usize> {
+    let (_, size, name) = &f.files[i];
+    let Some(pic) = f.pics.get(i).copied().flatten() else {
+        if !face_is_video(name) {
+            return None;
+        }
+        let key = (200u8, *size as u64);
+        let hit = idx.get(&key).and_then(|v| v.iter().find(|&&j| face_ext(&f.files[j].2) == face_ext(name)).copied());
+        if hit.is_none() {
+            idx.entry(key).or_default().push(i);
+        }
+        return hit;
+    };
+    let (h, w, ht, mean) = pic;
+    // fifteen bits apart at most: one of the sixteen 16-bit pieces is then the same, so only those are compared
+    let piece = |h: &[u64; 4], k: usize| (h[k / 4] >> ((k % 4) * 16)) & 0xFFFF;
+    for k in 0..16usize {
+        if let Some(c) = idx.get(&(k as u8, piece(&h, k))) {
+            for &j in c {
+                let Some((hj, wj, htj, mj)) = f.pics.get(j).copied().flatten() else { continue };
+                let dist: u32 = (0..4).map(|q| (h[q] ^ hj[q]).count_ones()).sum();
+                let same_shape = ((w * htj) as i64 - (wj * ht) as i64).abs() as f64 <= 0.02 * (w * htj) as f64;
+                let same_light = (mean as i32 - mj as i32).abs() <= 10;
+                let video_ok = !face_is_video(name) || f.files[j].1 == *size;
+                if dist <= 15 && same_shape && same_light && video_ok {
+                    return Some(j);
+                }
+            }
+        }
+    }
+    for k in 0..16usize {
+        let e = idx.entry((k as u8, piece(&h, k))).or_default();
+        if !e.contains(&i) {
+            e.push(i);
+        }
+    }
+    None
 }
 
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
@@ -522,7 +621,24 @@ fn face_finish() {
     let mut known: Vec<(usize, &Vec<f32>)> = Vec::new();
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     let (mut none, mut unreadable, mut next, mut nfaces) = (Vec::new(), 0usize, 1usize, 0usize);
+    let mut dups: Vec<(usize, usize)> = Vec::new();
+    if f.dedupe {
+        // the biggest file of each set is the one kept (normally the original; a copy made smaller is let go)
+        let mut order: Vec<usize> = (0..f.faces.len()).collect();
+        order.sort_by(|&a, &b| f.files[b].1.partial_cmp(&f.files[a].1).unwrap_or(core::cmp::Ordering::Equal).then_with(|| f.files[a].2.cmp(&f.files[b].2)));
+        let mut idx = BTreeMap::new();
+        for i in order {
+            if let Some(j) = dup_check(f, i, &mut idx) {
+                dups.push((i, j));
+            }
+        }
+        dups.sort_by(|a, b| f.files[a.0].2.cmp(&f.files[b.0].2));
+    }
+    let f = &mut st().face;
     for (i, hs) in f.faces.iter().enumerate() {
+        if dups.iter().any(|d| d.0 == i) {
+            continue;
+        }
         let Some(hs) = hs else {
             unreadable += 1;
             continue;
@@ -561,7 +677,8 @@ fn face_finish() {
     }
     // thumbnails: the first twelve of each group, as object URLs of the files themselves
     let mut thumbs = Vec::new();
-    for (_, idx) in &out {
+    let dup_list: Vec<usize> = dups.iter().map(|d| d.0).collect();
+    for idx in out.iter().map(|g| &g.1).chain(core::iter::once(&dup_list)) {
         for &i in idx.iter().take(12) {
             if !thumbs.iter().any(|(j, _)| *j == i) {
                 let url = host::call("fileurl", &format!("{}", f.files[i].0)).unwrap_or_default();
@@ -569,7 +686,7 @@ fn face_finish() {
             }
         }
     }
-    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs });
+    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups });
     f.running = false;
 }
 
@@ -638,6 +755,14 @@ fn live_save(i: usize) {
     let f = &mut st().face;
     if f.out_dir.is_none() || f.by_date {
         return;
+    }
+    if f.dedupe {
+        let mut idx = core::mem::take(&mut f.live_idx);
+        let d = dup_check(f, i, &mut idx);
+        f.live_idx = idx;
+        if d.is_some() {
+            return;
+        }
     }
     let Some(Some(hs)) = f.faces.get(i).cloned() else { return };
     let mut people: Vec<usize> = Vec::new();
@@ -1243,7 +1368,13 @@ fn face_view(s: &State) -> N {
                         .kid(txt(format!("Match strictness {} ", strict as i64)))
                         .kid(el("input").attr("type", "range").attr("min", "40").attr("max", "120").prop("value", format!("{}", strict as i64)).on("input", Msg::TV(Tool::Face, 2))),
                 )
-                .kid(el("p").cls("hint").text("Lower is stricter (more people, each photo set smaller); higher is looser (more photos grouped together). Faces are found once, so trying another strictness is quick.")),
+                .kid(el("p").cls("hint").text("Lower is stricter (more people, each photo set smaller); higher is looser (more photos grouped together). Faces are found once, so trying another strictness is quick."))
+                .kid(
+                    el("label")
+                        .cls("fm-option")
+                        .kid(el("input").attr("type", "checkbox").prop("checked", if f.dedupe { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 9, String::new())))
+                        .kid(txt(" Delete duplicates: a photo or video that is there twice (copied, saved again or resized) is kept once, everywhere Face Mace saves. Your original folder is not changed.")),
+                ),
         )
         .kid({
             let can = host::call("canpick", "").as_deref() == Some("1");
@@ -1289,7 +1420,19 @@ fn face_view(s: &State) -> N {
             )
             .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
-            .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into());
+            .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into())
+            .kid_if(!r.dups.is_empty(), || {
+                el("section")
+                    .cls("fm-group fm-dups")
+                    .kid(el("div").cls("fm-head").kid(el("h3").text(format!("Duplicates left out · {}", r.dups.len()))).kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 10, String::new())).text("Download the list")))
+                    .kid(el("p").cls("hint").text("Each is the same picture as one kept. A browser cannot delete files from your folders: the list says which ones to delete there, if you want to."))
+                    .kid(el("div").cls("fm-thumbs").kids(r.dups.iter().take(12).map(|(d, k)| -> N {
+                        let url = r.thumbs.iter().find(|(j, _)| j == d).map(|x| x.1.clone()).unwrap_or_default();
+                        let title = format!("{} (the same as {})", f.files[*d].2, f.files[*k].2);
+                        if url.is_empty() { el("span").cls("fm-tile").attr("title", title).text(face_ext(&f.files[*d].2).to_uppercase()).into() } else { el("img").attr("loading", "lazy").attr("alt", title.clone()).attr("title", title).attr("src", url).into() }
+                    })).kid_if(r.dups.len() > 12, || el("span").cls("fm-more").text(format!("+{}", r.dups.len() - 12)).into()))
+                    .into()
+            });
         for (gi, (k, idx)) in r.groups.iter().enumerate() {
             root = root.kid(
                 el("section")
