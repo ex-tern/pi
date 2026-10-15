@@ -373,6 +373,14 @@ pub struct Face {
     last_people: Vec<(usize, Vec<Vec<f32>>)>,
     show_all: bool,
     last_preview: f64,
+    /// what the person sorting says (owner, 2026-10-15: "make the person to be selected by the user ... just like
+    /// Google Photos"): this photo is this person (also a photo moved here), this photo is not this person, this
+    /// person is that one; their photos shown in full; and the files written into person folders, to follow
+    confirm: BTreeMap<usize, usize>,
+    reject: alloc::collections::BTreeSet<(usize, usize)>,
+    merge: BTreeMap<usize, usize>,
+    expanded: alloc::collections::BTreeSet<usize>,
+    sorted_written: BTreeMap<usize, Vec<String>>,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -431,6 +439,8 @@ struct FaceResult {
     /// group, and per photo in a group; and over everything
     conf: Vec<f64>,
     photo_conf: BTreeMap<(usize, usize), f64>,
+    /// the least sure matches not yet answered: (photo, person, how sure)
+    review: Vec<(usize, usize, f64)>,
     overall: Option<f64>,
     done: bool,
 }
@@ -536,6 +546,10 @@ fn face_update(a: u16, v: String) {
             f.result = None;
             f.stopped = false;
             f.thumb_cache.clear();
+            f.confirm.clear();
+            f.reject.clear();
+            f.merge.clear();
+            f.sorted_written.clear();
             f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
         }
         2 => f.strict = v.parse().unwrap_or(75.0),
@@ -617,6 +631,45 @@ fn face_update(a: u16, v: String) {
             host::download("Face Mace duplicates.txt", "text/plain", format!("Duplicates Face Mace left out ({}): delete these from the original folder if you wish.\n\n{}\n", lines.len(), lines.join("\n")).as_bytes());
         }
         5 => f.by_date = !f.by_date,
+        // the person sorting: yes, this is them / no / move to / merge / all their photos
+        20 | 21 | 22 | 23 | 24 => {
+            let nums: Vec<usize> = v.split('\t').filter_map(|x| x.parse().ok()).collect();
+            match (a, nums.as_slice()) {
+                (20, [i, p]) => {
+                    f.reject.remove(&(*i, *p));
+                    f.confirm.insert(*i, *p);
+                }
+                (21, [i, p]) => {
+                    if f.confirm.get(i) == Some(p) {
+                        f.confirm.remove(i);
+                    }
+                    f.reject.insert((*i, *p));
+                }
+                (22, [i, from, to]) => {
+                    let to = if *to == 0 { new_person_id(f) } else { *to };
+                    if *from > 0 {
+                        f.reject.insert((*i, *from));
+                    }
+                    f.reject.remove(&(*i, to));
+                    f.confirm.insert(*i, to);
+                }
+                (23, [from, to]) if from != to => {
+                    f.merge.insert(*from, *to);
+                    if let (Some(n), false) = (f.names.get(&format!("Person_{}", from)).cloned(), f.names.contains_key(&format!("Person_{}", to))) {
+                        f.names.insert(format!("Person_{}", to), n);
+                    }
+                }
+                (24, [p]) => {
+                    if !f.expanded.remove(p) {
+                        f.expanded.insert(*p);
+                    }
+                }
+                _ => {}
+            }
+            if !f.running {
+                face_compute(true);
+            }
+        }
         13 => f.part_size = v.trim().parse::<usize>().unwrap_or(0).min(1_000_000),
         14 => f.show_all = !f.show_all,
         // the people found, saved as a file (their names and up to forty faces each, as numbers: no pictures)
@@ -672,7 +725,7 @@ fn face_update(a: u16, v: String) {
                 // nothing to look at: straight to the dates
                 f.quick = false;
                 let all: Vec<usize> = (0..f.files.len()).collect();
-                f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: 0.0, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true });
+                f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: 0.0, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new() });
                 face_zip();
             }
         }
@@ -717,7 +770,8 @@ fn face_update(a: u16, v: String) {
             } else {
                 f.names.insert(k, n);
             }
-            live_rename_person(p);
+            let _ = p;
+            live_relabel();
         }
         // a name for the person of group a - 1000
         a if a >= 1000 => {
@@ -1260,6 +1314,22 @@ fn people_import(text: &str) {
     }
 }
 
+/// A number for a person made by hand ("Move to: a new person").
+fn new_person_id(f: &Face) -> usize {
+    let mut m = f.imported.iter().map(|p| p.0).max().unwrap_or(0);
+    if let Some(r) = &f.result {
+        for (k, _) in &r.groups {
+            if let Some(id) = k.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()) {
+                m = m.max(id);
+            }
+        }
+    }
+    for (_, &p) in f.confirm.iter() {
+        m = m.max(p);
+    }
+    m + 1
+}
+
 /// One part's files as a ZIP: renamed (when renaming) or in their people's folders.
 fn part_zip(k: usize) {
     let f = &mut st().face;
@@ -1331,7 +1401,29 @@ fn face_compute(done: bool) {
     }
     let f = &mut st().face;
     let dup_set: alloc::collections::BTreeSet<usize> = dups.iter().map(|d| d.0).collect();
-    let mut cl = Clusters::seeded(&f.imported);
+    // the photos the person sorting confirmed are where their people start: their faces lead the matching
+    let mut seed = f.imported.clone();
+    for (&i, &p) in f.confirm.iter() {
+        let Some(Some(hs)) = f.faces.get(i) else { continue };
+        let Some(h) = (if hs.len() == 1 { hs.first() } else {
+            // several faces: the one nearest this person's other confirmed faces (or the first)
+            let refs: Vec<&Vec<f32>> = seed.iter().filter(|q| q.0 == p).flat_map(|q| q.1.iter()).collect();
+            hs.iter().min_by(|a, b| {
+                let da = refs.iter().map(|r| face_dist(a, r)).fold(f64::INFINITY, f64::min);
+                let db = refs.iter().map(|r| face_dist(b, r)).fold(f64::INFINITY, f64::min);
+                da.partial_cmp(&db).unwrap_or(core::cmp::Ordering::Equal)
+            })
+        }) else { continue };
+        match seed.iter_mut().find(|q| q.0 == p) {
+            Some(q) => {
+                if q.1.len() < 40 {
+                    q.1.push(h.clone());
+                }
+            }
+            None => seed.push((p, alloc::vec![h.clone()])),
+        }
+    }
+    let mut cl = Clusters::seeded(&seed);
     for (i, hs) in f.faces.iter().enumerate() {
         if dup_set.contains(&i) {
             continue;
@@ -1355,9 +1447,124 @@ fn face_compute(done: bool) {
             }
         }
     }
+    // the same people keep the same numbers from one count to the next (so names, merges and answers stay with
+    // them): each new group takes the number of the earlier group it shares most photos with
+    let fixed: alloc::collections::BTreeSet<usize> = seed.iter().map(|q| q.0).collect();
+    let mut prev: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    if let Some(r) = &f.result {
+        for (k, idx) in &r.groups {
+            if let Some(id) = k.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()) {
+                prev.insert(id, idx.clone());
+            }
+        }
+    }
+    let mut pairs: Vec<(usize, usize, usize)> = Vec::new();
+    for (nid, v) in groups.iter() {
+        if fixed.contains(nid) {
+            continue;
+        }
+        for (pid, pv) in prev.iter() {
+            if fixed.contains(pid) {
+                continue;
+            }
+            let n = v.iter().filter(|i| pv.contains(i)).count();
+            if n > 0 {
+                pairs.push((n, *nid, *pid));
+            }
+        }
+    }
+    pairs.sort_by(|a, b| b.0.cmp(&a.0));
+    let mut remap: BTreeMap<usize, usize> = BTreeMap::new();
+    let mut taken: alloc::collections::BTreeSet<usize> = fixed.clone();
+    for (_, nid, pid) in pairs {
+        if remap.contains_key(&nid) || taken.contains(&pid) {
+            continue;
+        }
+        remap.insert(nid, pid);
+        taken.insert(pid);
+    }
+    let mut fresh = taken.iter().copied().chain(prev.keys().copied()).max().unwrap_or(0) + 1;
+    for nid in groups.keys() {
+        if !fixed.contains(nid) && !remap.contains_key(nid) {
+            while taken.contains(&fresh) {
+                fresh += 1;
+            }
+            remap.insert(*nid, fresh);
+            taken.insert(fresh);
+        }
+    }
+    let groups: BTreeMap<usize, Vec<usize>> = groups.into_iter().map(|(id, v)| (*remap.get(&id).unwrap_or(&id), v)).collect();
+    for k in known.iter_mut() {
+        k.0 = *remap.get(&k.0).unwrap_or(&k.0);
+    }
+    let mut cl = cl;
+    for p in cl.people.iter_mut() {
+        p.0 = *remap.get(&p.0).unwrap_or(&p.0);
+    }
+    // what the person sorting said: merges, then photos that are not someone, then photos that are
+    let resolve = |mut id: usize| {
+        let mut n = 0;
+        while let Some(&t) = f.merge.get(&id) {
+            if n > 50 || t == id {
+                break;
+            }
+            id = t;
+            n += 1;
+        }
+        id
+    };
+    let mut merged: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
+    for (id, v) in groups.into_iter() {
+        let e = merged.entry(resolve(id)).or_default();
+        for i in v {
+            if !e.contains(&i) {
+                e.push(i);
+            }
+        }
+    }
+    for k in known.iter_mut() {
+        k.0 = resolve(k.0);
+    }
+    let mut groups = merged;
+    let mut placed: alloc::collections::BTreeSet<usize> = alloc::collections::BTreeSet::new();
+    for v in groups.values() {
+        placed.extend(v.iter().copied());
+    }
+    for (i, p) in f.reject.iter() {
+        if let Some(v) = groups.get_mut(&resolve(*p)) {
+            v.retain(|x| x != i);
+        }
+    }
+    for (&i, &p) in f.confirm.iter() {
+        if i >= f.faces.len() || dup_set.contains(&i) {
+            continue;
+        }
+        let p = resolve(p);
+        // a photo with one face is in one person's group only
+        if f.faces[i].as_ref().map(|h| h.len() <= 1).unwrap_or(true) {
+            for (q, v) in groups.iter_mut() {
+                if *q != p {
+                    v.retain(|x| *x != i);
+                }
+            }
+        }
+        let v = groups.entry(p).or_default();
+        if !v.contains(&i) {
+            v.push(i);
+            v.sort();
+        }
+        none.retain(|x| *x != i);
+    }
+    groups.retain(|_, v| !v.is_empty());
+    // photos whose faces were all said to be someone else: not recognized
+    let mut lost: Vec<usize> = placed.into_iter().filter(|i| !groups.values().any(|v| v.contains(i)) && !none.contains(i)).collect();
+    lost.sort();
     next = groups.len() + 1;
     let people_now: Vec<(usize, Vec<Vec<f32>>)> = cl.people.iter().filter(|p| groups.contains_key(&p.0) || f.imported.iter().any(|q| q.0 == p.0)).cloned().collect();
     let mut out: Vec<(String, Vec<usize>)> = groups.into_iter().map(|(id, v)| (format!("Person_{}", id), v)).collect();
+    if !lost.is_empty() {
+        out.push(("Not_Recognized".to_string(), lost));
+    }
     if !none.is_empty() {
         out.push((if f.rename_only { "Not_Sorted".to_string() } else { "No_Faces_Detected".to_string() }, none));
     }
@@ -1366,7 +1573,7 @@ fn face_compute(done: bool) {
     let mut photo_conf: BTreeMap<(usize, usize), f64> = BTreeMap::new();
     let (mut all_sum, mut all_n) = (0.0f64, 0usize);
     for (gi, (k, idx)) in out.iter().enumerate() {
-        if k == "No_Faces_Detected" {
+        if k == "No_Faces_Detected" || k == "Not_Recognized" || k == "Not_Sorted" {
             conf.push(0.0);
             continue;
         }
@@ -1379,7 +1586,9 @@ fn face_compute(done: bool) {
         let dim = mine[0].1.len();
         let emb = dim == 128;
         let mut c = alloc::vec![0f64; dim];
-        for (_, h) in &mine {
+        let sure: Vec<&(usize, &Vec<f32>)> = mine.iter().filter(|(i, _)| f.confirm.get(i) == Some(&id)).collect();
+        let basis: Vec<&(usize, &Vec<f32>)> = if sure.is_empty() { mine.iter().collect() } else { sure };
+        for (_, h) in basis.iter().map(|x| (x.0, x.1)) {
             for (a, b) in c.iter_mut().zip(h.iter()) {
                 *a += *b as f64;
             }
@@ -1394,8 +1603,9 @@ fn face_compute(done: bool) {
         let (mut sum, mut cnt) = (0.0, 0usize);
         for (i, h) in &mine {
             // a person seen once is as sure as their single face is clear: a full match with itself is not news
-            let p = if mine.len() == 1 { 0.0 } else { match_conf(face_dist(h, &cf), emb, f.strict) };
-            if mine.len() > 1 {
+            // a photo the person sorting confirmed is sure; the others are measured against this person's centre
+            let p = if f.confirm.get(i) == Some(&id) { 1.0 } else if mine.len() == 1 { 0.0 } else { match_conf(face_dist(h, &cf), emb, f.strict) };
+            if mine.len() > 1 || f.confirm.get(i) == Some(&id) {
                 sum += p;
                 cnt += 1;
                 let e = photo_conf.entry((gi, *i)).or_insert(0.0);
@@ -1415,8 +1625,10 @@ fn face_compute(done: bool) {
     // thumbnails: the first twelve of each group, as object URLs of the files themselves (made once)
     let mut thumbs = Vec::new();
     let dup_list: Vec<usize> = dups.iter().map(|d| d.0).collect();
-    for idx in out.iter().map(|g| &g.1).chain(core::iter::once(&dup_list)) {
-        for &i in idx.iter().take(12) {
+    let expanded: Vec<bool> = out.iter().map(|g| g.0.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()).map(|p| f.expanded.contains(&p)).unwrap_or(false)).collect();
+    for (gk, idx) in out.iter().map(|g| &g.1).chain(core::iter::once(&dup_list)).enumerate() {
+        let take = if expanded.get(gk).copied().unwrap_or(false) { 600 } else { 12 };
+        for &i in idx.iter().take(take) {
             if !thumbs.iter().any(|(j, _): &(usize, String)| *j == i) {
                 let url = match f.thumb_cache.get(&i) {
                     Some(u) => u.clone(),
@@ -1434,7 +1646,88 @@ fn face_compute(done: bool) {
     }
     let overall = if all_n > 0 { Some(all_sum / all_n as f64) } else { None };
     f.last_people = people_now;
-    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done });
+    // to ask about: the least sure photos of each person, not yet answered
+    let mut review: Vec<(usize, usize, f64)> = Vec::new();
+    for ((gi, i), p) in photo_conf.iter() {
+        let Some(id) = out.get(*gi).and_then(|g| g.0.strip_prefix("Person_")).and_then(|x| x.parse::<usize>().ok()) else { continue };
+        if *p < 0.9 && f.confirm.get(i) != Some(&id) && !f.reject.contains(&(*i, id)) {
+            review.push((*i, id, *p));
+        }
+    }
+    review.sort_by(|a, b| a.2.partial_cmp(&b.2).unwrap_or(core::cmp::Ordering::Equal));
+    review.truncate(8);
+    for (i, _, _) in &review {
+        if !f.thumb_cache.contains_key(i) {
+            let u = host::call("fileurl", &format!("{}", f.files[*i].0)).unwrap_or_default();
+            if !u.is_empty() {
+                f.thumb_cache.insert(*i, u);
+            }
+        }
+    }
+    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done, review });
+    if done {
+        live_relabel();
+    }
+}
+
+/// After corrections: files already written into the folder follow (renamed ones get their people's names; ones
+/// sorted into person folders move to the right folder).
+fn live_relabel() {
+    let f = &mut st().face;
+    let Some(r) = &f.result else { return };
+    if f.out_dir.is_none() {
+        return;
+    }
+    let mut member: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    for (k, idx) in &r.groups {
+        for &i in idx {
+            member.entry(i).or_default().push(k.clone());
+        }
+    }
+    if f.live_rename {
+        let mut moves: Vec<(usize, String, String, Vec<usize>)> = Vec::new();
+        for (i, (n, _, path)) in f.live_written.iter() {
+            let people: Vec<usize> = member.get(i).map(|v| v.iter().filter_map(|k| k.strip_prefix("Person_")).filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
+            let new = renamed_path(*n, &if f.rename_only { String::new() } else { label_of(f, &people) }, f.file_when.get(*i).copied().unwrap_or(0), &f.files[*i].2);
+            if &new != path {
+                moves.push((*i, path.clone(), new, people));
+            }
+        }
+        for (i, old, new, people) in moves {
+            host::call("mvfile", &format!("{}\t{}", old, new));
+            if let Some(e) = f.live_written.get_mut(&i) {
+                e.2 = new;
+                e.1 = people;
+            }
+        }
+        return;
+    }
+    // person folders: named after the person once named
+    let folder = |k: &str| f.names.get(k).map(|n| file_safe(n)).filter(|n| !n.is_empty()).unwrap_or_else(|| k.to_string());
+    let mut jobs: Vec<(usize, Vec<String>)> = Vec::new();
+    for (i, have) in f.sorted_written.iter() {
+        let base = have.first().and_then(|p| p.rsplit('/').next()).unwrap_or("photo").to_string();
+        let want: Vec<String> = member.get(i).map(|v| v.iter().map(|k| format!("{}/{}", folder(k), base)).collect()).unwrap_or_default();
+        if &want != have {
+            jobs.push((*i, want));
+        }
+    }
+    for (i, want) in jobs {
+        let have = f.sorted_written.get(&i).cloned().unwrap_or_default();
+        let mut spare: Vec<String> = have.iter().filter(|p| !want.contains(p)).cloned().collect();
+        for w in want.iter().filter(|w| !have.contains(w)) {
+            match spare.pop() {
+                Some(old) => {
+                    host::call("mvfile", &format!("{}\t{}", old, w));
+                }
+                None => out_save(w, f.files[i].0),
+            }
+        }
+        for old in spare {
+            host::call("rmfile", &old);
+        }
+        f.sorted_written.insert(i, want);
+    }
 }
 
 // ---------------------------------------------------------------------------------------------- the ZIP (stored, as the original's folders)
@@ -1533,7 +1826,9 @@ fn live_save(i: usize) {
     let base = f.files[i].2.rsplit('/').next().unwrap_or("photo").to_string();
     for g in groups {
         let name = unique_in(f.live_used.entry(g.clone()).or_default(), &base);
-        out_save(&format!("{}/{}", g, name), f.files[i].0);
+        let path = format!("{}/{}", g, name);
+        f.sorted_written.entry(i).or_default().push(path.clone());
+        out_save(&path, f.files[i].0);
     }
 }
 
@@ -1778,7 +2073,7 @@ fn predate_done() {
         }
         let f = &mut st().face;
         let all: Vec<usize> = (0..f.files.len()).collect();
-        f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: host::now() - f.started, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true });
+        f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: host::now() - f.started, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new() });
         f.running = false;
         return;
     }
@@ -2317,7 +2612,7 @@ fn face_view(s: &State) -> N {
     if let Some(r) = &f.result {
         let pct = |p: f64| format!("{:.0}%", (p * 100.0).clamp(0.0, 100.0));
         let sure_cls = |p: f64| if p >= 0.9 { "hi" } else if p >= 0.7 { "mid" } else { "lo" };
-        let label = |k: &str| if k == "No_Faces_Detected" { "No faces found".to_string() } else if k == "Not_Sorted" { "Renamed only, not sorted".to_string() } else { k.replace('_', " ") };
+        let label = |k: &str| if k == "No_Faces_Detected" { "No faces found".to_string() } else if k == "Not_Recognized" { "Not recognized".to_string() } else if k == "Not_Sorted" { "Renamed only, not sorted".to_string() } else { k.replace('_', " ") };
         root = root
             .kid(
                 el("div")
@@ -2358,6 +2653,36 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                     })).kid_if(r.dups.len() > 12, || el("span").cls("fm-more").text(format!("+{}", r.dups.len() - 12)).into()))
                     .into()
             });
+        // the people, for "Move to" and "Merge into"
+        let persons: Vec<(usize, String)> = r
+            .groups
+            .iter()
+            .filter_map(|(k, _)| k.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()).map(|id| (id, f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| label(k)))))
+            .collect();
+        let pname = |id: usize| persons.iter().find(|p| p.0 == id).map(|p| p.1.clone()).unwrap_or_else(|| format!("Person {}", id));
+        // Google Photos' way: a few questions about the least sure photos; every answer makes the next match surer
+        if r.done && !r.review.is_empty() {
+            root = root.kid(
+                el("section")
+                    .cls("card fm-review")
+                    .kid(el("div").cls("fm-step-h").kid(el("h3").text("Help Face Mace get surer")).kid(el("span").cls("hint").text("Each answer is used to match the rest.")))
+                    .kid(el("div").cls("fm-qs").kids(r.review.iter().map(|(i, p, c)| -> N {
+                        let url = f.thumb_cache.get(i).cloned().unwrap_or_default();
+                        let v = format!("{}\t{}", i, p);
+                        el("div")
+                            .cls("fm-q")
+                            .kid(if url.is_empty() { el("span").cls("fm-tile").text(face_ext(&f.files[*i].2).to_uppercase()).into() } else { N::from(el("img").attr("alt", f.files[*i].2.clone()).attr("src", url)) })
+                            .kid(el("p").kid(txt("Is this ")).kid(el("b").text(pname(*p))).kid(txt("?")).kid(el("span").cls("hint").text(format!(" {} sure", pct(*c)))))
+                            .kid(
+                                el("div")
+                                    .cls("row")
+                                    .kid(el("button").attr("type", "button").cls("btn fm-yes").on("click", Msg::T(Tool::Face, 20, v.clone())).text("Yes"))
+                                    .kid(el("button").attr("type", "button").cls("btn fm-no").on("click", Msg::T(Tool::Face, 21, v)).text("No")),
+                            )
+                            .into()
+                    }))),
+            );
+        }
         // many people: the biggest sixty first (the others behind "Show all")
         let mut order: Vec<usize> = (0..r.groups.len()).collect();
         order.sort_by(|&a, &b| {
@@ -2378,7 +2703,7 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                                 let c = r.conf[gi];
                                 el("span").cls("fm-sure").cls(sure_cls(c)).attr("title", "How surely these are one person").text(format!("{} sure", pct(c))).into()
                             })
-                            .kid_if(k != "No_Faces_Detected" && k != "Not_Sorted", || {
+                            .kid_if(k.starts_with("Person_"), || {
                                 el("input")
                                     .cls("input fm-name")
                                     .attr("type", "text")
@@ -2388,12 +2713,22 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                                     .on("input", Msg::TV(Tool::Face, 1000 + gi as u16))
                                     .on("change", Msg::TV(Tool::Face, 3000 + gi as u16))
                                     .into()
+                            })
+                            .kid_if(k.starts_with("Person_") && persons.len() > 1, || {
+                                let me: usize = k.trim_start_matches("Person_").parse().unwrap_or(0);
+                                el("select")
+                                    .cls("input fm-merge")
+                                    .attr("aria-label", "Merge into another person")
+                                    .on("change", Msg::TV(Tool::Face, 23))
+                                    .kid(el("option").attr("value", "").text("Same person as…"))
+                                    .kids(persons.iter().filter(|p| p.0 != me).map(|(id, n)| -> N { el("option").attr("value", format!("{}\t{}", me, id)).text(n.clone()).into() }))
+                                    .into()
                             }),
                     )
                     .kid(
                         el("div")
                             .cls("fm-thumbs")
-                            .kids(idx.iter().take(12).map(|i| -> N {
+                            .kids(idx.iter().take(if k.strip_prefix("Person_").and_then(|x| x.parse::<usize>().ok()).map(|p| f.expanded.contains(&p)).unwrap_or(false) { 600 } else { 12 }).map(|i| -> N {
                                 let url = r.thumbs.iter().find(|(j, _)| j == i).map(|x| x.1.clone()).unwrap_or_default();
                                 let pc = r.photo_conf.get(&(gi, *i)).copied();
                                 let title = match pc { Some(p) => format!("{} · {} match", f.files[*i].2, pct(p)), None => f.files[*i].2.clone() };
@@ -2402,9 +2737,40 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                                 } else {
                                     el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("src", url).into()
                                 };
-                                el("span").cls("fm-th").attr("title", title).kid(pic).kid_if(pc.is_some(), || el("em").cls(sure_cls(pc.unwrap_or(0.0))).text(pct(pc.unwrap_or(0.0))).into()).into()
+                                let me: usize = k.strip_prefix("Person_").and_then(|x| x.parse().ok()).unwrap_or(0);
+                                let sure = me > 0 && f.confirm.get(i) == Some(&me);
+                                el("span")
+                                    .cls("fm-th")
+                                    .cls_if(sure, "sure")
+                                    .attr("title", if sure { format!("{} · confirmed", f.files[*i].2) } else { title })
+                                    .kid(pic)
+                                    .kid_if(pc.is_some() || sure, || if sure { el("em").cls("hi").text("✓").into() } else { el("em").cls(sure_cls(pc.unwrap_or(0.0))).text(pct(pc.unwrap_or(0.0))).into() })
+                                    .kid(
+                                        el("span")
+                                            .cls("fm-acts")
+                                            .kid_if(me > 0 && !sure, || el("button").attr("type", "button").attr("title", format!("Yes, this is {}", pname(me))).attr("aria-label", format!("Yes, this is {}", pname(me))).on("click", Msg::T(Tool::Face, 20, format!("{}\t{}", i, me))).text("✓").into())
+                                            .kid_if(me > 0, || el("button").attr("type", "button").attr("title", format!("Not {}", pname(me))).attr("aria-label", format!("Not {}", pname(me))).on("click", Msg::T(Tool::Face, 21, format!("{}\t{}", i, me))).text("✕").into())
+                                            .kid(
+                                                el("select")
+                                                    .attr("aria-label", "Move to")
+                                                    .attr("title", "Move to another person")
+                                                    .on("change", Msg::TV(Tool::Face, 22))
+                                                    .kid(el("option").attr("value", "").text("→"))
+                                                    .kids(persons.iter().filter(|p| p.0 != me).map(|(id, n)| -> N { el("option").attr("value", format!("{}\t{}\t{}", i, me, id)).text(n.clone()).into() }))
+                                                    .kid(el("option").attr("value", format!("{}\t{}\t0", i, me)).text("A new person")),
+                                            ),
+                                    )
+                                    .into()
                             }))
-                            .kid_if(idx.len() > 12, || el("span").cls("fm-more").text(format!("+{}", idx.len() - 12)).into()),
+                            .kid_if(idx.len() > 12, || {
+                                let me: usize = k.strip_prefix("Person_").and_then(|x| x.parse().ok()).unwrap_or(0);
+                                if me > 0 {
+                                    let open = f.expanded.contains(&me);
+                                    el("button").attr("type", "button").cls("btn fm-more").on("click", Msg::T(Tool::Face, 24, me.to_string())).text(if open { "Fewer".to_string() } else { format!("All {} photos", idx.len()) }).into()
+                                } else {
+                                    el("span").cls("fm-more").text(format!("+{}", idx.len() - 12)).into()
+                                }
+                            }),
                     ),
             );
         }
@@ -2432,6 +2798,14 @@ const FACE_CSS: &str = "\
 .fm-people{display:grid;gap:6px;padding-top:10px;border-top:1px solid var(--line)}.fm-people .row{gap:8px}\
 .fm-parts{display:flex;flex-wrap:wrap;align-items:center;gap:8px}.fm-parts .input{width:110px;flex:none;padding:6px 10px}.fm-parts .hint{flex-basis:100%}\
 .fm-partlist{display:flex;flex-wrap:wrap;gap:8px;align-items:center;margin:10px 0}\
+.fm-th .fm-acts{position:absolute;left:3px;top:3px;right:3px;display:flex;gap:3px;opacity:0;transition:opacity .12s}.fm-th:hover .fm-acts,.fm-th:focus-within .fm-acts{opacity:1}\
+.fm-acts button,.fm-acts select{height:22px;min-width:22px;padding:0 4px;border:0;background:rgba(255,255,255,.92);font:600 12px/22px inherit;cursor:pointer}.fm-acts select{max-width:30px;appearance:none;-webkit-appearance:none;text-align:center}\
+.fm-acts button:first-child:hover{background:#2b8a3e;color:#fff}.fm-acts button:hover{background:#c92a2a;color:#fff}\
+@media (hover:none){.fm-th .fm-acts{opacity:1}}\
+.fm-th.sure img{outline:2px solid #2b8a3e;outline-offset:-2px}\
+.fm-merge{max-width:170px;padding:5px 8px;font-size:13px}\
+.fm-review{margin:14px 0}.fm-qs{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px}.fm-q{display:grid;gap:6px;justify-items:start}.fm-q img,.fm-q .fm-tile{width:100%;height:auto;aspect-ratio:1;object-fit:cover}.fm-q p{margin:0;font-size:13.5px}\
+.fm-yes:hover:not(:disabled){background:#2b8a3e;border-color:#2b8a3e;color:#fff}.fm-no:hover:not(:disabled){background:#c92a2a;border-color:#c92a2a;color:#fff}\
 .fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\

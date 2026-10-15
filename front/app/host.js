@@ -462,13 +462,17 @@ async function outRun() {
   try {
     while (outQ.length && outDir) {
       const job = outQ.shift();
-      if (job.mv) {
-        // a file already written, renamed in place (a person named after their photos were saved)
-        const [from, to] = job.mv, fp = from.split("/").filter(Boolean), tp = to.split("/").filter(Boolean), oldName = fp.pop(), newName = tp.pop();
+      if (job.mv || job.rm) {
+        // a file already written, renamed or moved (a person named or corrected afterwards), or taken away
+        const [from, to] = job.mv || [job.rm, null], fp = from.split("/").filter(Boolean), oldName = fp.pop();
         let d = outDir; for (const p of fp) d = await d.getDirectoryHandle(p, { create: true });
-        const fh = await d.getFileHandle(oldName);
-        if (typeof fh.move === "function") await fh.move(newName);
-        else { const data = await fh.getFile(), nh = await d.getFileHandle(newName, { create: true }), w = await nh.createWritable(); await w.write(data); await w.close(); await d.removeEntry(oldName); }
+        if (!to) { try { await d.removeEntry(oldName); } catch (_) {} continue; }
+        const tp = to.split("/").filter(Boolean), newName = tp.pop();
+        let nd = outDir; for (const p of tp) nd = await nd.getDirectoryHandle(p, { create: true });
+        const fh = await d.getFileHandle(oldName), same = fp.join("/") === tp.join("/");
+        if (same && typeof fh.move === "function") await fh.move(newName);
+        else if (typeof fh.move === "function") await fh.move(nd, newName);
+        else { const data = await fh.getFile(), nh = await nd.getFileHandle(newName, { create: true }), w = await nh.createWritable(); await w.write(data); await w.close(); await d.removeEntry(oldName); }
         continue;
       }
       const [path, idx] = job, parts = path.split("/").filter(Boolean), name = parts.pop();
@@ -667,6 +671,12 @@ const ops = {
   // Face Mace's Stop: what waits to be written into the folder is dropped, and a ZIP being made is given up
   "save-stop": () => { outQ = []; return "1"; },
   // a file written into the folder, renamed: "from\tto" (paths in the folder, same place, new name)
+  rmfile: (a) => {
+    if (!outDir) return null;
+    outQ.push({ rm: a });
+    if (!outBusy) outRun();
+    return "1";
+  },
   mvfile: (a) => {
     if (!outDir) return null;
     const [from, to] = a.split("\t");
