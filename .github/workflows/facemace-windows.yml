@@ -37,11 +37,31 @@ jobs:
           curl -sf http://127.0.0.1:8791/facemace/ | grep -q "Face Mace"
           curl -sf -o /dev/null http://127.0.0.1:8791/app/ui.wasm
           cp back/rust/facemace-desktop/target/release/facemace.exe FaceMace.exe
+          taskkill //IM facemace.exe //F || true
+
+      # the installer (Inno Setup): Start menu and desktop shortcuts, an uninstaller, no administrator needed
+      - name: Installer
+        shell: bash
+        run: |
+          choco install innosetup -y --no-progress
+          "/c/Program Files (x86)/Inno Setup 6/ISCC.exe" //DMyVersion=1.0.${{ github.run_number }} back/rust/facemace-desktop/installer.iss
+          ls -la dist
+          cp dist/FaceMace-Setup.exe FaceMace-Setup.exe
+
+      - name: Check the installer installs
+        shell: pwsh
+        run: |
+          Start-Process -FilePath .\FaceMace-Setup.exe -ArgumentList '/VERYSILENT','/SUPPRESSMSGBOXES','/NORESTART','/CURRENTUSER' -Wait
+          $exe = Join-Path $env:LOCALAPPDATA 'Programs\Face Mace\FaceMace.exe'
+          if (-not (Test-Path $exe)) { throw "not installed at $exe" }
+          Write-Host "installed: $exe"
 
       - uses: actions/upload-artifact@v4
         with:
           name: FaceMace-windows
-          path: FaceMace.exe
+          path: |
+            FaceMace.exe
+            FaceMace-Setup.exe
 
       - name: Publish
         shell: bash
@@ -49,7 +69,7 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           gh release delete facemace-windows --yes --cleanup-tag || true
-          gh release create facemace-windows FaceMace.exe \
+          gh release create facemace-windows FaceMace-Setup.exe FaceMace.exe \
             --title "Face Mace for Windows" \
-            --notes "Sorts photos by face, on your computer: double-click FaceMace.exe and it opens in your browser. No photo leaves the computer; close its window to quit. Built from ${GITHUB_SHA::7}." \
+            --notes "Sorts photos and videos by face, on your computer. FaceMace-Setup.exe installs it (Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed). FaceMace.exe runs without installing. It opens in your browser and quits a minute after its page is closed; no photo leaves the computer. Version 1.0.${{ github.run_number }}, built from ${GITHUB_SHA::7}." \
             --latest=false

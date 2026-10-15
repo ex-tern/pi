@@ -1,12 +1,16 @@
 [package]
 name = "facemace"
-version = "0.1.0"
+version = "1.0.0"
 edition = "2021"
 description = "Face Mace for the desktop: sorts photos by face on this computer. The site's Face Mace, served from inside this program to the browser on 127.0.0.1 only; no photo leaves the computer."
 license-file = "../../LICENSES/LicenseRef-PiTechLab-Proprietary.txt"
 
-# No dependencies: the standard library only.
+# No dependencies: the standard library only. On Windows, the build puts the icon and the program's details into the
+# .exe (winresource, build time only).
 [dependencies]
+
+[target.'cfg(windows)'.build-dependencies]
+winresource = "0.1"
 
 [profile.release]
 opt-level = "s"

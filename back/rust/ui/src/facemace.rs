@@ -2717,7 +2717,13 @@ fn face_view(s: &State) -> N {
                 .cls("fm-intro")
                 .kid(el("p").cls("lede").kid(txt("Sort photos and videos by face: Face Mace finds the faces, learns who is who and groups everything by person. ")).kid(el("b").text("It all happens on this device; nothing is uploaded.")))
                 // the desktop program (owner, 2026-10-15), built by GitHub on Windows from back/rust/facemace-desktop
-                .kid_if(!s.app_mode, || el("a").cls("fm-get").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").text("Windows app (.exe) ↓").into()),
+                .kid_if(!s.app_mode, || {
+                    el("div")
+                        .cls("fm-gets")
+                        .kid(el("a").cls("fm-get").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace-Setup.exe").attr("rel", "noopener").attr("title", "Installs Face Mace: Start menu and desktop shortcuts, uninstall from Settings > Apps; no administrator needed").text("Install for Windows ↓"))
+                        .kid(el("a").cls("fm-get-alt").attr("href", "https://github.com/ex-tern/pi/releases/download/facemace-windows/FaceMace.exe").attr("rel", "noopener").attr("title", "Runs without installing").text("or the .exe alone"))
+                        .into()
+                }),
         )
         .kid(
             el("section")
@@ -3001,6 +3007,7 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
 
 const FACE_CSS: &str = "\
 .fm-intro{display:flex;gap:16px;align-items:flex-start;justify-content:space-between;margin-bottom:16px}.fm-intro .lede{margin:0}\
+.fm-gets{flex:none;display:grid;gap:4px;justify-items:end}.fm-get-alt{font-size:12px;color:var(--muted)}\
 .fm-get{flex:none;font-size:13px;font-weight:600;padding:6px 12px;border:1px solid var(--line2);background:#fff;white-space:nowrap}.fm-get:hover{border-color:var(--ink);text-decoration:none}\
 .fm-step{margin-bottom:12px;display:grid;gap:10px}.fm-step-h{display:flex;align-items:center;gap:10px}.fm-step-h h3{margin:0;font-size:16px}\
 .fm-n{width:24px;height:24px;display:grid;place-items:center;background:var(--ink);color:#fff;font:600 12px/1 inherit;flex:none}\
@@ -3026,7 +3033,7 @@ const FACE_CSS: &str = "\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\
 .fm-th{position:relative;display:inline-block}.fm-th em{position:absolute;right:3px;bottom:3px;font:600 10.5px/1 inherit;font-style:normal;padding:2px 4px;background:rgba(0,0,0,.72);color:#fff}.fm-th em.mid{background:#b06000}.fm-th em.lo{background:#c92a2a}\
-@media (max-width:699px){.fm-intro{flex-direction:column}}\
+@media (max-width:699px){.fm-intro{flex-direction:column}.fm-gets{justify-items:start}}\
 .fm-drop{border:1.5px dashed var(--line2);background:#fff;padding:18px;margin:14px 0;text-align:center}\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\

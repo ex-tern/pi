@@ -5,7 +5,13 @@
 //! inside this one file and served to the computer's browser at 127.0.0.1, an address no other machine can reach.
 //! It opens the browser on it and runs until its window is closed.
 
+// No console window on Windows: Face Mace lives in the browser, and quits by itself when its page is closed
+// (owner, 2026-10-15: "make the exe file installable").
+#![cfg_attr(windows, windows_subsystem = "windows")]
+
 use std::io::{BufRead, BufReader, Read, Write};
+use std::sync::atomic::{AtomicU64, Ordering};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 use std::net::{TcpListener, TcpStream};
 use std::thread;
 
@@ -30,8 +36,21 @@ const PAGE: &str = concat!(
     "<!doctype html><html lang=\"en\"><meta charset=\"utf-8\">",
     "<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">",
     "<title>Face Mace</title><link rel=\"icon\" href=\"/icon.svg\">",
-    "<script type=\"module\" src=\"/app/host.js\"></script></html>"
+    "<script type=\"module\" src=\"/app/host.js\"></script>",
+    // the page says it is still open: Face Mace quits a little after the last page is closed
+    "<script>(function(){function a(){fetch('/__alive',{cache:'no-store'}).catch(function(){})}a();setInterval(a,10000)})()</script></html>"
 );
+
+/// Always the same address, so what the browser remembers (people, settings) is there next time, and a second
+/// start finds the first one running.
+const PORT: u16 = 47123;
+
+/// When a page last said it was open (seconds since 1970); 0 before the first.
+static ALIVE: AtomicU64 = AtomicU64::new(0);
+
+fn now_s() -> u64 {
+    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
 
 fn answer(mut s: TcpStream) {
     let mut r = BufReader::new(match s.try_clone() {
@@ -69,6 +88,10 @@ fn answer(mut s: TcpStream) {
         ("GET", "/fonts/Geist-Variable.woff2") => ("200 OK", "font/woff2", GEIST),
         ("GET", "/fonts/GeistMono-Variable.woff2") => ("200 OK", "font/woff2", GEIST_MONO),
         ("GET", "/icon.svg") => ("200 OK", "image/svg+xml", ICON),
+        ("GET", "/__alive") => {
+            ALIVE.store(now_s(), Ordering::Relaxed);
+            ("200 OK", "text/plain; charset=utf-8", b"ok".as_slice())
+        }
         ("GET", "/facemace/heic/libheif-bundle.mjs") => ("200 OK", "text/javascript; charset=utf-8", HEIC),
         ("GET", "/facemace/cascade-profile.json") => ("200 OK", "application/json", PROFILE),
         ("GET", "/facemace/ml/ort.wasm.min.mjs") => ("200 OK", "text/javascript; charset=utf-8", ORT_MJS),
@@ -94,8 +117,12 @@ fn answer(mut s: TcpStream) {
 }
 
 fn open_browser(url: &str) {
+    // the browser opened without a console window flashing up (CREATE_NO_WINDOW)
     #[cfg(target_os = "windows")]
-    let r = std::process::Command::new("cmd").args(["/C", "start", "", url]).spawn();
+    let r = {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("cmd").args(["/C", "start", "", url]).creation_flags(0x0800_0000).spawn()
+    };
     #[cfg(target_os = "macos")]
     let r = std::process::Command::new("open").arg(url).spawn();
     #[cfg(not(any(target_os = "windows", target_os = "macos")))]
@@ -105,22 +132,54 @@ fn open_browser(url: &str) {
     }
 }
 
+/// Whether a Face Mace already answers at the port (then this start only opens the browser on it).
+fn running_already(port: u16) -> bool {
+    let Ok(mut c) = TcpStream::connect_timeout(&([127, 0, 0, 1], port).into(), Duration::from_millis(800)) else { return false };
+    let _ = c.set_read_timeout(Some(Duration::from_secs(2)));
+    let _ = c.write_all(b"GET /facemace/ HTTP/1.1\r\nHost: 127.0.0.1\r\nConnection: close\r\n\r\n");
+    let mut buf = Vec::new();
+    let _ = c.read_to_end(&mut buf);
+    String::from_utf8_lossy(&buf).contains("Face Mace")
+}
+
 fn main() {
-    // a port of its own, chosen by the system; 127.0.0.1 only, so no other machine can reach it
-    let fixed = std::env::args().nth(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(0);
-    let l = match TcpListener::bind(("127.0.0.1", fixed)) {
+    let port = std::env::args().nth(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(PORT);
+    let url = format!("http://127.0.0.1:{}/facemace/", port);
+    let l = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
-            eprintln!("Face Mace could not start: {}", e);
-            std::process::exit(1);
+            if running_already(port) {
+                open_browser(&url);
+                return;
+            }
+            // the port is someone else's: any free one (what is remembered then lasts this run only)
+            match TcpListener::bind(("127.0.0.1", 0)) {
+                Ok(l) => l,
+                Err(_) => {
+                    eprintln!("Face Mace could not start: {}", e);
+                    std::process::exit(1);
+                }
+            }
         }
     };
-    let port = l.local_addr().map(|a| a.port()).unwrap_or(0);
+    let port = l.local_addr().map(|a| a.port()).unwrap_or(port);
     let url = format!("http://127.0.0.1:{}/facemace/", port);
     println!("Face Mace is open in your browser at {}", url);
-    println!("Your photos stay on this computer. Close this window to quit Face Mace.");
+    println!("Your photos stay on this computer. Face Mace quits a minute after its page is closed.");
     if std::env::var_os("FACEMACE_NO_BROWSER").is_none() {
         open_browser(&url);
+    }
+    // quits when no page has said it is open for 90 seconds (or none came within 3 minutes of starting)
+    let started = now_s();
+    if std::env::var_os("FACEMACE_STAY").is_none() {
+        thread::spawn(move || loop {
+            thread::sleep(Duration::from_secs(5));
+            let last = ALIVE.load(Ordering::Relaxed);
+            let quiet = if last == 0 { now_s().saturating_sub(started) > 180 } else { now_s().saturating_sub(last) > 90 };
+            if quiet {
+                std::process::exit(0);
+            }
+        });
     }
     for c in l.incoming().flatten() {
         thread::spawn(move || answer(c));
