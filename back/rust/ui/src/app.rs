@@ -886,7 +886,9 @@ fn route() {
     s.routed = true;
     // Intern, the app (owner, 2026-10-15): /intern/ shows nothing else, whatever follows the #
     let base = href.split('#').next().unwrap_or("");
-    let app = if base.contains("/intern") { Some(Tool::Intern) } else if base.contains("/facemace") { Some(Tool::Face) } else { None };
+    // Face Mace on the desktop is at facemace.localhost (owner, 2026-10-15: "make the address bar only say facemace")
+    let host_part = base.split("://").nth(1).unwrap_or("").split(['/', ':']).next().unwrap_or("");
+    let app = if base.contains("/intern") { Some(Tool::Intern) } else if base.contains("/facemace") || host_part.starts_with("facemace.") { Some(Tool::Face) } else { None };
     if let Some(tool) = app {
         s.app_mode = true;
         s.app_tool = Some(tool);

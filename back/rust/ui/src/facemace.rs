@@ -400,6 +400,16 @@ pub struct Face {
     pending_dups: Vec<(String, u64, bool)>,
     cache_wait: bool,
     cache_hits: usize,
+    /// where each face is in its photo (x, y, w, h, as parts of the picture), as the faces; the face being
+    /// described; the faces just found (for the live bubbles); the photo open in the viewer, its address, and the
+    /// group it is stepped through in (owner, 2026-10-15: "a bubble of the face it is recognizing", "when clicking a
+    /// bubble its picture opens", "a photo previewer when clicking on the pictures")
+    boxes: Vec<Vec<[f32; 4]>>,
+    ml_boxes: Vec<[f32; 4]>,
+    ml_cur_box: [f32; 4],
+    recent: Vec<(usize, [f32; 4])>,
+    viewer: Option<(usize, Option<usize>)>,
+    viewer_url: String,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -458,6 +468,9 @@ struct FaceResult {
     /// group, and per photo in a group; and over everything
     conf: Vec<f64>,
     photo_conf: BTreeMap<(usize, usize), f64>,
+    /// per person, the clearest face (photo, where); per (group, photo), where that person's face is
+    avatars: BTreeMap<usize, (usize, [f32; 4])>,
+    face_at: BTreeMap<(usize, usize), [f32; 4]>,
     /// the least sure matches not yet answered: (photo, person, how sure)
     review: Vec<(usize, usize, f64)>,
     overall: Option<f64>,
@@ -569,6 +582,7 @@ fn face_update_inner(a: u16, v: String) {
             f.files = list;
             f.faces.clear();
             f.pics.clear();
+            f.boxes.clear();
             f.result = None;
             f.stopped = false;
             f.thumb_cache.clear();
@@ -630,6 +644,7 @@ fn face_update_inner(a: u16, v: String) {
             } else {
                 f.faces.clear();
                 f.pics.clear();
+            f.boxes.clear();
                 f.at = 0;
                 if f.ml == 0 {
                     f.ml = 1;
@@ -756,6 +771,35 @@ fn face_update_inner(a: u16, v: String) {
             }
         }
         34 => f.no_wake = !f.no_wake,
+        // the photo viewer: open (photo, group), close, previous, next
+        50 => {
+            let mut it = v.split('\t');
+            let Some(i) = it.next().and_then(|x| x.parse::<usize>().ok()) else { return };
+            let gi = it.next().and_then(|x| x.parse::<usize>().ok());
+            if i >= f.files.len() {
+                return;
+            }
+            f.viewer_url = host::call("fileraw", &format!("{}", f.files[i].0)).unwrap_or_default();
+            if f.viewer_url.is_empty() {
+                f.viewer_url = f.thumb_cache.get(&i).cloned().unwrap_or_default();
+            }
+            f.viewer = Some((i, gi));
+        }
+        51 => f.viewer = None,
+        52 | 53 => {
+            let Some((i, Some(g))) = f.viewer else { return };
+            let Some(list) = f.result.as_ref().and_then(|r| r.groups.get(g)).map(|x| x.1.clone()) else { return };
+            let Some(p) = list.iter().position(|x| *x == i) else { return };
+            let np = if a == 52 { p.checked_sub(1) } else { Some(p + 1).filter(|q| *q < list.len()) };
+            if let Some(q) = np {
+                let j = list[q];
+                f.viewer_url = host::call("fileraw", &format!("{}", f.files[j].0)).unwrap_or_default();
+                if f.viewer_url.is_empty() {
+                    f.viewer_url = f.thumb_cache.get(&j).cloned().unwrap_or_default();
+                }
+                f.viewer = Some((j, Some(g)));
+            }
+        }
         35 => {
             host::call("kvclear", "");
             for k in ["facemace:work", "facemace:people", "facemace:settings"] {
@@ -827,6 +871,7 @@ fn face_update_inner(a: u16, v: String) {
             f.live_idx.clear();
             f.faces.clear();
             f.pics.clear();
+            f.boxes.clear();
             f.at = 0;
             if f.dedupe {
                 // a quick look at each picture, for duplicates only, then the renaming
@@ -837,7 +882,7 @@ fn face_update_inner(a: u16, v: String) {
                 // nothing to look at: straight to the dates
                 f.quick = false;
                 let all: Vec<usize> = (0..f.files.len()).collect();
-                f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: 0.0, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new() });
+                f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: 0.0, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new(), avatars: BTreeMap::new(), face_at: BTreeMap::new() });
                 face_zip();
             }
         }
@@ -934,7 +979,8 @@ fn scan_put(i: usize) {
         Some(v) => v.iter().filter(|e| e.len() == 128).map(|e| hex_f32(e)).collect::<Vec<_>>().join(","),
         None => "x".to_string(),
     };
-    host::call("kvput", &format!("{}\t{};{};{}", scan_key(f, i), kind, p, fs));
+    let bx = f.boxes.get(i).map(|v| v.iter().map(|b| format!("{:.4},{:.4},{:.4},{:.4}", b[0], b[1], b[2], b[3])).collect::<Vec<_>>().join("|")).unwrap_or_default();
+    host::call("kvput", &format!("{}\t{};{};{};{}", scan_key(f, i), kind, p, fs, bx));
 }
 
 /// The store answered about the photo due next: what was kept is used (no decoding, no engines), or it is scanned.
@@ -943,8 +989,8 @@ fn scan_got(text: &str) {
     if !f.running || !f.cache_wait {
         return;
     }
-    let parts: Vec<&str> = text.splitn(3, ';').collect();
-    let usable = parts.len() == 3 && (parts[0] == "1" || (parts[0] == "q" && f.quick));
+    let parts: Vec<&str> = text.splitn(4, ';').collect();
+    let usable = parts.len() >= 3 && (parts[0] == "1" || (parts[0] == "q" && f.quick));
     if !usable {
         // not kept (or only a fingerprint where faces are needed): scanned now
         face_next();
@@ -959,6 +1005,9 @@ fn scan_got(text: &str) {
     };
     let faces = if parts[2] == "x" { None } else if f.quick { Some(Vec::new()) } else { Some(parts[2].split(',').filter(|x| !x.is_empty()).map(f32_hex).filter(|e| e.len() == 128).collect()) };
     f.cache_hits += 1;
+    let bx: Vec<[f32; 4]> = parts.get(3).map(|t| t.split('|').filter_map(|b| { let v: Vec<f32> = b.split(',').filter_map(|x| x.parse().ok()).collect(); if v.len() == 4 { Some([v[0], v[1], v[2], v[3]]) } else { None } }).collect()).unwrap_or_default();
+    let n = faces.as_ref().map(|v: &Vec<Vec<f32>>| v.len()).unwrap_or(0);
+    f.boxes.push(if bx.len() == n { bx } else { Vec::new() });
     f.faces.push(faces);
     f.pics.push(pic);
     live_save(f.faces.len() - 1);
@@ -1043,6 +1092,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         return;
     }
     let mut pic = None;
+    let mut cur_boxes: Vec<[f32; 4]> = Vec::new();
     let found = if w == 0 || h == 0 {
         if face_is_video(&f.files[i].2) { Some(Vec::new()) } else { None }
     } else {
@@ -1060,6 +1110,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         if f.quick {
             // renaming only: the fingerprint for duplicates is all that is needed
             f.faces.push(Some(Vec::new()));
+            f.boxes.push(Vec::new());
             f.pics.push(pic);
             scan_put(f.faces.len() - 1);
             live_save(st().face.faces.len() - 1);
@@ -1087,6 +1138,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         if f.engines_used.is_empty() {
             f.engines_used = "OpenCV Haar cascade (frontal) and LBPH".into();
         }
+        cur_boxes = boxes.iter().map(|b| [(b[0] / img.w as f64) as f32, (b[1] / img.h as f64) as f32, (b[2] / img.w as f64) as f32, (b[3] / img.h as f64) as f32]).collect();
         Some(
             boxes
                 .iter()
@@ -1099,6 +1151,7 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         )
     };
     f.faces.push(found);
+    f.boxes.push(cur_boxes);
     f.pics.push(pic);
     live_save(f.faces.len() - 1);
     face_preview();
@@ -1417,6 +1470,8 @@ fn ml_got(data: Vec<u8>) {
         if floats.len() == 128 {
             let n = floats.iter().map(|v| (*v as f64) * (*v as f64)).sum::<f64>().sqrt_c().max(1e-9);
             f.ml_embs.push(floats.iter().map(|v| (*v as f64 / n) as f32).collect());
+            let b = f.ml_cur_box;
+            f.ml_boxes.push(b);
         }
         ml_next_face();
     }
@@ -1425,6 +1480,8 @@ fn ml_got(data: Vec<u8>) {
 fn ml_next_face() {
     let f = &mut st().face;
     if let Some(face) = f.ml_faces.pop() {
+        let (w, h) = (f.cur_w.max(1) as f64, f.cur_h.max(1) as f64);
+        f.ml_cur_box = [(face[0] / w) as f32, (face[1] / h) as f32, (face[2] / w) as f32, (face[3] / h) as f32];
         ml_align(&face);
         st().face.ml_stage = 1;
         ml_run("sface", &[1, 3, 112, 112]);
@@ -1437,7 +1494,15 @@ fn ml_next_face() {
 fn ml_photo_done() {
     let f = &mut st().face;
     let embs = core::mem::take(&mut f.ml_embs);
+    let bx = core::mem::take(&mut f.ml_boxes);
+    let i_now = f.faces.len();
+    for b in &bx {
+        f.recent.push((i_now, *b));
+    }
+    let keep = f.recent.len().saturating_sub(14);
+    f.recent.drain(..keep);
     f.faces.push(Some(embs));
+    f.boxes.push(bx);
     f.pics.push(f.cur_pic.take());
     scan_put(f.faces.len() - 1);
     let f = &mut st().face;
@@ -1892,6 +1957,7 @@ fn face_compute(done: bool) {
     let f = &mut st().face;
     let mut known: Vec<(usize, &Vec<f32>)> = Vec::new();
     let mut owner: Vec<usize> = Vec::new();
+    let mut owner_k: Vec<usize> = Vec::new();
     let mut groups: BTreeMap<usize, Vec<usize>> = BTreeMap::new();
     let (mut none, mut unreadable, mut next, mut nfaces) = (Vec::new(), 0usize, 1usize, 0usize);
     let mut dups: Vec<(usize, usize)> = Vec::new();
@@ -1947,11 +2013,12 @@ fn face_compute(done: bool) {
             none.push(i);
             continue;
         }
-        for h in hs {
+        for (fk, h) in hs.iter().enumerate() {
             nfaces += 1;
             let id = cl.assign(h, f.strict);
             known.push((id, h));
             owner.push(i);
+            owner_k.push(fk);
             let g = groups.entry(id).or_default();
             if g.last() != Some(&i) {
                 g.push(i);
@@ -2079,6 +2146,26 @@ fn face_compute(done: bool) {
     if !none.is_empty() {
         out.push((if f.rename_only { "Not_Sorted".to_string() } else { "No_Faces_Detected".to_string() }, none));
     }
+    // where each person's face is in each of their photos, and their clearest face (for their bubble)
+    let mut face_at: BTreeMap<(usize, usize), [f32; 4]> = BTreeMap::new();
+    let mut avatars: BTreeMap<usize, (usize, [f32; 4])> = BTreeMap::new();
+    {
+        let mut best: BTreeMap<usize, (f32, usize, [f32; 4])> = BTreeMap::new();
+        for (n, (id, _)) in known.iter().enumerate() {
+            let (i, fk) = (owner[n], owner_k[n]);
+            let Some(b) = f.boxes.get(i).and_then(|v| v.get(fk)).copied() else { continue };
+            let Some(gi) = out.iter().position(|g| g.0 == format!("Person_{}", id) && g.1.contains(&i)) else { continue };
+            face_at.entry((gi, i)).or_insert(b);
+            // the clearest: a confirmed photo first, then the biggest face
+            let score = b[2] * b[3] + if f.confirm.get(&i) == Some(id) { 10.0 } else { 0.0 };
+            if best.get(&gi).map(|x| score > x.0).unwrap_or(true) {
+                best.insert(gi, (score, i, b));
+            }
+        }
+        for (gi, (_, i, b)) in best {
+            avatars.insert(gi, (i, b));
+        }
+    }
     // how sure: each face against its person's average (the group's own centre), as a probability
     let mut conf: Vec<f64> = Vec::new();
     let mut photo_conf: BTreeMap<(usize, usize), f64> = BTreeMap::new();
@@ -2157,6 +2244,15 @@ fn face_compute(done: bool) {
     }
     let overall = if all_n > 0 { Some(all_sum / all_n as f64) } else { None };
     f.last_people = people_now;
+    let need: Vec<usize> = avatars.values().map(|a| a.0).chain(f.recent.iter().map(|r| r.0)).collect();
+    for i in need {
+        if !f.thumb_cache.contains_key(&i) && i < f.files.len() {
+            let u = host::call("fileurl", &format!("{}", f.files[i].0)).unwrap_or_default();
+            if !u.is_empty() {
+                f.thumb_cache.insert(i, u);
+            }
+        }
+    }
     // to ask about: the least sure photos of each person, not yet answered
     let mut review: Vec<(usize, usize, f64)> = Vec::new();
     for ((gi, i), p) in photo_conf.iter() {
@@ -2175,7 +2271,7 @@ fn face_compute(done: bool) {
             }
         }
     }
-    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done, review });
+    f.result = Some(FaceResult { groups: out, people: next - 1, faces: nfaces, unreadable, ms: host::now() - f.started, strict: f.strict, thumbs, dups, conf, photo_conf, overall, done, review, avatars, face_at });
     if done {
         live_relabel();
         face_remember();
@@ -2583,6 +2679,7 @@ fn predate_done() {
     f.thumb_cache.clear();
     f.faces.clear();
     f.pics.clear();
+            f.boxes.clear();
     f.live_rename = true;
     f.live_no = 0;
     f.live_written.clear();
@@ -2597,7 +2694,7 @@ fn predate_done() {
         }
         let f = &mut st().face;
         let all: Vec<usize> = (0..f.files.len()).collect();
-        f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: host::now() - f.started, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new() });
+        f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: host::now() - f.started, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true, review: Vec::new(), avatars: BTreeMap::new(), face_at: BTreeMap::new() });
         f.running = false;
         return;
     }
@@ -3014,6 +3111,75 @@ fn exif_tiff(t: &[u8]) -> Option<u64> {
 
 // ---------------------------------------------------------------------------------------------- the view
 
+/// A round picture of one face: the photo, scaled and moved so the face (a little more than its box) fills it.
+/// Clicking it opens the photo.
+fn face_bubble(f: &Face, i: usize, b: [f32; 4], gi: Option<usize>, size: u32, title: &str) -> N {
+    let url = f.thumb_cache.get(&i).cloned().unwrap_or_default();
+    let (w, h) = f.pics.get(i).copied().flatten().map(|p| (p.1.max(1) as f64, p.2.max(1) as f64)).unwrap_or((1.0, 1.0));
+    let (bx, by, bw, bh) = (b[0] as f64 * w, b[1] as f64 * h, b[2] as f64 * w, b[3] as f64 * h);
+    let side = (bw.max(bh) * 1.35).min(w.min(h)).max(1.0);
+    let (cx, cy) = (bx + bw / 2.0, by + bh / 2.0);
+    let x0 = (cx - side / 2.0).clamp(0.0, (w - side).max(0.0));
+    let y0 = (cy - side / 2.0).clamp(0.0, (h - side).max(0.0));
+    let px = if w > side { x0 / (w - side) * 100.0 } else { 50.0 };
+    let py = if h > side { y0 / (h - side) * 100.0 } else { 50.0 };
+    let style = if url.is_empty() {
+        format!("width:{s}px;height:{s}px", s = size)
+    } else {
+        format!("width:{s}px;height:{s}px;background-image:url('{u}');background-size:{bw:.2}% {bh:.2}%;background-position:{px:.2}% {py:.2}%", s = size, u = url.replace('\'', "%27"), bw = w / side * 100.0, bh = h / side * 100.0, px = px, py = py)
+    };
+    el("button")
+        .attr("type", "button")
+        .cls("fm-bub")
+        .attr("title", title.to_string())
+        .attr("aria-label", format!("Open {}", title))
+        .style(style)
+        .on("click", Msg::T(Tool::Face, 50, format!("{}\t{}", i, gi.map(|g| g.to_string()).unwrap_or_else(|| "-".into()))))
+        .into()
+}
+
+/// The photo viewer: the picture large (a video plays), the face ringed, the person's other photos one step away.
+fn face_viewer(f: &Face) -> N {
+    let Some((i, gi)) = f.viewer else { return txt("") };
+    let Some(file) = f.files.get(i) else { return txt("") };
+    let r = f.result.as_ref();
+    let list: Vec<usize> = match (gi, r) {
+        (Some(g), Some(r)) => r.groups.get(g).map(|x| x.1.clone()).unwrap_or_default(),
+        _ => Vec::new(),
+    };
+    let pos = list.iter().position(|x| *x == i);
+    let ring = gi.and_then(|g| r.and_then(|r| r.face_at.get(&(g, i)).copied()));
+    let who = gi.and_then(|g| r.and_then(|r| r.groups.get(g))).map(|(k, _)| f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| k.replace('_', " "))).unwrap_or_default();
+    let pic: N = if face_is_video(&file.2) {
+        el("video").attr("src", f.viewer_url.clone()).attr("controls", "").attr("autoplay", "").attr("muted", "").attr("playsinline", "").into()
+    } else {
+        el("img").attr("src", f.viewer_url.clone()).attr("alt", file.2.clone()).into()
+    };
+    el("div")
+        .cls("fm-viewer")
+        .attr("role", "dialog")
+        .attr("aria-label", "Photo")
+        .kid(el("button").attr("type", "button").cls("fm-v-back").attr("aria-label", "Close").on("click", Msg::T(Tool::Face, 51, String::new())))
+        .kid(
+            el("figure")
+                .cls("fm-v-fig")
+                .kid(
+                    el("div")
+                        .cls("fm-v-pic")
+                        .kid(pic)
+                        .kid_if(ring.is_some(), || {
+                            let b = ring.unwrap_or([0.0; 4]);
+                            el("span").cls("fm-v-ring").style(format!("left:{:.2}%;top:{:.2}%;width:{:.2}%;height:{:.2}%", b[0] * 100.0, b[1] * 100.0, b[2] * 100.0, b[3] * 100.0)).into()
+                        }),
+                )
+                .kid(el("figcaption").kid_if(!who.is_empty(), || el("b").text(format!("{} · ", who)).into()).kid(txt(file.2.clone())).kid_if(pos.is_some(), || el("span").cls("hint").text(format!("  {} of {}", pos.unwrap_or(0) + 1, list.len())).into())),
+        )
+        .kid_if(pos.map(|p| p > 0).unwrap_or(false), || el("button").attr("type", "button").cls("fm-v-nav prev").attr("aria-label", "Previous").on("click", Msg::T(Tool::Face, 52, String::new())).text("‹").into())
+        .kid_if(pos.map(|p| p + 1 < list.len()).unwrap_or(false), || el("button").attr("type", "button").cls("fm-v-nav next").attr("aria-label", "Next").on("click", Msg::T(Tool::Face, 53, String::new())).text("›").into())
+        .kid(el("button").attr("type", "button").cls("fm-v-x").attr("aria-label", "Close").on("click", Msg::T(Tool::Face, 51, String::new())).text("✕"))
+        .into()
+}
+
 fn face_view(s: &State) -> N {
     let f = &s.face;
     let strict = if f.strict == 0.0 { 75.0 } else { f.strict };
@@ -3150,6 +3316,19 @@ fn face_view(s: &State) -> N {
                 .kid_if(f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into())
                 .kid_if(f.files.is_empty(), || el("span").cls("hint").text("Choose photos or videos first.").into()),
         );
+    root = root.kid(face_viewer(f));
+    // the faces just found, as bubbles, with whom each was matched to (live)
+    if f.running && !f.recent.is_empty() {
+        let who = |i: usize| -> String {
+            f.result.as_ref().and_then(|r| r.groups.iter().find(|g| g.0.starts_with("Person_") && g.1.contains(&i))).map(|(k, _)| f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| k.replace('_', " "))).unwrap_or_else(|| "…".into())
+        };
+        root = root.kid(
+            el("div")
+                .cls("fm-now")
+                .kid(el("span").cls("hint").text("Now recognizing"))
+                .kids(f.recent.iter().rev().map(|(i, b)| -> N { el("span").cls("fm-now-i").kid(face_bubble(f, *i, *b, None, 52, &f.files[*i].2)).kid(el("small").text(who(*i))).into() })),
+        );
+    }
     if f.running {
         let total = f.files.len().max(1);
         root = root.kid(
@@ -3288,6 +3467,10 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                     .kid(
                         el("div")
                             .cls("fm-head")
+                            .kid_if(r.avatars.contains_key(&gi), || {
+                                let (ai, ab) = r.avatars[&gi];
+                                face_bubble(f, ai, ab, Some(gi), 48, &format!("{} — open the photo", f.names.get(k).cloned().filter(|n| !n.trim().is_empty()).unwrap_or_else(|| label(k))))
+                            })
                             .kid(el("h3").text(format!("{} · {} photo{}", f.names.get(k).cloned().unwrap_or_else(|| label(k)), idx.len(), if idx.len() == 1 { "" } else { "s" })))
                             .kid_if(r.conf.get(gi).copied().unwrap_or(0.0) > 0.0, || {
                                 let c = r.conf[gi];
@@ -3323,9 +3506,9 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
                                 let pc = r.photo_conf.get(&(gi, *i)).copied();
                                 let title = match pc { Some(p) => format!("{} · {} match", f.files[*i].2, pct(p)), None => f.files[*i].2.clone() };
                                 let pic: N = if url.is_empty() {
-                                    el("span").cls("fm-tile").text(face_ext(&f.files[*i].2).to_uppercase()).into()
+                                    el("span").cls("fm-tile").on("click", Msg::T(Tool::Face, 50, format!("{}\t{}", i, gi))).text(face_ext(&f.files[*i].2).to_uppercase()).into()
                                 } else {
-                                    el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("src", url).into()
+                                    el("img").attr("loading", "lazy").attr("alt", f.files[*i].2.clone()).attr("src", url).on("click", Msg::T(Tool::Face, 50, format!("{}\t{}", i, gi))).into()
                                 };
                                 let me: usize = k.strip_prefix("Person_").and_then(|x| x.parse().ok()).unwrap_or(0);
                                 let sure = me > 0 && f.confirm.get(i) == Some(&me);
@@ -3404,6 +3587,19 @@ const FACE_CSS: &str = "\
 .fm-eq{font-weight:700;color:var(--muted)}.fm-dup-a{display:flex;gap:6px;justify-content:flex-end;flex-wrap:wrap}.fm-no.on{background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-dup-go{gap:8px;flex-wrap:wrap}\
 @media (max-width:699px){.fm-dup{grid-template-columns:72px auto 72px;}.fm-dup-a{grid-column:1/-1;justify-content:flex-start}.fm-dup img,.fm-dup .fm-tile{width:72px;height:56px}}\
+.fm-bub{flex:none;border-radius:50%!important;border:2px solid #fff;box-shadow:0 0 0 1.5px var(--line2),0 4px 10px -6px rgba(0,0,0,.4);background:#d8d6cf no-repeat;cursor:zoom-in;padding:0;transition:transform .12s,box-shadow .12s}\
+.fm-bub:hover{transform:scale(1.06);box-shadow:0 0 0 2px var(--accent),0 6px 14px -6px rgba(0,0,0,.45)}\
+.fm-now{display:flex;align-items:center;gap:10px;overflow-x:auto;padding:10px 2px;margin:8px 0}.fm-now-i{display:grid;justify-items:center;gap:3px;animation:fmpop .35s ease-out}.fm-now-i small{font-size:11px;color:var(--muted);max-width:64px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
+@keyframes fmpop{from{transform:scale(.4);opacity:0}to{transform:scale(1);opacity:1}}\
+.fm-thumbs img,.fm-thumbs .fm-tile{cursor:zoom-in}\
+.fm-viewer{position:fixed;inset:0;z-index:2147483100;display:grid;place-items:center;padding:24px 64px}.fm-v-back{position:absolute;inset:0;border:0;background:rgba(10,10,14,.86);cursor:zoom-out}\
+.fm-v-fig{position:relative;margin:0;display:grid;gap:10px;justify-items:center;max-width:100%;max-height:100%}.fm-v-pic{position:relative;display:inline-block;line-height:0}\
+.fm-v-pic img,.fm-v-pic video{max-width:calc(100vw - 140px);max-height:calc(100vh - 110px);object-fit:contain;background:#000}\
+.fm-v-ring{position:absolute;border:3px solid #fff;border-radius:50%;box-shadow:0 0 0 2px var(--accent),0 0 0 9999px rgba(0,0,0,.25);pointer-events:none}\
+.fm-v-fig figcaption{color:#fff;font-size:14px;text-align:center}.fm-v-fig figcaption .hint{color:#bbb}\
+.fm-v-nav{position:absolute;top:50%;transform:translateY(-50%);width:44px;height:64px;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:34px;cursor:pointer}.fm-v-nav:hover{background:rgba(255,255,255,.3)}.fm-v-nav.prev{left:10px}.fm-v-nav.next{right:10px}\
+.fm-v-x{position:absolute;top:12px;right:12px;width:40px;height:40px;border:0;background:rgba(255,255,255,.14);color:#fff;font-size:20px;cursor:pointer}.fm-v-x:hover{background:rgba(255,255,255,.3)}\
+@media (max-width:699px){.fm-viewer{padding:12px}.fm-v-pic img,.fm-v-pic video{max-width:calc(100vw - 24px);max-height:calc(100vh - 140px)}.fm-v-nav{top:auto;bottom:16px;transform:none}}\
 .fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\

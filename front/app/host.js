@@ -391,7 +391,7 @@ addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse";
 const isHeic = (f) => /\.(heic|heif)$/i.test(f.name || "") || /image\/hei[cf]/i.test(f.type || "");
 const isVideo = (f) => /^video\//i.test(f.type || "") || /\.(mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i.test(f.name || "");
 let heicLib = null;
-const heicThumbs = {};
+const heicThumbs = {}, rawUrls = {};
 const thumbOf = (cv, idx) => {
   if (idx == null || heicThumbs[idx]) return;
   const k = Math.min(1, 240 / Math.max(cv.width, cv.height)), t = Object.assign(document.createElement("canvas"), { width: Math.max(1, Math.round(cv.width * k)), height: Math.max(1, Math.round(cv.height * k)) });
@@ -653,6 +653,8 @@ const ops = {
     return "1";
   },
   // a chosen file, as an address the page can show
+  // a chosen file at full size, for the photo viewer (made once per file)
+  fileraw: (a) => { const i = +a; if (!files[i]) return ""; if (!rawUrls[i]) rawUrls[i] = isHeic(files[i]) ? (heicThumbs[i] || "") : URL.createObjectURL(files[i]); return rawUrls[i]; },
   fileurl: (a) => (heicThumbs[+a] || (files[+a] && !isVideo(files[+a]) ? URL.createObjectURL(files[+a]) : "")),
   // part of a chosen file: token, file, start, length (Face Mace reads where a photo or video says it was taken)
   slice: (a) => {
@@ -707,7 +709,7 @@ const ops = {
     wakeWanted = on;
     if (on) {
       wakeGet();
-      if (!wakeBeat && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
+      if (!wakeBeat && /^(127\.0\.0\.1|localhost|[a-z]+\.localhost)$/.test(location.hostname)) {
         const beat = () => fetch("/__busy", { cache: "no-store" }).catch(() => {});
         beat(); wakeBeat = setInterval(beat, 10000);
       }

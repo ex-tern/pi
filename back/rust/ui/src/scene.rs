@@ -1869,6 +1869,12 @@ fn wiring_end() {
 }
 
 pub fn on_key(key: &str) -> bool {
+    // Esc closes Face Mace's photo viewer first
+    if key == "Escape" && st().face.viewer.is_some() {
+        st().face.viewer = None;
+        render();
+        return true;
+    }
     if key.starts_with('+') || key.starts_with('-') {
         return map_key(key);
     }

@@ -151,6 +151,30 @@ fn answer(mut s: TcpStream) {
     let _ = s.flush();
 }
 
+/// Face Mace in a window of its own, as an app (owner, 2026-10-15: "make the address bar only say facemace"):
+/// Edge (on every Windows) or Chrome with --app, which has no address bar; otherwise the usual browser.
+fn open_app(url: &str) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let env = |k: &str| std::env::var(k).unwrap_or_default();
+        let candidates = [
+            format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", env("ProgramFiles(x86)")),
+            format!("{}\\Microsoft\\Edge\\Application\\msedge.exe", env("ProgramFiles")),
+            format!("{}\\Google\\Chrome\\Application\\chrome.exe", env("ProgramFiles")),
+            format!("{}\\Google\\Chrome\\Application\\chrome.exe", env("ProgramFiles(x86)")),
+            format!("{}\\Google\\Chrome\\Application\\chrome.exe", env("LOCALAPPDATA")),
+        ];
+        for exe in candidates.iter().filter(|p| std::path::Path::new(p).exists()) {
+            let app = format!("--app={}", url);
+            if std::process::Command::new(exe).args([app.as_str(), "--window-size=1280,880"]).creation_flags(0x0800_0000).spawn().is_ok() {
+                return;
+            }
+        }
+    }
+    open_browser(url);
+}
+
 fn open_browser(url: &str) {
     // the browser opened without a console window flashing up (CREATE_NO_WINDOW)
     #[cfg(target_os = "windows")]
@@ -179,12 +203,14 @@ fn running_already(port: u16) -> bool {
 
 fn main() {
     let port = std::env::args().nth(1).and_then(|p| p.parse::<u16>().ok()).unwrap_or(PORT);
-    let url = format!("http://127.0.0.1:{}/facemace/", port);
+    // "facemace.localhost" is this computer to the browser (any name ending in .localhost is), so the address reads
+    // as Face Mace's own, while the program still listens on 127.0.0.1 only
+    let url = format!("http://facemace.localhost:{}/", port);
     let l = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
             if running_already(port) {
-                open_browser(&url);
+                open_app(&url);
                 return;
             }
             // the port is someone else's: any free one (what is remembered then lasts this run only)
@@ -198,11 +224,11 @@ fn main() {
         }
     };
     let port = l.local_addr().map(|a| a.port()).unwrap_or(port);
-    let url = format!("http://127.0.0.1:{}/facemace/", port);
+    let url = format!("http://facemace.localhost:{}/", port);
     println!("Face Mace is open in your browser at {}", url);
     println!("Your photos stay on this computer. Face Mace quits a minute after its page is closed.");
     if std::env::var_os("FACEMACE_NO_BROWSER").is_none() {
-        open_browser(&url);
+        open_app(&url);
     }
     // quits when no page has said it is open for 90 seconds (or none came within 3 minutes of starting)
     let started = now_s();
