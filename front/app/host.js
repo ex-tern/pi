@@ -30,7 +30,8 @@ function send(id, kind, value) {
 }
 function fileList(list) {
   const out = [];
-  for (const f of list) { out.push(files.length + "\t" + f.size + "\t" + f.name.replace(/[\t\n]/g, " ")); files.push(f); }
+  // a folder chosen keeps its path (Holiday/2019/a.jpg), so files of the same name in different folders stay apart
+  for (const f of list) { out.push(files.length + "\t" + f.size + "\t" + (f.webkitRelativePath || f.name).replace(/[\t\n]/g, " ")); files.push(f); }
   return out.join("\n");
 }
 const safe = (f, d) => { try { return f(); } catch (_) { return d; } };
@@ -181,7 +182,19 @@ const host = {
     else if (k === "files") n.addEventListener("change", () => { const v = fileList(n.files); n.value = ""; send(id, k, v); });
     else if (k === "drop") {
       n.addEventListener("dragover", (e) => e.preventDefault());
-      n.addEventListener("drop", (e) => { e.preventDefault(); send(id, k, fileList(e.dataTransfer.files)); });
+      // folders dropped (any number) are read through, with their paths
+      n.addEventListener("drop", (e) => {
+        e.preventDefault();
+        const ents = [...(e.dataTransfer.items || [])].map((it) => (it.webkitGetAsEntry ? it.webkitGetAsEntry() : null)).filter(Boolean);
+        if (!ents.some((x) => x.isDirectory)) { send(id, k, fileList(e.dataTransfer.files)); return; }
+        const out = [];
+        const readAll = (dir) => new Promise((res) => { const rd = dir.createReader(), all = []; const step = () => rd.readEntries((es) => { if (!es.length) res(all); else { all.push(...es); step(); } }, () => res(all)); step(); });
+        const walk = async (en, pre) => {
+          if (en.isFile) { const f = await new Promise((res) => en.file(res, () => res(null))); if (f) out.push([pre + en.name, f]); }
+          else if (en.isDirectory && en.name !== "Duplicates (Face Mace)") { for (const c of await readAll(en)) await walk(c, pre + en.name + "/"); }
+        };
+        (async () => { for (const en of ents) await walk(en, ""); send(id, k, out.map(([p, f]) => { const i = files.length; files.push(f); return i + "\t" + f.size + "\t" + p.replace(/[\t\n]/g, " "); }).join("\n")); })();
+      });
     } else n.addEventListener(k, (e) => {
       if (n.dataset && n.dataset.stop) e.stopPropagation();
       // a tip sitting on a link (the sidebar's icons) wires; it does not follow the link
@@ -457,7 +470,7 @@ async function mlRun(model, data, dims) {
 
 // The folder Face Mace reads from, opened with the browser's folder access (Chrome, Edge), so that duplicates can be
 // moved aside or deleted there when the person says so: where each chosen file lives (its folder and name).
-let srcRoot = null;
+let srcRoots = [];
 const srcAt = {};
 const MEDIA = /\.(jpe?g|png|heic|heif|mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i;
 async function srcWalk(dir, pre, out) {
@@ -731,9 +744,10 @@ const ops = {
   pickfolder: () => {
     if (typeof window.showDirectoryPicker !== "function") return null;
     window.showDirectoryPicker({ mode: "read", id: "facemace-src" }).then(async (root) => {
-      const found = []; await srcWalk(root, "", found);
-      srcRoot = root;
-      const lines = found.map(([path, file, dir, name]) => { const i = files.length; files.push(file); srcAt[i] = [dir, name]; return i + "\t" + file.size + "\t" + path.replace(/[\t\n]/g, " "); });
+      // each folder chosen is added (many can be): its files under its name, Holiday/2019/a.jpg
+      const found = []; await srcWalk(root, root.name + "/", found);
+      const ri = srcRoots.push(root) - 1;
+      const lines = found.map(([path, file, dir, name]) => { const i = files.length; files.push(file); srcAt[i] = [dir, name, ri]; return i + "\t" + file.size + "\t" + path.replace(/[\t\n]/g, " "); });
       give(2000005, enc.encode(lines.join("\n")), 1, 1);
     }, () => {});
     return "1";
@@ -742,15 +756,18 @@ const ops = {
   // the files (comma separated); "done n" or "error …" on token 2_000_006
   srcdel: (a) => {
     const [mode, list] = a.split("\t"), ids = (list || "").split(",").filter(Boolean).map(Number);
-    if (!srcRoot) return null;
-    const perm = srcRoot.requestPermission({ mode: "readwrite" });
+    const used = [...new Set(ids.map((i) => srcAt[i] && srcAt[i][2]).filter((x) => x !== undefined))];
+    if (!used.length) return null;
+    // asked for every folder at once, while the click is still fresh
+    const perms = used.map((ri) => srcRoots[ri].requestPermission({ mode: "readwrite" }));
     (async () => {
-      if ((await perm) !== "granted") throw new Error("permission to change the folder was not given");
+      for (const p of perms) if ((await p) !== "granted") throw new Error("permission to change the folder was not given");
       let n = 0;
-      const aside = mode === "move" ? await srcRoot.getDirectoryHandle("Duplicates (Face Mace)", { create: true }) : null;
+      const asides = {};
       for (const i of ids) {
         const at = srcAt[i]; if (!at) continue;
-        const [dir, name] = at;
+        const [dir, name, ri] = at;
+        const aside = mode === "move" ? (asides[ri] || (asides[ri] = await srcRoots[ri].getDirectoryHandle("Duplicates (Face Mace)", { create: true }))) : null;
         if (aside) {
           const fh = await dir.getFileHandle(name), free = await srcFree(aside, name);
           if (typeof fh.move === "function") await fh.move(aside, free);

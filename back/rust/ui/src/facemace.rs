@@ -438,6 +438,12 @@ pub struct Face {
     ml_tile: usize,
     ml_acc: Vec<([f64; 14], f64)>,
     ml_flip: Option<Vec<f32>>,
+    /// many folders (owner, 2026-10-15: "many folders can be selected"): each folder or set of files added, by name,
+    /// and where its files are in the list
+    sources: Vec<(String, usize, usize)>,
+    /// a named person's own folder (owner, 2026-10-15: "if a person is named, a folder in that name is created with
+    /// all the pictures of that person ... renamed"): (file, person) → where its copy is in the folder
+    named_written: BTreeMap<(usize, usize), String>,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -595,7 +601,7 @@ fn face_update(a: u16, v: String) {
 }
 
 fn face_update_inner(a: u16, v: String) {
-    if matches!(a, 1 | 3 | 12 | 17) {
+    if matches!(a, 1 | 3 | 12 | 17 | 19) || (900..1000).contains(&a) {
         refine_stop();
     }
     let s = st();
@@ -622,27 +628,38 @@ fn face_update_inner(a: u16, v: String) {
                     }
                 })
                 .collect();
+            // the same file chosen again (same place, same size) is not added twice
+            list.retain(|x| !f.files.iter().any(|y| y.2 == x.2 && y.1 == x.1));
             list.sort_by(|a, b| a.2.cmp(&b.2));
-            f.files = list;
-            f.deep.clear();
-            f.learned.clear();
-            f.faces.clear();
-            f.pics.clear();
-            f.boxes.clear();
-            f.result = None;
-            f.stopped = false;
-            f.thumb_cache.clear();
-            f.confirm.clear();
-            f.reject.clear();
-            f.sorted_written.clear();
-            f.dup_keep.clear();
-            f.dup_del.clear();
-            f.dup_gone.clear();
-            f.dup_msg.clear();
-            f.src_folder = false;
-            work_apply_pending();
-            f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
+            if list.is_empty() {
+                f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { "Nothing new there: those are already chosen.".into() };
+                return;
+            }
+            let label = source_label(&list);
+            if f.files.is_empty() {
+                let n = list.len();
+                face_set_files(list);
+                st().face.sources = alloc::vec![(label, 0, n)];
+            } else {
+                // added to those already chosen: a sort done goes on with the new ones only
+                let (start, n) = (f.files.len(), list.len());
+                f.files.extend(list);
+                f.sources.push((label.clone(), start, start + n));
+                if !f.faces.is_empty() && !f.running && f.faces.len() < f.files.len() {
+                    f.stopped = true;
+                }
+                work_apply_pending();
+                let f = &mut st().face;
+                f.msg = format!("Added {}: {} more, {} in all.", label, n, f.files.len());
+            }
         }
+        19 => {
+            face_set_files(Vec::new());
+            let f = &mut st().face;
+            f.sources.clear();
+            f.msg.clear();
+        }
+        a if (900..1000).contains(&a) => source_remove((a - 900) as usize),
         2 => {
             f.strict = v.parse().unwrap_or(75.0);
             f.learned.clear();
@@ -998,6 +1015,83 @@ fn face_update_inner(a: u16, v: String) {
         }
         _ => {}
     }
+}
+
+/// What a set of files added is called: its folder (the first part of their paths), or the file, or how many.
+fn source_label(list: &[(u32, f64, String)]) -> String {
+    let first = list.first().map(|x| x.2.as_str()).unwrap_or("");
+    match first.split_once('/') {
+        Some((dir, _)) if list.iter().all(|x| x.2.starts_with(&format!("{}/", dir))) => dir.to_string(),
+        _ if list.len() == 1 => first.rsplit('/').next().unwrap_or(first).to_string(),
+        _ => format!("{} files", list.len()),
+    }
+}
+
+/// A new list of files: everything found for the earlier ones is let go (answers wait by file name, to come back).
+fn face_set_files(list: Vec<(u32, f64, String)>) {
+    let f = &mut st().face;
+    f.files = list;
+    f.deep.clear();
+    f.learned.clear();
+    f.faces.clear();
+    f.pics.clear();
+    f.boxes.clear();
+    f.result = None;
+    f.stopped = false;
+    f.thumb_cache.clear();
+    f.confirm.clear();
+    f.reject.clear();
+    f.sorted_written.clear();
+    f.named_written.clear();
+    f.dup_keep.clear();
+    f.dup_del.clear();
+    f.dup_gone.clear();
+    f.dup_msg.clear();
+    f.src_folder = false;
+    f.msg = if f.files.is_empty() { "No photos (JPG, PNG, HEIC) or videos found there.".into() } else { String::new() };
+    work_apply_pending();
+}
+
+/// One folder (or set of files) taken out again: the answers about the rest are kept (by file name) and come back.
+fn source_remove(k: usize) {
+    let f = &mut st().face;
+    let Some((label, a, b)) = f.sources.get(k).cloned() else { return };
+    if f.running {
+        return;
+    }
+    let key = |i: usize| (f.files[i].2.clone(), f.files[i].1 as u64);
+    let mut pend: Vec<(String, u64, usize, bool)> = Vec::new();
+    for (&i, &p) in f.confirm.iter() {
+        if i < f.files.len() && (i < a || i >= b) {
+            let (n, z) = key(i);
+            pend.push((n, z, p, true));
+        }
+    }
+    for &(i, p) in f.reject.iter() {
+        if i < f.files.len() && (i < a || i >= b) {
+            let (n, z) = key(i);
+            pend.push((n, z, p, false));
+        }
+    }
+    let mut pd: Vec<(String, u64, bool)> = Vec::new();
+    for &i in f.dup_keep.iter().filter(|&&i| i < f.files.len() && (i < a || i >= b)) {
+        let (n, z) = key(i);
+        pd.push((n, z, true));
+    }
+    for &i in f.dup_del.iter().filter(|&&i| i < f.files.len() && (i < a || i >= b)) {
+        let (n, z) = key(i);
+        pd.push((n, z, false));
+    }
+    let had = !f.faces.is_empty();
+    let list: Vec<(u32, f64, String)> = f.files.iter().enumerate().filter(|(i, _)| *i < a || *i >= b).map(|(_, x)| x.clone()).collect();
+    let n = b - a;
+    let sources: Vec<(String, usize, usize)> = f.sources.iter().enumerate().filter(|(j, _)| *j != k).map(|(_, (l, x, y))| if *x >= b { (l.clone(), x - n, y - n) } else { (l.clone(), *x, *y) }).collect();
+    f.pending.extend(pend);
+    f.pending_dups.extend(pd);
+    face_set_files(list);
+    let f = &mut st().face;
+    f.sources = sources;
+    f.msg = if f.files.is_empty() { String::new() } else if had { format!("Took out {}. Sort again: photos already scanned are not scanned again.", label) } else { format!("Took out {}.", label) };
 }
 
 /// A photo's place in the store: its name, size and date.
@@ -1774,7 +1868,8 @@ pub fn refine_tick() {
 /// The next photo of the chunk, decoded bigger than for the first scan.
 fn refine_next_photo() {
     let f = &mut st().face;
-    let Some(&i) = f.ref_queue.get(f.ref_k) else {
+    let Some(&i) = f.ref_queue.get(f.ref_k).filter(|&&i| i < f.files.len() && i < f.faces.len()) else {
+        f.ref_k = f.ref_queue.len();
         refine_chunk_end();
         return;
     };
@@ -2387,8 +2482,14 @@ fn part_zip(k: usize) {
     let mut want: Vec<(String, u32)> = Vec::new();
     if f.live_rename {
         for i in a..b {
-            if let Some((_, _, p)) = f.live_written.get(&i) {
+            if let Some((_, people, p)) = f.live_written.get(&i) {
                 want.push((p.clone(), f.files[i].0));
+                let base = p.rsplit('/').next().unwrap_or("photo");
+                let mut dirs: Vec<String> = people.iter().filter_map(|q| if f.rename_only { None } else { person_folder(f, *q) }).collect();
+                dirs.dedup();
+                for d in dirs {
+                    want.push((format!("{}/{}", d, base), f.files[i].0));
+                }
             }
         }
     } else if let Some(r) = &f.result {
@@ -2789,16 +2890,21 @@ fn live_relabel() {
         for (i, (n, _, path)) in f.live_written.iter() {
             let people: Vec<usize> = member.get(i).map(|v| v.iter().filter_map(|k| k.strip_prefix("Person_")).filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
             let new = renamed_path(*n, &if f.rename_only { String::new() } else { label_of(f, &people) }, f.file_when.get(*i).copied().unwrap_or(0), &f.files[*i].2);
-            if &new != path {
-                moves.push((*i, path.clone(), new, people));
-            }
+            moves.push((*i, path.clone(), new, people));
         }
         for (i, old, new, people) in moves {
-            host::call("mvfile", &format!("{}\t{}", old, new));
+            if new != old {
+                host::call("mvfile", &format!("{}\t{}", old, new));
+            }
             if let Some(e) = f.live_written.get_mut(&i) {
                 e.2 = new;
                 e.1 = people;
             }
+        }
+        // and each named person's own folder
+        let all: Vec<usize> = f.live_written.keys().copied().collect();
+        for i in all {
+            named_sync(i);
         }
         return;
     }
@@ -3218,6 +3324,62 @@ fn live_rename_write(i: usize, people: &[usize]) {
     f.live_written.insert(i, (n, people.to_vec(), path.clone()));
     if f.out_dir.is_some() {
         out_save(&path, h);
+        named_sync(i);
+    }
+}
+
+/// The folder a named person has of their own, by their name: copies of their files, named as in Renamed_by_date
+/// (0000005-Eileen Collins-1397-2019.jpg). A file written already follows: renamed, moved or taken out as the
+/// names and who is in it change.
+fn person_folder(f: &Face, p: usize) -> Option<String> {
+    f.names.get(&format!("Person_{}", p)).map(|n| file_safe(n)).filter(|n| !n.is_empty())
+}
+
+fn named_sync(i: usize) {
+    let f = &mut st().face;
+    if f.out_dir.is_none() {
+        return;
+    }
+    let Some((_, people, path)) = f.live_written.get(&i).cloned() else { return };
+    let base = path.rsplit('/').next().unwrap_or("photo").to_string();
+    let mut want: Vec<(usize, String)> = Vec::new();
+    if !f.rename_only {
+        for &p in &people {
+            if let Some(dir) = person_folder(f, p) {
+                let w = format!("{}/{}", dir, base);
+                if !want.iter().any(|x| x.1 == w) {
+                    want.push((p, w));
+                }
+            }
+        }
+    }
+    let have: Vec<((usize, usize), String)> = f.named_written.range((i, 0)..=(i, usize::MAX)).map(|(k, v)| (*k, v.clone())).collect();
+    let h = f.files[i].0;
+    for (key, old) in have {
+        match want.iter().position(|w| w.0 == key.1) {
+            Some(j) => {
+                let (_, w) = want.remove(j);
+                if w != old {
+                    host::call("mvfile", &format!("{}\t{}", old, w));
+                    f.named_written.insert(key, w);
+                }
+            }
+            None => {
+                // the same copy wanted under another person's number (two people of one name): kept as it is
+                if let Some(j) = want.iter().position(|w| w.1 == old) {
+                    let (p, w) = want.remove(j);
+                    f.named_written.remove(&key);
+                    f.named_written.insert((i, p), w);
+                } else {
+                    host::call("rmfile", &old);
+                    f.named_written.remove(&key);
+                }
+            }
+        }
+    }
+    for (p, w) in want {
+        out_save(&w, h);
+        st().face.named_written.insert((i, p), w);
     }
 }
 
@@ -3239,6 +3401,10 @@ fn live_rename_person(p: usize) {
             e.2 = new;
         }
     }
+    let with: Vec<usize> = f.live_written.iter().filter(|(_, e)| e.1.contains(&p)).map(|(i, _)| *i).collect();
+    for i in with {
+        named_sync(i);
+    }
 }
 
 /// Every file dated: numbered in that order and named after who is in it.
@@ -3251,7 +3417,7 @@ fn date_done() {
     let labels = face_labels(f);
     let mut items: Vec<(u64, String, usize)> = f.dates.iter().map(|(i, w)| (*w, f.files[*i].2.clone(), *i)).collect();
     items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
-    let want: Vec<(String, u32)> = items
+    let want: Vec<(String, u32, usize)> = items
         .into_iter()
         .enumerate()
         .map(|(k, (when, name, i))| {
@@ -3264,9 +3430,22 @@ fn date_done() {
             // output folders"): Renamed_by_date/0000001-0001000/0000001-Anna-1382-2004.jpg, then 0001001-0002000/…
             let n = k + 1;
             let first = (n - 1) / 1000 * 1000 + 1;
-            (format!("Renamed_by_date/{:07}-{:07}/{:07}{}{}.{}", first, first + 999, n, who, years, ext), f.files[i].0)
+            (format!("Renamed_by_date/{:07}-{:07}/{:07}{}{}.{}", first, first + 999, n, who, years, ext), f.files[i].0, i)
         })
         .collect();
+    // and each named person's own folder, with the same names: Eileen Collins/0000005-Eileen Collins-1397-2019.jpg
+    let mut copies: Vec<(String, u32)> = Vec::new();
+    if !f.rename_only {
+        for (p, h, i) in &want {
+            let base = p.rsplit('/').next().unwrap_or("photo");
+            for l in labels.get(i).map(|v| v.as_slice()).unwrap_or(&[]) {
+                if l != "unknown" {
+                    copies.push((format!("{}/{}", l, base), *h));
+                }
+            }
+        }
+    }
+    let want: Vec<(String, u32)> = want.into_iter().map(|(p, h, _)| (p, h)).chain(copies).collect();
     if f.out_dir.is_some() {
         f.msg = format!("Saving {} files into the folder…", want.len());
         for (p, h) in want {
@@ -3717,19 +3896,35 @@ fn face_view(s: &State) -> N {
                     el("div")
                         .cls("fm-drop")
                         .on("drop", Msg::TV(Tool::Face, 1))
-                        .kid(el("p").cls("fm-drop-t").text("Drop a folder or files here"))
+                        .kid(el("p").cls("fm-drop-t").text(if f.files.is_empty() { "Drop folders or files here, as many as you like" } else { "Drop more folders or files here to add them" }))
                         .kid(el("p").cls("hint").text("JPG, PNG, HEIC and videos (MP4, MOV, MKV, WebM, AVI and more)"))
                         .kid(
                             el("div")
                                 .cls("row")
                                 .kid(if can {
                                     // opened with the browser's folder access: duplicates can then be taken out of it when asked
-                                    el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 18, String::new())).text("Choose a folder").into()
+                                    el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 18, String::new())).text(if f.files.is_empty() { "Choose a folder" } else { "Add a folder" }).into()
                                 } else {
-                                    N::from(el("label").cls("btn").kid(txt("Choose a folder")).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
+                                    N::from(el("label").cls("btn").kid(txt(if f.files.is_empty() { "Choose a folder" } else { "Add a folder" })).kid(el("input").attr("type", "file").attr("webkitdirectory", "").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1))))
                                 })
-                                .kid(el("label").cls("btn").kid(txt("Choose files")).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
+                                .kid(el("label").cls("btn").kid(txt(if f.files.is_empty() { "Choose files" } else { "Add files" })).kid(el("input").attr("type", "file").attr("accept", ".jpg,.jpeg,.png,.heic,.heif,image/jpeg,image/png,image/heic,image/heif,video/*,.mp4,.m4v,.mov,.3gp,.3g2,.avi,.mkv,.webm,.wmv,.mts,.m2ts,.mpg,.mpeg,.flv,.ogv").attr("multiple", "").attr("hidden", "").on("files", Msg::TV(Tool::Face, 1)))),
                         )
+                        // the folders and sets of files chosen, each can be taken out again
+                        .kid_if(!f.sources.is_empty(), || {
+                            el("div")
+                                .cls("fm-sources")
+                                .kids(f.sources.iter().enumerate().map(|(k, (l, a, b))| -> N {
+                                    el("span")
+                                        .cls("fm-src")
+                                        .attr("title", l.clone())
+                                        .kid(el("span").cls("fm-src-n").text(l.clone()))
+                                        .kid(el("small").text(format!("{}", b - a)))
+                                        .kid(el("button").attr("type", "button").cls("fm-src-x").attr("aria-label", format!("Take out {}", l)).attr_if(f.running, "disabled", "").on("click", Msg::T(Tool::Face, 900 + k.min(99) as u16, String::new())).text("×"))
+                                        .into()
+                                }))
+                                .kid_if(f.sources.len() > 1 || !f.files.is_empty(), || el("button").attr("type", "button").cls("btn fm-src-clear").attr_if(f.running, "disabled", "").on("click", Msg::T(Tool::Face, 19, String::new())).text("Start over").into())
+                                .into()
+                        })
                         .kid_if(!ready.is_empty(), || el("p").cls("fm-ready").cls_if(!f.files.is_empty(), "ok").text(ready.clone()).into()),
                 ),
         )
@@ -4144,6 +4339,7 @@ const FACE_CSS: &str = "\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\
 .fm-progress{margin:14px 0}\
+.fm-sources{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin:10px 0 0;justify-content:center}.fm-src{display:inline-flex;align-items:center;gap:6px;max-width:100%;padding:3px 4px 3px 10px;border:1px solid var(--line);border-radius:999px;font-size:13px}.fm-src-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:220px}.fm-src small{color:var(--muted)}.fm-src-x{border:0;background:none;cursor:pointer;color:var(--muted);font-size:16px;line-height:1;padding:2px 6px;border-radius:999px}.fm-src-x:hover{color:var(--ink);background:color-mix(in srgb,var(--ink) 8%,transparent)}.fm-src-clear{padding:4px 10px;font-size:13px}\
 .fm-refine{margin:14px 0;padding:12px 14px;border:1px solid var(--line);border-radius:12px;background:color-mix(in srgb,var(--accent,#3b82f6) 6%,transparent)}.fm-refine .row{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.fm-refine .row .btn{margin-left:auto}.fm-refine p{margin:6px 0}.fm-refine .md-bar{margin:8px 0}.fm-now-in{margin:4px 0 0;padding:4px 2px}.fm-refine-off{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin:12px 0}\
 .fm-group{margin:16px 0}.fm-group h3{margin:0 0 8px}\
 .fm-thumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.fm-thumbs img{width:88px;height:88px;object-fit:cover;border:1px solid var(--line)}\
