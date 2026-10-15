@@ -353,6 +353,10 @@ pub struct Face {
     stopped: bool,
     /// thumbnails made so far (file → address), so the live view does not make them again
     thumb_cache: BTreeMap<usize, String>,
+    /// renaming only, no sorting (owner, 2026-10-15: "a button ... to just rename and not sort"): the pictures are
+    /// only looked at for duplicates (quick), and nobody's name goes into the file names
+    rename_only: bool,
+    quick: bool,
 }
 
 struct FaceResult {
@@ -395,7 +399,7 @@ fn face_load() {
 
 /// Everything needed to start scanning has come (or failed to): the cascades, and the neural engines' answer.
 fn face_ready(f: &Face) -> bool {
-    f.cascade.is_some() && !f.profile_busy && f.ml >= 2
+    f.quick || (f.cascade.is_some() && !f.profile_busy && f.ml >= 2)
 }
 
 fn face_apply(what: u8, v: Value, err: Option<String>) {
@@ -492,6 +496,8 @@ fn face_update(a: u16, v: String) {
                 return;
             }
             f.stopped = false;
+            f.rename_only = false;
+            f.quick = false;
             f.running = true;
             f.started = host::now();
             f.live_known.clear();
@@ -547,6 +553,32 @@ fn face_update(a: u16, v: String) {
             host::download("Face Mace duplicates.txt", "text/plain", format!("Duplicates Face Mace left out ({}): delete these from the original folder if you wish.\n\n{}\n", lines.len(), lines.join("\n")).as_bytes());
         }
         5 => f.by_date = !f.by_date,
+        12 => {
+            if f.files.is_empty() || f.running {
+                return;
+            }
+            f.rename_only = true;
+            f.by_date = true;
+            f.stopped = false;
+            f.started = host::now();
+            f.live_known.clear();
+            f.live_idx.clear();
+            f.faces.clear();
+            f.pics.clear();
+            f.at = 0;
+            if f.dedupe {
+                // a quick look at each picture, for duplicates only, then the renaming
+                f.quick = true;
+                f.running = true;
+                face_next();
+            } else {
+                // nothing to look at: straight to the dates
+                f.quick = false;
+                let all: Vec<usize> = (0..f.files.len()).collect();
+                f.result = Some(FaceResult { groups: alloc::vec![("Not_Sorted".to_string(), all)], people: 0, faces: 0, unreadable: 0, ms: 0.0, strict: f.strict, thumbs: Vec::new(), dups: Vec::new(), conf: alloc::vec![0.0], photo_conf: BTreeMap::new(), overall: None, done: true });
+                face_zip();
+            }
+        }
         // Stop: scanning, reading dates, packing or saving, whichever is going on
         11 => {
             if f.running {
@@ -653,6 +685,17 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
         let img = Grey { g, w, h };
         let mean = (img.g.iter().map(|&v| v as u64).sum::<u64>() / (img.g.len().max(1) as u64)) as u8;
         pic = Some((pic_hash(&img), w, h, mean));
+        if f.quick {
+            // renaming only: the fingerprint for duplicates is all that is needed
+            f.faces.push(Some(Vec::new()));
+            f.pics.push(pic);
+            face_preview();
+            let f = &mut st().face;
+            f.at += 1;
+            face_next();
+            render();
+            return;
+        }
         let boxes = f.cascade.as_ref().map(|c| detect(&img, c)).unwrap_or_default();
         if f.ml == 2 {
             // the neural way: YuNet looks, the cascades check it, SFace describes (ml_got goes on from here)
@@ -1028,7 +1071,12 @@ fn ml_photo_done() {
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
 fn face_finish() {
     face_compute(true);
-    st().face.running = false;
+    let f = &mut st().face;
+    f.running = false;
+    if f.rename_only {
+        f.quick = false;
+        face_zip();
+    }
 }
 
 /// While scanning, the result so far, so people and their photos show up as they are found.
@@ -1107,7 +1155,7 @@ fn face_compute(done: bool) {
     }
     let mut out: Vec<(String, Vec<usize>)> = groups.into_iter().map(|(id, v)| (format!("Person_{}", id), v)).collect();
     if !none.is_empty() {
-        out.push(("No_Faces_Detected".to_string(), none));
+        out.push((if f.rename_only { "Not_Sorted".to_string() } else { "No_Faces_Detected".to_string() }, none));
     }
     // how sure: each face against its person's average (the group's own centre), as a probability
     let mut conf: Vec<f64> = Vec::new();
@@ -1483,14 +1531,14 @@ fn date_done() {
         .map(|(k, (when, name, i))| {
             let ext = face_ext(&name);
             let ext = if ext.is_empty() || ext.len() > 5 { "jpg".to_string() } else { ext };
-            let who = labels.get(&i).map(|l| l.join("-")).unwrap_or_else(|| "unknown".into());
+            let who = if f.rename_only { String::new() } else { labels.get(&i).map(|l| format!("-{}", l.join("-"))).unwrap_or_else(|| "-unknown".into()) };
             // then the year, Persian (Solar Hijri) and Gregorian (owner, 2026-10-15: "0000001-unknown-1382-2004")
             let years = years_of(when).map(|(p, g)| format!("-{}-{}", p, g)).unwrap_or_default();
             // in folders of a thousand, named by their range (owner, 2026-10-15: "make the photos in batch on 1000
             // output folders"): Renamed_by_date/0000001-0001000/0000001-Anna-1382-2004.jpg, then 0001001-0002000/…
             let n = k + 1;
             let first = (n - 1) / 1000 * 1000 + 1;
-            (format!("Renamed_by_date/{:07}-{:07}/{:07}-{}{}.{}", first, first + 999, n, who, years, ext), f.files[i].0)
+            (format!("Renamed_by_date/{:07}-{:07}/{:07}{}{}.{}", first, first + 999, n, who, years, ext), f.files[i].0)
         })
         .collect();
     if f.out_dir.is_some() {
@@ -1605,6 +1653,9 @@ fn face_labels(f: &Face) -> BTreeMap<usize, Vec<String>> {
     let mut out: BTreeMap<usize, Vec<String>> = BTreeMap::new();
     if let Some(r) = &f.result {
         for (k, idx) in &r.groups {
+            if k == "Not_Sorted" {
+                continue;
+            }
             let label = f.names.get(k).map(|n| file_safe(n)).filter(|n| !n.is_empty()).unwrap_or_else(|| "unknown".to_string());
             for &i in idx {
                 let l = out.entry(i).or_default();
@@ -1914,6 +1965,7 @@ fn face_view(s: &State) -> N {
             el("div")
                 .cls("fm-go")
                 .kid(el("button").attr("type", "button").cls("btn primary fm-sort").attr_if(f.files.is_empty() || f.running, "disabled", "").on("click", Msg::T(Tool::Face, 3, String::new())).text(if f.running { "Sorting…" } else if f.stopped { "Go on sorting" } else { "Sort by face" }))
+                .kid_if(!f.running, || el("button").attr("type", "button").cls("btn fm-rename").attr_if(f.files.is_empty(), "disabled", "").attr("title", "Rename by date without sorting by face: 0000001-1382-2004.jpg, …").on("click", Msg::T(Tool::Face, 12, String::new())).text("Rename only").into())
                 .kid_if(f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into())
                 .kid_if(f.files.is_empty(), || el("span").cls("hint").text("Choose photos or videos first.").into()),
         );
@@ -1931,7 +1983,7 @@ fn face_view(s: &State) -> N {
     if let Some(r) = &f.result {
         let pct = |p: f64| format!("{:.0}%", (p * 100.0).clamp(0.0, 100.0));
         let sure_cls = |p: f64| if p >= 0.9 { "hi" } else if p >= 0.7 { "mid" } else { "lo" };
-        let label = |k: &str| if k == "No_Faces_Detected" { "No faces found".to_string() } else { k.replace('_', " ") };
+        let label = |k: &str| if k == "No_Faces_Detected" { "No faces found".to_string() } else if k == "Not_Sorted" { "Renamed only, not sorted".to_string() } else { k.replace('_', " ") };
         root = root
             .kid(
                 el("div")
@@ -1974,7 +2026,7 @@ fn face_view(s: &State) -> N {
                                 let c = r.conf[gi];
                                 el("span").cls("fm-sure").cls(sure_cls(c)).attr("title", "How surely these are one person").text(format!("{} sure", pct(c))).into()
                             })
-                            .kid_if(k != "No_Faces_Detected", || {
+                            .kid_if(k != "No_Faces_Detected" && k != "Not_Sorted", || {
                                 el("input")
                                     .cls("input fm-name")
                                     .attr("type", "text")
@@ -2017,6 +2069,7 @@ const FACE_CSS: &str = "\
 .fm-option{display:grid!important;grid-template-columns:auto 1fr;gap:10px;align-items:start;margin:0!important;cursor:pointer}.fm-option>span{display:grid;gap:2px}.fm-option b{font-weight:600}\
 .fm-go{display:flex;align-items:center;gap:12px;margin:16px 0 8px}.fm-sort{min-width:180px;min-height:44px;font-size:15px}\
 .fm-actions{align-items:center;gap:12px;margin:12px 0}\
+.fm-rename{min-height:44px}\
 .fm-stop{border-color:#c92a2a;color:#c92a2a}.fm-stop:hover:not(:disabled){background:#c92a2a;color:#fff;border-color:#c92a2a}\
 .fm-live{display:inline-flex;align-items:center;gap:8px;font-weight:600;font-size:14px;margin:8px 0}.fm-live::before{content:\"\";width:8px;height:8px;border-radius:50%;background:#2b8a3e;animation:lockblink 1.2s ease-in-out infinite}\
 .fm-sure{font-size:12px;font-weight:600;padding:3px 8px;border:1px solid}.fm-sure.hi{color:#2b8a3e;border-color:#2b8a3e}.fm-sure.mid{color:#b06000;border-color:#b06000}.fm-sure.lo{color:#c92a2a;border-color:#c92a2a}\
