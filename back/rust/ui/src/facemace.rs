@@ -865,7 +865,11 @@ fn date_done() {
             let who = labels.get(&i).map(|l| l.join("-")).unwrap_or_else(|| "unknown".into());
             // then the year, Persian (Solar Hijri) and Gregorian (owner, 2026-10-15: "0000001-unknown-1382-2004")
             let years = years_of(when).map(|(p, g)| format!("-{}-{}", p, g)).unwrap_or_default();
-            (format!("Renamed_by_date/{:07}-{}{}.{}", k + 1, who, years, ext), f.files[i].0)
+            // in folders of a thousand, named by their range (owner, 2026-10-15: "make the photos in batch on 1000
+            // output folders"): Renamed_by_date/0000001-0001000/0000001-Anna-1382-2004.jpg, then 0001001-0002000/…
+            let n = k + 1;
+            let first = (n - 1) / 1000 * 1000 + 1;
+            (format!("Renamed_by_date/{:07}-{:07}/{:07}-{}{}.{}", first, first + 999, n, who, years, ext), f.files[i].0)
         })
         .collect();
     if f.out_dir.is_some() {
@@ -1281,7 +1285,7 @@ fn face_view(s: &State) -> N {
                 el("label")
                     .cls("fm-option")
                     .kid(el("input").attr("type", "checkbox").prop("checked", if f.by_date { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 5, String::new())))
-                    .kid(txt(" Rename the photos and videos by date: numbered in the order they were taken, then who is in them and the year, Persian and Gregorian (0000001-Anna-1382-2004.jpg, 0000002-unknown-1403-2024.mp4), all in one folder")),
+                    .kid(txt(" Rename the photos and videos by date: numbered in the order they were taken, then who is in them and the year, Persian and Gregorian (0000001-Anna-1382-2004.jpg, 0000002-unknown-1403-2024.mp4), in folders of a thousand (0000001-0001000, 0001001-0002000, …)")),
             )
             .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(match (f.by_date, f.out_dir.is_some()) { (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
