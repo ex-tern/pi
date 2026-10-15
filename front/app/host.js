@@ -487,6 +487,8 @@ const ops = {
   },
   // a chosen file, as an address the page can show
   fileurl: (a) => (files[+a] ? URL.createObjectURL(files[+a]) : ""),
+  // a chosen file's date (when it was last changed, in ms): Face Mace's fallback when a photo has no camera date
+  filetime: (a) => (files[+a] ? String(files[+a].lastModified || 0) : "0"),
   audio: (a) => {
     const [cmd, url, ls, ll] = a.split("\t");
     const AC = window.AudioContext || window.webkitAudioContext;

@@ -287,6 +287,11 @@ pub struct Face {
     msg: String,
     zip: Vec<(String, Vec<u8>)>,
     zip_want: Vec<(String, u32)>,
+    /// names given to the people found (by group, "Person_3" → "Anna")
+    names: BTreeMap<String, String>,
+    /// the ZIP as one folder of copies renamed by date: 0000001-Anna.jpg, 0000002-unknown.jpg, …
+    by_date: bool,
+    zip_by_date: bool,
 }
 
 struct FaceResult {
@@ -373,6 +378,17 @@ fn face_update(a: u16, v: String) {
             }
         }
         4 => face_zip(),
+        5 => f.by_date = !f.by_date,
+        // a name for the person of group a - 1000
+        a if a >= 1000 => {
+            let Some(k) = f.result.as_ref().and_then(|r| r.groups.get((a - 1000) as usize)).map(|g| g.0.clone()) else { return };
+            let n: String = v.chars().take(60).collect();
+            if n.trim().is_empty() {
+                f.names.remove(&k);
+            } else {
+                f.names.insert(k, n);
+            }
+        }
         _ => {}
     }
 }
@@ -508,6 +524,24 @@ fn face_zip() {
     let f = &mut st().face;
     let Some(r) = &f.result else { return };
     let mut want = Vec::new();
+    f.zip_by_date = f.by_date;
+    if f.by_date {
+        // every photo once (the name is given when its date is known, after it is read): "#index" for now
+        let mut seen: Vec<usize> = Vec::new();
+        for (_, idx) in &r.groups {
+            for &i in idx {
+                if !seen.contains(&i) {
+                    seen.push(i);
+                    want.push((format!("#{}", i), f.files[i].0));
+                }
+            }
+        }
+        f.zip.clear();
+        f.zip_want = want;
+        f.msg = "Packing…".to_string();
+        zip_next();
+        return;
+    }
     for (k, idx) in &r.groups {
         let mut used: Vec<String> = Vec::new();
         for &i in idx {
@@ -535,9 +569,21 @@ fn zip_next() {
     let f = &mut st().face;
     let i = f.zip.len();
     if i >= f.zip_want.len() {
-        let bytes = zip_build(&f.zip);
-        host::download("Auto_Sorted_Faces.zip", "application/zip", &bytes);
-        f.msg = format!("Downloaded {} files.", f.zip.len());
+        let (folder, n) = if f.zip_by_date {
+            face_rename_by_date();
+            ("Renamed_by_date", st().face.zip.len())
+        } else {
+            ("Auto_Sorted_Faces", f.zip.len())
+        };
+        let f = &mut st().face;
+        // a ZIP holds at most 65 535 files: more go in parts
+        let parts: Vec<&[(String, Vec<u8>)]> = f.zip.chunks(60_000).collect();
+        for (k, part) in parts.iter().enumerate() {
+            let bytes = zip_build(part);
+            let name = if parts.len() == 1 { format!("{}.zip", folder) } else { format!("{}-part{}.zip", folder, k + 1) };
+            host::download(&name, "application/zip", &bytes);
+        }
+        f.msg = format!("Downloaded {} files{}.", n, if parts.len() > 1 { format!(" in {} ZIPs", parts.len()) } else { String::new() });
         f.zip.clear();
         return;
     }
@@ -552,6 +598,141 @@ fn zip_got(i: u32, data: Vec<u8>) {
     let path = f.zip_want[i as usize].0.clone();
     f.zip.push((path, data));
     zip_next();
+}
+
+/// Who is in each photo, as its file name will say: the names given, "unknown" for a face not named or a photo
+/// with none.
+fn face_labels(f: &Face) -> BTreeMap<usize, Vec<String>> {
+    let mut out: BTreeMap<usize, Vec<String>> = BTreeMap::new();
+    if let Some(r) = &f.result {
+        for (k, idx) in &r.groups {
+            let label = f.names.get(k).map(|n| file_safe(n)).filter(|n| !n.is_empty()).unwrap_or_else(|| "unknown".to_string());
+            for &i in idx {
+                let l = out.entry(i).or_default();
+                if !l.contains(&label) {
+                    l.push(label.clone());
+                }
+            }
+        }
+    }
+    // a named person first; "unknown" only when nobody in it is named
+    for l in out.values_mut() {
+        if l.len() > 1 {
+            l.retain(|x| x != "unknown");
+        }
+    }
+    out
+}
+
+/// A name that is safe as part of a file name anywhere (Windows included).
+fn file_safe(n: &str) -> String {
+    let t: String = n.trim().chars().map(|c| if c.is_alphanumeric() || c == ' ' || c == '.' || c == '_' || c == '\'' { c } else { ' ' }).collect();
+    t.split_whitespace().collect::<Vec<_>>().join(" ").trim_matches('.').to_string()
+}
+
+/// The photos in the order they were taken, numbered from 0000001 (to 1000000 and on), each named after who is in
+/// it: 0000001-Anna.jpg, 0000002-Anna-Marco.jpg, 0000003-unknown.jpg (owner, 2026-10-15).
+fn face_rename_by_date() {
+    let f = &mut st().face;
+    let labels = face_labels(f);
+    let mut items: Vec<(u64, String, usize, Vec<u8>)> = core::mem::take(&mut f.zip)
+        .into_iter()
+        .filter_map(|(tag, data)| {
+            let i: usize = tag.strip_prefix('#')?.parse().ok()?;
+            let when = exif_date(&data).unwrap_or_else(|| {
+                let ms: f64 = host::call("filetime", &format!("{}", f.files[i].0)).and_then(|t| t.parse().ok()).unwrap_or(0.0);
+                stamp_of_ms(ms)
+            });
+            Some((when, f.files[i].2.clone(), i, data))
+        })
+        .collect();
+    items.sort_by(|a, b| a.0.cmp(&b.0).then_with(|| a.1.cmp(&b.1)));
+    f.zip = items
+        .into_iter()
+        .enumerate()
+        .map(|(k, (_, name, i, data))| {
+            let ext = name.rsplit_once('.').map(|(_, e)| e.to_lowercase()).filter(|e| e.len() <= 5 && !e.contains('/')).unwrap_or_else(|| "jpg".into());
+            let who = labels.get(&i).map(|l| l.join("-")).unwrap_or_else(|| "unknown".into());
+            (format!("Renamed_by_date/{:07}-{}.{}", k + 1, who, ext), data)
+        })
+        .collect();
+}
+
+/// YYYYMMDDhhmmss as one number, so photo dates sort.
+fn stamp(y: u64, mo: u64, d: u64, h: u64, mi: u64, s: u64) -> u64 {
+    ((((y * 100 + mo) * 100 + d) * 100 + h) * 100 + mi) * 100 + s
+}
+
+/// A file's time (ms since 1970, UTC) as a stamp.
+fn stamp_of_ms(ms: f64) -> u64 {
+    if ms <= 0.0 {
+        return 0;
+    }
+    let secs = (ms / 1000.0) as i64;
+    let days = secs.div_euclid(86_400);
+    let rem = secs.rem_euclid(86_400) as u64;
+    // days since 1970 to a civil date (Howard Hinnant's algorithm)
+    let z = days + 719_468;
+    let era = z.div_euclid(146_097);
+    let doe = z.rem_euclid(146_097);
+    let yoe = (doe - doe / 1460 + doe / 36_524 - doe / 146_096) / 365;
+    let doy = doe - (365 * yoe + yoe / 4 - yoe / 100);
+    let mp = (5 * doy + 2) / 153;
+    let d = (doy - (153 * mp + 2) / 5 + 1) as u64;
+    let m = if mp < 10 { mp + 3 } else { mp - 9 } as u64;
+    let y = (yoe + era * 400 + if m <= 2 { 1 } else { 0 }) as u64;
+    stamp(y, m, d, rem / 3600, rem / 60 % 60, rem % 60)
+}
+
+/// When a JPEG was taken, from its EXIF (DateTimeOriginal, else DateTime): "YYYY:MM:DD hh:mm:ss" as a stamp.
+fn exif_date(b: &[u8]) -> Option<u64> {
+    if b.len() < 4 || b[0] != 0xFF || b[1] != 0xD8 {
+        return None;
+    }
+    let mut p = 2usize;
+    while p + 4 <= b.len() && b[p] == 0xFF {
+        let marker = b[p + 1];
+        let len = ((b[p + 2] as usize) << 8) | b[p + 3] as usize;
+        if marker == 0xDA || len < 2 {
+            break;
+        }
+        if marker == 0xE1 && p + 10 <= b.len() && &b[p + 4..p + 10] == b"Exif\0\0" {
+            return exif_tiff(b.get(p + 10..(p + 2 + len).min(b.len()))?);
+        }
+        p += 2 + len;
+    }
+    None
+}
+
+fn exif_tiff(t: &[u8]) -> Option<u64> {
+    if t.len() < 8 {
+        return None;
+    }
+    let le = &t[0..2] == b"II";
+    let u16_at = |o: usize| -> Option<u32> { let x = t.get(o..o + 2)?; Some(if le { u16::from_le_bytes([x[0], x[1]]) } else { u16::from_be_bytes([x[0], x[1]]) } as u32) };
+    let u32_at = |o: usize| -> Option<u32> { let x = t.get(o..o + 4)?; Some(if le { u32::from_le_bytes([x[0], x[1], x[2], x[3]]) } else { u32::from_be_bytes([x[0], x[1], x[2], x[3]]) }) };
+    // the entries of one directory: (tag, value or offset)
+    let entries = |ifd: usize| -> Vec<(u32, u32)> {
+        let n = u16_at(ifd).unwrap_or(0) as usize;
+        (0..n.min(400)).filter_map(|k| { let e = ifd + 2 + k * 12; Some((u16_at(e)?, u32_at(e + 8)?)) }).collect()
+    };
+    let text_at = |off: u32| -> Option<u64> {
+        let s = t.get(off as usize..off as usize + 19)?;
+        let d = |a: usize, n: usize| -> Option<u64> { core::str::from_utf8(&s[a..a + n]).ok()?.trim().parse().ok() };
+        let v = stamp(d(0, 4)?, d(5, 2)?, d(8, 2)?, d(11, 2)?, d(14, 2)?, d(17, 2)?);
+        if d(0, 4)? < 1900 { None } else { Some(v) }
+    };
+    let ifd0 = entries(u32_at(4)? as usize);
+    if let Some((_, exif)) = ifd0.iter().find(|e| e.0 == 0x8769) {
+        for (tag, off) in entries(*exif as usize) {
+            if tag == 0x9003 || tag == 0x9004 {
+                if let Some(v) = text_at(off) {
+                    return Some(v);
+                }
+            }
+        }
+    }
+    ifd0.iter().find(|e| e.0 == 0x0132).and_then(|e| text_at(e.1))
 }
 
 fn crc32(b: &[u8]) -> u32 {
@@ -680,13 +861,34 @@ fn face_view(s: &State) -> N {
                     .kid(el("div").kid(el("b").text(format!("{}", r.faces))).kid(el("span").text("faces")))
                     .kid(el("div").kid(el("b").text(format!("{:.1} s", r.ms / 1000.0))).kid(el("span").text(format!("at strictness {}", r.strict as i64)))),
             )
-            .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text("Download as ZIP")).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid(
+                el("label")
+                    .cls("fm-option")
+                    .kid(el("input").attr("type", "checkbox").prop("checked", if f.by_date { "1" } else { "0" }).on("change", Msg::T(Tool::Face, 5, String::new())))
+                    .kid(txt(" Rename the photos by date: numbered in the order they were taken, then who is in them (0000001-Anna.jpg, 0000002-unknown.jpg), all in one folder")),
+            )
+            .kid(el("div").cls("row").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 4, String::new())).text(if f.by_date { "Download renamed (ZIP)" } else { "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
+            .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the camera's (EXIF) where the photo has one, otherwise the file's.").into())
             .kid_if(r.unreadable > 0, || el("p").cls("hint").text(format!("{} file(s) could not be read and were skipped.", r.unreadable)).into());
-        for (k, idx) in &r.groups {
+        for (gi, (k, idx)) in r.groups.iter().enumerate() {
             root = root.kid(
                 el("section")
                     .cls("fm-group")
-                    .kid(el("h3").text(format!("{} · {} photo{}", label(k), idx.len(), if idx.len() == 1 { "" } else { "s" })))
+                    .kid(
+                        el("div")
+                            .cls("fm-head")
+                            .kid(el("h3").text(format!("{} · {} photo{}", f.names.get(k).cloned().unwrap_or_else(|| label(k)), idx.len(), if idx.len() == 1 { "" } else { "s" })))
+                            .kid_if(k != "No_Faces_Detected", || {
+                                el("input")
+                                    .cls("input fm-name")
+                                    .attr("type", "text")
+                                    .attr("placeholder", "Name this person")
+                                    .attr("aria-label", format!("Name for {}", label(k)))
+                                    .prop("value", f.names.get(k).cloned().unwrap_or_default())
+                                    .on("input", Msg::TV(Tool::Face, 1000 + gi as u16))
+                                    .into()
+                            }),
+                    )
                     .kid(
                         el("div")
                             .cls("fm-thumbs")
@@ -710,4 +912,6 @@ const FACE_CSS: &str = "\
 .fm-group{margin:16px 0}.fm-group h3{margin:0 0 8px}\
 .fm-thumbs{display:flex;flex-wrap:wrap;gap:6px;align-items:center}.fm-thumbs img{width:88px;height:88px;object-fit:cover;border:1px solid var(--line)}\
 .fm-more{font-size:13px;color:var(--muted);padding:0 8px}\
+.fm-head{display:flex;flex-wrap:wrap;gap:10px;align-items:center;margin-bottom:8px}.fm-head h3{margin:0}.fm-name{max-width:220px;padding:6px 10px}\
+.fm-option{display:flex;gap:8px;align-items:flex-start;margin:12px 0 8px;font-size:14px}\
 ";
