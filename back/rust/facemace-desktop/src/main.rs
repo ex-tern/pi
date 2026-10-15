@@ -48,6 +48,32 @@ const PORT: u16 = 47123;
 /// When a page last said it was open (seconds since 1970); 0 before the first.
 static ALIVE: AtomicU64 = AtomicU64::new(0);
 
+/// When a page last said Face Mace was working (seconds since 1970; 0: not working). While it is, Windows is kept
+/// from sleeping (owner, 2026-10-15: "dont let the windows sleep").
+static BUSY: AtomicU64 = AtomicU64::new(0);
+
+#[cfg(windows)]
+mod power {
+    #[link(name = "kernel32")]
+    extern "system" {
+        fn SetThreadExecutionState(flags: u32) -> u32;
+    }
+    const ES_CONTINUOUS: u32 = 0x8000_0000;
+    const ES_SYSTEM_REQUIRED: u32 = 0x0000_0001;
+    const ES_AWAYMODE_REQUIRED: u32 = 0x0000_0040;
+    /// Awake (the system; the screen may still turn off) or free to sleep again.
+    pub fn keep_awake(on: bool) {
+        unsafe {
+            SetThreadExecutionState(if on { ES_CONTINUOUS | ES_SYSTEM_REQUIRED | ES_AWAYMODE_REQUIRED } else { ES_CONTINUOUS });
+        }
+    }
+}
+
+#[cfg(not(windows))]
+mod power {
+    pub fn keep_awake(_on: bool) {}
+}
+
 fn now_s() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
 }
@@ -88,6 +114,15 @@ fn answer(mut s: TcpStream) {
         ("GET", "/fonts/Geist-Variable.woff2") => ("200 OK", "font/woff2", GEIST),
         ("GET", "/fonts/GeistMono-Variable.woff2") => ("200 OK", "font/woff2", GEIST_MONO),
         ("GET", "/icon.svg") => ("200 OK", "image/svg+xml", ICON),
+        ("GET", "/__busy") => {
+            BUSY.store(now_s(), Ordering::Relaxed);
+            ALIVE.store(now_s(), Ordering::Relaxed);
+            ("200 OK", "text/plain; charset=utf-8", b"ok".as_slice())
+        }
+        ("GET", "/__idle") => {
+            BUSY.store(0, Ordering::Relaxed);
+            ("200 OK", "text/plain; charset=utf-8", b"ok".as_slice())
+        }
         ("GET", "/__alive") => {
             ALIVE.store(now_s(), Ordering::Relaxed);
             ("200 OK", "text/plain; charset=utf-8", b"ok".as_slice())
@@ -171,6 +206,20 @@ fn main() {
     }
     // quits when no page has said it is open for 90 seconds (or none came within 3 minutes of starting)
     let started = now_s();
+    // one thread keeps Windows awake while a page says Face Mace is working (the setting belongs to the thread
+    // that makes it, so the same one turns it off)
+    thread::spawn(move || {
+        let mut on = false;
+        loop {
+            let b = BUSY.load(Ordering::Relaxed);
+            let want = b != 0 && now_s().saturating_sub(b) < 45;
+            if want != on {
+                power::keep_awake(want);
+                on = want;
+            }
+            thread::sleep(Duration::from_secs(5));
+        }
+    });
     if std::env::var_os("FACEMACE_STAY").is_none() {
         thread::spawn(move || loop {
             thread::sleep(Duration::from_secs(5));

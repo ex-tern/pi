@@ -393,6 +393,9 @@ pub struct Face {
     dup_gone: alloc::collections::BTreeSet<usize>,
     src_folder: bool,
     dup_msg: String,
+    /// keeping the computer awake while it works (on unless turned off), and whether it is being kept awake now
+    no_wake: bool,
+    awake: bool,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -538,6 +541,11 @@ fn face_is_img(name: &str) -> bool {
 }
 
 fn face_update(a: u16, v: String) {
+    face_update_inner(a, v);
+    face_wake_sync();
+}
+
+fn face_update_inner(a: u16, v: String) {
     let s = st();
     let f = &mut s.face;
     match a {
@@ -740,6 +748,7 @@ fn face_update(a: u16, v: String) {
                 f.msg = "This browser cannot open a folder that way: use Choose files, or drop the folder here.".into();
             }
         }
+        34 => f.no_wake = !f.no_wake,
         // saving
         30 => {
             f.forget = !f.forget;
@@ -875,6 +884,7 @@ fn face_update(a: u16, v: String) {
 
 /// Asks the browser for the next photo's pixels (shrunk to fit 600×600).
 fn face_next() {
+    face_wake_sync();
     let f = &mut st().face;
     if f.at >= f.files.len() {
         face_finish();
@@ -1341,6 +1351,11 @@ fn ml_photo_done() {
 
 /// The discover-as-you-go pass of face_sorter.py, at the chosen strictness.
 fn face_finish() {
+    face_finish_inner();
+    face_wake_sync();
+}
+
+fn face_finish_inner() {
     {
         let f = &mut st().face;
         if f.part_size > 0 && !f.files.is_empty() {
@@ -1594,6 +1609,11 @@ fn dup_kept_written(i: usize) {
 
 /// The folder answered: duplicates moved aside or deleted (or why not).
 fn dup_answer(m: &str) {
+    dup_answer_inner(m);
+    face_wake_sync();
+}
+
+fn dup_answer_inner(m: &str) {
     let f = &mut st().face;
     if let Some(n) = m.strip_prefix("progress ") {
         f.dup_msg = format!("{} done…", n);
@@ -1603,6 +1623,21 @@ fn dup_answer(m: &str) {
         f.dup_msg = format!("{} duplicate{} taken out of your folder.", n, if n == "1" { "" } else { "s" });
     } else if let Some(e) = m.strip_prefix("error ") {
         f.dup_msg = format!("Nothing was changed: {}", e);
+    }
+}
+
+/// Whether Face Mace is working on something (scanning, reading dates, packing, saving or deleting).
+fn face_busy(f: &Face) -> bool {
+    f.running || f.pre_dating || f.date_k < f.date_list.len() || f.msg.starts_with("Packing") || f.out_asked > f.out_saved || f.dup_msg.ends_with("…")
+}
+
+/// The computer is kept awake while Face Mace works, and let sleep again when it is done.
+fn face_wake_sync() {
+    let f = &mut st().face;
+    let want = !f.no_wake && face_busy(f);
+    if want != f.awake {
+        f.awake = want;
+        host::call("wake", if want { "1" } else { "0" });
     }
 }
 
@@ -1661,6 +1696,7 @@ fn part_break() -> bool {
     let f = &mut st().face;
     let total = (f.files.len() + f.part_size - 1) / f.part_size;
     f.msg = format!("Part {} of {} done ({} of {} files). Next part goes on from there.", f.parts_done.len(), total, f.at, f.files.len());
+    face_wake_sync();
     true
 }
 
@@ -2151,6 +2187,11 @@ fn face_save_sorted() {
 }
 
 fn out_answer(m: &str) {
+    out_answer_inner(m);
+    face_wake_sync();
+}
+
+fn out_answer_inner(m: &str) {
     let f = &mut st().face;
     if let Some(n) = m.strip_prefix("dir ") {
         f.out_dir = Some(n.to_string());
@@ -2183,6 +2224,11 @@ fn zip_start(name: &str, want: Vec<(String, u32)>) {
 }
 
 fn zip_progress(m: &str) {
+    zip_progress_inner(m);
+    face_wake_sync();
+}
+
+fn zip_progress_inner(m: &str) {
     let f = &mut st().face;
     f.msg = if let Some(n) = m.strip_prefix("done ") {
         format!("Downloaded {} files.", n)
@@ -2205,6 +2251,7 @@ fn date_ask(i: usize, start: u64, len: u64) {
 }
 
 fn date_begin() {
+    face_wake_sync();
     let f = &mut st().face;
     if f.date_k >= f.date_list.len() {
         date_done();
@@ -2856,6 +2903,7 @@ fn face_view(s: &State) -> N {
                         .kid(el("output").text(format!("{}", strict as i64))),
                 )
                 .kid(el("p").cls("hint").text("Lower is stricter: more people, each with fewer photos. Higher groups more together. Faces are found once, so trying another strictness is quick."))
+                .kid(check(!f.no_wake, 34, "Keep the computer awake while it works", "Windows (or the Mac) does not go to sleep in the middle of a long sort; it can again when Face Mace is done."))
                 .kid(check(f.dedupe, 9, "Delete duplicates", "A photo or video that is there twice (copied, saved again or resized) is kept once, the biggest. Your original folder is not changed."))
                 .kid(
                     el("div")
@@ -2925,7 +2973,7 @@ fn face_view(s: &State) -> N {
             el("div")
                 .cls("fm-progress")
                 .kid(el("span").cls("md-bar").kid(el("i").style(format!("width:{:.0}%", 100.0 * (if f.pre_dating { f.date_k } else { f.at }) as f64 / total as f64))))
-                .kid(el("p").cls("hint").text(if f.pre_dating { format!("Reading when each was taken: {} of {}…", f.date_k + 1, f.files.len()) } else if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
+                .kid(el("p").cls("hint").text(if f.pre_dating { format!("Reading when each was taken: {} of {}…", f.date_k + 1, f.files.len()) } else if f.awake && face_ready(f) { format!("Scanning {} of {}… (keeping the computer awake)", f.at + 1, f.files.len()) } else if !face_ready(f) { "Loading the face engines…".to_string() } else { format!("Scanning {} of {}…", f.at + 1, f.files.len()) })),
         );
     }
     // packing a ZIP, reading dates or saving into the folder can be stopped too

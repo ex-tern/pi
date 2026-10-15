@@ -471,6 +471,13 @@ async function srcFree(dir, name) {
   for (;;) { try { await dir.getFileHandle(n); k++; const dot = name.lastIndexOf("."); n = dot > 0 ? name.slice(0, dot) + " (" + k + ")" + name.slice(dot) : name + " (" + k + ")"; } catch (_) { return n; } }
 }
 
+let wakeLock = null, wakeWanted = false, wakeBeat = 0;
+const wakeGet = () => {
+  if (!wakeWanted || wakeLock || !("wakeLock" in navigator) || document.visibilityState !== "visible") return;
+  navigator.wakeLock.request("screen").then((l) => { wakeLock = l; l.addEventListener("release", () => { wakeLock = null; }); }, () => {});
+};
+document.addEventListener("visibilitychange", wakeGet);
+
 // the folder Face Mace saves into, and what waits to be written there
 let outDir = null, outQ = [], outBusy = false, outSaved = 0, zipStop = false;
 async function outRun() {
@@ -686,6 +693,24 @@ const ops = {
   },
   // Face Mace's Stop: what waits to be written into the folder is dropped, and a ZIP being made is given up
   "save-stop": () => { outQ = []; return "1"; },
+  // keep the computer awake while Face Mace works (owner, 2026-10-15: "dont let the windows sleep"): the screen wake
+  // lock, taken again when the tab comes back; in the Windows app also a "busy" note to the program every 10 s,
+  // which then keeps Windows from sleeping (SetThreadExecutionState)
+  wake: (a) => {
+    const on = a === "1";
+    wakeWanted = on;
+    if (on) {
+      wakeGet();
+      if (!wakeBeat && /^(127\.0\.0\.1|localhost)$/.test(location.hostname)) {
+        const beat = () => fetch("/__busy", { cache: "no-store" }).catch(() => {});
+        beat(); wakeBeat = setInterval(beat, 10000);
+      }
+    } else {
+      if (wakeLock) { wakeLock.release().catch(() => {}); wakeLock = null; }
+      if (wakeBeat) { clearInterval(wakeBeat); wakeBeat = 0; fetch("/__idle", { cache: "no-store" }).catch(() => {}); }
+    }
+    return "navigator" in window && "wakeLock" in navigator ? "1" : "0";
+  },
   // a folder to read from, with access kept (the list comes back on token 2_000_005, as the file picker's)
   pickfolder: () => {
     if (typeof window.showDirectoryPicker !== "function") return null;
