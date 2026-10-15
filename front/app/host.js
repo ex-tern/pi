@@ -478,6 +478,12 @@ const wakeGet = () => {
 };
 document.addEventListener("visibilitychange", wakeGet);
 
+// Face Mace's own store in this browser (IndexedDB): each photo's scan, so a sort that was closed goes on where it
+// was (owner, 2026-10-15: "the state of the app saves automatically")
+let kvDb = null;
+const kvOpen = () => kvDb || (kvDb = new Promise((res, rej) => { const r = indexedDB.open("facemace", 1); r.onupgradeneeded = () => r.result.createObjectStore("scan"); r.onsuccess = () => res(r.result); r.onerror = () => rej(r.error); }));
+const kvDo = (mode, f) => kvOpen().then((db) => new Promise((res, rej) => { const t = db.transaction("scan", mode), q = f(t.objectStore("scan")); t.oncomplete = () => res(q && q.result); t.onerror = () => rej(t.error); }));
+
 // the folder Face Mace saves into, and what waits to be written there
 let outDir = null, outQ = [], outBusy = false, outSaved = 0, zipStop = false;
 async function outRun() {
@@ -711,6 +717,14 @@ const ops = {
     }
     return "navigator" in window && "wakeLock" in navigator ? "1" : "0";
   },
+  // the store: kvget "token\tkey" answers on the token (empty when there is none), kvput "key\tvalue", kvclear
+  kvget: (a) => {
+    const t = a.indexOf("\t"), token = +a.slice(0, t), key = a.slice(t + 1);
+    kvDo("readonly", (s) => s.get(key)).then((v) => give(token, enc.encode(v || ""), 1, 1), () => give(token, new Uint8Array(0), 1, 1));
+    return "1";
+  },
+  kvput: (a) => { const t = a.indexOf("\t"); kvDo("readwrite", (s) => s.put(a.slice(t + 1), a.slice(0, t))).catch(() => {}); return "1"; },
+  kvclear: () => { kvDo("readwrite", (s) => s.clear()).catch(() => {}); return "1"; },
   // a folder to read from, with access kept (the list comes back on token 2_000_005, as the file picker's)
   pickfolder: () => {
     if (typeof window.showDirectoryPicker !== "function") return null;

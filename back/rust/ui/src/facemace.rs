@@ -396,6 +396,10 @@ pub struct Face {
     /// keeping the computer awake while it works (on unless turned off), and whether it is being kept awake now
     no_wake: bool,
     awake: bool,
+    /// saved by itself: duplicate answers waiting for their photos, and a scan being looked up in the store
+    pending_dups: Vec<(String, u64, bool)>,
+    cache_wait: bool,
+    cache_hits: usize,
 }
 
 /// The people found so far, each kept as up to forty of their faces: a new face is matched against those (not
@@ -543,6 +547,7 @@ fn face_is_img(name: &str) -> bool {
 fn face_update(a: u16, v: String) {
     face_update_inner(a, v);
     face_wake_sync();
+    work_autosave();
 }
 
 fn face_update_inner(a: u16, v: String) {
@@ -600,6 +605,8 @@ fn face_update_inner(a: u16, v: String) {
             f.rename_only = false;
             f.quick = false;
             f.live_rename = false;
+            f.cache_hits = 0;
+            f.cache_wait = false;
             if f.by_date && (f.out_dir.is_some() || f.part_size > 0) && f.faces.len() != f.files.len() {
                 f.started = host::now();
                 predate_start();
@@ -749,6 +756,16 @@ fn face_update_inner(a: u16, v: String) {
             }
         }
         34 => f.no_wake = !f.no_wake,
+        35 => {
+            host::call("kvclear", "");
+            for k in ["facemace:work", "facemace:people", "facemace:settings"] {
+                host::store_del(k);
+            }
+            f.pending.clear();
+            f.pending_dups.clear();
+            f.imported.clear();
+            f.msg = "Everything Face Mace saved in this browser is cleared.".into();
+        }
         // saving
         30 => {
             f.forget = !f.forget;
@@ -826,6 +843,7 @@ fn face_update_inner(a: u16, v: String) {
         }
         // Stop: scanning, reading dates, packing or saving, whichever is going on
         11 => {
+            f.cache_wait = false;
             if f.running {
                 f.running = false;
                 f.stopped = true;
@@ -882,7 +900,78 @@ fn face_update_inner(a: u16, v: String) {
     }
 }
 
-/// Asks the browser for the next photo's pixels (shrunk to fit 600×600).
+/// A photo's place in the store: its name, size and date.
+fn scan_key(f: &Face, i: usize) -> String {
+    let ms = host::call("filetime", &format!("{}", f.files[i].0)).unwrap_or_default();
+    format!("{}|{}|{}", f.files[i].2, f.files[i].1 as u64, ms)
+}
+
+fn hex_f32(v: &[f32]) -> String {
+    let mut s = String::with_capacity(v.len() * 8);
+    for x in v {
+        for b in x.to_le_bytes() {
+            s.push_str(&format!("{:02x}", b));
+        }
+    }
+    s
+}
+
+fn f32_hex(s: &str) -> Vec<f32> {
+    let b: Vec<u8> = (0..s.len() / 2).filter_map(|k| u8::from_str_radix(s.get(2 * k..2 * k + 2)?, 16).ok()).collect();
+    b.chunks_exact(4).map(|c| f32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+}
+
+/// A photo's scan into the store: "1" (full: with SFace faces) or "q" (fingerprint only), the fingerprint, the faces.
+fn scan_put(i: usize) {
+    let f = &st().face;
+    let (Some(faces), Some(pic)) = (f.faces.get(i), f.pics.get(i)) else { return };
+    let kind = if f.quick { "q" } else if f.ml == 2 { "1" } else { return };
+    let p = match pic {
+        Some((h, w, ht, m)) => format!("{:016x}{:016x}{:016x}{:016x},{},{},{}", h[0], h[1], h[2], h[3], w, ht, m),
+        None => "-".to_string(),
+    };
+    let fs = match faces {
+        Some(v) => v.iter().filter(|e| e.len() == 128).map(|e| hex_f32(e)).collect::<Vec<_>>().join(","),
+        None => "x".to_string(),
+    };
+    host::call("kvput", &format!("{}\t{};{};{}", scan_key(f, i), kind, p, fs));
+}
+
+/// The store answered about the photo due next: what was kept is used (no decoding, no engines), or it is scanned.
+fn scan_got(text: &str) {
+    let f = &mut st().face;
+    if !f.running || !f.cache_wait {
+        return;
+    }
+    let parts: Vec<&str> = text.splitn(3, ';').collect();
+    let usable = parts.len() == 3 && (parts[0] == "1" || (parts[0] == "q" && f.quick));
+    if !usable {
+        // not kept (or only a fingerprint where faces are needed): scanned now
+        face_next();
+        return;
+    }
+    f.cache_wait = false;
+    let pic = if parts[1] == "-" { None } else {
+        let a: Vec<&str> = parts[1].split(',').collect();
+        let h = a.first().copied().unwrap_or("");
+        let word = |k: usize| u64::from_str_radix(h.get(16 * k..16 * k + 16).unwrap_or("0"), 16).unwrap_or(0);
+        Some(([word(0), word(1), word(2), word(3)], a.get(1).and_then(|x| x.parse().ok()).unwrap_or(0), a.get(2).and_then(|x| x.parse().ok()).unwrap_or(0), a.get(3).and_then(|x| x.parse().ok()).unwrap_or(0)))
+    };
+    let faces = if parts[2] == "x" { None } else if f.quick { Some(Vec::new()) } else { Some(parts[2].split(',').filter(|x| !x.is_empty()).map(f32_hex).filter(|e| e.len() == 128).collect()) };
+    f.cache_hits += 1;
+    f.faces.push(faces);
+    f.pics.push(pic);
+    live_save(f.faces.len() - 1);
+    face_preview();
+    let f = &mut st().face;
+    f.at += 1;
+    if !part_break() {
+        face_next();
+    }
+}
+
+/// Asks the browser for the next photo's pixels (shrunk to fit 600×600) — unless it was scanned before (the store
+/// in this browser keeps each photo's faces and fingerprint, so a sort closed part way goes on where it was).
 fn face_next() {
     face_wake_sync();
     let f = &mut st().face;
@@ -890,6 +979,13 @@ fn face_next() {
         face_finish();
         return;
     }
+    if (f.ml == 2 || f.quick) && !f.cache_wait {
+        f.cache_wait = true;
+        let key = scan_key(f, f.at);
+        host::call("kvget", &format!("{}\t{}", ZIP_TOKEN + 7, key));
+        return;
+    }
+    f.cache_wait = false;
     let (h, _, _) = f.files[f.at];
     host::call("rgba", &format!("{}\t{}\t600", FACE_TOKEN + f.at as u32, h));
 }
@@ -929,6 +1025,8 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             // a folder opened with access: its files, as the file picker gives them
             face_update(1, String::from_utf8(data).unwrap_or_default());
             st().face.src_folder = true;
+        } else if token == ZIP_TOKEN + 7 {
+            scan_got(&String::from_utf8(data).unwrap_or_default());
         } else if token == ZIP_TOKEN + 6 {
             dup_answer(&String::from_utf8(data).unwrap_or_default());
         } else if token == ZIP_TOKEN + 4 {
@@ -963,7 +1061,9 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             // renaming only: the fingerprint for duplicates is all that is needed
             f.faces.push(Some(Vec::new()));
             f.pics.push(pic);
-            live_save(f.faces.len() - 1);
+            scan_put(f.faces.len() - 1);
+            live_save(st().face.faces.len() - 1);
+            let f = &mut st().face;
             face_preview();
             let f = &mut st().face;
             f.at += 1;
@@ -1339,6 +1439,8 @@ fn ml_photo_done() {
     let embs = core::mem::take(&mut f.ml_embs);
     f.faces.push(Some(embs));
     f.pics.push(f.cur_pic.take());
+    scan_put(f.faces.len() - 1);
+    let f = &mut st().face;
     f.cur.clear();
     live_save(f.faces.len() - 1);
     face_preview();
@@ -1443,6 +1545,21 @@ fn face_restore() {
             f.forget = p[4] == "1";
         }
     }
+    if let Some(v) = host::store_get("facemace:work").and_then(|t| json::parse(&t)) {
+        if let Value::Obj(kv) = v.get("names") {
+            for (k, n) in kv {
+                f.names.insert(k.clone(), n.text());
+            }
+        }
+        for m in v.get("merges").arr() {
+            let a = m.arr();
+            if let (Some(x), Some(y)) = (a.first(), a.get(1)) {
+                f.merge.insert(x.f() as usize, y.f() as usize);
+            }
+        }
+        f.pending = v.get("answers").arr().iter().filter_map(|a| { let a = a.arr(); Some((a.first()?.text(), a.get(1)?.f() as u64, a.get(2)?.f() as usize, a.get(3)?.f() >= 1.0)) }).collect();
+        f.pending_dups = v.get("dups").arr().iter().filter_map(|a| { let a = a.arr(); Some((a.first()?.text(), a.get(1)?.f() as u64, a.get(2)?.f() >= 1.0)) }).collect();
+    }
     if !f.forget {
         if let Some(t) = host::store_get("facemace:people") {
             people_import(&t);
@@ -1454,29 +1571,70 @@ fn face_restore() {
     }
 }
 
-/// Everything about this work, as a file to open again later (here or elsewhere): settings, people and names, and
-/// every answer given (by file name and size, since the photos are chosen again).
-fn work_save() {
-    let f = &mut st().face;
-    let key = |i: usize| (f.files[i].2.clone(), f.files[i].1 as u64);
+/// The answers given (by file name and size, as the photos are chosen again): who is who, and duplicates.
+fn answers_json(f: &Face) -> (String, String, usize) {
     let mut answers: Vec<String> = Vec::new();
     for (&i, &p) in f.confirm.iter() {
         if i < f.files.len() {
-            let (n, z) = key(i);
-            answers.push(format!("[{},{},{},1]", json::quote(&n), z, p));
+            answers.push(format!("[{},{},{},1]", json::quote(&f.files[i].2), f.files[i].1 as u64, p));
         }
     }
     for &(i, p) in f.reject.iter() {
         if i < f.files.len() {
-            let (n, z) = key(i);
-            answers.push(format!("[{},{},{},0]", json::quote(&n), z, p));
+            answers.push(format!("[{},{},{},0]", json::quote(&f.files[i].2), f.files[i].1 as u64, p));
         }
     }
+    let mut dups: Vec<String> = Vec::new();
+    for &i in f.dup_keep.iter() {
+        if i < f.files.len() {
+            dups.push(format!("[{},{},1]", json::quote(&f.files[i].2), f.files[i].1 as u64));
+        }
+    }
+    for &i in f.dup_del.iter() {
+        if i < f.files.len() {
+            dups.push(format!("[{},{},0]", json::quote(&f.files[i].2), f.files[i].1 as u64));
+        }
+    }
+    let n = answers.len();
+    (answers.join(","), dups.join(","), n)
+}
+
+/// Saved by itself after every change: names, merges and every answer, so choosing the same photos again (after
+/// closing Face Mace, or the computer going off) brings them back.
+fn work_autosave() {
+    let f = &st().face;
+    if f.files.is_empty() {
+        return;
+    }
+    let (answers, dups, _) = answers_json(f);
+    // the answers about photos not chosen this time are kept too
+    let mut old_a: Vec<String> = Vec::new();
+    let mut old_d: Vec<String> = Vec::new();
+    for (n, z, p, y) in &f.pending {
+        old_a.push(format!("[{},{},{},{}]", json::quote(n), z, p, *y as u8));
+    }
+    for (n, z, k) in &f.pending_dups {
+        old_d.push(format!("[{},{},{}]", json::quote(n), z, *k as u8));
+    }
+    let join = |a: String, b: Vec<String>| { let mut v: Vec<String> = Vec::new(); if !a.is_empty() { v.push(a); } v.extend(b); v.join(",") };
+    let merges: Vec<String> = f.merge.iter().map(|(a, b)| format!("[{},{}]", a, b)).collect();
+    let names: Vec<String> = f.names.iter().map(|(k, v)| format!("{}:{}", json::quote(k), json::quote(v))).collect();
+    host::store_set(
+        "facemace:work",
+        &format!("{{\"names\":{{{}}},\"merges\":[{}],\"answers\":[{}],\"dups\":[{}]}}", names.join(","), merges.join(","), join(answers, old_a), join(dups, old_d)),
+    );
+}
+
+/// Everything about this work, as a file to open again later (here or elsewhere): settings, people and names, and
+/// every answer given (by file name and size, since the photos are chosen again).
+fn work_save() {
+    let f = &mut st().face;
+    let (answers_s, dups_s, n_answers) = answers_json(f);
     let merges: Vec<String> = f.merge.iter().map(|(a, b)| format!("[{},{}]", a, b)).collect();
     let names: Vec<String> = f.names.iter().map(|(k, v)| format!("{}:{}", json::quote(k), json::quote(v))).collect();
     let (people, n) = people_json(f, 40, 4);
     let body = format!(
-        "{{\"facemace_work\":1,\"facemace_people\":1,\"saved\":{:.0},\"settings\":{{\"strict\":{},\"dedupe\":{},\"by_date\":{},\"part_size\":{}}},\"people\":{},\"names\":{{{}}},\"answers\":[{}],\"merges\":[{}],\"files\":{}}}",
+        "{{\"facemace_work\":1,\"facemace_people\":1,\"saved\":{:.0},\"settings\":{{\"strict\":{},\"dedupe\":{},\"by_date\":{},\"part_size\":{}}},\"people\":{},\"names\":{{{}}},\"answers\":[{}],\"dups\":[{}],\"merges\":[{}],\"files\":{}}}",
         host::now(),
         f.strict,
         f.dedupe,
@@ -1484,34 +1642,56 @@ fn work_save() {
         f.part_size,
         people,
         names.join(","),
-        answers.join(","),
+        answers_s,
+        dups_s,
         merges.join(","),
         f.files.len()
     );
     let day = date_of_epoch(host::now() / 1000.0).replace(' ', "-");
     host::download(&format!("Face Mace work {}.json", day), "application/json", body.as_bytes());
-    f.msg = format!("Work saved: {} people, {} answers. Open it next time after choosing the same photos.", n, answers.len());
+    f.msg = format!("Work saved: {} people, {} answers. Open it next time after choosing the same photos.", n, n_answers);
 }
 
 /// A saved work file's answers, put on the photos chosen now (matched by name and size).
 fn work_apply_pending() {
     let f = &mut st().face;
-    if f.pending.is_empty() || f.files.is_empty() {
+    if (f.pending.is_empty() && f.pending_dups.is_empty()) || f.files.is_empty() {
         return;
     }
     let pending = core::mem::take(&mut f.pending);
     let mut hit = 0;
-    for (name, size, p, yes) in pending.iter() {
-        if let Some(i) = f.files.iter().position(|x| &x.2 == name && x.1 as u64 == *size) {
+    let mut rest = Vec::new();
+    for (name, size, p, yes) in pending.into_iter() {
+        if let Some(i) = f.files.iter().position(|x| x.2 == name && x.1 as u64 == size) {
             hit += 1;
-            if *yes {
-                f.confirm.insert(i, *p);
+            if yes {
+                f.confirm.insert(i, p);
             } else {
-                f.reject.insert((i, *p));
+                f.reject.insert((i, p));
             }
+        } else {
+            rest.push((name, size, p, yes));
         }
     }
-    f.msg = format!("{} of {} saved answers matched these photos.", hit, pending.len());
+    let total = hit + rest.len();
+    f.pending = rest;
+    let dups = core::mem::take(&mut f.pending_dups);
+    let mut drest = Vec::new();
+    for (name, size, keep) in dups.into_iter() {
+        if let Some(i) = f.files.iter().position(|x| x.2 == name && x.1 as u64 == size) {
+            if keep {
+                f.dup_keep.insert(i);
+            } else {
+                f.dup_del.insert(i);
+            }
+        } else {
+            drest.push((name, size, keep));
+        }
+    }
+    f.pending_dups = drest;
+    if hit > 0 {
+        f.msg = format!("{} of {} saved answers matched these photos.", hit, total);
+    }
 }
 
 /// Every file, who is in it, how sure, and its new name: a list to open in a spreadsheet.
@@ -1566,6 +1746,7 @@ fn people_import(text: &str) {
             }
         }
         f.pending = v.get("answers").arr().iter().filter_map(|a| { let a = a.arr(); Some((a.first()?.text(), a.get(1)?.f() as u64, a.get(2)?.f() as usize, a.get(3)?.f() >= 1.0)) }).collect();
+        f.pending_dups = v.get("dups").arr().iter().filter_map(|a| { let a = a.arr(); Some((a.first()?.text(), a.get(1)?.f() as u64, a.get(2)?.f() >= 1.0)) }).collect();
         work_apply_pending();
     }
     let mut people: Vec<(usize, Vec<Vec<f32>>)> = Vec::new();
@@ -1998,6 +2179,7 @@ fn face_compute(done: bool) {
     if done {
         live_relabel();
         face_remember();
+        work_autosave();
     }
 }
 
@@ -2957,7 +3139,8 @@ fn face_view(s: &State) -> N {
                         .kid(el("button").attr("type", "button").cls("btn").attr_if(f.result.is_none(), "disabled", "").on("click", Msg::T(Tool::Face, 33, String::new())).text("Save list (CSV)"))
                         .kid_if(!f.forget && !f.imported.is_empty(), || el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 31, String::new())).text("Forget remembered people").into()),
                 )
-                .kid(el("p").cls("hint").text("Save work keeps people, names, your answers and settings in one file: open it after choosing the same photos to go on where you were.")),
+                .kid(el("p").cls("hint").text("Saved by itself, in this browser: your answers and names after every change, and each photo's scan as it is done; choosing the same photos again (after closing Face Mace, or the computer going off) brings them back, and photos already scanned are not scanned again. Save work puts all of it in a file, to go on on another computer."))
+                .kid(el("p").kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Face, 35, String::new())).text("Clear saved data"))),
         )
         .kid(
             el("div")
@@ -3006,6 +3189,7 @@ fn face_view(s: &State) -> N {
             .kid(el("div").cls("row fm-actions").kid_if(busy && !f.running, || el("button").attr("type", "button").cls("btn fm-stop").on("click", Msg::T(Tool::Face, 11, String::new())).text("Stop").into()).kid(el("button").attr("type", "button").cls("btn primary").attr_if(!r.done, "disabled", "").on("click", Msg::T(Tool::Face, 4, String::new())).attr_if(f.live_rename, "disabled", "").text(match (f.by_date, f.out_dir.is_some()) { _ if f.live_rename && f.out_dir.is_some() => "Renamed into the folder as it went",
 _ if f.live_rename => "Download each part below", (true, true) => "Save renamed into the folder", (true, false) => "Download renamed (ZIP)", _ => "Download as ZIP" })).kid(el("span").cls("hint").text(f.msg.clone())))
             .kid_if(f.by_date, || el("p").cls("hint").text("Name the people below; anyone not named is \"unknown\". The date is the one the camera or phone wrote into the photo or video where there is one, otherwise the file's. A video's faces are looked for on one frame; one the browser cannot play is renamed as unknown.").into())
+            .kid_if(f.cache_hits > 0, || el("p").cls("hint").text(format!("{} photo{} already scanned before: taken from what was saved.", f.cache_hits, if f.cache_hits == 1 { "" } else { "s" })).into())
             .kid_if(!f.engines_used.is_empty(), || {
                 el("p").cls("hint").text(format!("Engines: {}{}.", f.engines_used, if f.ml == 3 && !f.ml_err.is_empty() { format!(" (the neural ones could not start here: {})", f.ml_err) } else { String::new() })).into()
             })
