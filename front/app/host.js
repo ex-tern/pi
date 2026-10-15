@@ -490,6 +490,25 @@ async function mlRun(model, data, dims) {
 // The folder Face Mace reads from, opened with the browser's folder access (Chrome, Edge), so that duplicates can be
 // moved aside or deleted there when the person says so: where each chosen file lives (its folder and name).
 let srcRoots = [];
+// Photos kept on a Face Mace Server (back/facemace-server; owner, 2026-10-15: "a server who serves my photos through
+// Face Mace"): files[i] is then a stand-in with the photo's name, size, type and date, and its bytes are fetched
+// from the server when they are needed (the last few kept, as a photo is read twice: decoded, then shown)
+class RemoteFile {
+  constructor(p) { this.remote = true; this.id = p.id; this.url = p.url; this.name = p.name; this.size = p.size; this.type = p.type || ""; this.lastModified = p.mtime || 0; }
+}
+const remoteKept = new Map();
+function fileOf(i) {
+  const f = files[i];
+  if (!f || !f.remote) return Promise.resolve(f);
+  if (remoteKept.has(i)) return remoteKept.get(i);
+  const p = fetch(f.url, { credentials: "same-origin" })
+    .then((r) => { if (!r.ok) throw new Error("the server answered " + r.status); return r.blob(); })
+    .then((b) => new File([b], f.name.split("/").pop(), { type: f.type || b.type, lastModified: f.lastModified }));
+  remoteKept.set(i, p);
+  if (remoteKept.size > 6) remoteKept.delete(remoteKept.keys().next().value);
+  p.catch(() => remoteKept.delete(i));
+  return p;
+}
 const srcAt = {};
 const MEDIA = /\.(jpe?g|png|heic|heif|mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i;
 async function srcWalk(dir, pre, out) {
@@ -540,7 +559,7 @@ async function outRun() {
       let d = outDir;
       for (const p of parts) d = await d.getDirectoryHandle(p, { create: true });
       const fh = await d.getFileHandle(name, { create: true }), w = await fh.createWritable();
-      await w.write(files[idx]); await w.close();
+      await w.write(await fileOf(idx)); await w.close();
       outSaved++;
       give(2000002, enc.encode("saved " + outSaved), 1, 1);
     }
@@ -566,8 +585,9 @@ async function zipFiles(name, list) {
   zipStop = false;
   for (let k = 0; k < list.length; k++) {
     if (zipStop) { tell("error stopped"); return; }
-    const [path, idx] = list[k], file = files[idx];
-    if (!file) continue;
+    const [path, idx] = list[k];
+    if (!files[idx]) continue;
+    const file = await fileOf(idx);
     const nm = enc.encode(path), size = file.size, crc = await crcOf(file);
     const x64 = cat(le(1, 2), le(16, 2), le(size, 8), le(size, 8));
     const local = cat(le(0x04034b50, 4), le(45, 2), le(0x0800, 2), le(0, 2), le(dosT, 2), le(dosD, 2), le(crc, 4), le(0xFFFFFFFF, 4), le(0xFFFFFFFF, 4), le(nm.length, 2), le(x64.length, 2), nm, x64);
@@ -649,7 +669,7 @@ const ops = {
     const [token, file, max] = a.split("\t").map(Number);
     (async () => {
       try {
-        const bmp = await decodeImage(files[file], file);
+        const bmp = await decodeImage(await fileOf(file), file);
         const k = Math.min(1, max / Math.max(bmp.width, bmp.height));
         const w = Math.max(1, Math.round(bmp.width * k)), h = Math.max(1, Math.round(bmp.height * k));
         const cv = typeof OffscreenCanvas !== "undefined" ? new OffscreenCanvas(w, h) : Object.assign(document.createElement("canvas"), { width: w, height: h });
@@ -664,7 +684,7 @@ const ops = {
   // a chosen file's bytes
   bytes: (a) => {
     const [token, file] = a.split("\t").map(Number);
-    files[file].arrayBuffer().then((b) => give(token, new Uint8Array(b), 1, 1)).catch(() => give(token, new Uint8Array(0), 0, 0));
+    fileOf(file).then((f) => f.arrayBuffer()).then((b) => give(token, new Uint8Array(b), 1, 1)).catch(() => give(token, new Uint8Array(0), 0, 0));
     return "1";
   },
   // a short tone (the game's sounds): from, to (Hz), ms, wave, gain
@@ -686,18 +706,40 @@ const ops = {
   },
   // a chosen file, as an address the page can show
   // a chosen file at full size, for the photo viewer (made once per file)
-  fileraw: (a) => { const i = +a; if (!files[i]) return ""; if (!rawUrls[i]) rawUrls[i] = isHeic(files[i]) ? (heicThumbs[i] || "") : URL.createObjectURL(files[i]); return rawUrls[i]; },
-  fileurl: (a) => (heicThumbs[+a] || (files[+a] && !isVideo(files[+a]) ? URL.createObjectURL(files[+a]) : "")),
+  fileraw: (a) => { const i = +a; if (!files[i]) return ""; if (!rawUrls[i]) rawUrls[i] = isHeic(files[i]) ? (heicThumbs[i] || "") : files[i].remote ? files[i].url : URL.createObjectURL(files[i]); return rawUrls[i]; },
+  fileurl: (a) => (heicThumbs[+a] || (files[+a] && !isVideo(files[+a]) ? (files[+a].remote ? files[+a].url : URL.createObjectURL(files[+a])) : "")),
   // part of a chosen file: token, file, start, length (Face Mace reads where a photo or video says it was taken)
   slice: (a) => {
     const [token, idx, start, len] = a.split("\t").map(Number), f = files[idx];
     if (!f) return null;
+    if (f.remote) {
+      // only that part, asked of the server (it answers ranges); the whole file if it does not
+      fetch(f.url, { credentials: "same-origin", headers: { Range: "bytes=" + start + "-" + (start + len - 1) } })
+        .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.status === 206 ? r.arrayBuffer() : r.arrayBuffer().then((b) => b.slice(start, start + len)); })
+        .then((b) => give(token, new Uint8Array(b), 1, 1), () => give(token, new Uint8Array(0), 0, 0));
+      return "1";
+    }
     f.slice(start, start + len).arrayBuffer().then((b) => give(token, new Uint8Array(b), 1, 1), () => give(token, new Uint8Array(0), 0, 0));
     return "1";
   },
   // a folder on this computer to save into (Chrome, Edge): a new folder of the given name is made in the one picked;
   // the answer comes back on token 2_000_002 ("dir <name>" or "error …"). canpick says whether the browser can.
   canpick: () => (typeof window.showDirectoryPicker === "function" ? "1" : "0"),
+  // on a Face Mace Server: the edition its page asks for ("full"), whether it keeps photos, and their list (given
+  // as a folder chosen is, on token 2_000_005; a problem on 2_000_008)
+  edition: () => document.documentElement.dataset.edition || "",
+  library: () => (document.documentElement.dataset.library ? "1" : ""),
+  srvlist: () => {
+    const lib = document.documentElement.dataset.library;
+    if (!lib) return null;
+    fetch(lib, { credentials: "same-origin" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status === 401 ? "sign in on the server's page first" : r.status === 403 ? "your account is not active yet" : "the server answered " + r.status))))
+      .then((d) => {
+        const lines = (d.photos || []).map((p) => { const i = files.length; files.push(new RemoteFile(p)); srcAt[i] = ["remote", p.id]; return i + "\t" + p.size + "\t" + ("Server/" + p.name).replace(/[\t\n]/g, " "); });
+        give(2000005, enc.encode(lines.join("\n")), 1, 1);
+      }, (e) => give(2000008, enc.encode((e && e.message) || String(e)), 1, 1));
+    return "1";
+  },
   pickdir: (a) => {
     if (typeof window.showDirectoryPicker !== "function") return null;
     window.showDirectoryPicker({ mode: "readwrite", id: "facemace" }).then(async (root) => {
@@ -774,14 +816,23 @@ const ops = {
   // duplicates out of the folder read from: "move" (into its "Duplicates (Face Mace)" folder) or "delete", then
   // the files (comma separated); "done n" or "error …" on token 2_000_006
   srcdel: (a) => {
-    const [mode, list] = a.split("\t"), ids = (list || "").split(",").filter(Boolean).map(Number);
+    const [mode, list] = a.split("\t"), all = (list || "").split(",").filter(Boolean).map(Number);
+    // photos on a Face Mace Server are put aside or deleted there; the others in their folders
+    const rem = all.filter((i) => srcAt[i] && srcAt[i][0] === "remote"), ids = all.filter((i) => srcAt[i] && srcAt[i][0] !== "remote");
     const used = [...new Set(ids.map((i) => srcAt[i] && srcAt[i][2]).filter((x) => x !== undefined))];
-    if (!used.length) return null;
+    if (!used.length && !rem.length) return null;
     // asked for every folder at once, while the click is still fresh
     const perms = used.map((ri) => srcRoots[ri].requestPermission({ mode: "readwrite" }));
     (async () => {
       for (const p of perms) if ((await p) !== "granted") throw new Error("permission to change the folder was not given");
       let n = 0;
+      for (const i of rem) {
+        const id = srcAt[i][1];
+        const r = await fetch("/api/fms/photos/" + id + (mode === "move" ? "/aside" : ""), { method: mode === "move" ? "POST" : "DELETE", headers: { "X-FMS": "1" }, credentials: "same-origin" });
+        if (!r.ok) throw new Error("the server answered " + r.status);
+        delete srcAt[i]; n++;
+        give(2000006, enc.encode("progress " + n), 1, 1);
+      }
       const asides = {};
       for (const i of ids) {
         const at = srcAt[i]; if (!at) continue;

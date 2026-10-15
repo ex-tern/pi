@@ -904,7 +904,9 @@ fn route() {
     // Face Mace on the desktop is at facemace.localhost (owner, 2026-10-15: "make the address bar only say facemace")
     let host_part = base.split("://").nth(1).unwrap_or("").split(['/', ':']).next().unwrap_or("");
     // the full Face Mace is the Windows program's (facemace.localhost); online it is the lighter one
-    s.face.full = host_part.starts_with("facemace.");
+    s.face.full = host_part.starts_with("facemace.") || host::call("edition", "").as_deref() == Some("full");
+    // on a Face Mace Server: its photos can be opened from it
+    s.face.server_lib = host::call("library", "").as_deref() == Some("1");
     let app = if base.contains("/intern") { Some(Tool::Intern) } else if base.contains("/facemace") || host_part.starts_with("facemace.") { Some(Tool::Face) } else { None };
     if let Some(tool) = app {
         s.app_mode = true;

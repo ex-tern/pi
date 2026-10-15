@@ -471,6 +471,9 @@ pub struct Face {
     /// "online version is limited version, with 100 photos only and lighter"): a hundred photos at a time, the light
     /// engine only (OpenCV's cascade and LBPH: nothing big to download), and no getting surer without end
     pub full: bool,
+    /// on a Face Mace Server (back/facemace-server): the person's photos there can be opened (owner, 2026-10-15: "a
+    /// server who serves my photos through Face Mace")
+    pub server_lib: bool,
     /// Reset asked for once (when): a second click within a few seconds resets
     reset_armed: f64,
 }
@@ -543,8 +546,8 @@ struct FaceResult {
 /// The version, and its name, raised with every change pushed (owner, 2026-10-15: "write the version name for each
 /// push"); the page shows the number and the edition only, the name is in the commits and the Windows release (the
 /// build reads both from here)
-pub const FM_VERSION: &str = "1.2.2";
-pub const FM_VERSION_NAME: &str = "Edition shown";
+pub const FM_VERSION: &str = "1.3.0";
+pub const FM_VERSION_NAME: &str = "Home server";
 
 const FACE_TOKEN: u32 = 1_000_000;
 /// photos at a time, online
@@ -655,6 +658,11 @@ fn face_update_inner(a: u16, v: String) {
             }
         }
         37 => refine_start(),
+        40 => {
+            if host::call("srvlist", "").is_some() {
+                f.msg = "Loading your photos from the server…".into();
+            }
+        }
         39 => {
             let now = host::now();
             if now - f.reset_armed < 4000.0 {
@@ -1330,6 +1338,8 @@ pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
             // a folder opened with access: its files, as the file picker gives them
             face_update(1, String::from_utf8(data).unwrap_or_default());
             st().face.src_folder = true;
+        } else if token == ZIP_TOKEN + 8 {
+            st().face.msg = format!("Your photos could not be loaded from the server: {}.", String::from_utf8(data).unwrap_or_default());
         } else if token == ZIP_TOKEN + 7 {
             scan_got(&String::from_utf8(data).unwrap_or_default());
         } else if token == ZIP_TOKEN + 6 {
@@ -4103,6 +4113,13 @@ fn face_view(s: &State) -> N {
                         .on("drop", Msg::TV(Tool::Face, 1))
                         .kid(el("p").cls("fm-drop-t").text(if f.files.is_empty() { "Drop folders or files here, as many as you like" } else { "Drop more folders or files here to add them" }))
                         .kid(el("p").cls("hint").text("JPG, PNG, HEIC and videos (MP4, MOV, MKV, WebM, AVI and more)"))
+                        .kid_if(f.server_lib, || {
+                            el("div")
+                                .cls("row fm-srv")
+                                .kid(el("button").attr("type", "button").cls("btn primary").attr_if(f.running, "disabled", "").on("click", Msg::T(Tool::Face, 40, String::new())).text(if f.sources.iter().any(|x| x.0 == "Server") { "Your photos on this server (added)" } else { "Your photos on this server" }))
+                                .kid(el("a").cls("btn").attr("href", "/").text("Upload more…"))
+                                .into()
+                        })
                         .kid(
                             el("div")
                                 .cls("row")
@@ -4494,7 +4511,7 @@ _ if f.live_rename => "Download each part below", (true, true) => "Save renamed 
     }
     // the version and the edition only (owner, 2026-10-15: "keep the version number shown only, and edition whether
     // light or full for Windows")
-    root = root.kid(el("p").cls("fm-version").text(format!("Face Mace {} · {}", FM_VERSION, if f.full { "Full edition for Windows" } else { "Light edition (online)" })));
+    root = root.kid(el("p").cls("fm-version").text(format!("Face Mace {} · {}", FM_VERSION, if f.full && f.server_lib { "Full edition (your server)" } else if f.full { "Full edition for Windows" } else { "Light edition (online)" })));
     root.into()
 }
 
@@ -4550,6 +4567,7 @@ const FACE_CSS: &str = "\
 .fm-drop .row{justify-content:center}.fm-drop label.btn{cursor:pointer}\
 .fm-settings{margin:12px 0}.fm-settings input{vertical-align:middle;width:220px}\
 .fm-progress{margin:14px 0}\
+.fm-srv{justify-content:center;margin:4px 0 10px;gap:8px}\
 .fm-version{margin:28px 0 4px;text-align:center;font-size:12px;color:var(--muted)}\
 .fm-busy,.fm-busy *{cursor:progress}.fm-busy input[type=text],.fm-busy input:not([type]),.fm-busy textarea{cursor:text}\
 .fm-intro{position:relative}.fm-reset{float:right;margin:0 0 6px 10px;padding:4px 12px;font-size:13px}.fm-reset.armed{border-color:#c0392b;color:#c0392b}\

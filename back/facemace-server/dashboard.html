@@ -1,0 +1,295 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Face Mace Server</title>
+<link rel="icon" href="/icon.svg">
+<style>
+:root{--bg:#f6f5f1;--card:#fff;--ink:#1b1b1a;--muted:#6b6a64;--line:#e3e1d9;--accent:#2f5bd3;--accent-ink:#fff;--ok:#1f8a4c;--warn:#b4561b;--bad:#b3261e;--soft:#eef1fb;color-scheme:light}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--bg:#141413;--card:#1d1d1b;--ink:#ecebe6;--muted:#a3a29b;--line:#33322e;--accent:#8aa6ff;--accent-ink:#0e1220;--ok:#5cc58a;--warn:#e19a62;--bad:#ff8a80;--soft:#232838;color-scheme:dark}}
+:root[data-theme=dark]{--bg:#141413;--card:#1d1d1b;--ink:#ecebe6;--muted:#a3a29b;--line:#33322e;--accent:#8aa6ff;--accent-ink:#0e1220;--ok:#5cc58a;--warn:#e19a62;--bad:#ff8a80;--soft:#232838;color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.5 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+header{display:flex;align-items:center;gap:12px;padding:14px 20px;border-bottom:1px solid var(--line);background:var(--card);position:sticky;top:0;z-index:5}
+header h1{font-size:18px;margin:0;font-weight:650;letter-spacing:-.01em}
+header .who{margin-left:auto;display:flex;gap:10px;align-items:center;color:var(--muted);font-size:14px}
+main{max-width:980px;margin:0 auto;padding:20px 16px 60px;display:grid;gap:16px}
+.card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:18px 20px}
+.card h2{margin:0 0 4px;font-size:17px}
+.lede{color:var(--muted);margin:0 0 12px}
+.grid2{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:16px}
+label.f{display:grid;gap:4px;margin:10px 0;font-size:14px}
+input[type=text],input[type=password],input[type=number],select,textarea{font:inherit;padding:9px 11px;border:1px solid var(--line);border-radius:9px;background:var(--bg);color:var(--ink);width:100%}
+button,.btn{font:inherit;padding:8px 14px;border-radius:9px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;text-decoration:none;display:inline-flex;align-items:center;gap:6px}
+button.primary,.btn.primary{background:var(--accent);border-color:var(--accent);color:var(--accent-ink)}
+button.danger{color:var(--bad)}
+button:disabled{opacity:.5;cursor:default}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}
+.msg{font-size:14px;margin:8px 0 0;min-height:1em}.msg.bad{color:var(--bad)}.msg.ok{color:var(--ok)}
+.bar{height:8px;border-radius:99px;background:var(--line);overflow:hidden}.bar i{display:block;height:100%;background:var(--accent)}
+.drop{border:2px dashed var(--line);border-radius:12px;padding:22px;text-align:center;color:var(--muted);margin:12px 0}
+.drop.on{border-color:var(--accent);background:var(--soft)}
+.thumbs{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:6px;margin-top:12px}
+.thumbs figure{margin:0;position:relative;aspect-ratio:1;border-radius:8px;overflow:hidden;background:var(--line)}
+.thumbs img{width:100%;height:100%;object-fit:cover;display:block}
+.thumbs figure span{position:absolute;inset:auto 0 0 0;font-size:11px;padding:2px 4px;background:rgba(0,0,0,.45);color:#fff;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.thumbs figure button{position:absolute;top:4px;right:4px;padding:0 7px;font-size:14px;line-height:22px;border-radius:99px;opacity:0;background:rgba(0,0,0,.6);color:#fff;border:0}
+.thumbs figure:hover button,.thumbs figure:focus-within button{opacity:1}
+table{border-collapse:collapse;width:100%;font-size:14px}
+th,td{text-align:left;padding:8px 6px;border-bottom:1px solid var(--line);vertical-align:middle}
+th{font-weight:600;color:var(--muted);font-size:13px}
+.tw{overflow-x:auto}
+.pill{font-size:12px;padding:1px 8px;border-radius:99px;border:1px solid var(--line);white-space:nowrap}
+.pill.active{color:var(--ok);border-color:currentColor}.pill.pending{color:var(--warn);border-color:currentColor}.pill.disabled{color:var(--bad);border-color:currentColor}
+.choice{display:grid;gap:8px;margin:10px 0}
+.choice label{display:flex;gap:10px;align-items:flex-start;border:1px solid var(--line);border-radius:10px;padding:10px 12px;cursor:pointer}
+.choice label.off{opacity:.55;cursor:default}
+.choice small{display:block;color:var(--muted)}
+.conf{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start;margin-top:12px;padding:14px;border-radius:12px;background:var(--soft)}
+.conf svg{width:220px;height:220px;background:#fff;border-radius:8px}
+.conf pre{margin:0;font-size:12px;white-space:pre-wrap;word-break:break-all;background:var(--card);padding:10px;border-radius:8px;border:1px solid var(--line)}
+.hint{color:var(--muted);font-size:13px}
+.warnbox{border-left:3px solid var(--warn);padding:8px 12px;background:var(--soft);border-radius:6px;font-size:14px}
+@media (max-width:600px){.conf{grid-template-columns:1fr}.conf svg{width:100%;height:auto;max-width:260px}header{padding:12px 16px}}
+[hidden]{display:none!important}
+</style>
+</head>
+<body>
+<header><h1>Face Mace Server</h1><div class="who" id="who"></div></header>
+<main id="main"><p class="hint">Loading…</p></main>
+<script>
+"use strict";
+const $ = (s, r = document) => r.querySelector(s);
+const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+const gb = (b) => b >= 1e9 ? (b / 1e9).toFixed(1) + " GB" : b >= 1e6 ? (b / 1e6).toFixed(1) + " MB" : b >= 1e3 ? Math.round(b / 1e3) + " kB" : (b || 0) + " B";
+async function api(path, opt = {}) {
+  const o = { credentials: "same-origin", ...opt, headers: { "X-FMS": "1", ...(opt.json ? { "Content-Type": "application/json" } : {}), ...(opt.headers || {}) } };
+  if (opt.json) o.body = JSON.stringify(opt.json);
+  const r = await fetch(path, o);
+  let d = null; try { d = await r.json(); } catch (_) {}
+  if (!r.ok) { const e = new Error((d && d.detail) || ("The server answered " + r.status)); e.status = r.status; throw e; }
+  return d;
+}
+let ME = null, PUB = { open_signup: false }, PHOTOS = [], SHOWN = 120;
+
+async function boot() {
+  try { PUB = await api("/api/fms/public"); } catch (_) {}
+  try { ME = await api("/api/fms/me"); } catch (e) { ME = null; }
+  render();
+}
+
+function render() {
+  const who = $("#who");
+  who.innerHTML = ME ? `<span>${esc(ME.name)}${ME.admin ? " · owner" : ""}</span><button id="out">Sign out</button>` : "";
+  if (ME) $("#out").onclick = async () => { await api("/api/fms/logout", { method: "POST" }); ME = null; render(); };
+  const m = $("#main");
+  if (!ME) return signedOut(m);
+  if (ME.status !== "active") {
+    m.innerHTML = `<section class="card"><h2>${ME.status === "pending" ? "Waiting for approval" : "Account disabled"}</h2>
+      <p class="lede">${ME.status === "pending" ? "The owner of this server approves new accounts. Come back once they have; there is nothing else to do." : "The owner has turned this account off."}</p></section>`;
+    return;
+  }
+  m.innerHTML = `
+    <section class="card" id="photos"></section>
+    <section class="card" id="vpn"></section>
+    ${ME.admin ? '<section class="card" id="admin"></section>' : ""}
+    <section class="card" id="acct"></section>`;
+  photosCard(); vpnCard(); acctCard(); if (ME.admin) adminCard();
+}
+
+// ---------------------------------------------------------------- signed out
+function signedOut(m) {
+  m.innerHTML = `
+    <section class="card"><h2>Your photos, sorted by face, and a private VPN</h2>
+      <p class="lede">Keep your photos on this server, sort them by person with Face Mace, and connect your devices through its VPN. Your photos are yours only.</p></section>
+    <div class="grid2">
+      <section class="card"><h2>Sign in</h2>
+        <form id="in"><label class="f">User name<input type="text" name="name" autocomplete="username" required></label>
+        <label class="f">Password<input type="password" name="password" autocomplete="current-password" required></label>
+        <button class="primary">Sign in</button><p class="msg" id="inmsg"></p></form></section>
+      <section class="card"><h2>Create an account</h2>
+        <p class="hint">${PUB.open_signup ? "Accounts are open: you can sign in right after." : "The owner approves new accounts before they can be used."}</p>
+        <form id="up"><label class="f">User name<input type="text" name="name" autocomplete="username" minlength="3" maxlength="32" pattern="[A-Za-z0-9][A-Za-z0-9_.\\-]{2,31}" required></label>
+        <label class="f">Password (10 characters or more)<input type="password" name="password" autocomplete="new-password" minlength="10" required></label>
+        <label class="f">A note for the owner (who you are)<input type="text" name="note" maxlength="300"></label>
+        <button class="primary">Create the account</button><p class="msg" id="upmsg"></p></form></section>
+    </div>`;
+  $("#in").onsubmit = async (e) => {
+    e.preventDefault(); const f = new FormData(e.target), msg = $("#inmsg");
+    try { await api("/api/fms/login", { method: "POST", json: { name: f.get("name"), password: f.get("password") } }); ME = await api("/api/fms/me"); render(); }
+    catch (er) { msg.className = "msg bad"; msg.textContent = er.message; }
+  };
+  $("#up").onsubmit = async (e) => {
+    e.preventDefault(); const f = new FormData(e.target), msg = $("#upmsg");
+    try { const d = await api("/api/fms/signup", { method: "POST", json: { name: f.get("name"), password: f.get("password"), note: f.get("note") } }); msg.className = "msg ok"; msg.textContent = d.message; e.target.reset(); }
+    catch (er) { msg.className = "msg bad"; msg.textContent = er.message; }
+  };
+}
+
+// ---------------------------------------------------------------- photos
+async function photosCard() {
+  const c = $("#photos");
+  try { PHOTOS = (await api("/api/fms/photos")).photos; ME = await api("/api/fms/me"); } catch (e) { c.innerHTML = `<p class="msg bad">${esc(e.message)}</p>`; return; }
+  const pct = ME.quota ? Math.min(100, 100 * ME.used / ME.quota) : 0;
+  c.innerHTML = `
+    <div class="row" style="justify-content:space-between"><div><h2>Your photos</h2><p class="lede">${PHOTOS.length} photos and videos · ${gb(ME.used)} of ${gb(ME.quota)}</p></div>
+      <a class="btn primary" href="/facemace/">Sort them with Face Mace →</a></div>
+    <div class="bar" title="${pct.toFixed(0)}% of your space"><i style="width:${pct}%"></i></div>
+    <div class="drop" id="drop">Drop photos, videos or whole folders here
+      <div class="row" style="justify-content:center;margin-top:10px">
+        <label class="btn">Choose files<input type="file" id="pf" multiple accept="image/*,video/*,.heic,.heif" hidden></label>
+        <label class="btn">Choose a folder<input type="file" id="pd" webkitdirectory multiple hidden></label></div>
+      <div id="prog" hidden style="margin-top:12px"><div class="bar"><i id="progi" style="width:0"></i></div><p class="hint" id="progt"></p></div>
+    </div>
+    <p class="msg" id="pmsg"></p>
+    <div class="thumbs" id="thumbs"></div>
+    <div class="row" style="justify-content:center;margin-top:10px" id="more"></div>`;
+  const drop = $("#drop");
+  drop.ondragover = (e) => { e.preventDefault(); drop.classList.add("on"); };
+  drop.ondragleave = () => drop.classList.remove("on");
+  drop.ondrop = async (e) => { e.preventDefault(); drop.classList.remove("on"); upload(await dropped(e.dataTransfer)); };
+  $("#pf").onchange = (e) => upload([...e.target.files].map((f) => [f.name, f]));
+  $("#pd").onchange = (e) => upload([...e.target.files].map((f) => [f.webkitRelativePath || f.name, f]));
+  thumbs();
+}
+function thumbs() {
+  const t = $("#thumbs"); if (!t) return;
+  t.innerHTML = PHOTOS.slice(0, SHOWN).map((p) => `<figure title="${esc(p.name)}"><img loading="lazy" alt="" src="${p.url}/thumb" onerror="this.remove()"><span>${esc(p.name.split("/").pop())}</span><button data-del="${p.id}" aria-label="Delete ${esc(p.name)}">×</button></figure>`).join("");
+  t.querySelectorAll("[data-del]").forEach((b) => b.onclick = async () => {
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Delete?"; setTimeout(() => { b.dataset.sure = ""; b.textContent = "×"; }, 3000); return; }
+    try { await api("/api/fms/photos/" + b.dataset.del, { method: "DELETE" }); PHOTOS = PHOTOS.filter((p) => p.id !== b.dataset.del); thumbs(); } catch (e) { $("#pmsg").textContent = e.message; }
+  });
+  $("#more").innerHTML = PHOTOS.length > SHOWN ? `<button id="moreb">Show more (${PHOTOS.length - SHOWN} left)</button>` : "";
+  if ($("#moreb")) $("#moreb").onclick = () => { SHOWN += 240; thumbs(); };
+}
+async function dropped(dt) {
+  const ents = [...(dt.items || [])].map((i) => i.webkitGetAsEntry && i.webkitGetAsEntry()).filter(Boolean), out = [];
+  if (!ents.length) return [...dt.files].map((f) => [f.name, f]);
+  const all = (d) => new Promise((res) => { const r = d.createReader(), acc = []; const step = () => r.readEntries((es) => es.length ? (acc.push(...es), step()) : res(acc), () => res(acc)); step(); });
+  const walk = async (e, pre) => { if (e.isFile) { const f = await new Promise((r) => e.file(r, () => r(null))); if (f) out.push([pre + e.name, f]); } else if (e.isDirectory) for (const c of await all(e)) await walk(c, pre + e.name + "/"); };
+  for (const e of ents) await walk(e, "");
+  return out;
+}
+const MEDIA = /\.(jpe?g|png|heic|heif|mp4|m4v|mov|3gp|3g2|avi|mkv|webm|wmv|mts|m2ts|mpg|mpeg|flv|ogv)$/i;
+async function upload(list) {
+  list = list.filter(([n]) => MEDIA.test(n));
+  const msg = $("#pmsg"), prog = $("#prog"), pi = $("#progi"), pt = $("#progt");
+  if (!list.length) { msg.className = "msg bad"; msg.textContent = "No photos or videos there."; return; }
+  const total = list.reduce((a, [, f]) => a + f.size, 0); let sent = 0, added = 0; const skipped = [];
+  prog.hidden = false; msg.textContent = "";
+  // in batches (some files, or 200 MB), each with its progress
+  for (let k = 0; k < list.length;) {
+    const batch = []; let bytes = 0;
+    while (k < list.length && batch.length < 25 && (bytes === 0 || bytes + list[k][1].size < 2e8)) { batch.push(list[k]); bytes += list[k][1].size; k++; }
+    const fd = new FormData();
+    batch.forEach(([n, f]) => fd.append("files", f, n));
+    fd.append("mtimes", batch.map(([, f]) => f.lastModified || "").join(","));
+    try {
+      const d = await new Promise((res, rej) => {
+        const x = new XMLHttpRequest(); x.open("POST", "/api/fms/photos"); x.setRequestHeader("X-FMS", "1");
+        x.upload.onprogress = (e) => { pi.style.width = (100 * (sent + e.loaded * bytes / Math.max(e.total, 1)) / total) + "%"; pt.textContent = `Uploading… ${gb(sent + e.loaded)} of ${gb(total)}`; };
+        x.onload = () => { let d = null; try { d = JSON.parse(x.responseText); } catch (_) {} x.status < 300 ? res(d) : rej(new Error((d && d.detail) || "The server answered " + x.status)); };
+        x.onerror = () => rej(new Error("The upload was cut off."));
+        x.send(fd);
+      });
+      added += d.added.length; skipped.push(...d.skipped);
+    } catch (e) { msg.className = "msg bad"; msg.textContent = e.message; break; }
+    sent += bytes;
+  }
+  prog.hidden = true;
+  if (!msg.textContent) { msg.className = skipped.length ? "msg bad" : "msg ok"; msg.textContent = `${added} added.` + (skipped.length ? ` ${skipped.length} not: ${[...new Set(skipped.map((s) => s.why))].join(", ")}.` : ""); }
+  const keep = msg.textContent, cls = msg.className;
+  await photosCard(); $("#pmsg").className = cls; $("#pmsg").textContent = keep;
+}
+
+// ---------------------------------------------------------------- VPN
+async function vpnCard() {
+  const c = $("#vpn");
+  let d; try { d = await api("/api/fms/vpn"); } catch (e) { c.innerHTML = `<h2>VPN</h2><p class="msg bad">${esc(e.message)}</p>`; return; }
+  const rows = d.devices.map((x) => `<tr><td>${esc(x.name)}</td><td>${x.tunnel === "full" ? "All internet" : "This server only"}</td><td>${esc(x.ip)}</td>
+      <td>${x.rx != null ? gb(x.rx) + " ↓ · " + gb(x.tx) + " ↑" : "—"}</td><td>${x.handshake ? new Date(x.handshake * 1000).toLocaleString() : "not yet"}</td>
+      <td><button class="danger" data-rm="${x.id}">Remove</button></td></tr>`).join("");
+  c.innerHTML = `<h2>VPN</h2>
+    <p class="lede">Connect your phone or computer to this server with WireGuard (a free app for every system). ${d.full_allowed ? "You may also send all your internet through it." : "It reaches this server; the owner can also allow you to send all your internet through it."}</p>
+    ${!d.vpn ? '<p class="warnbox">The VPN is not switched on on this server yet (development mode): devices are kept but do not connect.</p>' : ""}
+    ${d.devices.length ? `<div class="tw"><table><thead><tr><th>Device</th><th>Goes to</th><th>Address</th><th>Data (this session)</th><th>Last seen</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>` : '<p class="hint">No devices yet.</p>'}
+    <form id="addd" style="margin-top:14px"><div class="row"><input type="text" name="name" placeholder="Device name, e.g. Phone" maxlength="40" required style="max-width:280px">
+      <button class="primary" ${d.devices.length >= d.max ? "disabled" : ""}>Add a device</button><span class="hint">${d.devices.length} of ${d.max}</span></div>
+      <div class="choice">
+        <label><input type="radio" name="tunnel" value="server" checked><span>This server only<small>Your photos and Face Mace, privately, from anywhere. The rest of your internet goes as usual.</small></span></label>
+        <label class="${d.full_allowed ? "" : "off"}"><input type="radio" name="tunnel" value="full" ${d.full_allowed ? "" : "disabled"}><span>All my internet<small>${d.full_allowed ? "Everything you do online goes through this server (as from its address)." : "Not allowed for your account."}</small></span></label>
+      </div></form>
+    <p class="msg" id="vmsg"></p><div id="newconf"></div>`;
+  c.querySelectorAll("[data-rm]").forEach((b) => b.onclick = async () => {
+    if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Sure? It will stop connecting"; return; }
+    try { await api("/api/fms/vpn/" + b.dataset.rm, { method: "DELETE" }); vpnCard(); } catch (e) { $("#vmsg").textContent = e.message; }
+  });
+  $("#addd").onsubmit = async (e) => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try {
+      const n = await api("/api/fms/vpn", { method: "POST", json: { name: f.get("name"), tunnel: f.get("tunnel") } });
+      await vpnCard();
+      const blob = URL.createObjectURL(new Blob([n.conf], { type: "text/plain" }));
+      $("#newconf").innerHTML = `<div class="conf"><div>${n.qr_svg}</div><div>
+        <h2>${esc(n.name)} is ready</h2>
+        <p class="warnbox"><b>Shown once.</b> Its key is not kept on the server: scan it or save the file now. If it is lost, remove the device and add it again.</p>
+        <ol class="hint"><li>Install WireGuard on the device (App Store, Google Play, wireguard.com).</li><li>On a phone: Add a tunnel → Scan from QR code. On a computer: Import tunnel from file.</li><li>Switch it on.</li></ol>
+        <div class="row"><a class="btn primary" href="${blob}" download="${esc(n.file)}">Download ${esc(n.file)}</a><button id="cp">Copy</button><button id="hide">Done</button></div>
+        <details style="margin-top:8px"><summary class="hint">Show the configuration</summary><pre>${esc(n.conf)}</pre></details></div></div>`;
+      $("#cp").onclick = () => navigator.clipboard.writeText(n.conf).then(() => $("#cp").textContent = "Copied");
+      $("#hide").onclick = () => { $("#newconf").innerHTML = ""; URL.revokeObjectURL(blob); };
+    } catch (er) { $("#vmsg").className = "msg bad"; $("#vmsg").textContent = er.message; }
+  };
+}
+
+// ---------------------------------------------------------------- account
+function acctCard() {
+  const c = $("#acct");
+  c.innerHTML = `<h2>Account</h2><form id="pw" class="row" style="align-items:end">
+    <label class="f" style="flex:1;min-width:180px">Present password<input type="password" name="old" autocomplete="current-password" required></label>
+    <label class="f" style="flex:1;min-width:180px">New password<input type="password" name="new" minlength="10" autocomplete="new-password" required></label>
+    <button style="margin:10px 0">Change password</button></form><p class="msg" id="pwmsg"></p>`;
+  $("#pw").onsubmit = async (e) => {
+    e.preventDefault(); const f = new FormData(e.target);
+    try { await api("/api/fms/password", { method: "POST", json: { old: f.get("old"), new: f.get("new") } }); ME = null; render(); }
+    catch (er) { $("#pwmsg").className = "msg bad"; $("#pwmsg").textContent = er.message; }
+  };
+}
+
+// ---------------------------------------------------------------- the owner
+async function adminCard() {
+  const c = $("#admin");
+  let d; try { d = await api("/api/fms/admin/users"); } catch (e) { c.innerHTML = `<p class="msg bad">${esc(e.message)}</p>`; return; }
+  const pend = d.users.filter((u) => u.status === "pending").length;
+  const rows = d.users.map((u) => `<tr data-u="${u.id}">
+      <td><b>${esc(u.name)}</b>${u.admin ? ' <span class="pill">owner</span>' : ""}${u.note ? `<div class="hint">${esc(u.note)}</div>` : ""}</td>
+      <td><span class="pill ${u.status}">${u.status === "pending" ? "waiting" : u.status}</span></td>
+      <td>${u.photos} · ${gb(u.used)}<div class="hint">of <input type="number" min="0" step="1" value="${(u.quota / 1e9).toFixed(0)}" data-quota style="width:70px;padding:2px 6px"> GB</div></td>
+      <td>${u.devices}${u.vpn_rx || u.vpn_tx ? `<div class="hint">${gb(u.vpn_rx)} ↓ · ${gb(u.vpn_tx)} ↑</div>` : ""}</td>
+      <td><label class="row" style="gap:6px"><input type="checkbox" data-full ${u.full_tunnel ? "checked" : ""}> allowed</label></td>
+      <td class="row">${u.status !== "active" ? '<button class="primary" data-st="active">Approve</button>' : '<button data-st="disabled">Disable</button>'}<button class="danger" data-del>Delete</button></td></tr>`).join("");
+  c.innerHTML = `<h2>People ${pend ? `<span class="pill pending">${pend} waiting</span>` : ""}</h2>
+    <p class="lede">Approve who may use this server, how much space each has, and who may send all their internet through it.</p>
+    <p class="warnbox">“All internet” means that person's traffic leaves from your home connection: whatever they do online looks as if it came from you. Allow it only for people you trust.</p>
+    <label class="row" style="margin:12px 0"><input type="checkbox" id="open" ${d.open_signup ? "checked" : ""}> Open sign-up (new accounts work at once, without your approval)</label>
+    <div class="tw"><table><thead><tr><th>Person</th><th>State</th><th>Photos</th><th>Devices</th><th>All internet</th><th></th></tr></thead><tbody>${rows}</tbody></table></div>
+    <p class="msg" id="amsg"></p>`;
+  const set = async (uid, body) => { try { await api("/api/fms/admin/users/" + uid, { method: "POST", json: body }); adminCard(); } catch (e) { $("#amsg").className = "msg bad"; $("#amsg").textContent = e.message; } };
+  $("#open").onchange = async (e) => { await api("/api/fms/admin/settings", { method: "POST", json: { open_signup: e.target.checked } }); };
+  c.querySelectorAll("tr[data-u]").forEach((tr) => {
+    const uid = tr.dataset.u;
+    tr.querySelectorAll("[data-st]").forEach((b) => b.onclick = () => set(uid, { status: b.dataset.st }));
+    tr.querySelector("[data-full]").onchange = (e) => set(uid, { full_tunnel: e.target.checked });
+    tr.querySelector("[data-quota]").onchange = (e) => set(uid, { quota_gb: +e.target.value });
+    tr.querySelector("[data-del]").onclick = async (e) => {
+      const b = e.target;
+      if (b.dataset.sure !== "1") { b.dataset.sure = "1"; b.textContent = "Delete with all their photos?"; return; }
+      try { await api("/api/fms/admin/users/" + uid, { method: "DELETE" }); adminCard(); } catch (er) { $("#amsg").className = "msg bad"; $("#amsg").textContent = er.message; }
+    };
+  });
+}
+boot();
+</script>
+</body>
+</html>

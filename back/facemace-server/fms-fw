@@ -1,0 +1,47 @@
+#!/bin/bash
+# Face Mace Server's firewall for the VPN (root; run by WireGuard as it starts and stops: wg0.conf PostUp/PostDown).
+#   * VPN devices reach this machine's web (80, 443) and pings, nothing else on it;
+#   * they do not reach each other, nor the home network (or any private address);
+#   * they reach the internet only when allowed (chain FMS_NET, filled by the server through fms-wg), sent out
+#     from this machine's address (NAT).
+set -euo pipefail
+what="${1:-}" IF="${2:-wg0}"
+NET="10.66.0.0/16"
+WAN="$(ip route show default | awk '/default/ {print $5; exit}')"
+PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10"
+
+del() { while iptables "$@" 2>/dev/null; do :; done; }   # take a rule away, however many times it is there
+
+if [[ "$what" == "up" ]]; then
+  iptables -N FMS_NET 2>/dev/null || true
+  iptables -F FMS_NET
+  iptables -A FMS_NET -j DROP
+  iptables -N FMS_FWD 2>/dev/null || true
+  iptables -F FMS_FWD
+  iptables -A FMS_FWD -o "$IF" -j DROP
+  for n in $PRIVATE; do iptables -A FMS_FWD -d "$n" -j DROP; done
+  iptables -A FMS_FWD -j FMS_NET
+  iptables -C FORWARD -i "$IF" -j FMS_FWD 2>/dev/null || iptables -I FORWARD 1 -i "$IF" -j FMS_FWD
+  iptables -C FORWARD -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+    || iptables -I FORWARD 1 -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  [[ -n "$WAN" ]] && { iptables -t nat -C POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE 2>/dev/null \
+    || iptables -t nat -A POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE; }
+  iptables -N FMS_IN 2>/dev/null || true
+  iptables -F FMS_IN
+  iptables -A FMS_IN -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  iptables -A FMS_IN -p tcp -m multiport --dports 80,443 -j ACCEPT
+  iptables -A FMS_IN -p icmp -j ACCEPT
+  iptables -A FMS_IN -j DROP
+  iptables -C INPUT -i "$IF" -j FMS_IN 2>/dev/null || iptables -I INPUT 1 -i "$IF" -j FMS_IN
+  # the server puts its devices back (and who may use the internet) when it starts: start it again, without waiting
+  systemctl --no-block try-restart facemace.service 2>/dev/null || true
+elif [[ "$what" == "down" ]]; then
+  del -D FORWARD -i "$IF" -j FMS_FWD
+  del -D FORWARD -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  [[ -n "$WAN" ]] && del -t nat -D POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE
+  del -D INPUT -i "$IF" -j FMS_IN
+  for c in FMS_FWD FMS_IN FMS_NET; do iptables -F "$c" 2>/dev/null || true; done
+  for c in FMS_FWD FMS_IN FMS_NET; do iptables -X "$c" 2>/dev/null || true; done
+else
+  echo "usage: fms-fw up|down INTERFACE" >&2; exit 2
+fi
