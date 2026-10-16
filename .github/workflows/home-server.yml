@@ -35,8 +35,9 @@ jobs:
             echo "try $i: $code"; [ "$code" = 200 ] && break; sleep 5
           done
           [ "$code" = 200 ]
-          # the password holds: the page itself asks for it
-          curl -s "$A/" | head -c 400; echo
+          # the password holds: the page itself answers 401 until it is given
+          page=$(curl -s -o /dev/null -w '%{http_code}' "$A/")
+          echo "page without the password: $page"; [ "$page" = 401 ]
           grep -q '^SITE_PASSWORD=ci-test-password' /etc/piii-site.env
           systemctl is-active piii-site piii-site-tunnel
 
