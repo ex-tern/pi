@@ -25,7 +25,9 @@ say() { printf '\n\033[1m== %s\033[0m\n' "$*"; }
 
 address() {
   for _ in $(seq 1 60); do
-    a="$(journalctl -u piii-site-tunnel -n 200 --no-pager -o cat 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | tail -1 || true)"
+    # only what the tunnel running now said (each start has a new address)
+    inv="$(systemctl show -p InvocationID --value piii-site-tunnel 2>/dev/null || true)"
+    a="$(journalctl _SYSTEMD_INVOCATION_ID="$inv" --no-pager -o cat 2>/dev/null | grep -o 'https://[a-z0-9-]*\.trycloudflare\.com' | grep -v 'api\.trycloudflare' | tail -1 || true)"
     [[ -n "$a" ]] && { echo "$a"; return 0; }
     sleep 1
   done

@@ -10,6 +10,9 @@ on:
       - ".github/workflows/home-server.yml"
   workflow_dispatch:
 
+permissions:
+  contents: write
+
 jobs:
   install:
     runs-on: ubuntu-latest
@@ -37,6 +40,15 @@ jobs:
           grep -q '^SITE_PASSWORD=ci-test-password' /etc/piii-site.env
           systemctl is-active piii-site piii-site-tunnel
 
-      - name: What the site said
+      - name: What the site said (also kept on branch ci/home-server-log)
         if: always()
-        run: sudo journalctl -u piii-site -u piii-site-tunnel -n 80 --no-pager -o cat
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          R=$(mktemp -d)
+          sudo journalctl -u piii-site -u piii-site-tunnel -n 300 --no-pager -o short > $R/journal.log 2>&1 || true
+          sudo bash back/deploy/home-server.sh --address > $R/address.txt 2>&1 || true
+          (systemctl status piii-site piii-site-tunnel --no-pager || true) > $R/status.txt 2>&1
+          cat $R/journal.log | tail -80
+          cd $R && git init -q -b log && git add . && git -c user.name="CI" -c user.email="ci@piii.app" commit -qm "home-server ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:refs/heads/ci/home-server-log
