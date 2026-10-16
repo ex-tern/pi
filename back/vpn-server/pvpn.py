@@ -225,7 +225,7 @@ def wg_call(*args: str) -> str:
         elif cmd == "dump":
             return "\n".join(f"{k} {v['endpoint']} {v['handshake']} {v['rx']} {v['tx']}" for k, v in _fake_peers.items())
         return ""
-    r = subprocess.run(["sudo", "-n", WG_HELPER, *args], capture_output=True, text=True, timeout=20)
+    r = subprocess.run(["sudo", "-n", "/bin/bash", WG_HELPER, *args], capture_output=True, text=True, timeout=20)
     if r.returncode != 0:
         raise HTTPException(status_code=500, detail=f"The VPN could not be changed: {(r.stderr or r.stdout).strip()[:200]}")
     return r.stdout

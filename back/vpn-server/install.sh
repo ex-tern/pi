@@ -69,7 +69,8 @@ chmod 750 "$DATA"
 say "The VPN (WireGuard, UDP $WG_PORT)"
 install -m 755 "$REPO/back/vpn-server/pvpn-wg" "$LIB/pvpn-wg"
 install -m 755 "$REPO/back/vpn-server/pvpn-fw" "$LIB/pvpn-fw"
-echo "piiivpn ALL=(root) NOPASSWD: $LIB/pvpn-wg" > /etc/sudoers.d/piiivpn
+# run through bash, so it works where scripts in /usr/local cannot be run directly (noexec mounts, hardening)
+echo "piiivpn ALL=(root) NOPASSWD: /bin/bash $LIB/pvpn-wg *" > /etc/sudoers.d/piiivpn
 chmod 440 /etc/sudoers.d/piiivpn
 visudo -cf /etc/sudoers.d/piiivpn >/dev/null
 mkdir -p /etc/wireguard && chmod 700 /etc/wireguard
@@ -82,12 +83,14 @@ if [[ ! -f /etc/wireguard/$IF.conf ]]; then
 Address = 10.77.0.1/16
 ListenPort = $WG_PORT
 PrivateKey = $KEY
-PostUp = $LIB/pvpn-fw up %i
-PostDown = $LIB/pvpn-fw down %i
+PostUp = /bin/bash $LIB/pvpn-fw up %i
+PostDown = /bin/bash $LIB/pvpn-fw down %i
 EOF
   umask 022
 fi
 sed -i "s|^ListenPort *=.*|ListenPort = $WG_PORT|" /etc/wireguard/$IF.conf
+# an earlier install ran the firewall directly: through bash now
+sed -i -E "s#^(PostUp|PostDown) *= *$LIB/pvpn-fw#\1 = /bin/bash $LIB/pvpn-fw#" /etc/wireguard/$IF.conf
 echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/90-piiivpn.conf
 sysctl -q -p /etc/sysctl.d/90-piiivpn.conf
 systemctl enable -q wg-quick@$IF
