@@ -18,7 +18,8 @@ set -euo pipefail
 DOMAIN="${PVPN_DOMAIN:-}"
 [[ -n "$DOMAIN" ]] || { echo "Set PVPN_DOMAIN to this machine's internet name, e.g. sudo PVPN_DOMAIN=vpn.example.org bash $0" >&2; exit 1; }
 [[ "$DOMAIN" =~ ^[A-Za-z0-9.-]+$ ]] || { echo "PVPN_DOMAIN looks wrong: $DOMAIN" >&2; exit 1; }
-[[ "$DOMAIN" == *.* ]] || { echo "PVPN_DOMAIN needs the whole name, e.g. $DOMAIN.duckdns.org" >&2; exit 1; }
+# a bare DuckDNS name ("yourname"): its whole name
+[[ "$DOMAIN" == *.* ]] || { DOMAIN="$DOMAIN.duckdns.org"; echo "Using $DOMAIN"; }
 REPO="$(cd "$(dirname "$0")/../.." && pwd)"
 OPT=/opt/piiivpn
 DATA=/var/lib/piiivpn
