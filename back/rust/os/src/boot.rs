@@ -270,8 +270,7 @@ impl Input {
         }
         if let Some((dx, dy, downs, ups, held)) = self.mice.take() {
             if dx != 0 || dy != 0 {
-                let k = if dx.abs() + dy.abs() > 6 { 1.8 } else { 1.0 };
-                out.push(Event::Move(dx as f64 * k, dy as f64 * k));
+                out.push(Event::Move(dx as f64, dy as f64));
             }
             // every press and release, in the order they must have come (a quick click is both at once)
             let mut l = self.pointers.usb_left;

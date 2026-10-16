@@ -69,6 +69,7 @@ enum Act {
     Restart,
     PowerOff,
     Scroll(i64),
+    Speed(i64),
 }
 
 struct Super {
@@ -126,6 +127,9 @@ const CONSTS: [(&str, &str, &str); 4] = [
     ("γ", "gamma", "Euler's constant, by Brent and McMillan"),
 ];
 const DIGITS: [usize; 4] = [100, 1000, 5000, 20000];
+/// how far the pointer goes for a mouse's move (owner, 2026-10-17: "mouse is too sensitive on piii os")
+const SPEEDS: [f64; 8] = [0.15, 0.25, 0.35, 0.5, 0.7, 1.0, 1.4, 2.0];
+const SPEED_START: usize = 2;
 
 pub struct App {
     pub w: usize,
@@ -156,6 +160,9 @@ pub struct App {
     pub dirty: bool,
     key_run: u32,
     hovered: Option<Act>,
+    speed: usize,
+    /// a mouse's moves smaller than a pixel, kept until they add up
+    rest: (f64, f64),
 }
 
 impl App {
@@ -187,6 +194,8 @@ impl App {
             dirty: true,
             key_run: 0,
             hovered: None,
+            speed: SPEED_START,
+            rest: (0.0, 0.0),
         };
         a.layout();
         a
@@ -214,7 +223,13 @@ impl App {
     pub fn event(&mut self, e: Event) {
         match e {
             Event::Move(dx, dy) => {
-                self.move_to(self.px + dx, self.py + dy);
+                let k = SPEEDS[self.speed];
+                let (mx, my) = (dx * k + self.rest.0, dy * k + self.rest.1);
+                let (ix, iy) = (mx as i64 as f64, my as i64 as f64);
+                self.rest = (mx - ix, my - iy);
+                if ix != 0.0 || iy != 0.0 {
+                    self.move_to(self.px + ix, self.py + iy);
+                }
                 self.key_run = 0;
             }
             Event::At(x, y) => self.move_to(x, y),
@@ -361,6 +376,10 @@ impl App {
                 self.view = View::Canvas;
                 self.dirty = true;
             }
+            Key::Char(c) if matches!(c, '-' | '+' | '=') => {
+                // anywhere: the pointer slower (−) or faster (+)
+                self.act(Act::Speed(if c == '-' { -1 } else { 1 }));
+            }
             Key::Char(c) => {
                 self.key_run = 0;
                 // in Program, 1 to 5 load the examples, r runs, s steps, c clears
@@ -419,6 +438,10 @@ impl App {
                 self.scroll = 0;
             }
             Act::Scroll(d) => self.scroll = (self.scroll + d).max(0),
+            Act::Speed(d) => {
+                self.speed = (self.speed as i64 + d).clamp(0, SPEEDS.len() as i64 - 1) as usize;
+                self.rest = (0.0, 0.0);
+            }
             Act::Restart | Act::PowerOff => {
                 // pressed twice: the first press asks "sure?"
                 if self.armed == Some(a) {
@@ -546,7 +569,8 @@ impl App {
                     Tools, Explore, Library, Lab and Connect live on the lab's servers. piii OS does not reach the \
                     internet yet, so they list what they hold; open www.piii.app on another device to use them.\n\n\
                     No mouse? The arrow keys move the pointer, Enter or Space clicks, and Tab jumps to the next \
-                    thing to click.";
+                    thing to click. The pointer too fast or too slow? The - and + keys change its speed (also in \
+                    Devices).";
         f.para(&SMALL, x, yy, w, text, INK);
     }
 
@@ -679,6 +703,18 @@ impl App {
                     (Apple's HID proxy). Pair it once in macOS before macOS is replaced, and it keeps working at start-up. \
                     If no pointer is listed above, the arrow keys move the pointer.";
         yy += f.para(&SMALL, x, yy, w.min(900.0), note, MUTED) + 20.0;
+        // the pointer's speed
+        f.text(&SMALL, x, yy + 9.0, "Pointer speed", MUTED, 1);
+        let mut sx = x + 190.0;
+        sx += self.button(f, sx, yy, "- slower", Act::Speed(-1), false) + 10.0;
+        for i in 0..SPEEDS.len() {
+            let r = Rect::new(sx + i as f64 * 22.0, yy + 10.0, 14.0, 14.0);
+            f.superellipse(r, Some(if i <= self.speed { INK } else { CARD }), INK, 1.4);
+        }
+        sx += SPEEDS.len() as f64 * 22.0 + 10.0;
+        self.button(f, sx, yy, "faster +", Act::Speed(1), false);
+        f.text(&SMALL, x + 190.0, yy + 42.0, "or the - and + keys, anywhere", MUTED, 1);
+        yy += 76.0;
         let r1 = if self.armed == Some(Act::Restart) { "Restart: sure?" } else { "Restart" };
         let r2 = if self.armed == Some(Act::PowerOff) { "Switch off: sure?" } else { "Switch off" };
         let bw = self.button(f, x, yy, r1, Act::Restart, self.armed == Some(Act::Restart));
