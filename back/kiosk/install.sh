@@ -33,8 +33,9 @@ if [[ "${ID:-}" == "debian" ]]; then
   # Debian keeps Wi-Fi drivers and firmware (Broadcom, as in MacBooks) in non-free and non-free-firmware
   for f in /etc/apt/sources.list /etc/apt/sources.list.d/debian.sources; do
     [[ -f "$f" ]] || continue
-    sed -i -E '/^deb /{/non-free-firmware/!s/main( |$)/main contrib non-free non-free-firmware\1/}' "$f"
-    sed -i -E '/^Components:/{/non-free-firmware/!s/main( |$)/main contrib non-free non-free-firmware\1/}' "$f"
+    for c in contrib non-free non-free-firmware; do   # each one added once, after main, where it is missing
+      sed -i -E "/^(deb |Components:)/{/ $c( |\$)/!s/ main( |\$)/ main $c\1/}" "$f"
+    done
   done
 fi
 apt-get update -q
