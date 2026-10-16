@@ -163,6 +163,7 @@ pub struct App {
     speed: usize,
     /// a mouse's moves smaller than a pixel, kept until they add up
     rest: (f64, f64),
+    cursor: Sprite,
 }
 
 impl App {
@@ -196,6 +197,7 @@ impl App {
             hovered: None,
             speed: SPEED_START,
             rest: (0.0, 0.0),
+            cursor: Self::cursor(),
         };
         a.layout();
         a
@@ -223,7 +225,9 @@ impl App {
     pub fn event(&mut self, e: Event) {
         match e {
             Event::Move(dx, dy) => {
-                let k = SPEEDS[self.speed];
+                // slow moves exact, quick ones go further (up to twice as far), as a computer's mouse feels
+                let m = crate::num::sqrt(dx * dx + dy * dy);
+                let k = SPEEDS[self.speed] * (1.0 + 0.7 * ((m - 3.0) / 10.0).clamp(0.0, 1.4));
                 let (mx, my) = (dx * k + self.rest.0, dy * k + self.rest.1);
                 let (ix, iy) = (mx as i64 as f64, my as i64 as f64);
                 self.rest = (mx - ix, my - iy);
@@ -738,7 +742,15 @@ impl App {
 
     /// The pointer arrow at (px, py), drawn over a frame.
     pub fn draw_pointer(&self, f: &mut Frame) {
-        let (x, y) = (self.px, self.py);
+        f.sprite(&self.cursor, self.px as i64 - 3, self.py as i64 - 3);
+    }
+
+    /// the pointer, drawn once (its tip at 3, 3)
+    fn cursor() -> Sprite {
+        Sprite::of(20, 29, |f| Self::draw_arrow(f, 3.0, 3.0))
+    }
+
+    fn draw_arrow(f: &mut Frame, x: f64, y: f64) {
         let pts = [(x, y), (x, y + 19.0), (x + 4.5, y + 15.0), (x + 8.0, y + 22.0), (x + 11.0, y + 20.5), (x + 7.5, y + 14.0), (x + 13.5, y + 14.0)];
         let out: Vec<(f64, f64)> = pts.iter().map(|p| (p.0, p.1)).collect();
         f.stroke(&[out[0], out[1], out[2], out[3], out[4], out[5], out[6], out[0]], 3.0, CARD, None);

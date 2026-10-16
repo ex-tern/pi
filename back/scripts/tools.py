@@ -662,42 +662,46 @@ def build_os_main() -> int:
     Copy the esp folder's EFI folder onto a USB stick formatted FAT32 (or write piii-os.img from the release), and
     start the computer from it (a Mac: hold Option at the chime, choose EFI Boot).
 
-    With the target installed (rustup target add x86_64-unknown-uefi) this is a plain cargo build. Without it,
-    --library DIR builds core, compiler_builtins and alloc for it from the standard library's source, as build-ui
-    does.
+    It is built for x86_64-piii-uefi.json: the firmware's own target (x86_64-unknown-uefi) with the processor's SSE2
+    floating point on, which the standard target leaves off (all its arithmetic in software, many times slower: the
+    pointer lagged). core, compiler_builtins and alloc are built for it from the standard library's source: --library
+    DIR, or the rust-src component (rustup component add rust-src).
     """
     args = sys.argv[1:]
     crate = REPO / "back" / "rust" / "os"
-    target = "x86_64-unknown-uefi"
+    target = str(crate / "x86_64-piii-uefi.json")
     out = crate / "esp" / "EFI" / "BOOT" / "BOOTX64.EFI"
     out.parent.mkdir(parents=True, exist_ok=True)
     env = dict(os.environ)
-    if "--library" not in args:
-        subprocess.run(["cargo", "build", "--release", "--target", target], cwd=crate, check=True)
-        shutil.copyfile(crate / "target" / target / "release" / "piii-os.efi", out)
-    else:
+    if "--library" in args:
         lib = Path(args[args.index("--library") + 1]).resolve()
-        sysroot = crate / "target" / "sysroot"
-        sysroot.mkdir(parents=True, exist_ok=True)
-        env["RUSTC_BOOTSTRAP"] = "1"
-        base = ["rustc", "--edition", "2024", "--crate-type", "rlib", "--target", target, "-C", "opt-level=3",
-                "-C", "panic=abort", "--cap-lints", "allow", "--out-dir", str(sysroot), "-L", str(sysroot)]
-        parts = [("core", lib / "core/src/lib.rs", []),
-                 ("compiler_builtins", lib / "compiler-builtins/compiler-builtins/src/lib.rs",
-                  ["--cfg", 'feature="mem"', "--cfg", 'feature="compiler-builtins"',
-                   "--cfg", 'feature="unmangled-names"', "-C", "codegen-units=1"]),
-                 ("alloc", lib / "alloc/src/lib.rs", [])]
-        for name, src, extra in parts:
-            if not (sysroot / f"lib{name}.rlib").exists():
-                print(f"building {name} for {target}")
-                subprocess.run(base + ["--crate-name", name, *extra, str(src)], check=True, env=env)
-        common = ["--target", target, "-C", "opt-level=3", "-C", "panic=abort", "--sysroot", str(sysroot / "none"),
-                  "-L", str(sysroot)]
-        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "rlib", "--crate-name", "numbers", *common,
-                        "--out-dir", str(sysroot), str(crate.parent / "numbers" / "src" / "lib.rs")], check=True, env=env)
-        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "bin", "--crate-name", "piii_os", *common,
-                        "-C", "codegen-units=1", "-C", "lto", "--extern", f"numbers={sysroot / 'libnumbers.rlib'}",
-                        str(crate / "src" / "main.rs"), "-o", str(out)], check=True, env=env)
+    else:
+        root = subprocess.run(["rustc", "--print", "sysroot"], capture_output=True, text=True, check=True).stdout.strip()
+        lib = Path(root) / "lib" / "rustlib" / "src" / "rust" / "library"
+        if not lib.exists():
+            sys.exit("The standard library's source is needed: rustup component add rust-src (or --library DIR)")
+    sysroot = crate / "target" / "sysroot-piii"
+    sysroot.mkdir(parents=True, exist_ok=True)
+    env["RUSTC_BOOTSTRAP"] = "1"
+    # a target from a file is not yet stable in rustc: allowed here, as building core already needs
+    base = ["rustc", "-Z", "unstable-options", "--edition", "2024", "--crate-type", "rlib", "--target", target,
+            "-C", "opt-level=3", "-C", "panic=abort", "--cap-lints", "allow", "--out-dir", str(sysroot), "-L", str(sysroot)]
+    parts = [("core", lib / "core/src/lib.rs", []),
+             ("compiler_builtins", lib / "compiler-builtins/compiler-builtins/src/lib.rs",
+              ["--cfg", 'feature="mem"', "--cfg", 'feature="compiler-builtins"',
+               "--cfg", 'feature="unmangled-names"', "-C", "codegen-units=1"]),
+             ("alloc", lib / "alloc/src/lib.rs", [])]
+    for name, src, extra in parts:
+        if not (sysroot / f"lib{name}.rlib").exists():
+            print(f"building {name} for {target}")
+            subprocess.run(base + ["--crate-name", name, *extra, str(src)], check=True, env=env)
+    common = ["-Z", "unstable-options", "--target", target, "-C", "opt-level=3", "-C", "panic=abort", "--sysroot", str(sysroot / "none"),
+              "-L", str(sysroot)]
+    subprocess.run(["rustc", "--edition", "2021", "--crate-type", "rlib", "--crate-name", "numbers", *common,
+                    "--out-dir", str(sysroot), str(crate.parent / "numbers" / "src" / "lib.rs")], check=True, env=env)
+    subprocess.run(["rustc", "--edition", "2021", "--crate-type", "bin", "--crate-name", "piii_os", *common,
+                    "-C", "codegen-units=1", "-C", "lto", "--extern", f"numbers={sysroot / 'libnumbers.rlib'}",
+                    str(crate / "src" / "main.rs"), "-o", str(out)], check=True, env=env)
     # the site serves it too: Tools → piii OS writes it onto a flash drive from the browser
     site = REPO / "front" / "os" / "BOOTX64.EFI"
     site.parent.mkdir(parents=True, exist_ok=True)

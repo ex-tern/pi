@@ -72,7 +72,49 @@ fn mix(dst: u32, src: u32, a: u32) -> u32 {
     ch(16) | ch(8) | ch(0)
 }
 
+/// A small picture with its own transparency, drawn once and then only copied (the pointer: drawing it anew at each
+/// move of the mouse is what made it lag).
+pub struct Sprite {
+    pub w: usize,
+    pub h: usize,
+    px: Vec<u32>,
+    a: Vec<u8>,
+}
+
+impl Sprite {
+    /// What `draw` puts on a w × h frame, with its edges' softness kept: drawn on black and on white, the difference
+    /// is how much shows through.
+    pub fn of(w: usize, h: usize, draw: impl Fn(&mut Frame)) -> Sprite {
+        let (mut k, mut wt) = (Frame { w, h, px: vec![0; w * h] }, Frame { w, h, px: vec![0xFFFFFF; w * h] });
+        draw(&mut k);
+        draw(&mut wt);
+        let mut px = vec![0u32; w * h];
+        let mut al = vec![0u8; w * h];
+        for i in 0..w * h {
+            let ch = |p: u32, s: u32| (p >> s) & 0xFF;
+            let through = (ch(wt.px[i], 8) as i32 - ch(k.px[i], 8) as i32).clamp(0, 255) as u32;
+            let a = 255 - through;
+            al[i] = a as u8;
+            if a > 0 {
+                let un = |s: u32| ((ch(k.px[i], s) * 255 + a / 2) / a).min(255) << s;
+                px[i] = un(16) | un(8) | un(0);
+            }
+        }
+        Sprite { w, h, px, a: al }
+    }
+}
+
 impl Frame {
+    /// A sprite with its top left at (x, y).
+    pub fn sprite(&mut self, sp: &Sprite, x: i64, y: i64) {
+        for j in 0..sp.h {
+            for i in 0..sp.w {
+                let k = j * sp.w + i;
+                self.blend(x + i as i64, y + j as i64, sp.px[k], sp.a[k] as u32);
+            }
+        }
+    }
+
     pub fn new(w: usize, h: usize) -> Frame {
         Frame { w, h, px: vec![PAPER; w * h] }
     }

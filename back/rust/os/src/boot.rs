@@ -248,7 +248,9 @@ impl Input {
                 if s.x != 0 || s.y != 0 {
                     out.push(Event::Move(s.x as f64 * kx, s.y as f64 * ky));
                 }
-                uefi::log(&format!("piii OS: pointer {} {} button {}", s.x, s.y, s.left));
+                if (s.left != 0) != self.pointers.fw_left {
+                    uefi::log(&format!("piii OS: pointer button {}", s.left));
+                }
                 left = s.left != 0;
             }
         }
@@ -303,6 +305,28 @@ fn union(a: Rect, b: Rect) -> Rect {
     Rect::new(x0, y0, x1 - x0, y1 - y0)
 }
 
+/// The box around every pixel that differs between two frames (None: they are the same).
+fn changed(a: &Frame, b: &Frame) -> Option<Rect> {
+    let w = a.w;
+    let (mut x0, mut y0, mut x1, mut y1) = (usize::MAX, usize::MAX, 0, 0);
+    for y in 0..a.h {
+        let (ra, rb) = (&a.px[y * w..(y + 1) * w], &b.px[y * w..(y + 1) * w]);
+        if ra == rb {
+            continue;
+        }
+        let l = ra.iter().zip(rb).position(|(p, q)| p != q).unwrap_or(0);
+        let r = w - ra.iter().rev().zip(rb.iter().rev()).position(|(p, q)| p != q).unwrap_or(0);
+        x0 = x0.min(l);
+        x1 = x1.max(r);
+        y0 = y0.min(y);
+        y1 = y + 1;
+    }
+    if y1 == 0 {
+        return None;
+    }
+    Some(Rect::new(x0 as f64, y0 as f64, (x1 - x0) as f64, (y1 - y0) as f64))
+}
+
 fn copy_rect(from: &Frame, to: &mut Frame, r: Rect) {
     let x0 = (r.x.max(0.0) as usize).min(from.w);
     let y0 = (r.y.max(0.0) as usize).min(from.h);
@@ -314,8 +338,27 @@ fn copy_rect(from: &Frame, to: &mut Frame, r: Rect) {
     }
 }
 
+/// Where the firmware enters: before any Rust runs, the processor's SSE unit is switched on (CR0: no emulation,
+/// monitor the coprocessor; CR4: FXSAVE and SIMD exceptions). UEFI firmware on x64 is meant to leave it on already;
+/// saying so again costs nothing, and piii OS draws with hardware floating point (x86_64-piii-uefi.json), which on
+/// a 2008 Mac is many times faster than the software kind: the pointer and the canvas keep up with the mouse.
+#[unsafe(naked)]
 #[export_name = "efi_main"]
-pub extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
+pub extern "efiapi" fn entry(image: Handle, st: *mut SystemTable) -> Status {
+    core::arch::naked_asm!(
+        "mov rax, cr0",
+        "and rax, -5",
+        "or rax, 2",
+        "mov cr0, rax",
+        "mov rax, cr4",
+        "or rax, 0x600",
+        "mov cr4, rax",
+        "jmp {main}",
+        main = sym efi_main,
+    )
+}
+
+extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
     uefi::init(image, st);
     uefi::no_watchdog();
     uefi::log("piii OS: starting");
@@ -338,6 +381,8 @@ pub extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
         uefi::log(&format!("piii OS: {}: {}", k, v));
     }
     let mut scene = Frame::new(w, h);
+    let mut before = Frame::new(w, h);
+    let mut first = true;
     let mut shown = Frame::new(w, h);
     let mut events = Vec::new();
     let mut last_ptr = app.pointer_rect();
@@ -359,11 +404,23 @@ pub extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             app.dirty = true;
         }
         if app.dirty {
+            // drawn whole, but only what changed goes to the screen (a hover, a dragged super: a small part of it)
+            core::mem::swap(&mut scene, &mut before);
             app.draw(&mut scene);
-            shown.px.copy_from_slice(&scene.px);
+            let changed = if first { Some(Rect::new(0.0, 0.0, w as f64, h as f64)) } else { changed(&before, &scene) };
+            first = false;
+            let now = app.pointer_rect();
+            let r = match changed {
+                Some(c) => {
+                    copy_rect(&scene, &mut shown, c);
+                    union(c, union(last_ptr, now))
+                }
+                None => union(last_ptr, now),
+            };
+            copy_rect(&scene, &mut shown, last_ptr);
             app.draw_pointer(&mut shown);
-            screen.show(&mut shown, Rect::new(0.0, 0.0, w as f64, h as f64));
-            last_ptr = app.pointer_rect();
+            screen.show(&mut shown, r);
+            last_ptr = now;
             frames += 1;
             if frames <= 3 || frames % 50 == 0 {
                 uefi::log(&format!("piii OS: frame {}", frames));
@@ -376,7 +433,8 @@ pub extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             screen.show(&mut shown, union(last_ptr, now));
             last_ptr = now;
         }
-        uefi::stall(8_000);
+        // about 200 looks a second: a mouse reports up to 125 times a second
+        uefi::stall(5_000);
     }
 }
 

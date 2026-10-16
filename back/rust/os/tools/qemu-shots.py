@@ -136,6 +136,13 @@ def move(dx, dy, steps=10):
         time.sleep(0.02)
 
 
+def steps(dx, dy, n):
+    for _ in range(n):
+        cmd("input-send-event", events=[{"type": "rel", "data": {"axis": "x", "value": dx}},
+                                        {"type": "rel", "data": {"axis": "y", "value": dy}}])
+        time.sleep(0.02)
+
+
 def button(down):
     cmd("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
     time.sleep(0.15)
@@ -167,15 +174,17 @@ try:
     keys("ret")
     shot("devices")
     keys("esc")
-    # the mouse (piii OS's own USB driver): from Devices onto Program, then drag Program down and right
-    # (the pointer starts at speed 0.35: a move of 100 counts goes 35 pixels)
-    move(-1100, -1100, steps=100)
-    shot("mouse-on-program")
+    # the mouse (piii OS's own USB driver): into the top left corner, onto Welcome in small steps (2 counts: slow
+    # enough that the pointer's acceleration stays out, so each goes 0.35 × 2.8 pixels), drag it down and right,
+    # then click it open. The screen is 1280 × 800; Welcome's middle is near (255, 235).
+    move(-3000, -3000, steps=100)
+    steps(2, 2, 336)
+    steps(2, 0, 28)
+    shot("mouse-on-welcome")
     button(True)
-    move(300, 300, steps=30)
+    steps(2, 2, 100)
     button(False)
-    shot("mouse-dragged-program")
-    move(-30, -30, steps=3)
+    shot("mouse-dragged-welcome")
     time.sleep(0.5)
     button(True)
     time.sleep(0.2)

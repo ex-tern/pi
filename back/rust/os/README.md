@@ -34,7 +34,7 @@ on that Mac. Devices lists the pointers piii OS found.
 ## Build it
 
 ```bash
-python3 back/scripts/tools.py build-os                  # needs: rustup target add x86_64-unknown-uefi
+python3 back/scripts/tools.py build-os                  # needs: rustup component add rust-src (SSE2 target: x86_64-piii-uefi.json)
 python3 back/scripts/tools.py build-os --library DIR    # or from the standard library's source, as build-ui
 ```
 
