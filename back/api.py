@@ -4818,6 +4818,18 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         ip TEXT NOT NULL, path TEXT NOT NULL, hits INTEGER DEFAULT 0, last_at DATETIME,
                         PRIMARY KEY (ip, path))""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_ip_paths_last ON ip_paths(last_at)")
+    # The open portal (owner, 2026-10-17: "an open portal in piii.app so whatever you type in it stays public and
+    # saved on the site"): what anyone wrote, shown to everyone. The address is kept only as a salted hash, for the
+    # per-writer limits; `key_hash` lets the writer take their own words down again; `hidden` is the owner's.
+    cursor.execute("""CREATE TABLE IF NOT EXISTS portal_posts (
+                        id INTEGER PRIMARY KEY AUTOINCREMENT,
+                        text TEXT NOT NULL,
+                        name TEXT DEFAULT '',
+                        ip_hash TEXT DEFAULT '',
+                        key_hash TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+                        hidden INTEGER DEFAULT 0)""")
+    cursor.execute("CREATE INDEX IF NOT EXISTS idx_portal_ip ON portal_posts(ip_hash, created_at)")
     cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
                         account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
                         goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
@@ -6074,6 +6086,13 @@ RESET_GROUPS = {
         "tables": ["bug_reports"],
         "order": 70,
         "destroys": "bug reports",
+    },
+    "portal": {
+        "label": "Open portal",
+        "detail": "Everything written on the open portal.",
+        "tables": ["portal_posts"],
+        "order": 75,
+        "destroys": "portal posts",
     },
     "visits": {
         "label": "Visitor counts",
@@ -24932,6 +24951,132 @@ def bug_report_list(request: Request, wallet: str = Query(default=""),
             "count": len(reports)}
 
 
+# ---------------------------------------------------------------------------
+# The open portal (owner, 2026-10-17: "can you make a open portal in piii.app so whatever you type in it stays
+# public and saved on the site"). Anyone may write; everyone reads it, newest first. Plain text only (the page
+# shows it as text, never as markup). Limits per writer, counted in the database so they hold across workers and
+# restarts: one post per PORTAL_GAP seconds, PORTAL_PER_DAY a day, and the same words not twice. The writer gets a
+# key, kept in their browser, to take their own post down; the owner can take any down.
+# ---------------------------------------------------------------------------
+portal_router = APIRouter()
+
+PORTAL_MAX = 1000
+PORTAL_NAME_MAX = 32
+PORTAL_GAP = 20
+PORTAL_PER_DAY = 40
+
+
+class PortalPost(BaseModel):
+    text: str
+    name: str = ""
+
+
+class PortalDelete(BaseModel):
+    key: str = ""
+    wallet: str = ""
+
+
+def _portal_clean(s: str, limit: int) -> str:
+    # no control characters but line breaks and tabs; no more than two blank lines in a row
+    s = "".join(c for c in (s or "") if c in "\n\t" or (ord(c) >= 32 and not 0x7F <= ord(c) < 0xA0
+                                                         and c not in "\u200b\u200c\u200d\u2028\u2029\u202a\u202b\u202c\u202d\u202e\ufeff"))
+    s = re.sub(r"\n{3,}", "\n\n", s.replace("\r", "")).strip()
+    return s[:limit]
+
+
+def _portal_ip_hash(request: Request) -> str:
+    salt = os.getenv("SESSION_SECRET", "") or "portal"
+    return hashlib.sha256(f"portal:{salt}:{get_client_ip(request)}".encode()).hexdigest()[:32]
+
+
+def _portal_row(r) -> dict:
+    return {"id": r[0], "text": r[1], "name": r[2] or "", "at": str(r[3] or "")}
+
+
+@portal_router.get("/api/portal")
+def portal_list(before: int = Query(default=0, ge=0), limit: int = Query(default=50, ge=1, le=100)):
+    """What is on the portal, newest first; `before` pages back."""
+    conn = get_db_connection()
+    try:
+        q = "SELECT id, text, name, created_at FROM portal_posts WHERE hidden=0"
+        args: list = []
+        if before:
+            q += " AND id < ?"
+            args.append(before)
+        rows = conn.execute(q + " ORDER BY id DESC LIMIT ?", (*args, limit + 1)).fetchall()
+        total = conn.execute("SELECT COUNT(*) FROM portal_posts WHERE hidden=0").fetchone()[0]
+    finally:
+        conn.close()
+    return {"posts": [_portal_row(r) for r in rows[:limit]], "more": len(rows) > limit, "total": total,
+            "max": PORTAL_MAX, "name_max": PORTAL_NAME_MAX}
+
+
+@portal_router.post("/api/portal")
+def portal_post(payload: PortalPost, request: Request):
+    check_rate_limit(get_client_ip(request), bucket="portal")
+    text = _portal_clean(payload.text, PORTAL_MAX + 1)
+    name = _portal_clean(payload.name, PORTAL_NAME_MAX + 1).replace("\n", " ")
+    if not text:
+        raise HTTPException(status_code=400, detail="Write something first.")
+    if len(text) > PORTAL_MAX:
+        raise HTTPException(status_code=400, detail=f"At most {PORTAL_MAX} characters.")
+    if len(name) > PORTAL_NAME_MAX:
+        raise HTTPException(status_code=400, detail=f"A name of at most {PORTAL_NAME_MAX} characters.")
+    ip_hash = _portal_ip_hash(request)
+    now = datetime.utcnow()
+    conn = get_db_connection()
+    try:
+        last = conn.execute("SELECT created_at FROM portal_posts WHERE ip_hash=? ORDER BY id DESC LIMIT 1",
+                            (ip_hash,)).fetchone()
+        if last:
+            try:
+                wait = PORTAL_GAP - (now - datetime.fromisoformat(str(last[0]))).total_seconds()
+            except ValueError:
+                wait = 0
+            if wait > 0:
+                raise HTTPException(status_code=429, detail=f"One post every {PORTAL_GAP} seconds: "
+                                                            f"wait {int(wait) + 1} more.")
+        day = (now - timedelta(days=1)).isoformat(sep=" ", timespec="seconds")
+        n = conn.execute("SELECT COUNT(*) FROM portal_posts WHERE ip_hash=? AND created_at > ?",
+                         (ip_hash, day)).fetchone()[0]
+        if n >= PORTAL_PER_DAY:
+            raise HTTPException(status_code=429, detail=f"{PORTAL_PER_DAY} posts a day at most: come back tomorrow.")
+        if conn.execute("SELECT 1 FROM portal_posts WHERE ip_hash=? AND text=? AND created_at > ?",
+                        (ip_hash, text, day)).fetchone():
+            raise HTTPException(status_code=409, detail="You wrote exactly this already.")
+        key = secrets.token_urlsafe(18)
+        cur = conn.execute(
+            "INSERT INTO portal_posts (text, name, ip_hash, key_hash, created_at) VALUES (?, ?, ?, ?, ?)",
+            (text, name, ip_hash, hashlib.sha256(key.encode()).hexdigest(), now.isoformat(sep=" ", timespec="seconds")))
+        conn.commit()
+        pid = int(cur.lastrowid)
+        row = conn.execute("SELECT id, text, name, created_at FROM portal_posts WHERE id=?", (pid,)).fetchone()
+    finally:
+        conn.close()
+    add_log(f"Portal post #{pid} ({len(text)} chars).")
+    return {**_portal_row(row), "key": key}
+
+
+@portal_router.post("/api/portal/{post_id}/delete")
+def portal_delete(post_id: int, payload: PortalDelete, request: Request):
+    """The writer (with the key their browser kept) or the owner takes a post down."""
+    check_rate_limit(get_client_ip(request), bucket="portal_delete")
+    conn = get_db_connection()
+    try:
+        row = conn.execute("SELECT key_hash FROM portal_posts WHERE id=? AND hidden=0", (post_id,)).fetchone()
+        if not row:
+            raise HTTPException(status_code=404, detail="No such post.")
+        mine = bool(payload.key) and hmac.compare_digest(row[0] or "", hashlib.sha256(payload.key.encode()).hexdigest())
+        if not mine:
+            require_owner(request, payload.wallet)
+        conn.execute("UPDATE portal_posts SET hidden=1, text='', name='' WHERE id=?", (post_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    add_log(f"Portal post #{post_id} taken down ({'by its writer' if mine else 'by the owner'}).")
+    return {"deleted": post_id}
+
+
 # ==============================================================================================================
 # routes/chain.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
@@ -27202,6 +27347,7 @@ app.include_router(history_router)
 app.include_router(admin_router)
 app.include_router(reviewing_router)
 app.include_router(bugreport_router)
+app.include_router(portal_router)
 app.include_router(assess_router)
 app.include_router(discover_router)
 app.include_router(scilem_router)

@@ -48,6 +48,8 @@ pub enum Tool {
     Vpn,
     // os.rs: piii OS onto a flash drive
     OsFlash,
+    // portal.rs: the open portal
+    Portal,
 }
 
 /// What every tool keeps.
@@ -98,6 +100,7 @@ fn tool_view(s: &State, t: Tool) -> N {
         Tool::Grid => txt(""),
         Tool::Vpn => vpn_view(s),
         Tool::OsFlash => os_view(s),
+        Tool::Portal => portal_view(s),
     }
 }
 
@@ -144,6 +147,9 @@ fn tool_load(t: Tool) {
     if t == Tool::Vpn {
         vpn_load();
     }
+    if t == Tool::Portal {
+        portal_load();
+    }
     tools2_load(t);
 }
 
@@ -157,6 +163,8 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
         rev_apply(what, v, err);
     } else if t == Tool::Vpn {
         vpn_apply(what, v, err);
+    } else if t == Tool::Portal {
+        portal_apply(what, v, err);
     } else if t == Tool::Learn {
         learn_apply(v, err);
     } else if matches!(t, Tool::Ledger | Tool::Board | Tool::Donate) {
@@ -196,6 +204,7 @@ fn tool_update(t: Tool, a: u16, v: String) {
         Tool::Intern => intern_update(a, v),
         Tool::Vpn => vpn_update(a, v),
         Tool::OsFlash => os_update(a, v),
+        Tool::Portal => portal_update(a, v),
         _ => tools2_update(t, a, v),
     }
 }

@@ -773,6 +773,8 @@ const GROUPS: [Group; 6] = [
             ("Support Pi", Target::Tool(Tool::Donate)),
             ("Contact us", Target::Tool(Tool::Bug)),
             ("GitHub", Target::Url("https://github.com/ex-tern/pi")),
+            // owner, 2026-10-17: "an open portal in piii.app so whatever you type in it stays public and saved on the site"
+            ("Open portal", Target::Tool(Tool::Portal)),
         ],
     },
     Group {
