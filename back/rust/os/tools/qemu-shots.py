@@ -163,7 +163,7 @@ try:
     shot("numbers-pi", 3.0)
     keys("esc")
     for _ in range(6):
-        keys("tab", gap=0.1)
+        keys("tab", gap=0.35)
     keys("ret")
     shot("devices")
     keys("esc")
