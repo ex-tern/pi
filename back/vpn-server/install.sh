@@ -128,10 +128,12 @@ if [[ ! -f /etc/piiivpn.env ]]; then
 PVPN_DATA=$DATA
 PVPN_WG=on
 PVPN_WG_ENDPOINT=$DOMAIN:$WG_PORT
-PVPN_WG_DNS=1.1.1.1, 9.9.9.9
+PVPN_WG_DNS="1.1.1.1, 9.9.9.9"
 EOF
 fi
 sed -i "s|^PVPN_WG_ENDPOINT=.*|PVPN_WG_ENDPOINT=$DOMAIN:$WG_PORT|" /etc/piiivpn.env
+# a value with a space must be quoted (an earlier install wrote it bare)
+sed -i -E 's/^PVPN_WG_DNS=([^"].*)$/PVPN_WG_DNS="\1"/' /etc/piiivpn.env
 chmod 640 /etc/piiivpn.env && chgrp piiivpn /etc/piiivpn.env
 
 say "The service"

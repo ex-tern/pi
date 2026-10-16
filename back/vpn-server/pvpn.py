@@ -765,9 +765,18 @@ def _cli(argv: list[str]) -> int:
         if not NAME_RE.match(name):
             print("A user name is 3 to 32 letters, digits, dots, dashes or underscores.")
             return 1
-        pw = os.getenv("PVPN_ADMIN_PASSWORD") or getpass.getpass("Password (10 characters or more): ")
+        pw = os.getenv("PVPN_ADMIN_PASSWORD") or ""
+        for _ in range(3 if not pw else 0):
+            pw = getpass.getpass("Owner's password (10 characters or more): ")
+            if len(pw) < 10:
+                print(f"That is {len(pw)} characters: use 10 or more.")
+            elif getpass.getpass("Once more: ") != pw:
+                print("The two do not match.")
+            else:
+                break
+            pw = ""
         if len(pw) < 10:
-            print("Too short.")
+            print("No password set. Run again:  sudo piiivpn create-admin " + name)
             return 1
         try:
             make_user(name, pw, "active", admin=True)
