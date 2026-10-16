@@ -78,25 +78,43 @@ if [[ ! -f /etc/wireguard/$IF.conf ]]; then
   umask 077
   KEY="$(wg genkey)"
   cat > /etc/wireguard/$IF.conf <<EOF
-# piii VPN. Devices are added by the server itself (pvpn-wg); the firewall by pvpn-fw.
+# piii VPN. Devices are added by the server itself (pvpn-wg); the firewall by piiivpn-fw.service (pvpn-fw).
 [Interface]
 Address = 10.77.0.1/16
 ListenPort = $WG_PORT
 PrivateKey = $KEY
-PostUp = /bin/bash $LIB/pvpn-fw up %i
-PostDown = /bin/bash $LIB/pvpn-fw down %i
 EOF
   umask 022
 fi
 sed -i "s|^ListenPort *=.*|ListenPort = $WG_PORT|" /etc/wireguard/$IF.conf
-# an earlier install ran the firewall directly: through bash now
-sed -i -E "s#^(PostUp|PostDown) *= *$LIB/pvpn-fw#\1 = /bin/bash $LIB/pvpn-fw#" /etc/wireguard/$IF.conf
+# an earlier install ran the firewall from WireGuard's PostUp, which Ubuntu's AppArmor profile for wg-quick
+# forbids on newer releases: it is its own service now (below)
+sed -i -E "/^(PostUp|PostDown) *=.*pvpn-fw/d" /etc/wireguard/$IF.conf
 echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/90-piiivpn.conf
 sysctl -q -p /etc/sysctl.d/90-piiivpn.conf
+# the firewall: its own service, up right after the VPN and down with it
+cat > /etc/systemd/system/piiivpn-fw.service <<EOF
+[Unit]
+Description=piii VPN firewall (devices reach the internet only)
+After=wg-quick@$IF.service
+BindsTo=wg-quick@$IF.service
+PartOf=wg-quick@$IF.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart=/bin/bash $LIB/pvpn-fw up $IF
+ExecStop=/bin/bash $LIB/pvpn-fw down $IF
+
+[Install]
+WantedBy=wg-quick@$IF.service
+EOF
+systemctl daemon-reload
 systemctl enable -q wg-quick@$IF
-if ! systemctl restart wg-quick@$IF; then
+systemctl enable -q piiivpn-fw
+if ! systemctl restart wg-quick@$IF || ! systemctl restart piiivpn-fw; then
   echo; echo "The VPN did not start. What it said:"
-  journalctl -u wg-quick@$IF -n 25 --no-pager -o cat || true
+  journalctl -u wg-quick@$IF -u piiivpn-fw -n 25 --no-pager -o cat || true
   if ! modprobe wireguard 2>/dev/null; then
     echo; echo "This kernel has no WireGuard module. Install it with:  sudo apt install linux-generic  (then reboot and run this again)"
   fi

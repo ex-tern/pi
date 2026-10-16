@@ -80,7 +80,7 @@ Devices send IPv6 into the tunnel too, where it stops: nothing leaks around the 
 | Accounts, devices, usage (SQLite) | `/var/lib/piiivpn` |
 | Settings (public name, DNS for devices) | `/etc/piiivpn.env`, then `sudo systemctl restart piiivpn` |
 | The VPN | `/etc/wireguard/pvpn0.conf` (addresses `10.77.0.0/16`); devices are added through `/usr/local/lib/piiivpn/pvpn-wg` |
-| Firewall | `/usr/local/lib/piiivpn/pvpn-fw`, run as the VPN starts and stops |
+| Firewall | `/usr/local/lib/piiivpn/pvpn-fw`, run by `piiivpn-fw.service` as the VPN starts and stops |
 | Logs | `journalctl -u piiivpn -f` |
 
 To back up, copy `/var/lib/piiivpn` and `/etc/wireguard/pvpn0.conf`.

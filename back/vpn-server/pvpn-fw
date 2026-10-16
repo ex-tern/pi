@@ -1,5 +1,5 @@
 #!/bin/bash
-# piii VPN's firewall (root; run by WireGuard as the interface comes up and goes down: PostUp/PostDown).
+# piii VPN's firewall (root; run by piiivpn-fw.service right after the VPN comes up, and as it goes down).
 #   * devices reach the internet, sent out from this machine's address (NAT);
 #   * they do not reach each other, your home network, or any private address;
 #   * on this machine they reach its web page (80, 443) and pings, nothing else;
