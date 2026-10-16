@@ -63,9 +63,11 @@ fn vpn_base(s: &str) -> String {
         ("https://", &t[..])
     };
     let host: String = rest.split(['/', '?', '#']).next().unwrap_or("").chars().filter(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':' | '[' | ']')).collect();
-    if host.is_empty() || !host.contains(['.', ':']) && host != "localhost" {
+    if host.is_empty() {
         return String::new();
     }
+    // a bare DuckDNS name ("yourname"): its full name
+    let host = if !host.contains(['.', ':']) && host != "localhost" { format!("{}.duckdns.org", host) } else { host };
     format!("{}{}", scheme, host)
 }
 
@@ -525,11 +527,12 @@ fn invite_link(code: &str) -> String {
 }
 
 fn install_cmd(v: &Vpn) -> String {
-    let d = v.g_domain.trim().trim_start_matches("https://").trim_end_matches('/');
-    let d = if d.is_empty() { "yourname.duckdns.org" } else { d };
+    let d = v.g_domain.trim().trim_start_matches("https://").trim_end_matches('/').to_lowercase();
+    // the field asks for the DuckDNS name: "yourname" is yourname.duckdns.org
+    let d = if d.is_empty() { "yourname.duckdns.org".to_string() } else if !d.contains('.') { format!("{}.duckdns.org", d) } else { d };
     let a = if v.g_admin.trim().is_empty() { "yourname".to_string() } else { v.g_admin.trim().to_lowercase() };
     let duck = if v.g_duck.trim().is_empty() { String::new() } else { format!(" PVPN_DUCKDNS_TOKEN={}", v.g_duck.trim()) };
-    format!("git clone https://github.com/ex-tern/pi && cd pi\nsudo PVPN_DOMAIN={} PVPN_ADMIN={}{} bash back/vpn-server/install.sh", d, a, duck)
+    format!("git clone https://github.com/ex-tern/pi && cd pi\nsudo PVPN_DOMAIN={} PVPN_ADMIN={}{} bash back/vpn-server/install.sh\n\n# already have it? in that folder:  git pull  and then only the sudo line", d, a, duck)
 }
 
 // ---------------------------------------------------------------------------------------------- views
