@@ -1,0 +1,42 @@
+name: Home server
+
+# Runs back/deploy/home-server.sh on a fresh Ubuntu (as on a home computer): the site as a service, then reached from
+# the internet through a Cloudflare quick tunnel, checked at its public address.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "back/deploy/home-server.sh"
+      - ".github/workflows/home-server.yml"
+  workflow_dispatch:
+
+jobs:
+  install:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install, as on a home computer
+        run: sudo PIII_SITE_PASSWORD=ci-test-password bash back/deploy/home-server.sh
+
+      - name: Run it again (an update keeps data and settings)
+        run: sudo bash back/deploy/home-server.sh
+
+      - name: Reached from the internet, through the tunnel
+        run: |
+          A=$(sudo bash back/deploy/home-server.sh --address | grep -o 'https://[^ ]*')
+          echo "address: $A"
+          for i in $(seq 1 30); do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "$A/api/health" || true)
+            echo "try $i: $code"; [ "$code" = 200 ] && break; sleep 5
+          done
+          [ "$code" = 200 ]
+          # the password holds: the page itself asks for it
+          curl -s "$A/" | head -c 400; echo
+          grep -q '^SITE_PASSWORD=ci-test-password' /etc/piii-site.env
+          systemctl is-active piii-site piii-site-tunnel
+
+      - name: What the site said
+        if: always()
+        run: sudo journalctl -u piii-site -u piii-site-tunnel -n 80 --no-pager -o cat
