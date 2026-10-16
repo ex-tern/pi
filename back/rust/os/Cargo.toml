@@ -1,0 +1,24 @@
+[package]
+name = "piii-os"
+version = "0.1.0"
+edition = "2021"
+description = "piii OS: the π canvas as an operating system, booted straight from UEFI firmware (no other OS underneath)"
+license-file = "../../LICENSES/LicenseRef-PiTechLab-Proprietary.txt"
+
+# no dependencies but the lab's own constants (π, e, φ, γ, exactly)
+[dependencies]
+numbers = { path = "../numbers" }
+
+[[bin]]
+name = "piii-os"
+path = "src/main.rs"
+
+[profile.release]
+opt-level = 3
+lto = true
+panic = "abort"
+codegen-units = 1
+
+[profile.dev]
+panic = "abort"
+opt-level = 1

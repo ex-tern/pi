@@ -36,3 +36,6 @@ back/rust/ui/target/
 *.long-type-*.txt
 back/rust/facemace-desktop/target/
 dist/
+
+# piii OS: the build (BOOTX64.EFI is published on the piii-os release)
+back/rust/os/esp/

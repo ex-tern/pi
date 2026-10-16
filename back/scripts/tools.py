@@ -3,6 +3,7 @@
 
     python back/scripts/tools.py run [--lab]              run ScholarPi locally (was run.py)
     python back/scripts/tools.py build-ui [--library DIR] the front end (back/rust/ui) to front/app/ui.wasm
+    python back/scripts/tools.py build-os [--library DIR] piii OS (back/rust/os) to back/rust/os/esp/EFI/BOOT/BOOTX64.EFI
     python back/scripts/tools.py zotero                   package the Zotero plugin (back/zotero/) as front/zotero/scholarpi.xpi
     python back/scripts/tools.py whitepaper [OUTDIR]      typeset the whitepaper PDF; needs reportlab
                                                      (was backend/build_whitepaper.py + whitepaper_content.py)
@@ -655,6 +656,56 @@ def _main_build_ui():
     sys.exit(build_ui_main())
 
 
+def build_os_main() -> int:
+    """back/rust/os -> back/rust/os/esp/EFI/BOOT/BOOTX64.EFI: piii OS, for a computer's UEFI firmware.
+
+    Copy the esp folder's EFI folder onto a USB stick formatted FAT32 (or write piii-os.img from the release), and
+    start the computer from it (a Mac: hold Option at the chime, choose EFI Boot).
+
+    With the target installed (rustup target add x86_64-unknown-uefi) this is a plain cargo build. Without it,
+    --library DIR builds core, compiler_builtins and alloc for it from the standard library's source, as build-ui
+    does.
+    """
+    args = sys.argv[1:]
+    crate = REPO / "back" / "rust" / "os"
+    target = "x86_64-unknown-uefi"
+    out = crate / "esp" / "EFI" / "BOOT" / "BOOTX64.EFI"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    env = dict(os.environ)
+    if "--library" not in args:
+        subprocess.run(["cargo", "build", "--release", "--target", target], cwd=crate, check=True)
+        shutil.copyfile(crate / "target" / target / "release" / "piii-os.efi", out)
+    else:
+        lib = Path(args[args.index("--library") + 1]).resolve()
+        sysroot = crate / "target" / "sysroot"
+        sysroot.mkdir(parents=True, exist_ok=True)
+        env["RUSTC_BOOTSTRAP"] = "1"
+        base = ["rustc", "--edition", "2024", "--crate-type", "rlib", "--target", target, "-C", "opt-level=3",
+                "-C", "panic=abort", "--cap-lints", "allow", "--out-dir", str(sysroot), "-L", str(sysroot)]
+        parts = [("core", lib / "core/src/lib.rs", []),
+                 ("compiler_builtins", lib / "compiler-builtins/compiler-builtins/src/lib.rs",
+                  ["--cfg", 'feature="mem"', "--cfg", 'feature="compiler-builtins"',
+                   "--cfg", 'feature="unmangled-names"', "-C", "codegen-units=1"]),
+                 ("alloc", lib / "alloc/src/lib.rs", [])]
+        for name, src, extra in parts:
+            if not (sysroot / f"lib{name}.rlib").exists():
+                print(f"building {name} for {target}")
+                subprocess.run(base + ["--crate-name", name, *extra, str(src)], check=True, env=env)
+        common = ["--target", target, "-C", "opt-level=3", "-C", "panic=abort", "--sysroot", str(sysroot / "none"),
+                  "-L", str(sysroot)]
+        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "rlib", "--crate-name", "numbers", *common,
+                        "--out-dir", str(sysroot), str(crate.parent / "numbers" / "src" / "lib.rs")], check=True, env=env)
+        subprocess.run(["rustc", "--edition", "2021", "--crate-type", "bin", "--crate-name", "piii_os", *common,
+                        "-C", "codegen-units=1", "-C", "lto", "--extern", f"numbers={sysroot / 'libnumbers.rlib'}",
+                        str(crate / "src" / "main.rs"), "-o", str(out)], check=True, env=env)
+    print(f"{out.relative_to(REPO)}: {out.stat().st_size} bytes")
+    return 0
+
+
+def _main_build_os():
+    sys.exit(build_os_main())
+
+
 # ==============================================================================================================
 # run.py (was its own script)
 # ==============================================================================================================
@@ -731,6 +782,7 @@ def _main_zotero():
 COMMANDS = {
     "whitepaper": _main_build_whitepaper,
     "build-ui": _main_build_ui,
+    "build-os": _main_build_os,
     "run": _main_run,
     "zotero": _main_zotero,
 }

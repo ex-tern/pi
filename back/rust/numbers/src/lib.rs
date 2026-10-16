@@ -11,7 +11,7 @@
 //!   γ   Brent–McMillan: γ ≈ U/V, U = Σaₖ, V = Σbₖ, b₀ = 1, a₀ = −ln n, bₖ = bₖ₋₁·n²/k², aₖ = (aₖ₋₁·n²/k + bₖ)/k
 //!
 //! In the browser (wasm.rs) the page asks for "pi 1000" and gets "3.1415…" back.
-#![cfg_attr(target_arch = "wasm32", no_std)]
+#![cfg_attr(any(target_arch = "wasm32", target_os = "uefi"), no_std)]
 extern crate alloc;
 
 pub mod big;

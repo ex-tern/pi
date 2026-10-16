@@ -1,0 +1,69 @@
+name: piii OS
+
+# Builds piii OS (back/rust/os) for UEFI, boots it in QEMU on real UEFI firmware (OVMF), drives it with the keyboard
+# and a USB mouse and keeps what the screen showed; then publishes BOOTX64.EFI and a USB image (piii-os.img) on the
+# "piii-os" release.
+on:
+  push:
+    branches: [main]
+    paths:
+      - "back/rust/os/**"
+      - "back/rust/numbers/**"
+      - ".github/workflows/piii-os.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: piii-os
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Tests (on this computer)
+        working-directory: back/rust/os
+        run: cargo test --release
+
+      - name: Build for UEFI
+        run: |
+          rustup target add x86_64-unknown-uefi
+          python3 back/scripts/tools.py build-os
+
+      - name: The USB image (GPT, one FAT32 EFI system partition)
+        run: |
+          sudo apt-get update -q && sudo apt-get install -y -q qemu-system-x86 ovmf mtools
+          IMG=piii-os.img
+          dd if=/dev/zero of=$IMG bs=1M count=64 status=none
+          printf 'label: gpt\nstart=2048, type=C12A7328-F81F-11D2-BA4B-00A0C93EC93B, name="piii OS"\n' | sfdisk -q $IMG
+          mformat -i $IMG@@1M -F -v PIIIOS ::
+          mmd -i $IMG@@1M ::/EFI ::/EFI/BOOT
+          mcopy -i $IMG@@1M back/rust/os/esp/EFI/BOOT/BOOTX64.EFI ::/EFI/BOOT/
+          mdir -i $IMG@@1M ::/EFI/BOOT
+
+      - name: Boot it on UEFI firmware and take pictures
+        working-directory: back/rust/os
+        run: python3 tools/qemu-shots.py ../../../piii-os.img ../../../shots
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: piii-os
+          path: |
+            piii-os.img
+            back/rust/os/esp/EFI/BOOT/BOOTX64.EFI
+            shots/
+
+      - name: Publish on the release
+        if: github.ref == 'refs/heads/main'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp back/rust/os/esp/EFI/BOOT/BOOTX64.EFI .
+          gzip -kf piii-os.img
+          gh release view piii-os >/dev/null 2>&1 || gh release create piii-os --title "piii OS" \
+            --notes "piii OS for UEFI computers. Write piii-os.img(.gz) to a USB stick (balenaEtcher), or copy BOOTX64.EFI to EFI/BOOT/ on a FAT32 stick; start the computer from it (a Mac: hold Option, choose EFI Boot). See back/rust/os/README.md."
+          gh release upload piii-os piii-os.img.gz BOOTX64.EFI --clobber
