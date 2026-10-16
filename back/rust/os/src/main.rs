@@ -6,6 +6,7 @@
 //!   lang.rs   piii.app's Program language (dataflow, Turing complete) with its five examples
 //!   gfx.rs    drawing: superellipses (n = π), wires, text (font.rs: Spleen, made by tools/font.py)
 //!   uefi.rs   the firmware's tables and protocols, by hand; boot.rs: efi_main, screen, keyboard, pointers
+//!   usb.rs    piii OS's own USB mouse driver (a mouse's receiver, the Mac's trackpad), through the firmware's USB layer
 //!
 //! Built for the machine (x86_64-unknown-uefi), it is BOOTX64.EFI. Built for this computer, it is a tool that runs
 //! the same app with scripted clicks and writes what it draws as pictures (shots.rs): `cargo run -- shots DIR`.
@@ -24,6 +25,8 @@ mod num;
 mod boot;
 #[cfg(target_os = "uefi")]
 mod uefi;
+#[cfg(target_os = "uefi")]
+mod usb;
 
 #[cfg(not(target_os = "uefi"))]
 mod shots;

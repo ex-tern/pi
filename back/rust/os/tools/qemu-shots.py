@@ -166,13 +166,17 @@ try:
     keys("ret")
     shot("devices")
     keys("esc")
-    # the mouse: move, then drag a super
-    move(-300, -200)
-    shot("mouse-moved")
+    # the mouse (piii OS's own USB driver): from Devices onto Program, then drag Program down and right
+    move(-213, -215)
+    shot("mouse-on-program")
     button(True)
-    move(120, 80)
+    move(60, 60)
     button(False)
-    shot("mouse-drag")
+    shot("mouse-dragged-program")
+    move(-10, -10)
+    button(True)
+    button(False)
+    shot("mouse-click-opens", 1.0)
 finally:
     print(log(), flush=True)
     qemu.kill()

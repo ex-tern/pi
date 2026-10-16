@@ -18,6 +18,7 @@ pub const UGA: Guid = Guid(0x982c298b, 0xf4fa, 0x41cb, [0xb8, 0x38, 0x77, 0xaa, 
 pub const CONSOLE_CONTROL: Guid = Guid(0xf42f7782, 0x012e, 0x4c12, [0x99, 0x56, 0x49, 0xf9, 0x43, 0x04, 0xf7, 0x21]);
 pub const POINTER: Guid = Guid(0x31878c87, 0x0b75, 0x11d5, [0x9a, 0x4f, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d]);
 pub const ABS_POINTER: Guid = Guid(0x8d59d32b, 0xc655, 0x4ae9, [0x9b, 0x15, 0xf2, 0x59, 0x04, 0x99, 0x2a, 0x43]);
+pub const USB_IO: Guid = Guid(0x2b2f68d6, 0x0cd2, 0x44cf, [0x8e, 0x8b, 0xbb, 0xa2, 0x0b, 0x1b, 0x5b, 0x75]);
 pub const TEXT_IN_EX: Guid = Guid(0xdd9e7534, 0x7762, 0x4698, [0x8c, 0x14, 0xf5, 0x85, 0x17, 0xa6, 0x25, 0xaa]);
 
 #[repr(C)]
@@ -190,6 +191,78 @@ pub struct AbsPointer {
     pub state: extern "efiapi" fn(*mut AbsPointer, *mut AbsState) -> Status,
     pub wait: *mut c_void,
     pub mode: *mut AbsMode,
+}
+
+// ------------------------------------------------------------------------------------------------- USB
+
+#[repr(C)]
+pub struct UsbRequest {
+    pub kind: u8,
+    pub request: u8,
+    pub value: u16,
+    pub index: u16,
+    pub length: u16,
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct UsbDeviceDesc {
+    pub length: u8,
+    pub kind: u8,
+    pub bcd_usb: u16,
+    pub class: u8,
+    pub subclass: u8,
+    pub protocol: u8,
+    pub max_packet0: u8,
+    pub vendor: u16,
+    pub product: u16,
+    pub bcd_device: u16,
+    pub str_maker: u8,
+    pub str_product: u8,
+    pub str_serial: u8,
+    pub n_configs: u8,
+}
+
+#[repr(C)]
+#[derive(Default)]
+pub struct UsbInterfaceDesc {
+    pub length: u8,
+    pub kind: u8,
+    pub number: u8,
+    pub alternate: u8,
+    pub n_endpoints: u8,
+    pub class: u8,
+    pub subclass: u8,
+    pub protocol: u8,
+    pub name: u8,
+}
+
+#[repr(C, packed)]
+#[derive(Default)]
+pub struct UsbEndpointDesc {
+    pub length: u8,
+    pub kind: u8,
+    pub address: u8,
+    pub attributes: u8,
+    pub max_packet: u16,
+    pub interval: u8,
+}
+
+pub type UsbCallback = extern "efiapi" fn(*mut u8, usize, *mut c_void, u32) -> Status;
+
+/// EFI_USB_IO_PROTOCOL: the firmware's way to a USB device, there whether or not it has a driver for it.
+#[repr(C)]
+pub struct UsbIo {
+    pub control: extern "efiapi" fn(*mut UsbIo, *mut UsbRequest, u32, u32, *mut c_void, usize, *mut u32) -> Status,
+    pub bulk: usize,
+    pub async_interrupt: extern "efiapi" fn(*mut UsbIo, u8, u8, usize, usize, Option<UsbCallback>, *mut c_void) -> Status,
+    pub sync_interrupt: usize,
+    pub isochronous: usize,
+    pub async_isochronous: usize,
+    pub device_desc: extern "efiapi" fn(*mut UsbIo, *mut UsbDeviceDesc) -> Status,
+    pub config_desc: usize,
+    pub interface_desc: extern "efiapi" fn(*mut UsbIo, *mut UsbInterfaceDesc) -> Status,
+    pub endpoint_desc: extern "efiapi" fn(*mut UsbIo, u8, *mut UsbEndpointDesc) -> Status,
 }
 
 // ------------------------------------------------------------------------------------------------- the tables

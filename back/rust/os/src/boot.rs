@@ -117,12 +117,16 @@ impl Screen {
 struct Pointers {
     rel: Vec<(*mut Pointer, f64, f64)>,
     abs: Vec<*mut AbsPointer>,
+    /// the buttons as the firmware's pointers and piii OS's own USB mice last said, and both together
+    fw_left: bool,
+    usb_left: bool,
     left: bool,
 }
 
 struct Input {
     ex: Option<*mut TextInEx>,
     pointers: Pointers,
+    mice: crate::usb::Mice,
 }
 
 impl Input {
@@ -160,11 +164,19 @@ impl Input {
         }
         // the console's own pointer gathers the others: it is no mouse itself
         let n_dev = uefi::handles(&POINTER).into_iter().filter(|h| *h != st.con_in_handle).count();
+        // and the USB mice the firmware has no driver for: piii OS reads those itself
+        let mice = crate::usb::start();
         let n_abs = uefi::handles(&ABS_POINTER).into_iter().filter(|h| *h != st.con_in_handle).count();
         info.push((
             "Pointers".into(),
-            if n_dev == 0 && n_abs == 0 {
-                "none: this firmware has no mouse driver, so the arrow keys move the pointer and Enter clicks".into()
+            if !mice.found.is_empty() {
+                format!(
+                    "{} (read by piii OS's own USB driver){}",
+                    mice.found.join(", "),
+                    if n_dev + n_abs > 0 { format!("; {} more read by the firmware", n_dev + n_abs) } else { String::new() }
+                )
+            } else if n_dev == 0 && n_abs == 0 {
+                "none found: the arrow keys move the pointer and Enter clicks (plug in a USB mouse or its receiver, then restart)".into()
             } else {
                 format!(
                     "{} mouse or trackpad{} ({}), {} touch or tablet",
@@ -175,7 +187,7 @@ impl Input {
                 )
             },
         ));
-        (Input { ex, pointers: Pointers { rel, abs, left: false } }, info)
+        (Input { ex, pointers: Pointers { rel, abs, fw_left: false, usb_left: false, left: false }, mice }, info)
     }
 
     fn key(scan: u16, ch: u16, shift: bool) -> Option<Key> {
@@ -229,7 +241,7 @@ impl Input {
             }
         }
         // mice and trackpads
-        let mut left = self.pointers.left;
+        let mut left = self.pointers.fw_left;
         for &(p, kx, ky) in &self.pointers.rel {
             let mut s = PointerState { x: 0, y: 0, z: 0, left: 0, right: 0 };
             if unsafe { ((*p).state)(p, &mut s) } == SUCCESS {
@@ -250,9 +262,19 @@ impl Input {
                 left = s.buttons & 1 != 0;
             }
         }
-        if left != self.pointers.left {
-            self.pointers.left = left;
-            out.push(Event::Button(left));
+        self.pointers.fw_left = left;
+        // piii OS's own USB mice: a little faster for a big move, as a mouse feels right
+        if let Some((dx, dy, l)) = self.mice.take() {
+            if dx != 0 || dy != 0 {
+                let k = if dx.abs() + dy.abs() > 6 { 1.8 } else { 1.0 };
+                out.push(Event::Move(dx as f64 * k, dy as f64 * k));
+            }
+            self.pointers.usb_left = l;
+        }
+        let both = self.pointers.fw_left || self.pointers.usb_left;
+        if both != self.pointers.left {
+            self.pointers.left = both;
+            out.push(Event::Button(both));
         }
     }
 }
