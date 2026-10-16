@@ -18,6 +18,8 @@ pub struct OpenPortal {
     ticking: bool,
     /// a post asked to come down, waiting for "sure?"
     armed: Option<i64>,
+    /// the post just copied
+    copied: Option<i64>,
 }
 
 const T_PORTAL: u32 = 38;
@@ -209,6 +211,14 @@ fn portal_update(a: u16, v: String) {
             request(Want::Tool(Tool::Portal, 4), "POST", &format!("/api/portal/{}/delete", id), &body, 0);
         }
         6 => p.armed = None,
+        // copy a post's words
+        7 => {
+            let id: i64 = v.parse().unwrap_or(0);
+            if let Some(x) = p.posts.iter().find(|x| x.get("id").f() as i64 == id) {
+                host::call("copy", &x.get("text").text());
+                p.copied = Some(id);
+            }
+        }
         _ => {}
     }
 }
@@ -277,8 +287,15 @@ fn portal_view(s: &State) -> N {
             let can = owner || mine.iter().any(|k| k.0 == id);
             let mut head = el("div")
                 .cls("portal-head")
-                .kid(el("b").text(if who.is_empty() { "anonymous".to_string() } else { who }))
+                .kid(el("b").attr("data-solid", "").text(if who.is_empty() { "anonymous".to_string() } else { who }))
                 .kid(el("span").cls("hint").text(format!("#{} · {}", id, portal_when(&x.get("at").text()))));
+            head = head.kid(
+                el("button")
+                    .attr("type", "button")
+                    .cls("btn small portal-copy")
+                    .on("click", Msg::T(Tool::Portal, 7, id.to_string()))
+                    .text(if p.copied == Some(id) { "Copied" } else { "Copy" }),
+            );
             if can {
                 head = if p.armed == Some(id) {
                     head.kid(el("button").attr("type", "button").cls("btn small danger").on("click", Msg::T(Tool::Portal, 5, id.to_string())).text("Sure? Take it down"))
@@ -287,7 +304,7 @@ fn portal_view(s: &State) -> N {
                     head.kid(el("button").attr("type", "button").cls("btn small").on("click", Msg::T(Tool::Portal, 5, id.to_string())).text("Take down"))
                 };
             }
-            el("article").cls("portal-post").kid(head).kid(el("p").cls("portal-text").text(x.get("text").text())).into()
+            el("article").cls("portal-post").kid(head).kid(el("p").cls("portal-text").attr("data-solid", "").text(x.get("text").text())).into()
         })
         .collect();
     let mut root = el("div")
@@ -314,8 +331,8 @@ fn portal_view(s: &State) -> N {
 }
 
 const PORTAL_CSS: &str = "\
-.portal{max-width:760px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}\
-.portal *:not(input):not(textarea){user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}\
+.portal{max-width:760px}\
+.portal-text,.portal-head b{user-select:text;-webkit-user-select:text;-webkit-touch-callout:default;cursor:text}\
 .portal-write{display:grid;gap:8px;margin:12px 0 4px}\
 .portal-write textarea,.portal-row input{font:inherit;padding:10px 12px;border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:10px}\
 .portal-write textarea{resize:vertical;min-height:90px}\
@@ -325,6 +342,6 @@ const PORTAL_CSS: &str = "\
 .portal-list{display:grid;gap:10px;margin:8px 0 14px}\
 .portal-post{border:1px solid var(--line);background:var(--card);border-radius:12px;padding:10px 14px}\
 .portal-head{display:flex;gap:10px;align-items:baseline;flex-wrap:wrap;font-size:13px}\
-.portal-head .btn{margin-left:auto}\
+.portal-head .portal-copy{margin-left:auto}\
 .portal-text{margin:6px 0 2px;white-space:pre-wrap;overflow-wrap:anywhere;line-height:1.5}\
 ";
