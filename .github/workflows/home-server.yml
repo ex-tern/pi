@@ -38,7 +38,7 @@ jobs:
           # the password holds: the page itself answers 401 until it is given
           page=$(curl -s -o /dev/null -w '%{http_code}' "$A/")
           echo "page without the password: $page"; [ "$page" = 401 ]
-          grep -q '^SITE_PASSWORD=ci-test-password' /etc/piii-site.env
+          sudo grep -q '^SITE_PASSWORD=ci-test-password' /etc/piii-site.env   # (readable by root and the site only)
           systemctl is-active piii-site piii-site-tunnel
 
       - name: What the site said (also kept on branch ci/home-server-log)
