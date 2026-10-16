@@ -700,6 +700,8 @@ const GROUPS: [Group; 6] = [
             ("Assess Manuscripts [Pi]", Target::Hash("#/assess")),
             ("Assist Diagnosis [Intern]", Target::Tool(Tool::Intern)),
             ("Face Mace", Target::Tool(Tool::Face)),
+            // owner, 2026-10-16: "I want to make my own VPN provider. Make an app for it and merge it to the tools"
+            ("piii VPN", Target::Tool(Tool::Vpn)),
             // moved here from Explore (owner, 2026-10-14: "put super AI in tools")
             ("Super AI", Target::Tool(Tool::Ask)),
             // from the Library (owner, 2026-10-14: "put RiBD in tools")

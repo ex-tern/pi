@@ -44,6 +44,8 @@ pub enum Tool {
     Hal,
     // board.rs: a super's page as a canvas
     Grid,
+    // vpn.rs: your own VPN service
+    Vpn,
 }
 
 /// What every tool keeps.
@@ -92,6 +94,7 @@ fn tool_view(s: &State, t: Tool) -> N {
         Tool::Whitepaper => paper_doc_view(),
         Tool::Hal => hal_view(s),
         Tool::Grid => txt(""),
+        Tool::Vpn => vpn_view(s),
     }
 }
 
@@ -135,6 +138,9 @@ fn tool_load(t: Tool) {
     if t == Tool::Intern {
         intern_load();
     }
+    if t == Tool::Vpn {
+        vpn_load();
+    }
     tools2_load(t);
 }
 
@@ -146,6 +152,8 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
         intern_apply(what, v, err);
     } else if t == Tool::Rev {
         rev_apply(what, v, err);
+    } else if t == Tool::Vpn {
+        vpn_apply(what, v, err);
     } else if t == Tool::Learn {
         learn_apply(v, err);
     } else if matches!(t, Tool::Ledger | Tool::Board | Tool::Donate) {
@@ -183,6 +191,7 @@ fn tool_update(t: Tool, a: u16, v: String) {
         Tool::Hal => hal_update(a, v),
         Tool::Grid => board_update(a, v),
         Tool::Intern => intern_update(a, v),
+        Tool::Vpn => vpn_update(a, v),
         _ => tools2_update(t, a, v),
     }
 }

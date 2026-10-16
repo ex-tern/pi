@@ -208,6 +208,14 @@ const host = {
     const url = str(up, ul), init = { method: str(mp, ml), headers: {} };
     const tok = safe(() => localStorage.getItem("sp_token"), null);
     if (tok && url.startsWith("/api/")) init.headers.Authorization = "Bearer " + tok;
+    // piii VPN (Tools → piii VPN): the person's own server, with its own sign-in (kept per server) and the header it
+    // asks for; nothing of this site's own sign-in goes there
+    const vpn = /^https?:\/\/[^/]+\/api\/pvpn\//.test(url) ? safe(() => new URL(url).origin, "") : "";
+    if (vpn) {
+      init.headers["X-PVPN"] = "1";
+      const vt = safe(() => localStorage.getItem("pvpn_token:" + vpn), null);
+      if (vt) init.headers.Authorization = "Bearer " + vt;
+    }
     if (form) { init.body = forms[form]; forms[form] = undefined; }
     else if (bl) { init.body = str(bp, bl); init.headers["Content-Type"] = "application/json"; }
     (async () => {

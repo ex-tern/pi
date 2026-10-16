@@ -1,0 +1,47 @@
+#!/bin/bash
+# piii VPN's firewall (root; run by WireGuard as the interface comes up and goes down: PostUp/PostDown).
+#   * devices reach the internet, sent out from this machine's address (NAT);
+#   * they do not reach each other, your home network, or any private address;
+#   * on this machine they reach its web page (80, 443) and pings, nothing else;
+#   * TCP sizes are fitted to the tunnel (no stalled pages on networks with a small MTU).
+# It works next to ufw and next to Face Mace Server's VPN (its own chains, its own interface and addresses).
+set -euo pipefail
+what="${1:-}" IF="${2:-pvpn0}"
+NET="${PVPN_WG_NET:-10.77.0.0/16}"
+WAN="$(ip route show default | awk '/default/ {print $5; exit}')"
+PRIVATE="10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 224.0.0.0/4"
+
+del() { while iptables "$@" 2>/dev/null; do :; done; }   # take a rule away, however many times it is there
+
+if [[ "$what" == "up" ]]; then
+  iptables -N PVPN_FWD 2>/dev/null || true
+  iptables -F PVPN_FWD
+  iptables -A PVPN_FWD -o "$IF" -j DROP                                  # device to device
+  for n in $PRIVATE; do iptables -A PVPN_FWD -d "$n" -j DROP; done       # the home network
+  iptables -A PVPN_FWD -j ACCEPT                                         # the internet
+  iptables -C FORWARD -i "$IF" -j PVPN_FWD 2>/dev/null || iptables -I FORWARD 1 -i "$IF" -j PVPN_FWD
+  iptables -C FORWARD -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT 2>/dev/null \
+    || iptables -I FORWARD 1 -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  iptables -t mangle -C FORWARD -i "$IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu 2>/dev/null \
+    || iptables -t mangle -A FORWARD -i "$IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  [[ -n "$WAN" ]] && { iptables -t nat -C POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE 2>/dev/null \
+    || iptables -t nat -A POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE; }
+  iptables -N PVPN_IN 2>/dev/null || true
+  iptables -F PVPN_IN
+  iptables -A PVPN_IN -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  iptables -A PVPN_IN -p tcp -m multiport --dports 80,443 -j ACCEPT
+  iptables -A PVPN_IN -p icmp -j ACCEPT
+  iptables -A PVPN_IN -j DROP
+  iptables -C INPUT -i "$IF" -j PVPN_IN 2>/dev/null || iptables -I INPUT 1 -i "$IF" -j PVPN_IN
+  # the server puts its devices back when it starts: start it again, without waiting
+  systemctl --no-block try-restart piiivpn.service 2>/dev/null || true
+elif [[ "$what" == "down" ]]; then
+  del -D FORWARD -i "$IF" -j PVPN_FWD
+  del -D FORWARD -o "$IF" -m conntrack --ctstate RELATED,ESTABLISHED -j ACCEPT
+  del -t mangle -D FORWARD -i "$IF" -p tcp --tcp-flags SYN,RST SYN -j TCPMSS --clamp-mss-to-pmtu
+  [[ -n "$WAN" ]] && del -t nat -D POSTROUTING -s "$NET" -o "$WAN" -j MASQUERADE
+  del -D INPUT -i "$IF" -j PVPN_IN
+  for c in PVPN_FWD PVPN_IN; do iptables -F "$c" 2>/dev/null || true; iptables -X "$c" 2>/dev/null || true; done
+else
+  echo "usage: pvpn-fw up|down INTERFACE" >&2; exit 2
+fi

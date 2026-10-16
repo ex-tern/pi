@@ -1,0 +1,24 @@
+#!/bin/bash
+# piii VPN's helper: the only part that runs as root. The server (user piiivpn) calls it through sudo with one of
+# these commands, and each argument is checked before anything is changed:
+#   pubkey          the server's public key
+#   peers           the devices WireGuard has now (public keys)
+#   dump            per device: public key, endpoint, last handshake (unix time), bytes received, bytes sent
+#   add KEY IP      let a device in, at its VPN address
+#   remove KEY      take a device out
+set -euo pipefail
+IF="${PVPN_WG_IF:-pvpn0}"
+KEY_RE='^[A-Za-z0-9+/]{42}[AEIMQUYcgkosw480]=$'
+IP_RE='^10\.77\.[0-9]{1,3}\.[0-9]{1,3}$'
+case "${1:-}" in
+  pubkey) wg show "$IF" public-key ;;
+  peers) wg show "$IF" peers ;;
+  dump) wg show "$IF" dump | tail -n +2 | awk '{print $1, $3, $5, $6, $7}' ;;
+  add)
+    [[ "${2:-}" =~ $KEY_RE && "${3:-}" =~ $IP_RE ]] || { echo "bad arguments" >&2; exit 2; }
+    wg set "$IF" peer "$2" allowed-ips "$3/32" ;;
+  remove)
+    [[ "${2:-}" =~ $KEY_RE ]] || { echo "bad arguments" >&2; exit 2; }
+    wg set "$IF" peer "$2" remove ;;
+  *) echo "usage: pvpn-wg pubkey|peers|dump|add KEY IP|remove KEY" >&2; exit 2 ;;
+esac

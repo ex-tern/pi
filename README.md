@@ -11,6 +11,9 @@ Live at https://www.piii.app/
 - **Science first.** The lab's first instrument is **ScholarPi**, which assesses research papers. A panel of independent AI models reads a manuscript. Deterministic checks audit its references, reproducibility and integrity. It is scored on eight open criteria (the **piX** index), and the report shows what holds it back. Each assessment is recorded on a Proof-of-Research ledger and earns **piQ**, a soulbound token.
 - **Open and accountable.** The rubric and every weight are published (`/api/rubric`). The h-index and venue prestige are reported but never scored. Nothing optional happens before you choose (`/api/cookies`).
 - **More instruments.** Lab, Library and Connect hold the tools still being rewritten in Rust: HAL-OS, Unigyro, Face Mace, the Map of Science, Neuro Frenzy and the MD plan.
+- **Your own VPN.** Tools → **piii VPN** runs a VPN service from a Linux computer at home (`back/vpn-server`): one
+  command installs it, and the site is its client: people sign in, add devices with a QR code and see their usage; the
+  owner approves people, hands out invite codes and sets each plan (data a month, devices, an end date).
 
 ## The canvas
 
@@ -72,6 +75,7 @@ back/
   rust/superai/   SuperAI, the lab's graphical language
   rust/numbers/   π, e, φ, γ, computed exactly
   api.py      the server and the science engines (FastAPI)
+  vpn-server/ piii VPN: your own VPN service on a home Linux machine (WireGuard; installer, firewall, its own page)
   tests/  scripts/tools.py  zotero/  deploy/  LICENSES/
 nixpacks.toml railway.toml requirements.txt runtime.txt .github/
 ```
