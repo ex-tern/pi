@@ -176,7 +176,9 @@ try:
     button(False)
     shot("mouse-dragged-program")
     move(-30, -30, steps=3)
+    time.sleep(0.5)
     button(True)
+    time.sleep(0.2)
     button(False)
     shot("mouse-click-opens", 1.0)
 finally:

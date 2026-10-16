@@ -30,8 +30,10 @@ extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: 
         let now = b[0] as u32 & 1;
         if now == 1 && before == 0 {
             DOWNS.fetch_add(1, Ordering::Relaxed);
+            uefi::log("piii OS: usb button down");
         } else if now == 0 && before == 1 {
             UPS.fetch_add(1, Ordering::Relaxed);
+            uefi::log("piii OS: usb button up");
         }
         DX.fetch_add(b[1] as i8 as i32, Ordering::Relaxed);
         DY.fetch_add(b[2] as i8 as i32, Ordering::Relaxed);

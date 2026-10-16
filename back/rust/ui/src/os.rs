@@ -12,8 +12,15 @@ pub struct OsFlash {
     busy: bool,
     step: String,
     err: String,
-    /// written: (bytes, the drive's name, an older boot file kept, written into the drive (true) or its EFI folder)
-    done: Option<(usize, String, bool, bool)>,
+    /// the drive chosen: its name, how many things are at its top, and the first of their names
+    picked: Option<(String, usize, Vec<String>)>,
+    /// erase it first (owner, 2026-10-17: "make this so when you write it formats the flash drive first"), confirmed by
+    /// typing ERASE
+    erase: bool,
+    typed: String,
+    /// written: (bytes, the drive's name, an older boot file kept, into the drive (true) or its EFI folder, things
+    /// erased, things that would not go)
+    done: Option<(usize, String, bool, bool, usize, usize)>,
     how: u8,
 }
 
@@ -26,6 +33,23 @@ fn os_flash_got(data: Vec<u8>) {
     let o = &mut st().osf;
     if let Some(m) = s.strip_prefix("step ") {
         o.step = m.to_string();
+        return;
+    }
+    if let Some(m) = s.strip_prefix("picked ") {
+        let p: Vec<&str> = m.split('\t').collect();
+        o.busy = false;
+        o.step.clear();
+        o.err.clear();
+        o.typed.clear();
+        o.picked = Some((
+            p.first().unwrap_or(&"").to_string(),
+            p.get(1).and_then(|x| x.parse().ok()).unwrap_or(0),
+            p.iter().skip(2).map(|x| x.to_string()).collect(),
+        ));
+        // an empty drive needs no erasing
+        if o.picked.as_ref().map(|x| x.1 == 0).unwrap_or(false) {
+            o.erase = false;
+        }
         return;
     }
     o.busy = false;
@@ -42,26 +66,55 @@ fn os_flash_got(data: Vec<u8>) {
             p.get(1).unwrap_or(&"").to_string(),
             p.get(2) == Some(&"1"),
             p.get(3) != Some(&"efi"),
+            p.get(4).and_then(|x| x.parse().ok()).unwrap_or(0),
+            p.get(5).and_then(|x| x.parse().ok()).unwrap_or(0),
         ));
+        o.picked = None;
+        o.erase = false;
+        o.typed.clear();
     }
 }
 
 fn os_update(a: u16, v: String) {
     let o = &mut st().osf;
     match a {
+        // choose the drive
         1 => {
             o.err.clear();
             o.done = None;
-            if host::call("osflash", OS_FILE).is_none() {
+            o.picked = None;
+            if host::call("ospick", "").is_none() {
                 o.err = "This browser cannot write to a drive. Use Chrome or Edge on a computer, or the download below.".into();
             } else {
                 o.busy = true;
                 o.step = "Choose your flash drive in the window that opened…".into();
             }
         }
+        4 => {
+            o.erase = v == "1";
+            o.typed.clear();
+        }
+        5 => o.typed = v,
+        // write (erasing first if asked and confirmed)
+        6 => {
+            if o.erase && o.typed.trim() != "ERASE" {
+                o.err = "Type ERASE to confirm that everything on the drive may be deleted, or untick Erase.".into();
+                return;
+            }
+            o.err.clear();
+            let arg = format!("{}\t{}", OS_FILE, if o.erase { "1" } else { "0" });
+            if host::call("oswrite", &arg).is_none() {
+                o.err = "Choose the drive again.".into();
+                o.picked = None;
+            } else {
+                o.busy = true;
+                o.step = "Starting…".into();
+            }
+        }
         2 => o.how = v.parse().unwrap_or(0),
         3 => {
             o.done = None;
+            o.picked = None;
             o.err.clear();
         }
         _ => {}
@@ -97,23 +150,54 @@ fn os_view(s: &State) -> N {
                 .kid(el("li").text("Copy BOOTX64.EFI into EFI/BOOT.")))
             .kid(el("p").cls("hint").kid(el("span").text("Or write the whole image with balenaEtcher: ")).kid(ext_link(OS_RELEASE, "piii-os.img.gz")))
             .into()
-    } else if let Some((bytes, name, kept, drive)) = &o.done {
+    } else if let Some((bytes, name, kept, drive, erased, left)) = &o.done {
         el("div")
             .kid(el("p").cls("osf-ok").text(format!(
                 "piii OS is on {}: EFI/BOOT/BOOTX64.EFI, {} KB, checked after writing.",
                 if name.is_empty() { "the drive".to_string() } else { format!("“{}”", name) },
                 bytes / 1024
             )))
+            .kid_if(*erased > 0, || el("p").cls("hint").text(format!("The drive was erased first: {} thing{} deleted{}.", erased, if *erased == 1 { "" } else { "s" }, if *left > 0 { format!("; {} of the system's own would not go (harmless)", left) } else { String::new() })).into())
             .kid_if(*kept, || el("p").cls("hint").text("A boot file that was already there is kept beside it as BOOTX64-before-piii.EFI.").into())
             .kid_if(!*drive, || el("p").cls("hint").text("It went into the EFI folder you chose. That folder must be at the top of the drive.").into())
             .kid(el("p").cls("hint").text("Eject the drive before you unplug it (Mac: ⏏ in Finder; Windows: Safely Remove), so everything is really on it."))
             .kid(el("button").attr("type", "button").cls("btn small").on("click", Msg::T(Tool::OsFlash, 3, String::new())).text("Write another drive"))
             .into()
+    } else if let Some((name, count, names)) = &o.picked {
+        let shown = if names.is_empty() { String::new() } else { format!(": {}{}", names.join(", "), if *count > names.len() { ", …" } else { "" }) };
+        let ready = !o.erase || o.typed.trim() == "ERASE";
+        el("div")
+            .kid(el("p").kid(el("b").text(format!("“{}”", if name.is_empty() { "the drive" } else { name.as_str() }))).kid(el("span").text(if *count == 0 {
+                " is empty.".to_string()
+            } else {
+                format!(" has {} thing{} at its top{}", count, if *count == 1 { "" } else { "s" }, shown)
+            })))
+            .kid_if(*count > 0, || {
+                el("label")
+                    .cls("osf-erase")
+                    .kid(el("input").attr("type", "checkbox").prop("checked", if o.erase { "1" } else { "0" }).on_val("change", |v| Msg::T(Tool::OsFlash, 4, v)))
+                    .kid(el("span").text("Erase everything on it first (as formatting does). This deletes those files for good."))
+                    .into()
+            })
+            .kid_if(o.erase, || {
+                el("label")
+                    .cls("osf-confirm")
+                    .kid(el("span").text("Is this really the flash drive? Type ERASE to confirm:"))
+                    .kid(el("input").attr("type", "text").attr("autocomplete", "off").attr("spellcheck", "false").prop("value", o.typed.clone()).on("input", Msg::TV(Tool::OsFlash, 5)))
+                    .into()
+            })
+            .kid(el("div").cls("row")
+                .kid(el("button").attr("type", "button").cls("btn primary osf-go").attr_if(o.busy || !ready, "disabled", "").on("click", Msg::T(Tool::OsFlash, 6, String::new()))
+                    .text(if o.busy { "Working…" } else if o.erase { "Erase and write piii OS" } else { "Write piii OS" }))
+                .kid(el("button").attr("type", "button").cls("btn small").attr_if(o.busy, "disabled", "").on("click", Msg::T(Tool::OsFlash, 1, String::new())).text("Choose another")))
+            .kid_if(!o.step.is_empty(), || el("p").cls("hint").attr("role", "status").text(o.step.clone()).into())
+            .kid_if(!o.err.is_empty(), || el("p").cls("osf-warn").attr("role", "alert").text(format!("It did not work: {}", o.err)).into())
+            .into()
     } else {
         el("div")
-            .kid(el("p").text("Plug in the flash drive, press the button, and choose the drive itself in the window that opens. piii OS is written onto it as one file; nothing else on the drive is touched."))
+            .kid(el("p").text("Plug in the flash drive, press the button, and choose the drive itself in the window that opens. You will see what is on it, and can erase it before piii OS is written."))
             .kid(el("button").attr("type", "button").cls("btn primary osf-go").attr_if(o.busy, "disabled", "").on("click", Msg::T(Tool::OsFlash, 1, String::new()))
-                .text(if o.busy { "Writing…" } else { "Write piii OS to a flash drive" }))
+                .text(if o.busy { "Choosing…" } else { "Choose the flash drive" }))
             .kid_if(!o.step.is_empty(), || el("p").cls("hint").attr("role", "status").text(o.step.clone()).into())
             .kid_if(!o.err.is_empty(), || el("p").cls("osf-warn").attr("role", "alert").text(format!("It did not work: {}", o.err)).into())
             .kid(el("p").cls("hint").text("If the browser will not open the drive itself, make a folder named EFI at the top of the drive and choose that folder instead."))
@@ -148,5 +232,9 @@ const OS_CSS: &str = "\
 .osf .btn.osf-go{font-size:15px;padding:12px 20px;margin:8px 0}\
 .osf-ok{border-left:3px solid #1f8a4c;padding:8px 12px;background:var(--card);font-weight:500}\
 .osf-warn{border-left:3px solid #b4561b;padding:8px 12px;background:var(--card)}\
+.osf-erase{display:flex;gap:10px;align-items:flex-start;margin:12px 0;font-size:14px;cursor:pointer}\
+.osf-erase input{margin-top:3px}\
+.osf-confirm{display:grid;gap:6px;margin:8px 0 12px;font-size:14px;max-width:360px}\
+.osf-confirm input{font:inherit;padding:8px 10px;border:1px solid var(--line2);background:var(--card);color:var(--ink);letter-spacing:.08em}\
 @media (max-width:600px){.osf-step{grid-template-columns:1fr}}\
 ";

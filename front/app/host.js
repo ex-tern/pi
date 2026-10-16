@@ -613,6 +613,7 @@ async function zipFiles(name, list) {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 600000);
   tell("done " + n);
 }
+let osRoot = null; // Tools → piii OS: the flash drive chosen
 const ops = {
   ptr: () => lastPointer,
   // Intern: notices. notify: title, body, tag (shown only when the app is not in front); notify-ask asks once and
@@ -733,21 +734,44 @@ const ops = {
   // a folder on this computer to save into (Chrome, Edge): a new folder of the given name is made in the one picked;
   // the answer comes back on token 2_000_002 ("dir <name>" or "error …"). canpick says whether the browser can.
   canpick: () => (typeof window.showDirectoryPicker === "function" ? "1" : "0"),
-  // piii OS onto a flash drive (Tools → piii OS): the drive chosen (or its EFI folder, where the browser will not open
-  // a drive itself), piii OS fetched from this site, written to EFI/BOOT/BOOTX64.EFI and read back to check; a boot
-  // file already there is kept as BOOTX64-before-piii.EFI. Progress and the answer come back on token 7_000_000:
-  // "step …", "done bytes\tname\tkept\twhere" or "error …".
-  osflash: (a) => {
+  // piii OS onto a flash drive (Tools → piii OS), in two steps. ospick: the drive chosen (or its EFI folder, where the
+  // browser will not open a drive itself), and what is at its top answered on token 7_000_000 as
+  // "picked name\tcount\tfirst names…" (or "error …"). oswrite "url\terase": everything at its top removed first if
+  // erase is 1 (what a browser can do of "format"), then piii OS fetched from this site, written to
+  // EFI/BOOT/BOOTX64.EFI and read back to check; a boot file already there (not erased) is kept as
+  // BOOTX64-before-piii.EFI. Progress and the answer: "step …", "done bytes\tname\tkept\twhere\terased\tleft" or
+  // "error …".
+  ospick: () => {
     if (typeof window.showDirectoryPicker !== "function") return null;
     const tell = (s) => give(7000000, enc.encode(s), 1, 1);
-    const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
     (async () => {
-      let root;
-      try { root = await window.showDirectoryPicker({ mode: "readwrite", id: "piii-os" }); }
-      catch (e) { return tell("error " + (e && e.name === "AbortError" ? "cancelled" : (e && e.message) || e)); }
       try {
+        osRoot = await window.showDirectoryPicker({ mode: "readwrite", id: "piii-os" });
+        const names = [];
+        for await (const [n] of osRoot.entries()) names.push(n);
+        tell("picked " + osRoot.name + "\t" + names.length + "\t" + names.slice(0, 12).join("\t"));
+      } catch (e) { osRoot = null; tell("error " + (e && e.name === "AbortError" ? "cancelled" : (e && e.message) || e)); }
+    })();
+    return "1";
+  },
+  oswrite: (a) => {
+    if (!osRoot) return null;
+    const [url, erase] = a.split("\t");
+    const tell = (s) => give(7000000, enc.encode(s), 1, 1);
+    const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+    const root = osRoot;
+    (async () => {
+      try {
+        let erased = 0, left = 0;
+        if (erase === "1") {
+          tell("step Erasing the drive…");
+          const names = [];
+          for await (const [n] of root.entries()) names.push(n);
+          // the system's own files (Windows' System Volume Information, a Mac's .Spotlight-V100) may refuse
+          for (const n of names) { try { await root.removeEntry(n, { recursive: true }); erased++; } catch (_) { left++; } }
+        }
         tell("step Getting piii OS from piii.app…");
-        const r = await fetch(a, { cache: "no-store" });
+        const r = await fetch(url, { cache: "no-store" });
         if (!r.ok) throw new Error("piii OS could not be downloaded (the site answered " + r.status + ")");
         const bin = new Uint8Array(await r.arrayBuffer());
         if (bin.length < 4096 || bin[0] !== 0x4d || bin[1] !== 0x5a) throw new Error("what was downloaded is not a UEFI program");
@@ -769,7 +793,7 @@ const ops = {
         tell("step Checking what was written…");
         const back = new Uint8Array(await (await fh.getFile()).arrayBuffer());
         if (!same(back, bin)) throw new Error("what was read back differs from what was written: try another flash drive");
-        tell("done " + bin.length + "\t" + root.name + "\t" + kept + "\t" + (inEfi ? "efi" : "drive"));
+        tell("done " + bin.length + "\t" + root.name + "\t" + kept + "\t" + (inEfi ? "efi" : "drive") + "\t" + erased + "\t" + left);
       } catch (e) {
         const m = (e && e.message) || String(e);
         tell("error " + (/not allowed|denied|security/i.test(m) ? "the browser did not allow writing there (" + m + ")" : m));
