@@ -314,7 +314,8 @@ fn portal_view(s: &State) -> N {
 }
 
 const PORTAL_CSS: &str = "\
-.portal{max-width:760px}\
+.portal{max-width:760px;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}\
+.portal *:not(input):not(textarea){user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}\
 .portal-write{display:grid;gap:8px;margin:12px 0 4px}\
 .portal-write textarea,.portal-row input{font:inherit;padding:10px 12px;border:1px solid var(--line2);background:var(--card);color:var(--ink);border-radius:10px}\
 .portal-write textarea{resize:vertical;min-height:90px}\
