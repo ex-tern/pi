@@ -597,7 +597,7 @@ pub fn example(i: usize) -> Program {
         about: about.to_string(),
         nodes: nodes.iter().map(|(t, x, y)| Node { text: t.to_string(), x: *x, y: *y }).collect(),
         wires: wires.iter().map(|(a, b)| (*a, *b, Tip::In)).collect(),
-        status: format!("{}: press ▶ Run, or Step.", name),
+        status: format!("{}: press Run, or Step (r, s).", name),
         ..Default::default()
     }
 }

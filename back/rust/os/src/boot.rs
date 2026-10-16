@@ -158,18 +158,20 @@ impl Input {
             unsafe { ((*p).reset)(p, 0) };
             abs.push(p);
         }
-        let n_dev = uefi::handles(&POINTER).len();
+        // the console's own pointer gathers the others: it is no mouse itself
+        let n_dev = uefi::handles(&POINTER).into_iter().filter(|h| *h != st.con_in_handle).count();
+        let n_abs = uefi::handles(&ABS_POINTER).into_iter().filter(|h| *h != st.con_in_handle).count();
         info.push((
             "Pointers".into(),
-            if rel.is_empty() && abs.is_empty() {
-                "none from the firmware: the arrow keys move the pointer, Enter clicks".into()
+            if n_dev == 0 && n_abs == 0 {
+                "none: this firmware has no mouse driver, so the arrow keys move the pointer and Enter clicks".into()
             } else {
                 format!(
-                    "{} mouse or trackpad device{} ({}), {} absolute (touch or tablet)",
+                    "{} mouse or trackpad{} ({}), {} touch or tablet",
                     n_dev,
                     if n_dev == 1 { "" } else { "s" },
                     if gathered.is_some() { "read through the console" } else { "read one by one" },
-                    abs.len()
+                    n_abs
                 )
             },
         ));
@@ -218,6 +220,7 @@ impl Input {
             };
             match got {
                 Some((s, c, sh)) => {
+                    uefi::log(&format!("piii OS: key scan {:#x} char {:#x}{}", s, c, if sh { " shift" } else { "" }));
                     if let Some(k) = Self::key(s, c, sh) {
                         out.push(Event::Key(k));
                     }
@@ -233,6 +236,7 @@ impl Input {
                 if s.x != 0 || s.y != 0 {
                     out.push(Event::Move(s.x as f64 * kx, s.y as f64 * ky));
                 }
+                uefi::log(&format!("piii OS: pointer {} {} button {}", s.x, s.y, s.left));
                 left = s.left != 0;
             }
         }

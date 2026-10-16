@@ -116,7 +116,7 @@ pub fn main() {
         ("Firmware".into(), "Apple (revision 0x10001), EFI 1.10".into()),
         ("Screen".into(), format!("Universal Graphics Adapter, {} × {}", w, h)),
         ("Keyboard".into(), "the firmware's keyboard (Simple Text Input)".into()),
-        ("Pointers".into(), "1 mouse or trackpad device (read through the console), 0 absolute (touch or tablet)".into()),
+        ("Pointers".into(), "1 mouse or trackpad (read through the console), 0 touch or tablet".into()),
     ];
     let mut s = Shooter { app, frame: Frame::new(w, h), dir, n: 0 };
     let (fw, fh) = (w as f64, h as f64);
