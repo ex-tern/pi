@@ -91,7 +91,14 @@ sed -i "s|^ListenPort *=.*|ListenPort = $WG_PORT|" /etc/wireguard/$IF.conf
 echo "net.ipv4.ip_forward = 1" > /etc/sysctl.d/90-piiivpn.conf
 sysctl -q -p /etc/sysctl.d/90-piiivpn.conf
 systemctl enable -q wg-quick@$IF
-systemctl restart wg-quick@$IF
+if ! systemctl restart wg-quick@$IF; then
+  echo; echo "The VPN did not start. What it said:"
+  journalctl -u wg-quick@$IF -n 25 --no-pager -o cat || true
+  if ! modprobe wireguard 2>/dev/null; then
+    echo; echo "This kernel has no WireGuard module. Install it with:  sudo apt install linux-generic  (then reboot and run this again)"
+  fi
+  exit 1
+fi
 
 say "Settings"
 if [[ ! -f /etc/piiivpn.env ]]; then
