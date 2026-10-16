@@ -48,6 +48,18 @@ jobs:
       - name: Boot it on UEFI firmware and take pictures
         working-directory: back/rust/os
         run: python3 tools/qemu-shots.py ../../../piii-os.img ../../../shots
+        continue-on-error: true
+
+      - name: Keep the pictures in git too (branch ci/piii-os-shots)
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          [ -d shots ] || exit 0
+          R=$(mktemp -d) && cp -r shots/. $R/ && cd $R
+          git init -q -b shots && git -c user.name="piii OS CI" -c user.email="ci@piii.app" add . \
+            && git -c user.name="piii OS CI" -c user.email="ci@piii.app" commit -qm "piii OS on OVMF: ${{ github.sha }}"
+          git push -qf "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:refs/heads/ci/piii-os-shots
 
       - uses: actions/upload-artifact@v4
         with:
