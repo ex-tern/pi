@@ -75,6 +75,7 @@ back/
   rust/superai/   SuperAI, the lab's graphical language
   rust/numbers/   π, e, φ, γ, computed exactly
   api.py      the server and the science engines (FastAPI)
+  kiosk/      piii kiosk: a computer (an old MacBook) that boots straight into piii.app
   vpn-server/ piii VPN: your own VPN service on a home Linux machine (WireGuard; installer, firewall, its own page)
   tests/  scripts/tools.py  zotero/  deploy/  LICENSES/
 nixpacks.toml railway.toml requirements.txt runtime.txt .github/
