@@ -129,10 +129,11 @@ def keys(*names, gap=0.25):
 
 
 def move(dx, dy, steps=10):
+    # small steps, often, as a real mouse sends them (big jumps overflow the emulated mouse's queue)
     for _ in range(steps):
         cmd("input-send-event", events=[{"type": "rel", "data": {"axis": "x", "value": dx // steps}},
                                         {"type": "rel", "data": {"axis": "y", "value": dy // steps}}])
-        time.sleep(0.05)
+        time.sleep(0.02)
 
 
 def button(down):
@@ -168,10 +169,10 @@ try:
     keys("esc")
     # the mouse (piii OS's own USB driver): from Devices onto Program, then drag Program down and right
     # (the pointer starts at speed 0.35: a move of 100 counts goes 35 pixels)
-    move(-1100, -1100, steps=20)
+    move(-1100, -1100, steps=100)
     shot("mouse-on-program")
     button(True)
-    move(300, 300, steps=10)
+    move(300, 300, steps=30)
     button(False)
     shot("mouse-dragged-program")
     move(-30, -30, steps=3)
