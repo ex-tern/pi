@@ -18,12 +18,21 @@ static DY: AtomicI32 = AtomicI32::new(0);
 static BUTTONS: AtomicU32 = AtomicU32::new(0);
 /// reports seen (to know a mouse is alive)
 static REPORTS: AtomicU32 = AtomicU32::new(0);
+/// the left button's presses and releases since last asked (a quick click is both, between two looks)
+static DOWNS: AtomicU32 = AtomicU32::new(0);
+static UPS: AtomicU32 = AtomicU32::new(0);
 
 /// A report from a mouse: called by the firmware (on its timer), so it only adds to what the loop takes.
 extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: u32) -> Status {
     if status == 0 && !data.is_null() && len >= 3 {
         let b = unsafe { core::slice::from_raw_parts(data, len) };
-        BUTTONS.store(b[0] as u32, Ordering::Relaxed);
+        let before = BUTTONS.swap(b[0] as u32, Ordering::Relaxed) & 1;
+        let now = b[0] as u32 & 1;
+        if now == 1 && before == 0 {
+            DOWNS.fetch_add(1, Ordering::Relaxed);
+        } else if now == 0 && before == 1 {
+            UPS.fetch_add(1, Ordering::Relaxed);
+        }
         DX.fetch_add(b[1] as i8 as i32, Ordering::Relaxed);
         DY.fetch_add(b[2] as i8 as i32, Ordering::Relaxed);
         REPORTS.fetch_add(1, Ordering::Relaxed);
@@ -92,13 +101,15 @@ pub fn start() -> Mice {
 }
 
 impl Mice {
-    /// what the mice did since last asked: how far, and the buttons held
-    pub fn take(&self) -> Option<(i32, i32, bool)> {
+    /// what the mice did since last asked: how far, the left button's presses and releases, and whether it is held
+    pub fn take(&self) -> Option<(i32, i32, u32, u32, bool)> {
         if self.found.is_empty() || REPORTS.load(Ordering::Relaxed) == 0 {
             return None;
         }
         let dx = DX.swap(0, Ordering::Relaxed);
         let dy = DY.swap(0, Ordering::Relaxed);
-        Some((dx, dy, BUTTONS.load(Ordering::Relaxed) & 1 != 0))
+        let downs = DOWNS.swap(0, Ordering::Relaxed);
+        let ups = UPS.swap(0, Ordering::Relaxed);
+        Some((dx, dy, downs, ups, BUTTONS.load(Ordering::Relaxed) & 1 != 0))
     }
 }

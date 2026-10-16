@@ -264,17 +264,36 @@ impl Input {
         }
         self.pointers.fw_left = left;
         // piii OS's own USB mice: a little faster for a big move, as a mouse feels right
-        if let Some((dx, dy, l)) = self.mice.take() {
+        if self.pointers.fw_left != self.pointers.left {
+            self.pointers.left = self.pointers.fw_left;
+            out.push(Event::Button(self.pointers.left));
+        }
+        if let Some((dx, dy, downs, ups, held)) = self.mice.take() {
             if dx != 0 || dy != 0 {
                 let k = if dx.abs() + dy.abs() > 6 { 1.8 } else { 1.0 };
                 out.push(Event::Move(dx as f64 * k, dy as f64 * k));
             }
+            // every press and release, in the order they must have come (a quick click is both at once)
+            let mut l = self.pointers.usb_left;
+            let mut d = downs;
+            let mut u = ups;
+            while d > 0 || u > 0 {
+                if !l && d > 0 {
+                    d -= 1;
+                    l = true;
+                } else if l && u > 0 {
+                    u -= 1;
+                    l = false;
+                } else {
+                    break;
+                }
+                out.push(Event::Button(l));
+            }
+            if l != held {
+                l = held;
+                out.push(Event::Button(l));
+            }
             self.pointers.usb_left = l;
-        }
-        let both = self.pointers.fw_left || self.pointers.usb_left;
-        if both != self.pointers.left {
-            self.pointers.left = both;
-            out.push(Event::Button(both));
         }
     }
 }
