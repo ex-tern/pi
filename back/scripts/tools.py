@@ -698,7 +698,11 @@ def build_os_main() -> int:
         subprocess.run(["rustc", "--edition", "2021", "--crate-type", "bin", "--crate-name", "piii_os", *common,
                         "-C", "codegen-units=1", "-C", "lto", "--extern", f"numbers={sysroot / 'libnumbers.rlib'}",
                         str(crate / "src" / "main.rs"), "-o", str(out)], check=True, env=env)
-    print(f"{out.relative_to(REPO)}: {out.stat().st_size} bytes")
+    # the site serves it too: Tools → piii OS writes it onto a flash drive from the browser
+    site = REPO / "front" / "os" / "BOOTX64.EFI"
+    site.parent.mkdir(parents=True, exist_ok=True)
+    shutil.copyfile(out, site)
+    print(f"{out.relative_to(REPO)} and {site.relative_to(REPO)}: {out.stat().st_size} bytes")
     return 0
 
 

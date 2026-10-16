@@ -46,6 +46,8 @@ pub enum Tool {
     Grid,
     // vpn.rs: your own VPN service
     Vpn,
+    // os.rs: piii OS onto a flash drive
+    OsFlash,
 }
 
 /// What every tool keeps.
@@ -95,6 +97,7 @@ fn tool_view(s: &State, t: Tool) -> N {
         Tool::Hal => hal_view(s),
         Tool::Grid => txt(""),
         Tool::Vpn => vpn_view(s),
+        Tool::OsFlash => os_view(s),
     }
 }
 
@@ -192,6 +195,7 @@ fn tool_update(t: Tool, a: u16, v: String) {
         Tool::Grid => board_update(a, v),
         Tool::Intern => intern_update(a, v),
         Tool::Vpn => vpn_update(a, v),
+        Tool::OsFlash => os_update(a, v),
         _ => tools2_update(t, a, v),
     }
 }

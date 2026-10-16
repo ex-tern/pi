@@ -348,6 +348,7 @@ struct State {
     hal: Hal,
     intern: Intern,
     vpn: Vpn,
+    osf: OsFlash,
     boards: Vec<Board>,
     board_drag: Option<BoardDrag>,
     /// the program drawn on the canvas (program.rs)
@@ -382,7 +383,7 @@ pub fn start() {
     host::append_child(shape, rule_node);
     host::append_child(head, shape);
     let tools = host::create_el("style");
-    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS, INTERN_CSS, VPN_CSS));
+    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS, INTERN_CSS, VPN_CSS, OS_CSS));
     host::append_child(tools, tools_css);
     host::append_child(head, tools);
     let meta = host::create_el("meta");
@@ -525,6 +526,7 @@ pub fn start() {
         hal: Hal::default(),
         intern: Intern::default(),
         vpn: Vpn::default(),
+        osf: OsFlash::default(),
         boards: Vec::new(),
         board_drag: None,
         prog: Prog::default(),
@@ -3577,6 +3579,7 @@ include!("board.rs");
 include!("dossier.rs");
 include!("intern.rs");
 include!("vpn.rs");
+include!("os.rs");
 
 /// Save, lock, chain and reset, floating over an open super as they sit on the canvas.
 fn ctl_bar(s: &State) -> N {

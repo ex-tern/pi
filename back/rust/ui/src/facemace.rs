@@ -1305,6 +1305,12 @@ fn face_next() {
 
 /// Pixels arrived (w = 0: the file could not be read).
 pub fn on_pixels(token: u32, data: Vec<u8>, w: u32, h: u32) {
+    // piii OS onto a flash drive (os.rs)
+    if token == OS_TOKEN {
+        os_flash_got(data);
+        render();
+        return;
+    }
     if token >= ML_TOKEN {
         if token == ML_TOKEN {
             ml_loaded(&String::from_utf8(data).unwrap_or_default());

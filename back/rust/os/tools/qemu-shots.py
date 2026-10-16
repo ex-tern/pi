@@ -16,6 +16,7 @@ import zlib
 from pathlib import Path
 
 IMG, OUT = Path(sys.argv[1]), Path(sys.argv[2])
+QUICK = "--quick" in sys.argv  # only: does it start and draw?
 OUT.mkdir(parents=True, exist_ok=True)
 tmp = Path(tempfile.mkdtemp())
 sock_path = str(tmp / "qmp.sock")
@@ -143,6 +144,10 @@ ok = wait_for("piii OS: frame 1", 90)
 print("booted:", ok, flush=True)
 try:
     shot("boot", 2.0)
+    if QUICK:
+        if not ok:
+            sys.exit("piii OS did not start")
+        raise SystemExit(0)
     # the keyboard alone: Tab to Welcome, open, back; Program, the Turing machine, run
     keys("tab")
     shot("tab-welcome")

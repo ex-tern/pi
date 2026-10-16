@@ -733,6 +733,50 @@ const ops = {
   // a folder on this computer to save into (Chrome, Edge): a new folder of the given name is made in the one picked;
   // the answer comes back on token 2_000_002 ("dir <name>" or "error …"). canpick says whether the browser can.
   canpick: () => (typeof window.showDirectoryPicker === "function" ? "1" : "0"),
+  // piii OS onto a flash drive (Tools → piii OS): the drive chosen (or its EFI folder, where the browser will not open
+  // a drive itself), piii OS fetched from this site, written to EFI/BOOT/BOOTX64.EFI and read back to check; a boot
+  // file already there is kept as BOOTX64-before-piii.EFI. Progress and the answer come back on token 7_000_000:
+  // "step …", "done bytes\tname\tkept\twhere" or "error …".
+  osflash: (a) => {
+    if (typeof window.showDirectoryPicker !== "function") return null;
+    const tell = (s) => give(7000000, enc.encode(s), 1, 1);
+    const same = (x, y) => x.length === y.length && x.every((v, i) => v === y[i]);
+    (async () => {
+      let root;
+      try { root = await window.showDirectoryPicker({ mode: "readwrite", id: "piii-os" }); }
+      catch (e) { return tell("error " + (e && e.name === "AbortError" ? "cancelled" : (e && e.message) || e)); }
+      try {
+        tell("step Getting piii OS from piii.app…");
+        const r = await fetch(a, { cache: "no-store" });
+        if (!r.ok) throw new Error("piii OS could not be downloaded (the site answered " + r.status + ")");
+        const bin = new Uint8Array(await r.arrayBuffer());
+        if (bin.length < 4096 || bin[0] !== 0x4d || bin[1] !== 0x5a) throw new Error("what was downloaded is not a UEFI program");
+        const inEfi = root.name.toUpperCase() === "EFI";
+        const efi = inEfi ? root : await root.getDirectoryHandle("EFI", { create: true });
+        const boot = await efi.getDirectoryHandle("BOOT", { create: true });
+        let kept = "";
+        try {
+          const old = new Uint8Array(await (await (await boot.getFileHandle("BOOTX64.EFI")).getFile()).arrayBuffer());
+          if (!same(old, bin)) {
+            const w = await (await boot.getFileHandle("BOOTX64-before-piii.EFI", { create: true })).createWritable();
+            await w.write(old); await w.close(); kept = "1";
+          }
+        } catch (_) { /* nothing there before */ }
+        tell("step Writing piii OS to the drive…");
+        const fh = await boot.getFileHandle("BOOTX64.EFI", { create: true });
+        const w = await fh.createWritable();
+        await w.write(bin); await w.close();
+        tell("step Checking what was written…");
+        const back = new Uint8Array(await (await fh.getFile()).arrayBuffer());
+        if (!same(back, bin)) throw new Error("what was read back differs from what was written: try another flash drive");
+        tell("done " + bin.length + "\t" + root.name + "\t" + kept + "\t" + (inEfi ? "efi" : "drive"));
+      } catch (e) {
+        const m = (e && e.message) || String(e);
+        tell("error " + (/not allowed|denied|security/i.test(m) ? "the browser did not allow writing there (" + m + ")" : m));
+      }
+    })();
+    return "1";
+  },
   // on a Face Mace Server: the edition its page asks for ("full"), whether it keeps photos, and their list (given
   // as a folder chosen is, on token 2_000_005; a problem on 2_000_008)
   edition: () => document.documentElement.dataset.edition || "",
