@@ -524,12 +524,46 @@ fn group_canvas(gi: usize, fresh: bool) {
     }
     // every member the site has now, there; one it no longer has here, gone
     changed |= group_members_sync(gi);
+    // tidied once (owner, 2026-10-17: "fix the library"): the members back in their flow, and what you drew moved
+    // clear of them, to their right, as it was arranged
+    if host::store_get(&ckey("piii:tidy-v")).as_deref() != Some("1") {
+        group_members_place(gi, false);
+        members_clear_of_yours();
+        host::store_set(&ckey("piii:tidy-v"), "1");
+        changed = true;
+    }
     if changed {
         locked_save();
         wires_save();
         prog_save();
         st().undo.clear();
         st().undo_at = 0.0;
+    }
+}
+
+/// Your own supers on a group's page, moved as one block to the right of the members if any of them lies on one.
+fn members_clear_of_yours() {
+    let s = st();
+    let size = |n: &UNode| if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
+    let mem: Vec<(f64, f64, f64, f64)> = s.prog.nodes.iter().filter(|n| n.text.starts_with(MEMBER)).map(|n| { let (w, h) = size(n); (n.x, n.y, w, h) }).collect();
+    let yours: Vec<usize> = s.prog.nodes.iter().filter(|n| !n.text.starts_with(MEMBER)).map(|n| n.id).collect();
+    if mem.is_empty() || yours.is_empty() {
+        return;
+    }
+    let hit = s.prog.nodes.iter().filter(|n| !n.text.starts_with(MEMBER)).any(|n| {
+        let (w, h) = size(n);
+        mem.iter().any(|m| n.x < m.0 + m.2 + 20.0 && n.x + w + 20.0 > m.0 && n.y < m.1 + m.3 + 20.0 && n.y + h + 20.0 > m.1)
+    });
+    if !hit {
+        return;
+    }
+    let right = mem.iter().map(|m| m.0 + m.2).fold(f64::MIN, f64::max);
+    let top = mem.iter().map(|m| m.1).fold(f64::MAX, f64::min);
+    let (lx, ty) = s.prog.nodes.iter().filter(|n| yours.contains(&n.id)).fold((f64::MAX, f64::MAX), |a, n| (a.0.min(n.x), a.1.min(n.y)));
+    let (dx, dy) = (right + 140.0 - lx, top - ty);
+    for n in s.prog.nodes.iter_mut().filter(|n| yours.contains(&n.id)) {
+        n.x += dx;
+        n.y += dy;
     }
 }
 
@@ -3376,6 +3410,8 @@ fn zoom_into_place(px: f64, py: f64, dy: f64) -> bool {
     };
     match hit {
         Some((t, r)) => {
+            // remembered: where it was zoomed into from, so zooming out comes back there
+            trail_push();
             // the page grows out of the super it was
             st().trans = (1, r, host::now());
             st().zoom_nav_at = host::now();
@@ -3398,11 +3434,93 @@ fn zoom_out_of_page() -> bool {
     s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
+    // back where it was zoomed in from (owner, 2026-10-17: "add memory to scaling, where you scaled from"); with no
+    // memory of it, up to what holds the page
+    if let Some(h) = trail_pop() {
+        host::go(&h);
+        return true;
+    }
     match s.page {
         Page::Item(g, _) => host::go(&format!("#/g/{}", g)),
         _ => host::go("#/"),
     }
     true
+}
+
+// ---------------------------------------------------------------------------------------------- the trail
+// The site keeps track of where you go (owner, 2026-10-17: "the site always keeps track of your movement in the super
+// AI engine"): the pages zoomed into, as a stack to zoom back out along, and the latest places visited, which Super AI
+// is told so it knows where you are and where you came from. Kept in this browser only.
+
+const TRAIL_KEY: &str = "piii:trail";
+const MOVES_KEY: &str = "piii:moves";
+
+fn here() -> String {
+    let f = fragment(&host::href()).to_string();
+    format!("#{}", if f.is_empty() { "/" } else { f.as_str() })
+}
+
+fn trail_push() {
+    let mut t: Vec<String> = host::store_get(TRAIL_KEY).unwrap_or_default().lines().map(|x| x.to_string()).collect();
+    let h = here();
+    if t.last() != Some(&h) {
+        t.push(h);
+    }
+    let n = t.len().saturating_sub(24);
+    host::store_set(TRAIL_KEY, &t[n..].join("\n"));
+}
+
+fn trail_pop() -> Option<String> {
+    let mut t: Vec<String> = host::store_get(TRAIL_KEY).unwrap_or_default().lines().map(|x| x.to_string()).collect();
+    let h = here();
+    let mut out = None;
+    while let Some(x) = t.pop() {
+        if x != h {
+            out = Some(x);
+            break;
+        }
+    }
+    host::store_set(TRAIL_KEY, &t.join("\n"));
+    out
+}
+
+/// Every page arrived at, the latest last (at most a dozen).
+fn moves_note() {
+    let h = here();
+    let mut m: Vec<String> = host::store_get(MOVES_KEY).unwrap_or_default().lines().map(|x| x.to_string()).collect();
+    if m.last() == Some(&h) {
+        return;
+    }
+    m.push(h);
+    let n = m.len().saturating_sub(12);
+    host::store_set(MOVES_KEY, &m[n..].join("\n"));
+}
+
+/// The trail as Super AI is told it: "home → Connect → account", the latest last.
+fn moves_text() -> String {
+    host::store_get(MOVES_KEY)
+        .unwrap_or_default()
+        .lines()
+        .map(|h| {
+            let f = h.trim_start_matches('#').trim_matches('/');
+            if f.is_empty() {
+                return "home".to_string();
+            }
+            let mut p = f.split('/');
+            match (p.next(), p.next(), p.next()) {
+                (Some("g"), Some(g), None) => g.parse::<usize>().ok().and_then(|g| GROUPS.get(g)).map(|g| g.title.to_string()).unwrap_or_else(|| f.to_string()),
+                (Some("i"), Some(g), Some(m)) => g
+                    .parse::<usize>()
+                    .ok()
+                    .zip(m.parse::<usize>().ok())
+                    .and_then(|(g, m)| GROUPS.get(g).and_then(|g| g.members.get(m)))
+                    .map(|x| x.0.to_string())
+                    .unwrap_or_else(|| f.to_string()),
+                _ => f.to_string(),
+            }
+        })
+        .collect::<Vec<_>>()
+        .join(" → ")
 }
 
 fn open_member(gi: usize, m: usize) {

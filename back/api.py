@@ -25902,8 +25902,8 @@ async def photos_enter(request: Request):
     form = await request.form()
     pw = photos_password()
     got = str(form.get("password") or "").strip()
-    rate_limit(request)
     if not pw or not hmac.compare_digest(got.encode(), pw.encode()):
+        await asyncio.sleep(1.5)  # a wrong guess costs time, so guessing many is slow
         return RedirectResponse("/photos?wrong=1", status_code=303)
     r = RedirectResponse("/facemace", status_code=303)
     r.set_cookie(PHOTOS_COOKIE, photos_token(pw), max_age=30 * 86400, httponly=True, samesite="lax",
@@ -27873,6 +27873,9 @@ class OneAsk(BaseModel):
     prompt: str
     # asked from a super on the π canvas: the answer may be a π program (owner, 2026-10-17: "teach the superAI")
     pi: bool = False
+    # where the visitor has been on the site, the latest last (owner, 2026-10-17: "the site always keeps track of your
+    # movement in the super AI engine")
+    trail: str = ""
 
 
 class WeighAsk(BaseModel):
@@ -28252,7 +28255,10 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
             elif not known[eid]["ready"]:
                 out.update(ok=False, text="No API key for this model on this site yet.")
             else:
-                r = ask_juror(eid, pi_prompt(prompt) if pi else panel_prompt(prompt, "")) or {}
+                trail = _clip(re.sub(r"[\r\n]+", " ", req.trail or ""), 400)
+                where = (f"(Context: the user is on piii.app; the pages they visited, the latest last: {trail}. "
+                         "Use it only if it helps answer.)\n\n") if trail else ""
+                r = ask_juror(eid, where + (pi_prompt(prompt) if pi else panel_prompt(prompt, ""))) or {}
                 ans = str(r.get("answer") or "").strip()
                 if r.get("failed") or not ans:
                     out.update(ok=False, text=str(r.get("failed") or "no answer"))

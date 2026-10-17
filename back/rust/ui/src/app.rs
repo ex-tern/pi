@@ -1003,6 +1003,7 @@ fn page_origin_measure() -> bool {
 
 fn route() {
     route_page();
+    moves_note();
     // the page's own π canvas (or the home one) comes with it
     canvas_switch();
 }

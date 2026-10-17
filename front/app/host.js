@@ -447,6 +447,10 @@ addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse";
 // The Super AI microphone (owner, 2026-10-17: "add a microphone button"): what is said fills the question field as it
 // is heard and, once it ends, is sent; a second press stops listening.
 let micRec = null;
+// a prompt on the canvas: Enter is done (Shift+Enter a new line)
+addEventListener("keydown", (e) => {
+  if (e.key === "Enter" && !e.shiftKey && e.target.matches && e.target.matches("textarea.u-prompt")) { e.preventDefault(); e.target.blur(); }
+}, true);
 addEventListener("click", (e) => {
   const b = e.target.closest && e.target.closest(".ai-mic");
   if (!b || b.disabled) return;

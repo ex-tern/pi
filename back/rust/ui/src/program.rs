@@ -609,7 +609,8 @@ fn prog_ai_flush() {
     let want = core::mem::take(&mut s.prog.ai_want);
     for q in want {
         // pi: asked from the canvas, so a request for a program is answered in the π language
-        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true}}", json::quote(&engine), json::quote(&q));
+        // and where you have been on the site, so it knows where you are
+        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true,\"trail\":{}}}", json::quote(&engine), json::quote(&q), json::quote(&moves_text()));
         st().prog.ai_busy.push(q.clone());
         request(Want::ProgAi(q), "POST", "/api/super/one", &body, 0);
     }
@@ -1330,11 +1331,11 @@ const EXAMPLES: [Example; 5] = [
 fn example_load(i: usize) {
     let Some((name, _, nodes, wires)) = EXAMPLES.get(i) else { return };
     let s = st();
-    // the program's own nodes go; the site's supers and their wires stay
-    let old: Vec<usize> = s.prog.nodes.iter().map(|n| n.id).collect();
+    // the program's own nodes go; the site's supers (and a group's members) and their wires stay
+    let old: Vec<usize> = s.prog.nodes.iter().filter(|n| !n.text.starts_with(MEMBER)).map(|n| n.id).collect();
     s.wires.retain(|w| !old.contains(&w.0) && !old.contains(&w.1));
     s.passes.retain(|p| !old.contains(&p.0) && !old.contains(&p.2));
-    s.prog.nodes.clear();
+    s.prog.nodes.retain(|n| n.text.starts_with(MEMBER));
     s.prog.regs.clear();
     s.prog.vals.clear();
     s.prog.steps = 0;
@@ -1346,6 +1347,8 @@ fn example_load(i: usize) {
         }
     }
     st().prog.status = format!("{}: press ▶ to run it, ⏹ to clear.", name);
+    // never on top of a page's members
+    members_clear_of_yours();
     prog_save();
 }
 
@@ -1713,7 +1716,16 @@ fn ai_ask_on_canvas(q: &str) {
     let y = asked.iter().filter_map(|id| unode(s, *id)).map(|n| n.y + if n.h > 0.0 { n.h } else { unode_size(&n.text).1 } + 70.0).fold(if top < f64::MAX { top } else { 0.0 }, f64::max);
     let x = if right > f64::MIN { right + 160.0 } else { 0.0 };
     let ask = prog_add(q, x, y);
-    let (aw, ah) = unode_size(q);
+    // big enough for the whole question, wrapped (owner, 2026-10-17: "improve the prompt typing")
+    let (aw, ah) = {
+        let (w0, h0) = unode_size(q);
+        let lines = ((q.chars().count() + 29) / 30).max(1) as f64;
+        if lines > 1.0 { (w0.max(360.0), h0.max(120.0 + 26.0 * lines)) } else { (w0, h0) }
+    };
+    if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.id == ask) {
+        n.w = aw;
+        n.h = ah;
+    }
     let show = prog_add("show", x + aw + 90.0, y - 40.0);
     if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.id == show) {
         n.w = 380.0;
@@ -2055,9 +2067,10 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
         .cls_if(!shown.is_empty(), "has-val")
         .cls_if(n.text.trim().is_empty(), "empty")
-        // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this"); selected, the
-        // name comes back to be retyped
+        // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this", "show, it still
+        // exists")
         .cls_if(matches!(k, Kind::Show), "u-nameless")
+        .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
         .attr("title", format!("{}: {}", kind_name(&k), n.text))
@@ -2069,9 +2082,13 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         ))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(r.2.min(r.3) * kz) }))
+        // a question to Super AI is written in a box that wraps and grows, in ordinary type (owner, 2026-10-17:
+        // "improve the prompt typing"); Enter is done, Shift+Enter a new line
         .kid(
-            el("input")
+            el(if matches!(k, Kind::Ask(_)) { "textarea" } else { "input" })
                 .cls("u-text")
+                .cls_if(matches!(k, Kind::Ask(_)), "u-prompt")
+                .attr_if(matches!(k, Kind::Ask(_)), "rows", "1")
                 .attr("placeholder", "type…")
                 .attr("aria-label", "What this node does")
                 .attr("spellcheck", "false")
@@ -2080,7 +2097,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if matches!(k, Kind::Show) { String::new() } else { kind_name(&k).to_string() }).into())
+        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2187,7 +2204,10 @@ const PROG_CSS: &str = "\
 .ai-row input{flex:1;min-width:0;font:inherit;font-size:18px;padding:10px 2px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:transparent!important;outline:none;color:var(--ink);text-align:center}\
 .ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
 .ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
-.unode.u-nameless>.u-text{opacity:0;pointer-events:none}\
+.sx.unode.u-nameless .u-text,.sx.unode.u-canvas.u-nameless .u-text{display:none!important}\
+.sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc;scrollbar-width:thin}\
+.sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
+.sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
 .ai-mic{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:50%!important;box-shadow:none!important;background:none!important;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s,background .2s}\
 .ai-mic:hover:not([disabled]){color:var(--accent);transform:scale(1.1)}.ai-mic[disabled]{opacity:.22;cursor:default}\
 .ai-mic svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}\
