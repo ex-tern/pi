@@ -25890,8 +25890,8 @@ def photos_gate(request: Request, wrong: int = 0):
     if not photos_root() or not photos_password():
         return _photos_page("Photos", "<h1>No photos here</h1><p>This server does not offer a photo folder.</p>", 404)
     if photos_allowed(request):
-        return RedirectResponse("/facemace", status_code=303)
-    return _photos_page("Photos", "<h1>Photos</h1><p>Enter the password to open the photos on this server in Face Mace.</p>"
+        return RedirectResponse("/photos/browse", status_code=303)
+    return _photos_page("Photos", "<h1>Photos</h1><p>Enter the password to see the photos on this server.</p>"
                         + ('<p class="bad">That password is not right.</p>' if wrong else "")
                         + '<form method="post" action="/photos"><input type="password" name="password" autocomplete="current-password" '
                           'aria-label="Password" autofocus required><button>Open</button></form>')
@@ -25905,42 +25905,219 @@ async def photos_enter(request: Request):
     if not pw or not hmac.compare_digest(got.encode(), pw.encode()):
         await asyncio.sleep(1.5)  # a wrong guess costs time, so guessing many is slow
         return RedirectResponse("/photos?wrong=1", status_code=303)
-    r = RedirectResponse("/facemace", status_code=303)
+    r = RedirectResponse("/photos/browse", status_code=303)
     r.set_cookie(PHOTOS_COOKIE, photos_token(pw), max_age=30 * 86400, httponly=True, samesite="lax",
                  secure=request.url.scheme == "https")
     return r
+
+
+_PHOTOS_IX: Dict = {"at": 0.0, "root": "", "items": []}
+_PHOTOS_IX_LOCK = threading.Lock()
+PHOTOS_VIDEO = re.compile(r"\.(mp4|mov|m4v|webm|avi|mkv|3gp)$", re.I)
+
+
+def photos_index(root: str) -> List[Dict]:
+    """Every photo and video under the folder, newest walk kept 10 minutes (a USB disk of 100,000 photos is slow to
+    walk): system folders, hidden files and anything not a photo or video left out."""
+    with _PHOTOS_IX_LOCK:
+        if _PHOTOS_IX["root"] == root and time.time() - _PHOTOS_IX["at"] < 600:
+            return _PHOTOS_IX["items"]
+        out: List[Dict] = []
+        for d, dirs, files in os.walk(root):
+            dirs[:] = sorted(x for x in dirs if not PHOTOS_SKIP.match(x))
+            for f in sorted(files):
+                if PHOTOS_SKIP.match(f) or not PHOTOS_MEDIA.search(f):
+                    continue
+                full = os.path.join(d, f)
+                try:
+                    st_ = os.stat(full)
+                except OSError:
+                    continue
+                out.append({"rel": os.path.relpath(full, root).replace(os.sep, "/"), "size": st_.st_size,
+                            "mtime": int(st_.st_mtime * 1000), "type": mimetypes.guess_type(f)[0] or ""})
+                if len(out) >= PHOTOS_MAX:
+                    break
+            if len(out) >= PHOTOS_MAX:
+                break
+        _PHOTOS_IX.update(at=time.time(), root=root, items=out)
+        return out
 
 
 @photos_router.get("/api/photos/list")
 def photos_list(request: Request):
     """Every photo and video under the folder (system folders and hidden files left out), for Face Mace."""
     root = photos_guard(request)
-    out = []
-    for d, dirs, files in os.walk(root):
-        dirs[:] = sorted(x for x in dirs if not PHOTOS_SKIP.match(x))
-        for f in sorted(files):
-            if PHOTOS_SKIP.match(f) or not PHOTOS_MEDIA.search(f):
-                continue
-            full = os.path.join(d, f)
+    items = photos_index(root)
+    return {"photos": [{"id": hashlib.sha1(x["rel"].encode()).hexdigest()[:24], "name": x["rel"], "size": x["size"],
+                        "mtime": x["mtime"], "type": x["type"], "url": "/api/photos/file/" + urllib.parse.quote(x["rel"])}
+                       for x in items], **({"more": True} if len(items) >= PHOTOS_MAX else {})}
+
+
+@photos_router.get("/api/photos/page")
+def photos_page(request: Request, offset: int = 0, limit: int = 240, folder: str = "", refresh: int = 0):
+    """A page of the photos, for the preview: in a folder (and the folders under it) or all, by name."""
+    root = photos_guard(request)
+    if refresh:
+        _PHOTOS_IX["at"] = 0.0
+    items = photos_index(root)
+    folder = folder.strip("/")
+    sel = [x for x in items if not folder or x["rel"].startswith(folder + "/")]
+    # the folders one level down from where you are, with how many are in each
+    counts: Dict[str, int] = {}
+    depth = len(folder.split("/")) if folder else 0
+    for x in sel:
+        parts = x["rel"].split("/")
+        if len(parts) > depth + 1:
+            k = "/".join(parts[: depth + 1])
+            counts[k] = counts.get(k, 0) + 1
+    limit = max(1, min(limit, 600))
+    page = sel[max(0, offset): max(0, offset) + limit]
+    return {"total": len(sel), "all": len(items), "folder": folder,
+            "folders": [{"path": k, "count": v} for k, v in sorted(counts.items())],
+            "items": [{"name": x["rel"], "size": x["size"], "mtime": x["mtime"],
+                       "video": bool(PHOTOS_VIDEO.search(x["rel"])),
+                       "url": "/api/photos/file/" + urllib.parse.quote(x["rel"]),
+                       "thumb": "/api/photos/thumb/" + urllib.parse.quote(x["rel"])} for x in page]}
+
+
+_THUMB_GATE = threading.BoundedSemaphore(4)
+
+
+def _photos_inside(root: str, rel: str) -> Optional[str]:
+    full = os.path.realpath(os.path.join(root, rel))
+    # never outside the folder (a ../ or a link out of it is refused)
+    if not (full == root or full.startswith(root + os.sep)) or not os.path.isfile(full) or not PHOTOS_MEDIA.search(full):
+        return None
+    return full
+
+
+@photos_router.get("/api/photos/thumb/{rel:path}")
+def photos_thumb(request: Request, rel: str):
+    """A small preview of a photo (made once, kept on the server's disk); 404 for a video or what can't be read."""
+    root = photos_guard(request)
+    full = _photos_inside(root, rel)
+    if not full or PHOTOS_VIDEO.search(full):
+        raise HTTPException(status_code=404, detail="No preview.")
+    st_ = os.stat(full)
+    key = hashlib.sha1(f"{full}|{st_.st_size}|{int(st_.st_mtime)}".encode()).hexdigest()
+    tdir = os.path.join(BASE_DIR, "photo-thumbs", key[:2])
+    tpath = os.path.join(tdir, key + ".jpg")
+    headers = {"Cache-Control": "private, max-age=2592000, immutable"}
+    if os.path.isfile(tpath):
+        return FileResponse(tpath, media_type="image/jpeg", headers=headers)
+    try:
+        from PIL import Image, ImageOps
+    except ImportError:
+        raise HTTPException(status_code=404, detail="Previews need Pillow on the server.")
+    if full.lower().endswith((".heic", ".heif")):
+        try:
+            import pillow_heif
+            pillow_heif.register_heif_opener()
+        except ImportError:
+            raise HTTPException(status_code=404, detail="HEIC previews need pillow-heif on the server.")
+    with _THUMB_GATE:
+        if not os.path.isfile(tpath):
             try:
-                st_ = os.stat(full)
-            except OSError:
-                continue
-            rel = os.path.relpath(full, root).replace(os.sep, "/")
-            out.append({"id": hashlib.sha1(rel.encode()).hexdigest()[:24], "name": rel, "size": st_.st_size,
-                        "mtime": int(st_.st_mtime * 1000), "type": mimetypes.guess_type(f)[0] or "",
-                        "url": "/api/photos/file/" + urllib.parse.quote(rel)})
-            if len(out) >= PHOTOS_MAX:
-                return {"photos": out, "more": True}
-    return {"photos": out}
+                with Image.open(full) as im:
+                    im.draft("RGB", (640, 640))  # a JPEG is read at a fraction of its size: far faster
+                    im = ImageOps.exif_transpose(im)
+                    im.thumbnail((360, 360))
+                    os.makedirs(tdir, exist_ok=True)
+                    tmp = tpath + ".tmp"
+                    im.convert("RGB").save(tmp, "JPEG", quality=78, optimize=True)
+                    os.replace(tmp, tpath)
+            except Exception as e:                       # noqa: BLE001 -- a broken photo has no preview
+                logging.info("photos: no preview for %s: %s", rel, e)
+                raise HTTPException(status_code=404, detail="No preview.")
+    return FileResponse(tpath, media_type="image/jpeg", headers=headers)
+
+
+PHOTOS_BROWSE_HTML = r'''<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Photos</title><link rel="icon" href="/icon.svg"><style>
+:root{--bg:#f7f5ef;--ink:#1d1d1b;--mute:#6b6963;--line:#e2dfd6;--card:#fff;--acc:#3540e8}
+@media (prefers-color-scheme:dark){:root{--bg:#141413;--ink:#f1efe8;--mute:#9b988f;--line:#2c2b28;--card:#1d1d1b;--acc:#8b93ff}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font:15px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+header{position:sticky;top:0;z-index:5;background:color-mix(in srgb,var(--bg) 88%,transparent);backdrop-filter:blur(10px);border-bottom:1px solid var(--line);padding:14px 16px 10px}
+.top{display:flex;align-items:center;gap:12px;flex-wrap:wrap;max-width:1400px;margin:0 auto}
+h1{font-size:22px;margin:0;letter-spacing:-.01em}.count{color:var(--mute);font-variant-numeric:tabular-nums}
+.sp{flex:1}a.btn,button.btn{font:inherit;font-weight:600;padding:9px 16px;border-radius:999px;border:1.5px solid var(--ink);background:var(--ink);color:var(--bg);text-decoration:none;cursor:pointer}
+.crumbs{max-width:1400px;margin:8px auto 0;display:flex;gap:6px;flex-wrap:wrap;align-items:center}
+.chip{font:inherit;font-size:13px;padding:5px 11px;border-radius:999px;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer;white-space:nowrap}
+.chip b{font-weight:600}.chip span{color:var(--mute);margin-left:5px;font-variant-numeric:tabular-nums}.chip.here{border-color:var(--ink)}
+.sizes{display:flex;gap:4px}.sizes button{font:inherit;font-size:13px;width:30px;height:30px;border-radius:50%;border:1px solid var(--line);background:var(--card);color:var(--ink);cursor:pointer}.sizes button.on{border-color:var(--ink);font-weight:700}
+main{max-width:1400px;margin:0 auto;padding:12px 16px 60px}
+.grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--t,150px),1fr));gap:6px}
+.tile{position:relative;aspect-ratio:1;border-radius:10px;overflow:hidden;background:var(--line);cursor:zoom-in;content-visibility:auto;contain-intrinsic-size:150px}
+.tile img{width:100%;height:100%;object-fit:cover;display:block;opacity:0;transition:opacity .3s}.tile img.in{opacity:1}
+.tile.vid::after{content:"";position:absolute;inset:auto auto 8px 8px;width:0;height:0;border-left:12px solid #fff;border-top:8px solid transparent;border-bottom:8px solid transparent;filter:drop-shadow(0 1px 2px #0008)}
+.tile .nm{position:absolute;inset:auto 0 0 0;padding:16px 8px 6px;font-size:11px;color:#fff;background:linear-gradient(transparent,#0009);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;opacity:0;transition:opacity .2s}
+.tile:hover .nm,.tile.noimg .nm{opacity:1}.tile.vid .nm{padding-left:28px}.tile.noimg{display:grid;place-items:center;color:var(--mute);font-size:12px}
+.more{height:1px}.msg{color:var(--mute);text-align:center;padding:40px 0}
+.lb{position:fixed;inset:0;z-index:20;background:#000e;display:none;align-items:center;justify-content:center}
+.lb.open{display:flex}.lb img,.lb video{max-width:94vw;max-height:84vh;object-fit:contain;border-radius:6px}
+.lb .cap{position:absolute;left:0;right:0;bottom:14px;text-align:center;color:#ddd;font-size:13px;padding:0 60px}
+.lb button{position:absolute;top:50%;transform:translateY(-50%);width:48px;height:48px;border-radius:50%;border:0;background:#fff2;color:#fff;font-size:22px;cursor:pointer}
+.lb .pv{left:14px}.lb .nx{right:14px}.lb .x{top:28px;right:14px;transform:none;font-size:18px}
+@media (max-width:600px){h1{font-size:19px}.grid{gap:3px}.tile{border-radius:6px}}
+</style>
+<header><div class="top"><h1>Photos</h1><span class="count" id="count">Reading the disk…</span><span class="sp"></span>
+<div class="sizes" role="group" aria-label="Preview size"><button data-t="100" aria-label="Small">S</button><button data-t="150" aria-label="Medium">M</button><button data-t="240" aria-label="Large">L</button></div>
+<a class="btn" href="/facemace">Find faces in Face Mace</a></div>
+<nav class="crumbs" id="crumbs"></nav></header>
+<main><div class="grid" id="grid"></div><div class="msg" id="msg"></div><div class="more" id="more"></div></main>
+<div class="lb" id="lb" role="dialog" aria-modal="true"><button class="x" aria-label="Close">✕</button><button class="pv" aria-label="Previous">‹</button><div id="lbin"></div><button class="nx" aria-label="Next">›</button><div class="cap" id="cap"></div></div>
+<script>
+const $=(i)=>document.getElementById(i);let folder="",offset=0,total=0,busy=false,items=[],at=-1;const PAGE=240;
+const fmt=(n)=>n.toLocaleString();
+function size(t){document.documentElement.style.setProperty("--t",t+"px");document.querySelectorAll(".sizes button").forEach(b=>b.classList.toggle("on",b.dataset.t==t));try{localStorage.setItem("photos-t",t)}catch(e){}}
+document.querySelectorAll(".sizes button").forEach(b=>b.onclick=()=>size(b.dataset.t));
+let t0="150";try{t0=localStorage.getItem("photos-t")||t0}catch(e){}size(t0);
+function crumbs(fs){const c=$("crumbs");c.innerHTML="";const parts=folder?folder.split("/"):[];
+ const add=(label,path,here)=>{const b=document.createElement("button");b.className="chip"+(here?" here":"");b.innerHTML="<b></b>";b.firstChild.textContent=label;b.onclick=()=>open(path);c.appendChild(b)};
+ add("All","",!folder);parts.forEach((p,i)=>add("› "+p,parts.slice(0,i+1).join("/"),i==parts.length-1));
+ fs.forEach(f=>{const b=document.createElement("button");b.className="chip";b.innerHTML="<b></b><span></span>";b.firstChild.textContent=f.path.split("/").pop();b.lastChild.textContent=fmt(f.count);b.onclick=()=>open(f.path);c.appendChild(b)})}
+function tile(it,i){const d=document.createElement("div");d.className="tile"+(it.video?" vid noimg":"");d.title=it.name;
+ const n=document.createElement("div");n.className="nm";n.textContent=it.name.split("/").pop();
+ if(!it.video){const im=new Image();im.loading="lazy";im.decoding="async";im.alt="";im.onload=()=>im.classList.add("in");im.onerror=()=>{im.remove();d.classList.add("noimg");d.prepend(document.createTextNode(it.name.split(".").pop().toUpperCase()))};im.src=it.thumb;d.appendChild(im)}else d.appendChild(document.createTextNode("video"));
+ d.appendChild(n);d.onclick=()=>show(i);return d}
+async function load(){if(busy||(offset>=total&&offset>0))return;busy=true;
+ try{const r=await fetch(`/api/photos/page?offset=${offset}&limit=${PAGE}&folder=${encodeURIComponent(folder)}`,{credentials:"same-origin"});
+  if(r.status==401){location.href="/photos";return}const d=await r.json();
+  if(offset==0){total=d.total;$("count").textContent=fmt(d.total)+(folder?" here · "+fmt(d.all)+" in all":" photos and videos");crumbs(d.folders);if(!d.total)$("msg").textContent="Nothing here."}
+  const g=$("grid"),frag=document.createDocumentFragment();d.items.forEach(it=>{items.push(it);frag.appendChild(tile(it,items.length-1))});g.appendChild(frag);offset+=d.items.length}
+ catch(e){$("msg").textContent="The server did not answer. Try again."}finally{busy=false}
+ if(offset<total&&$("more").getBoundingClientRect().top<innerHeight*2)load()}
+function open(f){folder=f;offset=0;total=0;items=[];$("grid").innerHTML="";$("msg").textContent="";$("count").textContent="…";history.replaceState(null,"","#"+encodeURIComponent(f));scrollTo(0,0);load()}
+new IntersectionObserver(e=>{if(e[0].isIntersecting)load()},{rootMargin:"1200px"}).observe($("more"));
+function show(i){if(i<0||i>=items.length)return;at=i;const it=items[i],w=$("lbin");w.innerHTML="";
+ const m=it.video?Object.assign(document.createElement("video"),{controls:true,autoplay:true,src:it.url}):Object.assign(new Image(),{src:it.url,alt:it.name});
+ w.appendChild(m);$("cap").textContent=it.name+"  ·  "+(i+1)+" of "+fmt(total);$("lb").classList.add("open");
+ if(i>=items.length-5)load();[i+1,i-1].forEach(k=>{const n=items[k];if(n&&!n.video)new Image().src=n.url})}
+function close(){$("lb").classList.remove("open");$("lbin").innerHTML="";at=-1}
+document.querySelector(".lb .x").onclick=close;document.querySelector(".lb .pv").onclick=()=>show(at-1);document.querySelector(".lb .nx").onclick=()=>show(at+1);
+$("lb").onclick=(e)=>{if(e.target.id=="lb")close()};
+addEventListener("keydown",(e)=>{if(at<0)return;if(e.key=="Escape")close();if(e.key=="ArrowRight")show(at+1);if(e.key=="ArrowLeft")show(at-1)});
+let sx=0;$("lb").addEventListener("touchstart",e=>sx=e.touches[0].clientX,{passive:true});$("lb").addEventListener("touchend",e=>{const dx=e.changedTouches[0].clientX-sx;if(Math.abs(dx)>50)show(at+(dx<0?1:-1))});
+open(decodeURIComponent(location.hash.slice(1)));
+</script></html>
+'''
+
+
+@photos_router.get("/photos/browse", include_in_schema=False)
+def photos_browse(request: Request):
+    """The preview: every photo as a small picture, page by page as you scroll; a click shows it whole."""
+    if not photos_root() or not photos_password():
+        return RedirectResponse("/photos", status_code=303)
+    if not photos_allowed(request):
+        return RedirectResponse("/photos", status_code=303)
+    return HTMLResponse(PHOTOS_BROWSE_HTML)
 
 
 @photos_router.get("/api/photos/file/{rel:path}")
 def photos_file(request: Request, rel: str):
     root = photos_guard(request)
-    full = os.path.realpath(os.path.join(root, rel))
-    # never outside the folder (a ../ or a link out of it is refused)
-    if not (full == root or full.startswith(root + os.sep)) or not os.path.isfile(full) or not PHOTOS_MEDIA.search(full):
+    full = _photos_inside(root, rel)
+    if not full:
         raise HTTPException(status_code=404, detail="No such photo.")
     return FileResponse(full, headers={"Cache-Control": "private, max-age=86400"})
 

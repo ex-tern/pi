@@ -29,7 +29,11 @@ def test_photos_portal(monkeypatch):
     r = c.post("/photos", data={"password": "bad"}, follow_redirects=False)
     assert r.status_code == 303 and "wrong" in r.headers["location"]
     r = c.post("/photos", data={"password": "pw"}, follow_redirects=False)
-    assert r.status_code == 303 and r.headers["location"] == "/facemace"
+    assert r.status_code == 303 and r.headers["location"] == "/photos/browse"
+    assert c.get("/photos/browse").status_code == 200
+    pg = c.get("/api/photos/page?limit=1").json()
+    assert pg["total"] == 2 and len(pg["items"]) == 1 and pg["folders"][0]["path"] == "Album"
+    assert c.get("/api/photos/page?folder=Album").json()["total"] == 1
     names = sorted(p["name"] for p in c.get("/api/photos/list").json()["photos"])
     assert names == ["Album/2019/a b.jpg", "clip.MP4"]
     url = next(p["url"] for p in c.get("/api/photos/list").json()["photos"] if p["name"].endswith(".jpg"))
@@ -45,3 +49,19 @@ def test_no_folder_no_portal(monkeypatch):
     c = TestClient(api.app)
     assert c.get("/api/photos/list").status_code == 404
     assert "data-library" not in c.get("/facemace").text
+
+
+def test_preview_is_small(monkeypatch):
+    from PIL import Image
+    d = tempfile.mkdtemp()
+    Image.new("RGB", (2400, 1600), (200, 120, 40)).save(os.path.join(d, "big.jpg"), quality=90)
+    monkeypatch.setenv("SERVER_PHOTOS_DIR", d)
+    monkeypatch.setenv("PHOTOS_PASSWORD", "pw")
+    c = TestClient(api.app)
+    assert c.get("/api/photos/thumb/big.jpg").status_code == 401
+    c.post("/photos", data={"password": "pw"})
+    r = c.get("/api/photos/thumb/big.jpg")
+    assert r.status_code == 200 and r.headers["content-type"] == "image/jpeg"
+    import io
+    assert max(Image.open(io.BytesIO(r.content)).size) <= 360
+    assert c.get("/api/photos/thumb/big.jpg").status_code == 200  # the second time, from the disk

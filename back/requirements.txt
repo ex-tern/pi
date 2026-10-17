@@ -60,3 +60,7 @@ cloudscraper~=1.2
 
 # --- HTTP ---
 requests~=2.32
+
+# --- Photo previews on a home server (the /photos page) ---
+Pillow>=10
+pillow-heif>=0.18
