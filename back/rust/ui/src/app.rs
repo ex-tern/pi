@@ -263,6 +263,10 @@ struct State {
     ai_file_err: String,
     /// the files each question was sent with (as JSON), for its request
     ai_q_files: Vec<(String, String)>,
+    /// the conversation with Super AI (question, answer), oldest first, kept in this browser; the questions asked from
+    /// its bubble that have no answer yet
+    ai_chat: Vec<(String, String)>,
+    ai_chat_wait: Vec<String>,
     /// what Super AI answered in its bubble, the question, and whether it is thinking
     ai_answer: String,
     ai_asked: String,
@@ -510,6 +514,8 @@ pub fn start() {
         ai_reading: 0,
         ai_file_err: String::new(),
         ai_q_files: Vec::new(),
+        ai_chat: Vec::new(),
+        ai_chat_wait: Vec::new(),
         ai_answer: String::new(),
         ai_asked: String::new(),
         ai_busy: false,
@@ -653,6 +659,7 @@ pub fn start() {
             st().win_off = (n[0], n[1]);
         }
     }
+    ai_chat_load();
     st().pzoom = host::store_get("piii:pzoom").and_then(|v| v.parse::<f64>().ok()).filter(|z| z.is_finite() && *z > 0.0).unwrap_or(1.0);
     prog_load();
     groups_load();

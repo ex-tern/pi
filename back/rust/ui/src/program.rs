@@ -611,7 +611,8 @@ fn prog_ai_flush() {
         // pi: asked from the canvas, so a request for a program is answered in the π language
         // and where you have been on the site, so it knows where you are
         let files = st().ai_q_files.iter().find(|x| x.0 == q).map(|x| x.1.clone()).unwrap_or_else(|| "[]".to_string());
-        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true,\"trail\":{},\"files\":{}}}", json::quote(&engine), json::quote(&q), json::quote(&moves_text()), files);
+        let history = if st().ai_chat_wait.contains(&q) { ai_chat_json() } else { "[]".to_string() };
+        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true,\"trail\":{},\"files\":{},\"history\":{}}}", json::quote(&engine), json::quote(&q), json::quote(&moves_text()), files, history);
         st().prog.ai_busy.push(q.clone());
         request(Want::ProgAi(q), "POST", "/api/super/one", &body, 0);
     }
@@ -644,6 +645,12 @@ fn prog_ai_apply(q: String, v: Value, err: Option<String>) {
                 st().prog.status = format!("Super AI wrote a π program: {} supers, beside the one that asked. Press ▶ to run it.", n);
             }
         }
+    }
+    let s = st();
+    if let Some(i) = s.ai_chat_wait.iter().position(|x| *x == q) {
+        s.ai_chat_wait.remove(i);
+        s.ai_chat.push((q.clone(), text.clone()));
+        ai_chat_save();
     }
     let s = st();
     s.prog.ai.insert(q, text);
@@ -1150,6 +1157,32 @@ const P_AI_FILES: u16 = 12;
 const P_AI_UNFILE: u16 = 13;
 /// the answer to a file sent to be read
 const AI_ATTACH: u8 = 50;
+/// a new conversation with Super AI
+const P_AI_NEWCHAT: u16 = 14;
+
+fn ai_chat_load() {
+    let Some(v) = host::store_get("piii:ai-chat").and_then(|t| json::parse(&t)) else { return };
+    st().ai_chat = v.arr().iter().map(|x| (x.get("q").str().to_string(), x.get("a").str().to_string())).filter(|x| !x.0.is_empty()).collect();
+}
+
+fn ai_chat_save() {
+    let s = st();
+    let n = s.ai_chat.len().saturating_sub(30);
+    s.ai_chat.drain(..n);
+    let items: Vec<String> = s.ai_chat.iter().map(|(q, a)| format!("{{\"q\":{},\"a\":{}}}", json::quote(q), json::quote(a))).collect();
+    host::store_set("piii:ai-chat", &format!("[{}]", items.join(",")));
+}
+
+/// The conversation so far, as the request carries it: the last six exchanges.
+fn ai_chat_json() -> String {
+    let s = st();
+    let n = s.ai_chat.len().saturating_sub(6);
+    let items: Vec<String> = s.ai_chat[n..].iter().map(|(q, a)| {
+        let a: String = a.chars().take(900).collect();
+        format!("{{\"q\":{},\"a\":{}}}", json::quote(q), json::quote(&a))
+    }).collect();
+    format!("[{}]", items.join(","))
+}
 
 /// A file read by the server for Super AI: kept to go with the next question.
 fn ai_attach_apply(v: Value, err: Option<String>) {
@@ -1203,6 +1236,13 @@ fn prog_update(a: u16, v: String) {
                 st().ai_reading += 1;
                 request(Want::Tool(Tool::Prog, AI_ATTACH), "POST", "/api/super/attach", "", form);
             }
+        }
+        P_AI_NEWCHAT => {
+            s.ai_chat.clear();
+            s.ai_chat_wait.clear();
+            s.ai_answer.clear();
+            s.ai_asked.clear();
+            ai_chat_save();
         }
         P_AI_UNFILE => {
             if let Ok(i) = v.parse::<usize>() {
@@ -1275,6 +1315,9 @@ fn prog_update(a: u16, v: String) {
             // row below the last, right of the ring
             s.ai_draft.clear();
             s.ai_asked = q.clone();
+            if !s.ai_chat_wait.contains(&q) {
+                s.ai_chat_wait.push(q.clone());
+            }
             ai_ask_on_canvas(&q);
         }
         P_SEL => s.prog.sel = Some(id),
@@ -1693,6 +1736,7 @@ fn ai_level_view(s: &State) -> N {
             el("div")
                 .cls("ai-bubble")
                 .cls_if(answered, "answered")
+                .cls_if(!answered && !s.ai_chat.is_empty(), "chatting")
                 .cls_if(s.ai_busy, "busy")
                 .kid(se_shape_n(2.25))
                 .kid(el("span").cls("ai-spark").kid(el("span").cls("pi-mark").text("π")))
@@ -1764,6 +1808,19 @@ fn ai_level_view(s: &State) -> N {
                                 ),
                         ),
                 )
+                // the conversation so far, the latest last (owner, 2026-10-17: "improve our chat")
+                .kid_if(!s.ai_chat.is_empty() && !answered, || {
+                    let n = s.ai_chat.len().saturating_sub(4);
+                    let mut t = el("div").cls("ai-thread");
+                    for (q, a) in s.ai_chat[n..].iter() {
+                        let a: String = if a.chars().count() > 280 { a.chars().take(279).collect::<String>() + "…" } else { a.clone() };
+                        t = t.kid(el("div").cls("ai-turn").kid(el("div").cls("ai-tq").text(q.clone())).kid(el("div").cls("ai-ta").text(a)));
+                    }
+                    t.kid(
+                        el("button").attr("type", "button").cls("ai-new").attr("title", "Start a new conversation").on("click", Msg::T(Tool::Prog, P_AI_NEWCHAT, String::new())).text("New chat"),
+                    )
+                    .into()
+                })
                 // the files that go with the question, each to take off again
                 .kid_if(!s.ai_files.is_empty() || s.ai_reading > 0 || !s.ai_file_err.is_empty(), || {
                     let mut row = el("div").cls("ai-files");
@@ -2315,6 +2372,12 @@ const PROG_CSS: &str = "\
 .sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc;scrollbar-width:thin}\
 .sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
 .sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
+.ai-bubble.chatting{justify-content:flex-start;padding-top:9%}\
+.ai-thread{width:100%;max-height:44%;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:4px 2px 2px;scrollbar-width:thin;mask-image:linear-gradient(transparent,#000 14px)}\
+.ai-turn{display:flex;flex-direction:column;gap:4px}\
+.ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:#eef0fd;color:#1d1d1b;font-size:13.5px;line-height:1.4}\
+.ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:#3b3a36;white-space:pre-wrap}\
+.ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid #dcd9d0!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:#6b6963;cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
 .ai-clip{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s}\
 .ai-clip:hover{color:var(--accent);transform:scale(1.1) rotate(-8deg)}.ai-clip.busy{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
 .ai-clip svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\

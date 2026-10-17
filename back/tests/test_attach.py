@@ -36,3 +36,11 @@ def test_files_go_with_the_question():
     block = api.attached_block([{"name": "n.txt", "text": "the answer is 42"}])
     assert "n.txt" in block and "the answer is 42" in block
     assert api.attached_block([]) == ""
+
+
+def test_chat_remembers_and_site_learned_is_served():
+    h = api.history_block([{"q": "What is piX?", "a": "An index."}, {"q": "", "a": "skipped"}])
+    assert "What is piX?" in h and "An index." in h and "skipped" not in h
+    assert api.history_block([]) == ""
+    r = c.get("/api/super/learned")
+    assert r.status_code == 200 and isinstance(r.json()["text"], str)

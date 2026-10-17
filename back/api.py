@@ -28108,6 +28108,17 @@ class OneAsk(BaseModel):
     # files sent with the question (owner, 2026-10-17: "add a file, send a file capability to the AI"): their text, as
     # /api/super/attach read it
     files: List[Dict] = []
+    # the conversation so far in Super AI's bubble, oldest first: [{"q": …, "a": …}] (owner, 2026-10-17: "improve our
+    # chat"), so a follow-up question is understood
+    history: List[Dict] = []
+
+
+def history_block(history: List[Dict]) -> str:
+    turns = []
+    for h in (history or [])[-6:]:
+        if isinstance(h, dict) and str(h.get("q") or "").strip():
+            turns.append("User: " + _clip(str(h.get("q")), 600) + "\nSuper AI: " + _clip(str(h.get("a") or ""), 900))
+    return ("(The conversation so far, oldest first:\n" + "\n\n".join(turns) + ")\n\n") if turns else ""
 
 
 # What Super AI reads of a file sent to it: the text of a PDF, a Word document, or any text or code file.
@@ -28468,6 +28479,47 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
                         else "No API key for this model on this site yet", "ready": ready})
         return out
 
+    _learned_cache: Dict = {"at": 0.0, "text": ""}
+
+    def _learned() -> str:
+        """What the site has learned, in a few lines (owner, 2026-10-17: "can you learn what the site learned?"): the
+        papers assessed and how they scored, the fields that are hot, and what visitors open most (PiEn)."""
+        if time.time() - _learned_cache["at"] < 300:
+            return _learned_cache["text"]
+        bits: List[str] = []
+        try:
+            rs = rows() or []
+            scored = [r for r in rs if isinstance(r.get("score"), (int, float))]
+            if rs:
+                line = f"{len(rs)} papers assessed"
+                if scored:
+                    line += f", mean piX {sum(r['score'] for r in scored) / len(scored):.1f}"
+                bits.append(line)
+            best = sorted(scored, key=lambda r: -r["score"])[:3]
+            if best:
+                bits.append("highest piX: " + "; ".join(f"“{_clip(str(r.get('title') or ''), 80)}” ({r['score']:.1f})" for r in best))
+            topics = [t.get("field") or t.get("name") for t in (hot(rs) or [])[:4] if isinstance(t, dict)]
+            if [t for t in topics if t]:
+                bits.append("hot fields: " + ", ".join(t for t in topics if t))
+        except Exception as e:                           # noqa: BLE001 -- what is known is said; the rest is left out
+            logging.info("super: learned rows: %s", e)
+        try:
+            if os.path.exists(pien_db):
+                with sqlite3.connect(pien_db, timeout=5) as c:
+                    opens = c.execute("SELECT card, n FROM opens ORDER BY n DESC LIMIT 5").fetchall()
+                if opens:
+                    bits.append("what visitors open most: " + ", ".join(f"{card.split(':', 1)[-1]} ({n}×)" for card, n in opens))
+        except sqlite3.Error:
+            pass
+        text = ("(What piii.app has learned so far: " + "; ".join(bits) + ".)\n\n") if bits else ""
+        _learned_cache.update(at=time.time(), text=text)
+        return text
+
+    @router.get("/learned")
+    def learned():
+        """What Super AI is told the site has learned."""
+        return {"text": _learned().strip("()\n ")}
+
     def _limit_one(request: Request, engine: str):
         if one_rate_limit:
             one_rate_limit(request, engine)
@@ -28551,7 +28603,8 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
                 trail = _clip(re.sub(r"[\r\n]+", " ", req.trail or ""), 400)
                 where = (f"(Context: the user is on piii.app; the pages they visited, the latest last: {trail}. "
                          "Use it only if it helps answer.)\n\n") if trail else ""
-                r = ask_juror(eid, where + (pi_prompt(full) if pi else panel_prompt(full, ""))) or {}
+                ctx = _learned() + history_block(req.history) + where
+                r = ask_juror(eid, ctx + (pi_prompt(full) if pi else panel_prompt(full, ""))) or {}
                 ans = str(r.get("answer") or "").strip()
                 if r.get("failed") or not ans:
                     out.update(ok=False, text=str(r.get("failed") or "no answer"))
