@@ -2576,10 +2576,31 @@ fn canvas_zoom(v: &str) {
     if !(z.is_finite() && z > 1e-300 && z < 1e300) || z == s.zoom {
         return;
     }
+    let (z0, pan0) = (s.zoom, s.pan);
     s.zoom = z;
     let g1 = geo(s);
     s.pan = ((px - g1.ox) / g1.k - d.0, (py - g1.oy) / g1.k - d.1);
+    // zooming in never empties the view (owner, 2026-10-17: "if zooming in makes canvas empty, it stops there"): a
+    // step that would leave nothing on screen is not taken
+    if z > z0 && !s.prog.nodes.is_empty() && !anything_on_screen(s) {
+        s.zoom = z0;
+        s.pan = pan0;
+        return;
+    }
     layout_save();
+}
+
+/// Is any super or sparkle of the canvas at least partly in the window?
+fn anything_on_screen(s: &State) -> bool {
+    let g = geo(s);
+    let (vw, vh) = (host::vw(), host::vh());
+    s.prog.nodes.iter().any(|n| {
+        let (x, y, w, h) = rect(&g, n.id);
+        let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
+        // its middle in the window, clear of the sidebar: something to look at, not an edge
+        let (mx, my) = (sx + sw / 2.0, sy + sh / 2.0);
+        mx > 80.0 && mx < vw && my > 0.0 && my < vh
+    })
 }
 
 /// A zoom step by `f` from `z`, kept within (lo, hi): a step that would go past a limit stops at it, and from outside
@@ -3022,29 +3043,41 @@ fn open_place(text: &str) -> bool {
     true
 }
 
-/// The home canvas has its places, once: in a ring round the middle, as supers to zoom into.
+/// The home canvas has its places: in a ring round the middle, as supers to zoom into. The ring is laid out in the
+/// canvas's own units (220 × 104 each, never overlapping, whatever the zoom was), and laid out again once for
+/// canvases that got their ring before (owner, 2026-10-17: "fix this", places piled on each other).
 fn world_sync() {
     if !st().ctx.is_empty() {
         return;
     }
-    let have: Vec<String> = st().prog.nodes.iter().map(|n| n.text.clone()).collect();
-    let (vw, vh) = (host::vw(), host::vh());
-    let (cx, cy) = (vw / 2.0, vh / 2.0);
-    let r = (vw.min(vh) * 0.32).max(140.0);
-    let mut added = false;
+    let again = host::store_get("piii:world-v").as_deref() != Some("2");
+    let (cx, cy) = screen_to_node(host::vw() / 2.0, host::vh() / 2.0);
+    let (rx, ry) = (430.0, 300.0);
+    let mut changed = false;
     for (i, w) in WORLD.iter().enumerate() {
         let text = format!("{}{}", MEMBER, w);
-        if have.contains(&text) {
-            continue;
-        }
         let a = i as f64 / WORLD.len() as f64 * core::f64::consts::TAU - core::f64::consts::FRAC_PI_2;
-        let (sx, sy) = (cx + r * 1.35 * libm_cos(a), cy + r * libm_cos(a - core::f64::consts::FRAC_PI_2));
-        let (x, y) = screen_to_node(sx, sy);
         let (w0, h0) = unode_size(&text);
-        prog_add(&text, x - w0 / 2.0, y - h0 / 2.0);
-        added = true;
+        let (x, y) = (cx + rx * libm_cos(a) - w0 / 2.0, cy + ry * libm_cos(a - core::f64::consts::FRAC_PI_2) - h0 / 2.0);
+        match st().prog.nodes.iter_mut().find(|n| n.text == text) {
+            Some(n) if again => {
+                n.x = x;
+                n.y = y;
+                n.w = 0.0;
+                n.h = 0.0;
+                changed = true;
+            }
+            Some(_) => {}
+            None => {
+                prog_add(&text, x, y);
+                changed = true;
+            }
+        }
     }
-    if added {
+    if again {
+        host::store_set("piii:world-v", "2");
+    }
+    if changed {
         prog_save();
     }
 }

@@ -1542,29 +1542,21 @@ fn ladder_view(s: &State) -> N {
 
 /// The top of the zoom: the AI language.
 fn ai_level_view(s: &State) -> N {
-    let places: Vec<String> = s.prog.nodes.iter().filter_map(|n| n.text.strip_prefix(MEMBER).map(|x| x.to_string())).collect();
-    let mine = s.prog.nodes.iter().filter(|n| !n.text.starts_with(MEMBER)).count();
     el("div")
         .cls("ai-level")
         .attr("data-stop", "1")
         .kid(el("div").cls("ai-in")
             .kid(el("div").cls("ai-k").text("AI language"))
             .kid(el("h1").text("Super AI"))
-            .kid(el("p").cls("lede").text(format!(
-                "The highest level: say what to make, in words. Below this, the site{}, then supers and wires, then code, BASIC, assembly, and the 0s and 1s. {}",
-                if places.is_empty() { String::new() } else { format!(" ({})", places.join(", ")) },
-                if mine > 0 { format!("Your canvas has {} supers and sparkles of your own and {} wires.", mine, s.wires.len()) } else { "Your canvas is empty so far.".to_string() }
-            )))
             .kid(el("div").cls("ai-row")
                 .kid(el("input")
                     .attr("type", "text")
                     .attr("aria-label", "What to make")
-                    .attr("placeholder", "a program that counts to 10 and stops…")
                     .prop("value", s.ai_draft.clone())
                     .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
                     .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())))
-                .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new())).text("Make it")))
-            .kid(el("p").cls("hint").text("Zoom in to go back down to the canvas.")))
+                .kid(el("button").attr("type", "button").cls("btn primary ai-play").attr("aria-label", "Make it").attr("title", "Make it").on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new())).kid(line_icon(&["M8 5.5v13l10.5-6.5z"]))))
+)
         .into()
 }
 
@@ -1959,7 +1951,7 @@ const PROG_CSS: &str = "\
 .ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:blur(3px)}\
 .ai-in{width:min(640px,calc(100vw - 32px));text-align:center}.ai-in h1{font-size:44px;margin:4px 0 10px}\
 .ai-k{font:600 12px/1 'Geist Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
-.ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
+.ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-play{display:grid;place-items:center;width:52px;padding:0}.ai-play svg{width:22px;height:22px;fill:currentColor}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
 @keyframes pi-grow{from{transform:translate(var(--fx,0),var(--fy,0)) scale(var(--fsx,.2),var(--fsy,.2));opacity:.55;border-radius:48px}60%{opacity:1}to{transform:none;opacity:1}}\
 @keyframes pi-back{from{transform:scale(1.6);opacity:0;filter:blur(8px)}40%{opacity:.8}to{transform:none;opacity:1;filter:none}}\
