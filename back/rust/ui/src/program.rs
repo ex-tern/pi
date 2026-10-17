@@ -2601,7 +2601,7 @@ const PROG_CSS: &str = "\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}\
 .ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid var(--line)!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
 .sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text{display:none!important}\
-.sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0}\
+.sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0;text-align:center!important}\
 .u-mode{position:absolute;inset:0;margin:auto;display:grid;place-items:center;align-content:center;gap:6px;width:62%;height:62%;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .u-mode:hover{color:var(--accent);transform:scale(1.08)}.u-mode svg{width:min(34px,70%);height:auto;max-height:70%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}\
 .u-picbtn svg{width:min(56px,40%)}.u-mode-t{font-size:13px;letter-spacing:.02em}\
@@ -2614,6 +2614,7 @@ const PROG_CSS: &str = "\
 .del-q{margin:0;font-size:14.5px;font-weight:600;color:var(--ink);text-align:center;overflow-wrap:anywhere}.del-n{margin:0;font-size:12.5px;color:var(--muted)}\
 .del-row{display:flex;gap:8px;margin-top:8px}.del-row button{font:inherit;font-size:13.5px;padding:6px 14px!important;border-radius:999px!important;cursor:pointer;box-shadow:none!important}\
 .del-no{background:none!important;border:1px solid var(--line2)!important;color:var(--ink)}.del-yes{background:var(--bad)!important;border:1px solid var(--bad)!important;color:#fff;font-weight:600}\
+.sx.unode .u-text,.sx.unode .u-text:focus,.sx.unode.empty .u-text,.sx.unode.u-canvas .u-text,.sx.unode .u-text.u-prompt{border:0!important;outline:0!important;box-shadow:none!important;background:transparent!important;border-radius:0!important}\
 .ai-clip{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .ai-clip:hover{color:var(--accent);transform:scale(1.1) rotate(-8deg)}.ai-clip.busy{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
 .ai-clip svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\
