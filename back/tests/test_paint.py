@@ -77,3 +77,22 @@ def test_it_shipped_knowing_its_starting_vocabulary():
         assert api.paint_learned(w), w
     assert "<image" in svg(api.paint_picture("an octopus underwater"))
     assert svg(api.paint_picture("three dragons in space")).count("<image") == 3
+
+
+def test_the_second_lesson_other_words_two_words_and_plurals():
+    # every word it was taught has its drawing
+    for w in api.PAINT_SEED_WORDS:
+        assert api.paint_learned(w), w
+    # other words, two words for one thing, plurals that are not just an s
+    assert api.paint_learned_name("tv") == "television" and api.paint_learned_name("laptops") == "computer"
+    assert api.paint_learned_name("wolves") == "wolf" and api.paint_learned_name("elves") == "elf"
+    assert api.paint_learned_name("tomatoes") == "tomato" and api.paint_learned_name("shoes") == "shoe"
+    assert api.paint_learned_name("glasses") == "glasses" and api.paint_learned_name("scissors") == "scissors"
+    assert svg(api.paint_picture("a red fire truck in the city")).count("<image") == 1
+    assert svg(api.paint_picture("a tv")).count("<image") == 1          # a tv is one, not a few
+    assert svg(api.paint_picture("glasses on a table")).count("<image") == 1
+    assert svg(api.paint_picture("wolves in the forest at night")).count("<image") >= 2
+    # a shark is painted in its sea, without saying so
+    sea = api._hsl(198, 70, 42)
+    assert sea in svg(api.paint_picture("a shark")) and sea not in svg(api.paint_picture("a shark on the beach"))
+    assert api.paint_unknown("a tiger and a laptop") == []

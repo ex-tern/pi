@@ -28272,7 +28272,18 @@ PAINT_SEED_WORDS = ("giraffe zebra horse cow pig sheep goat chicken frog snake m
                     "guitar piano drum violin book lamp clock chair table cup teapot cake pizza burger apple banana "
                     "strawberry cherry watermelon carrot mushroom cactus palm sunflower tulip rose umbrella kite "
                     "ball crown key gift candle snowman astronaut wizard pirate knight princess ghost alien "
-                    "planet comet volcano island rainbow").split()
+                    "planet comet volcano island rainbow "
+                    # the second lesson
+                    "tiger wolf shark duck eagle parrot gorilla hippo rhino leopard bat spider ant dragonfly jellyfish "
+                    "seahorse starfish seal otter beaver raccoon sloth llama donkey ostrich toucan hummingbird lobster "
+                    "moose lizard skyscraper barn pagoda fountain cabin treehouse waterfall bench fence truck taxi "
+                    "ambulance firetruck tram scooter skateboard sailboat canoe ufo satellite trumpet saxophone harp "
+                    "microphone camera phone computer television radio telescope glasses hat shoe backpack sword "
+                    "shield anchor globe lantern bell trophy flag bed sofa vase basket hammer scissors pencil "
+                    "paintbrush envelope donut cookie cupcake sandwich taco sushi bread cheese egg pear grape lemon "
+                    "pineapple peach coconut corn broccoli tomato pumpkin popcorn lollipop daisy bamboo lotus clover "
+                    "acorn feather shell diamond mermaid fairy ninja king queen clown cowboy chef doctor firefighter "
+                    "scientist angel superhero viking elf witch vampire").split()
 PAINT_DIR = os.path.join(BASE_DIR, "paint-learned")
 
 
@@ -28286,12 +28297,53 @@ def paint_word(w: str) -> str:
 PAINT_SHIPPED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paint-learned")
 
 
+# other words for things it was taught (a tv is the television it learned, a laptop the computer)
+PAINT_LEARNED_ALIASES = {"tv": "television", "telly": "television", "telephone": "phone", "smartphone": "phone",
+                         "mobile": "phone", "laptop": "computer", "pc": "computer", "couch": "sofa", "doughnut": "donut",
+                         "spaceship": "ufo", "saucer": "ufo", "mic": "microphone", "hippopotamus": "hippo",
+                         "rhinoceros": "rhino", "cheetah": "leopard", "jaguar": "leopard", "panther": "leopard",
+                         "ape": "gorilla", "chimp": "monkey", "chimpanzee": "monkey", "pony": "horse", "lamb": "sheep",
+                         "hen": "chicken", "rooster": "chicken", "chick": "chicken", "toad": "frog", "dino": "dinosaur",
+                         "trex": "dinosaur", "plane": "airplane", "aeroplane": "airplane", "jet": "airplane",
+                         "bike": "bicycle", "motorbike": "motorcycle", "sub": "submarine", "mage": "wizard",
+                         "sorcerer": "wizard", "spaceman": "astronaut", "muffin": "cupcake", "biscuit": "cookie",
+                         "cab": "taxi", "lorry": "truck", "skate": "skateboard", "spectacles": "glasses",
+                         "fireman": "firefighter", "firewoman": "firefighter", "doc": "doctor", "cook": "chef",
+                         "hero": "superhero", "seashell": "shell", "gem": "diamond", "jewel": "diamond",
+                         "candy": "lollipop", "streetcar": "tram", "trolley": "tram", "yacht": "sailboat", "kayak": "canoe",
+                         "cottage": "cabin", "hut": "cabin", "farm": "barn", "seastar": "starfish", "orca": "whale"}
+# taught things that fly (they go up in the air) and that swim (a picture of them is under water)
+PAINT_FLYING = set("eagle parrot bat dragonfly hummingbird butterfly bee ufo satellite fairy angel kite comet airplane "
+                   "helicopter feather toucan dragon superhero balloon".split())
+PAINT_SWIMMING = set("shark jellyfish seahorse starfish lobster octopus dolphin whale submarine mermaid".split())
+
+
+def paint_learned_name(w: str) -> Optional[str]:
+    """The name of what piii Paint learned for a word (its own name, its singular, another word for it), or None."""
+    w = re.sub(r"[^a-z]", "", w.lower())
+    if not w:
+        return None
+    # the word as it is first (an octopus, a cactus, glasses), then its singulars (giraffes, tomatoes, wolves)
+    tries = [w, paint_word(w)]
+    if w.endswith("es") and len(w) > 4:
+        tries.append(w[:-2])
+    if w.endswith("ves") and len(w) > 4:
+        tries.append(w[:-3] + "f")
+    for t in list(tries):
+        if PAINT_LEARNED_ALIASES.get(t):
+            tries.append(PAINT_LEARNED_ALIASES[t])
+    for n in dict.fromkeys(tries):
+        if any(os.path.isfile(os.path.join(d, n + ".svg")) for d in (PAINT_DIR, PAINT_SHIPPED)):
+            return n
+    return None
+
+
 def paint_learned(w: str) -> Optional[str]:
     """What piii Paint learned to draw for a word: the drawing as a data URL, or None. What it learned on this server
     comes first, then what it shipped knowing."""
-    # the word as it is first (an octopus, a cactus), then its singular (giraffes)
-    names = [re.sub(r"[^a-z]", "", v) + ".svg" for v in dict.fromkeys((w.lower(), paint_word(w)))]
-    path = next((p for n in names for p in (os.path.join(PAINT_DIR, n), os.path.join(PAINT_SHIPPED, n)) if os.path.isfile(p)), None)
+    n = paint_learned_name(w)
+    path = n and next((p for p in (os.path.join(PAINT_DIR, n + ".svg"), os.path.join(PAINT_SHIPPED, n + ".svg"))
+                       if os.path.isfile(p)), None)
     if not path:
         return None
     with open(path, "rb") as f:
@@ -28406,7 +28458,11 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
                 return v
         return None
     learned = None
-    for w in words:
+    for i, w in enumerate(words):
+        # two words for one thing it was taught ("a fire truck", "a tree house")
+        if i + 1 < len(words) and w not in PAINT_STOP and paint_learned_name(w + words[i + 1]):
+            learned, subject = paint_learned(w + words[i + 1]), "learned:" + w + words[i + 1]
+            break
         # a word it was taught comes before a look-alike it draws itself (a penguin, not just a bird)
         if w not in PAINT_STOP and paint_word(w) not in PAINT_ANIMALS + PAINT_THINGS:
             learned = paint_learned(w)
@@ -28416,6 +28472,10 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
         subject = one(w)
         if subject:
             break
+    taught = paint_learned_name(subject[8:]) if learned else None
+    # a sea creature is painted in its sea
+    if taught in PAINT_SWIMMING and not ws & {"beach", "boat", "ship", "sky", "space", "island"}:
+        under = True
     if subject is None and ws & {"animal", "animals", "pet", "pets", "creature", "creatures", "zoo"}:
         # land animals on land, fish in water
         subject = "fish" if under else rnd.choice([a for a in PAINT_ANIMALS if a != "fish"])
@@ -28426,7 +28486,7 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
     if subject and count == 1 and any(w.endswith("s") and w != subject and one(w) == subject for w in words):
         count = 2 + rnd.randrange(2)
     # a taught thing asked for in the plural ("penguins") is a few of them
-    if (subject or "").startswith("learned:") and count == 1 and paint_word(subject[8:]) != subject[8:]:
+    if learned and count == 1 and taught not in (subject[8:], PAINT_LEARNED_ALIASES.get(subject[8:])):
         count = 2 + rnd.randrange(2)
     count = max(1, min(count, 5))
     # ---------------------------------------------------------------- the sky
@@ -28673,6 +28733,9 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
                 cy = S * rnd.uniform(.3, .7)
             if space or (under and learned):
                 cy = S * (.5 + rnd.uniform(-.08, .08)) + (r * .6 if learned else 0)
+            elif taught in PAINT_FLYING:
+                # up in the air
+                cy = S * rnd.uniform(.3, .42) + r * .6
             h = hue + (i * 23 if count > 1 else 0)
             out.append(f'<ellipse cx="{cx:.0f}" cy="{horizon+r*.7:.0f}" rx="{r*1.1:.0f}" ry="{r*.16:.0f}" fill="#000" opacity=".16"/>' if cy > horizon - r else "")
             if learned:
