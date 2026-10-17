@@ -151,6 +151,17 @@ if [[ -n "${PIII_TUNNEL_TOKEN:-}" ]]; then
   echo "  Logs   journalctl -u piii-site -f     ·   journalctl -u cloudflared -f"
   exit 0
 fi
+# updating a site already live through its own tunnel: that tunnel stays, and no temporary one is made
+if systemctl is-enabled -q cloudflared 2>/dev/null; then
+  systemctl disable --now piii-site-tunnel 2>/dev/null || true
+  rm -f /etc/systemd/system/piii-site-tunnel.service
+  systemctl daemon-reload
+  systemctl restart cloudflared || true
+  say "Done"
+  echo "Updated. piii.app is served from this computer, through your Cloudflare tunnel (cloudflared.service)."
+  echo "  Version  $(git -C "$REPO" log --oneline -1 2>/dev/null)"
+  exit 0
+fi
 cat > /etc/systemd/system/piii-site-tunnel.service <<EOF
 [Unit]
 Description=piii.app on this computer: a temporary public address (Cloudflare quick tunnel)
