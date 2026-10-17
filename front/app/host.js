@@ -877,7 +877,7 @@ const ops = {
     const lib = document.documentElement.dataset.library;
     if (!lib) return null;
     fetch(lib, { credentials: "same-origin" })
-      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(r.status === 401 ? "sign in on the server's page first" : r.status === 403 ? "your account is not active yet" : "the server answered " + r.status))))
+      .then((r) => (r.ok ? r.json() : (r.status === 401 && lib.startsWith("/api/photos/") ? (location.href = "/photos", new Promise(() => {})) : 0) || Promise.reject(new Error(r.status === 401 ? "sign in on the server's page first" : r.status === 403 ? "your account is not active yet" : "the server answered " + r.status))))
       .then((d) => {
         const lines = (d.photos || []).map((p) => { const i = files.length; files.push(new RemoteFile(p)); srcAt[i] = ["remote", p.id]; return i + "\t" + p.size + "\t" + ("Server/" + p.name).replace(/[\t\n]/g, " "); });
         give(2000005, enc.encode(lines.join("\n")), 1, 1);
