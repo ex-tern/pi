@@ -1962,14 +1962,18 @@ const PROG_CSS: &str = "\
 .ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
 @keyframes pi-grow{from{transform:translate(var(--fx,0),var(--fy,0)) scale(var(--fsx,.2),var(--fsy,.2));opacity:.55;border-radius:48px}60%{opacity:1}to{transform:none;opacity:1}}\
-@keyframes pi-back{from{transform:scale(1.9);opacity:0;filter:blur(6px)}to{transform:none;opacity:1;filter:none}}\
+@keyframes pi-back{from{transform:scale(1.6);opacity:0;filter:blur(8px)}40%{opacity:.8}to{transform:none;opacity:1;filter:none}}\
 @keyframes pi-rise{from{transform:scale(.6);opacity:0;filter:blur(8px)}to{transform:none;opacity:1;filter:none}}\
 @keyframes pi-fade{from{opacity:0}to{opacity:1}}\
-.focus.grow-in>.win,.focus.grow-in>.scene{animation:pi-grow .5s cubic-bezier(.2,.75,.15,1) both;transform-origin:50vw 50vh}\
-.focus.back-in>.win,.focus.back-in>.scene{animation:pi-back .45s cubic-bezier(.2,.75,.15,1) both;transform-origin:50vw 50vh}\
+.focus.grow-in>.win,.focus.grow-in>.scene{animation:pi-grow .7s cubic-bezier(.16,.8,.2,1) both;transform-origin:50vw 50vh}\
+.focus.back-in>.win,.focus.back-in>.scene{animation:pi-back .65s cubic-bezier(.16,.8,.2,1) both;transform-origin:50vw 50vh}\
 .ai-level{animation:pi-fade .35s ease-out both}.ai-level .ai-in{animation:pi-rise .45s cubic-bezier(.2,.75,.15,1) both}\
-.u-deep,.u-icon{animation:pi-fade .25s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
-.ladder .rung{transition:color .2s,background-color .2s}\
+@keyframes wl0{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl1{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
+@keyframes wl2{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl3{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
+.win-in.wl-0{animation:wl0 .45s ease-out}.win-in.wl-1{animation:wl1 .45s ease-out}.win-in.wl-2{animation:wl2 .45s ease-out}.win-in.wl-3{animation:wl3 .45s ease-out}\
+@keyframes pi-dissolve{from{opacity:0;filter:blur(6px)}to{opacity:1;filter:none}}\
+.u-deep,.u-icon,.sx.unode .u-text,.sx.unode .u-val,.sx.unode .u-mark,.sx.unode .tag{animation:pi-dissolve .4s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
+.ladder .rung{transition:color .35s,background-color .35s,transform .35s}.ladder .rung.at{transform:translateX(-4px)}\
 .sx.unode.k-member{flex-direction:column;gap:6px}.u-mark{display:grid;place-items:center;color:#2b2b2b}.u-mark svg{width:26px;height:26px}\
 .u-icon svg{width:20px;height:20px;display:block}.sx.unode.k-member.u-iconic{flex-direction:row}\
 .sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\

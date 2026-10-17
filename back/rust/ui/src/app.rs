@@ -1898,7 +1898,7 @@ fn view(s: &State) -> N {
         // in or zooming out"): the site's places are supers on the canvas, opened by zooming into them
         el("div")
             .cls("focus home")
-            .cls_if(s.trans.0 == 2 && host::now() - s.trans.2 < 600.0, "back-in")
+            .cls_if(s.trans.0 == 2 && host::now() - s.trans.2 < 800.0, "back-in")
             .kid(canvas_view(s))
             // the legacy navigation stays beside the zoom (owner, 2026-10-17: "keep the legacy navigation")
             .kid(rail(s))
@@ -1932,7 +1932,7 @@ fn view(s: &State) -> N {
             // drawn on this page, with every move the home canvas has; the page itself stays usable under it
             // grown out of the super zoomed into, the window and what is drawn on it as one; or come back out to
             let (tk, (fx, fy, fw, fh), tat) = s.trans;
-            let fresh = host::now() - tat < 600.0;
+            let fresh = host::now() - tat < 800.0;
             let (vw, vh) = (host::vw(), host::vh());
             el("div")
                 .cls("focus")
@@ -2371,6 +2371,8 @@ fn window_frame(s: &State, content: N) -> N {
         .kid(el("div").cls("win-body").kid(
             el("div")
                 .cls("win-in")
+                // a change of level dissolves in (a different animation per level, so each change plays it again)
+                .cls(["wl-0", "wl-1", "wl-2", "wl-3"][word_level(s) as usize])
                 // one transform, as the canvas's: the page scales as a whole (no reflow), so what is drawn over it stays put
                 .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("transform-origin:0 0;transform:translate({:.1}px,{:.1}px) scale({:.4})", s.ppan.0, s.ppan.1, s.pzoom))
                 .kid(content),

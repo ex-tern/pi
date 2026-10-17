@@ -1037,7 +1037,8 @@ addEventListener("pointercancel", (e) => { if (capturing) W.pointer(2, e.clientX
 // the last place the pointer was; a page change lets go of what was left of the step
 let zq = 0, zx = 0, zy = 0, zraf = 0;
 const zstep = () => {
-  const d = Math.abs(zq) < 2 ? zq : zq * 0.28;
+  // a long, soft glide: a sixth of what is left each frame
+  const d = Math.abs(zq) < 1 ? zq : zq * 0.16;
   zq -= d;
   W.zoomed(d, zx, zy);
   zraf = Math.abs(zq) > 0.01 ? requestAnimationFrame(zstep) : 0;
