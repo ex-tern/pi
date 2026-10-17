@@ -285,6 +285,19 @@ fn board_pointer(phase: u32, x: f64, y: f64) -> bool {
         render();
         return true;
     }
+    if let Some((sx, sy, ox, oy, 3)) = s.win_drag {
+        if phase == 0 {
+            // moved, never so far that its head leaves the screen
+            let (vw, vh) = (host::vw(), host::vh());
+            s.win_off = ((ox + x - sx).clamp(-vw + 160.0, vw - 160.0), (oy + y - sy).clamp(-20.0, vh - 80.0));
+        } else {
+            host::capture(false);
+            s.win_drag = None;
+            host::store_set("piii:winoff", &format!("{:.0},{:.0}", s.win_off.0, s.win_off.1));
+        }
+        render();
+        return true;
+    }
     if let Some((sx, sy, w0, h0, mode)) = s.win_drag {
         if phase == 0 {
             // no larger than the screen beside the rail holds, so every edge stays in view
@@ -436,6 +449,14 @@ fn board_update(a: u16, v: String) {
             return;
         }
         let n: Vec<f64> = v.split(',').filter_map(|x| x.parse().ok()).collect();
+        // its head, held with the left button: the window moves (owner, 2026-10-17: "make the connect and similar
+        // pages unlockable to move also"); with the middle one it resizes
+        if a == 62 && n.get(2).copied() == Some(0.0) {
+            let s = st();
+            s.win_drag = Some((n.first().copied().unwrap_or(0.0), n.get(1).copied().unwrap_or(0.0), s.win_off.0, s.win_off.1, 3));
+            host::capture(true);
+            return;
+        }
         if a == 62 && n.get(2).copied() != Some(2.0) {
             return;
         }

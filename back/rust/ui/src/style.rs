@@ -233,6 +233,7 @@ overflow:hidden;text-overflow:ellipsis}
 .win{min-width:360px;min-height:240px;position:fixed;z-index:8;left:88px;top:12px;right:12px;bottom:12px;display:flex;flex-direction:column;background:var(--card);
 border:1px solid var(--line);border-radius:22px;overflow:hidden;box-shadow:0 18px 50px -30px rgba(20,20,30,.35)}
 .win-head{flex:none;display:flex;align-items:center;gap:12px;padding:10px 12px 10px 22px}
+.win.free>.win-head{cursor:grab}.win.free>.win-head:active{cursor:grabbing}
 .win-title{flex:1;min-width:0;font-weight:500;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:var(--muted)}
 .win-x{flex:none;width:34px;height:34px;border-radius:11px;border:1px solid var(--line2);background:var(--card);cursor:pointer;
 font-size:20px;line-height:1;color:var(--muted)}

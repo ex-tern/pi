@@ -2416,6 +2416,7 @@ fn window_frame(s: &State, content: N) -> N {
     }
     el("section")
         .cls("win")
+        .cls_if(s.win_free, "free")
         .cls_if(s.win_pick, "picked")
         .attr_if(!size.is_empty(), "style", size)
         .attr("aria-label", super_name(s, s.page, arg))
@@ -2428,7 +2429,7 @@ fn window_frame(s: &State, content: N) -> N {
         .kid(
             el("div")
                 .cls("win-head")
-                .attr("title", if s.win_free { "Unlocked: drag its edges to resize it" } else { "Click here, then the lock, to unlock the window's size" })
+                .attr("title", if s.win_free { "Unlocked: drag here to move it, its edges to resize it" } else { "Click here, then the lock, to unlock the window" })
                 .on("pdown", Msg::TV(Tool::Grid, 62))
                 .on("click", Msg::TV(Tool::Grid, 65))
                 .kid(el("span").cls("win-title tag").text(super_name(s, s.page, arg))),
