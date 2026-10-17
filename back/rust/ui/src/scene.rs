@@ -2721,7 +2721,7 @@ fn loop_to_ai() {
     s.zoom = canvas_zoom_limits(s).0;
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
-    s.ai_level = 2;
+    s.ai_level = 1;
     layout_save();
     if s.page != Page::Home || s.peek {
         host::go("#/");

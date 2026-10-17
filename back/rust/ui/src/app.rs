@@ -257,6 +257,10 @@ struct State {
     /// 2026-10-17: "make the website start above super AI bubble, like almost a circle in the center")
     ai_level: u8,
     ai_draft: String,
+    /// what Super AI answered in its bubble, the question, and whether it is thinking
+    ai_answer: String,
+    ai_asked: String,
+    ai_busy: bool,
     /// resistance at a level's edge (owner, 2026-10-17: "add some resistance to go to extreme levels"): how hard the
     /// wheel has pushed against it, which way, and when last
     resist: (f64, f64, f64),
@@ -490,6 +494,9 @@ pub fn start() {
         zoom_nav_at: 0.0,
         ai_level: 0,
         ai_draft: String::new(),
+        ai_answer: String::new(),
+        ai_asked: String::new(),
+        ai_busy: false,
         resist: (0.0, 0.0, 0.0),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
@@ -775,18 +782,12 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             s.ai_level = 0;
             layout_save();
         } else if s.ai_level > 0 {
-            // in: the bubble → Super AI → the site; out: back up to the bubble, the outermost
-            if host::now() - s.zoom_nav_at > 600.0 && push_through(dy, 700.0) {
+            // Super AI's bubble is the outermost: in, with a push, back to the site
+            if dy < 0.0 && host::now() - s.zoom_nav_at > 600.0 && push_through(dy, 700.0) {
                 let s = st();
-                if dy < 0.0 {
-                    s.ai_level -= 1;
-                    s.zoom_nav_at = host::now();
-                    s.trans = (if s.ai_level == 0 { 2 } else { 4 }, (0.0, 0.0, 0.0, 0.0), host::now());
-                } else if s.ai_level < 2 {
-                    s.ai_level += 1;
-                    s.zoom_nav_at = host::now();
-                    s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
-                }
+                s.ai_level = 0;
+                s.zoom_nav_at = host::now();
+                s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
             }
         } else {
             let z0 = s.zoom;
@@ -1924,8 +1925,7 @@ fn view(s: &State) -> N {
             // the legacy navigation stays beside the zoom (owner, 2026-10-17: "keep the legacy navigation")
             .kid(rail(s))
             .kid(ctl_bar(s))
-            .kid_if(s.ai_level == 1, || ai_level_view(s))
-            .kid_if(s.ai_level == 2, || ai_bubble_view(s))
+            .kid_if(s.ai_level > 0, || ai_level_view(s))
             .kid(ladder_view(s))
             .into()
     } else {

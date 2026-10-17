@@ -179,6 +179,8 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
         proxy_apply(what, v, err);
     } else if t == Tool::TsVpn {
         ts_apply(what, v, err);
+    } else if t == Tool::Prog {
+        ai_bubble_apply(v, err);
     } else if t == Tool::Learn {
         learn_apply(v, err);
     } else if matches!(t, Tool::Ledger | Tool::Board | Tool::Donate) {

@@ -1,5 +1,5 @@
 #!/bin/bash
-# piii.app on your own computer (Ubuntu or Debian), run as Railway runs it, and reached from the internet through a
+# piii.app on your own computer (Ubuntu or Debian), reached from the internet through a
 # Cloudflare Tunnel: the computer connects out to Cloudflare, so nothing is opened in the router.
 # (owner, 2026-10-17: "can you use my home pc with ubuntu server on it as server for the site?"; "test first".)
 #
@@ -10,7 +10,7 @@
 #   sudo bash back/deploy/home-server.sh --remove              stop and remove the services (data and settings kept)
 #
 # Run it again after `git pull` to update: the data (/var/lib/piii-site) and settings (/etc/piii-site.env) are kept.
-# The site's keys (AI providers, ORCID, chain) go in /etc/piii-site.env, as on Railway; without them it still runs,
+# The site's keys (AI providers, ORCID, chain) go in /etc/piii-site.env; without them it still runs,
 # with its own local model. Then: sudo systemctl restart piii-site
 set -euo pipefail
 
@@ -60,8 +60,8 @@ tar -C "$REPO" --exclude=.git --exclude=target --exclude=venv --exclude=node_mod
 chown -R "$U:$U" "$DATA"
 chmod 750 "$DATA"
 
-say "Python 3.11 (as on Railway) and the site's packages"
-# Railway runs 3.11, and numpy 1.26 has no builds for the newest Python: uv fetches exactly 3.11
+say "Python 3.11 and the site's packages"
+# the site runs on 3.11, and numpy 1.26 has no builds for the newest Python: uv fetches exactly 3.11
 if ! command -v uv >/dev/null; then
   curl -LsSf https://astral.sh/uv/install.sh | env UV_INSTALL_DIR=/usr/local/bin INSTALLER_NO_MODIFY_PATH=1 sh
 fi
@@ -75,7 +75,7 @@ chmod -R a+rX "$OPT/python" "$OPT/venv"
 
 say "Settings ($ENVF)"
 if [[ ! -f "$ENVF" ]]; then
-  # every setting the site knows, empty where it needs your keys (the same names as Railway's Variables)
+  # every setting the site knows, empty where it needs your keys
   cp "$OPT/app/back/.env.example" "$ENVF"
   sed -i "s|^ENVIRONMENT=.*|ENVIRONMENT=production|" "$ENVF"
 fi
@@ -120,7 +120,8 @@ systemctl restart piii-site
 printf 'Starting'
 ok=""
 for _ in $(seq 1 120); do
-  if curl -fsS -o /dev/null "http://127.0.0.1:$PORT/api/health"; then ok=1; break; fi
+  # quietly: the site takes a few seconds to come up, and each early try would print an error
+  if curl -fs -o /dev/null "http://127.0.0.1:$PORT/api/health"; then ok=1; break; fi
   printf '.'; sleep 1
 done
 echo
@@ -192,6 +193,5 @@ piii.app is running on this computer.
   Password             ${PIII_SITE_PASSWORD:+set (SITE_PASSWORD in $ENVF)}${PIII_SITE_PASSWORD:-none (to add one: sudo PIII_SITE_PASSWORD=… bash back/deploy/home-server.sh)}
   Keys                 add them to $ENVF, then: sudo systemctl restart piii-site
   Logs                 journalctl -u piii-site -f
-The test address is temporary: it changes when the tunnel restarts (--address shows it). This is a fresh copy with
-its own empty data; www.piii.app on Railway is not touched.
+The test address is temporary: it changes when the tunnel restarts (--address shows it).
 EOF

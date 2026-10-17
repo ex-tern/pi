@@ -1177,25 +1177,16 @@ fn prog_update(a: u16, v: String) {
         },
         P_AI_SEND => {
             let q = s.ai_draft.trim().to_string();
-            if q.is_empty() {
+            if q.is_empty() || s.ai_busy {
                 return;
             }
-            // what is said becomes a super of words wired to a show, in the middle of the canvas: Super AI answers
-            // there, and a π program it writes lands beside it, running
             s.ai_draft.clear();
-            s.ai_level = 0;
-            s.zoom_nav_at = host::now();
-            // back down at the usual size, so what is made is readable
-            s.zoom = 1.0;
-            layout_save();
-            let (x, y) = screen_to_node(host::vw() / 2.0 - 160.0, host::vh() / 2.0 - 44.0);
-            let ask = prog_add(&q, x, y);
-            let (w, _) = unode_size(&q);
-            let show = prog_add("show", x + w + 60.0, y);
-            st().wires.push((ask, show, Tip::In));
-            st().prog.sel = Some(ask);
-            wires_save();
-            prog_save();
+            s.ai_asked = q.clone();
+            s.ai_answer.clear();
+            s.ai_busy = true;
+            let engine = ai_engine(s).unwrap_or_else(|| "sim".to_string());
+            let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true}}", json::quote(&engine), json::quote(&q));
+            request(Want::Tool(Tool::Prog, 1), "POST", "/api/super/one", &body, 0);
         }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
@@ -1574,44 +1565,82 @@ fn ladder_view(s: &State) -> N {
         .into()
 }
 
-/// The outermost layer: Super AI as one bubble, almost a circle, in the middle of an empty canvas. Zoomed into (or
-/// clicked), it opens.
-fn ai_bubble_view(_: &State) -> N {
+/// Super AI: the outermost layer and the site's centre, one bubble (owner, 2026-10-17: "fix the super AI bubble and
+/// page and merge them all together. Make it nicer"). Almost a circle; in it, its sparkle, a line to say what to
+/// make or ask, and the answer. A π program in an answer lands on the home canvas, running.
+fn ai_level_view(s: &State) -> N {
+    let answered = !s.ai_answer.is_empty() || s.ai_busy;
     el("div")
-        .cls("ai-bubble-wrap")
+        .cls("ai-level")
         .attr("data-stop", "1")
         .kid(
-            el("button")
-                .attr("type", "button")
+            el("div")
                 .cls("ai-bubble")
-                .attr("aria-label", "Super AI: zoom in, or click, to enter")
-                .attr("title", "Zoom in to enter")
-                .on("click", Msg::TV(Tool::Prog, P_LADDER))
-                .kid(se_shape_n(2.2))
-                .kid(el("span").cls("u-mark").kid(line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"])))
-                .kid(el("span").cls("ai-bubble-t").text("Super AI")),
+                .cls_if(answered, "answered")
+                .cls_if(s.ai_busy, "busy")
+                .kid(se_shape_n(2.25))
+                .kid(el("span").cls("ai-spark").kid(line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"])))
+                .kid(el("div").cls("ai-title").text("Super AI"))
+                .kid(
+                    el("div")
+                        .cls("ai-row")
+                        .kid(
+                            el("input")
+                                .attr("type", "text")
+                                .attr("aria-label", "Ask Super AI, or say what to make")
+                                .attr("autocomplete", "off")
+                                .prop("value", s.ai_draft.clone())
+                                .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
+                                .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())),
+                        )
+                        .kid(
+                            el("button")
+                                .attr("type", "button")
+                                .cls("ai-play")
+                                .attr("aria-label", "Go")
+                                .attr("title", "Go")
+                                .attr_if(s.ai_busy || s.ai_draft.trim().is_empty(), "disabled", "")
+                                .on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new()))
+                                .kid(line_icon(&["M8 5.5v13l10.5-6.5z"])),
+                        ),
+                )
+                .kid_if(answered, || {
+                    el("div")
+                        .cls("ai-answer")
+                        .kid_if(!s.ai_asked.is_empty(), || el("div").cls("ai-q").text(s.ai_asked.clone()).into())
+                        .kid(if s.ai_busy {
+                            el("div").cls("ai-dots").kid(el("i")).kid(el("i")).kid(el("i"))
+                        } else {
+                            el("div").cls("ai-a").text(s.ai_answer.clone())
+                        })
+                        .into()
+                }),
         )
         .into()
 }
 
-/// The top of the zoom: the AI language.
-fn ai_level_view(s: &State) -> N {
-    el("div")
-        .cls("ai-level")
-        .attr("data-stop", "1")
-        .kid(el("div").cls("ai-in")
-            .kid(el("div").cls("ai-k").text("AI language"))
-            .kid(el("h1").text("Super AI"))
-            .kid(el("div").cls("ai-row")
-                .kid(el("input")
-                    .attr("type", "text")
-                    .attr("aria-label", "What to make")
-                    .prop("value", s.ai_draft.clone())
-                    .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
-                    .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())))
-                .kid(el("button").attr("type", "button").cls("btn primary ai-play").attr("aria-label", "Make it").attr("title", "Make it").on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new())).kid(line_icon(&["M8 5.5v13l10.5-6.5z"]))))
-)
-        .into()
+/// Super AI answered in its bubble.
+fn ai_bubble_apply(v: Value, err: Option<String>) {
+    let s = st();
+    s.ai_busy = false;
+    let mut text = match err {
+        Some(e) => format!("Super AI could not answer: {}", e),
+        None if v.get("ok").truthy() => v.get("text").text(),
+        None => format!("Super AI could not answer: {}", v.get("text").text()),
+    };
+    // a π program: onto the home canvas, beyond the ring on the right, running
+    if let Some(prog) = pi_block(&text) {
+        let right = s.prog.nodes.iter().filter(|n| world_of(&n.text).is_some()).max_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(core::cmp::Ordering::Equal)).map(|n| n.id);
+        if let (true, Some(beside)) = (s.ctx.is_empty(), right) {
+            let n = pi_place(beside, &prog);
+            if let (Some(a), Some(b)) = (text.find("```pi"), text.rfind("```")) {
+                let words = format!("{} {}", text[..a].trim(), if b > a + 4 { text[b + 3..].trim() } else { "" });
+                text = words.trim().trim_end_matches(':').to_string();
+            }
+            text = format!("{}{}A π program of {} supers is on the canvas, to the right of the ring, running. Zoom in to see it.", text, if text.is_empty() { "" } else { "\n\n" }, n);
+        }
+    }
+    st().ai_answer = text;
 }
 
 // ---------------------------------------------------------------------------------------------- zooming into a super
@@ -2010,17 +2039,24 @@ const PROG_CSS: &str = "\
 .ladder .rung{font:500 11px/1.2 'Geist Mono',ui-monospace,monospace;color:#8a877f;background:none;border:0;padding:4px 8px;border-radius:8px;text-align:right;cursor:pointer;box-shadow:none}\
 .ladder .rung:hover{color:#2b2b2b}.ladder .rung.at{color:var(--accent);background:var(--accent-soft);font-weight:700}\
 @media (max-width:699px){.ladder{top:auto;bottom:8px;right:50%;transform:translateX(50%);flex-direction:row;overflow-x:auto;max-width:calc(100vw - 16px)}}\
-.ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:blur(3px)}\
-.ai-in{width:min(640px,calc(100vw - 32px));text-align:center}.ai-in h1{font-size:44px;margin:4px 0 10px}\
-.push-ring{display:none}.push-ring.on{display:block;position:fixed;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;z-index:2147483200;pointer-events:none;background:conic-gradient(var(--accent) calc(var(--p) * 360deg),color-mix(in srgb,var(--accent) 14%,transparent) 0);-webkit-mask:radial-gradient(circle,transparent 25px,#000 26px);mask:radial-gradient(circle,transparent 25px,#000 26px);animation:pi-fade .15s ease-out both}\
-.ai-bubble-wrap{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:var(--paper);animation:pi-fade .4s ease-out both}\
-.ai-bubble{position:relative;width:min(34vmin,320px);height:min(31vmin,292px);border:0;background:none;box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-in;animation:pi-rise .55s cubic-bezier(.2,.75,.15,1) both}\
-.ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 14px 30px rgba(25,25,25,.14))}\
+.ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 46%,color-mix(in srgb,var(--accent) 7%,var(--paper)) 0,var(--paper) 62%);animation:pi-fade .4s ease-out both}\
+.ai-bubble{position:relative;width:min(74vmin,640px);height:min(66vmin,580px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 9%;box-sizing:border-box;animation:pi-rise .6s cubic-bezier(.2,.75,.15,1) both;transition:height .45s cubic-bezier(.2,.75,.15,1)}\
+.ai-bubble.answered{justify-content:flex-start;padding-top:12%}\
+.ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 26px 50px rgba(25,25,25,.16))}\
 .ai-bubble .u-shape path{fill:#fff;stroke:#2b2b2b;stroke-width:1.8px;vector-effect:non-scaling-stroke}\
-.ai-bubble .u-mark svg{width:40px;height:40px}.ai-bubble-t{font:600 24px/1.1 'Geist',system-ui,sans-serif;color:#2b2b2b}\
-.ai-bubble:hover .u-shape path{stroke:var(--accent)}\
-.ai-k{font:600 12px/1 'Geist Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
-.ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-play{display:grid;place-items:center;width:52px;padding:0}.ai-play svg{width:22px;height:22px;fill:currentColor}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
+.ai-spark{color:var(--accent);display:grid;place-items:center;animation:ai-breathe 3.2s ease-in-out infinite}.ai-spark svg{width:46px;height:46px}\
+.ai-bubble.busy .ai-spark{animation:ai-spin 1.6s linear infinite}\
+@keyframes ai-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes ai-spin{to{transform:rotate(360deg)}}\
+.ai-title{font:600 30px/1.1 'Geist',system-ui,sans-serif;color:#2b2b2b;letter-spacing:-.01em}\
+.ai-row{display:flex;align-items:center;gap:10px;width:100%;max-width:440px;margin:6px 0 0;border-bottom:1.6px solid #d9d6cc;padding:2px 0 6px;transition:border-color .2s}.ai-row:focus-within{border-color:var(--accent)}\
+.ai-row input{flex:1;min-width:0;font:inherit;font-size:17px;padding:8px 2px;border:0;background:transparent;outline:none;color:var(--ink)}\
+.ai-play{flex:none;display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:#2b2b2b;color:#fff;cursor:pointer;transition:transform .15s,background .2s,opacity .2s}.ai-play:hover:not([disabled]){transform:scale(1.08);background:var(--accent)}.ai-play[disabled]{opacity:.3;cursor:default}\
+.ai-play svg{width:18px;height:18px;fill:currentColor;stroke:none}\
+.ai-answer{width:100%;max-width:460px;flex:1 1 auto;min-height:0;overflow:auto;margin-top:4px;padding-bottom:14%;animation:pi-dissolve .4s ease-out both;-webkit-mask-image:linear-gradient(#000 calc(100% - 28px),transparent)}\
+.ai-q{font-size:13px;color:#8a877f;margin-bottom:8px}.ai-a{font-size:15.5px;line-height:1.55;color:#2b2b2b;white-space:pre-wrap;overflow-wrap:anywhere}\
+.ai-dots{display:flex;gap:6px;padding:6px 0}.ai-dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:ai-dot 1s ease-in-out infinite}.ai-dots i:nth-child(2){animation-delay:.15s}.ai-dots i:nth-child(3){animation-delay:.3s}\
+@keyframes ai-dot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}\
+.push-ring{display:none}.push-ring.on{display:block;position:fixed;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;z-index:2147483200;pointer-events:none;background:conic-gradient(var(--accent) calc(var(--p) * 360deg),color-mix(in srgb,var(--accent) 14%,transparent) 0);-webkit-mask:radial-gradient(circle,transparent 25px,#000 26px);mask:radial-gradient(circle,transparent 25px,#000 26px);animation:pi-fade .15s ease-out both}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
 @keyframes pi-grow{from{transform:translate(var(--fx,0),var(--fy,0)) scale(var(--fsx,.2),var(--fsy,.2));opacity:.55;border-radius:48px}60%{opacity:1}to{transform:none;opacity:1}}\
 @keyframes pi-back{from{transform:scale(1.6);opacity:0;filter:blur(8px)}40%{opacity:.8}to{transform:none;opacity:1;filter:none}}\
@@ -2028,7 +2064,7 @@ const PROG_CSS: &str = "\
 @keyframes pi-fade{from{opacity:0}to{opacity:1}}\
 .focus.grow-in>.win,.focus.grow-in>.scene{animation:pi-grow .7s cubic-bezier(.16,.8,.2,1) both;transform-origin:50vw 50vh}\
 .focus.back-in>.win,.focus.back-in>.scene{animation:pi-back .65s cubic-bezier(.16,.8,.2,1) both;transform-origin:50vw 50vh}\
-.ai-level{animation:pi-fade .35s ease-out both}.ai-level .ai-in{animation:pi-rise .45s cubic-bezier(.2,.75,.15,1) both}\
+\
 @keyframes wl0{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl1{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
 @keyframes wl2{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl3{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
 .win-in.wl-0{animation:wl0 .45s ease-out}.win-in.wl-1{animation:wl1 .45s ease-out}.win-in.wl-2{animation:wl2 .45s ease-out}.win-in.wl-3{animation:wl3 .45s ease-out}\
