@@ -373,6 +373,13 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
     uefi::log(&format!("piii OS: {}", gfx));
     let (mut input, keys) = Input::open();
     let mut app = App::new(w, h);
+    // the pointer's speed as it was left last time
+    if let Some(v) = uefi::get_var("PiiiPointerSpeed") {
+        if let Some(&i) = v.first() {
+            app.set_speed(i as usize);
+            uefi::log(&format!("piii OS: pointer speed {} (kept from last time)", i));
+        }
+    }
     let rev = uefi::st().hdr.rev;
     app.info.push(("Computer".into(), uefi::cpu()));
     app.info.push(("Firmware".into(), format!("{} (revision {:#x}), EFI {}.{}", uefi::vendor(), uefi::st().fw_rev, rev >> 16, (rev & 0xffff) / 10)));
@@ -419,6 +426,11 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             app.event(e);
         }
         app.event(Event::Tick(10));
+        if app.speed_changed {
+            app.speed_changed = false;
+            let ok = uefi::set_var("PiiiPointerSpeed", &[app.speed() as u8]);
+            uefi::log(&format!("piii OS: pointer speed {} {}", app.speed(), if ok { "kept" } else { "(could not be kept)" }));
+        }
         if let Some(r) = app.request {
             uefi::log(&format!("piii OS: {:?}", r));
             uefi::reset(if r == Request::Restart { 0 } else { 2 });

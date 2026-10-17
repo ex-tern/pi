@@ -67,6 +67,8 @@ const SET_WATCHDOG: usize = 29;
 const LOCATE_HANDLE_BUFFER: usize = 36;
 // runtime services
 const RESET_SYSTEM: usize = 10;
+const GET_VARIABLE: usize = 6;
+const SET_VARIABLE: usize = 8;
 
 #[repr(C)]
 pub struct InputKey {
@@ -465,6 +467,31 @@ pub fn tsc() -> u64 {
 pub fn now_ms() -> u64 {
     let per = unsafe { PER_MS };
     if per == 0 { 0 } else { tsc() / per }
+}
+
+/// piii OS's own place in the computer's memory that survives a restart (NVRAM): one small setting per name.
+const PIII_VARS: Guid = Guid(0x3141_5926, 0x5358, 0x4979, [0x32, 0x38, 0x46, 0x26, 0x43, 0x38, 0x32, 0x79]);
+
+fn var_name(name: &str) -> alloc::vec::Vec<u16> {
+    name.encode_utf16().chain(core::iter::once(0)).collect()
+}
+
+/// A setting kept from the last start, if there is one.
+pub fn get_var(name: &str) -> Option<alloc::vec::Vec<u8>> {
+    let f: extern "efiapi" fn(*const u16, *const Guid, *mut u32, *mut usize, *mut u8) -> Status =
+        unsafe { core::mem::transmute((*st().runtime).f[GET_VARIABLE]) };
+    let n = var_name(name);
+    let mut buf = [0u8; 64];
+    let (mut attrs, mut size) = (0u32, buf.len());
+    if f(n.as_ptr(), &PIII_VARS, &mut attrs, &mut size, buf.as_mut_ptr()) == SUCCESS { Some(buf[..size].to_vec()) } else { None }
+}
+
+/// A setting kept for the next start (non-volatile, boot and runtime access).
+pub fn set_var(name: &str, data: &[u8]) -> bool {
+    let f: extern "efiapi" fn(*const u16, *const Guid, u32, usize, *const u8) -> Status =
+        unsafe { core::mem::transmute((*st().runtime).f[SET_VARIABLE]) };
+    let n = var_name(name);
+    f(n.as_ptr(), &PIII_VARS, 0x1 | 0x2 | 0x4, data.len(), data.as_ptr()) == SUCCESS
 }
 
 /// 0 restarts cold, 2 switches off.

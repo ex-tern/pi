@@ -134,8 +134,10 @@ const CONSTS: [(&str, &str, &str); 4] = [
 ];
 const DIGITS: [usize; 4] = [100, 1000, 5000, 20000];
 /// how far the pointer goes for a mouse's move (owner, 2026-10-17: "mouse is too sensitive on piii os")
-const SPEEDS: [f64; 8] = [0.15, 0.25, 0.35, 0.5, 0.7, 1.0, 1.4, 2.0];
-const SPEED_START: usize = 2;
+/// (owner, again: "piii os mouse still too sensitive"): slower steps at the bottom, and it starts slower; the choice
+/// is kept in the computer's memory (NVRAM) from one start to the next
+pub const SPEEDS: [f64; 10] = [0.06, 0.09, 0.12, 0.16, 0.2, 0.26, 0.35, 0.5, 0.75, 1.1];
+const SPEED_START: usize = 3;
 
 pub struct App {
     pub w: usize,
@@ -175,6 +177,8 @@ pub struct App {
     /// the browser's state; and a request for the network, which the machine's loop carries out
     br: Browser,
     pub fetch: Option<Fetch>,
+    /// the pointer's speed was changed (the machine keeps it for the next start)
+    pub speed_changed: bool,
 }
 
 impl App {
@@ -212,6 +216,7 @@ impl App {
             cursor: Self::cursor(),
             br: Browser::default(),
             fetch: None,
+            speed_changed: false,
         };
         a.layout();
         a
@@ -241,7 +246,7 @@ impl App {
             Event::Move(dx, dy) => {
                 // slow moves exact, quick ones go further (up to twice as far), as a computer's mouse feels
                 let m = crate::num::sqrt(dx * dx + dy * dy);
-                let k = SPEEDS[self.speed] * (1.0 + 0.7 * ((m - 3.0) / 10.0).clamp(0.0, 1.4));
+                let k = SPEEDS[self.speed] * (1.0 + 0.4 * ((m - 4.0) / 12.0).clamp(0.0, 1.0));
                 let (mx, my) = (dx * k + self.rest.0, dy * k + self.rest.1);
                 let (ix, iy) = (mx as i64 as f64, my as i64 as f64);
                 self.rest = (mx - ix, my - iy);
@@ -470,6 +475,7 @@ impl App {
             Act::Speed(d) => {
                 self.speed = (self.speed as i64 + d).clamp(0, SPEEDS.len() as i64 - 1) as usize;
                 self.rest = (0.0, 0.0);
+                self.speed_changed = true;
             }
             Act::Field(_) | Act::Go | Act::Portal | Act::Link(_) | Act::Post => self.br_act(a),
             Act::Restart | Act::PowerOff => {
@@ -720,6 +726,14 @@ impl App {
                 }
             }
         }
+    }
+
+    pub fn speed(&self) -> usize {
+        self.speed
+    }
+
+    pub fn set_speed(&mut self, i: usize) {
+        self.speed = i.min(SPEEDS.len() - 1);
     }
 
     /// Devices is open (it shows the live numbers, so it is drawn again each second)

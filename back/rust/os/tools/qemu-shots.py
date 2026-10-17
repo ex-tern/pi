@@ -186,11 +186,14 @@ try:
     shot("devices")
     keys("esc")
     # the mouse (piii OS's own USB driver): into the top left corner, onto Welcome in small steps (2 counts: slow
-    # enough that the pointer's acceleration stays out, so each goes 0.35 × 2.8 pixels), drag it down and right,
+    # enough that the pointer's acceleration stays out), drag it down and right,
     # then click it open. The screen is 1280 × 800; Welcome's middle is near (255, 235).
+    # the fastest pointer (= six times: from the starting speed 0.16 to 1.1), so a step of 2 counts goes 2.2 pixels
+    for _ in range(6):
+        keys("equal", gap=0.3)
     move(-3000, -3000, steps=100)
-    steps(2, 2, 336)
-    steps(2, 0, 28)
+    steps(2, 2, 107)
+    steps(2, 0, 9)
     shot("mouse-on-welcome")
     button(True)
     steps(2, 2, 100)

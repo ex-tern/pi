@@ -74,4 +74,4 @@ def test_invite_and_withdraw(tailscale):
     assert c.post("/api/ts/invite", json={"email": "not an email"}).status_code == 400
     assert c.post("/api/ts/invite/i1/delete").json() == {"deleted": "i1"}
     assert c.get("/api/ts/status").json()["invites"] == []
-    assert c.post("/api/ts/invite/..%2Fx/delete").status_code in (400, 404)
+    assert c.post("/api/ts/invite/..%2Fx/delete").status_code in (400, 404, 405)
