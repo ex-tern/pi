@@ -1472,8 +1472,8 @@ fn place_mark(name: &str) -> N {
         Some(6) => mark_of(Page::Map, name),
         Some(7) => line_icon(&["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M12 10.5v3.5"]),
         Some(8) => line_icon(&["M8 7l-5 5 5 5", "M16 7l5 5-5 5"]),
-        // a sparkle: Super AI
-        Some(9) => line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"]),
+        // π: Super AI (owner, 2026-10-17: "replace this logo for a pi")
+        Some(9) => el("span").cls("pi-mark").text("π").into(),
         _ => ai_mark(name),
     }
 }
@@ -1579,7 +1579,7 @@ fn ai_level_view(s: &State) -> N {
                 .cls_if(answered, "answered")
                 .cls_if(s.ai_busy, "busy")
                 .kid(se_shape_n(2.25))
-                .kid(el("span").cls("ai-spark").kid(line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"])))
+                .kid(el("span").cls("ai-spark").kid(el("span").cls("pi-mark").text("π")))
                 .kid(
                     el("div")
                         .cls("ai-row")
@@ -2099,6 +2099,7 @@ const PROG_CSS: &str = "\
 .ai-bubble.answered{justify-content:flex-start;padding-top:12%}\
 .ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 26px 50px rgba(25,25,25,.16))}\
 .ai-bubble .u-shape path{fill:#fff;stroke:#2b2b2b;stroke-width:1.8px;vector-effect:non-scaling-stroke}\
+.pi-mark{display:block;font:500 24px/1 'Geist',system-ui,sans-serif;color:inherit;letter-spacing:0}.ai-spark .pi-mark{font-size:56px;line-height:.9}\
 .ai-spark{color:var(--accent);display:grid;place-items:center;animation:ai-breathe 3.2s ease-in-out infinite}.ai-spark svg{width:46px;height:46px}\
 .ai-bubble.busy .ai-spark{animation:ai-spin 1.6s linear infinite}\
 @keyframes ai-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes ai-spin{to{transform:rotate(360deg)}}\

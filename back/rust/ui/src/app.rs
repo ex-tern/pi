@@ -779,6 +779,17 @@ fn example_toggle() {
 /// Zoom, from anywhere: the canvas when it is what is shown, else the open page. 0 puts it back to 1.
 pub fn on_zoom(dy: f64, x: f64, y: f64) {
     let s = st();
+    // what a zoom opened, a zoom out closes (owner, 2026-10-17: "fix the privacy bubble, zooming out doesn't close"):
+    // the privacy choices (once some are chosen) and the API's window
+    if dy > 0.0 && ((s.consent_open && s.consent.is_some()) || s.modal.is_some()) {
+        if s.consent.is_some() {
+            s.consent_open = false;
+        }
+        s.modal = None;
+        s.zoom_nav_at = host::now();
+        render();
+        return;
+    }
     if s.page == Page::Home || s.peek {
         if dy == 0.0 {
             s.zoom = 1.0;

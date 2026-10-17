@@ -3152,6 +3152,12 @@ fn activate(id: usize, member: Option<u8>) {
             host::store_del("piii:example");
             layer().clear();
             layer_save();
+            // back to the welcome page as it first was: the ring round Super AI, its spokes and links, in view
+            // (owner, 2026-10-17: "reset button doesn't work": it used to leave an empty canvas)
+            host::store_del("piii:world-v");
+            host::store_del("piii:world-links");
+            world_sync();
+            welcome_view();
         }
         S_RUN => prog_run(None),
         S_STEP => prog_run(Some(1)),
