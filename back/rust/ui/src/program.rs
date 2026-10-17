@@ -1743,6 +1743,34 @@ fn ladder_view(s: &State) -> N {
         .into()
 }
 
+/// The logo (owner, 2026-10-17: "make my logo more beautiful"): π drawn by hand, not typed — a top bar with a curl,
+/// a leg that leans in and one that kicks out — in a blue-to-violet line, inside a thin superellipse of exponent π (the
+/// shape every super has) with a spark going round it. It takes the theme's accent.
+fn pi_logo(big: bool) -> N {
+    let id = if big { "pi-g1" } else { "pi-g2" };
+    el("svg:svg")
+        .cls("pi-logo")
+        .cls_if(big, "big")
+        .attr("viewBox", "0 0 64 64")
+        .attr("aria-hidden", "true")
+        .kid(
+            el("svg:defs").kid(
+                el("svg:linearGradient").attr("id", id).attr("x1", "0").attr("y1", "0").attr("x2", "1").attr("y2", "1")
+                    .kid(el("svg:stop").attr("offset", "0").attr("style", "stop-color:var(--accent)"))
+                    .kid(el("svg:stop").attr("offset", "1").attr("style", "stop-color:var(--violet)")),
+            ),
+        )
+        .kid_if(big, || el("svg:path").cls("pi-orbit").attr("d", "M61.00,32.00 L60.96,37.11 L60.84,39.93 L60.64,42.25 L60.37,44.27 L60.01,46.08 L59.57,47.73 L59.06,49.25 L58.46,50.65 L57.79,51.95 L57.03,53.14 L56.18,54.25 L55.26,55.26 L54.25,56.18 L53.14,57.03 L51.95,57.79 L50.65,58.46 L49.25,59.06 L47.73,59.57 L46.08,60.01 L44.27,60.37 L42.25,60.64 L39.93,60.84 L37.11,60.96 L32.00,61.00 L26.89,60.96 L24.07,60.84 L21.75,60.64 L19.73,60.37 L17.92,60.01 L16.27,59.57 L14.75,59.06 L13.35,58.46 L12.05,57.79 L10.86,57.03 L9.75,56.18 L8.74,55.26 L7.82,54.25 L6.97,53.14 L6.21,51.95 L5.54,50.65 L4.94,49.25 L4.43,47.73 L3.99,46.08 L3.63,44.27 L3.36,42.25 L3.16,39.93 L3.04,37.11 L3.00,32.00 L3.04,26.89 L3.16,24.07 L3.36,21.75 L3.63,19.73 L3.99,17.92 L4.43,16.27 L4.94,14.75 L5.54,13.35 L6.21,12.05 L6.97,10.86 L7.82,9.75 L8.74,8.74 L9.75,7.82 L10.86,6.97 L12.05,6.21 L13.35,5.54 L14.75,4.94 L16.27,4.43 L17.92,3.99 L19.73,3.63 L21.75,3.36 L24.07,3.16 L26.89,3.04 L32.00,3.00 L37.11,3.04 L39.93,3.16 L42.25,3.36 L44.27,3.63 L46.08,3.99 L47.73,4.43 L49.25,4.94 L50.65,5.54 L51.95,6.21 L53.14,6.97 L54.25,7.82 L55.26,8.74 L56.18,9.75 L57.03,10.86 L57.79,12.05 L58.46,13.35 L59.06,14.75 L59.57,16.27 L60.01,17.92 L60.37,19.73 L60.64,21.75 L60.84,24.07 L60.96,26.89Z").into())
+        .kid_if(big, || el("svg:circle").cls("pi-spark").attr("cx", "32").attr("cy", "3").attr("r", "2.3").into())
+        .kid(
+            el("svg:g").cls("pi-glyph").attr("stroke", format!("url(#{})", id))
+                .kid(el("svg:path").attr("d", "M14.5 23.2 Q17.6 18 24.4 18 H49.5"))
+                .kid(el("svg:path").attr("d", "M27.4 19 Q27.2 33.6 20.6 46"))
+                .kid(el("svg:path").attr("d", "M40.2 19 Q39.4 36.6 42.2 42.6 Q44 46.6 48.4 43.4")),
+        )
+        .into()
+}
+
 /// Super AI: the outermost layer and the site's centre, one bubble (owner, 2026-10-17: "fix the super AI bubble and
 /// page and merge them all together. Make it nicer"). Almost a circle; in it, its sparkle, a line to say what to
 /// make or ask, and the answer. A π program in an answer lands on the home canvas, running.
@@ -1758,7 +1786,7 @@ fn ai_level_view(s: &State) -> N {
                 .cls_if(!answered && !s.ai_chat.is_empty(), "chatting")
                 .cls_if(s.ai_busy, "busy")
                 .kid(se_shape_n(2.25))
-                .kid(el("span").cls("ai-spark").kid(el("span").cls("pi-mark").text("π")))
+                .kid(el("span").cls("ai-spark").kid(pi_logo(true)))
                 .kid(
                     el("div")
                         .cls("ai-row")
@@ -2376,9 +2404,15 @@ const PROG_CSS: &str = "\
 .ai-bubble.answered{justify-content:flex-start;padding-top:12%}\
 .ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 26px 50px rgba(25,25,25,.16))}\
 .ai-bubble .u-shape path{fill:var(--surface);stroke:var(--ink2);stroke-width:1.8px;vector-effect:non-scaling-stroke}\
+.pi-logo{display:block;overflow:visible}.pi-logo .pi-glyph{fill:none;stroke-width:4.6;stroke-linecap:round;stroke-linejoin:round}\
+.ai-spark .pi-logo{width:84px;height:84px;filter:drop-shadow(0 6px 16px color-mix(in srgb,var(--accent) 28%,transparent))}\
+.pi-logo .pi-orbit{fill:none;stroke:var(--accent);stroke-opacity:.22;stroke-width:1.3}\
+.pi-logo .pi-spark{fill:var(--violet);transform-origin:32px 32px;animation:pi-orbit 9s linear infinite}\
+@keyframes pi-orbit{to{transform:rotate(360deg)}}\
+.ai-bubble.busy .pi-logo .pi-spark{animation-duration:1.4s}\
 .pi-mark{display:block;font:500 24px/1 'Geist',system-ui,sans-serif;color:inherit;letter-spacing:0}.ai-spark .pi-mark{font-size:56px;line-height:.9}\
 .ai-spark{color:var(--accent);display:grid;place-items:center;animation:ai-breathe 3.2s ease-in-out infinite}.ai-spark svg{width:46px;height:46px}\
-.ai-bubble.busy .ai-spark{animation:ai-spin 1.6s linear infinite}\
+.ai-bubble.busy .ai-spark{animation:ai-breathe 1.2s ease-in-out infinite}\
 @keyframes ai-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes ai-spin{to{transform:rotate(360deg)}}\
 .ai-title{font:600 30px/1.1 'Geist',system-ui,sans-serif;color:var(--ink2);letter-spacing:-.01em}\
 .ai-row{display:flex;align-items:center;gap:6px;width:100%;max-width:440px;margin:4px 0 0;padding:0 0 4px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:0 1.5px 0 #d9d6cc;background:none;transition:box-shadow .25s}\

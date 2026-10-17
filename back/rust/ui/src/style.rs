@@ -41,9 +41,9 @@ pub const CSS: &str = r#"
 :root{--paper:#f6f6f4;--card:#fbfbf9;--ink:#191919;--magenta:#b0447a;--muted:#5f6472;--faint:#8b8f99;--line:#e2ded2;--line2:#cfcabb;
 --accent:#2f40e8;--accent-soft:#e9ebfd;--good:#1d7a4a;--good-soft:#e3f3ea;--warn:#9a5b00;--warn-soft:#fbf0dc;
 --bad:#b3261e;--bad-soft:#fbe7e5;--r:4px;--r2:4px;color-scheme:light;
---surface:#fff;--ink2:#2b2b2b;--on-ink:#fff;--soft:#f1f0ec}
-:root[data-theme=dark]{--soft:#2d3757;--paper:#1c2440;--card:#232c4a;--surface:#28324f;--ink:#eef1f8;--ink2:#dde3f0;--on-ink:#1c2440;--magenta:#f08cbd;--muted:#b6bfd3;--faint:#8f99b0;--line:#3b4669;--line2:#4e5a80;--accent:#9ba7ff;--accent-soft:#313c72;--good:#6fd39c;--good-soft:#1d3a33;--warn:#f0b455;--warn-soft:#3d3324;--bad:#ff8a80;--bad-soft:#4a2633;color-scheme:dark}
-@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--soft:#2d3757;--paper:#1c2440;--card:#232c4a;--surface:#28324f;--ink:#eef1f8;--ink2:#dde3f0;--on-ink:#1c2440;--magenta:#f08cbd;--muted:#b6bfd3;--faint:#8f99b0;--line:#3b4669;--line2:#4e5a80;--accent:#9ba7ff;--accent-soft:#313c72;--good:#6fd39c;--good-soft:#1d3a33;--warn:#f0b455;--warn-soft:#3d3324;--bad:#ff8a80;--bad-soft:#4a2633;color-scheme:dark}}
+--surface:#fff;--ink2:#2b2b2b;--on-ink:#fff;--soft:#f1f0ec;--violet:#8b45e6}
+:root[data-theme=dark]{--violet:#c39bff;--soft:#2d3757;--paper:#1c2440;--card:#232c4a;--surface:#28324f;--ink:#eef1f8;--ink2:#dde3f0;--on-ink:#1c2440;--magenta:#f08cbd;--muted:#b6bfd3;--faint:#8f99b0;--line:#3b4669;--line2:#4e5a80;--accent:#9ba7ff;--accent-soft:#313c72;--good:#6fd39c;--good-soft:#1d3a33;--warn:#f0b455;--warn-soft:#3d3324;--bad:#ff8a80;--bad-soft:#4a2633;color-scheme:dark}
+@media (prefers-color-scheme:dark){:root:not([data-theme=light]){--violet:#c39bff;--soft:#2d3757;--paper:#1c2440;--card:#232c4a;--surface:#28324f;--ink:#eef1f8;--ink2:#dde3f0;--on-ink:#1c2440;--magenta:#f08cbd;--muted:#b6bfd3;--faint:#8f99b0;--line:#3b4669;--line2:#4e5a80;--accent:#9ba7ff;--accent-soft:#313c72;--good:#6fd39c;--good-soft:#1d3a33;--warn:#f0b455;--warn-soft:#3d3324;--bad:#ff8a80;--bad-soft:#4a2633;color-scheme:dark}}
 /* the light/dark switch at the foot of the sidebar: a moon in the light, a sun in the dark */
 .theme-btn .sun{display:none}:root[data-theme=dark] .theme-btn .sun{display:inline}:root[data-theme=dark] .theme-btn .moon{display:none}
 @media (prefers-color-scheme:dark){:root:not([data-theme=light]) .theme-btn .sun{display:inline}:root:not([data-theme=light]) .theme-btn .moon{display:none}}
