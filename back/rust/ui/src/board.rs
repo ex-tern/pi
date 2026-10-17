@@ -631,9 +631,9 @@ fn board_key_press(key: &str) -> bool {
 /// A group's page: its title over its π canvas, where its members are supers like any other (owner, 2026-10-17:
 /// "everywhere is a canvas"); double click one to open it.
 fn group_board(gi: usize) -> N {
-    let g = &GROUPS[gi];
+    // no heading: the window's own name says which group it is (owner, 2026-10-17: "delete these")
+    let _ = gi;
     el("div")
-        .kid(el("div").cls("head").kid(el("h1").text(g.title)))
         .kid(el("div").cls("board-space").style("min-height:calc(100vh - 190px)"))
         .into()
 }
