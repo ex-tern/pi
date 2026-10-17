@@ -257,6 +257,12 @@ struct State {
     /// 2026-10-17: "make the website start above super AI bubble, like almost a circle in the center")
     ai_level: u8,
     ai_draft: String,
+    /// files to send with the next question: (name, text read by the server), and how many are still being read
+    ai_files: Vec<(String, String)>,
+    ai_reading: u8,
+    ai_file_err: String,
+    /// the files each question was sent with (as JSON), for its request
+    ai_q_files: Vec<(String, String)>,
     /// what Super AI answered in its bubble, the question, and whether it is thinking
     ai_answer: String,
     ai_asked: String,
@@ -500,6 +506,10 @@ pub fn start() {
         zoom_nav_at: 0.0,
         ai_level: 0,
         ai_draft: String::new(),
+        ai_files: Vec::new(),
+        ai_reading: 0,
+        ai_file_err: String::new(),
+        ai_q_files: Vec::new(),
         ai_answer: String::new(),
         ai_asked: String::new(),
         ai_busy: false,

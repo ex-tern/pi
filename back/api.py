@@ -28105,6 +28105,48 @@ class OneAsk(BaseModel):
     # where the visitor has been on the site, the latest last (owner, 2026-10-17: "the site always keeps track of your
     # movement in the super AI engine")
     trail: str = ""
+    # files sent with the question (owner, 2026-10-17: "add a file, send a file capability to the AI"): their text, as
+    # /api/super/attach read it
+    files: List[Dict] = []
+
+
+# What Super AI reads of a file sent to it: the text of a PDF, a Word document, or any text or code file.
+ATTACH_MAX_BYTES = 25 * 1024 * 1024
+ATTACH_MAX_CHARS = 20000
+
+
+def attach_text(name: str, data: bytes) -> str:
+    low = name.lower()
+    if low.endswith(".pdf") or data[:5] == b"%PDF-":
+        return full_text_from_pdf(data, max_chars=ATTACH_MAX_CHARS * 2)
+    if low.endswith((".docx", ".odt", ".pptx", ".xlsx")):
+        import zipfile as _zf
+        import io as _io
+        with _zf.ZipFile(_io.BytesIO(data)) as z:
+            parts = [n for n in z.namelist() if re.match(r"(word/document|content|ppt/slides/slide\d+|xl/sharedStrings)\.xml$", n)]
+            xml = " ".join(z.read(n).decode("utf-8", "replace") for n in sorted(parts))
+        xml = re.sub(r"</(w:p|text:p|a:p|si)>", "\n", xml)
+        return html.unescape(re.sub(r"<[^>]+>", "", xml))
+    if b"\x00" in data[:4096]:
+        raise ValueError("Super AI reads text: PDFs, Word documents, and text or code files.")
+    for enc in ("utf-8", "utf-16", "latin-1"):
+        try:
+            return data.decode(enc)
+        except UnicodeDecodeError:
+            continue
+    return data.decode("utf-8", "replace")
+
+
+def attached_block(files: List[Dict]) -> str:
+    out = []
+    for f in (files or [])[:5]:
+        if not isinstance(f, dict):
+            continue
+        name = _clip(str(f.get("name") or "file"), 120)
+        text = str(f.get("text") or "")[:ATTACH_MAX_CHARS]
+        if text.strip():
+            out.append(f"--- {name} ---\n{text}")
+    return ("\n\nFiles sent with the question:\n" + "\n\n".join(out)) if out else ""
 
 
 class WeighAsk(BaseModel):
@@ -28441,6 +28483,26 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         """What Super AI is taught of the π language, for anyone (and any other model) to read."""
         return {"text": PI_LANGUAGE}
 
+    @router.post("/attach")
+    async def attach(request: Request, file: UploadFile = File(...)):
+        """A file sent to Super AI: its text, read here, comes back to go with the question."""
+        _limit_one(request, "attach")
+        data = await file.read(ATTACH_MAX_BYTES + 1)
+        if len(data) > ATTACH_MAX_BYTES:
+            raise HTTPException(status_code=413, detail="That file is too big (at most 25 MB).")
+        name = os.path.basename(file.filename or "file")
+        try:
+            text = await run_in_threadpool(attach_text, name, data)
+        except ValueError as e:
+            raise HTTPException(status_code=415, detail=str(e))
+        except Exception as e:                           # noqa: BLE001 -- a file that can't be read says so
+            logging.info("attach: %s unreadable: %s", name, e)
+            raise HTTPException(status_code=415, detail="That file could not be read.")
+        text = re.sub(r"[ \t]+\n", "\n", text).strip()
+        if not text:
+            raise HTTPException(status_code=415, detail="There is no text in that file to read.")
+        return {"name": name, "chars": len(text), "cut": len(text) > ATTACH_MAX_CHARS, "text": text[:ATTACH_MAX_CHARS]}
+
     @router.post("/one")
     def one(req: OneAsk, request: Request):
         import time
@@ -28461,6 +28523,8 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         _limit_one(request, eid)
         t0 = time.time()
         out: Dict = {"engine": eid}
+        # the question with what was sent with it
+        full = prompt + attached_block(req.files)
         # about the language, or (from a super on the canvas) asking for a program
         pi = pi_asked(prompt) or (req.pi and bool(re.search(r"\bprogram|\bloop\b|\bcount\b|\bsum of\b|\bwire", prompt.lower())))
         try:
@@ -28468,7 +28532,7 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
                 # the lab's own engine knows the language too
                 out.update(ok=True, text=pi_local(prompt), model="π")
             elif eid == "sim":
-                res = answer(prompt) or {}
+                res = answer(full) or {}
                 text = res.get("response") or ""
                 out.update(ok=bool(text), text=text or "The SciM assistant is switched off here.",
                            model=res.get("source", ""))
@@ -28487,7 +28551,7 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
                 trail = _clip(re.sub(r"[\r\n]+", " ", req.trail or ""), 400)
                 where = (f"(Context: the user is on piii.app; the pages they visited, the latest last: {trail}. "
                          "Use it only if it helps answer.)\n\n") if trail else ""
-                r = ask_juror(eid, where + (pi_prompt(prompt) if pi else panel_prompt(prompt, ""))) or {}
+                r = ask_juror(eid, where + (pi_prompt(full) if pi else panel_prompt(full, ""))) or {}
                 ans = str(r.get("answer") or "").strip()
                 if r.get("failed") or not ans:
                     out.update(ok=False, text=str(r.get("failed") or "no answer"))

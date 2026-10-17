@@ -1,0 +1,38 @@
+"""Files sent to Super AI (owner, 2026-10-17: "add a file, send a file capability to the AI"): their text is read, and
+it goes with the question."""
+import io
+import os
+import tempfile
+import zipfile
+
+os.environ.setdefault("SCHOLARPI_DATA_DIR", tempfile.mkdtemp())
+
+from fastapi.testclient import TestClient  # noqa: E402
+
+import api  # noqa: E402
+
+c = TestClient(api.app)
+
+
+def test_text_file_is_read():
+    r = c.post("/api/super/attach", files={"file": ("note.txt", b"piX rose by 12 percent.", "text/plain")})
+    assert r.status_code == 200 and r.json()["text"] == "piX rose by 12 percent." and r.json()["name"] == "note.txt"
+
+
+def test_word_document_is_read():
+    b = io.BytesIO()
+    with zipfile.ZipFile(b, "w") as z:
+        z.writestr("word/document.xml", "<w:document><w:body><w:p><w:t>Hello</w:t></w:p><w:p><w:t>World</w:t></w:p></w:body></w:document>")
+    r = c.post("/api/super/attach", files={"file": ("a.docx", b.getvalue(), "application/octet-stream")})
+    assert r.status_code == 200 and r.json()["text"].split() == ["Hello", "World"]
+
+
+def test_binary_is_refused():
+    r = c.post("/api/super/attach", files={"file": ("x.bin", b"\x00\x01\x02" * 50, "application/octet-stream")})
+    assert r.status_code == 415
+
+
+def test_files_go_with_the_question():
+    block = api.attached_block([{"name": "n.txt", "text": "the answer is 42"}])
+    assert "n.txt" in block and "the answer is 42" in block
+    assert api.attached_block([]) == ""

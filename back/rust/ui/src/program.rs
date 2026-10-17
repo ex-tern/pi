@@ -610,7 +610,8 @@ fn prog_ai_flush() {
     for q in want {
         // pi: asked from the canvas, so a request for a program is answered in the π language
         // and where you have been on the site, so it knows where you are
-        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true,\"trail\":{}}}", json::quote(&engine), json::quote(&q), json::quote(&moves_text()));
+        let files = st().ai_q_files.iter().find(|x| x.0 == q).map(|x| x.1.clone()).unwrap_or_else(|| "[]".to_string());
+        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true,\"trail\":{},\"files\":{}}}", json::quote(&engine), json::quote(&q), json::quote(&moves_text()), files);
         st().prog.ai_busy.push(q.clone());
         request(Want::ProgAi(q), "POST", "/api/super/one", &body, 0);
     }
@@ -1144,6 +1145,28 @@ const P_LADDER: u16 = 9;
 const P_DROP: u16 = 10;
 /// π in the sidebar: home, the welcome view, centred on π
 const P_HOME: u16 = 11;
+/// files chosen to send to Super AI (the host's file list), and one taken off again (its index)
+const P_AI_FILES: u16 = 12;
+const P_AI_UNFILE: u16 = 13;
+/// the answer to a file sent to be read
+const AI_ATTACH: u8 = 50;
+
+/// A file read by the server for Super AI: kept to go with the next question.
+fn ai_attach_apply(v: Value, err: Option<String>) {
+    let s = st();
+    s.ai_reading = s.ai_reading.saturating_sub(1);
+    match err {
+        Some(e) => s.ai_file_err = e,
+        None => {
+            let name = v.get("name").str().to_string();
+            let text = v.get("text").str().to_string();
+            if !text.is_empty() && s.ai_files.len() < 5 {
+                s.ai_files.push((name, text));
+                s.ai_file_err.clear();
+            }
+        }
+    }
+}
 
 fn prog_update(a: u16, v: String) {
     let s = st();
@@ -1166,6 +1189,28 @@ fn prog_update(a: u16, v: String) {
         }
         P_EXAMPLE => example_load(v.parse::<usize>().unwrap_or(0)),
         P_AI_DRAFT => s.ai_draft = v,
+        P_AI_FILES => {
+            // each file goes to the server to be read; its text comes back to go with the question
+            for line in v.lines() {
+                let mut f = line.split('\t');
+                let Some(idx) = f.next().and_then(|x| x.parse::<u32>().ok()) else { continue };
+                if st().ai_files.len() + st().ai_reading as usize >= 5 {
+                    st().ai_file_err = "At most five files with one question.".to_string();
+                    break;
+                }
+                let form = host::form_new();
+                host::form_file(form, "file", idx);
+                st().ai_reading += 1;
+                request(Want::Tool(Tool::Prog, AI_ATTACH), "POST", "/api/super/attach", "", form);
+            }
+        }
+        P_AI_UNFILE => {
+            if let Ok(i) = v.parse::<usize>() {
+                if i < s.ai_files.len() {
+                    s.ai_files.remove(i);
+                }
+            }
+        }
         P_HOME => {
             s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
             if s.ctx.is_empty() {
@@ -1206,9 +1251,24 @@ fn prog_update(a: u16, v: String) {
             _ => s.ai_level = 0,
         },
         P_AI_SEND => {
-            let q = s.ai_draft.trim().to_string();
+            if s.ai_reading > 0 {
+                return;
+            }
+            let mut q = s.ai_draft.trim().to_string();
+            if q.is_empty() && !s.ai_files.is_empty() {
+                q = if s.ai_files.len() == 1 { format!("What is in {}?", s.ai_files[0].0) } else { "What is in these files?".to_string() };
+            }
             if q.is_empty() {
                 return;
+            }
+            // the files go with this question
+            if !s.ai_files.is_empty() {
+                let files: Vec<String> = core::mem::take(&mut s.ai_files).iter().map(|(n, t)| format!("{{\"name\":{},\"text\":{}}}", json::quote(n), json::quote(t))).collect();
+                s.ai_q_files.retain(|x| x.0 != q);
+                s.ai_q_files.push((q.clone(), format!("[{}]", files.join(","))));
+                let n = s.ai_q_files.len().saturating_sub(12);
+                s.ai_q_files.drain(..n);
+                s.ai_file_err.clear();
             }
             // what is asked opens as supers, wired (owner, 2026-10-17: "it should open in a new super and organized in a
             // wiring matter"): Super AI → the question → its answer, a show grown big enough to read; each new one in a
@@ -1648,6 +1708,29 @@ fn ai_level_view(s: &State) -> N {
                                 .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
                                 .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())),
                         )
+                        // a file to send with the question (owner, 2026-10-17: "add a file, send a file capability to
+                        // the AI"): PDFs, Word documents, text and code
+                        .kid(
+                            el("label")
+                                .cls("ai-clip")
+                                .cls_if(s.ai_reading > 0, "busy")
+                                .attr("title", "Send a file with the question")
+                                .attr("aria-label", "Send a file with the question")
+                                .kid(
+                                    el("svg:svg")
+                                        .attr("viewBox", "0 0 24 24")
+                                        .attr("aria-hidden", "true")
+                                        .kid(el("svg:path").attr("d", "M20.5 11.5 12.6 19.4a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5")),
+                                )
+                                .kid(
+                                    el("input")
+                                        .attr("type", "file")
+                                        .attr("multiple", "")
+                                        .attr("hidden", "")
+                                        .attr("accept", ".pdf,.docx,.odt,.pptx,.xlsx,.txt,.md,.csv,.tsv,.json,.xml,.html,.htm,.tex,.bib,.rtf,.log,.yaml,.yml,.toml,.ini,.py,.rs,.js,.ts,.java,.c,.h,.cpp,.go,.rb,.php,.sh,.sql,.r,.m,.swift,.kt,text/*,application/pdf")
+                                        .on("files", Msg::TV(Tool::Prog, P_AI_FILES)),
+                                ),
+                        )
                         // speak instead of typing (owner, 2026-10-17: "add a microphone button"); host.js listens
                         // and fills the field, then sends
                         .kid(
@@ -1671,7 +1754,7 @@ fn ai_level_view(s: &State) -> N {
                                 .cls("ai-play")
                                 .attr("aria-label", "Go")
                                 .attr("title", "Go")
-                                .attr_if(s.ai_busy || s.ai_draft.trim().is_empty(), "disabled", "")
+                                .attr_if(s.ai_busy || s.ai_reading > 0 || (s.ai_draft.trim().is_empty() && s.ai_files.is_empty()), "disabled", "")
                                 .on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new()))
                                 .kid(
                                     el("svg:svg")
@@ -1681,6 +1764,24 @@ fn ai_level_view(s: &State) -> N {
                                 ),
                         ),
                 )
+                // the files that go with the question, each to take off again
+                .kid_if(!s.ai_files.is_empty() || s.ai_reading > 0 || !s.ai_file_err.is_empty(), || {
+                    let mut row = el("div").cls("ai-files");
+                    for (i, (name, _)) in s.ai_files.iter().enumerate() {
+                        row = row.kid(
+                            el("span").cls("ai-file").attr("title", name.clone())
+                                .kid(el("span").cls("ai-file-n").text(name.clone()))
+                                .kid(el("button").attr("type", "button").attr("aria-label", format!("Take {} off", name)).on("click", Msg::T(Tool::Prog, P_AI_UNFILE, i.to_string())).text("×")),
+                        );
+                    }
+                    if s.ai_reading > 0 {
+                        row = row.kid(el("span").cls("ai-file reading").text("reading…"));
+                    }
+                    if !s.ai_file_err.is_empty() {
+                        row = row.kid(el("span").cls("ai-file-err").text(s.ai_file_err.clone()));
+                    }
+                    row.into()
+                })
                 .kid_if(answered, || {
                     el("div")
                         .cls("ai-answer")
@@ -2214,6 +2315,15 @@ const PROG_CSS: &str = "\
 .sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc;scrollbar-width:thin}\
 .sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
 .sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
+.ai-clip{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s}\
+.ai-clip:hover{color:var(--accent);transform:scale(1.1) rotate(-8deg)}.ai-clip.busy{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
+.ai-clip svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\
+.ai-files{display:flex;flex-wrap:wrap;gap:6px;justify-content:center;max-width:100%;margin-top:-4px}\
+.ai-file{display:inline-flex;align-items:center;gap:4px;max-width:220px;padding:4px 6px 4px 11px;border-radius:999px;background:#f1f0fb;color:#2b2b2b;font-size:13px}\
+.ai-file.reading{padding-right:11px;color:#8a877f;font-style:italic}\
+.ai-file-n{overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
+.ai-file button{border:0!important;background:none!important;box-shadow:none!important;padding:0 4px!important;font-size:15px;line-height:1;color:#8a877f;cursor:pointer}.ai-file button:hover{color:#b42318}\
+.ai-file-err{font-size:12.5px;color:#b42318}\
 .ai-mic{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:50%!important;box-shadow:none!important;background:none!important;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s,background .2s}\
 .ai-mic:hover:not([disabled]){color:var(--accent);transform:scale(1.1)}.ai-mic[disabled]{opacity:.22;cursor:default}\
 .ai-mic svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}\
