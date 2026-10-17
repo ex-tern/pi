@@ -2153,7 +2153,7 @@ const PROG_CSS: &str = "\
 .unode.k-show .u-val{font-size:15px}\
 .sx.unode.k-member{justify-content:center;align-items:center;text-align:center;padding:16px 26px;cursor:pointer}\
 .sx.unode.k-member .tag{font:500 15px/1.3 'Geist',system-ui,sans-serif;font-size:max(15px, calc(10px / var(--k, 1)));white-space:normal;border:0;background:none;padding:0;border-radius:0;box-shadow:none}\
-.sx.unode.k-member .u-val{position:absolute;right:22%;bottom:16%}\
+.sx.unode.k-member .u-val{position:absolute;left:18%;right:18%;bottom:13%;max-width:none;text-align:center;font-size:11px;font-weight:500;color:#8a877f;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
 .sx.palette,.sx.examples{background:#fff;padding:38px 10px 10px;cursor:grab;display:block}\
 .sx.palette>.tag,.sx.examples>.tag{position:absolute;left:12px;top:9px}\
 .chips{display:flex;flex-wrap:wrap;gap:6px}\

@@ -1323,7 +1323,7 @@ fn sup_label(id: usize) -> &'static str {
         S_CLEAR => "Stop: clear the values",
         S_SAVE => "Wire: click to turn wiring on or off",
         S_LOCK => "Lock: every canvas stays where it is, at its size; select one, then click here to unlock it (or lock it again)",
-        S_CHAIN => "Chain: a holder brings what it holds",
+        S_CHAIN => "Group: click, then draw a box round the supers to group (or ungroup) them",
         S_RESET => "Click: undo. Hold: reset and clear this canvas",
         S_LEFT => "Move left",
         S_UP => "Move up",
@@ -1509,17 +1509,17 @@ fn scene_view(s: &State, mini: bool) -> N {
                 t = t.chars().take(13).collect::<String>() + "…";
             }
             // just after the out it leaves, starting there (so it never runs back over the super it leaves)
-            let (mx, my) = (px + 8.0 * du, py - 6.0 * du);
+            // along the wire itself, just above it, small (owner, 2026-10-17: "written part of the wiring follow the
+            // wiring itself in smaller sizes")
+            let _ = (px, py);
             wires = wires.kid(
                 el("svg:text")
                     .cls("w-val")
                     .cls(ty)
-                    .attr("x", format!("{:.1}", mx))
-                    .attr("y", format!("{:.1}", my))
-                    .attr("text-anchor", "start")
-                    .attr("font-size", format!("{:.2}", 12.0 * du))
-                    .attr("stroke-width", format!("{:.2}", 4.0 * du))
-                    .text(t),
+                    .attr("font-size", format!("{:.2}", 9.5 * du))
+                    .attr("stroke-width", format!("{:.2}", 3.0 * du))
+                    .attr("dy", format!("{:.2}", -4.0 * du))
+                    .kid(el("svg:textPath").attr("href", format!("#wp{}", i)).attr("startOffset", format!("{:.1}", 10.0 * du)).text(t)),
             );
         }
     }
@@ -1841,6 +1841,7 @@ fn draw_link(mut wires: crate::dom::El<Msg>, mini: bool, sel: bool, i: usize, d:
     wires = wires.kid(
         el("svg:path")
             .cls("w")
+            .attr("id", format!("wp{}", i))
             .cls(kind)
             .cls_if(sel, "sel")
             .cls_if(ty.is_some(), ty.unwrap_or(""))
@@ -2552,6 +2553,19 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
             host::capture(false);
             let d = s.drag.take().unwrap();
             s.drag_end_at = host::now();
+            // let go, supers settle on a grid of 20, so what is placed lines up (owner, 2026-10-17: "bubbles are more
+            // aligned")
+            if d.how == 0 && d.moved {
+                let ids: Vec<usize> = d.start.iter().map(|(i, _)| *i).filter(|i| is_unode(*i)).collect();
+                for n in st().prog.nodes.iter_mut().filter(|n| ids.contains(&n.id)) {
+                    n.x = floor_f(n.x / 20.0 + 0.5) * 20.0;
+                    n.y = floor_f(n.y / 20.0 + 0.5) * 20.0;
+                }
+                if !ids.is_empty() {
+                    prog_save();
+                }
+            }
+            let s = st();
             if d.how != 0 && d.moved {
                 if is_unode(d.id) {
                     prog_save();
@@ -2980,6 +2994,7 @@ fn marquee_update(v: &str) {
         return;
     }
     s.marquee = None;
+    s.group_mode = false;
     let g = geo(s);
     let (l, r) = ((x0.min(x1) - g.ox) / g.k, (x0.max(x1) - g.ox) / g.k);
     let (t, b) = ((y0.min(y1) - g.oy) / g.k, (y0.max(y1) - g.oy) / g.k);
@@ -3084,9 +3099,11 @@ fn activate(id: usize, member: Option<u8>) {
     match id {
         S_SAVE => wire_mode_toggle(),
         S_LOCK => lock_toggle(),
+        // the link button groups (owner, 2026-10-17: "use this button for grouping"): on, a box drawn round supers
+        // groups them (or takes a group apart); it turns itself off after
         S_CHAIN => {
-            s.chained = !s.chained;
-            layout_save();
+            s.group_mode = !s.group_mode;
+            note(if s.group_mode { "Grouping: draw a box round the supers to group (again to ungroup)" } else { "Grouping off" }.to_string());
         }
         // on a super's own canvas the reset puts that canvas back (owner, 2026-10-14: "merge the reset this canvas
         // button with this")

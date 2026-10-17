@@ -263,6 +263,8 @@ struct State {
     ai_busy: bool,
     /// the supers the bubble's questions opened, in order (each new one goes below)
     ai_chain: Vec<usize>,
+    /// the link button is on: the next box drawn with the left button groups what it takes in
+    group_mode: bool,
     /// resistance at a level's edge (owner, 2026-10-17: "add some resistance to go to extreme levels"): how hard the
     /// wheel has pushed against it, which way, and when last
     resist: (f64, f64, f64),
@@ -500,6 +502,7 @@ pub fn start() {
         ai_asked: String::new(),
         ai_busy: false,
         ai_chain: Vec::new(),
+        group_mode: false,
         resist: (0.0, 0.0, 0.0),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
@@ -1999,7 +2002,7 @@ fn view(s: &State) -> N {
     let page_note = false;
     // the push against a level's edge, as a ring filling in the middle of the window
     let push = push_shown();
-    el("div").cls("app").cls_if(s.wire_mode, "wire-on").kid(body)
+    el("div").cls("app").cls_if(s.wire_mode, "wire-on").cls_if(s.group_mode, "group-on").kid(body)
         .kid(el("div").cls("push-ring").cls_if(push > 0.02, "on").style(format!("--p:{:.3}", push))).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
 }
 
@@ -3834,7 +3837,7 @@ fn ctl_bar(s: &State) -> N {
                 .attr("title", sup_label(id))
                 .attr("aria-label", sup_label(id))
                 .cls_if(id == S_RESET && s.reset_hold.is_some(), "holding")
-                .cls_if(id == S_SAVE && s.wire_mode, "on")
+                .cls_if((id == S_SAVE && s.wire_mode) || (id == S_CHAIN && s.group_mode), "on")
                 .attr_if(id == S_SAVE, "aria-pressed", if s.wire_mode { "true" } else { "false" })
                 .cls_if(id == S_LOCK && host::now() - s.lock_blink < 1500.0, "blink")
                 .on_if(id != S_RESET, "click", Msg::Activate(id as u8))

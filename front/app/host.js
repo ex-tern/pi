@@ -114,6 +114,7 @@ const host = {
     // a press on the bare background (nothing solid under it): the canvas pans from here
     else if (k === "bgdown") n.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || e.target.closest("[data-solid], button, a, input, textarea, select, label")) return;
+      if (document.querySelector(".app.group-on")) return;
       send(id, k, e.clientX + "," + e.clientY);
     });
     // anywhere on an open page, over text too (owner, 2026-10-14): x, y within the node, as drawn; a super's own
@@ -135,7 +136,10 @@ const host = {
     }
     // the right button held and dragged: a box (x0, y0, x1, y1, phase: 0 moving, 1 let go) that selects and groups
     else if (k === "rsel") n.addEventListener("pointerdown", (e) => {
-      if (e.button !== 2 || e.target.closest("input, textarea")) return;
+      // the right button, or the left one once the link button is on (owner, 2026-10-17: "use this button for grouping")
+      const grouping = e.button === 0 && document.querySelector(".app.group-on") && !e.target.closest("[data-solid], button, a, .ctl-bar, .rail");
+      if ((e.button !== 2 && !grouping) || e.target.closest("input, textarea")) return;
+      if (grouping) { e.preventDefault(); e.stopPropagation(); }
       const x0 = e.clientX, y0 = e.clientY; let on = false;
       const mv = (ev) => {
         if (!on && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 6) return;
