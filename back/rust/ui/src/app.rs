@@ -245,6 +245,11 @@ struct State {
     /// the open window is unlocked by selecting it and clicking the lock (owner, 2026-10-14: "to unlock a canvas, you
     /// have to first select it and select the lock to unlock it"). These are the main canvas's unlocked ones.
     free: Vec<usize>,
+    /// the site's supers that are locked: every other one moves and resizes (owner, 2026-10-17: "everything is
+    /// unlocked unless it's locked")
+    sup_locked: Vec<usize>,
+    /// when the program was last changed and will run by itself (0: nothing waiting)
+    autorun_at: f64,
     float_free: bool,
     win_free: bool,
     /// the floating canvas or the open window selected by a click, for the lock
@@ -373,6 +378,8 @@ const T_PI: u32 = 3;
 const T_LIVE: u32 = 4;
 const T_NOTE: u32 = 5;
 const T_RESET: u32 = 6;
+/// the program runs a moment after it last changed
+const T_AUTORUN: u32 = 41;
 
 fn st() -> &'static mut State {
     STATE.get().as_mut().expect("started")
@@ -465,8 +472,10 @@ pub fn start() {
         zoom: 1.0,
         pan: (0.0, 0.0),
         free: Vec::new(),
-        float_free: false,
-        win_free: false,
+        sup_locked: Vec::new(),
+        autorun_at: 0.0,
+        float_free: true,
+        win_free: true,
         float_pick: false,
         win_pick: false,
         chained: true,
@@ -672,12 +681,8 @@ pub fn on_page_press() {
 /// A drag on the open window's bare background: unlocked, the window moves; locked, what it shows pans.
 pub fn on_page_pan(dx: f64, dy: f64) {
     let s = st();
-    if s.win_free {
-        s.win_off = (s.win_off.0 + dx, s.win_off.1 + dy);
-        host::store_set("piii:winoff", &format!("{:.0},{:.0}", s.win_off.0, s.win_off.1));
-    } else {
-        s.ppan = (s.ppan.0 + dx, s.ppan.1 + dy);
-    }
+    // what it shows pans, locked or not: unlocked, the window's edges resize it
+    s.ppan = (s.ppan.0 + dx, s.ppan.1 + dy);
     render();
 }
 
@@ -769,6 +774,18 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
 
 pub fn on_timer(token: u32) {
     let s = st();
+    if token == T_AUTORUN {
+        // the program runs always (owner, 2026-10-17: "the apps runs always constantly"): after every change, and
+        // over and over while it reads the clock or dice
+        s.autorun_at = 0.0;
+        prog_run(None);
+        let live = st().prog.nodes.iter().any(|n| matches!(kind_of(&n.text), Kind::Op("now") | Kind::Op("random")));
+        if live {
+            prog_autorun();
+        }
+        render();
+        return;
+    }
     match token {
         T_POW => {
             let Some(c) = s.challenge.take() else { return };

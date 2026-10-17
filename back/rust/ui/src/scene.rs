@@ -203,11 +203,12 @@ fn is_gone(id: usize) -> bool {
         // the sidebar's icons are wired from the canvas where the sidebar stands upright (not on a phone)
         return host::vw() < 700.0;
     }
-    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET | S_RUN | S_CLEAR)
+    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET)
 }
 
-/// The controls on the bar, in its order: their supers sit pinned under its buttons.
-const BAR: [usize; 6] = [S_SAVE, S_LOCK, S_CHAIN, S_RESET, S_RUN, S_CLEAR];
+/// The controls on the bar, in its order: their supers sit pinned under its buttons. No ▶ or ■ (owner, 2026-10-17:
+/// "delete these buttons"): the program runs by itself whenever it changes, as LabVIEW's run continuously.
+const BAR: [usize; 4] = [S_SAVE, S_LOCK, S_CHAIN, S_RESET];
 
 /// The sidebar's icons, top to bottom (π, the five groups, the map; then privacy, cookies and the API), stand on
 /// supers of their own that sit pinned under them, so they are wired like anything else (owner, 2026-10-14).
@@ -307,6 +308,7 @@ fn arriving(s: &State, id: usize, tip: Tip, depth: u32) -> Vec<usize> {
 }
 
 fn wires_save() {
+    prog_autorun();
     undo_mark();
     let s = st();
     let mut out = String::from("v3;");
@@ -367,10 +369,11 @@ fn ctl_wired(s: &State, ctl: usize) -> bool {
 fn locked(s: &State, id: usize) -> bool {
     // on the π canvas what you draw starts unlocked, and stays so until it is locked (owner, 2026-10-14: "only in pi
     // canvas the default lock is off"); everything else is locked until it is selected and the lock is clicked
+    // and now everything else too (owner, 2026-10-17: "everything is unlocked unless it's locked")
     if is_unode(id) {
         return s.locked.contains(&id);
     }
-    !s.free.contains(&id)
+    s.sup_locked.contains(&id)
 }
 
 /// A canvas's storage key: the home canvas's as it always was; a page's, its own beside it.
@@ -381,6 +384,13 @@ fn ckey(base: &str) -> String {
 
 fn locked_load() {
     st().locked = host::store_get(&ckey("piii:locked")).unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+    st().sup_locked = host::store_get("piii:sup-locked").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+}
+
+/// The site's own supers that have been locked (the rest are free to move and resize).
+fn sup_locked_save() {
+    let out: Vec<String> = st().sup_locked.iter().map(|x| x.to_string()).collect();
+    host::store_set("piii:sup-locked", &out.join(","));
 }
 
 /// The canvas a page has: "" for the home canvas (and a page opened over it, the canvas live around it), else the
@@ -427,6 +437,8 @@ fn canvas_switch() {
     if let Page::Group(g) = st().page {
         group_canvas(g as usize, fresh);
     }
+    // what is drawn here runs as soon as it shows
+    prog_autorun();
 }
 
 /// Where a point on a group's old board shows on screen (roughly: the board sat under the page's heading).
@@ -498,6 +510,13 @@ fn group_canvas(gi: usize, fresh: bool) {
         host::store_set(&ckey("piii:canvas-v"), "4");
         changed = true;
     }
+    // members were locked when placed, before everything was unlocked unless locked: they come free, once
+    if host::store_get(&ckey("piii:lock-v")).as_deref() != Some("1") {
+        let members: Vec<usize> = st().prog.nodes.iter().filter(|n| n.text.starts_with(MEMBER)).map(|n| n.id).collect();
+        st().locked.retain(|x| !members.contains(x));
+        host::store_set(&ckey("piii:lock-v"), "1");
+        changed = true;
+    }
     // every member the site has now, there; one it no longer has here, gone
     changed |= group_members_sync(gi);
     if changed {
@@ -534,7 +553,6 @@ fn group_members_place(gi: usize, only_missing: bool) {
             None if member_hidden(gi, m) => {}
             None => {
                 let id = prog_add(&text, x, y);
-                st().locked.push(id);
                 ids[m] = Some(id);
             }
         }
@@ -568,8 +586,7 @@ fn group_members_sync(gi: usize) -> bool {
         }
         let (sx, sy) = board_to_screen(place[m].0, place[m].1);
         let (x, y) = screen_to_node(sx, sy);
-        let id = prog_add(&text, x, y);
-        st().locked.push(id);
+        prog_add(&text, x, y);
         changed = true;
     }
     let stale: Vec<usize> = st().prog.nodes.iter().filter(|nd| nd.text.starts_with(MEMBER) && member_of(&nd.text).map(|(g, _)| g != gi).unwrap_or(true)).map(|nd| nd.id).collect();
@@ -651,7 +668,7 @@ fn is_icon(s: &State, id: usize) -> bool {
 /// A super on the main canvas that a double click shrinks: shown as a canvas, and unlocked (owner, 2026-10-14: "if a
 /// super is unlocked, double clicking it on its canvas will close it", to an icon).
 fn shrinkable(s: &State, id: usize) -> bool {
-    id < NSUP && icon_kind(id) && !is_icon(s, id) && s.free.contains(&id)
+    id < NSUP && icon_kind(id) && !is_icon(s, id) && !s.sup_locked.contains(&id)
 }
 
 /// The share of the window an icon is shrunk to when its starting size is itself a canvas.
@@ -676,8 +693,7 @@ fn shrink_to_icon(id: usize) {
     let (bw, bh) = (b[id].2, b[id].3);
     let (w, h) = icon_size(bw, bh, geo(s).k);
     s.sizes[id] = (w - bw, h - bh);
-    // back to an icon, and locked, as every super starts
-    s.free.retain(|x| *x != id);
+    // back to an icon (still unlocked: nothing locks unless it is locked)
     layout_save();
     note(format!("{} is an icon again", name_of(id)));
 }
@@ -733,29 +749,9 @@ fn lock_target_free(s: &State) -> Option<bool> {
 /// locks the previous super automatically"). Called just before a new selection is made.
 /// Every unlocked canvas is locked again except the one being selected (so a drag that let the selection go does
 /// not leave the previous one unlocked).
-fn relock_except(main: Option<usize>, node: Option<usize>, win: bool) {
-    let s = st();
-    let before = s.free.len();
-    // what is grouped with the one being selected stays as it is, with it
-    let keep: Vec<usize> = main.map(|m| group_with(s, m)).unwrap_or_default();
-    s.free.retain(|x| Some(*x) == main || keep.contains(x));
-    if s.free.len() != before {
-        layout_save();
-    }
-    if let Page::Group(g) = s.page {
-        let gi = g as usize;
-        let b = board(gi);
-        let n0 = b.free.len();
-        b.free.retain(|x| Some(*x) == node);
-        if b.free.len() != n0 {
-            board_save(gi);
-        }
-    }
-    if !win && s.win_free {
-        s.win_free = false;
-        host::store_set("piii:win-free", "0");
-    }
-}
+/// No longer: nothing locks by itself (owner, 2026-10-17: "everything is unlocked unless it's locked"); only the lock
+/// locks. Kept so the places that selected through it still read the same.
+fn relock_except(_main: Option<usize>, _node: Option<usize>, _win: bool) {}
 
 /// The lock: the selected canvas is unlocked, or locked again. With nothing selected it says how.
 fn lock_toggle() {
@@ -814,15 +810,15 @@ fn lock_toggle() {
         note(if open { format!("Unlocked: {} can be moved and resized", name_of(id)) } else { format!("Locked in place: {}", name_of(id)) });
         return;
     }
-    let open = flip(&mut s.free, id);
+    let open = !flip(&mut s.sup_locked, id);
     // a group locks and unlocks as one
     for m in group_with(s, id) {
-        s.free.retain(|x| *x != m);
-        if open {
-            s.free.push(m);
+        s.sup_locked.retain(|x| *x != m);
+        if !open {
+            s.sup_locked.push(m);
         }
     }
-    layout_save();
+    sup_locked_save();
     note(if open { format!("Unlocked: {} can be moved and resized", name_of(id)) } else { format!("Locked in place: {}", name_of(id)) });
 }
 
@@ -1161,9 +1157,9 @@ fn bar_slot(i: usize, vw: f64, vh: f64) -> (f64, f64, f64, f64) {
     let narrow = vw < 700.0;
     let gap = if narrow { 10.0 } else { 12.0 };
     let top = if narrow { vh - 80.0 - bh } else { 10.0 };
-    // five buttons: lock, chain, reset, play, stop
-    // six buttons: the + for wiring, lock, chain, reset (a click undoes), play, stop
-    let left = vw / 2.0 - (6.0 * bw + 5.0 * gap) / 2.0 + i as f64 * (bw + gap);
+    // the + for wiring, lock, chain, reset (a click undoes)
+    let n = BAR.len() as f64;
+    let left = vw / 2.0 - (n * bw + (n - 1.0) * gap) / 2.0 + i as f64 * (bw + gap);
     (left, top, bw, bh)
 }
 
@@ -1544,7 +1540,7 @@ fn scene_view(s: &State, mini: bool) -> N {
             .cls("sx")
             .cls_if(mini && id == lit(s), "lit")
             .cls_if(!mini && s.wiring.as_ref().and_then(|w| w.to).map(|(t, _)| t == id).unwrap_or(false), "wire-target")
-            .cls_if(!mini && id >= S_WELCOME && !s.free.contains(&id) && !(icon_kind(id) && icon_area(w * g.k, h * g.k)), "locked")
+            .cls_if(!mini && id >= S_WELCOME && s.sup_locked.contains(&id) && !(icon_kind(id) && icon_area(w * g.k, h * g.k)), "locked")
             .cls_if(!mini && s.sup_pick == Some(id), "picked")
             .cls_if(!mini && id == S_RESET && s.reset_hold.is_some(), "holding")
             .cls_if(!mini && (on_bar(id) || rail_pin(id).is_some()), "under-bar")
@@ -1595,7 +1591,7 @@ fn scene_view(s: &State, mini: bool) -> N {
     let area = |n: &UNode| { let r = rect(&g, n.id); r.2 * r.3 };
     order.sort_by(|a, b| area(b).partial_cmp(&area(a)).unwrap_or(core::cmp::Ordering::Equal));
     for n in order {
-        stage = stage.kid(unode_view(s, n, rect(&g, n.id), mini));
+        stage = stage.kid(unode_view(s, n, rect(&g, n.id), mini, g.k));
     }
     // the selected super's group, outlined
     if !mini {
@@ -2357,14 +2353,7 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
                         board(g as usize).picked = None;
                     }
                 }
-                if !moved && phase == 1 && s.float_free {
-                    // unlocked, a click also grows it, or takes it back to its small size
-                    s.float_big = !s.float_big;
-                    host::store_set("piii:float-big", if s.float_big { "1" } else { "0" });
-                    if let Some(p) = s.float_at {
-                        s.float_at = Some(float_clamp(p));
-                    }
-                }
+                // a click no longer grows it (owner, 2026-10-17: "super gets bigger suddenly"): it only selects it
                 if let Some((l, t)) = s.float_at {
                     host::store_set("piii:float", &format!("{:.0},{:.0}", l, t));
                 }
@@ -2615,7 +2604,8 @@ fn canvas_zoom_limits(s: &State) -> (f64, f64) {
         small = small.min(w.max(*h));
     }
     let all = (r - l).max(b - t).max(1e-9);
-    let hi = m / small.max(1e-9) / base;
+    // in far enough to reach a super's bits: its machine code fills the window several times over
+    let hi = 40.0 * m / small.max(1e-9) / base;
     // out until the whole drawing is a third of the window (further, it is only specks)
     let lo = (0.33 * m / all / base).min(hi * 0.33).min(1.0);
     (lo, hi)
@@ -2866,8 +2856,9 @@ fn layout_load() {
         s.pan = (xy.next().and_then(|v| v.parse().ok()).unwrap_or(0.0), xy.next().and_then(|v| v.parse().ok()).unwrap_or(0.0));
     }
     s.free = parts.get(2).and_then(|p| p.strip_prefix('f')).map(|p| p.split(',').filter_map(|x| x.parse().ok()).collect()).unwrap_or_default();
-    s.float_free = host::store_get("piii:float-free").as_deref() == Some("1");
-    s.win_free = host::store_get("piii:win-free").as_deref() == Some("1");
+    // unlocked unless locked (owner, 2026-10-17)
+    s.float_free = host::store_get("piii:float-free").as_deref() != Some("0");
+    s.win_free = host::store_get("piii:win-free").as_deref() != Some("0");
     s.chained = parts.get(3) != Some(&"0");
     s.zoom = parts.get(5).and_then(|v| v.parse::<f64>().ok()).filter(|z| z.is_finite() && *z > 0.0).unwrap_or(1.0);
     if let Some(sz) = parts.get(4) {
@@ -2924,8 +2915,10 @@ fn activate(id: usize, member: Option<u8>) {
             s.zoom = 1.0;
             s.pan = (0.0, 0.0);
             s.free.clear();
-            s.float_free = false;
-            s.win_free = false;
+            s.sup_locked.clear();
+            sup_locked_save();
+            s.float_free = true;
+            s.win_free = true;
             s.win_off = (0.0, 0.0);
             host::store_del("piii:winoff");
             host::store_del("piii:float-free");

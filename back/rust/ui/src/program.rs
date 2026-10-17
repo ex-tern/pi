@@ -1004,7 +1004,17 @@ fn node_label(s: &State, id: usize) -> String {
 
 // ---------------------------------------------------------------------------------------------- editing
 
+/// Run the program a moment after it last changed (typing a word sends nothing until it rests).
+fn prog_autorun() {
+    let s = st();
+    if s.autorun_at == 0.0 {
+        host::timer(450, T_AUTORUN);
+    }
+    s.autorun_at = host::now();
+}
+
 fn prog_save() {
+    prog_autorun();
     undo_mark();
     let s = st();
     let mut out = String::from("v1\n");
@@ -1293,7 +1303,7 @@ fn sparkle_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
     let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
     el("div")
         .cls("sx unode sparkle")
-        .cls_if(s.prog.sel == Some(n.id), "sel")
+        .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
         .attr("title", if v.is_empty() { "A sparkle: a junction".to_string() } else { format!("A sparkle: {}", v) })
@@ -1309,7 +1319,8 @@ fn sparkle_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
                 .attr("aria-hidden", "true")
                 .kid(el("svg:path").attr("d", star(0.0, 0.0, 43.0))),
         )
-        .kid_if(!v.is_empty(), || el("span").cls("sp-val").text(v.clone()).into())
+        // what passes through, short: the whole of it in its title
+        .kid_if(!v.is_empty(), || el("span").cls("sp-val").attr("title", v.clone()).text(if v.chars().count() > 140 { v.chars().take(139).collect::<String>() + "…" } else { v.clone() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -1380,7 +1391,7 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
     el("div")
         .cls("sx unode k-member")
         .cls_if(pien, "pien")
-        .cls_if(s.prog.sel == Some(n.id), "sel")
+        .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
         .attr("title", format!("{}: double click to open it", name))
@@ -1397,7 +1408,175 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
         .into()
 }
 
-fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
+// ---------------------------------------------------------------------------------------------- zooming into a super
+
+/// How deep a super is shown, from how big it is on screen (owner, 2026-10-17: "restore the resizing to change into
+/// icon and to see code if zoom too much. The more you zoom in, the more fundamental it gets. You can even zoom into
+/// zero and one. From high level of graphical to low level bare metal."). Made small (resized or zoomed out) it is an
+/// icon; zoomed in, its π source, then the code it stands for, then x86-64 assembly, then the machine code's bits.
+fn zoom_depth(px: f64) -> u8 {
+    match px {
+        p if p < 30.0 => 0,
+        p if p < 240.0 => 1,
+        p if p < 480.0 => 2,
+        p if p < 960.0 => 3,
+        p if p < 1920.0 => 4,
+        _ => 5,
+    }
+}
+
+const DEPTH_NAMES: [&str; 6] = ["icon", "graphical", "π source", "code · Rust", "x86-64 assembly", "machine code"];
+
+/// A value as π (and Rust) would write it.
+fn lit_of(v: &Value) -> String {
+    match v {
+        Value::Str(t) => json::quote(t),
+        x => vtext(x),
+    }
+}
+
+fn vname(id: usize) -> String {
+    if is_unode(id) { format!("n{}", id) } else { format!("site{}", id) }
+}
+
+/// What arrives at a node's in, in order.
+fn ins_of(s: &State, id: usize) -> Vec<usize> {
+    s.wires.iter().filter(|w| w.1 == id && w.2 == Tip::In).map(|w| w.0).collect()
+}
+
+/// The π source of one super: itself and the wires into it, in the language Super AI writes.
+fn depth_pi(s: &State, n: &UNode) -> String {
+    let mut out = format!("{}: {}\n", vname(n.id), n.text.trim());
+    for w in s.wires.iter().filter(|w| w.1 == n.id) {
+        let tip = match w.2 { Tip::Control => " control", Tip::Gate => " gate", _ => "" };
+        out.push_str(&format!("{} -> {}{}\n", vname(w.0), vname(n.id), tip));
+    }
+    out
+}
+
+/// The same super as code: what the engine computes, written out.
+fn depth_code(s: &State, n: &UNode, k: &Kind) -> String {
+    let v = vname(n.id);
+    let ins: Vec<String> = ins_of(s, n.id).into_iter().map(vname).collect();
+    let args = if ins.is_empty() { "/* nothing wired */".to_string() } else { ins.join(", ") };
+    let body = match k {
+        Kind::Const(Value::Num(x)) => format!("let {v}: f64 = {};", vtext(&Value::Num(*x))),
+        Kind::Const(c) => format!("let {v}: Value = {};", lit_of(c)),
+        Kind::Op(op) => {
+            let sym = match *op { "×" => "*", "÷" => "/", "−" => "-", "≠" => "!=", "≤" => "<=", "≥" => ">=", "=" => "==", "and" => "&&", "or" => "||", o => o };
+            match (*op, ins.len()) {
+                ("+" | "−" | "×" | "÷" | "%" | "<" | ">" | "=" | "≠" | "≤" | "≥" | "and" | "or", l) if l >= 2 => format!("let {v} = {};", ins.join(&format!(" {} ", sym))),
+                ("^", 2) => format!("let {v} = {}.powf({});", ins[0], ins[1]),
+                ("√", _) => format!("let {v} = {}.sqrt();", ins.first().cloned().unwrap_or_default()),
+                ("not", _) => format!("let {v} = !{};", ins.first().cloned().unwrap_or_default()),
+                ("if", 3) => format!("let {v} = if {} {{ {} }} else {{ {} }};", ins[0], ins[1], ins[2]),
+                (o, _) => format!("let {v} = pi::{}({});", o.replace('&', "join"), args),
+            }
+        }
+        Kind::Reg(init) => format!("static mut {}: Value = {};\nlet {v} = unsafe {{ {} }};          // at the step's end:\nunsafe {{ {} = {}; }}", v.to_uppercase(), lit_of(init), v.to_uppercase(), v.to_uppercase(), ins.first().cloned().unwrap_or_else(|| v.to_uppercase())),
+        Kind::Stop => format!("if truthy(&{}) {{ return Run::Stopped; }}", ins.first().cloned().unwrap_or_default()),
+        Kind::Show => format!("show({});", args),
+        Kind::Ask(t) => format!("let {v} = super_ai({:?}, &[{}]);", t, ins.join(", ")),
+        Kind::List => format!("let {v} = vec![{}];", ins.join(", ")),
+        _ => format!("let {v} = pi::{}({});", kind_name(k), args),
+    };
+    format!("// {} — {}\nfn step_{}(..) {{\n    {}\n}}\n", n.text.trim(), kind_name(k), v, body.replace('\n', "\n    "))
+}
+
+/// The same super as x86-64: its values live in a frame, 8 bytes each, below rbp; numbers in SSE registers. Returns
+/// the listing, and the bytes it assembles to.
+fn depth_asm(s: &State, n: &UNode, k: &Kind) -> (String, Vec<u8>) {
+    let slot = |id: usize| -> u8 { (0u8).wrapping_sub((((id % 15) + 1) * 8) as u8) };
+    let mut asm = String::new();
+    let mut code: Vec<u8> = Vec::new();
+    let ins = ins_of(s, n.id);
+    let mut line = |text: String, bytes: &[u8], asm: &mut String, code: &mut Vec<u8>| {
+        let hex: Vec<String> = bytes.iter().map(|b| format!("{:02x}", b)).collect();
+        asm.push_str(&format!("{:<34} ; {}\n", text, hex.join(" ")));
+        code.extend_from_slice(bytes);
+    };
+    let me = slot(n.id);
+    match k {
+        Kind::Const(Value::Num(x)) => {
+            let mut b = alloc::vec![0x48, 0xB8];
+            b.extend_from_slice(&x.to_bits().to_le_bytes());
+            line(format!("mov  rax, 0x{:016x}", x.to_bits()), &b, &mut asm, &mut code);
+            line(format!("mov  [rbp{}], rax", me as i8), &[0x48, 0x89, 0x45, me], &mut asm, &mut code);
+        }
+        Kind::Op(op) if matches!(*op, "+" | "−" | "×" | "÷") && !ins.is_empty() => {
+            let opc = match *op { "+" => 0x58, "−" => 0x5C, "×" => 0x59, _ => 0x5E };
+            let name = match *op { "+" => "addsd", "−" => "subsd", "×" => "mulsd", _ => "divsd" };
+            line(format!("movsd xmm0, [rbp{}]", slot(ins[0]) as i8), &[0xF2, 0x0F, 0x10, 0x45, slot(ins[0])], &mut asm, &mut code);
+            for i in &ins[1..] {
+                line(format!("{} xmm0, [rbp{}]", name, slot(*i) as i8), &[0xF2, 0x0F, opc, 0x45, slot(*i)], &mut asm, &mut code);
+            }
+            line(format!("movsd [rbp{}], xmm0", me as i8), &[0xF2, 0x0F, 0x11, 0x45, me], &mut asm, &mut code);
+        }
+        Kind::Op("√") if !ins.is_empty() => {
+            line(format!("sqrtsd xmm0, [rbp{}]", slot(ins[0]) as i8), &[0xF2, 0x0F, 0x51, 0x45, slot(ins[0])], &mut asm, &mut code);
+            line(format!("movsd [rbp{}], xmm0", me as i8), &[0xF2, 0x0F, 0x11, 0x45, me], &mut asm, &mut code);
+        }
+        Kind::Op(op) if matches!(*op, "<" | ">" | "≤" | "≥" | "=" | "≠") && ins.len() >= 2 => {
+            let (cc, name) = match *op { "<" => (0x92, "setb"), ">" => (0x97, "seta"), "≤" => (0x96, "setbe"), "≥" => (0x93, "setae"), "=" => (0x94, "sete"), _ => (0x95, "setne") };
+            line(format!("movsd xmm0, [rbp{}]", slot(ins[0]) as i8), &[0xF2, 0x0F, 0x10, 0x45, slot(ins[0])], &mut asm, &mut code);
+            line(format!("ucomisd xmm0, [rbp{}]", slot(ins[1]) as i8), &[0x66, 0x0F, 0x2E, 0x45, slot(ins[1])], &mut asm, &mut code);
+            line(format!("{} al", name), &[0x0F, cc, 0xC0], &mut asm, &mut code);
+            line("movzx eax, al".to_string(), &[0x0F, 0xB6, 0xC0], &mut asm, &mut code);
+            line(format!("mov  [rbp{}], rax", me as i8), &[0x48, 0x89, 0x45, me], &mut asm, &mut code);
+        }
+        Kind::Reg(_) => {
+            line(format!("mov  rax, [rbp{}]", me as i8), &[0x48, 0x8B, 0x45, me], &mut asm, &mut code);
+            line("; held across steps: written back at the step's end".to_string(), &[], &mut asm, &mut code);
+            if let Some(i) = ins.first() {
+                line(format!("mov  rcx, [rbp{}]", slot(*i) as i8), &[0x48, 0x8B, 0x4D, slot(*i)], &mut asm, &mut code);
+                line(format!("mov  [rbp{}], rcx", me as i8), &[0x48, 0x89, 0x4D, me], &mut asm, &mut code);
+            }
+        }
+        _ => {
+            // everything else calls into the π runtime: the values arrive in rdi (a pointer to them) and rsi (how many)
+            line(format!("lea  rdi, [rbp{}]", ins.first().map(|i| slot(*i)).unwrap_or(me) as i8), &[0x48, 0x8D, 0x7D, ins.first().map(|i| slot(*i)).unwrap_or(me)], &mut asm, &mut code);
+            line(format!("mov  esi, {}", ins.len()), &[0xBE, ins.len() as u8, 0, 0, 0], &mut asm, &mut code);
+            line(format!("call pi_{}", kind_name(k).replace(' ', "_")), &[0xE8, 0, 0, 0, 0], &mut asm, &mut code);
+            line(format!("mov  [rbp{}], rax", me as i8), &[0x48, 0x89, 0x45, me], &mut asm, &mut code);
+        }
+    }
+    (asm, code)
+}
+
+/// What a super shows at a depth past the graphical: a heading, and the text.
+fn depth_view(s: &State, n: &UNode, k: &Kind, depth: u8, kz: f64) -> N {
+    let text = match depth {
+        2 => depth_pi(s, n),
+        3 => depth_code(s, n, k),
+        4 => depth_asm(s, n, k).0,
+        _ => {
+            let (_, bytes) = depth_asm(s, n, k);
+            bytes.iter().map(|b| format!("{:08b}", b)).collect::<Vec<_>>().chunks(4).map(|c| c.join(" ")).collect::<Vec<_>>().join("\n")
+        }
+    };
+    // the text stays one size on screen however far in: the deeper you go, the more of it there is room for
+    el("div")
+        .cls("u-deep")
+        .style(format!("font-size:{:.3}px", 12.5 / kz.max(1e-6)))
+        .kid(el("div").cls("u-deep-h").text(format!("{} · {}", DEPTH_NAMES[depth as usize], n.text.trim())))
+        .kid(el("pre").cls("u-deep-t").text(text))
+        .into()
+}
+
+/// A super as an icon: what it does, as one mark.
+fn icon_mark(k: &Kind, text: &str) -> String {
+    match k {
+        Kind::Op(op) => op.to_string(),
+        Kind::Const(_) => text.trim().chars().take(4).collect(),
+        Kind::Reg(_) => "R".into(),
+        Kind::Stop => "■".into(),
+        Kind::Show => "▣".into(),
+        Kind::Ask(_) => "✦".into(),
+        _ => kind_name(k).chars().take(2).collect(),
+    }
+}
+
+fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     if n.text == SPARKLE {
         return sparkle_view(s, n, r, mini);
     }
@@ -1424,11 +1603,31 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
     // grown to half as big again as it was made (by area), a super is a canvas: its name up in the corner and room
     // below it (owner, 2026-10-14: "if a new super becomes 50% larger than its initial state, it turns into a canvas")
     let canvas = unode_is_canvas(n);
+    // how deep it is shown: by its size on screen (a super grown into a canvas holds drawings, so it goes no deeper)
+    let depth = if mini || n.text.trim().is_empty() { 1 } else { zoom_depth(r.2.min(r.3) * kz) };
+    let depth = if canvas && depth > 1 { 1 } else { depth };
+    if depth != 1 {
+        let tag = if depth == 0 { el("span").cls("u-icon").text(icon_mark(&k, &n.text)).into() } else { depth_view(s, n, &k, depth, kz) };
+        return el("div")
+            .cls("sx unode")
+            .cls(kcls)
+            .cls(if depth == 0 { "u-iconic" } else { "u-deeper" })
+            .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
+            .attr("data-s", format!("{}", n.id))
+            .attr("data-solid", "1")
+            .attr("title", format!("{}: {} — {}", kind_name(&k), n.text, DEPTH_NAMES[depth as usize]))
+            .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
+            .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
+            .kid(se_shape())
+            .kid(tag)
+            .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
+            .into();
+    }
     el("div")
         .cls("sx unode")
         .cls_if(canvas, "u-canvas")
         .cls(kcls)
-        .cls_if(s.prog.sel == Some(n.id), "sel")
+        .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
         .cls_if(!shown.is_empty(), "has-val")
         .cls_if(n.text.trim().is_empty(), "empty")
         .attr("data-s", format!("{}", n.id))
@@ -1515,7 +1714,7 @@ const PROG_CSS: &str = "\
 .sx.unode.k-member.pien .u-shape path{stroke:var(--accent)}\
 .sx.unode.sparkle{background:transparent;border:0;padding:0;box-shadow:none;overflow:visible;display:grid;place-items:center}\
 .sparkle svg{display:block}.sparkle path{fill:none;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}.sparkle.sel path{fill:none;stroke:var(--accent)}.sx.unode.sparkle.sel{outline:0}\
-.sp-val{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:11.5px;color:var(--magenta);font-weight:600;white-space:nowrap}\
+.sp-val{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:11.5px;line-height:1.35;color:var(--magenta);font-weight:600;width:max-content;max-width:180px;text-align:center;white-space:normal;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical;background:color-mix(in srgb,var(--paper) 88%,transparent);border-radius:6px;padding:1px 5px;pointer-events:none}\
 .sx.unode.sel{outline:2px solid var(--accent);outline-offset:3px}\
 .u-grip{position:absolute;right:calc(2px / var(--k, 1));bottom:calc(2px / var(--k, 1));width:calc(16px / var(--k, 1));height:calc(16px / var(--k, 1));cursor:nwse-resize;touch-action:none;z-index:3;background:none;border:0}\
 .u-grip::after{content:\"\";position:absolute;right:calc(3px / var(--k, 1));bottom:calc(3px / var(--k, 1));width:calc(8px / var(--k, 1));height:calc(8px / var(--k, 1));border-radius:50%;background:var(--accent)}\
@@ -1528,7 +1727,16 @@ const PROG_CSS: &str = "\
 .unode.k-ask .u-val{color:var(--accent)}\
 .u-text{font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;border:0;background:transparent;width:100%;padding:0;color:var(--ink);text-align:center;outline:none;cursor:text}\
 .sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
+.wires .w-val{paint-order:stroke fill}\
 .sx.unode .u-val.t-num{color:#b4651a}.sx.unode .u-val.t-bool{color:#2f8f4e}.sx.unode .u-val.t-text{color:#c2185b}.sx.unode .u-val.t-list{color:#6a4fb3}\
+.sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\
+.u-icon{font:600 22px/1 'Geist Mono',ui-monospace,monospace;color:#2b2b2b;transform:scale(calc(1 / var(--k, 1)));white-space:nowrap}\
+.sx.unode.u-deeper{padding:0;cursor:grab}\
+.u-deep{position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);width:max-content;max-width:none;font-family:'Geist Mono',ui-monospace,monospace;line-height:1.45;color:#2b2b2b;text-align:left}\
+.u-deep-h{font-weight:600;color:var(--accent);margin-bottom:.5em;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
+.u-deep-t{margin:0;font:inherit;white-space:pre;user-select:text;-webkit-user-select:text}\
+.unode.k-op .u-deep-t,.unode.k-const .u-deep-t{color:#2b2b2b}\
+.sx.unode.is-locked{cursor:default}.sx.unode.is-locked::after{content:'';position:absolute;right:16%;top:12%;width:9px;height:11px;background:#8a877f;-webkit-mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M2 5V3.3a2.5 2.5 0 0 1 5 0V5h1v6H1V5zm1 0h3V3.3a1.5 1.5 0 0 0-3 0z'/%3E%3C/svg%3E\") center/contain no-repeat;mask:url(\"data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 9 11'%3E%3Cpath d='M2 5V3.3a2.5 2.5 0 0 1 5 0V5h1v6H1V5zm1 0h3V3.3a1.5 1.5 0 0 0-3 0z'/%3E%3C/svg%3E\") center/contain no-repeat;pointer-events:none}\
 .u-text::placeholder{color:#b3b1aa;font-size:12.5px}.sx.unode.empty .u-text{border-bottom:1.5px dashed transparent;padding:4px 2px}.sx.unode.empty .u-text:focus,.sx.unode .u-text:focus{border-bottom:1.5px solid var(--accent)}\
 .u-val{font-size:11.5px;color:var(--faint);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}\
 .unode.has-val .u-val{color:var(--magenta);font-weight:600;font-size:12.5px}\

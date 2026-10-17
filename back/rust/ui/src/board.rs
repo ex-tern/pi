@@ -249,7 +249,8 @@ fn board_open(gi: usize, m: usize) {
 /// How far an open page zooms (owner, 2026-10-17: "improve zooming out and zooming in"): one range for every page,
 /// out to about a third (the whole page at a glance, still readable as shapes) and in to four times.
 fn page_zoom_limits(_: &State) -> (f64, f64) {
-    (0.35, 4.0)
+    // in as far as a super's machine code (owner, 2026-10-17: "you can even zoom into zero and one")
+    (0.35, 60.0)
 }
 
 fn win_default() -> (f64, f64) {
