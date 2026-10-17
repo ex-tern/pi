@@ -110,6 +110,23 @@ impl<M> El<M> {
     }
 }
 
+impl<M> Node<M> {
+    /// Every word shown under this node, rewritten by `f` (not inside svg, style or script, nor what a field holds).
+    pub fn map_text(&mut self, f: &dyn Fn(&str) -> String) {
+        match self {
+            Node::Text(s) => *s = f(s),
+            Node::El(e) => {
+                if e.tag.starts_with("svg") || e.tag == "style" || e.tag == "script" || e.tag == "textarea" {
+                    return;
+                }
+                for k in e.kids.iter_mut() {
+                    k.map_text(f);
+                }
+            }
+        }
+    }
+}
+
 impl<M> From<El<M>> for Node<M> {
     fn from(e: El<M>) -> Self {
         Node::El(e)

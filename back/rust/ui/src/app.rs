@@ -2293,7 +2293,52 @@ fn rail(s: &State) -> N {
         .into()
 }
 
+/// How far a page's words have gone down, by how big they are on screen (owner, 2026-10-17: "every word that is
+/// zoomed too big turns into assembly language, then hexadecimal, then zero and ones"): 0 words, 1 assembly, 2
+/// hexadecimal, 3 bits. Words are about 15px; they turn at 8, 16 and 32 times that.
+fn word_level(s: &State) -> u8 {
+    match s.pzoom {
+        z if z >= 32.0 => 3,
+        z if z >= 16.0 => 2,
+        z if z >= 8.0 => 1,
+        _ => 0,
+    }
+}
+
+/// A run of text at a level: each word becomes its bytes, written as assembly (db), in hexadecimal, or in bits.
+fn words_as(level: u8, t: &str) -> String {
+    let mut out = String::new();
+    let mut word = String::new();
+    let flush = |w: &mut String, out: &mut String| {
+        if w.is_empty() {
+            return;
+        }
+        let b = w.as_bytes();
+        match level {
+            1 => out.push_str(&format!("db {}", b.iter().map(|x| format!("0x{:02X}", x)).collect::<Vec<_>>().join(","))),
+            2 => out.push_str(&b.iter().map(|x| format!("{:02X}", x)).collect::<Vec<_>>().join(" ")),
+            _ => out.push_str(&b.iter().map(|x| format!("{:08b}", x)).collect::<Vec<_>>().join(" ")),
+        }
+        w.clear();
+    };
+    for c in t.chars() {
+        if c.is_whitespace() {
+            flush(&mut word, &mut out);
+            out.push(c);
+        } else {
+            word.push(c);
+        }
+    }
+    flush(&mut word, &mut out);
+    out
+}
+
 fn window_frame(s: &State, content: N) -> N {
+    let mut content = content;
+    let lv = word_level(s);
+    if lv > 0 {
+        content.map_text(&|t: &str| words_as(lv, t));
+    }
     // no close button (owner, 2026-10-14): π, in the rail or on the floating canvas, goes back to the canvas
     let arg = match s.page {
         Page::Paper => s.paper.as_str(),

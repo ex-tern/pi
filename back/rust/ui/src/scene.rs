@@ -2619,8 +2619,9 @@ fn canvas_zoom_limits(s: &State) -> (f64, f64) {
     // in far enough to reach a super's bits: its machine code fills the window several times over
     let hi = 40.0 * m / small.max(1e-9) / base;
     // out until the whole drawing is a third of the window (further, it is only specks)
-    // out until the drawing is a speck in the middle of an empty canvas (where the site starts), one step more is Super AI
-    let lo = (0.02 * m / all / base).min(hi * 0.02).min(1.0);
+    // out until the drawing is a ring of icons in the middle (where the site starts); one step more is Super AI (owner,
+    // 2026-10-17: "after this comes Super AI, is closer to this")
+    let lo = (0.45 * m / all / base).min(hi * 0.45).min(1.0);
     (lo, hi)
 }
 

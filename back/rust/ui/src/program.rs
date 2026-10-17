@@ -1504,13 +1504,16 @@ fn ladder_at(s: &State) -> usize {
             best = Some((d, depth));
         }
     }
-    match best {
+    // a page's own words count too: assembly, hexadecimal, bits
+    let words = if s.page == Page::Home { 0 } else { word_level(s) as usize };
+    let canvas = match best {
         Some((_, dp)) if dp >= 2 => 1 + dp as usize,
         _ => if s.page == Page::Home { 1 } else { 2 },
-    }
+    };
+    if words > 0 { canvas.max(4 + words) } else { canvas }
 }
 
-const LADDER: [&str; 7] = ["Super AI", "the site", "graphical", "high language", "BASIC", "assembly", "0 and 1"];
+const LADDER: [&str; 8] = ["Super AI", "the site", "graphical", "high language", "BASIC", "assembly", "hexadecimal", "0 and 1"];
 
 /// The ladder, at the window's right edge: where the zoom is, from the AI language down to bare metal.
 fn ladder_view(s: &State) -> N {
@@ -1578,13 +1581,14 @@ fn zoom_depth(px: f64) -> u8 {
         p if p < 480.0 => 2,
         p if p < 960.0 => 3,
         p if p < 1920.0 => 4,
-        _ => 5,
+        p if p < 3840.0 => 5,
+        _ => 6,
     }
 }
 
 /// The ladder, from the top (owner, 2026-10-17: "from bare metal 0 and 1 to assembly to basic language, then to high
 /// language, then to graphical language, then to AI language"; the AI language is the canvas zoomed all the way out).
-const DEPTH_NAMES: [&str; 6] = ["icon", "graphical", "high language · Rust", "basic language · BASIC", "assembly · x86-64", "bare metal · 0 and 1"];
+const DEPTH_NAMES: [&str; 7] = ["icon", "graphical", "high language · Rust", "basic language · BASIC", "assembly · x86-64", "hexadecimal", "bare metal · 0 and 1"];
 
 /// A value as π (and Rust) would write it.
 fn lit_of(v: &Value) -> String {
@@ -1762,6 +1766,10 @@ fn depth_view(s: &State, n: &UNode, k: &Kind, depth: u8, kz: f64) -> N {
         2 => depth_code(s, n, k),
         3 => depth_basic(s, n, k),
         4 => depth_asm(s, n, k).0,
+        5 => {
+            let (_, bytes) = depth_asm(s, n, k);
+            bytes.chunks(8).map(|c| c.iter().map(|b| format!("{:02X}", b)).collect::<Vec<_>>().join(" ")).collect::<Vec<_>>().join("\n")
+        }
         _ => {
             let (_, bytes) = depth_asm(s, n, k);
             bytes.iter().map(|b| format!("{:08b}", b)).collect::<Vec<_>>().chunks(4).map(|c| c.join(" ")).collect::<Vec<_>>().join("\n")
