@@ -24,7 +24,16 @@ jobs:
 
       - name: Run tests
         working-directory: back
-        run: pytest tests/ -v
+        shell: bash
+        run: |
+          # failures also as annotations (readable through the API, where the full log may not be)
+          set -o pipefail
+          pytest tests/ -v -rfE --tb=short 2>&1 | tee /tmp/pytest.txt
+          s=$?
+          if [ $s -ne 0 ]; then
+            grep -E "^(FAILED|ERROR) |^E   " /tmp/pytest.txt | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+          fi
+          exit $s
         env:
           # Deliberately left empty — the scoring engine must work with no
           # LLM keys configured (falls back to the local Scilem model).
