@@ -632,7 +632,7 @@ fn group_members_sync(gi: usize) -> bool {
     let place = flow_layout(gi);
     let mut changed = false;
     // a member renamed keeps its place and its wires (owner, 2026-10-17: "the global map of science to map of science")
-    for (old, new) in [("The Global Map of Science", "Map of Science")] {
+    for (old, new) in [("The Global Map of Science", "Map of Science"), ("piii OS", "piii-OS")] {
         let (old, new) = (format!("{}{}", MEMBER, old), format!("{}{}", MEMBER, new));
         if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.text == old) {
             n.text = new;
@@ -954,7 +954,7 @@ struct Group {
 
 // The groups, reorganized by what each thing is for (owner, 2026-10-17: "reorganize everything"): Tools are what you
 // use on your own work (assessing, asking, reading lists, diagnosis, faces, and getting online through the lab);
-// Explore is what the lab has assessed; the Library is what to read and learn; the Lab its experiments (piii OS
+// Explore is what the lab has assessed; the Library is what to read and learn; the Lab its experiments (piii-OS
 // among them); Connect is you and the people round the lab; Insights how the site is doing. Each group's order
 // follows its wires (FLOWS), the way things lead from one to the next.
 const GROUPS: [Group; 6] = [
@@ -1001,7 +1001,7 @@ const GROUPS: [Group; 6] = [
         title: "Lab",
         members: &[
             ("HAL-OS", Target::Tool(Tool::Hal)),
-            ("piii OS", Target::Tool(Tool::OsFlash)),
+            ("piii-OS", Target::Tool(Tool::OsFlash)),
             ("QuVI", Target::Tool(Tool::Quvi)),
             ("MD", Target::Tool(Tool::Md)),
             ("Neuro Frenzy", Target::Tool(Tool::Frenzy)),
@@ -1061,7 +1061,7 @@ const FLOWS: [&[(&str, &str)]; 6] = [
         ("The journal", "Map of Science"),
     ],
     // Lab: the operating systems, the old one before the new; study medicine, then practise neuroscience
-    &[("HAL-OS", "piii OS"), ("MD", "Neuro Frenzy")],
+    &[("HAL-OS", "piii-OS"), ("MD", "Neuro Frenzy")],
     // Connect: why sign in, then your account and what hangs off it; invite people to the open portal
     &[
         ("Why sign in", "Your account"),
@@ -2845,12 +2845,14 @@ fn loop_back() {
     if z.is_finite() && z > 0.0 {
         s.zoom = z;
         s.pan = pan;
-        // a step out, about the middle of the window
-        canvas_zoom(&format!("{},{},{}", 460.0, vw / 2.0, vh / 2.0));
+        // three rungs out (an eighth of the size), about the middle of the window: back at assembly, not at the bits
+        for _ in 0..4 {
+            canvas_zoom(&format!("{},{},{}", 460.0, vw / 2.0, vh / 2.0));
+        }
     }
     let s = st();
     if pz.is_finite() && pz > 1.0 {
-        let z1 = (pz * 0.5).max(1.0);
+        let z1 = (pz / 4.0).max(1.0);
         let (ox, oy) = s.porg;
         let c = ((vw / 2.0 - ox - ppan.0) / pz, (vh / 2.0 - oy - ppan.1) / pz);
         s.ppan = (vw / 2.0 - ox - z1 * c.0, vh / 2.0 - oy - z1 * c.1);

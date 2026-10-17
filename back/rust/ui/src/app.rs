@@ -2043,7 +2043,7 @@ fn super_name(s: &State, page: Page, arg: &str) -> String {
             } else if signed_in(s) {
                 "Account".to_string()
             } else {
-                "Sign in".to_string()
+                "Account".to_string()
             }
         }
         Page::Paper => {
@@ -2394,16 +2394,31 @@ fn rail(s: &State) -> N {
 /// zoomed too big turns into assembly language, then hexadecimal, then zero and ones"): 0 words, 1 assembly, 2
 /// hexadecimal, 3 bits. Words are about 15px; they turn at 8, 16 and 32 times that.
 fn word_level(s: &State) -> u8 {
+    // every rung of the ladder in turn (owner, 2026-10-17: "zoom and this doesn't match", "assembly is not basic"):
+    // words, then a high language, BASIC, assembly, hexadecimal and bits
     match s.pzoom {
-        z if z >= 32.0 => 3,
-        z if z >= 16.0 => 2,
-        z if z >= 8.0 => 1,
+        z if z >= 32.0 => 5,
+        z if z >= 16.0 => 4,
+        z if z >= 8.0 => 3,
+        z if z >= 5.0 => 2,
+        z if z >= 3.0 => 1,
         _ => 0,
     }
 }
 
 /// A run of text at a level: each word becomes its bytes, written as assembly (db), in hexadecimal, or in bits.
 fn words_as(level: u8, t: &str) -> String {
+    // a high language and BASIC write the words as a program that prints them; below that, each word is its bytes
+    if level == 1 || level == 2 {
+        let lead = &t[..t.len() - t.trim_start().len()];
+        let tail = &t[t.trim_end().len()..];
+        let body = t.trim().replace('\\', "\\\\").replace('"', "\\\"");
+        if body.is_empty() {
+            return t.to_string();
+        }
+        return if level == 1 { format!("{}print(\"{}\");{}", lead, body, tail) } else { format!("{}PRINT \"{}\"{}", lead, body, tail) };
+    }
+    let level = level - 2;
     let mut out = String::new();
     let mut word = String::new();
     let flush = |w: &mut String, out: &mut String| {
@@ -2470,7 +2485,7 @@ fn window_frame(s: &State, content: N) -> N {
             el("div")
                 .cls("win-in")
                 // a change of level dissolves in (a different animation per level, so each change plays it again)
-                .cls(["wl-0", "wl-1", "wl-2", "wl-3"][word_level(s) as usize])
+                .cls(["wl-0", "wl-1", "wl-2", "wl-3", "wl-4", "wl-5"][word_level(s) as usize])
                 // one transform, as the canvas's: the page scales as a whole (no reflow), so what is drawn over it stays put
                 .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("transform-origin:0 0;transform:translate({:.1}px,{:.1}px) scale({:.4})", s.ppan.0, s.ppan.1, s.pzoom))
                 .kid(content),
@@ -3274,7 +3289,7 @@ fn explore_page(s: &State) -> N {
         el("p").cls("hint").style("margin-bottom:12px").text("Papers published here, reviewed, or waiting for a reviewer.").into()
     } else {
         el("div")
-            .cls("field")
+            .cls("field row-search")
             .style("margin-bottom:14px")
             .kid(
                 el("input")

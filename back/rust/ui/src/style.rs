@@ -349,7 +349,7 @@ border-radius:0 0 0 6px}
 .win{border-radius:0;border:1.5px solid var(--ink2);overflow:visible;box-shadow:0 18px 50px -30px rgba(20,20,30,.35)}
 .win-body{border-radius:0}
 .win-head{border-bottom:0}
-.win-title.tag{flex:none;color:var(--ink);font-size:21px;padding:3px 14px;max-width:calc(100% - 60px)}
+.win-title.tag{flex:none;color:var(--ink);font-size:21px;padding:3px 14px;max-width:min(calc(100% - 60px),calc(50vw - 330px));min-width:6ch;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
 .win-head{justify-content:space-between}
 .win-x{border-radius:0;border:1.5px solid var(--ink2);color:var(--ink)}
 .members{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:22px}
@@ -476,6 +476,10 @@ color:var(--paper);font-size:16px;line-height:1}
 }
 /* the polish layer (owner, 2026-10-15: "enhance the ui over all pro"): one focus ring, themed controls, steady
    buttons, cards with a little depth, readable line lengths, and tools as wide as every other page */
+/* one header on every page (owner, 2026-10-17: "uniform the site"): its title and a line under it; which place it is
+   in, the window's name, the sidebar and the ladder already say */
+.head .eyebrow{display:none!important}
+.field.row-search{display:flex;gap:8px;align-items:stretch;flex-wrap:nowrap}.field.row-search .input{flex:1;min-width:0;width:auto}.field.row-search .btn{flex:none;width:auto}
 .head .eyebrow{display:block;font:600 11.5px/1 "Geist Mono",ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .head h1{letter-spacing:-.02em}
 h2,h3{letter-spacing:-.01em}

@@ -1712,7 +1712,8 @@ fn ladder_at(s: &State) -> usize {
         Some((_, dp)) if dp >= 2 => 1 + dp as usize,
         _ => if s.page == Page::Home { 1 } else { 2 },
     };
-    if words > 0 { canvas.max(4 + words) } else { canvas }
+    // the words' rung: 1 high language … 5 bits, the ladder's 3 … 7
+    if words > 0 { canvas.max(2 + words) } else { canvas }
 }
 
 const LADDER: [&str; 8] = ["Super AI", "the site", "graphical", "high language", "BASIC", "assembly", "hexadecimal", "0 and 1"];
@@ -2428,7 +2429,7 @@ const PROG_CSS: &str = "\
 \
 @keyframes wl0{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl1{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
 @keyframes wl2{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}@keyframes wl3{from{opacity:.25;filter:blur(10px)}to{opacity:1;filter:none}}\
-.win-in.wl-0{animation:wl0 .45s ease-out}.win-in.wl-1{animation:wl1 .45s ease-out}.win-in.wl-2{animation:wl2 .45s ease-out}.win-in.wl-3{animation:wl3 .45s ease-out}\
+.win-in.wl-0{animation:wl0 .45s ease-out}.win-in.wl-1{animation:wl1 .45s ease-out}.win-in.wl-2{animation:wl2 .45s ease-out}.win-in.wl-3{animation:wl3 .45s ease-out}.win-in.wl-4{animation:wl1 .45s ease-out}.win-in.wl-5{animation:wl2 .45s ease-out}\
 @keyframes pi-dissolve{from{opacity:0;filter:blur(6px)}to{opacity:1;filter:none}}\
 .u-deep,.u-icon,.sx.unode .u-text,.sx.unode .u-val,.sx.unode .u-mark,.sx.unode .tag{animation:pi-dissolve .4s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
 .ladder .rung{transition:color .3s,font-size .25s,gap .25s}\

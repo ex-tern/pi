@@ -1,8 +1,8 @@
-// piii OS onto a flash drive, from the site (owner, 2026-10-17: "make a tool on piii.app web app to write the os to
+// piii-OS onto a flash drive, from the site (owner, 2026-10-17: "make a tool on piii.app web app to write the os to
 // the flash to boot instead of balena etcher"). Included into app.rs.
 //
 // A browser may not write a disk image to a USB drive (Chrome keeps web pages away from USB storage), but it may write
-// files into a folder the person chooses. piii OS needs no image: a FAT32 drive with EFI/BOOT/BOOTX64.EFI on it
+// files into a folder the person chooses. piii-OS needs no image: a FAT32 drive with EFI/BOOT/BOOTX64.EFI on it
 // starts any UEFI computer (a Mac with Option held). So: the person picks the drive; host.js (op "osflash") fetches
 // /os/BOOTX64.EFI from this site, writes it there and reads it back to check. Browsers without folder access get the
 // file to copy by hand, and the image for balenaEtcher.
@@ -153,7 +153,7 @@ fn os_view(s: &State) -> N {
     } else if let Some((bytes, name, kept, drive, erased, left)) = &o.done {
         el("div")
             .kid(el("p").cls("osf-ok").text(format!(
-                "piii OS is on {}: EFI/BOOT/BOOTX64.EFI, {} KB, checked after writing.",
+                "piii-OS is on {}: EFI/BOOT/BOOTX64.EFI, {} KB, checked after writing.",
                 if name.is_empty() { "the drive".to_string() } else { format!("“{}”", name) },
                 bytes / 1024
             )))
@@ -188,14 +188,14 @@ fn os_view(s: &State) -> N {
             })
             .kid(el("div").cls("row")
                 .kid(el("button").attr("type", "button").cls("btn primary osf-go").attr_if(o.busy || !ready, "disabled", "").on("click", Msg::T(Tool::OsFlash, 6, String::new()))
-                    .text(if o.busy { "Working…" } else if o.erase { "Erase and write piii OS" } else { "Write piii OS" }))
+                    .text(if o.busy { "Working…" } else if o.erase { "Erase and write piii-OS" } else { "Write piii-OS" }))
                 .kid(el("button").attr("type", "button").cls("btn small").attr_if(o.busy, "disabled", "").on("click", Msg::T(Tool::OsFlash, 1, String::new())).text("Choose another")))
             .kid_if(!o.step.is_empty(), || el("p").cls("hint").attr("role", "status").text(o.step.clone()).into())
             .kid_if(!o.err.is_empty(), || el("p").cls("osf-warn").attr("role", "alert").text(format!("It did not work: {}", o.err)).into())
             .into()
     } else {
         el("div")
-            .kid(el("p").text("Plug in the flash drive, press the button, and choose the drive itself in the window that opens. You will see what is on it, and can erase it before piii OS is written."))
+            .kid(el("p").text("Plug in the flash drive, press the button, and choose the drive itself in the window that opens. You will see what is on it, and can erase it before piii-OS is written."))
             .kid(el("button").attr("type", "button").cls("btn primary osf-go").attr_if(o.busy, "disabled", "").on("click", Msg::T(Tool::OsFlash, 1, String::new()))
                 .text(if o.busy { "Choosing…" } else { "Choose the flash drive" }))
             .kid_if(!o.step.is_empty(), || el("p").cls("hint").attr("role", "status").text(o.step.clone()).into())
@@ -208,15 +208,15 @@ fn os_view(s: &State) -> N {
         .kid(el("ul").cls("osf-list")
             .kid(el("li").kid(el("b").text("Mac (Intel): ")).kid(el("span").text("plug the drive in, switch the Mac on while holding Option (⌥), and choose EFI Boot.")))
             .kid(el("li").kid(el("b").text("PC: ")).kid(el("span").text("press the boot-menu key as it starts (F12, F11, F9 or Esc) and choose the flash drive. If it refuses, turn off Secure Boot in its settings."))))
-        .kid(el("p").cls("hint").text("Nothing on the computer's own disk changes: take the drive out and it starts as before. No mouse in piii OS? The arrow keys move the pointer, Enter clicks, Tab jumps to the next super."));
+        .kid(el("p").cls("hint").text("Nothing on the computer's own disk changes: take the drive out and it starts as before. No mouse in piii-OS? The arrow keys move the pointer, Enter clicks, Tab jumps to the next super."));
 
     el("div")
         .cls("tool osf")
-        .kid(el("p").cls("lede").text("piii OS is the π canvas as a whole operating system: it starts straight from a computer's firmware, with nothing underneath, and runs the Program language, the exact constants and more. Put it on a flash drive from here and start a computer from it."))
+        .kid(el("p").cls("lede").text("piii-OS is the π canvas as a whole operating system: it starts straight from a computer's firmware, with nothing underneath, and runs the Program language, the exact constants and more. Put it on a flash drive from here and start a computer from it."))
         .kid(os_step("1", "A flash drive formatted FAT32", step1.into()))
-        .kid(os_step("2", "Write piii OS to it", step2))
+        .kid(os_step("2", "Write piii-OS to it", step2))
         .kid(os_step("3", "Start a computer from it", step3.into()))
-        .kid(el("p").cls("hint").kid(el("span").text("piii OS 0.1 · 250 KB · ")).kid(ext_link("https://github.com/ex-tern/pi/tree/main/back/rust/os", "how it is made")).kid(el("span").text(" · ")).kid(ext_link(OS_RELEASE, "the release")))
+        .kid(el("p").cls("hint").kid(el("span").text("piii-OS 0.1 · 250 KB · ")).kid(ext_link("https://github.com/ex-tern/pi/tree/main/back/rust/os", "how it is made")).kid(el("span").text(" · ")).kid(ext_link(OS_RELEASE, "the release")))
         .into()
 }
 

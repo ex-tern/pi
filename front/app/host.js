@@ -693,7 +693,7 @@ async function zipFiles(name, list) {
   document.body.appendChild(a); a.click(); a.remove(); setTimeout(() => URL.revokeObjectURL(u), 600000);
   tell("done " + n);
 }
-let osRoot = null; // Tools → piii OS: the flash drive chosen
+let osRoot = null; // Tools → piii-OS: the flash drive chosen
 const ops = {
   ptr: () => lastPointer,
   // Intern: notices. notify: title, body, tag (shown only when the app is not in front); notify-ask asks once and
@@ -816,10 +816,10 @@ const ops = {
   // a folder on this computer to save into (Chrome, Edge): a new folder of the given name is made in the one picked;
   // the answer comes back on token 2_000_002 ("dir <name>" or "error …"). canpick says whether the browser can.
   canpick: () => (typeof window.showDirectoryPicker === "function" ? "1" : "0"),
-  // piii OS onto a flash drive (Tools → piii OS), in two steps. ospick: the drive chosen (or its EFI folder, where the
+  // piii-OS onto a flash drive (Tools → piii-OS), in two steps. ospick: the drive chosen (or its EFI folder, where the
   // browser will not open a drive itself), and what is at its top answered on token 7_000_000 as
   // "picked name\tcount\tfirst names…" (or "error …"). oswrite "url\terase": everything at its top removed first if
-  // erase is 1 (what a browser can do of "format"), then piii OS fetched from this site, written to
+  // erase is 1 (what a browser can do of "format"), then piii-OS fetched from this site, written to
   // EFI/BOOT/BOOTX64.EFI and read back to check; a boot file already there (not erased) is kept as
   // BOOTX64-before-piii.EFI. Progress and the answer: "step …", "done bytes\tname\tkept\twhere\terased\tleft" or
   // "error …".
@@ -852,9 +852,9 @@ const ops = {
           // the system's own files (Windows' System Volume Information, a Mac's .Spotlight-V100) may refuse
           for (const n of names) { try { await root.removeEntry(n, { recursive: true }); erased++; } catch (_) { left++; } }
         }
-        tell("step Getting piii OS from piii.app…");
+        tell("step Getting piii-OS from piii.app…");
         const r = await fetch(url, { cache: "no-store" });
-        if (!r.ok) throw new Error("piii OS could not be downloaded (the site answered " + r.status + ")");
+        if (!r.ok) throw new Error("piii-OS could not be downloaded (the site answered " + r.status + ")");
         const bin = new Uint8Array(await r.arrayBuffer());
         if (bin.length < 4096 || bin[0] !== 0x4d || bin[1] !== 0x5a) throw new Error("what was downloaded is not a UEFI program");
         const inEfi = root.name.toUpperCase() === "EFI";
@@ -868,7 +868,7 @@ const ops = {
             await w.write(old); await w.close(); kept = "1";
           }
         } catch (_) { /* nothing there before */ }
-        tell("step Writing piii OS to the drive…");
+        tell("step Writing piii-OS to the drive…");
         const fh = await boot.getFileHandle("BOOTX64.EFI", { create: true });
         const w = await fh.createWritable();
         await w.write(bin); await w.close();

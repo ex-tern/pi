@@ -46,7 +46,7 @@ pub enum Tool {
     Grid,
     // vpn.rs: your own VPN service
     Vpn,
-    // os.rs: piii OS onto a flash drive
+    // os.rs: piii-OS onto a flash drive
     OsFlash,
     // portal.rs: the open portal
     Portal,
