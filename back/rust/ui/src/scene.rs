@@ -199,9 +199,11 @@ fn is_gone(id: usize) -> bool {
     // everything on the canvas (owner, 2026-10-14: "delete all these things", everything on it): the sidebar reaches
     // every part of the site, and lock, chain and reset stay, under the bar. What you add (a double click: a sparkle,
     // a double right click: a super) still goes on it.
-    // the sidebar and the bar are gone too (owner, 2026-10-17): their supers with them
-    let _ = id;
-    true
+    // the legacy navigation is kept (owner, 2026-10-17): the sidebar's and the bar's supers sit pinned under them
+    if rail_pin(id).is_some() {
+        return host::vw() < 700.0;
+    }
+    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET)
 }
 
 /// The controls on the bar, in its order: their supers sit pinned under its buttons. No ▶ or ■ (owner, 2026-10-17:

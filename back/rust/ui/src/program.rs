@@ -1988,7 +1988,7 @@ const PROG_CSS: &str = "\
 .chip:hover,.ex:hover{border-color:var(--accent);color:var(--accent)}\
 .ex-list{display:flex;flex-direction:column;gap:5px}\
 .ex{font:inherit;font-size:13.5px;text-align:left;border:1px solid #2b2b2b;background:#fbfbf9;padding:4px 10px;cursor:pointer}\
-.ctl-bar{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:2147483000}\
+.ctl-bar{position:fixed;top:10px;left:50%;transform:translateX(-50%);display:flex;gap:12px;z-index:2147483090}\
 .ctl-bar .ric{position:relative}.ctl-bar svg.ci{width:20px;height:20px;stroke-width:1.8}\
 @media (max-width:699px){.ctl-bar{top:auto;bottom:80px;gap:10px}}\
 ";

@@ -209,7 +209,7 @@ border:1px solid var(--line);border-radius:28px;color:var(--ink);transition:tran
 .canvas .foot-in{justify-content:center}
 /* focus: the open super fills the canvas; everything else is an icon in the rail */
 .focus{min-height:100vh}
-.rail{position:fixed;left:0;top:0;bottom:0;width:68px;z-index:2147482999;display:flex;flex-direction:column;align-items:center;gap:8px;
+.rail{position:fixed;left:0;top:0;bottom:0;width:68px;z-index:2147483090;display:flex;flex-direction:column;align-items:center;gap:8px;
 padding:12px 0;background:var(--paper);border-right:1px solid var(--line)}
 .ric{position:relative;flex:none;width:44px;height:44px;border-radius:14px;border:1px solid var(--line2);background:var(--card);
 display:grid;place-items:center;color:var(--ink);font-weight:600;font-size:13px;transition:transform .15s ease,border-color .15s ease}
@@ -226,7 +226,7 @@ overflow:hidden;text-overflow:ellipsis}
 .rscroll{flex:1 1 auto;min-height:0;width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;overflow-y:auto;overflow-x:hidden;padding:0 0 6px}
 .rfoot{flex:none;display:flex;flex-direction:column;align-items:center;gap:8px;padding-top:6px}
 @media (max-width:699px){.rscroll{flex-direction:row;overflow-x:auto;overflow-y:hidden;height:100%;width:auto;padding:0 6px 0 0}.rfoot{flex-direction:row;padding:0 0 0 6px}}button.ric{font:inherit;padding:0;cursor:pointer}
-.focus.peek .win{left:calc(12px + (100vw - 24px) * .15);right:calc((100vw - 24px) * .15 + 12px);top:15vh;bottom:15vh;box-shadow:0 30px 80px -30px rgba(20,20,30,.45)}
+.focus.peek .win{left:calc(88px + (100vw - 100px) * .15);right:calc((100vw - 100px) * .15 + 12px);top:15vh;bottom:15vh;box-shadow:0 30px 80px -30px rgba(20,20,30,.45)}
 .focus.peek .scene{z-index:0}
 .win-grip{position:absolute;z-index:3;touch-action:none}.win-grip.r{top:60px;right:0;bottom:22px;width:8px;cursor:ew-resize}.win-grip.b{left:22px;right:22px;bottom:0;height:8px;cursor:ns-resize}.win-grip.c{right:0;bottom:0;width:22px;height:22px;cursor:nwse-resize;background:linear-gradient(135deg,transparent 50%,var(--line2) 50%,var(--line2) 56%,transparent 56%,transparent 70%,var(--line2) 70%,var(--line2) 76%,transparent 76%)}
 .win.picked{outline:3px solid var(--accent);outline-offset:2px}
@@ -443,7 +443,7 @@ html.shift-on,html.shift-on *{cursor:move!important}
 .wire-note{position:absolute;left:16px;bottom:14px;z-index:5;padding:7px 12px;background:var(--ink);color:var(--paper);font-size:13px;
 max-width:min(520px,calc(100% - 32px))}
 /* the π canvas, floating on top of an open super */
-.win{left:12px}
+.win{left:88px}
 .scene.floating{position:fixed;inset:auto;right:18px;bottom:18px;z-index:30;background:var(--paper);overflow:hidden;
 box-shadow:0 22px 50px -18px rgba(20,20,30,.45)}
 .scene.floating .frame{border-width:2px}
@@ -454,7 +454,7 @@ box-shadow:0 22px 50px -18px rgba(20,20,30,.45)}
 color:var(--paper);font-size:16px;line-height:1}
 .pi-tab:hover{text-decoration:none;background:var(--accent)}
 /* a window resized larger than the screen (or kept from a bigger one) still shows its every edge */
-.win{max-width:calc(100vw - 24px);max-height:calc(100vh - 24px)}
+.win{max-width:calc(100vw - 100px);max-height:calc(100vh - 24px)}
 .focus.peek .win{max-width:calc((100vw - 100px) * .85 - 12px);max-height:calc(85vh - 12px)}
 @media (max-width:699px){.scene.floating{top:auto;right:12px;bottom:76px}.win{left:8px;bottom:136px;min-width:0;max-width:calc(100vw - 16px);max-height:calc(100vh - 144px)}}
 /* phones (owner, 2026-10-15): the controls on top, and a window fills all the screen between them and the rail */

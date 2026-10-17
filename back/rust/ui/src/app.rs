@@ -1900,6 +1900,9 @@ fn view(s: &State) -> N {
             .cls("focus home")
             .cls_if(s.trans.0 == 2 && host::now() - s.trans.2 < 600.0, "back-in")
             .kid(canvas_view(s))
+            // the legacy navigation stays beside the zoom (owner, 2026-10-17: "keep the legacy navigation")
+            .kid(rail(s))
+            .kid(ctl_bar(s))
             .kid_if(s.ai_level, || ai_level_view(s))
             .kid(ladder_view(s))
             .into()
@@ -1922,7 +1925,7 @@ fn view(s: &State) -> N {
         // what is open takes 70% of the canvas, which stays live around it (owner, 2026-10-14: "double clicking
         // anything opens it to 70% of the canvas"); on a phone it still takes the screen
         if s.peek && host::vw() >= 700.0 {
-            el("div").cls("focus peek").kid(scene_view(s, false)).kid(window_frame(s, page)).kid(ladder_view(s)).into()
+            el("div").cls("focus peek").kid(scene_view(s, false)).kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).kid(ladder_view(s)).into()
         } else {
             // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back.
             // The page's own π canvas is over it (owner, 2026-10-17: "Make the pi canvas work in every canvas"): what is
@@ -1942,8 +1945,10 @@ fn view(s: &State) -> N {
                     (fw / vw).clamp(0.05, 1.0),
                     (fh / vh).clamp(0.05, 1.0)
                 ))
+                .kid(rail(s))
                 .kid(window_frame(s, page))
                 .kid(scene_view(s, false))
+                .kid(ctl_bar(s))
                 .kid(ladder_view(s))
                 .into()
         }
