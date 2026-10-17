@@ -451,6 +451,44 @@ TOGETHER_API_KEY = get_secret("TOGETHER_API_KEY")
 ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
 CLAUDE_MODEL = (os.getenv("CLAUDE_MODEL") or "claude-haiku-5-5").strip()
 ANTHROPIC_OPENAI_BASE = "https://api.anthropic.com/v1"
+# a key not scoped to one workspace names the workspace with each request
+ANTHROPIC_WORKSPACE_ID = (os.getenv("ANTHROPIC_WORKSPACE_ID") or "").strip()
+
+
+def claude_ask(prompt: str, max_tokens: int = 700) -> Dict:
+    """One answer from Claude, through Anthropic's Messages API: {"answer", "model"} or {"failed"}."""
+    if not ANTHROPIC_API_KEY:
+        return {"failed": "not configured on this deployment"}
+    headers = {"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    if ANTHROPIC_WORKSPACE_ID:
+        headers["anthropic-workspace-id"] = ANTHROPIC_WORKSPACE_ID
+    try:
+        r = requests.post("https://api.anthropic.com/v1/messages", headers=headers, timeout=60,
+                          json={"model": CLAUDE_MODEL, "max_tokens": max_tokens,
+                                "messages": [{"role": "user", "content": prompt}]})
+        d = r.json() if r.content else {}
+    except Exception as e:                               # noqa: BLE001 -- said plainly, never raised into the page
+        return {"failed": f"Claude could not be reached ({type(e).__name__})"}
+    if not r.ok:
+        msg = ((d.get("error") or {}).get("message") or r.text or "")[:240]
+        logging.warning("Claude: %s %s", r.status_code, msg)
+        return {"failed": "Claude: " + (msg or f"HTTP {r.status_code}")}
+    text = "".join(b.get("text", "") for b in (d.get("content") or []) if b.get("type") == "text").strip()
+    if not text:
+        return {"failed": "Claude gave no answer"}
+    out: Dict = {"answer": text, "model": d.get("model") or CLAUDE_MODEL}
+    # asked for {"answer", "confidence"}: unpacked when it came that way
+    m = re.search(r"\{.*\}", text, re.S)
+    if m:
+        try:
+            j = json.loads(m.group(0))
+            if isinstance(j, dict) and str(j.get("answer") or "").strip():
+                out["answer"] = str(j["answer"]).strip()
+                if isinstance(j.get("confidence"), (int, float)):
+                    out["confidence"] = j["confidence"]
+        except ValueError:
+            pass
+    return out
 GITHUB_MODELS_TOKEN = get_secret("GITHUB_MODELS_TOKEN")
 ORCID_CLIENT_ID = get_secret("ORCID_CLIENT_ID")
 ORCID_CLIENT_SECRET = get_secret("ORCID_CLIENT_SECRET")
@@ -29190,9 +29228,8 @@ def _super_route_call(juror, prompt, routes):
 
 def _super_ask_juror(juror, prompt):
     if juror == "claude":
-        # Claude alone: never another model answering under its name
-        r = _route(CLAUDE_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_OPENAI_BASE, "Anthropic")
-        return _super_route_call(juror, prompt, [r] if r else [])
+        # Claude alone, through Anthropic's own API: never another model answering under its name
+        return claude_ask(prompt)
     return _super_route_call(juror, prompt, build_routes(juror))
 
 
