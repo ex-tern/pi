@@ -646,6 +646,24 @@ fn prog_ai_apply(q: String, v: Value, err: Option<String>) {
             }
         }
     }
+    // the super that shows the answer grows to hold all of it: nothing on the canvas scrolls (owner, 2026-10-17:
+    // "remove all traditional scrolling"); zoom in to read
+    {
+        let s = st();
+        let asker = s.prog.nodes.iter().find(|n| matches!(kind_of(&n.text), Kind::Ask(ref t) if q.starts_with(t.as_str()))).map(|n| n.id);
+        if let Some(a) = asker {
+            let shows: Vec<usize> = s.wires.iter().filter(|w| w.0 == a).map(|w| w.1).collect();
+            for n in s.prog.nodes.iter_mut().filter(|n| shows.contains(&n.id) && matches!(kind_of(&n.text), Kind::Show)) {
+                let w = if n.w > 0.0 { n.w } else { 380.0 };
+                // the canvas super's room: about two thirds of its width, 13px type
+                let per_line = ((w * 0.64) / 6.9).max(10.0) as usize;
+                let lines: usize = text.split('\n').map(|l| (l.chars().count() + per_line - 1) / per_line).map(|x| x.max(1)).sum();
+                let need = lines as f64 * 18.9 + w * 0.25 + 60.0;
+                n.w = w;
+                n.h = n.h.max(need).min(4000.0);
+            }
+        }
+    }
     let s = st();
     if let Some(i) = s.ai_chat_wait.iter().position(|x| *x == q) {
         s.ai_chat_wait.remove(i);
@@ -2241,7 +2259,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
             "left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px{}",
             r.0, r.1, r.2, r.3,
             // a canvas super's room, inside its curves: in its own size (a percentage would be of the stage's)
-            if canvas { format!(";padding:{:.1}px {:.1}px {:.1}px!important", r.3 * 0.15, r.2 * 0.17, r.3 * 0.14) } else { String::new() }
+            if canvas { format!(";padding:{:.1}px {:.1}px {:.1}px!important", (r.3 * 0.15).min(r.2 * 0.13), r.2 * 0.17, (r.3 * 0.14).min(r.2 * 0.12)) } else { String::new() }
         ))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(r.2.min(r.3) * kz) }))
@@ -2340,7 +2358,7 @@ const PROG_CSS: &str = "\
 .sx.unode.u-canvas .u-val{white-space:pre-wrap;overflow:hidden;text-overflow:clip;text-align:left;align-self:stretch;margin-top:8px;font-size:13px;line-height:1.45;color:var(--ink);font-weight:400}\
 .sx.unode.u-canvas{box-sizing:border-box}\
 .sx.unode.u-canvas .u-text{flex:none}\
-.sx.unode.u-canvas .u-val{flex:1 1 auto;min-height:0;width:100%;max-width:100%;box-sizing:border-box;padding:0 2px;overflow:auto;overflow-wrap:anywhere;scrollbar-width:thin;-webkit-mask-image:linear-gradient(#000 calc(100% - 18px),transparent)}\
+.sx.unode.u-canvas .u-val{flex:1 1 auto;min-height:0;width:100%;max-width:100%;box-sizing:border-box;padding:0 2px;overflow:hidden;overflow-wrap:anywhere;-webkit-mask-image:linear-gradient(#000 calc(100% - 18px),transparent)}\
 .unode.k-ask .u-val{color:var(--accent)}\
 .u-text{font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;border:0;background:transparent;width:100%;padding:0;color:var(--ink);text-align:center;outline:none;cursor:text}\
 .sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
@@ -2368,12 +2386,13 @@ const PROG_CSS: &str = "\
 .ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
 .ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
 .sx.unode.u-nameless .u-text,.sx.unode.u-canvas.u-nameless .u-text{display:none!important}\
+.sx.unode.u-canvas.u-nameless .u-val{margin-top:0!important;align-self:stretch}\
 .sx.unode.u-display .u-val{font-size:16px;color:var(--ink);text-align:center;max-width:100%;overflow-wrap:anywhere}\
-.sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc;scrollbar-width:thin}\
+.sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc}\
 .sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
 .sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
 .ai-bubble.chatting{justify-content:flex-start;padding-top:9%}\
-.ai-thread{width:100%;max-height:44%;overflow:auto;display:flex;flex-direction:column;gap:12px;padding:4px 2px 2px;scrollbar-width:thin;mask-image:linear-gradient(transparent,#000 14px)}\
+.ai-thread{width:100%;max-height:44%;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;justify-content:flex-end;gap:12px;padding:4px 2px 2px;mask-image:linear-gradient(transparent,#000 14px)}\
 .ai-turn{display:flex;flex-direction:column;gap:4px}\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:#eef0fd;color:#1d1d1b;font-size:13.5px;line-height:1.4}\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:#3b3a36;white-space:pre-wrap}\
