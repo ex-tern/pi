@@ -93,7 +93,7 @@ fn unode(s: &State, id: usize) -> Option<&UNode> {
 /// only widens when what is typed in it needs the room.
 const MADE: f64 = 88.0;
 /// A new super's side: the smallest, a voice message
-const SUPER_START: f64 = 52.0;
+const SUPER_START: f64 = 40.0;
 
 fn unode_size(text: &str) -> (f64, f64) {
     if text == SPARKLE {
@@ -1228,10 +1228,17 @@ fn prog_update(a: u16, v: String) {
     let id = UBASE + (a >> 4) as usize;
     match a & 15 {
         P_TEXT => {
+            let before = s.prog.nodes.iter().find(|n| n.id == id).map(|n| n.text.clone()).unwrap_or_default();
             if let Some(n) = s.prog.nodes.iter_mut().find(|n| n.id == id) {
                 n.text = v;
-                s.prog.regs.remove(&id);
+                // typed into a tiny super: it takes its words' size
+                if before.trim().is_empty() && n.w > 0.0 && n.w < BAND[1] && !n.text.trim_start().starts_with('"') {
+                    n.w = 0.0;
+                    n.h = 0.0;
+                }
             }
+            s.prog.regs.remove(&id);
+            weigh_in(id, &before);
             prog_save();
         }
         P_ADD => {
@@ -1526,7 +1533,7 @@ fn canvas_add(sup: bool, at: &str) {
     st().prog.sel = Some(id);
     prog_save();
     note(if sup {
-        "A super: press its microphone to speak into it; make it bigger for a file, typing, then a picture".to_string()
+        "A super, empty: make it bigger to type, then for a voice message, a picture, a video, a file".to_string()
     } else {
         "A sparkle: a junction that passes on what arrives".to_string()
     });
@@ -1574,13 +1581,44 @@ fn super_mode(s: &State, n: &UNode, display: bool, mini: bool) -> u8 {
         return 0;
     }
     let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
-    match w.min(h) {
-        x if x < 60.0 => 1,
-        x if x < 84.0 => 2,
-        x if x < 200.0 => 3,
-        x if x < 360.0 => 4,
-        // bigger than a picture: a video (owner, 2026-10-17: "if picture super gets bigger, it goes to videos")
-        _ => 5,
+    // by weight (owner, 2026-10-17: "an empty new super is empty byte, then the heavier the file gets, the bigger it
+    // gets: typing, then voice message, then picture, then movie, then the file")
+    let side = w.min(h);
+    if side < BAND[0] { 6 } else if side < BAND[1] { 3 } else if side < BAND[2] { 1 } else if side < BAND[3] { 4 } else if side < BAND[4] { 5 } else { 2 }
+}
+
+/// Where each kind begins, by a super's shorter side: typing, a voice message, a picture, a video, a file (below the
+/// first, it is empty).
+const BAND: [f64; 5] = [48.0, 96.0, 150.0, 240.0, 380.0];
+
+/// What went into a super, by its weight, makes it at least the size of that kind: typed words, a voice message (words
+/// in quotes), a picture, a video, a file (a long text).
+fn weigh_in(id: usize, before: &str) {
+    if !before.trim().is_empty() {
+        return;
+    }
+    let Some(n) = st().prog.nodes.iter_mut().find(|n| n.id == id) else { return };
+    let t = n.text.trim();
+    if t.is_empty() || t == SPARKLE {
+        return;
+    }
+    let quoted = t.starts_with('"') || t.starts_with('“');
+    let inner = t.trim_matches(|c| c == '"' || c == '“' || c == '”');
+    let side = if inner.starts_with("data:image/") {
+        BAND[2] + 30.0
+    } else if inner.starts_with("video:") {
+        BAND[3] + 40.0
+    } else if quoted && inner.len() > 280 {
+        BAND[4] + 40.0
+    } else if quoted {
+        BAND[1] + 20.0
+    } else {
+        return; // typed: it is sized to its words
+    };
+    let w = if n.w > 0.0 { n.w } else { 0.0 };
+    if w < side {
+        n.w = side;
+        n.h = side;
     }
 }
 
@@ -1591,7 +1629,7 @@ fn pic_words(s: &State, n: &UNode) -> Option<String> {
         return None;
     }
     let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
-    if !(200.0..360.0).contains(&w.min(h)) {
+    if !(BAND[2]..BAND[3]).contains(&w.min(h)) {
         return None;
     }
     match s.prog.vals.get(&n.id) {
@@ -2471,7 +2509,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         // exists")
         .cls_if(matches!(k, Kind::Show) || display || picture.is_some() || video.is_some(), "u-nameless")
         .cls_if(picture.is_some() || video.is_some(), "u-picture")
-        .cls(match mode { 1 => "m-voice", 2 => "m-file", 3 => "m-type", 4 => "m-pic", 5 => "m-vid", _ => "m-none" })
+        .cls(match mode { 1 => "m-voice", 2 => "m-file", 3 => "m-type", 4 => "m-pic", 5 => "m-vid", 6 => "m-empty", _ => "m-none" })
         .cls_if(display, "u-display")
         .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
@@ -2661,7 +2699,7 @@ const PROG_CSS: &str = "\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:var(--accent-soft);color:var(--ink);font-size:13.5px;line-height:1.4}\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}\
 .ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid var(--line)!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
-.sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text,.sx.unode.m-vid>.u-text{display:none!important}\
+.sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text,.sx.unode.m-vid>.u-text,.sx.unode.m-empty>.u-text{display:none!important}\
 .sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0;text-align:center!important}\
 .u-mode{position:absolute;inset:0;margin:auto;display:grid;place-items:center;align-content:center;gap:6px;width:62%;height:62%;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .u-mode:hover{color:var(--accent);transform:scale(1.08)}.u-mode svg{width:min(34px,70%);height:auto;max-height:70%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}\
