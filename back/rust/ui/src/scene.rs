@@ -2372,6 +2372,12 @@ pub fn on_key(key: &str) -> bool {
         render();
         return true;
     }
+    // asked whether to delete something: Enter deletes, Escape keeps it
+    if s.del_ask.is_some() && (key == "Escape" || key == "Enter") {
+        prog_update(P_DEL_ANSWER, if key == "Enter" { "yes" } else { "no" }.to_string());
+        render();
+        return true;
+    }
     match key {
         "Escape" if (s.sup_pick.is_some() || s.float_pick || s.win_pick) && s.modal.is_none() && s.held_port.is_none() => {
             s.sup_pick = None;
@@ -2632,15 +2638,13 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
                 if let Some(t) = unode(s, d.id).map(|n| n.text.clone()) {
                     open_place(&t);
                 }
-            } else if !d.moved && is_unode(d.id) && d.free && !touching() && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && !unode(s, d.id).map(unode_is_canvas).unwrap_or(false) {
-                // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14); not
-                // with a finger, where a double tap is too easy to make by accident (owner, 2026-10-15)
+            } else if !d.moved && is_unode(d.id) && d.free && !touching() && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 {
+                // a super or sparkle of yours, unlocked and double clicked: it asks first, in a bubble of its own shape,
+                // then goes with its wires (owner, 2026-10-17: "double clicking deletes a super and sparkle or any
+                // element, and ask for confirmation before doing so, with the same style as the supers"); not with a
+                // finger, where a double tap is too easy to make by accident (owner, 2026-10-15)
                 s.last_tap = (usize::MAX, None, 0.0);
-                s.free.retain(|i| *i != d.id);
-                s.locked.retain(|i| *i != d.id);
-                locked_save();
-                prog_remove(d.id);
-                layout_save();
+                s.del_ask = Some(d.id);
             } else if !d.moved && (is_ctl_super(d.id) || matches!(d.id, S_TITLE | S_RUN | S_CLEAR) || is_unode(d.id)) {
                 // the controls are buttons: one click does it
                 if is_unode(d.id) {

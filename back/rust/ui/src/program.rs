@@ -1172,6 +1172,8 @@ const P_LADDER: u16 = 9;
 const P_DROP: u16 = 10;
 /// π in the sidebar: home, the welcome view, centred on π
 const P_HOME: u16 = 11;
+/// the answer to "delete it?": "yes" or "no"
+const P_DEL_ANSWER: u16 = 15;
 /// files chosen to send to Super AI (the host's file list), and one taken off again (its index)
 const P_AI_FILES: u16 = 12;
 const P_AI_UNFILE: u16 = 13;
@@ -1342,6 +1344,24 @@ fn prog_update(a: u16, v: String) {
         }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
+        P_DEL_ANSWER => {
+            if let Some(id) = s.del_ask.take() {
+                if v == "yes" {
+                    let s = st();
+                    s.free.retain(|i| *i != id);
+                    s.locked.retain(|i| *i != id);
+                    locked_save();
+                    // what is drawn inside a canvas super goes with it
+                    let inside = unode_inside(s, id);
+                    for i in inside {
+                        prog_remove(i);
+                    }
+                    prog_remove(id);
+                    prog_save();
+                    layout_save();
+                }
+            }
+        }
         P_OPEN => {
             if let Some(t) = unode(s, id).map(|n| n.text.clone()) {
                 open_place(&t);
@@ -1560,6 +1580,88 @@ fn super_mode(s: &State, n: &UNode, display: bool, mini: bool) -> u8 {
         x if x < 200.0 => 3,
         _ => 4,
     }
+}
+
+/// A picture super wired with words (owner, 2026-10-17: "if these two connected, they should generate a picture of
+/// animal"): an empty super of picture size with something wired into it. The words it is given, if any.
+fn pic_words(s: &State, n: &UNode) -> Option<String> {
+    if !n.text.trim().is_empty() || !s.wires.iter().any(|w| w.1 == n.id) {
+        return None;
+    }
+    let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
+    if w.min(h) < 200.0 {
+        return None;
+    }
+    match s.prog.vals.get(&n.id) {
+        Some(Value::Str(t)) if !t.trim().is_empty() => Some(t.trim().to_string()),
+        Some(v) if !v.is_null() => Some(vtext(v)).filter(|t| !t.trim().is_empty()),
+        _ => None,
+    }
+}
+
+/// Every picture super that has words and no picture of them yet asks for one (once per words).
+fn pictures_want() {
+    let s = st();
+    let want: Vec<String> = s.prog.nodes.iter().filter_map(|n| pic_words(s, n)).filter(|t| !t.starts_with("data:image/")).collect();
+    for q in want {
+        let s = st();
+        if s.pics.iter().any(|p| p.0 == q) {
+            continue;
+        }
+        s.pics.push((q.clone(), String::new()));
+        let n = s.pics.len().saturating_sub(24);
+        s.pics.drain(..n);
+        request(Want::ProgPic(q.clone()), "POST", "/api/super/picture", &format!("{{\"prompt\":{}}}", json::quote(&q)), 0);
+    }
+}
+
+fn pic_apply(q: String, v: Value, err: Option<String>) {
+    let s = st();
+    let got = match err {
+        Some(e) => format!("!{}", e),
+        None => v.get("image").str().to_string(),
+    };
+    if let Some(p) = s.pics.iter_mut().find(|p| p.0 == q) {
+        p.1 = if got.is_empty() { "!no picture came back".to_string() } else { got };
+    }
+}
+
+/// "Delete it?" beside the super or sparkle double clicked, in a bubble shaped as the supers are; Enter deletes, Escape
+/// keeps it.
+fn del_ask_view(s: &State) -> N {
+    let Some(id) = s.del_ask else { return el("span").into() };
+    let Some(n) = unode(s, id) else { return el("span").into() };
+    let g = geo(s);
+    let (x, y, w, h) = rect(&g, id);
+    let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
+    let what = if n.text == SPARKLE {
+        "this sparkle".to_string()
+    } else if n.text.trim().is_empty() {
+        "this super".to_string()
+    } else {
+        let t: String = n.text.trim().trim_start_matches(MEMBER).chars().take(28).collect();
+        format!("“{}”", t)
+    };
+    let inside = unode_inside(s, id).len();
+    let (vw, vh) = (host::vw(), host::vh());
+    // beside it, on the side with room, kept in the window
+    let left = if sx + sw + 250.0 < vw { sx + sw + 14.0 } else { (sx - 250.0).max(8.0) };
+    let top = (sy + sh / 2.0 - 70.0).clamp(8.0, (vh - 150.0).max(8.0));
+    el("div")
+        .cls("del-ask")
+        .attr("role", "alertdialog")
+        .attr("aria-label", "Delete it?")
+        .attr("data-stop", "1")
+        .style(format!("left:{:.0}px;top:{:.0}px", left, top))
+        .kid(se_shape_n(core::f64::consts::PI))
+        .kid(el("p").cls("del-q").text(format!("Delete {}?", what)))
+        .kid_if(inside > 0, || el("p").cls("del-n").text(format!("and the {} inside it", inside)).into())
+        .kid(
+            el("div").cls("del-row")
+                .kid(el("button").attr("type", "button").cls("del-no").on("click", Msg::T(Tool::Prog, P_DEL_ANSWER, "no".to_string())).text("Keep"))
+                .kid(el("button").attr("type", "button").cls("del-yes").attr("autofocus", "").on("click", Msg::T(Tool::Prog, P_DEL_ANSWER, "yes".to_string())).text("Delete")),
+        )
+        .into()
 }
 
 fn unode_is_canvas(n: &UNode) -> bool {
@@ -2272,7 +2374,13 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     // it gets, the file must send, and then the typing, and then the picture")
     let mode = super_mode(s, n, display, mini);
     // a picture held: the super shows it
-    let picture = match &k { Kind::Const(Value::Str(t)) if t.starts_with("data:image/") => Some(t.clone()), _ => None };
+    let made = pic_words(s, n).map(|q| if q.starts_with("data:image/") { q.clone() } else { s.pics.iter().find(|p| p.0 == q).map(|p| p.1.clone()).unwrap_or_default() });
+    let picture = match &k {
+        Kind::Const(Value::Str(t)) if t.starts_with("data:image/") => Some(t.clone()),
+        _ => made.clone().filter(|m| m.starts_with("data:image/")),
+    };
+    // a picture being made, or why it could not be
+    let making = made.as_ref().map(|m| if m.is_empty() { "making a picture…".to_string() } else if let Some(e) = m.strip_prefix('!') { e.to_string() } else { String::new() }).filter(|t| !t.is_empty());
     let a = ((n.id - UBASE) as u16) << 4;
     // grown to half as big again as it was made (by area), a super is a canvas: its name up in the corner and room
     // below it (owner, 2026-10-14: "if a new super becomes 50% larger than its initial state, it turns into a canvas")
@@ -2340,6 +2448,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .prop("value", n.text.clone())
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
+        .kid_if(making.is_some(), || el("span").cls("u-making").cls_if(making.as_deref() != Some("making a picture…"), "err").text(making.clone().unwrap_or_default()).into())
         .kid_if(picture.is_some(), || el("img").cls("u-img").attr("alt", "").attr("draggable", "false").attr("src", picture.clone().unwrap_or_default()).into())
         .kid_if(mode == 1, || {
             el("button").attr("type", "button").cls("u-mode u-voice").attr("title", "Speak: what you say goes in").attr("aria-label", "Speak")
@@ -2366,7 +2475,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .into()
         })
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(picture.is_none() && (!n.text.trim().is_empty() || !shown.is_empty() || display), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
+        .kid_if(picture.is_none() && making.is_none() && (!n.text.trim().is_empty() || !shown.is_empty() || display), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2499,6 +2608,12 @@ const PROG_CSS: &str = "\
 .mic-on .u-voice{color:#fff;background:var(--accent)!important;border-radius:50%!important;width:70%;height:70%;animation:ai-mic 1.2s ease-in-out infinite}\
 .u-mode.reading{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
 .sx.unode.u-picture{padding:0!important;overflow:visible}.u-img{position:absolute;inset:7%;width:86%;height:86%;object-fit:cover;border-radius:22%;pointer-events:none}\
+.u-making{position:absolute;inset:0;margin:auto;height:fit-content;width:70%;text-align:center;font-size:14px;color:var(--accent);animation:ai-breathe 1.6s ease-in-out infinite}.u-making.err{color:var(--bad);animation:none;font-size:12.5px}\
+.del-ask{position:fixed;z-index:60;width:236px;height:132px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 22px;box-sizing:border-box;animation:pi-rise .25s cubic-bezier(.2,.75,.15,1) both}\
+.del-ask .u-shape{position:absolute;inset:0;width:100%;height:100%;z-index:-1;overflow:visible;filter:drop-shadow(0 14px 28px rgba(25,25,25,.18))}.del-ask .u-shape path{fill:var(--surface);stroke:var(--bad);stroke-width:1.8px;vector-effect:non-scaling-stroke}\
+.del-q{margin:0;font-size:14.5px;font-weight:600;color:var(--ink);text-align:center;overflow-wrap:anywhere}.del-n{margin:0;font-size:12.5px;color:var(--muted)}\
+.del-row{display:flex;gap:8px;margin-top:8px}.del-row button{font:inherit;font-size:13.5px;padding:6px 14px!important;border-radius:999px!important;cursor:pointer;box-shadow:none!important}\
+.del-no{background:none!important;border:1px solid var(--line2)!important;color:var(--ink)}.del-yes{background:var(--bad)!important;border:1px solid var(--bad)!important;color:#fff;font-weight:600}\
 .ai-clip{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .ai-clip:hover{color:var(--accent);transform:scale(1.1) rotate(-8deg)}.ai-clip.busy{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
 .ai-clip svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\

@@ -28148,6 +28148,58 @@ def attach_text(name: str, data: bytes) -> str:
     return data.decode("utf-8", "replace")
 
 
+class PictureAsk(BaseModel):
+    prompt: str
+
+
+def picture_make(prompt: str) -> Optional[str]:
+    """A picture of the words (owner, 2026-10-17: "if these two connected, they should generate a picture of animal"),
+    as a data URL: Together's FLUX first, then Google's image model; kept on disk, so the same words make the same
+    picture without asking again."""
+    key = hashlib.sha256(prompt.strip().lower().encode()).hexdigest()
+    cdir = os.path.join(BASE_DIR, "pictures")
+    cpath = os.path.join(cdir, key + ".txt")
+    if os.path.isfile(cpath):
+        with open(cpath) as f:
+            return f.read()
+    out = None
+    if TOGETHER_API_KEY and not out:
+        try:
+            r = requests.post(TOGETHER_BASE + "/images/generations", timeout=90,
+                              headers={"Authorization": "Bearer " + TOGETHER_API_KEY},
+                              json={"model": "black-forest-labs/FLUX.1-schnell-Free", "prompt": prompt, "width": 768,
+                                    "height": 768, "steps": 4, "n": 1, "response_format": "b64_json"})
+            if r.ok:
+                b64 = ((r.json().get("data") or [{}])[0]).get("b64_json")
+                if b64:
+                    out = "data:image/png;base64," + b64
+            else:
+                logging.info("picture: Together %s %s", r.status_code, r.text[:200])
+        except Exception as e:                           # noqa: BLE001 -- the next provider is tried
+            logging.info("picture: Together failed: %s", e)
+    if GEMINI_API_KEY and not out:
+        try:
+            r = requests.post("https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash-image:generateContent",
+                              params={"key": GEMINI_API_KEY}, timeout=90,
+                              json={"contents": [{"parts": [{"text": "Make a picture: " + prompt}]}],
+                                    "generationConfig": {"responseModalities": ["IMAGE"]}})
+            if r.ok:
+                for part in ((r.json().get("candidates") or [{}])[0].get("content") or {}).get("parts") or []:
+                    d = part.get("inlineData") or part.get("inline_data")
+                    if d and d.get("data"):
+                        out = "data:" + (d.get("mimeType") or d.get("mime_type") or "image/png") + ";base64," + d["data"]
+                        break
+            else:
+                logging.info("picture: Gemini %s %s", r.status_code, r.text[:200])
+        except Exception as e:                           # noqa: BLE001
+            logging.info("picture: Gemini failed: %s", e)
+    if out:
+        os.makedirs(cdir, exist_ok=True)
+        with open(cpath, "w") as f:
+            f.write(out)
+    return out
+
+
 def attached_block(files: List[Dict]) -> str:
     out = []
     for f in (files or [])[:5]:
@@ -28534,6 +28586,20 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
     def pi_language():
         """What Super AI is taught of the π language, for anyone (and any other model) to read."""
         return {"text": PI_LANGUAGE}
+
+    @router.post("/picture")
+    def picture(req: PictureAsk, request: Request):
+        """A picture of the words wired into a picture super."""
+        prompt = re.sub(r"\s+", " ", (req.prompt or "")).strip()[:600]
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Wire some words into it first.")
+        if declined(request, "ext"):
+            raise HTTPException(status_code=403, detail=WHY["ext"])
+        _limit_one(request, "picture")
+        img = picture_make(prompt)
+        if not img:
+            raise HTTPException(status_code=503, detail="No picture model answered (needs a Together or Gemini key).")
+        return {"image": img}
 
     @router.post("/attach")
     async def attach(request: Request, file: UploadFile = File(...)):

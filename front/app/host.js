@@ -468,11 +468,21 @@ const superPut = (el, text) => {
   f.value = '"' + text.replace(/"/g, "\u201d") + '"';
   f.dispatchEvent(new Event("input", { bubbles: true }));
 };
-let superRec = null;
+let superRec = null, modeWait = 0;
+// a double click on a super deletes it (after asking), so its microphone, paperclip and picture buttons wait a moment
+// before doing their own thing: a second click in that moment is the double click's
 addEventListener("click", (e) => {
-  const b = e.target.closest && e.target.closest(".u-voice");
-  if (!b) return;
+  const m = e.target.closest && e.target.closest(".u-mode");
+  if (!m || e.target.matches("input")) return;
   e.preventDefault(); e.stopPropagation();
+  clearTimeout(modeWait);
+  if (e.detail >= 2) return;
+  modeWait = setTimeout(() => {
+    if (m.classList.contains("u-voice")) superVoice(m);
+    else m.querySelector("input[type=file]")?.click();
+  }, 300);
+}, true);
+const superVoice = (b) => {
   if (superRec) { superRec.stop(); return; }
   const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
   if (!SR) { b.title = "Speaking isn't available in this browser"; return; }
@@ -482,7 +492,7 @@ addEventListener("click", (e) => {
   const done = () => { superRec = null; document.documentElement.classList.remove("mic-on"); if (said) superPut(b, said); };
   rec.onend = done; rec.onerror = done;
   try { rec.start(); superRec = rec; document.documentElement.classList.add("mic-on"); } catch (_) { done(); }
-}, true);
+};
 addEventListener("change", async (e) => {
   const inp = e.target;
   if (!(inp instanceof HTMLInputElement) || !inp.files || !inp.files[0]) return;

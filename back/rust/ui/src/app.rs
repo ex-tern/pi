@@ -134,6 +134,8 @@ enum Want {
     Tool(Tool, u8),
     Icons,
     ProgAi(String),
+    /// a picture made of the words wired into a picture super
+    ProgPic(String),
 }
 
 /// Something fetched: nothing yet, on its way, here, or failed.
@@ -267,6 +269,10 @@ struct State {
     /// its bubble that have no answer yet
     ai_chat: Vec<(String, String)>,
     ai_chat_wait: Vec<String>,
+    /// pictures made from words: (the words, the picture as a data URL; empty while it is being made, "!why" if not)
+    pics: Vec<(String, String)>,
+    /// a super or sparkle double clicked: asking whether to delete it
+    del_ask: Option<usize>,
     /// what Super AI answered in its bubble, the question, and whether it is thinking
     ai_answer: String,
     ai_asked: String,
@@ -516,6 +522,8 @@ pub fn start() {
         ai_q_files: Vec::new(),
         ai_chat: Vec::new(),
         ai_chat_wait: Vec::new(),
+        pics: Vec::new(),
+        del_ask: None,
         ai_answer: String::new(),
         ai_asked: String::new(),
         ai_busy: false,
@@ -971,6 +979,7 @@ fn tick() {
 }
 
 fn render() {
+    pictures_want();
     let view = view(st());
     if let Some(d) = DOM.get().as_mut() {
         d.render(view);
@@ -1522,6 +1531,7 @@ fn apply(want: Want, v: Value, err: Option<String>) {
         Want::Tool(t, w) => tool_apply(t, w, v, err),
         Want::Icons => icons_apply(v, err),
         Want::ProgAi(q) => prog_ai_apply(q, v, err),
+        Want::ProgPic(q) => pic_apply(q, v, err),
     }
 }
 
@@ -2026,6 +2036,7 @@ fn view(s: &State) -> N {
     // the push against a level's edge, as a ring filling in the middle of the window
     let push = push_shown();
     el("div").cls("app").cls_if(s.wire_mode, "wire-on").cls_if(s.group_mode, "group-on").kid(body)
+        .kid_if(s.del_ask.is_some(), || del_ask_view(s))
         .kid(el("div").cls("push-ring").cls_if(push > 0.02, "on").style(format!("--p:{:.3}", push))).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
 }
 
