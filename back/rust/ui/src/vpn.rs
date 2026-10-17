@@ -559,7 +559,8 @@ fn vmsg(v: &Vpn) -> N {
 
 fn vpn_view(s: &State) -> N {
     let v = &s.vpn;
-    let mut root = el("div").cls("tool vp");
+    // through Tailscale first (no router needed); a WireGuard server of your own below
+    let mut root = el("div").cls("tool vp").kid(ts_view(s)).kid(el("h3").cls("vp-own").text("Or: your own WireGuard server"));
     if v.server.is_empty() {
         return root.kid(connect_view(v)).kid(guide_view(v, true)).into();
     }

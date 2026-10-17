@@ -4830,6 +4830,11 @@ def enforce_database_schema(conn: sqlite3.Connection):
                         created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
                         hidden INTEGER DEFAULT 0)""")
     cursor.execute("CREATE INDEX IF NOT EXISTS idx_portal_ip ON portal_posts(ip_hash, created_at)")
+    # piii VPN through Tailscale: the names the owner gave the people invited (Tailscale keeps the invites)
+    cursor.execute("""CREATE TABLE IF NOT EXISTS ts_invites (
+                        id TEXT PRIMARY KEY,
+                        name TEXT DEFAULT '',
+                        created_at DATETIME DEFAULT CURRENT_TIMESTAMP)""")
     cursor.execute("""CREATE TABLE IF NOT EXISTS researcher_profiles (
                         account_key TEXT PRIMARY KEY, field TEXT, career_stage TEXT,
                         goal TEXT, idea TEXT, abstract TEXT, updated_at DATETIME)""")
@@ -6093,6 +6098,13 @@ RESET_GROUPS = {
         "tables": ["portal_posts"],
         "order": 75,
         "destroys": "portal posts",
+    },
+    "vpn_invites": {
+        "label": "VPN invites (names)",
+        "detail": "The names given to people invited to piii VPN through Tailscale (Tailscale keeps the invites).",
+        "tables": ["ts_invites"],
+        "order": 76,
+        "destroys": "VPN invite names",
     },
     "visits": {
         "label": "Visitor counts",
@@ -25474,6 +25486,245 @@ def proxy_leave():
     return r
 
 
+# ---------------------------------------------------------------------------
+# piii VPN through Tailscale (owner, 2026-10-17: "can tailscale be integrated to my website" — "do it"). No router
+# needed: the owner's computer runs Tailscale and offers itself as an exit node; piii.app shares that one device
+# with each person invited, allowed as an exit node (Tailscale's device invites). They sign in to Tailscale with
+# their own account, can reach nothing of the owner's but the way out, and do not count against the owner's plan.
+#
+# Settings (/etc/piii-site.env): TAILSCALE_API_KEY (tskey-api-…, made in Tailscale: Settings → Keys),
+# TAILSCALE_TAILNET (default "-": the key's own), TAILSCALE_EXIT_NODE (the computer's name, if it is not found by
+# itself), VPN_ADMIN_PASSWORD (to manage invites here; the site owner's signed session works too).
+# ---------------------------------------------------------------------------
+ts_router = APIRouter()
+TS_API = "https://api.tailscale.com/api/v2"
+TS_COOKIE = "pi_vpnadmin"
+EXIT_ROUTES = ("0.0.0.0/0", "::/0")
+
+
+def ts_key() -> str:
+    return (os.getenv("TAILSCALE_API_KEY") or "").strip()
+
+
+def ts_tailnet() -> str:
+    return (os.getenv("TAILSCALE_TAILNET") or "-").strip() or "-"
+
+
+def ts_admin_password() -> str:
+    return (os.getenv("VPN_ADMIN_PASSWORD") or "").strip()
+
+
+def ts_admin_token(pw: str) -> str:
+    secret = os.getenv("SESSION_SECRET", "").strip() or pw
+    return hmac.new(secret.encode(), ("vpnadmin:" + pw).encode(), hashlib.sha256).hexdigest()
+
+
+def ts_is_admin(request: Request) -> bool:
+    pw = ts_admin_password()
+    got = request.cookies.get(TS_COOKIE) or ""
+    if pw and got and hmac.compare_digest(got, ts_admin_token(pw)):
+        return True
+    try:
+        return auth_is_owner(identity_from_request(request, ""))
+    except Exception:                                      # noqa: BLE001
+        return False
+
+
+def ts_require_admin(request: Request):
+    if not ts_is_admin(request):
+        raise HTTPException(status_code=403, detail="Only the owner manages piii VPN. Enter the VPN admin password.")
+    if not ts_key():
+        raise HTTPException(status_code=503, detail="Tailscale is not connected: TAILSCALE_API_KEY is not set on the server.")
+
+
+def ts_call(method: str, path: str, body=None):
+    """Tailscale's API; its answer, or an HTTPException in plain words."""
+    try:
+        r = requests.request(method, TS_API + path, json=body, timeout=20,
+                             headers={"Authorization": "Bearer " + ts_key(), "Accept": "application/json"})
+    except requests.RequestException:
+        raise HTTPException(status_code=502, detail="Tailscale could not be reached from the server.")
+    if r.status_code == 401:
+        raise HTTPException(status_code=502, detail="Tailscale refused the API key: it is wrong or expired (keys last at most 90 days). Make a new one.")
+    if r.status_code == 403:
+        raise HTTPException(status_code=502, detail="The Tailscale API key may not do this. Make it as an owner or admin of the tailnet.")
+    if r.status_code >= 400:
+        try:
+            msg = r.json().get("message") or r.text
+        except ValueError:
+            msg = r.text
+        raise HTTPException(status_code=502, detail=f"Tailscale said: {str(msg)[:300]}")
+    if not r.content:
+        return {}
+    try:
+        return r.json()
+    except ValueError:
+        return {}
+
+
+def ts_exit_device(devices: list) -> Optional[dict]:
+    """The owner's computer: the one named in TAILSCALE_EXIT_NODE, else the one offering itself as an exit node."""
+    want = (os.getenv("TAILSCALE_EXIT_NODE") or "").strip().lower()
+    if want:
+        for d in devices:
+            if want in ((d.get("hostname") or "").lower(), (d.get("name") or "").lower().split(".")[0]):
+                return d
+    for d in devices:
+        if any(r in (d.get("advertisedRoutes") or []) for r in EXIT_ROUTES):
+            return d
+    host = socket.gethostname().lower()
+    for d in devices:
+        if (d.get("hostname") or "").lower() == host:
+            return d
+    return None
+
+
+def ts_online(d: dict) -> bool:
+    if d.get("connectedToControl") is not None:
+        return bool(d.get("connectedToControl"))
+    seen = d.get("lastSeen") or ""
+    try:
+        t = datetime.fromisoformat(seen.replace("Z", "+00:00"))
+        return (datetime.now(timezone.utc) - t).total_seconds() < 300
+    except ValueError:
+        return False
+
+
+def ts_names() -> dict:
+    conn = get_db_connection()
+    try:
+        return {r[0]: r[1] for r in conn.execute("SELECT id, name FROM ts_invites").fetchall()}
+    finally:
+        conn.close()
+
+
+class TsLogin(BaseModel):
+    password: str = ""
+
+
+class TsInvite(BaseModel):
+    name: str = ""
+    email: str = ""
+    multi: bool = False
+
+
+@ts_router.get("/api/ts/status")
+def ts_status(request: Request):
+    """Anyone: whether piii VPN runs through Tailscale here. The owner: the computer, and everyone invited."""
+    out = {"configured": bool(ts_key()), "admin": ts_is_admin(request), "can_login": bool(ts_admin_password())}
+    if not out["admin"] or not out["configured"]:
+        return out
+    devices = ts_call("GET", f"/tailnet/{ts_tailnet()}/devices?fields=all").get("devices", [])
+    d = ts_exit_device(devices)
+    if not d:
+        out["exit_node"] = None
+        out["devices_seen"] = [x.get("hostname") or x.get("name") for x in devices][:20]
+        return out
+    adv, ena = d.get("advertisedRoutes") or [], d.get("enabledRoutes") or []
+    out["exit_node"] = {
+        "id": d.get("nodeId") or d.get("id"), "name": d.get("hostname") or d.get("name"), "os": d.get("os"),
+        "online": ts_online(d), "last_seen": d.get("lastSeen"),
+        "offers_exit": all(r in adv for r in EXIT_ROUTES), "exit_approved": all(r in ena for r in EXIT_ROUTES),
+    }
+    names = ts_names()
+    invites = ts_call("GET", f"/device/{out['exit_node']['id']}/device-invites")
+    invites = invites if isinstance(invites, list) else invites.get("invites", [])
+    out["invites"] = [{
+        "id": i.get("id"), "name": names.get(str(i.get("id")), ""), "created": i.get("created"),
+        "accepted": bool(i.get("accepted")), "by": ((i.get("acceptedBy") or {}).get("loginName") or ""),
+        "email": i.get("email") or "", "multi": bool(i.get("multiUse")), "exit": bool(i.get("allowExitNode")),
+        "url": "" if i.get("accepted") and not i.get("multiUse") else (i.get("inviteUrl") or ""),
+    } for i in invites]
+    return out
+
+
+@ts_router.post("/api/ts/login")
+def ts_login(payload: TsLogin, request: Request):
+    check_rate_limit(get_client_ip(request), bucket="ts_login")
+    pw = ts_admin_password()
+    if not pw:
+        raise HTTPException(status_code=403, detail="No VPN admin password is set on the server (VPN_ADMIN_PASSWORD).")
+    if not hmac.compare_digest(payload.password.strip().encode(), pw.encode()):
+        raise HTTPException(status_code=401, detail="That is not the VPN admin password.")
+    r = JSONResponse({"admin": True})
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    r.set_cookie(TS_COOKIE, ts_admin_token(pw), max_age=60 * 60 * 24 * 30, httponly=True, samesite="strict", secure=secure, path="/")
+    return r
+
+
+@ts_router.post("/api/ts/logout")
+def ts_logout():
+    r = JSONResponse({"admin": False})
+    r.delete_cookie(TS_COOKIE, path="/")
+    return r
+
+
+@ts_router.post("/api/ts/approve-exit")
+def ts_approve_exit(request: Request):
+    """Lets the owner's computer be used as an exit node (it must offer itself: tailscale up --advertise-exit-node)."""
+    ts_require_admin(request)
+    devices = ts_call("GET", f"/tailnet/{ts_tailnet()}/devices?fields=all").get("devices", [])
+    d = ts_exit_device(devices)
+    if not d:
+        raise HTTPException(status_code=404, detail="Your computer is not in Tailscale yet (run the commands on it first).")
+    dev = d.get("nodeId") or d.get("id")
+    routes = ts_call("GET", f"/device/{dev}/routes")
+    adv = routes.get("advertisedRoutes") or []
+    if not all(r in adv for r in EXIT_ROUTES):
+        raise HTTPException(status_code=409, detail="Your computer does not offer itself as an exit node yet. On it: sudo tailscale set --advertise-exit-node")
+    enabled = sorted(set((routes.get("enabledRoutes") or []) + list(EXIT_ROUTES)))
+    ts_call("POST", f"/device/{dev}/routes", {"routes": enabled})
+    add_log("piii VPN: the computer is approved as Tailscale exit node.")
+    return {"approved": True}
+
+
+@ts_router.post("/api/ts/invite")
+def ts_invite(payload: TsInvite, request: Request):
+    """A new invite: the owner's computer shared with one person, as an exit node. Its link goes to them."""
+    ts_require_admin(request)
+    name = re.sub(r"[\x00-\x1f]", "", payload.name).strip()[:60]
+    email = payload.email.strip()[:200]
+    if email and not re.fullmatch(r"[^@\s]+@[^@\s]+\.[^@\s]+", email):
+        raise HTTPException(status_code=400, detail="That email address does not look right (or leave it empty for a link).")
+    devices = ts_call("GET", f"/tailnet/{ts_tailnet()}/devices?fields=all").get("devices", [])
+    d = ts_exit_device(devices)
+    if not d:
+        raise HTTPException(status_code=404, detail="Your computer is not in Tailscale yet (run the commands on it first).")
+    one = {"multiUse": bool(payload.multi), "allowExitNode": True}
+    if email:
+        one["email"] = email
+    got = ts_call("POST", f"/device/{d.get('nodeId') or d.get('id')}/device-invites", [one])
+    inv = (got[0] if isinstance(got, list) and got else got) or {}
+    iid = str(inv.get("id") or "")
+    if iid:
+        conn = get_db_connection()
+        try:
+            conn.execute("INSERT OR REPLACE INTO ts_invites (id, name, created_at) VALUES (?, ?, ?)",
+                         (iid, name, datetime.now().isoformat(timespec="seconds")))
+            conn.commit()
+        finally:
+            conn.close()
+    add_log("piii VPN: an invite was made.")
+    return {"id": iid, "url": inv.get("inviteUrl") or "", "emailed": bool(email), "name": name}
+
+
+@ts_router.post("/api/ts/invite/{invite_id}/delete")
+def ts_invite_delete(invite_id: str, request: Request):
+    """The invite withdrawn, and with it the person's use of the computer."""
+    ts_require_admin(request)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,80}", invite_id):
+        raise HTTPException(status_code=400, detail="Not an invite.")
+    ts_call("DELETE", f"/device-invites/{invite_id}")
+    conn = get_db_connection()
+    try:
+        conn.execute("DELETE FROM ts_invites WHERE id=?", (invite_id,))
+        conn.commit()
+    finally:
+        conn.close()
+    add_log("piii VPN: an invite was withdrawn.")
+    return {"deleted": invite_id}
+
+
 # ==============================================================================================================
 # routes/chain.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
@@ -27746,6 +27997,7 @@ app.include_router(reviewing_router)
 app.include_router(bugreport_router)
 app.include_router(portal_router)
 app.include_router(proxy_router)
+app.include_router(ts_router)
 app.include_router(assess_router)
 app.include_router(discover_router)
 app.include_router(scilem_router)

@@ -52,6 +52,8 @@ pub enum Tool {
     Portal,
     // proxy.rs: the web proxy
     Proxy,
+    // ts.rs: piii VPN through Tailscale (drawn inside the piii VPN tool)
+    TsVpn,
 }
 
 /// What every tool keeps.
@@ -104,6 +106,7 @@ fn tool_view(s: &State, t: Tool) -> N {
         Tool::OsFlash => os_view(s),
         Tool::Portal => portal_view(s),
         Tool::Proxy => proxy_view(s),
+        Tool::TsVpn => ts_view(s),
     }
 }
 
@@ -149,6 +152,7 @@ fn tool_load(t: Tool) {
     }
     if t == Tool::Vpn {
         vpn_load();
+        ts_load();
     }
     if t == Tool::Portal {
         portal_load();
@@ -173,6 +177,8 @@ fn tool_apply(t: Tool, what: u8, v: Value, err: Option<String>) {
         portal_apply(what, v, err);
     } else if t == Tool::Proxy {
         proxy_apply(what, v, err);
+    } else if t == Tool::TsVpn {
+        ts_apply(what, v, err);
     } else if t == Tool::Learn {
         learn_apply(v, err);
     } else if matches!(t, Tool::Ledger | Tool::Board | Tool::Donate) {
@@ -214,6 +220,7 @@ fn tool_update(t: Tool, a: u16, v: String) {
         Tool::OsFlash => os_update(a, v),
         Tool::Portal => portal_update(a, v),
         Tool::Proxy => proxy_update(a, v),
+        Tool::TsVpn => ts_update(a, v),
         _ => tools2_update(t, a, v),
     }
 }
