@@ -95,11 +95,20 @@ const MADE: f64 = 88.0;
 /// A new super's side: the smallest, a voice message
 const SUPER_START: f64 = 40.0;
 
+/// The Super AI super on the home canvas, with its chat in it, in the canvas's units.
+const AI_HUB_W: f64 = 460.0;
+const AI_HUB_H: f64 = 330.0;
+
 fn unode_size(text: &str) -> (f64, f64) {
     if text == SPARKLE {
         return (MADE, MADE);
     }
     if text.starts_with(MEMBER) {
+        // Super AI is its chat, so it is bigger than the places round it (owner, 2026-10-17: "merge picture one, put
+        // to picture two")
+        if text.strip_prefix(MEMBER) == Some("Super AI") {
+            return (AI_HUB_W, AI_HUB_H);
+        }
         // a member keeps the size it had on its group's board
         return (220.0, 104.0);
     }
@@ -1347,7 +1356,7 @@ fn prog_update(a: u16, v: String) {
             if !s.ai_chat_wait.contains(&q) {
                 s.ai_chat_wait.push(q.clone());
             }
-            ai_ask_on_canvas(&q);
+            ai_ask_on_canvas(&q, s.ai_level > 0);
         }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
@@ -1878,6 +1887,27 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -
     let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
     let v = if name == "Your account" && v.is_empty() { account_status(s) } else { v };
     let pien = st().t2.pien.pick.as_deref() == Some(name);
+    // Super AI on the home canvas, near enough to read: its chat, typed into where it stands (owner, 2026-10-17:
+    // "merge picture one, put to picture two"); held by its edge or its π to move it
+    if name == "Super AI" && !mini && px >= 150.0 && s.ctx.is_empty() {
+        let answered = !s.ai_answer.is_empty() || s.ai_busy;
+        return el("div")
+            .cls("sx unode k-member ai-hub")
+            .cls_if(answered, "answered")
+            .cls_if(!answered && !s.ai_chat.is_empty(), "chatting")
+            .cls_if(s.ai_busy, "busy")
+            .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(locked(s, n.id), "is-locked")
+            .attr("data-s", format!("{}", n.id))
+            .attr("data-solid", "1")
+            .attr("aria-label", "Super AI")
+            .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
+            .on("pdown", Msg::PDown(n.id, String::new()))
+            .cls_if(px > 300.0, "u-big")
+            .kid(se_shape_n(se_n_for(px)))
+            .kid(ai_chat(s, 2))
+            .kid_if(s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
+            .into();
+    }
     el("div")
         .cls("sx unode k-member")
         .cls_if(pien, "pien")
@@ -2004,6 +2034,18 @@ fn ai_level_view(s: &State) -> N {
                 .cls_if(!answered && !s.ai_chat.is_empty(), "chatting")
                 .cls_if(s.ai_busy, "busy")
                 .kid(se_shape_n(2.25))
+                .kid(ai_chat(s, 4)),
+        )
+        .into()
+}
+
+/// What Super AI's bubble holds: π, the question with a file, the microphone and ▶, the conversation (its last turns)
+/// and the answer. The same in the bubble and in the Super AI super on the canvas (owner, 2026-10-17: "merge picture
+/// one, put to picture two").
+fn ai_chat(s: &State, turns: usize) -> N {
+    let answered = !s.ai_answer.is_empty() || s.ai_busy;
+    el("div")
+        .cls("ai-chat")
                 .kid(el("span").cls("ai-spark").kid(pi_logo(true)))
                 .kid(
                     el("div")
@@ -2075,7 +2117,7 @@ fn ai_level_view(s: &State) -> N {
                 )
                 // the conversation so far, the latest last (owner, 2026-10-17: "improve our chat")
                 .kid_if(!s.ai_chat.is_empty() && !answered, || {
-                    let n = s.ai_chat.len().saturating_sub(4);
+                    let n = s.ai_chat.len().saturating_sub(turns);
                     let mut t = el("div").cls("ai-thread");
                     for (q, a) in s.ai_chat[n..].iter() {
                         let a: String = if a.chars().count() > 280 { a.chars().take(279).collect::<String>() + "…" } else { a.clone() };
@@ -2114,14 +2156,13 @@ fn ai_level_view(s: &State) -> N {
                             el("div").cls("ai-a").text(s.ai_answer.clone())
                         })
                         .into()
-                }),
-        )
+                })
         .into()
 }
 
 /// A question to Super AI on the home canvas: the hub wired into a super of the words, wired into a show that the
 /// answer opens in. The view goes down to them.
-fn ai_ask_on_canvas(q: &str) {
+fn ai_ask_on_canvas(q: &str, go_there: bool) {
     let s = st();
     s.ai_level = 0;
     s.zoom_nav_at = host::now();
@@ -2164,6 +2205,10 @@ fn ai_ask_on_canvas(q: &str) {
     s.prog.sel = Some(show);
     wires_save();
     prog_save();
+    // asked in the Super AI super on the canvas: the view stays on it, and the answer shows in it too
+    if !go_there {
+        return;
+    }
     // the view: both, filling the window
     s.zoom = 1.0;
     let g = geo(s);
@@ -2707,6 +2752,12 @@ const PROG_CSS: &str = "\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:var(--accent-soft);color:var(--ink);font-size:13.5px;line-height:1.4}\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}\
 .ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid var(--line)!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
+.ai-chat{display:contents}\
+.sx.unode.ai-hub{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:0 46px!important;box-sizing:border-box;overflow:visible}\
+.sx.unode.ai-hub.answered,.sx.unode.ai-hub.chatting{justify-content:flex-start;padding-top:34px!important}\
+.ai-hub .ai-spark .pi-logo{width:60px;height:60px}.ai-hub.chatting .ai-spark .pi-logo,.ai-hub.answered .ai-spark .pi-logo{width:44px;height:44px}\
+.ai-hub .ai-row{max-width:100%}.ai-hub .ai-row input{font-size:16px;padding:7px 2px;cursor:text}\
+.ai-hub .ai-thread{max-height:46%}.ai-hub .ai-answer{max-height:48%;overflow:hidden;width:100%}\
 .sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text,.sx.unode.m-vid>.u-text,.sx.unode.m-empty>.u-text{display:none!important}\
 .sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0;text-align:center!important}\
 .u-mode{position:absolute;inset:0;margin:auto;display:grid;place-items:center;align-content:center;gap:6px;width:62%;height:62%;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\

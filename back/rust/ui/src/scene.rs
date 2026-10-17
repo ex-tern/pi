@@ -3369,7 +3369,7 @@ fn world_sync() {
     if !st().ctx.is_empty() {
         return;
     }
-    let again = host::store_get("piii:world-v").as_deref() != Some("7");
+    let again = host::store_get("piii:world-v").as_deref() != Some("8");
     let (cx, cy) = screen_to_node(host::vw() / 2.0, host::vh() / 2.0);
     let (rx, ry) = (470.0, 345.0);
     let mut changed = false;
@@ -3443,7 +3443,7 @@ fn world_sync() {
             }
         }
         wires_save();
-        host::store_set("piii:world-v", "7");
+        host::store_set("piii:world-v", "8");
         host::store_set("piii:world-links", "1");
     }
     if changed {

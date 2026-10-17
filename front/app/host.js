@@ -65,9 +65,11 @@ const host = {
   release: (id) => { nodes[id] = undefined; freed.push(id); },
   listen: (id, kp, kl) => {
     const n = nodes[id], k = str(kp, kl);
-    if (k === "enter") n.addEventListener("keydown", (e) => { if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(id, k, n.value || ""); } });
+    if (k === "enter") n.addEventListener("keydown", (e) => { if (e.target !== n && e.target.closest && e.target.closest("input, textarea")) return; if (e.key === "Enter" && !e.isComposing) { e.preventDefault(); send(id, k, n.value || ""); } });
     // a press: x, y, then how: 0 a click, 1 shift + click (drags), 2 the middle button (resizes)
     else if (k === "pdown") n.addEventListener("pointerdown", (e) => {
+      // Super AI's chat on the canvas: its field, buttons and conversation are used, not dragged
+      if (e.target.closest && e.target.closest(".ai-hub .ai-row, .ai-hub .ai-thread, .ai-hub .ai-files, .ai-hub .ai-answer")) return;
       if (e.button === 1) e.preventDefault();
       // the corner grip of a selected super resizes, as the middle button does (a finger has neither)
       const grip = e.target.closest && e.target.closest("[data-resize]");
@@ -576,7 +578,7 @@ addEventListener("click", (e) => {
   };
   const done = () => {
     micRec = null; document.documentElement.classList.remove("mic-on");
-    if (said) setTimeout(() => { const go = document.querySelector(".ai-play"); if (go && !go.disabled) go.click(); }, 80);
+    if (said) setTimeout(() => { const go = b.closest(".ai-row")?.querySelector(".ai-play") || document.querySelector(".ai-play"); if (go && !go.disabled) go.click(); }, 80);
   };
   rec.onend = done; rec.onerror = done;
   try { rec.start(); micRec = rec; document.documentElement.classList.add("mic-on"); } catch (_) { done(); }
