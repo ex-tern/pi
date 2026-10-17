@@ -1426,6 +1426,33 @@ fn se_shape() -> N {
         .into()
 }
 
+/// A line drawing, as the sidebar drew its icons.
+fn line_icon(d: &[&str]) -> N {
+    el("svg:svg")
+        .attr("viewBox", "0 0 24 24")
+        .attr("width", "20")
+        .attr("height", "20")
+        .attr("fill", "none")
+        .attr("stroke", "currentColor")
+        .attr("stroke-width", "1.8")
+        .attr("stroke-linecap", "round")
+        .attr("stroke-linejoin", "round")
+        .attr("aria-hidden", "true")
+        .kids(d.iter().map(|x| -> N { el("svg:path").attr("d", *x).into() }))
+        .into()
+}
+
+/// A place's icon, as it was in the sidebar (owner, 2026-10-17: "restore the icons"); a group's member, its mark.
+fn place_mark(name: &str) -> N {
+    match WORLD.iter().position(|w| *w == name) {
+        Some(i) if i < GROUPS.len() => mark_of(Page::Group(i as u8), name),
+        Some(6) => mark_of(Page::Map, name),
+        Some(7) => line_icon(&["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M12 10.5v3.5"]),
+        Some(8) => line_icon(&["M8 7l-5 5 5 5", "M16 7l5 5-5 5"]),
+        _ => ai_mark(name),
+    }
+}
+
 fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -> N {
     // far out a place is a speck, then a mark; it reads as itself once it is big enough (owner, 2026-10-17: "the web
     // starts as an empty canvas. We have to zoom in to find out")
@@ -1448,8 +1475,10 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -
         .cls_if(px < 8.0, "u-speck")
         .cls_if((8.0..30.0).contains(&px), "u-iconic")
         .kid(se_shape())
+        // the site's places have line drawings; a group's member is its name (its initials when small)
+        .kid_if(px >= 30.0 && WORLD.contains(&name), || el("span").cls("u-mark").kid(place_mark(name)).into())
         .kid_if(px >= 30.0, || el("span").cls("tag").text(name.to_string()).into())
-        .kid_if((8.0..30.0).contains(&px), || el("span").cls("u-icon").text(name.chars().next().map(|c| c.to_string()).unwrap_or_default()).into())
+        .kid_if((8.0..30.0).contains(&px), || el("span").cls("u-icon").kid(place_mark(name)).into())
         .kid_if(px >= 30.0 && !v.is_empty(), || el("span").cls("u-val").text(v.clone()).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
@@ -1933,6 +1962,8 @@ const PROG_CSS: &str = "\
 .ai-level{animation:pi-fade .35s ease-out both}.ai-level .ai-in{animation:pi-rise .45s cubic-bezier(.2,.75,.15,1) both}\
 .u-deep,.u-icon{animation:pi-fade .25s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
 .ladder .rung{transition:color .2s,background-color .2s}\
+.sx.unode.k-member{flex-direction:column;gap:6px}.u-mark{display:grid;place-items:center;color:#2b2b2b}.u-mark svg{width:26px;height:26px}\
+.u-icon svg{width:20px;height:20px;display:block}.sx.unode.k-member.u-iconic{flex-direction:row}\
 .sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\
 .u-icon{font:600 22px/1 'Geist Mono',ui-monospace,monospace;color:#2b2b2b;transform:scale(calc(1 / var(--k, 1)));white-space:nowrap}\
 .sx.unode.u-deeper{padding:0;cursor:grab}\
