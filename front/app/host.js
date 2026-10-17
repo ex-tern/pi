@@ -493,10 +493,39 @@ const superVoice = (b) => {
   rec.onend = done; rec.onerror = done;
   try { rec.start(); superRec = rec; document.documentElement.classList.add("mic-on"); } catch (_) { done(); }
 };
+// Videos in supers: too big to be a super's words, so kept in this browser (IndexedDB), the super holding its key
+const mediaDb = () => new Promise((ok, no) => {
+  const r = indexedDB.open("piii-media", 1);
+  r.onupgradeneeded = () => r.result.createObjectStore("m");
+  r.onsuccess = () => ok(r.result); r.onerror = () => no(r.error);
+});
+const mediaPut = async (key, blob) => { const db = await mediaDb(); await new Promise((ok, no) => { const t = db.transaction("m", "readwrite"); t.objectStore("m").put(blob, key); t.oncomplete = ok; t.onerror = () => no(t.error); }); };
+const mediaGet = async (key) => { const db = await mediaDb(); return new Promise((ok) => { const q = db.transaction("m").objectStore("m").get(key); q.onsuccess = () => ok(q.result || null); q.onerror = () => ok(null); }); };
+const mediaUrls = {};
+const mediaShow = () => {
+  document.querySelectorAll("video[data-media]").forEach(async (v) => {
+    const key = v.dataset.media;
+    if (!key || v.dataset.shown === key) return;
+    v.dataset.shown = key;
+    if (!mediaUrls[key]) { const blob = await safe(() => mediaGet(key), null); if (!blob) { v.title = "This video is kept in the browser it was added in"; return; } mediaUrls[key] = URL.createObjectURL(blob); }
+    v.src = mediaUrls[key];
+  });
+};
+new MutationObserver(mediaShow).observe(document.documentElement, { childList: true, subtree: true });
 addEventListener("change", async (e) => {
   const inp = e.target;
   if (!(inp instanceof HTMLInputElement) || !inp.files || !inp.files[0]) return;
   const file = inp.files[0], lab = inp.closest(".u-mode");
+  if (inp.classList.contains("u-vid-in")) {
+    lab && lab.classList.add("reading");
+    try {
+      const key = "v" + Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+      await mediaPut(key, file);
+      superPut(inp, "video:" + key);
+    } catch (_) { lab && (lab.title = "That video could not be kept"); }
+    lab && lab.classList.remove("reading"); inp.value = "";
+    return;
+  }
   if (inp.classList.contains("u-pic-in")) {
     // a picture, made small enough to keep (at most 640 px across, as JPEG)
     const url = URL.createObjectURL(file);

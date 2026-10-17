@@ -1578,7 +1578,9 @@ fn super_mode(s: &State, n: &UNode, display: bool, mini: bool) -> u8 {
         x if x < 60.0 => 1,
         x if x < 84.0 => 2,
         x if x < 200.0 => 3,
-        _ => 4,
+        x if x < 360.0 => 4,
+        // bigger than a picture: a video (owner, 2026-10-17: "if picture super gets bigger, it goes to videos")
+        _ => 5,
     }
 }
 
@@ -1589,7 +1591,7 @@ fn pic_words(s: &State, n: &UNode) -> Option<String> {
         return None;
     }
     let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
-    if w.min(h) < 200.0 {
+    if !(200.0..360.0).contains(&w.min(h)) {
         return None;
     }
     match s.prog.vals.get(&n.id) {
@@ -1599,8 +1601,47 @@ fn pic_words(s: &State, n: &UNode) -> Option<String> {
     }
 }
 
-/// Every picture super that has words and no picture of them yet asks for one (once per words).
+/// Words that ask something: a question mark, or a question's first word.
+fn is_question(t: &str) -> bool {
+    let t = t.trim();
+    if t.ends_with('?') {
+        return true;
+    }
+    let w = t.split_whitespace().next().unwrap_or("").to_lowercase();
+    let w = w.trim_matches(|c: char| !c.is_alphanumeric() && c != '\'');
+    matches!(w, "what" | "what's" | "whats" | "who" | "who's" | "whom" | "whose" | "where" | "where's" | "when" | "why" | "how" | "which"
+        | "is" | "are" | "was" | "were" | "can" | "could" | "does" | "do" | "did" | "will" | "would" | "should" | "tell" | "explain"
+        | "describe" | "define" | "name" | "list" | "translate" | "summarize" | "summarise")
+}
+
+/// An empty super given a question shows its answer (owner, 2026-10-17: "it should show capital of France as Paris"):
+/// the question wired into it, if it is one.
+fn asked_into(s: &State, n: &UNode) -> Option<String> {
+    if !n.text.trim().is_empty() || !s.wires.iter().any(|w| w.1 == n.id) || pic_words(s, n).is_some() {
+        return None;
+    }
+    match s.prog.vals.get(&n.id) {
+        Some(Value::Str(t)) if is_question(t) && !t.starts_with("data:") && !t.starts_with("video:") => Some(t.trim().to_string()),
+        _ => None,
+    }
+}
+
+/// Every picture super that has words and no picture of them yet asks for one (once per words); every empty super
+/// given a question asks Super AI.
 fn pictures_want() {
+    let s = st();
+    let qs: Vec<String> = s.prog.nodes.iter().filter_map(|n| asked_into(s, n)).collect();
+    let mut asked = false;
+    for q in qs {
+        let s = st();
+        if !s.prog.ai.contains_key(&q) && !s.prog.ai_want.contains(&q) && !s.prog.ai_busy.contains(&q) {
+            s.prog.ai_want.push(q);
+            asked = true;
+        }
+    }
+    if asked {
+        prog_ai_flush();
+    }
     let s = st();
     let want: Vec<String> = s.prog.nodes.iter().filter_map(|n| pic_words(s, n)).filter(|t| !t.starts_with("data:image/")).collect();
     for q in want {
@@ -2366,6 +2407,14 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     // a prompt on its way to Super AI says so
     let asking = matches!(&k, Kind::Ask(_)) && shown.is_empty() && !s.prog.ai_busy.is_empty() && s.wires.iter().any(|w| w.0 == n.id);
     let shown = if asking { "asking Super AI…".to_string() } else { shown };
+    // a question given to an empty super: its answer
+    let shown = match asked_into(s, n) {
+        Some(q) => match s.prog.ai.get(&q) {
+            Some(a) => a.clone(),
+            None => "asking Super AI…".to_string(),
+        },
+        None => shown,
+    };
     // an empty super is typed in until something is wired into it; then it is a display of what arrives (owner,
     // 2026-10-17: "super ellipse is typable until it's connected as the output for another sparkle, which then turns
     // into a display")
@@ -2379,6 +2428,8 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         Kind::Const(Value::Str(t)) if t.starts_with("data:image/") => Some(t.clone()),
         _ => made.clone().filter(|m| m.starts_with("data:image/")),
     };
+    // a video held (kept in this browser; the super holds its key)
+    let video = match &k { Kind::Const(Value::Str(t)) if t.starts_with("video:") => Some(t[6..].to_string()), _ => None };
     // a picture being made, or why it could not be
     let making = made.as_ref().map(|m| if m.is_empty() { "making a picture…".to_string() } else if let Some(e) = m.strip_prefix('!') { e.to_string() } else { String::new() }).filter(|t| !t.is_empty());
     let a = ((n.id - UBASE) as u16) << 4;
@@ -2418,9 +2469,9 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .cls_if(n.text.trim().is_empty(), "empty")
         // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this", "show, it still
         // exists")
-        .cls_if(matches!(k, Kind::Show) || display || picture.is_some(), "u-nameless")
-        .cls_if(picture.is_some(), "u-picture")
-        .cls(match mode { 1 => "m-voice", 2 => "m-file", 3 => "m-type", 4 => "m-pic", _ => "m-none" })
+        .cls_if(matches!(k, Kind::Show) || display || picture.is_some() || video.is_some(), "u-nameless")
+        .cls_if(picture.is_some() || video.is_some(), "u-picture")
+        .cls(match mode { 1 => "m-voice", 2 => "m-file", 3 => "m-type", 4 => "m-pic", 5 => "m-vid", _ => "m-none" })
         .cls_if(display, "u-display")
         .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
@@ -2449,6 +2500,16 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
         .kid_if(making.is_some(), || el("span").cls("u-making").cls_if(making.as_deref() != Some("making a picture…"), "err").text(making.clone().unwrap_or_default()).into())
+        .kid_if(video.is_some(), || el("video").cls("u-img u-video").attr("data-media", video.clone().unwrap_or_default()).attr("controls", "").attr("loop", "").attr("playsinline", "").attr("preload", "metadata").into())
+        .kid_if(mode == 5, || {
+            el("label").cls("u-mode u-picbtn u-vidbtn").attr("title", "Send a video").attr("aria-label", "Send a video")
+                .kid(el("svg:svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
+                    .kid(el("svg:rect").attr("x", "2.5").attr("y", "6").attr("width", "14").attr("height", "12").attr("rx", "3"))
+                    .kid(el("svg:path").attr("d", "M16.5 10.5 21.5 7.5v9l-5-3z")))
+                .kid(el("span").cls("u-mode-t").text("a video"))
+                .kid(el("input").attr("type", "file").attr("accept", "video/*").attr("hidden", "").cls("u-vid-in"))
+                .into()
+        })
         .kid_if(picture.is_some(), || el("img").cls("u-img").attr("alt", "").attr("draggable", "false").attr("src", picture.clone().unwrap_or_default()).into())
         .kid_if(mode == 1, || {
             el("button").attr("type", "button").cls("u-mode u-voice").attr("title", "Speak: what you say goes in").attr("aria-label", "Speak")
@@ -2475,7 +2536,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .into()
         })
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(picture.is_none() && making.is_none() && (!n.text.trim().is_empty() || !shown.is_empty() || display), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
+        .kid_if(picture.is_none() && video.is_none() && making.is_none() && (!n.text.trim().is_empty() || !shown.is_empty() || display), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2600,14 +2661,14 @@ const PROG_CSS: &str = "\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:var(--accent-soft);color:var(--ink);font-size:13.5px;line-height:1.4}\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}\
 .ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid var(--line)!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
-.sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text{display:none!important}\
+.sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text,.sx.unode.m-vid>.u-text{display:none!important}\
 .sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0;text-align:center!important}\
 .u-mode{position:absolute;inset:0;margin:auto;display:grid;place-items:center;align-content:center;gap:6px;width:62%;height:62%;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .u-mode:hover{color:var(--accent);transform:scale(1.08)}.u-mode svg{width:min(34px,70%);height:auto;max-height:70%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}\
 .u-picbtn svg{width:min(56px,40%)}.u-mode-t{font-size:13px;letter-spacing:.02em}\
 .mic-on .u-voice{color:#fff;background:var(--accent)!important;border-radius:50%!important;width:70%;height:70%;animation:ai-mic 1.2s ease-in-out infinite}\
 .u-mode.reading{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
-.sx.unode.u-picture{padding:0!important;overflow:visible}.u-img{position:absolute;inset:7%;width:86%;height:86%;object-fit:cover;border-radius:22%;pointer-events:none}\
+.sx.unode.u-picture{padding:0!important;overflow:visible}.u-img{position:absolute;inset:7%;width:86%;height:86%;object-fit:cover;border-radius:22%;pointer-events:none}.u-video{pointer-events:auto;background:#000;object-fit:contain}\
 .u-making{position:absolute;inset:0;margin:auto;height:fit-content;width:70%;text-align:center;font-size:14px;color:var(--accent);animation:ai-breathe 1.6s ease-in-out infinite}.u-making.err{color:var(--bad);animation:none;font-size:12.5px}\
 .del-ask{position:fixed;z-index:60;width:236px;height:132px;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:4px;padding:0 22px;box-sizing:border-box;animation:pi-rise .25s cubic-bezier(.2,.75,.15,1) both}\
 .del-ask .u-shape{position:absolute;inset:0;width:100%;height:100%;z-index:-1;overflow:visible;filter:drop-shadow(0 14px 28px rgba(25,25,25,.18))}.del-ask .u-shape path{fill:var(--surface);stroke:var(--bad);stroke-width:1.8px;vector-effect:non-scaling-stroke}\
