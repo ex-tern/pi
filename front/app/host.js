@@ -996,7 +996,13 @@ addEventListener("keydown", (e) => {
   if (e.key === "Delete" || e.key === "Backspace" || e.key === "Escape") { const [p, l] = put(e.key); W.keyed(p, l); }
   if ((e.ctrlKey || e.metaKey) && !e.shiftKey && !e.altKey && (e.key === "z" || e.key === "Z")) { e.preventDefault(); const [p, l] = put("Undo"); W.keyed(p, l); }
   // keys a game steers with, down (+) and up (−); the program says whether it used them
-  if (STEER.has(e.key)) { const [p, l] = put("+" + e.key); if (W.keyed(p, l) === 1) e.preventDefault(); }
+  let used = false;
+  if (STEER.has(e.key)) { const [p, l] = put("+" + e.key); if (W.keyed(p, l) === 1) { used = true; e.preventDefault(); } }
+  // no bar any more (owner, 2026-10-17): W turns wiring on and off, L locks or unlocks what is selected
+  if (!used && !e.ctrlKey && !e.metaKey && !e.altKey && !e.repeat) {
+    const k = e.key.toLowerCase();
+    if (k === "w" || k === "l") { const [p, l] = put(k === "w" ? "Wire" : "Lock"); W.keyed(p, l); }
+  }
 });
 const STEER = new Set(["ArrowLeft", "ArrowRight", "ArrowUp", "ArrowDown", "w", "a", "s", "d", "W", "A", "S", "D", "Escape"]);
 addEventListener("keyup", (e) => { if (STEER.has(e.key)) { const [p, l] = put("-" + e.key); W.keyed(p, l); } });

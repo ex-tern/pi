@@ -1117,6 +1117,10 @@ const P_EXAMPLE: u16 = 3;
 const P_SEL: u16 = 4;
 const P_DEL: u16 = 5;
 const P_OPEN: u16 = 6;
+/// the AI language: what is typed to Super AI at the top of the zoom, and sending it
+const P_AI_DRAFT: u16 = 7;
+const P_AI_SEND: u16 = 8;
+const P_LADDER: u16 = 9;
 
 fn prog_update(a: u16, v: String) {
     let s = st();
@@ -1138,11 +1142,48 @@ fn prog_update(a: u16, v: String) {
             }
         }
         P_EXAMPLE => example_load(v.parse::<usize>().unwrap_or(0)),
+        P_AI_DRAFT => s.ai_draft = v,
+        // a rung of the ladder: the top is Super AI; the site's places are the home canvas
+        P_LADDER => match (a >> 4) as usize {
+            0 => {
+                s.ai_level = true;
+                if s.page != Page::Home {
+                    host::go("#/");
+                }
+            }
+            1 => {
+                s.ai_level = false;
+                host::go("#/");
+            }
+            _ => s.ai_level = false,
+        },
+        P_AI_SEND => {
+            let q = s.ai_draft.trim().to_string();
+            if q.is_empty() {
+                return;
+            }
+            // what is said becomes a super of words wired to a show, in the middle of the canvas: Super AI answers
+            // there, and a π program it writes lands beside it, running
+            s.ai_draft.clear();
+            s.ai_level = false;
+            s.zoom_nav_at = host::now();
+            // back down at the usual size, so what is made is readable
+            s.zoom = 1.0;
+            layout_save();
+            let (x, y) = screen_to_node(host::vw() / 2.0 - 160.0, host::vh() / 2.0 - 44.0);
+            let ask = prog_add(&q, x, y);
+            let (w, _) = unode_size(&q);
+            let show = prog_add("show", x + w + 60.0, y);
+            st().wires.push((ask, show, Tip::In));
+            st().prog.sel = Some(ask);
+            wires_save();
+            prog_save();
+        }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
         P_OPEN => {
-            if let Some((gi, m)) = unode(s, id).and_then(|n| member_of(&n.text)) {
-                open_member(gi, m);
+            if let Some(t) = unode(s, id).map(|n| n.text.clone()) {
+                open_place(&t);
             }
         }
         _ => {}
@@ -1385,7 +1426,10 @@ fn se_shape() -> N {
         .into()
 }
 
-fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
+fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -> N {
+    // far out a place is a speck, then a mark; it reads as itself once it is big enough (owner, 2026-10-17: "the web
+    // starts as an empty canvas. We have to zoom in to find out")
+    let px = r.2.min(r.3) * kz;
     let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
     let pien = st().t2.pien.pick.as_deref() == Some(name);
     el("div")
@@ -1401,10 +1445,94 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
         .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .on("enter", Msg::TV(Tool::Prog, P_OPEN | (((n.id - UBASE) as u16) << 4)))
+        .cls_if(px < 8.0, "u-speck")
+        .cls_if((8.0..30.0).contains(&px), "u-iconic")
         .kid(se_shape())
-        .kid(el("span").cls("tag").text(name.to_string()))
-        .kid_if(!v.is_empty(), || el("span").cls("u-val").text(v.clone()).into())
+        .kid_if(px >= 30.0, || el("span").cls("tag").text(name.to_string()).into())
+        .kid_if((8.0..30.0).contains(&px), || el("span").cls("u-icon").text(name.chars().next().map(|c| c.to_string()).unwrap_or_default()).into())
+        .kid_if(px >= 30.0 && !v.is_empty(), || el("span").cls("u-val").text(v.clone()).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
+        .into()
+}
+
+// ---------------------------------------------------------------------------------------------- the zoom's ladder
+
+/// Where the view is on the ladder, from the top: 0 Super AI, 1 the site's places, 2 graphical, then the depths of the
+/// super in the middle of the window.
+fn ladder_at(s: &State) -> usize {
+    if s.ai_level {
+        return 0;
+    }
+    let g = geo(s);
+    let (cx, cy) = (host::vw() / 2.0, host::vh() / 2.0);
+    let mut best: Option<(f64, u8)> = None;
+    for n in s.prog.nodes.iter().filter(|n| n.text != SPARKLE && !n.text.trim().is_empty() && !n.text.starts_with(MEMBER)) {
+        let (x, y, w, h) = rect(&g, n.id);
+        let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
+        let d = ((sx + sw / 2.0 - cx).abs() + (sy + sh / 2.0 - cy).abs()) / sw.max(1.0);
+        let depth = zoom_depth(sw.min(sh));
+        if best.map(|b| d < b.0).unwrap_or(true) && d < 1.5 {
+            best = Some((d, depth));
+        }
+    }
+    match best {
+        Some((_, dp)) if dp >= 2 => 1 + dp as usize,
+        _ => if s.page == Page::Home { 1 } else { 2 },
+    }
+}
+
+const LADDER: [&str; 7] = ["Super AI", "the site", "graphical", "high language", "BASIC", "assembly", "0 and 1"];
+
+/// The ladder, at the window's right edge: where the zoom is, from the AI language down to bare metal.
+fn ladder_view(s: &State) -> N {
+    let at = ladder_at(s);
+    el("nav")
+        .cls("ladder")
+        .attr("aria-label", "How far in you are")
+        .attr("data-stop", "1")
+        .kids(LADDER.iter().enumerate().map(|(i, l)| -> N {
+            el("button")
+                .attr("type", "button")
+                .cls("rung")
+                .cls_if(i == at, "at")
+                .attr("title", match i {
+                    0 => "Zoomed all the way out: tell Super AI what to make",
+                    1 => "The site's places: zoom into one to open it",
+                    2 => "Supers and wires",
+                    _ => "Zoom into a super to read it at this depth",
+                })
+                .on("click", Msg::TV(Tool::Prog, P_LADDER | ((i as u16) << 4)))
+                .text(*l)
+                .into()
+        }))
+        .into()
+}
+
+/// The top of the zoom: the AI language.
+fn ai_level_view(s: &State) -> N {
+    let places: Vec<String> = s.prog.nodes.iter().filter_map(|n| n.text.strip_prefix(MEMBER).map(|x| x.to_string())).collect();
+    let mine = s.prog.nodes.iter().filter(|n| !n.text.starts_with(MEMBER)).count();
+    el("div")
+        .cls("ai-level")
+        .attr("data-stop", "1")
+        .kid(el("div").cls("ai-in")
+            .kid(el("div").cls("ai-k").text("AI language"))
+            .kid(el("h1").text("Super AI"))
+            .kid(el("p").cls("lede").text(format!(
+                "The highest level: say what to make, in words. Below this, the site{}, then supers and wires, then code, BASIC, assembly, and the 0s and 1s. {}",
+                if places.is_empty() { String::new() } else { format!(" ({})", places.join(", ")) },
+                if mine > 0 { format!("Your canvas has {} supers and sparkles of your own and {} wires.", mine, s.wires.len()) } else { "Your canvas is empty so far.".to_string() }
+            )))
+            .kid(el("div").cls("ai-row")
+                .kid(el("input")
+                    .attr("type", "text")
+                    .attr("aria-label", "What to make")
+                    .attr("placeholder", "a program that counts to 10 and stops…")
+                    .prop("value", s.ai_draft.clone())
+                    .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
+                    .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())))
+                .kid(el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new())).text("Make it")))
+            .kid(el("p").cls("hint").text("Zoom in to go back down to the canvas.")))
         .into()
 }
 
@@ -1425,7 +1553,9 @@ fn zoom_depth(px: f64) -> u8 {
     }
 }
 
-const DEPTH_NAMES: [&str; 6] = ["icon", "graphical", "π source", "code · Rust", "x86-64 assembly", "machine code"];
+/// The ladder, from the top (owner, 2026-10-17: "from bare metal 0 and 1 to assembly to basic language, then to high
+/// language, then to graphical language, then to AI language"; the AI language is the canvas zoomed all the way out).
+const DEPTH_NAMES: [&str; 6] = ["icon", "graphical", "high language · Rust", "basic language · BASIC", "assembly · x86-64", "bare metal · 0 and 1"];
 
 /// A value as π (and Rust) would write it.
 fn lit_of(v: &Value) -> String {
@@ -1481,6 +1611,60 @@ fn depth_code(s: &State, n: &UNode, k: &Kind) -> String {
         _ => format!("let {v} = pi::{}({});", kind_name(k), args),
     };
     format!("// {} — {}\nfn step_{}(..) {{\n    {}\n}}\n", n.text.trim(), kind_name(k), v, body.replace('\n', "\n    "))
+}
+
+/// The same super in BASIC: numbered lines, one variable per super, GOSUB into the runtime for what BASIC lacks.
+fn depth_basic(s: &State, n: &UNode, k: &Kind) -> String {
+    let v = vname(n.id).to_uppercase();
+    let ins: Vec<String> = ins_of(s, n.id).into_iter().map(|i| vname(i).to_uppercase()).collect();
+    let first = ins.first().cloned().unwrap_or_else(|| "0".into());
+    let mut l: Vec<String> = Vec::new();
+    match k {
+        Kind::Const(Value::Str(t)) => l.push(format!("LET {}$ = {}", v, json::quote(t))),
+        Kind::Const(c) => l.push(format!("LET {} = {}", v, lit_of(c))),
+        Kind::Op(op) => {
+            let sym = match *op { "×" => "*", "÷" => "/", "−" => "-", "≠" => "<>", "≤" => "<=", "≥" => ">=", "%" => "MOD", "and" => "AND", "or" => "OR", o => o };
+            match *op {
+                "+" | "−" | "×" | "÷" | "%" | "^" | "<" | ">" | "=" | "≠" | "≤" | "≥" | "and" | "or" if ins.len() >= 2 => l.push(format!("LET {} = {}", v, ins.join(&format!(" {} ", sym)))),
+                "√" => l.push(format!("LET {} = SQR({})", v, first)),
+                "sin" | "cos" | "tan" | "abs" | "exp" => l.push(format!("LET {} = {}({})", v, op.to_uppercase(), first)),
+                "ln" => l.push(format!("LET {} = LOG({})", v, first)),
+                "floor" => l.push(format!("LET {} = INT({})", v, first)),
+                "random" => l.push(format!("LET {} = RND(1)", v)),
+                "not" => l.push(format!("LET {} = NOT {}", v, first)),
+                "if" if ins.len() >= 3 => {
+                    l.push(format!("IF {} THEN LET {} = {} ELSE LET {} = {}", ins[0], v, ins[1], v, ins[2]));
+                }
+                o => {
+                    l.push(format!("LET A$ = \"{}\"", o));
+                    l.push("GOSUB 9000 : REM the π runtime".to_string());
+                    l.push(format!("LET {} = R", v));
+                }
+            }
+        }
+        Kind::Reg(init) => {
+            l.push(format!("IF STEP = 0 THEN LET {} = {}", v, lit_of(init)));
+            l.push(format!("LET NEXT{} = {} : REM taken at the step's end", v, first));
+        }
+        Kind::Stop => l.push(format!("IF {} THEN END", first)),
+        Kind::Show => l.push(format!("PRINT {}", first)),
+        Kind::Ask(t) => {
+            l.push(format!("LET Q$ = {}", json::quote(t)));
+            l.push("GOSUB 9500 : REM ask Super AI".to_string());
+            l.push(format!("LET {}$ = A$", v));
+        }
+        _ => {
+            l.push(format!("LET A$ = \"{}\"", kind_name(k)));
+            l.push("GOSUB 9000 : REM the π runtime".to_string());
+            l.push(format!("LET {} = R", v));
+        }
+    }
+    let base = 100 + (n.id % 90) * 10;
+    let mut out = format!("REM {} — {}\n", n.text.trim(), kind_name(k));
+    for (i, x) in l.iter().enumerate() {
+        out.push_str(&format!("{} {}\n", base + i, x));
+    }
+    out
 }
 
 /// The same super as x86-64: its values live in a frame, 8 bytes each, below rbp; numbers in SSE registers. Returns
@@ -1546,8 +1730,8 @@ fn depth_asm(s: &State, n: &UNode, k: &Kind) -> (String, Vec<u8>) {
 /// What a super shows at a depth past the graphical: a heading, and the text.
 fn depth_view(s: &State, n: &UNode, k: &Kind, depth: u8, kz: f64) -> N {
     let text = match depth {
-        2 => depth_pi(s, n),
-        3 => depth_code(s, n, k),
+        2 => depth_code(s, n, k),
+        3 => depth_basic(s, n, k),
         4 => depth_asm(s, n, k).0,
         _ => {
             let (_, bytes) = depth_asm(s, n, k);
@@ -1581,7 +1765,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         return sparkle_view(s, n, r, mini);
     }
     if let Some(name) = n.text.strip_prefix(MEMBER) {
-        return member_view(s, n, r, mini, name);
+        return member_view(s, n, r, mini, name, kz);
     }
     let k = kind_of(&n.text);
     let val = if let Kind::Reg(_) = k { s.prog.regs.get(&n.id).cloned().unwrap_or(Value::Null) } else { s.prog.vals.get(&n.id).cloned().unwrap_or(Value::Null) };
@@ -1605,6 +1789,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     let canvas = unode_is_canvas(n);
     // how deep it is shown: by its size on screen (a super grown into a canvas holds drawings, so it goes no deeper)
     let depth = if mini || n.text.trim().is_empty() { 1 } else { zoom_depth(r.2.min(r.3) * kz) };
+    let speck = !mini && r.2.min(r.3) * kz < 8.0;
     let depth = if canvas && depth > 1 { 1 } else { depth };
     if depth != 1 {
         let tag = if depth == 0 { el("span").cls("u-icon").text(icon_mark(&k, &n.text)).into() } else { depth_view(s, n, &k, depth, kz) };
@@ -1612,6 +1797,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
             .cls("sx unode")
             .cls(kcls)
             .cls(if depth == 0 { "u-iconic" } else { "u-deeper" })
+            .cls_if(speck, "u-speck")
             .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
             .attr("data-s", format!("{}", n.id))
             .attr("data-solid", "1")
@@ -1729,6 +1915,15 @@ const PROG_CSS: &str = "\
 .sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
 .wires .w-val{paint-order:stroke fill}\
 .sx.unode .u-val.t-num{color:#b4651a}.sx.unode .u-val.t-bool{color:#2f8f4e}.sx.unode .u-val.t-text{color:#c2185b}.sx.unode .u-val.t-list{color:#6a4fb3}\
+.ladder{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:2147483100;display:flex;flex-direction:column;gap:2px;padding:6px;border-radius:14px;background:color-mix(in srgb,var(--paper) 85%,transparent);backdrop-filter:blur(6px)}\
+.ladder .rung{font:500 11px/1.2 'Geist Mono',ui-monospace,monospace;color:#8a877f;background:none;border:0;padding:4px 8px;border-radius:8px;text-align:right;cursor:pointer;box-shadow:none}\
+.ladder .rung:hover{color:#2b2b2b}.ladder .rung.at{color:var(--accent);background:var(--accent-soft);font-weight:700}\
+@media (max-width:699px){.ladder{top:auto;bottom:8px;right:50%;transform:translateX(50%);flex-direction:row;overflow-x:auto;max-width:calc(100vw - 16px)}}\
+.ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:blur(3px)}\
+.ai-in{width:min(640px,calc(100vw - 32px));text-align:center}.ai-in h1{font-size:44px;margin:4px 0 10px}\
+.ai-k{font:600 12px/1 'Geist Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
+.ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
+.sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
 .sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\
 .u-icon{font:600 22px/1 'Geist Mono',ui-monospace,monospace;color:#2b2b2b;transform:scale(calc(1 / var(--k, 1)));white-space:nowrap}\
 .sx.unode.u-deeper{padding:0;cursor:grab}\

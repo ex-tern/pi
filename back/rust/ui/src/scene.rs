@@ -199,11 +199,9 @@ fn is_gone(id: usize) -> bool {
     // everything on the canvas (owner, 2026-10-14: "delete all these things", everything on it): the sidebar reaches
     // every part of the site, and lock, chain and reset stay, under the bar. What you add (a double click: a sparkle,
     // a double right click: a super) still goes on it.
-    if rail_pin(id).is_some() {
-        // the sidebar's icons are wired from the canvas where the sidebar stands upright (not on a phone)
-        return host::vw() < 700.0;
-    }
-    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET)
+    // the sidebar and the bar are gone too (owner, 2026-10-17): their supers with them
+    let _ = id;
+    true
 }
 
 /// The controls on the bar, in its order: their supers sit pinned under its buttons. No ▶ or ■ (owner, 2026-10-17:
@@ -437,6 +435,8 @@ fn canvas_switch() {
     if let Page::Group(g) = st().page {
         group_canvas(g as usize, fresh);
     }
+    // the home canvas holds the site's places
+    world_sync();
     // what is drawn here runs as soon as it shows
     prog_autorun();
 }
@@ -2230,6 +2230,18 @@ pub fn on_key(key: &str) -> bool {
         undo();
         return true;
     }
+    // the bar's two buttons, as keys
+    if key == "Wire" {
+        wire_mode_toggle();
+        note(if st().wire_mode { "Wiring on: click an out, then an in (W again: off)" } else { "Wiring off" }.to_string());
+        render();
+        return true;
+    }
+    if key == "Lock" {
+        lock_toggle();
+        render();
+        return true;
+    }
     match key {
         "Escape" if (s.sup_pick.is_some() || s.float_pick || s.win_pick) && s.modal.is_none() && s.held_port.is_none() => {
             s.sup_pick = None;
@@ -2471,11 +2483,11 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
             } else if !d.moved && d.id == S_RESET {
                 // reset is held, not clicked: let go early and nothing happens
                 reset_hold_end(true);
-            } else if !d.moved && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && unode(s, d.id).and_then(|n| member_of(&n.text)).is_some() {
-                // a member of the site, double clicked (or tapped twice): it opens
+            } else if !d.moved && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && unode(s, d.id).map(|n| is_place(&n.text)).unwrap_or(false) {
+                // one of the site's places, double clicked (or tapped twice): it opens
                 s.last_tap = (usize::MAX, None, 0.0);
-                if let Some((gi, m)) = unode(s, d.id).and_then(|n| member_of(&n.text)) {
-                    open_member(gi, m);
+                if let Some(t) = unode(s, d.id).map(|n| n.text.clone()) {
+                    open_place(&t);
                 }
             } else if !d.moved && is_unode(d.id) && d.free && !touching() && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && !unode(s, d.id).map(unode_is_canvas).unwrap_or(false) {
                 // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14); not
@@ -2607,7 +2619,8 @@ fn canvas_zoom_limits(s: &State) -> (f64, f64) {
     // in far enough to reach a super's bits: its machine code fills the window several times over
     let hi = 40.0 * m / small.max(1e-9) / base;
     // out until the whole drawing is a third of the window (further, it is only specks)
-    let lo = (0.33 * m / all / base).min(hi * 0.33).min(1.0);
+    // out until the drawing is a speck in the middle of an empty canvas (where the site starts), one step more is Super AI
+    let lo = (0.02 * m / all / base).min(hi * 0.02).min(1.0);
     (lo, hi)
 }
 
@@ -2972,6 +2985,109 @@ fn activate(id: usize, member: Option<u8>) {
         }
         _ => {}
     }
+}
+
+/// The home canvas's own places, where the sidebar was (owner, 2026-10-17: "remove all sidebar and top bar and merge
+/// them into each other as in zooming inside each other opens them"): the six groups, the map, privacy and the API.
+const WORLD: [&str; 9] = ["Tools", "Explore", "Library", "Lab", "Connect", "Insights", "The map", "Privacy", "API"];
+
+fn world_of(text: &str) -> Option<usize> {
+    let name = text.strip_prefix(MEMBER)?;
+    WORLD.iter().position(|w| *w == name)
+}
+
+/// A super that is one of the site's places (a group's member, or one of the home canvas's): can it be opened?
+fn is_place(text: &str) -> bool {
+    member_of(text).is_some() || world_of(text).is_some()
+}
+
+/// Open the place a super stands for. True if it was one.
+fn open_place(text: &str) -> bool {
+    if let Some((gi, m)) = member_of(text) {
+        open_member(gi, m);
+        return true;
+    }
+    match world_of(text) {
+        Some(i) if i < GROUPS.len() => host::go(&format!("#/g/{}", i)),
+        Some(6) => host::go("#/map"),
+        Some(7) => {
+            let s = st();
+            s.draft = s.consent.unwrap_or([true, true, true]);
+            s.consent_open = true;
+        }
+        Some(8) => open_modal(Modal::Info("The API".into(), API_GUIDE.into())),
+        _ => return false,
+    }
+    true
+}
+
+/// The home canvas has its places, once: in a ring round the middle, as supers to zoom into.
+fn world_sync() {
+    if !st().ctx.is_empty() {
+        return;
+    }
+    let have: Vec<String> = st().prog.nodes.iter().map(|n| n.text.clone()).collect();
+    let (vw, vh) = (host::vw(), host::vh());
+    let (cx, cy) = (vw / 2.0, vh / 2.0);
+    let r = (vw.min(vh) * 0.32).max(140.0);
+    let mut added = false;
+    for (i, w) in WORLD.iter().enumerate() {
+        let text = format!("{}{}", MEMBER, w);
+        if have.contains(&text) {
+            continue;
+        }
+        let a = i as f64 / WORLD.len() as f64 * core::f64::consts::TAU - core::f64::consts::FRAC_PI_2;
+        let (sx, sy) = (cx + r * 1.35 * libm_cos(a), cy + r * libm_cos(a - core::f64::consts::FRAC_PI_2));
+        let (x, y) = screen_to_node(sx, sy);
+        let (w0, h0) = unode_size(&text);
+        prog_add(&text, x - w0 / 2.0, y - h0 / 2.0);
+        added = true;
+    }
+    if added {
+        prog_save();
+    }
+}
+
+/// Zoomed far enough into a place, it opens (owner, 2026-10-17: "zooming inside each other opens them"): one that is
+/// under the pointer and fills most of the window. True if one opened.
+fn zoom_into_place(px: f64, py: f64) -> bool {
+    let s = st();
+    if host::now() - s.zoom_nav_at < 700.0 {
+        return false;
+    }
+    let g = geo(s);
+    let m = host::vw().min(host::vh());
+    let hit = s.prog.nodes.iter().filter(|n| is_place(&n.text)).find_map(|n| {
+        let (x, y, w, h) = rect(&g, n.id);
+        let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
+        (px >= sx && px <= sx + sw && py >= sy && py <= sy + sh && sw.min(sh) >= 0.6 * m).then(|| n.text.clone())
+    });
+    match hit {
+        Some(t) => {
+            st().zoom_nav_at = host::now();
+            st().pzoom = 1.0;
+            host::store_set("piii:pzoom", "1");
+            open_place(&t)
+        }
+        None => false,
+    }
+}
+
+/// Zoomed out past the farthest a page goes: up to what holds it (a member's page → its group → the home canvas).
+fn zoom_out_of_page() -> bool {
+    let s = st();
+    if host::now() - s.zoom_nav_at < 700.0 {
+        return false;
+    }
+    s.zoom_nav_at = host::now();
+    // the level above opens at its usual size; the home canvas as it was left, around the place come out of
+    s.pzoom = 1.0;
+    host::store_set("piii:pzoom", "1");
+    match s.page {
+        Page::Item(g, _) => host::go(&format!("#/g/{}", g)),
+        _ => host::go("#/"),
+    }
+    true
 }
 
 fn open_member(gi: usize, m: usize) {

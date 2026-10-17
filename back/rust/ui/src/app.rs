@@ -250,6 +250,11 @@ struct State {
     sup_locked: Vec<usize>,
     /// when the program was last changed and will run by itself (0: nothing waiting)
     autorun_at: f64,
+    /// when a zoom last opened or left a place (a wheel's run of steps does only one)
+    zoom_nav_at: f64,
+    /// the canvas zoomed all the way out: the AI language, Super AI (owner, 2026-10-17: "the maximum is super AI")
+    ai_level: bool,
+    ai_draft: String,
     float_free: bool,
     win_free: bool,
     /// the floating canvas or the open window selected by a click, for the lock
@@ -474,6 +479,9 @@ pub fn start() {
         free: Vec::new(),
         sup_locked: Vec::new(),
         autorun_at: 0.0,
+        zoom_nav_at: 0.0,
+        ai_level: false,
+        ai_draft: String::new(),
         float_free: true,
         win_free: true,
         float_pick: false,
@@ -623,6 +631,8 @@ pub fn start() {
         program_clear();
         host::store_del("piii:example");
     }
+    // the site's places on the home canvas (where the sidebar was)
+    world_sync();
 
     route();
     let s = st();
@@ -750,15 +760,36 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
     if s.page == Page::Home || s.peek {
         if dy == 0.0 {
             s.zoom = 1.0;
+            s.ai_level = false;
             layout_save();
+        } else if s.ai_level {
+            // in from Super AI: back to the canvas
+            if dy < 0.0 && host::now() - s.zoom_nav_at > 400.0 {
+                s.ai_level = false;
+                s.zoom_nav_at = host::now();
+            }
         } else {
+            let z0 = s.zoom;
             canvas_zoom(&format!("{},{},{}", dy, x, y));
+            let s = st();
+            if dy < 0.0 {
+                zoom_into_place(x, y);
+            } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 {
+                // as far out as the canvas goes: one more step is the AI language
+                s.ai_level = true;
+                s.zoom_nav_at = host::now();
+            }
         }
     } else {
         // about the pointer (owner, 2026-10-17: "improve zooming out and zooming in"): what is under it stays under it,
         // the page and what is drawn on it alike
         let z0 = s.pzoom.max(1e-6);
         let z = if dy == 0.0 { 1.0 } else { zoom_within(z0, libm_exp(-dy * 0.0015), page_zoom_limits(s)) };
+        // out past the farthest: up a level; in on a place on this page's canvas: into it
+        if dy > 0.0 && z == z0 && zoom_out_of_page() {
+            render();
+            return;
+        }
         if dy == 0.0 {
             s.ppan = (0.0, 0.0);
         } else {
@@ -768,6 +799,10 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
         }
         s.pzoom = z;
         host::store_set("piii:pzoom", &format!("{:.4}", z));
+        if dy < 0.0 && zoom_into_place(x, y) {
+            render();
+            return;
+        }
     }
     render();
 }
@@ -963,9 +998,12 @@ fn route_page() {
         return;
     }
     match parts.next().unwrap_or("") {
+        // the site starts as an empty canvas, zoomed all the way out: zoom in to find it, or out to Super AI (owner,
+        // 2026-10-17: "the web starts as an empty canvas. We have to zoom in to find out")
         "" if first && !href.contains('#') => {
-            host::replace_url("#/explore");
-            return route();
+            s.page = Page::Home;
+            let lo = canvas_zoom_limits(s).0;
+            st().zoom = lo;
         }
         "" => s.page = Page::Home,
         "map" => s.page = Page::Map,
@@ -1849,7 +1887,9 @@ fn view(s: &State) -> N {
     // the sidebar and the controls are on top of every view, always (owner, 2026-10-14: "both sidebar and top icons are
     // always on top. Always.")
     let body: N = if s.page == Page::Home {
-        el("div").cls("focus home").kid(canvas_view(s)).kid(rail(s)).kid(ctl_bar(s)).into()
+        // no sidebar and no bar (owner, 2026-10-17: "remove all sidebar and top bar ... the whole program is zooming
+        // in or zooming out"): the site's places are supers on the canvas, opened by zooming into them
+        el("div").cls("focus home").kid(canvas_view(s)).kid_if(s.ai_level, || ai_level_view(s)).kid(ladder_view(s)).into()
     } else {
         let page = match s.page {
             Page::Assess => assess_page(s),
@@ -1869,12 +1909,12 @@ fn view(s: &State) -> N {
         // what is open takes 70% of the canvas, which stays live around it (owner, 2026-10-14: "double clicking
         // anything opens it to 70% of the canvas"); on a phone it still takes the screen
         if s.peek && host::vw() >= 700.0 {
-            el("div").cls("focus peek").kid(scene_view(s, false)).kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).into()
+            el("div").cls("focus peek").kid(scene_view(s, false)).kid(window_frame(s, page)).kid(ladder_view(s)).into()
         } else {
             // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back.
             // The page's own π canvas is over it (owner, 2026-10-17: "Make the pi canvas work in every canvas"): what is
             // drawn on this page, with every move the home canvas has; the page itself stays usable under it
-            el("div").cls("focus").kid(rail(s)).kid(window_frame(s, page)).kid(scene_view(s, false)).kid(ctl_bar(s)).into()
+            el("div").cls("focus").kid(window_frame(s, page)).kid(scene_view(s, false)).kid(ladder_view(s)).into()
         }
     };
     // the canvas shows its own note; elsewhere it floats over the page, so the lock's answers are always seen
