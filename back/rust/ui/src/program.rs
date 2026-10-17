@@ -2032,6 +2032,10 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     // a prompt on its way to Super AI says so
     let asking = matches!(&k, Kind::Ask(_)) && shown.is_empty() && !s.prog.ai_busy.is_empty() && s.wires.iter().any(|w| w.0 == n.id);
     let shown = if asking { "asking Super AI…".to_string() } else { shown };
+    // an empty super is typed in until something is wired into it; then it is a display of what arrives (owner,
+    // 2026-10-17: "super ellipse is typable until it's connected as the output for another sparkle, which then turns
+    // into a display")
+    let display = n.text.trim().is_empty() && s.wires.iter().any(|w| w.1 == n.id);
     let a = ((n.id - UBASE) as u16) << 4;
     // grown to half as big again as it was made (by area), a super is a canvas: its name up in the corner and room
     // below it (owner, 2026-10-14: "if a new super becomes 50% larger than its initial state, it turns into a canvas")
@@ -2069,7 +2073,8 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .cls_if(n.text.trim().is_empty(), "empty")
         // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this", "show, it still
         // exists")
-        .cls_if(matches!(k, Kind::Show), "u-nameless")
+        .cls_if(matches!(k, Kind::Show) || display, "u-nameless")
+        .cls_if(display, "u-display")
         .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
@@ -2097,7 +2102,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
+        .kid_if(!n.text.trim().is_empty() || !shown.is_empty() || display, || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2205,6 +2210,7 @@ const PROG_CSS: &str = "\
 .ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
 .ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
 .sx.unode.u-nameless .u-text,.sx.unode.u-canvas.u-nameless .u-text{display:none!important}\
+.sx.unode.u-display .u-val{font-size:16px;color:var(--ink);text-align:center;max-width:100%;overflow-wrap:anywhere}\
 .sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:auto;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid #d9d6cc;scrollbar-width:thin}\
 .sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
 .sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
