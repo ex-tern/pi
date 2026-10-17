@@ -367,7 +367,7 @@ fn buddy_view(s: &State) -> N {
                 "Fill in any two and RiBD will tell you which of your fields is busiest, where your work is most likely to be noticed, and what to fix first. It reads only the papers you tick under Your assessments{}.",
                 if st_.selection.is_empty() { String::new() } else { format!(" ({} ticked)", st_.selection.len()) }
             )))
-            .kid(el("a").cls("btn primary").attr("href", "#/i/4/2").text("Fill in your profile"));
+            .kid(el("a").cls("btn primary").attr("href", member_href("Research profile")).text("Fill in your profile"));
         return root.kid(suggest_view(s)).into();
     }
     root = root.kid(el("p").cls("lede").text(format!(

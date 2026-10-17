@@ -710,40 +710,6 @@ fn layer_save() {
     host::store_set(&key, &out);
 }
 
-/// A double click on an open page: a sparkle (kind 0) or, by a double right click, a super (1), centred there.
-pub fn layer_add(kind: u8, at: &str) {
-    let n: Vec<f64> = at.split(',').filter_map(|x| x.parse().ok()).collect();
-    let z = st().pzoom.max(0.01);
-    let (x, y) = (n.first().copied().unwrap_or(0.0) / z - 44.0, n.get(1).copied().unwrap_or(0.0) / z - 44.0);
-    // left and right of the page's column are canvas too; above its top is the window's head, so it lands just below
-    layer().push((kind, x, y.max(0.0), String::new()));
-    layer_save();
-}
-
-/// What is drawn on the open page, over what it shows (it pans and zooms with it).
-fn layer_view() -> N {
-    let items = layer();
-    if items.is_empty() {
-        return txt("");
-    }
-    el("div")
-        .cls("page-layer")
-        .kids(items.iter().enumerate().map(|(i, (k, x, y, label))| -> N {
-            let base = el("div").cls("layer-node").attr("data-layer", "1").attr("data-solid", "1").style(format!("left:{:.0}px;top:{:.0}px", x, y));
-            if *k == 0 {
-                base.cls("layer-spark")
-                    .kid(el("svg:svg").attr("viewBox", "-44 -44 88 88").attr("width", "100%").attr("height", "100%").kid(el("svg:path").attr("d", sparkle(0.0, 0.0, 43.0))))
-                    .into()
-            } else {
-                base.cls("layer-super")
-                    .kid(el("input").cls("layer-in").attr("type", "text").attr("aria-label", "This super's name").prop("value", label.clone()).on("input", Msg::TV(Tool::Grid, 3000 + i as u16)))
-                    .kid(ports())
-                    .into()
-            }
-        }))
-        .into()
-}
-
 /// Takes the program (its nodes and their wires) off the canvas.
 fn program_clear() {
     let s = st();

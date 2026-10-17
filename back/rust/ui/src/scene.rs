@@ -251,43 +251,6 @@ fn has_tip(id: usize, tip: Tip) -> bool {
     tips_of(id).contains(&tip)
 }
 
-/// Is there a path of wires (or passes) from `a` to `b`?
-fn reaches(s: &State, a: usize, b: usize) -> bool {
-    let (mut stack, mut seen) = (alloc::vec![a], Vec::new());
-    while let Some(n) = stack.pop() {
-        if n == b {
-            return true;
-        }
-        if !seen.contains(&n) {
-            seen.push(n);
-            stack.extend(s.wires.iter().filter(|w| w.0 == n).map(|w| w.1));
-            stack.extend(s.passes.iter().filter(|p| p.0 == n).map(|p| p.2));
-        }
-    }
-    false
-}
-
-
-/// Is there a path of wires (or passes) from `a` to `b` that does not pass through a register? (A loop through a
-/// register is how a program repeats; one without would never settle.)
-fn reaches_direct(s: &State, a: usize, b: usize) -> bool {
-    let (mut stack, mut seen) = (alloc::vec![a], Vec::new());
-    while let Some(n) = stack.pop() {
-        if n == b {
-            return true;
-        }
-        if !seen.contains(&n) && (n == a || !is_reg(s, n)) {
-            seen.push(n);
-            stack.extend(s.wires.iter().filter(|w| w.0 == n).map(|w| w.1));
-            stack.extend(s.passes.iter().filter(|p| p.0 == n).map(|p| p.2));
-        }
-    }
-    false
-}
-
-fn loops(s: &State, from: usize, to: usize) -> bool {
-    !is_reg(s, from) && !is_reg(s, to) && reaches_direct(s, to, from)
-}
 
 /// Can `from`'s out be wired to `to`'s `tip`? Or why not.
 fn can_connect(s: &State, from: usize, to: usize, tip: Tip) -> Result<(), &'static str> {
@@ -482,40 +445,42 @@ fn screen_to_node(sx: f64, sy: f64) -> (f64, f64) {
 }
 
 /// A group's page as a π canvas: every member there as a super of its own (locked, like everything that is not drawn
-/// by you), and on the first visit what was on its board (its places, sizes, sparkles, supers and wires).
+/// by you), laid out and wired by what leads to what (FLOWS); on the first visit what you drew on the old board comes
+/// over too (its sparkles and supers, and their wires).
 fn group_canvas(gi: usize, fresh: bool) {
     let Some(grp) = GROUPS.get(gi) else { return };
-    let mut by_board: Vec<usize> = Vec::new();
+    let mut changed = false;
     if fresh {
+        // what you drew on the old board: its sparkles and supers, and the wires that touch them
         let b = board(gi);
-        let (pos, extra, links, sizes, free) = (b.pos.clone(), b.extra.clone(), b.links.clone(), b.sizes.clone(), b.free.clone());
-        let n = grp.members.len();
-        for i in 0..n + extra.len() {
-            let (bx, by, text, (bw, bh)) = if i < n {
-                (pos[i].0, pos[i].1, format!("{}{}", MEMBER, grp.members[i].0), (220.0, 104.0))
-            } else {
-                let (k, x, y, l) = &extra[i - n];
-                (*x, *y, if *k == 0 { SPARKLE.to_string() } else { l.clone() }, (88.0, 88.0))
-            };
-            let (sx, sy) = board_to_screen(bx, by);
+        let (extra, links, sizes) = (b.extra.clone(), b.links.clone(), b.sizes.clone());
+        let n = b.pos.len();
+        let mut by_board: Vec<Option<usize>> = alloc::vec![None; n];
+        for (k, (kind, bx, by, l)) in extra.iter().enumerate() {
+            let (sx, sy) = board_to_screen(*bx, *by);
             let (x, y) = screen_to_node(sx, sy);
-            let id = prog_add(&text, x, y);
-            if let Some((gw, gh)) = sizes.get(i).copied().filter(|g| g.0 != 0.0 || g.1 != 0.0) {
+            let id = prog_add(&if *kind == 0 { SPARKLE.to_string() } else { l.clone() }, x, y);
+            if let Some((gw, gh)) = sizes.get(n + k).copied().filter(|g| g.0 != 0.0 || g.1 != 0.0) {
                 if let Some(nd) = st().prog.nodes.iter_mut().find(|nd| nd.id == id) {
-                    nd.w = bw + gw;
-                    nd.h = bh + gh;
+                    nd.w = 88.0 + gw;
+                    nd.h = 88.0 + gh;
                 }
             }
-            if i < n && !free.contains(&i) {
-                st().locked.push(id);
-            }
-            by_board.push(id);
+            by_board.push(Some(id));
         }
-        // the board's wires: out to in (either way round), and control or gate to control or gate
+        // members first, so a wire between one of yours and a member finds it
+        group_members_place(gi, true);
+        let member_id = |m: usize| -> Option<usize> {
+            let text = format!("{}{}", MEMBER, grp.members.get(m)?.0);
+            st().prog.nodes.iter().find(|nd| nd.text == text).map(|nd| nd.id)
+        };
         for (a, c, t) in links {
-            let (Some(&ia), Some(&ic)) = (by_board.get(a), by_board.get(c)) else { continue };
-            let to = t & 3;
-            let from = ((t >> 2) & 3) ^ 1;
+            if a < n && c < n {
+                continue; // between two members: their wires now follow the flows
+            }
+            let id_of = |i: usize| if i < n { member_id(i) } else { by_board.get(i).copied().flatten() };
+            let (Some(ia), Some(ic)) = (id_of(a), id_of(c)) else { continue };
+            let (to, from) = (t & 3, ((t >> 2) & 3) ^ 1);
             let s = st();
             match (Tip::of(from), Tip::of(to)) {
                 (Some(Tip::Out), Some(Tip::In)) => s.wires.push((ia, ic, Tip::In)),
@@ -524,36 +489,98 @@ fn group_canvas(gi: usize, fresh: bool) {
                 _ => {}
             }
         }
+        changed = true;
     }
-    // every member the site has now, there (one added to the group since appears at its place on the first layout)
-    let (start, _) = board_layout(gi, grp.members.len());
-    let mut added = false;
-    for (m, (name, _)) in grp.members.iter().enumerate() {
-        let text = format!("{}{}", MEMBER, name);
-        if st().prog.nodes.iter().any(|n| n.text == text) || member_hidden(gi, m) {
-            continue;
-        }
-        let (sx, sy) = board_to_screen(start[m].0, start[m].1);
-        let (x, y) = screen_to_node(sx, sy);
-        let id = prog_add(&text, x, y);
-        st().locked.push(id);
-        added = true;
+    // laid out and wired by meaning once (owner, 2026-10-17: "reorganize everything", "rewire everything"): your own
+    // sparkles and supers stay where they are, with their wires
+    if host::store_get(&ckey("piii:canvas-v")).as_deref() != Some("2") {
+        group_members_place(gi, false);
+        host::store_set(&ckey("piii:canvas-v"), "2");
+        changed = true;
     }
-    // and a member the site no longer has, gone
-    let stale: Vec<usize> = st().prog.nodes.iter().filter(|n| n.text.starts_with(MEMBER) && member_of(&n.text).map(|(g, _)| g != gi).unwrap_or(true)).map(|n| n.id).collect();
-    for id in &stale {
-        let s = st();
-        s.prog.nodes.retain(|n| n.id != *id);
-        s.wires.retain(|w| w.0 != *id && w.1 != *id);
-        s.passes.retain(|p| p.0 != *id && p.2 != *id);
-    }
-    if fresh || added || !stale.is_empty() {
+    // every member the site has now, there; one it no longer has here, gone
+    changed |= group_members_sync(gi);
+    if changed {
         locked_save();
-        st().undo_at = 1e300;
+        wires_save();
         prog_save();
         st().undo.clear();
         st().undo_at = 0.0;
     }
+}
+
+/// The members of a group put at their places in its flow, and wired by it (member to member; nothing of yours is
+/// touched). Missing ones are made; with `only_missing`, the ones there stay where they are.
+fn group_members_place(gi: usize, only_missing: bool) {
+    let grp = &GROUPS[gi];
+    let place = flow_layout(gi);
+    let mut ids: Vec<Option<usize>> = alloc::vec![None; grp.members.len()];
+    for (m, (name, _)) in grp.members.iter().enumerate() {
+        let text = format!("{}{}", MEMBER, name);
+        let (sx, sy) = board_to_screen(place[m].0, place[m].1);
+        let (x, y) = screen_to_node(sx, sy);
+        let have = st().prog.nodes.iter().position(|nd| nd.text == text);
+        match have {
+            Some(i) => {
+                let nd = &mut st().prog.nodes[i];
+                if !only_missing {
+                    nd.x = x;
+                    nd.y = y;
+                    nd.w = 0.0;
+                    nd.h = 0.0;
+                }
+                ids[m] = Some(nd.id);
+            }
+            None if member_hidden(gi, m) => {}
+            None => {
+                let id = prog_add(&text, x, y);
+                st().locked.push(id);
+                ids[m] = Some(id);
+            }
+        }
+    }
+    if only_missing {
+        return;
+    }
+    // the wires between members: as the flows say, and no others
+    let members: Vec<usize> = ids.iter().flatten().copied().collect();
+    let s = st();
+    s.wires.retain(|w| !(members.contains(&w.0) && members.contains(&w.1)));
+    s.passes.retain(|p| !(members.contains(&p.0) && members.contains(&p.2)));
+    let idx = |name: &str| grp.members.iter().position(|m| m.0 == name);
+    for (a, b) in FLOWS[gi].iter() {
+        if let (Some(Some(ia)), Some(Some(ib))) = (idx(a).map(|i| ids[i]), idx(b).map(|i| ids[i])) {
+            st().wires.push((ia, ib, Tip::In));
+        }
+    }
+}
+
+/// Members added to the group since appear at their place in the flow; members moved to another group go. Answers
+/// whether anything changed.
+fn group_members_sync(gi: usize) -> bool {
+    let grp = &GROUPS[gi];
+    let place = flow_layout(gi);
+    let mut changed = false;
+    for (m, (name, _)) in grp.members.iter().enumerate() {
+        let text = format!("{}{}", MEMBER, name);
+        if member_hidden(gi, m) || st().prog.nodes.iter().any(|nd| nd.text == text) {
+            continue;
+        }
+        let (sx, sy) = board_to_screen(place[m].0, place[m].1);
+        let (x, y) = screen_to_node(sx, sy);
+        let id = prog_add(&text, x, y);
+        st().locked.push(id);
+        changed = true;
+    }
+    let stale: Vec<usize> = st().prog.nodes.iter().filter(|nd| nd.text.starts_with(MEMBER) && member_of(&nd.text).map(|(g, _)| g != gi).unwrap_or(true)).map(|nd| nd.id).collect();
+    for id in &stale {
+        let s = st();
+        s.prog.nodes.retain(|nd| nd.id != *id);
+        s.wires.retain(|w| w.0 != *id && w.1 != *id);
+        s.passes.retain(|p| p.0 != *id && p.2 != *id);
+        changed = true;
+    }
+    changed
 }
 
 /// What was drawn on this page before it had a canvas of its own (sparkles and named supers, in the page's own
@@ -868,104 +895,206 @@ struct Group {
     members: &'static [(&'static str, Target)],
 }
 
+// The groups, reorganized by what each thing is for (owner, 2026-10-17: "reorganize everything"): Tools are what you
+// use on your own work (assessing, asking, reading lists, diagnosis, faces, and getting online through the lab);
+// Explore is what the lab has assessed; the Library is what to read and learn; the Lab its experiments (piii OS
+// among them); Connect is you and the people round the lab; Insights how the site is doing. Each group's order
+// follows its wires (FLOWS), the way things lead from one to the next.
 const GROUPS: [Group; 6] = [
     Group {
         sup: S_TOOLS,
         title: "Tools",
         members: &[
+            ("RiBD", Target::Tool(Tool::Buddy)),
             ("Assess Manuscripts [Pi]", Target::Hash("#/assess")),
+            ("Super AI", Target::Tool(Tool::Ask)),
             ("Assist Diagnosis [Intern]", Target::Tool(Tool::Intern)),
             ("Face Mace", Target::Tool(Tool::Face)),
-            // owner, 2026-10-16: "I want to make my own VPN provider. Make an app for it and merge it to the tools"
-            ("piii VPN", Target::Tool(Tool::Vpn)),
-            // owner, 2026-10-17: "make a tool on piii.app web app to write the os to the flash to boot"
-            ("piii OS", Target::Tool(Tool::OsFlash)),
-            // moved here from Explore (owner, 2026-10-14: "put super AI in tools")
-            ("Super AI", Target::Tool(Tool::Ask)),
-            // from the Library (owner, 2026-10-14: "put RiBD in tools")
-            ("RiBD", Target::Tool(Tool::Buddy)),
-            // owner, 2026-10-17: "A web proxy on piii.app"
             ("Web proxy", Target::Tool(Tool::Proxy)),
+            ("piii VPN", Target::Tool(Tool::Vpn)),
         ],
     },
     Group {
         sup: S_EXPLORE,
         title: "Explore",
         members: &[
+            ("Recent assessments", Target::Tool(Tool::Recent)),
             ("Leaderboards", Target::Tool(Tool::Board)),
             ("Proof-of-Research Ledger Explorer", Target::Tool(Tool::Ledger)),
-            ("Recent assessments", Target::Tool(Tool::Recent)),
         ],
     },
     Group {
         sup: S_LIBRARY,
         title: "Library",
         members: &[
-            ("The Global Map of Science", Target::Tool(Tool::Map)),
-            ("Whitepaper", Target::Tool(Tool::Whitepaper)),
-            ("Architecture", Target::Tool(Tool::Arch)),
+            ("Learn to program", Target::Tool(Tool::Learn)),
             ("Capabilities", Target::Words(
                 "siM is the lab's own assistant model. riB learns which papers are worth reading. piD forecasts from the \
                  ledger. PiEn learns how the site is used. Super AI joins them, with Llama, Mistral, Qwen, Gemini and \
                  DeepSeek as independent jurors and a judge over them.",
             )),
-            ("Learn to program", Target::Tool(Tool::Learn)),
-            // from Connect (owner, 2026-10-14: "put assessment results in the library")
+            ("Architecture", Target::Tool(Tool::Arch)),
+            ("Whitepaper", Target::Tool(Tool::Whitepaper)),
             ("Assessment results", Target::Hash("#/assess")),
-            // from Explore (owner, 2026-10-15: "put that journal in the library")
             ("The journal", Target::Hash("#/explore/journal")),
+            ("The Global Map of Science", Target::Tool(Tool::Map)),
         ],
     },
     Group {
         sup: S_LAB,
         title: "Lab",
         members: &[
-            ("QuVI", Target::Tool(Tool::Quvi)),
             ("HAL-OS", Target::Tool(Tool::Hal)),
-            ("Unigyro", Target::Tool(Tool::Unigyro)),
-            // from the Library (owner, 2026-10-14: "put Neurofrenzy and MD in lab")
-            ("Neuro Frenzy", Target::Tool(Tool::Frenzy)),
+            ("piii OS", Target::Tool(Tool::OsFlash)),
+            ("QuVI", Target::Tool(Tool::Quvi)),
             ("MD", Target::Tool(Tool::Md)),
+            ("Neuro Frenzy", Target::Tool(Tool::Frenzy)),
+            ("Unigyro", Target::Tool(Tool::Unigyro)),
         ],
     },
     Group {
         sup: S_CONNECT,
         title: "Connect",
         members: &[
-            ("Your account", Target::Hash("#/account")),
-            ("Your assessments", Target::Hash("#/account")),
-            ("Research profile", Target::Tool(Tool::Profile)),
-            ("piQ held for you", Target::Hash("#/account")),
-            ("Owner console", Target::Tool(Tool::Owner)),
-            // from the Lab (owner, 2026-10-14: "put these in account")
-            ("Private projects", Target::Tool(Tool::Private)),
-            ("Permission requests", Target::Tool(Tool::Requests)),
             ("Why sign in", Target::Words(
                 "Signing in with ORCID links your assessments to you: they stay in your history, and the piQ they earn \
                  is minted to you instead of held in escrow. Anonymous visitors have a short free trial.",
             )),
+            ("Your account", Target::Hash("#/account")),
+            ("Your assessments", Target::Hash("#/account")),
+            ("piQ held for you", Target::Hash("#/account")),
+            ("Research profile", Target::Tool(Tool::Profile)),
+            ("Private projects", Target::Tool(Tool::Private)),
+            ("Permission requests", Target::Tool(Tool::Requests)),
+            ("Owner console", Target::Tool(Tool::Owner)),
             ("Invite a researcher", Target::Words(
                 "Send a colleague to www.piii.app. Researchers signed in with ORCID can request and give peer reviews \
                  of each other's papers.",
             )),
-            ("Support Pi", Target::Tool(Tool::Donate)),
-            ("Contact us", Target::Tool(Tool::Bug)),
-            ("GitHub", Target::Url("https://github.com/ex-tern/pi")),
-            // owner, 2026-10-17: "an open portal in piii.app so whatever you type in it stays public and saved on the site"
             ("Open portal", Target::Tool(Tool::Portal)),
+            ("Contact us", Target::Tool(Tool::Bug)),
+            ("Support Pi", Target::Tool(Tool::Donate)),
+            ("GitHub", Target::Url("https://github.com/ex-tern/pi")),
         ],
     },
     Group {
         sup: S_INSIGHT,
         title: "Insights",
         members: &[
+            ("Live", Target::Hash("#/live")),
             ("Analytics", Target::Tool(Tool::Analytics)),
             ("Performance", Target::Tool(Tool::Perf)),
             ("Minting Difficulty", Target::Hash("#/library")),
-            ("Live", Target::Hash("#/live")),
         ],
     },
 ];
+
+/// How each group's members lead into one another (owner, 2026-10-17: "rewire everything", by meaning): an out into
+/// an in, by name. What stands alone has no wire.
+const FLOWS: [&[(&str, &str)]; 6] = [
+    // Tools: find what is worth reading, assess it, ask about it; the lighter way online before the whole one
+    &[("RiBD", "Assess Manuscripts [Pi]"), ("Assess Manuscripts [Pi]", "Super AI"), ("Web proxy", "piii VPN")],
+    // Explore: every assessment ranks on the leaderboards and is a block on the ledger
+    &[("Recent assessments", "Leaderboards"), ("Recent assessments", "Proof-of-Research Ledger Explorer")],
+    // Library: learn, see what the models can do and how they are built, read the paper; results into the journal,
+    // the journal's papers onto the map
+    &[
+        ("Learn to program", "Architecture"),
+        ("Capabilities", "Architecture"),
+        ("Architecture", "Whitepaper"),
+        ("Assessment results", "The journal"),
+        ("The journal", "The Global Map of Science"),
+    ],
+    // Lab: the operating systems, the old one before the new; study medicine, then practise neuroscience
+    &[("HAL-OS", "piii OS"), ("MD", "Neuro Frenzy")],
+    // Connect: why sign in, then your account and what hangs off it; invite people to the open portal
+    &[
+        ("Why sign in", "Your account"),
+        ("Your account", "Your assessments"),
+        ("Your account", "piQ held for you"),
+        ("Your account", "Research profile"),
+        ("Research profile", "Private projects"),
+        ("Private projects", "Permission requests"),
+        ("Invite a researcher", "Open portal"),
+    ],
+    // Insights: what happens now, counted, and how fast it is served
+    &[("Live", "Analytics"), ("Analytics", "Performance")],
+];
+
+/// A group's members placed by their wires (owner, 2026-10-17: "layout of each canvas"): each in the column after
+/// everything that leads into it, top to bottom in the group's order; what stands alone in rows below. Where each
+/// goes, in the old board's units (as `board_to_screen` reads them).
+fn flow_layout(gi: usize) -> Vec<(f64, f64)> {
+    let g = &GROUPS[gi];
+    let n = g.members.len();
+    let idx = |name: &str| g.members.iter().position(|m| m.0 == name);
+    let links: Vec<(usize, usize)> = FLOWS[gi].iter().filter_map(|(a, b)| Some((idx(a)?, idx(b)?))).collect();
+    let wired: Vec<bool> = (0..n).map(|i| links.iter().any(|l| l.0 == i || l.1 == i)).collect();
+    // the column: one after the furthest that leads into it
+    let mut col = alloc::vec![0usize; n];
+    for _ in 0..n {
+        for &(a, b) in &links {
+            if col[b] < col[a] + 1 {
+                col[b] = col[a] + 1;
+            }
+        }
+    }
+    let (cw, rh) = (220.0 + 64.0, 104.0 + 40.0);
+    let shown = |i: usize| !member_hidden(gi, i);
+    // the rows within each column: each where the ones it is wired to are, on average (a few rounds of it), so the
+    // wires run as straight as they can and do not share a line
+    let ncol = col.iter().copied().max().unwrap_or(0) + 1;
+    let mut row = alloc::vec![0.0f64; n];
+    let mut order: Vec<Vec<usize>> = (0..ncol).map(|c| (0..n).filter(|i| wired[*i] && shown(*i) && col[*i] == c).collect()).collect();
+    for (c, o) in order.iter().enumerate() {
+        let _ = c;
+        for (r, i) in o.iter().enumerate() {
+            row[*i] = r as f64;
+        }
+    }
+    for round in 0..6 {
+        for c in 0..ncol {
+            let mut keyed: Vec<(f64, usize)> = order[c]
+                .iter()
+                .map(|&i| {
+                    // the next column's ones leading out of it first (left to right), then the ones leading in
+                    let nb: Vec<f64> = links.iter().filter_map(|&(a, b)| if a == i && shown(b) { Some(row[b]) } else if b == i && shown(a) && round % 2 == 1 { Some(row[a]) } else { None }).collect();
+                    let k = if nb.is_empty() { row[i] } else { nb.iter().sum::<f64>() / nb.len() as f64 };
+                    (k, i)
+                })
+                .collect();
+            keyed.sort_by(|x, y| x.0.partial_cmp(&y.0).unwrap_or(core::cmp::Ordering::Equal).then(x.1.cmp(&y.1)));
+            order[c] = keyed.iter().map(|x| x.1).collect();
+            for (r, i) in order[c].iter().enumerate() {
+                row[*i] = r as f64;
+            }
+        }
+    }
+    // then each level with what feeds it (a gap left where needed), so a wire runs straight wherever it can
+    let mut at = alloc::vec![0usize; n];
+    for (c, o) in order.iter().enumerate() {
+        let mut next = 0usize;
+        for &i in o {
+            let src: Vec<f64> = links.iter().filter(|l| l.1 == i && shown(l.0) && col[l.0] < c).map(|l| at[l.0] as f64).collect();
+            let want = if c == 0 || src.is_empty() { next } else { (src.iter().sum::<f64>() / src.len() as f64 + 0.5) as usize };
+            at[i] = want.max(next);
+            next = at[i] + 1;
+        }
+    }
+    let mut pos = alloc::vec![(0.0, 0.0); n];
+    let mut below = 0usize;
+    for o in order.iter() {
+        for &i in o {
+            pos[i] = (24.0 + col[i] as f64 * cw, 24.0 + at[i] as f64 * rh);
+            below = below.max(at[i] + 1);
+        }
+    }
+    let cols = ((host::vw() - 220.0) / cw).clamp(1.0, 4.0) as usize;
+    for (k, i) in (0..n).filter(|i| !wired[*i] && shown(*i)).enumerate() {
+        pos[i] = (24.0 + (k % cols) as f64 * cw, 24.0 + (below + k / cols) as f64 * rh + if below > 0 { 24.0 } else { 0.0 });
+    }
+    pos
+}
 
 /// Where a group member is opened, found by its name (the map's links follow members as they move between groups).
 fn member_href(name: &str) -> String {
@@ -1109,34 +1238,6 @@ fn curve(a: (f64, f64), sa: Side, b: (f64, f64), sb: Side) -> String {
         b.1 + nb.1 * d,
         b.0,
         b.1
-    )
-}
-
-/// A data wire: out of an output, across in straight runs with rounded corners, into an input.
-fn step(a: (f64, f64), b: (f64, f64)) -> String {
-    let mx = (a.0 + b.0) / 2.0;
-    let dy = b.1 - a.1;
-    if dy.abs() < 1.0 {
-        return format!("M{:.1} {:.1}H{:.1}", a.0, a.1, b.0);
-    }
-    let r = 12.0f64.min(dy.abs() / 2.0).min((mx - a.0).abs()).max(0.0);
-    let sy = if dy > 0.0 { 1.0 } else { -1.0 };
-    let sx = if b.0 >= a.0 { 1.0 } else { -1.0 };
-    format!(
-        "M{:.1} {:.1}H{:.1}Q{:.1} {:.1} {:.1} {:.1}V{:.1}Q{:.1} {:.1} {:.1} {:.1}H{:.1}",
-        a.0,
-        a.1,
-        mx - sx * r,
-        mx,
-        a.1,
-        mx,
-        a.1 + sy * r,
-        b.1 - sy * r,
-        mx,
-        b.1,
-        mx + sx * r,
-        b.1,
-        b.0
     )
 }
 
@@ -2756,7 +2857,10 @@ fn activate(id: usize, member: Option<u8>) {
             locked_save();
             prog_clear();
             if let Page::Group(g) = st().page {
-                group_canvas(g as usize, false);
+                group_members_place(g as usize, false);
+                locked_save();
+                wires_save();
+                prog_save();
             }
             note("This page's canvas is cleared (the reset button, clicked, undoes it)".to_string());
         }
@@ -2836,36 +2940,6 @@ fn open_member(gi: usize, m: usize) {
 }
 
 // ---------------------------------------------------------------------------------------------- the open supers
-
-/// A bubble, open: everything it holds, each a super of its own.
-fn group_page(gi: usize) -> N {
-    let g = &GROUPS[gi];
-    el("div")
-        .kid(el("div").cls("head").kid(el("h1").text(g.title)))
-        .kid(el("div").cls("members").kids(g.members.iter().enumerate().filter(|(m, _)| !member_hidden(gi, *m)).map(|(m, (name, t))| -> N {
-            let (href, note, ext) = match t {
-                Target::Hash(h) => (h.to_string(), "", false),
-                Target::Url(u) => (u.to_string(), "Opens in a new tab", true),
-                Target::Words(_) => (format!("#/i/{}/{}", gi, m), "", false),
-                Target::Data(_, d) => (format!("#/i/{}/{}", gi, m), *d, false),
-                Target::Soon(_) => (format!("#/i/{}/{}", gi, m), "Being rewritten in Rust", false),
-                Target::Tool(_) => (format!("#/i/{}/{}", gi, m), "", false),
-            };
-            let pien = st().t2.pien.pick.as_deref() == Some(*name);
-            el("a")
-                .cls("member sx-like")
-                .cls_if(pien, "pien")
-                .attr_if(pien, "title", "PiEN suggests this next")
-                .attr("href", href)
-                .attr_if(ext, "target", "_blank")
-                .attr_if(ext, "rel", "noopener")
-                .kid(el("span").cls("tag").text(*name))
-                .kid_if(!note.is_empty(), || el("span").cls("m-note").text(note).into())
-                .kid(ports())
-                .into()
-        })))
-        .into()
-}
 
 /// The four ports of a super drawn by CSS (a window, an icon, a member).
 /// The tips of a control on the floating bar: the same tips as on the canvas, which sit pinned under the bar, so a wire

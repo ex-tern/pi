@@ -75,10 +75,6 @@ fn integrals(img: &Grey) -> (Vec<f64>, Vec<f64>, usize) {
     (ii, sq, ww)
 }
 
-fn rsum(t: &[f64], ww: usize, x: usize, y: usize, w: usize, h: usize) -> f64 {
-    t[(y + h) * ww + x + w] - t[y * ww + x + w] - t[(y + h) * ww + x] + t[y * ww + x]
-}
-
 fn detect(img: &Grey, c: &Haar) -> Vec<[f64; 4]> {
     detect_from(img, c, 0)
 }
@@ -547,8 +543,6 @@ struct FaceResult {
 /// push"); the page shows the number and the edition only, the name is in the commits and the Windows release (the
 /// build reads both from here)
 pub const FM_VERSION: &str = "1.3.0";
-pub const FM_VERSION_NAME: &str = "Home server";
-
 const FACE_TOKEN: u32 = 1_000_000;
 /// photos at a time, online
 const ONLINE_MAX: usize = 100;
@@ -3588,30 +3582,6 @@ fn named_sync(i: usize) {
     for (p, w) in want {
         out_save(&w, h);
         st().face.named_written.insert((i, p), w);
-    }
-}
-
-/// A person was named: their files already in the folder take the name.
-fn live_rename_person(p: usize) {
-    let f = &mut st().face;
-    let mut moves: Vec<(usize, String, String)> = Vec::new();
-    for (i, (n, people, path)) in f.live_written.iter() {
-        if people.contains(&p) {
-            let new = renamed_path(*n, &label_of(f, people), f.file_when.get(*i).copied().unwrap_or(0), &f.files[*i].2);
-            if &new != path {
-                moves.push((*i, path.clone(), new));
-            }
-        }
-    }
-    for (i, old, new) in moves {
-        host::call("mvfile", &format!("{}\t{}", old, new));
-        if let Some(e) = f.live_written.get_mut(&i) {
-            e.2 = new;
-        }
-    }
-    let with: Vec<usize> = f.live_written.iter().filter(|(_, e)| e.1.contains(&p)).map(|(i, _)| *i).collect();
-    for i in with {
-        named_sync(i);
     }
 }
 
