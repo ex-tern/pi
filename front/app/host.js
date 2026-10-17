@@ -460,6 +460,61 @@ addEventListener("click", (e) => {
   themeSet(t);
   try { localStorage.setItem("piii:theme", t); } catch (_) {}
 }, true);
+// An empty super takes what its size says (owner, 2026-10-17): a voice message, a file, typing or a picture. What
+// comes in is put in the super as words in quotes (a picture as its data), as if typed.
+const superPut = (el, text) => {
+  const f = el.closest(".unode")?.querySelector(".u-text");
+  if (!f) return;
+  f.value = '"' + text.replace(/"/g, "\u201d") + '"';
+  f.dispatchEvent(new Event("input", { bubbles: true }));
+};
+let superRec = null;
+addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".u-voice");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  if (superRec) { superRec.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) { b.title = "Speaking isn't available in this browser"; return; }
+  const rec = new SR(); rec.lang = navigator.language || "en-US"; rec.interimResults = false;
+  let said = "";
+  rec.onresult = (ev) => { said = Array.from(ev.results).map((r) => r[0].transcript).join(" ").trim(); };
+  const done = () => { superRec = null; document.documentElement.classList.remove("mic-on"); if (said) superPut(b, said); };
+  rec.onend = done; rec.onerror = done;
+  try { rec.start(); superRec = rec; document.documentElement.classList.add("mic-on"); } catch (_) { done(); }
+}, true);
+addEventListener("change", async (e) => {
+  const inp = e.target;
+  if (!(inp instanceof HTMLInputElement) || !inp.files || !inp.files[0]) return;
+  const file = inp.files[0], lab = inp.closest(".u-mode");
+  if (inp.classList.contains("u-pic-in")) {
+    // a picture, made small enough to keep (at most 640 px across, as JPEG)
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((ok, no) => { const i = new Image(); i.onload = () => ok(i); i.onerror = no; i.src = url; });
+      const k = Math.min(1, 640 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      superPut(inp, c.toDataURL("image/jpeg", 0.82));
+    } catch (_) { lab && (lab.title = "That picture could not be read"); }
+    URL.revokeObjectURL(url); inp.value = "";
+  } else if (inp.classList.contains("u-file-in")) {
+    // a file: its text (PDFs and Word documents read by the server, as for Super AI)
+    lab && lab.classList.add("reading");
+    try {
+      let text;
+      if (/\.(pdf|docx|odt|pptx|xlsx)$/i.test(file.name)) {
+        const fd = new FormData(); fd.append("file", file);
+        const r = await fetch("/api/super/attach", { method: "POST", body: fd, credentials: "same-origin" });
+        if (!r.ok) throw new Error();
+        text = (await r.json()).text || "";
+      } else text = await file.text();
+      superPut(inp, text.slice(0, 4000));
+    } catch (_) { lab && (lab.title = "That file could not be read"); }
+    lab && lab.classList.remove("reading"); inp.value = "";
+  }
+}, true);
 let micRec = null;
 // a prompt on the canvas: Enter is done (Shift+Enter a new line)
 addEventListener("keydown", (e) => {

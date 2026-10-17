@@ -1535,6 +1535,22 @@ fn grip() -> N {
 
 /// Grown half as big again as it was made (by area): a super is a canvas, an empty one to draw in (owner, 2026-10-14:
 /// "if a super gets bigger than 50% of its size, it becomes a canvas, empty canvas, which you can draw again inside it").
+/// What an empty super takes, by its size (its shorter side, in the canvas's units; a new one is 88): 1 a voice
+/// message (under 60), 2 a file (under 84), 3 typing (under 200), 4 a picture. 0: it is not empty, it shows what is
+/// wired into it, or it holds drawings.
+fn super_mode(s: &State, n: &UNode, display: bool, mini: bool) -> u8 {
+    if mini || display || !n.text.trim().is_empty() || !unode_inside(s, n.id).is_empty() {
+        return 0;
+    }
+    let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
+    match w.min(h) {
+        x if x < 60.0 => 1,
+        x if x < 84.0 => 2,
+        x if x < 200.0 => 3,
+        _ => 4,
+    }
+}
+
 fn unode_is_canvas(n: &UNode) -> bool {
     let (iw, ih) = unode_size(&n.text);
     n.text != SPARKLE && n.w > 0.0 && n.w * n.h >= 1.5 * iw * ih
@@ -2241,6 +2257,11 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     // 2026-10-17: "super ellipse is typable until it's connected as the output for another sparkle, which then turns
     // into a display")
     let display = n.text.trim().is_empty() && s.wires.iter().any(|w| w.1 == n.id);
+    // an empty super's size says what it takes (owner, 2026-10-17: "the smallest one is voice message, then the bigger
+    // it gets, the file must send, and then the typing, and then the picture")
+    let mode = super_mode(s, n, display, mini);
+    // a picture held: the super shows it
+    let picture = match &k { Kind::Const(Value::Str(t)) if t.starts_with("data:image/") => Some(t.clone()), _ => None };
     let a = ((n.id - UBASE) as u16) << 4;
     // grown to half as big again as it was made (by area), a super is a canvas: its name up in the corner and room
     // below it (owner, 2026-10-14: "if a new super becomes 50% larger than its initial state, it turns into a canvas")
@@ -2278,7 +2299,9 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .cls_if(n.text.trim().is_empty(), "empty")
         // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this", "show, it still
         // exists")
-        .cls_if(matches!(k, Kind::Show) || display, "u-nameless")
+        .cls_if(matches!(k, Kind::Show) || display || picture.is_some(), "u-nameless")
+        .cls_if(picture.is_some(), "u-picture")
+        .cls(match mode { 1 => "m-voice", 2 => "m-file", 3 => "m-type", 4 => "m-pic", _ => "m-none" })
         .cls_if(display, "u-display")
         .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
@@ -2306,8 +2329,33 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .prop("value", n.text.clone())
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
+        .kid_if(picture.is_some(), || el("img").cls("u-img").attr("alt", "").attr("draggable", "false").attr("src", picture.clone().unwrap_or_default()).into())
+        .kid_if(mode == 1, || {
+            el("button").attr("type", "button").cls("u-mode u-voice").attr("title", "Speak: what you say goes in").attr("aria-label", "Speak")
+                .kid(el("svg:svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
+                    .kid(el("svg:rect").attr("x", "9").attr("y", "3").attr("width", "6").attr("height", "11").attr("rx", "3"))
+                    .kid(el("svg:path").attr("d", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21")))
+                .into()
+        })
+        .kid_if(mode == 2, || {
+            el("label").cls("u-mode u-filebtn").attr("title", "Send a file: its text goes in").attr("aria-label", "Send a file")
+                .kid(el("svg:svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
+                    .kid(el("svg:path").attr("d", "M20.5 11.5 12.6 19.4a5 5 0 0 1-7.1-7.1l8.2-8.2a3.3 3.3 0 0 1 4.7 4.7l-8.2 8.2a1.7 1.7 0 0 1-2.4-2.4l7.5-7.5")))
+                .kid(el("input").attr("type", "file").attr("hidden", "").cls("u-file-in"))
+                .into()
+        })
+        .kid_if(mode == 4, || {
+            el("label").cls("u-mode u-picbtn").attr("title", "Send a picture").attr("aria-label", "Send a picture")
+                .kid(el("svg:svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
+                    .kid(el("svg:rect").attr("x", "3").attr("y", "5").attr("width", "18").attr("height", "14").attr("rx", "3"))
+                    .kid(el("svg:circle").attr("cx", "9").attr("cy", "10").attr("r", "1.6"))
+                    .kid(el("svg:path").attr("d", "M4 17l5-5 4 4 2.5-2.5L20 18")))
+                .kid(el("span").cls("u-mode-t").text("a picture"))
+                .kid(el("input").attr("type", "file").attr("accept", "image/*").attr("hidden", "").cls("u-pic-in"))
+                .into()
+        })
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(!n.text.trim().is_empty() || !shown.is_empty() || display, || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
+        .kid_if(picture.is_none() && (!n.text.trim().is_empty() || !shown.is_empty() || display), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if display { "…".to_string() } else if matches!(k, Kind::Show | Kind::Ask(_)) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2432,6 +2480,14 @@ const PROG_CSS: &str = "\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:var(--accent-soft);color:var(--ink);font-size:13.5px;line-height:1.4}\
 .ai-ta{align-self:flex-start;max-width:92%;font-size:13.5px;line-height:1.5;color:var(--ink);white-space:pre-wrap}\
 .ai-new{align-self:center;margin-top:2px;font:inherit;font-size:12.5px;padding:4px 12px!important;border:1px solid var(--line)!important;border-radius:999px!important;background:none!important;box-shadow:none!important;color:var(--muted);cursor:pointer}.ai-new:hover{color:var(--accent);border-color:var(--accent)!important}\
+.sx.unode.m-voice>.u-text,.sx.unode.m-file>.u-text,.sx.unode.m-pic>.u-text{display:none!important}\
+.sx.unode.m-type.u-canvas.empty>.u-text{display:block!important;width:80%;align-self:center;margin:auto 0}\
+.u-mode{position:absolute;inset:0;margin:auto;display:grid;place-items:center;align-content:center;gap:6px;width:62%;height:62%;padding:0!important;border:0!important;background:none!important;box-shadow:none!important;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
+.u-mode:hover{color:var(--accent);transform:scale(1.08)}.u-mode svg{width:min(34px,70%);height:auto;max-height:70%;fill:none;stroke:currentColor;stroke-width:1.7;stroke-linecap:round;stroke-linejoin:round}\
+.u-picbtn svg{width:min(56px,40%)}.u-mode-t{font-size:13px;letter-spacing:.02em}\
+.mic-on .u-voice{color:#fff;background:var(--accent)!important;border-radius:50%!important;width:70%;height:70%;animation:ai-mic 1.2s ease-in-out infinite}\
+.u-mode.reading{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
+.sx.unode.u-picture{padding:0!important;overflow:visible}.u-img{position:absolute;inset:7%;width:86%;height:86%;object-fit:cover;border-radius:22%;pointer-events:none}\
 .ai-clip{flex:none;display:grid;place-items:center;width:34px;height:34px;border-radius:50%;color:var(--faint);cursor:pointer;transition:color .2s,transform .2s}\
 .ai-clip:hover{color:var(--accent);transform:scale(1.1) rotate(-8deg)}.ai-clip.busy{color:var(--accent);animation:ai-mic 1.2s ease-in-out infinite}\
 .ai-clip svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round}\
