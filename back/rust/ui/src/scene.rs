@@ -2806,16 +2806,58 @@ fn push_shown() -> f64 {
 /// Round the loop: past the deepest zoom is the highest level again.
 fn loop_to_ai() {
     let s = st();
+    // where it came round from, to go back to on the way in again (owner, 2026-10-17: "can zooming into zero and ones
+    // loop back to super AI, and it should remember where it came from")
+    host::store_set(
+        "piii:loop-from",
+        &format!("{}|{}|{}|{}|{}|{}|{}", here(), s.zoom, s.pan.0, s.pan.1, s.pzoom, s.ppan.0, s.ppan.1),
+    );
     s.zoom_nav_at = host::now();
     s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
     s.zoom = canvas_zoom_limits(s).0;
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
     s.ai_level = 1;
+    // arriving home this way is Super AI, not the welcome view
+    s.welcome_next = false;
     layout_save();
     if s.page != Page::Home || s.peek {
         host::go("#/");
     }
+}
+
+/// Zooming in from Super AI after coming round from the bits: back to the page and the place it came from, a step out
+/// from the deepest so it does not come round again at once.
+fn loop_back() {
+    let Some(v) = host::store_get("piii:loop-from") else { return };
+    host::store_del("piii:loop-from");
+    let f: Vec<&str> = v.split('|').collect();
+    if f.len() != 7 {
+        return;
+    }
+    let n = |i: usize| f[i].parse::<f64>().unwrap_or(0.0);
+    let (vw, vh) = (host::vw(), host::vh());
+    if f[0] != here() {
+        host::go(f[0]);
+    }
+    let s = st();
+    let (z, pan, pz, ppan) = (n(1), (n(2), n(3)), n(4), (n(5), n(6)));
+    if z.is_finite() && z > 0.0 {
+        s.zoom = z;
+        s.pan = pan;
+        // a step out, about the middle of the window
+        canvas_zoom(&format!("{},{},{}", 460.0, vw / 2.0, vh / 2.0));
+    }
+    let s = st();
+    if pz.is_finite() && pz > 1.0 {
+        let z1 = (pz * 0.5).max(1.0);
+        let (ox, oy) = s.porg;
+        let c = ((vw / 2.0 - ox - ppan.0) / pz, (vh / 2.0 - oy - ppan.1) / pz);
+        s.ppan = (vw / 2.0 - ox - z1 * c.0, vh / 2.0 - oy - z1 * c.1);
+        s.pzoom = z1;
+        host::store_set("piii:pzoom", &format!("{:.4}", z1));
+    }
+    layout_save();
 }
 
 /// Is any super or sparkle of the canvas at least partly in the window?

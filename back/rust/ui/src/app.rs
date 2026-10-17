@@ -825,6 +825,8 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
                 s.ai_level = 0;
                 s.zoom_nav_at = host::now();
                 s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
+                // come round from the bits: back where it was, a step out
+                loop_back();
             }
         } else {
             let z0 = s.zoom;

@@ -1105,6 +1105,8 @@ const zstep = () => {
   // as quick as a scroll (owner, 2026-10-17: "zooming and scrolling speed are the same"): most of a step in the first
   // frames, the rest eased
   const d = Math.abs(zq) < 1 ? zq : zq * 0.45;
+  // nothing left (a page change let go of the step): no step, since a zero one means "back to 1"
+  if (!d) { zraf = 0; return; }
   zq -= d;
   W.zoomed(d, zx, zy);
   zraf = Math.abs(zq) > 0.01 ? requestAnimationFrame(zstep) : 0;
@@ -1123,7 +1125,13 @@ addEventListener("wheel", (e) => {
   // Intern, the app, is a page that scrolls like any other
   if (document.querySelector(".iapp")) return;
   e.preventDefault(); e.stopPropagation();
-  const dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
+  let dy = e.deltaMode === 1 ? e.deltaY * 16 : e.deltaMode === 2 ? e.deltaY * innerHeight : e.deltaY;
+  // a MacBook's trackpad (owner, 2026-10-17: "adjust the zooming sensitivity for MacBooks"): a pinch comes as small
+  // steps with Ctrl held, made as quick as the wheel; two fingers swiped come as a stream of small steps with momentum,
+  // made gentler so the view does not run away. A mouse wheel's steps are left as they are.
+  const pad = e.deltaMode === 0 && (e.ctrlKey || e.deltaX !== 0 || Math.abs(dy) % 1 !== 0 || Math.abs(dy) < 40);
+  if (pad && e.ctrlKey && !e.metaKey) dy *= 4.5;
+  else if (pad) dy = Math.sign(dy) * Math.min(Math.abs(dy) * 0.5, 60);
   if (dy) zoomBy(dy, e.clientX, e.clientY);
 }, { passive: false, capture: true });
 addEventListener("keydown", (e) => {
