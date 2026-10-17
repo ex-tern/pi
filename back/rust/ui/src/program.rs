@@ -701,11 +701,29 @@ fn pi_place(beside: usize, prog: &str) -> usize {
     let (w0, _) = if n0.w > 0.0 { (n0.w, n0.h) } else { unode_size(&n0.text) };
     let (x0, y0) = (n0.x + w0 + 90.0, n0.y);
     let mut rows = alloc::vec![0usize; names.len() + 1];
+    let mut at: Vec<(f64, f64)> = Vec::new();
+    for i in 0..names.len() {
+        let c = col[i].min(names.len());
+        at.push((c as f64 * 150.0, rows[c] as f64 * 120.0));
+        rows[c] += 1;
+    }
+    // the block lands where nothing else is (owner, 2026-10-17: "fix this", a program laid over the page's places):
+    // moved down below whatever it would cover
+    let (bw, bh) = at.iter().fold((0.0f64, 0.0f64), |a, p| (a.0.max(p.0 + 100.0), a.1.max(p.1 + 100.0)));
+    let (bx, mut by) = (x0, y0);
+    for _ in 0..40 {
+        let hit = st().prog.nodes.iter().filter_map(|n| {
+            let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
+            (n.x < bx + bw + 30.0 && n.x + w > bx - 30.0 && n.y < by + bh + 30.0 && n.y + h > by - 30.0).then(|| n.y + h)
+        }).fold(f64::MIN, f64::max);
+        if hit == f64::MIN {
+            break;
+        }
+        by = hit + 60.0;
+    }
     let mut ids = Vec::new();
     for (i, (_, t)) in names.iter().enumerate() {
-        let c = col[i].min(names.len());
-        let id = prog_add(t, x0 + c as f64 * 150.0, y0 + rows[c] as f64 * 120.0);
-        rows[c] += 1;
+        let id = prog_add(t, bx + at[i].0, by + at[i].1);
         ids.push(id);
     }
     for (a, b, t) in links {
@@ -1123,6 +1141,8 @@ const P_AI_SEND: u16 = 8;
 const P_LADDER: u16 = 9;
 /// a sidebar icon dropped on the canvas: "name<TAB>x<TAB>y"
 const P_DROP: u16 = 10;
+/// π in the sidebar: home, the welcome view, centred on π
+const P_HOME: u16 = 11;
 
 fn prog_update(a: u16, v: String) {
     let s = st();
@@ -1145,6 +1165,15 @@ fn prog_update(a: u16, v: String) {
         }
         P_EXAMPLE => example_load(v.parse::<usize>().unwrap_or(0)),
         P_AI_DRAFT => s.ai_draft = v,
+        P_HOME => {
+            s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
+            if s.ctx.is_empty() {
+                welcome_view();
+            } else {
+                // leaving a page: the welcome view once the home canvas is in use
+                s.welcome_next = true;
+            }
+        }
         P_DROP => {
             let f: Vec<&str> = v.split('\t').collect();
             if let [name, x, y] = f.as_slice() {
@@ -1446,7 +1475,7 @@ fn se_shape_n(n: f64) -> N {
 fn se_n_for(px: f64) -> f64 {
     let n = core::f64::consts::PI * powf((px / 200.0).max(1e-6), 0.35);
     // two decimals: the outline only changes when it shows
-    floor_f(n.clamp(2.05, 16.0) * 50.0 + 0.5) / 50.0
+    floor_f(n.clamp(2.5, 16.0) * 50.0 + 0.5) / 50.0
 }
 
 /// A line drawing, as the sidebar drew its icons.

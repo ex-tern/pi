@@ -439,6 +439,9 @@ fn canvas_switch() {
     }
     // the home canvas holds the site's places
     world_sync();
+    if st().ctx.is_empty() && core::mem::take(&mut st().welcome_next) {
+        welcome_view();
+    }
     // what is drawn here runs as soon as it shows
     prog_autorun();
 }
@@ -3720,9 +3723,12 @@ fn map_page() -> N {
     }
     svg = svg.kid(el("svg:path").cls("ports").attr("d", stars));
     // the site row: the supers of the canvas, as a reminder of where the map sits
-    let mut x = 20.0;
+    // all of them inside the row, evenly (owner, 2026-10-17: "fix this", the last ones ran past the card)
+    let gap = 16.0;
+    let n = GROUPS.len() as f64;
+    let w = (952.0 - gap * (n - 1.0)) / n;
+    let mut x = 24.0;
     for g in GROUPS.iter() {
-        let w = 150.0;
         svg = svg.kid(
             el("svg:a").attr("href", format!("#/g/{}", group_of(g.sup).unwrap_or(0))).cls("m-link").kid(
                 el("svg:g")
@@ -3731,7 +3737,7 @@ fn map_page() -> N {
                     .kid(el("svg:text").attr("x", format!("{}", x + w / 2.0)).attr("y", "751").attr("text-anchor", "middle").text(g.title)),
             ),
         );
-        x += w + 42.0;
+        x += w + gap;
     }
     el("div")
         .kid(head("Project", "The whole project as one super's inside: one prompt to every engine, the assessment from manuscript to ledger, the lab's tools in the browser, what it all runs on, and the site. Click a box to open it."))

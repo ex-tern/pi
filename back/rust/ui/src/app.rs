@@ -265,6 +265,8 @@ struct State {
     ai_chain: Vec<usize>,
     /// the link button is on: the next box drawn with the left button groups what it takes in
     group_mode: bool,
+    /// the home canvas, when it next shows, opens on its welcome view
+    welcome_next: bool,
     /// resistance at a level's edge (owner, 2026-10-17: "add some resistance to go to extreme levels"): how hard the
     /// wheel has pushed against it, which way, and when last
     resist: (f64, f64, f64),
@@ -503,6 +505,7 @@ pub fn start() {
         ai_busy: false,
         ai_chain: Vec::new(),
         group_mode: false,
+        welcome_next: false,
         resist: (0.0, 0.0, 0.0),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
@@ -2239,6 +2242,9 @@ fn rail(s: &State) -> N {
             .attr("draggable", "false")
             .attr("href", "#/")
             .attr("aria-label", "Back to the canvas")
+            // and the canvas comes back to its welcome view, π in the middle (owner, 2026-10-17: "clicking this centers
+            // the pi")
+            .on("click", Msg::TV(Tool::Prog, P_HOME))
             // π drawn as a line icon, like every other one in the sidebar (owner, 2026-10-14: "make the pi icon same as
             // other icon")
             .kid(el("span").cls("g").kid(
