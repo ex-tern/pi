@@ -685,7 +685,20 @@ fn board_key_press(key: &str) -> bool {
     true
 }
 
+/// A group's page: its title over its π canvas, where its members are supers like any other (owner, 2026-10-17:
+/// "everywhere is a canvas"); double click one to open it.
 fn group_board(gi: usize) -> N {
+    let g = &GROUPS[gi];
+    el("div")
+        .kid(el("div").cls("head").kid(el("h1").text(g.title)))
+        .kid(el("div").cls("board-space").style("min-height:calc(100vh - 190px)"))
+        .into()
+}
+
+/// The board as it was drawn before its members became π supers (kept for what it still reads: the layout it
+/// comes over from).
+#[allow(dead_code)]
+fn group_board_old(gi: usize) -> N {
     let g = &GROUPS[gi];
     let b = board(gi).clone();
     let total = b.pos.len() + b.extra.len();

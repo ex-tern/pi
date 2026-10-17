@@ -2182,7 +2182,16 @@ fn rail(s: &State) -> N {
         &["M8 7l-5 5 5 5", "M16 7l5 5-5 5"],
         RAIL[10],
     ));
-    el("nav").cls("rail").attr("aria-label", "Everything else").kid(r).kid(f).into()
+    // canvas too (owner, 2026-10-17: "everywhere is a canvas"): a double click on it draws a sparkle, a double right
+    // click a super, on the canvas in use
+    el("nav")
+        .cls("rail")
+        .attr("aria-label", "Everything else")
+        .on("pdbl", Msg::TV(Tool::Grid, 80))
+        .on("pdbl2", Msg::TV(Tool::Grid, 81))
+        .kid(r)
+        .kid(f)
+        .into()
 }
 
 fn window_frame(s: &State, content: N) -> N {
@@ -3616,6 +3625,8 @@ fn ctl_bar(s: &State) -> N {
         .cls("ctl-bar")
         .attr("role", "toolbar")
         .attr("aria-label", "The canvas's controls")
+        .on("pdbl", Msg::TV(Tool::Grid, 80))
+        .on("pdbl2", Msg::TV(Tool::Grid, 81))
         .kids(BAR.iter().map(|&id| -> N {
             el("button")
                 .attr("type", "button")

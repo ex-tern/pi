@@ -980,7 +980,7 @@ fn toasts_view(s: &State) -> N {
 }
 
 const REV_CSS: &str = "\
-.modal-veil{position:fixed;inset:0;z-index:90;background:rgba(25,25,25,.35);display:grid;place-items:center;padding:16px}\
+.modal-veil{position:fixed;inset:0;z-index:2147483400;background:rgba(25,25,25,.35);display:grid;place-items:center;padding:16px}\
 .modal-box{position:relative;background:var(--paper);border:1.4px solid #2b2b2b;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px}\
 .modal-box h2{margin:0 0 10px;padding-right:30px}.modal-box h3{margin:16px 0 6px}\
 .modal-x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted)}\
@@ -999,6 +999,6 @@ button.seal{cursor:pointer}.seal-mark{font-size:10px}\
 .history td{vertical-align:top}.history tr.picked{background:var(--accent-soft)}.nowrap{flex-wrap:nowrap;white-space:nowrap}\
 .row.spread{justify-content:space-between;align-items:center;margin:8px 0}\
 .author-actions summary{cursor:pointer;font-weight:600}\
-.toasts{position:fixed;right:16px;bottom:16px;z-index:95;display:flex;flex-direction:column;gap:8px;max-width:340px}\
+.toasts{position:fixed;right:16px;bottom:16px;z-index:2147483300;display:flex;flex-direction:column;gap:8px;max-width:340px}\
 .toast{position:relative;background:#fff;border:1.4px solid var(--good);padding:10px 30px 10px 12px;font-size:13.5px}.toast.warn{border-color:var(--warn)}\
 ";

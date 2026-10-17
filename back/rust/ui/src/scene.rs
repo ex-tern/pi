@@ -451,7 +451,8 @@ fn canvas_switch() {
     s.undo.clear();
     s.undo_at = 0.0;
     host::capture(false);
-    if !prog_load() {
+    let fresh = !prog_load();
+    if fresh {
         st().prog.nodes.clear();
         st().prog.next = UBASE;
         canvas_adopt_layer();
@@ -459,6 +460,100 @@ fn canvas_switch() {
     groups_load();
     locked_load();
     wires_load();
+    // a group's page: its members are π supers on its canvas (and, the first time, its old board comes over)
+    if let Page::Group(g) = st().page {
+        group_canvas(g as usize, fresh);
+    }
+}
+
+/// Where a point on a group's old board shows on screen (roughly: the board sat under the page's heading).
+fn board_to_screen(x: f64, y: f64) -> (f64, f64) {
+    let s = st();
+    let z = s.pzoom.max(0.01);
+    let (left, top) = if host::vw() < 700.0 { (24.0, 120.0) } else { (178.0, 116.0) };
+    (left + x * z + s.ppan.0, top + y * z + s.ppan.1)
+}
+
+/// A screen point, in the canvas's own units (from the Program super's corner, as nodes are kept).
+fn screen_to_node(sx: f64, sy: f64) -> (f64, f64) {
+    let g = geo(st());
+    let (px, py, _, _) = rect(&g, S_PROG);
+    ((sx - g.ox) / g.k - px, (sy - g.oy) / g.k - py)
+}
+
+/// A group's page as a π canvas: every member there as a super of its own (locked, like everything that is not drawn
+/// by you), and on the first visit what was on its board (its places, sizes, sparkles, supers and wires).
+fn group_canvas(gi: usize, fresh: bool) {
+    let Some(grp) = GROUPS.get(gi) else { return };
+    let mut by_board: Vec<usize> = Vec::new();
+    if fresh {
+        let b = board(gi);
+        let (pos, extra, links, sizes, free) = (b.pos.clone(), b.extra.clone(), b.links.clone(), b.sizes.clone(), b.free.clone());
+        let n = grp.members.len();
+        for i in 0..n + extra.len() {
+            let (bx, by, text, (bw, bh)) = if i < n {
+                (pos[i].0, pos[i].1, format!("{}{}", MEMBER, grp.members[i].0), (220.0, 104.0))
+            } else {
+                let (k, x, y, l) = &extra[i - n];
+                (*x, *y, if *k == 0 { SPARKLE.to_string() } else { l.clone() }, (88.0, 88.0))
+            };
+            let (sx, sy) = board_to_screen(bx, by);
+            let (x, y) = screen_to_node(sx, sy);
+            let id = prog_add(&text, x, y);
+            if let Some((gw, gh)) = sizes.get(i).copied().filter(|g| g.0 != 0.0 || g.1 != 0.0) {
+                if let Some(nd) = st().prog.nodes.iter_mut().find(|nd| nd.id == id) {
+                    nd.w = bw + gw;
+                    nd.h = bh + gh;
+                }
+            }
+            if i < n && !free.contains(&i) {
+                st().locked.push(id);
+            }
+            by_board.push(id);
+        }
+        // the board's wires: out to in (either way round), and control or gate to control or gate
+        for (a, c, t) in links {
+            let (Some(&ia), Some(&ic)) = (by_board.get(a), by_board.get(c)) else { continue };
+            let to = t & 3;
+            let from = ((t >> 2) & 3) ^ 1;
+            let s = st();
+            match (Tip::of(from), Tip::of(to)) {
+                (Some(Tip::Out), Some(Tip::In)) => s.wires.push((ia, ic, Tip::In)),
+                (Some(Tip::In), Some(Tip::Out)) => s.wires.push((ic, ia, Tip::In)),
+                (Some(fa), Some(tc)) if matches!(fa, Tip::Control | Tip::Gate) && matches!(tc, Tip::Control | Tip::Gate) => s.passes.push((ia, fa, ic, tc)),
+                _ => {}
+            }
+        }
+    }
+    // every member the site has now, there (one added to the group since appears at its place on the first layout)
+    let (start, _) = board_layout(gi, grp.members.len());
+    let mut added = false;
+    for (m, (name, _)) in grp.members.iter().enumerate() {
+        let text = format!("{}{}", MEMBER, name);
+        if st().prog.nodes.iter().any(|n| n.text == text) || member_hidden(gi, m) {
+            continue;
+        }
+        let (sx, sy) = board_to_screen(start[m].0, start[m].1);
+        let (x, y) = screen_to_node(sx, sy);
+        let id = prog_add(&text, x, y);
+        st().locked.push(id);
+        added = true;
+    }
+    // and a member the site no longer has, gone
+    let stale: Vec<usize> = st().prog.nodes.iter().filter(|n| n.text.starts_with(MEMBER) && member_of(&n.text).map(|(g, _)| g != gi).unwrap_or(true)).map(|n| n.id).collect();
+    for id in &stale {
+        let s = st();
+        s.prog.nodes.retain(|n| n.id != *id);
+        s.wires.retain(|w| w.0 != *id && w.1 != *id);
+        s.passes.retain(|p| p.0 != *id && p.2 != *id);
+    }
+    if fresh || added || !stale.is_empty() {
+        locked_save();
+        st().undo_at = 1e300;
+        prog_save();
+        st().undo.clear();
+        st().undo_at = 0.0;
+    }
 }
 
 /// What was drawn on this page before it had a canvas of its own (sparkles and named supers, in the page's own
@@ -1407,13 +1502,19 @@ fn scene_view(s: &State, mini: bool) -> N {
             .kid(stage)
             .into();
     }
-    el("div")
+    // Two layers (owner, 2026-10-17: "everywhere is a canvas"): the bare canvas underneath, which takes the double
+    // clicks, the pans and the right-button box; and what is drawn, on top of everything (the sidebar and the bar
+    // too), where only the supers, sparkles, wires and tips take the pointer, so whatever is under them stays usable
+    let picked = s.sup_pick.is_none() && s.prog.sel.is_none();
+    let wiring = s.wiring.is_some() || s.held_port.is_some();
+    let over = !s.ctx.is_empty();
+    let bare = el("div")
         .cls("scene")
-        // a page's own canvas, drawn over the page: only what is drawn on it takes the pointer
-        .cls_if(!s.ctx.is_empty(), "over")
+        // a page's own canvas: the page itself is its bare canvas (its double clicks come from the window)
+        .cls_if(over, "over")
         // the main canvas is selected whenever nothing on it is: its frame is blue then
-        .cls_if(s.sup_pick.is_none() && s.prog.sel.is_none(), "picked")
-        .cls_if(s.wiring.is_some() || s.held_port.is_some(), "wiring")
+        .cls_if(picked, "picked")
+        .cls_if(wiring, "wiring")
         .cls_if(s.pan_drag.is_some(), "panning")
         .attr("title", "Double click: a sparkle. Double right click: a super.")
         .on("click", Msg::WireSel(255))
@@ -1421,16 +1522,21 @@ fn scene_view(s: &State, mini: bool) -> N {
         .on("dbl2", Msg::Dbl(true, String::new()))
         .on("mwheel", Msg::TV(Tool::Grid, 50))
         .on("bgdown", Msg::TV(Tool::Grid, 52))
-        .kid(el("div").cls("frame"))
-        .kid(stage)
         .on("rsel", Msg::TV(Tool::Grid, 90))
+        .kid(el("div").cls("frame"));
+    let drawn = el("div")
+        .cls("scene scene-top")
+        .cls_if(over, "over")
+        .cls_if(wiring, "wiring")
+        .cls_if(s.pan_drag.is_some(), "panning")
+        .kid(stage)
         .kid_if(s.marquee.is_some(), || {
             let (x0, y0, x1, y1) = s.marquee.unwrap_or_default();
             el("div").cls("marquee").style(format!("left:{:.0}px;top:{:.0}px;width:{:.0}px;height:{:.0}px", x0.min(x1), y0.min(y1), (x1 - x0).abs(), (y1 - y0).abs())).into()
         })
-        .kid_if(!s.note.is_empty(), || el("div").cls("wire-note").attr("role", "status").text(s.note.clone()).into())
-        // no footer line on the canvas (owner, 2026-10-14: "delete this")
-        .into()
+        .kid_if(!s.note.is_empty(), || el("div").cls("wire-note").attr("role", "status").text(s.note.clone()).into());
+    // no footer line on the canvas (owner, 2026-10-14: "delete this")
+    el("div").cls("scene-pair").kid(bare).kid(drawn).into()
 }
 
 /// Where a node's tip is: the page's edges at the page's sides, a super's at its extreme points.
@@ -2225,6 +2331,12 @@ pub fn on_pointer(phase: u32, x: f64, y: f64) {
             } else if !d.moved && d.id == S_RESET {
                 // reset is held, not clicked: let go early and nothing happens
                 reset_hold_end(true);
+            } else if !d.moved && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && unode(s, d.id).and_then(|n| member_of(&n.text)).is_some() {
+                // a member of the site, double clicked (or tapped twice): it opens
+                s.last_tap = (usize::MAX, None, 0.0);
+                if let Some((gi, m)) = unode(s, d.id).and_then(|n| member_of(&n.text)) {
+                    open_member(gi, m);
+                }
             } else if !d.moved && is_unode(d.id) && d.free && !touching() && s.last_tap.0 == d.id && host::now() - s.last_tap.2 < 450.0 && !unode(s, d.id).map(unode_is_canvas).unwrap_or(false) {
                 // a super or sparkle of yours, unlocked and double clicked: gone, with its wires (owner, 2026-10-14); not
                 // with a finger, where a double tap is too easy to make by accident (owner, 2026-10-15)
@@ -2643,6 +2755,9 @@ fn activate(id: usize, member: Option<u8>) {
             st().locked.clear();
             locked_save();
             prog_clear();
+            if let Page::Group(g) = st().page {
+                group_canvas(g as usize, false);
+            }
             note("This page's canvas is cleared (the reset button, clicked, undoes it)".to_string());
         }
         S_RESET => {

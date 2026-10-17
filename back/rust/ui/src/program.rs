@@ -89,6 +89,10 @@ fn unode_size(text: &str) -> (f64, f64) {
     if text == SPARKLE {
         return (MADE, MADE);
     }
+    if text.starts_with(MEMBER) {
+        // a member keeps the size it had on its group's board
+        return (220.0, 104.0);
+    }
     let w = (text.chars().count() as f64 * 9.2 + 34.0).clamp(MADE, 320.0);
     (w, MADE)
 }
@@ -112,6 +116,18 @@ enum Kind {
     /// words that are no operation: a prompt for Super AI (owner, 2026-10-14: "a super uses super text uses Super AI
     /// as a prompt and shows results in output if connected to another canvas")
     Ask(String),
+    /// one of the site's own: a group's member (Leaderboards, piii VPN…) on its group's page, a π super like any other
+    /// (owner, 2026-10-17: "everywhere is a canvas"). It passes on what arrives; a double click opens it.
+    Member(String),
+}
+
+/// What a member super's text starts with (the rest is the member's name).
+const MEMBER: &str = "⇢ ";
+
+/// The member a super stands for, if it is one: (its group, its place in the group).
+fn member_of(text: &str) -> Option<(usize, usize)> {
+    let name = text.strip_prefix(MEMBER)?;
+    GROUPS.iter().enumerate().find_map(|(gi, g)| g.members.iter().position(|m| m.0 == name).map(|m| (gi, m)))
 }
 
 fn literal(t: &str) -> Option<Value> {
@@ -142,6 +158,9 @@ fn literal(t: &str) -> Option<Value> {
 }
 
 fn kind_of(text: &str) -> Kind {
+    if let Some(name) = text.strip_prefix(MEMBER) {
+        return Kind::Member(name.to_string());
+    }
     let t = text.trim();
     let low = t.to_lowercase();
     let word = low.split_whitespace().next().unwrap_or("");
@@ -206,6 +225,7 @@ fn kind_name(k: &Kind) -> &'static str {
         Kind::Push => "push",
         Kind::Open => "open",
         Kind::Ask(_) => "Super AI",
+        Kind::Member(_) => "member",
     }
 }
 
@@ -370,7 +390,7 @@ fn index_of(v: &Value, len: usize) -> Option<usize> {
 fn eval_kind(k: &Kind, ins: &[Value]) -> Value {
     let first = || ins.iter().find(|v| !v.is_null()).cloned().unwrap_or(Value::Null);
     match k {
-        Kind::Pick | Kind::Show | Kind::Open | Kind::Stop => first(),
+        Kind::Pick | Kind::Show | Kind::Open | Kind::Stop | Kind::Member(_) => first(),
         Kind::Const(v) => v.clone(),
         Kind::Op(op) => apply_op(op, ins),
         Kind::Reg(_) | Kind::Ask(_) => Value::Null,
@@ -863,6 +883,7 @@ const P_ADD: u16 = 2;
 const P_EXAMPLE: u16 = 3;
 const P_SEL: u16 = 4;
 const P_DEL: u16 = 5;
+const P_OPEN: u16 = 6;
 
 fn prog_update(a: u16, v: String) {
     let s = st();
@@ -886,6 +907,11 @@ fn prog_update(a: u16, v: String) {
         P_EXAMPLE => example_load(v.parse::<usize>().unwrap_or(0)),
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
+        P_OPEN => {
+            if let Some((gi, m)) = unode(s, id).and_then(|n| member_of(&n.text)) {
+                open_member(gi, m);
+            }
+        }
         _ => {}
     }
 }
@@ -1090,9 +1116,34 @@ fn unode_inside(s: &State, id: usize) -> Vec<usize> {
         .collect()
 }
 
+fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
+    let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
+    let pien = st().t2.pien.pick.as_deref() == Some(name);
+    el("div")
+        .cls("sx unode k-member")
+        .cls_if(pien, "pien")
+        .cls_if(s.prog.sel == Some(n.id), "sel")
+        .attr("data-s", format!("{}", n.id))
+        .attr("data-solid", "1")
+        .attr("title", format!("{}: double click to open it", name))
+        .attr("tabindex", "0")
+        .attr("role", "link")
+        .attr("aria-label", format!("Open {}", name))
+        .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
+        .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
+        .on("enter", Msg::TV(Tool::Prog, P_OPEN | (((n.id - UBASE) as u16) << 4)))
+        .kid(el("span").cls("tag").text(name.to_string()))
+        .kid_if(!v.is_empty(), || el("span").cls("u-val").text(v.clone()).into())
+        .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
+        .into()
+}
+
 fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
     if n.text == SPARKLE {
         return sparkle_view(s, n, r, mini);
+    }
+    if let Some(name) = n.text.strip_prefix(MEMBER) {
+        return member_view(s, n, r, mini, name);
     }
     let k = kind_of(&n.text);
     let val = if let Kind::Reg(_) = k { s.prog.regs.get(&n.id).cloned().unwrap_or(Value::Null) } else { s.prog.vals.get(&n.id).cloned().unwrap_or(Value::Null) };
@@ -1104,6 +1155,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
         Kind::Stop => "k-stop",
         Kind::Show => "k-show",
         Kind::Ask(_) => "k-ask",
+        Kind::Member(_) => "k-member",
         _ => "k-fn",
     };
     // a prompt on its way to Super AI says so
@@ -1214,6 +1266,9 @@ const PROG_CSS: &str = "\
 .unode.k-reg{border-color:var(--accent);border-width:2px}.unode.k-reg .u-val{color:var(--accent)}\
 .unode.k-stop{border-color:var(--bad)}.unode.k-const{background:#fbfbf9}\
 .unode.k-show .u-val{font-size:15px}\
+.sx.unode.k-member{justify-content:flex-start;align-items:flex-start;padding:14px 16px;border-radius:18px;border:1.5px solid #2b2b2b;cursor:pointer}\
+.sx.unode.k-member .tag{font:400 14px/1.35 'Geist Mono',ui-monospace,monospace;white-space:normal}\
+.sx.unode.k-member .u-val{margin-top:auto;align-self:flex-end}.sx.unode.k-member.pien{border-color:var(--accent)}\
 .sx.palette,.sx.examples{background:#fff;padding:38px 10px 10px;cursor:grab;display:block}\
 .sx.palette>.tag,.sx.examples>.tag{position:absolute;left:12px;top:9px}\
 .chips{display:flex;flex-wrap:wrap;gap:6px}\

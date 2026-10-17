@@ -265,9 +265,12 @@ font-size:20px;line-height:1;color:var(--muted)}
 @media print{.rail,.win-head,.foot,.consent{display:none!important}.win{position:static;border:0;box-shadow:none}.win-body{overflow:visible}}
 /* the canvas, as the site has always looked */
 .scene{position:fixed;inset:0;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+.scene-pair{display:contents}
 .scene.over{z-index:9;pointer-events:none;background:transparent;touch-action:auto}.scene.over>.frame{display:none}
-.scene.over .sx{pointer-events:auto}.scene.over .wire-note{position:fixed;left:50%;right:auto;bottom:24px;transform:translateX(-50%);z-index:2147483001;max-width:calc(100vw - 32px)}
-@media (max-width:699px){.scene.over .wire-note{bottom:auto;top:12px;left:12px;right:12px;transform:none;max-width:none}}
+.scene.scene-top{z-index:2147483001;pointer-events:none;background:transparent;touch-action:auto}
+.scene.scene-top .sx{pointer-events:auto}.scene.scene-top .sx.under-bar{visibility:hidden;pointer-events:none}
+.ports-svg .port{pointer-events:none}.wire-on .ports-svg .port,.scene.wiring .ports-svg .port{pointer-events:all}
+.focus.peek .scene.scene-top{z-index:7}
 .frame{position:absolute;inset:0;border:2px solid var(--accent);pointer-events:none;z-index:3}.scene:not(.floating):not(.picked)>.frame{border-color:#d6d6d1}
 .stage{position:absolute;left:0;top:0;width:1440px;height:900px;transform-origin:0 0}
 .wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
@@ -278,7 +281,7 @@ font-size:20px;line-height:1;color:var(--muted)}
 .wires .w.gate{stroke-width:calc(2.8px*var(--wz));stroke-dasharray:0.1px calc(6px*var(--wz));stroke-linecap:round}
 .wires .head.flow{fill:var(--magenta)}.wires .head.ink{fill:#2b2b2b}
 .ports-svg{position:absolute;left:0;top:0;overflow:visible;pointer-events:none;z-index:5}
-.ports-svg .port{pointer-events:all;cursor:pointer}
+.ports-svg .port{cursor:pointer}
 .ports-svg .port .pad{fill:transparent}
 .ports-svg .port .mark{fill:var(--paper);stroke:var(--ink);stroke-width:1.5;vector-effect:non-scaling-stroke;stroke-linejoin:round}
 .ports-svg .port.out .mark{fill:var(--ink)}
