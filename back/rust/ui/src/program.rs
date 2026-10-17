@@ -1411,12 +1411,13 @@ fn unode_inside(s: &State, id: usize) -> Vec<usize> {
 /// 2026-10-17: "improve the super"): the whole outline is the π shape, not a box with rounded corners.
 fn se_path(n: f64) -> String {
     let mut d = String::new();
-    for i in 0..96 {
-        let t = i as f64 / 96.0 * core::f64::consts::TAU;
+    // enough points that, zoomed in far, the outline is still a curve (owner, 2026-10-17: "fix this", a jagged edge)
+    for i in 0..256 {
+        let t = i as f64 / 256.0 * core::f64::consts::TAU;
         let (c, sn) = (libm_cos(t), libm_cos(t - core::f64::consts::FRAC_PI_2));
         let x = c.signum() * powf(c.abs(), 2.0 / n);
         let y = sn.signum() * powf(sn.abs(), 2.0 / n);
-        d.push_str(&format!("{}{:.4},{:.4}", if i == 0 { "M" } else { "L" }, x, y));
+        d.push_str(&format!("{}{:.5},{:.5}", if i == 0 { "M" } else { "L" }, x, y));
     }
     d.push('Z');
     d
@@ -1599,7 +1600,12 @@ fn ai_level_view(s: &State) -> N {
                                 .attr("title", "Go")
                                 .attr_if(s.ai_busy || s.ai_draft.trim().is_empty(), "disabled", "")
                                 .on("click", Msg::T(Tool::Prog, P_AI_SEND, String::new()))
-                                .kid(line_icon(&["M8 5.5v13l10.5-6.5z"])),
+                                .kid(
+                                    el("svg:svg")
+                                        .attr("viewBox", "0 0 20 20")
+                                        .attr("aria-hidden", "true")
+                                        .kid(el("svg:path").attr("d", "M5 3.5 L16.5 10 L5 16.5 Z")),
+                                ),
                         ),
                 )
                 .kid_if(answered, || {
@@ -2097,10 +2103,12 @@ const PROG_CSS: &str = "\
 .ai-bubble.busy .ai-spark{animation:ai-spin 1.6s linear infinite}\
 @keyframes ai-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes ai-spin{to{transform:rotate(360deg)}}\
 .ai-title{font:600 30px/1.1 'Geist',system-ui,sans-serif;color:#2b2b2b;letter-spacing:-.01em}\
-.ai-row{display:flex;align-items:center;gap:10px;width:100%;max-width:440px;margin:6px 0 0;border-bottom:1.6px solid #d9d6cc;padding:2px 0 6px;transition:border-color .2s}.ai-row:focus-within{border-color:var(--accent)}\
-.ai-row input{flex:1;min-width:0;font:inherit;font-size:17px;padding:8px 2px;border:0;background:transparent;outline:none;color:var(--ink)}\
-.ai-play{flex:none;display:grid;place-items:center;width:40px;height:40px;padding:0;border:0;border-radius:50%;background:#2b2b2b;color:#fff;cursor:pointer;transition:transform .15s,background .2s,opacity .2s}.ai-play:hover:not([disabled]){transform:scale(1.08);background:var(--accent)}.ai-play[disabled]{opacity:.3;cursor:default}\
-.ai-play svg{width:18px;height:18px;fill:currentColor;stroke:none}\
+.ai-row{display:flex;align-items:center;gap:6px;width:100%;max-width:440px;margin:4px 0 0;padding:0 0 4px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:0 1.5px 0 #d9d6cc;background:none;transition:box-shadow .25s}\
+.ai-row:focus-within{box-shadow:0 2px 0 var(--accent)}\
+.ai-row input{flex:1;min-width:0;font:inherit;font-size:18px;padding:10px 2px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:transparent!important;outline:none;color:var(--ink);text-align:center}\
+.ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
+.ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
+.ai-play svg{width:22px;height:22px;display:block}.ai-play svg path{fill:currentColor;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}\
 .ai-answer{width:100%;max-width:460px;flex:1 1 auto;min-height:0;overflow:auto;margin-top:4px;padding-bottom:14%;animation:pi-dissolve .4s ease-out both;-webkit-mask-image:linear-gradient(#000 calc(100% - 28px),transparent)}\
 .ai-q{font-size:13px;color:#8a877f;margin-bottom:8px}.ai-a{font-size:15.5px;line-height:1.55;color:#2b2b2b;white-space:pre-wrap;overflow-wrap:anywhere}\
 .ai-dots{display:flex;gap:6px;padding:6px 0}.ai-dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:ai-dot 1s ease-in-out infinite}.ai-dots i:nth-child(2){animation-delay:.15s}.ai-dots i:nth-child(3){animation-delay:.3s}\
