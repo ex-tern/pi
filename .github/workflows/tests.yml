@@ -31,7 +31,7 @@ jobs:
           pytest tests/ -v -rfE --tb=short 2>&1 | tee /tmp/pytest.txt
           s=$?
           if [ $s -ne 0 ]; then
-            grep -E "^(FAILED|ERROR) |^E   " /tmp/pytest.txt | head -40 | while IFS= read -r l; do echo "::error::$l"; done
+            { grep -E "(FAILED|ERROR)|^E   " /tmp/pytest.txt | head -40; tail -n 15 /tmp/pytest.txt; } | sed 's/\x1b\[[0-9;]*m//g' | while IFS= read -r l; do echo "::error::$l"; done
           fi
           exit $s
         env:
