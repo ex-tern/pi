@@ -27,7 +27,7 @@ def test_same_words_same_picture_and_different_words_differ():
 def test_it_draws_what_is_asked():
     two = svg(api.paint_picture("two dogs on the beach at sunset"))
     one = svg(api.paint_picture("a dog on the beach at sunset"))
-    assert two.count("<ellipse") > one.count("<ellipse")       # two dogs are more shapes than one
+    assert two.count("#1b1b1f") == 2 * one.count("#1b1b1f") > 0  # two dogs have twice the eyes of one
     assert "#05060f" in svg(api.paint_picture("a rocket in space"))  # the dark of space
 
 
