@@ -1,4 +1,4 @@
-// The Global Map of Science, and its game (arcade.js of the old page), in Rust. One surface, two modes.
+// The Map of Science, and its game (arcade.js of the old page), in Rust. One surface, two modes.
 //
 // EXPLORE is the graph: every bubble is a field of science, sized by how many assessed papers it holds. The fields
 // gather into one region per discipline; drag to pan, scroll to zoom, click a field for its detail and its papers.

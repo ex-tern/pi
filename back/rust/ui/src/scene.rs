@@ -631,6 +631,14 @@ fn group_members_sync(gi: usize) -> bool {
     let grp = &GROUPS[gi];
     let place = flow_layout(gi);
     let mut changed = false;
+    // a member renamed keeps its place and its wires (owner, 2026-10-17: "the global map of science to map of science")
+    for (old, new) in [("The Global Map of Science", "Map of Science")] {
+        let (old, new) = (format!("{}{}", MEMBER, old), format!("{}{}", MEMBER, new));
+        if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.text == old) {
+            n.text = new;
+            changed = true;
+        }
+    }
     for (m, (name, _)) in grp.members.iter().enumerate() {
         let text = format!("{}{}", MEMBER, name);
         if member_hidden(gi, m) || st().prog.nodes.iter().any(|nd| nd.text == text) {
@@ -985,7 +993,7 @@ const GROUPS: [Group; 6] = [
             ("Architecture", Target::Tool(Tool::Arch)),
             ("Whitepaper", Target::Tool(Tool::Whitepaper)),
             ("The journal", Target::Hash("#/explore/journal")),
-            ("The Global Map of Science", Target::Tool(Tool::Map)),
+            ("Map of Science", Target::Tool(Tool::Map)),
         ],
     },
     Group {
@@ -1050,7 +1058,7 @@ const FLOWS: [&[(&str, &str)]; 6] = [
         ("Capabilities", "Architecture"),
         ("Architecture", "Whitepaper"),
         ("Whitepaper", "The journal"),
-        ("The journal", "The Global Map of Science"),
+        ("The journal", "Map of Science"),
     ],
     // Lab: the operating systems, the old one before the new; study medicine, then practise neuroscience
     &[("HAL-OS", "piii OS"), ("MD", "Neuro Frenzy")],
@@ -3719,7 +3727,7 @@ const MAP: [MapNode; 41] = [
     mn("hal", "HAL-OS", "lab", 392.0, 470.0, 104.0, 44.0, "@HAL-OS", "x86 · ternary net"),
     mn("quvi", "QuVI", "lab", 516.0, 470.0, 104.0, 44.0, "@QuVI", "quantum circuits"),
     mn("face", "Face Mace", "lab", 640.0, 470.0, 104.0, 44.0, "@Face Mace", "faces, sorted"),
-    mn("map", "Map of Science", "lab", 764.0, 470.0, 104.0, 44.0, "@The Global Map of Science", "and its game"),
+    mn("map", "Map of Science", "lab", 764.0, 470.0, 104.0, 44.0, "@Map of Science", "and its game"),
     mn("frenzy", "Neuro Frenzy", "lab", 888.0, 470.0, 92.0, 44.0, "@Neuro Frenzy", ""),
     // what it runs on
     mn("browser", "Browser", "in", 20.0, 610.0, 92.0, 44.0, "", ""),

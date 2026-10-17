@@ -61,7 +61,7 @@ const ARCH: [(&str, &str, [&str; 3]); 6] = [
     ]),
     ("Outputs", "What you get back", [
         "A dossier in DORA form, with guidance for answering reviewers.",
-        "The paper's place on the Global Map of Science.",
+        "The paper's place on the Map of Science.",
         "The next epoch's criteria weights, forecast from every recorded block.",
     ]),
 ];
