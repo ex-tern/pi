@@ -708,6 +708,8 @@ const GROUPS: [Group; 6] = [
             ("Super AI", Target::Tool(Tool::Ask)),
             // from the Library (owner, 2026-10-14: "put RiBD in tools")
             ("RiBD", Target::Tool(Tool::Buddy)),
+            // owner, 2026-10-17: "A web proxy on piii.app"
+            ("Web proxy", Target::Tool(Tool::Proxy)),
         ],
     },
     Group {

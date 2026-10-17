@@ -25077,6 +25077,403 @@ def portal_delete(post_id: int, payload: PortalDelete, request: Request):
     return {"deleted": post_id}
 
 
+# ---------------------------------------------------------------------------
+# The web proxy (owner, 2026-10-17: "A web proxy on piii.app", chosen over a VPN that needs an app). A page of
+# another site, fetched by this server and shown here: browsing from the server's address instead of the
+# visitor's, with nothing to install. Websites only, and pages that need their own scripts do not work.
+#
+# What keeps it safe, each because the obvious version gets it wrong:
+#   - Only with the password (PROXY_PASSWORD, set by the owner): otherwise it is an open proxy, and whatever
+#     anyone does through it comes from the owner's address. Unset, the proxy is off.
+#   - Only public addresses, every redirect checked again (public_url): never the router, the LAN or this server.
+#   - The fetched page runs no scripts and is sandboxed (Content-Security-Policy, sandbox): it is served from
+#     piii.app's own address, and a script there could read the visitor's piii.app session.
+#   - Its links, pictures, styles and forms are rewritten to come through the proxy too; its cookies are not
+#     passed on in either direction.
+#   - A size cap and a time limit per fetch, and a per-address rate.
+# Nothing about what is visited is stored or logged.
+# ---------------------------------------------------------------------------
+proxy_router = APIRouter()
+
+PROXY_COOKIE = "pi_proxy"
+PROXY_MAX_BYTES = 12 * 1024 * 1024
+PROXY_TIMEOUT = 20
+PROXY_RATE = 240          # fetches a minute for one address (a page with its pictures is tens of them)
+_proxy_hits: Dict[str, list] = defaultdict(list)
+PROXY_CSP = ("sandbox allow-forms allow-same-origin allow-popups allow-popups-to-escape-sandbox "
+             "allow-top-navigation-by-user-activation; "
+             "default-src 'self' data:; script-src 'none'; object-src 'none'; base-uri 'none'; "
+             "form-action 'self'; frame-ancestors 'self'; style-src 'self' 'unsafe-inline' data:; "
+             "img-src 'self' data:; font-src 'self' data:; media-src 'self' data:; frame-src 'self'")
+PROXY_UA = ("Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) "
+            "Chrome/128.0.0.0 Safari/537.36")
+
+
+def proxy_password() -> str:
+    return (os.getenv("PROXY_PASSWORD") or "").strip()
+
+
+def proxy_token(pw: str) -> str:
+    secret = os.getenv("SESSION_SECRET", "").strip() or pw
+    return hmac.new(secret.encode(), ("proxy:" + pw).encode(), hashlib.sha256).hexdigest()
+
+
+def proxy_allowed(request: Request) -> bool:
+    pw = proxy_password()
+    got = request.cookies.get(PROXY_COOKIE) or ""
+    return bool(pw) and bool(got) and hmac.compare_digest(got, proxy_token(pw))
+
+
+def proxy_rate(request: Request):
+    ip = get_client_ip(request)
+    now = time.time()
+    hits = _proxy_hits[ip]
+    while hits and hits[0] < now - 60:
+        hits.pop(0)
+    if len(hits) >= PROXY_RATE:
+        raise HTTPException(status_code=429, detail="Too many pages a minute through the proxy. Wait a little.")
+    hits.append(now)
+
+
+def proxy_link(url: str) -> str:
+    return "/proxy?u=" + urllib.parse.quote(url, safe="")
+
+
+def proxy_target(url: str) -> str:
+    """What was typed, as an address: https:// added when it has none."""
+    url = (url or "").strip()
+    if url and not re.match(r"^[a-zA-Z][a-zA-Z0-9+.-]*://", url):
+        url = "https://" + url
+    return url
+
+
+def _proxy_abs(base: str, ref: str) -> Optional[str]:
+    ref = (ref or "").strip()
+    if not ref or ref.startswith(("#", "javascript:", "data:", "mailto:", "tel:", "about:", "blob:")):
+        return None
+    try:
+        u = urllib.parse.urljoin(base, ref)
+    except ValueError:
+        return None
+    return u if u.startswith(("http://", "https://")) else None
+
+
+_CSS_URL = re.compile(r"""url\(\s*(['"]?)([^'")]+)\1\s*\)""", re.I)
+_CSS_IMPORT = re.compile(r"""@import\s+(['"])([^'"]+)\1""", re.I)
+
+
+def proxy_css(css: str, base: str) -> str:
+    def u(m):
+        a = _proxy_abs(base, m.group(2))
+        return f"url('{proxy_link(a)}')" if a else m.group(0)
+
+    def i(m):
+        a = _proxy_abs(base, m.group(2))
+        return f"@import '{proxy_link(a)}'" if a else m.group(0)
+    return _CSS_IMPORT.sub(i, _CSS_URL.sub(u, css))
+
+
+class _ProxyHTML(__import__("html.parser", fromlist=["HTMLParser"]).HTMLParser):
+    """A page rewritten so everything it points to comes through the proxy, and nothing of its own runs."""
+    URL_ATTRS = {"href", "src", "action", "poster", "background", "data", "formaction", "data-src", "longdesc"}
+    DROP = {"script", "noscript", "object", "embed", "applet"}
+    VOID = {"area", "base", "br", "col", "embed", "hr", "img", "input", "link", "meta", "param", "source", "track", "wbr"}
+
+    def __init__(self, base: str):
+        super().__init__(convert_charrefs=False)
+        self.base = base
+        self.out: list = []
+        self.skip = 0
+        self.in_style = False
+        self.title = ""
+        self._in_title = False
+
+    def _attrs(self, tag, attrs):
+        out, has_action = [], False
+        for k, v in attrs:
+            k = k.lower()
+            if k.startswith("on") or k in ("integrity", "nonce", "ping", "srcdoc"):
+                continue
+            if v is None:
+                out.append(k)
+                continue
+            if k == "action" and tag == "form":
+                has_action = True
+                a = _proxy_abs(self.base, v) or self.base
+                out.append(f'action="/proxy/form"')
+                out.append(f'data-to="{__import__("html").escape(a)}"')
+                continue
+            if k in self.URL_ATTRS:
+                a = _proxy_abs(self.base, v)
+                v = proxy_link(a) if a else ("#" if v.strip().lower().startswith("javascript:") else v)
+            elif k in ("srcset", "imagesrcset"):
+                parts = []
+                for c in v.split(","):
+                    bits = c.strip().split()
+                    if bits:
+                        a = _proxy_abs(self.base, bits[0])
+                        if a:
+                            parts.append(" ".join([proxy_link(a)] + bits[1:]))
+                v = ", ".join(parts)
+            elif k == "style":
+                v = proxy_css(v, self.base)
+            elif k == "target":
+                continue
+            out.append(f'{k}="{__import__("html").escape(v, quote=True)}"')
+        if tag == "form" and not has_action:
+            out.append('action="/proxy/form"')
+            out.append(f'data-to="{__import__("html").escape(self.base)}"')
+        return out
+
+    def handle_starttag(self, tag, attrs):
+        tag = tag.lower()
+        if tag in self.DROP:
+            if tag not in self.VOID:
+                self.skip += 1
+            return
+        if self.skip:
+            return
+        if tag == "base":
+            href = dict(attrs).get("href")
+            a = _proxy_abs(self.base, href or "")
+            if a:
+                self.base = a
+            return
+        if tag == "meta":
+            d = {k.lower(): (v or "") for k, v in attrs}
+            if d.get("http-equiv", "").lower() in ("refresh", "content-security-policy", "set-cookie"):
+                return
+        if tag == "title":
+            self._in_title = True
+        if tag == "style":
+            self.in_style = True
+        a = self._attrs(tag, attrs)
+        self.out.append("<" + tag + ("" if not a else " " + " ".join(a)) + ">")
+        if tag == "form":
+            to = next((x for x in a if x.startswith("data-to=")), None)
+            if to:
+                self.out.append(f'<input type="hidden" name="__u" value={to[8:]}>')
+        if tag == "body":
+            self.out.append("\x00BAR\x00")
+
+    def handle_startendtag(self, tag, attrs):
+        self.handle_starttag(tag, attrs)
+
+    def handle_endtag(self, tag):
+        tag = tag.lower()
+        if tag in self.DROP:
+            if tag not in self.VOID:
+                self.skip = max(0, self.skip - 1)
+            return
+        if self.skip:
+            return
+        if tag == "title":
+            self._in_title = False
+        if tag == "style":
+            self.in_style = False
+        self.out.append(f"</{tag}>")
+
+    def handle_data(self, data):
+        if self.skip:
+            return
+        if self._in_title:
+            self.title += data
+        self.out.append(proxy_css(data, self.base) if self.in_style else data)
+
+    def handle_entityref(self, name):
+        if not self.skip:
+            self.out.append(f"&{name};")
+
+    def handle_charref(self, name):
+        if not self.skip:
+            self.out.append(f"&#{name};")
+
+    def handle_comment(self, data):
+        pass
+
+    def handle_decl(self, decl):
+        self.out.append(f"<!{decl}>")
+
+
+def proxy_bar(url: str) -> str:
+    esc = __import__("html").escape
+    return ('<div style="all:initial;display:flex;gap:8px;align-items:center;position:sticky;top:0;z-index:2147483647;'
+            'background:#f7f6f2;border-bottom:1px solid #d9d6cc;padding:8px 12px;font:14px system-ui,sans-serif;color:#1b1b1a">'
+            '<a href="/" style="all:initial;font:600 14px system-ui,sans-serif;color:#1b1b1a;cursor:pointer">piii.app proxy</a>'
+            '<form action="/proxy" method="get" style="all:initial;display:flex;flex:1;gap:6px">'
+            f'<input name="u" value="{esc(url)}" style="all:initial;flex:1;font:14px system-ui,sans-serif;background:#fff;'
+            'border:1px solid #d9d6cc;border-radius:8px;padding:6px 10px;color:#1b1b1a;min-width:0">'
+            '<button style="all:initial;font:600 14px system-ui,sans-serif;background:#1b1b1a;color:#fff;border-radius:8px;'
+            'padding:6px 12px;cursor:pointer">Go</button></form></div>')
+
+
+def proxy_page(body: bytes, url: str, encoding: str) -> str:
+    text = body.decode(encoding or "utf-8", errors="replace")
+    p = _ProxyHTML(url)
+    try:
+        p.feed(text)
+        p.close()
+    except Exception:                                       # noqa: BLE001 — a broken page is shown as it parsed
+        pass
+    out = "".join(p.out)
+    bar = proxy_bar(url)
+    out = out.replace("\x00BAR\x00", bar, 1) if "\x00BAR\x00" in out else bar + out
+    return out
+
+
+def proxy_message(title: str, msg: str, url: str = "", status: int = 200) -> HTMLResponse:
+    esc = __import__("html").escape
+    doc = (f'<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+           f'<title>{esc(title)}</title><body style="margin:0;font:16px system-ui,sans-serif;background:#f7f6f2;color:#1b1b1a">'
+           f'{proxy_bar(url)}<div style="max-width:640px;margin:40px auto;padding:0 16px"><h1 style="font-size:22px">{esc(title)}</h1>'
+           f'<p>{esc(msg)}</p></div></body>')
+    return HTMLResponse(doc, status_code=status, headers={"Content-Security-Policy": PROXY_CSP, "Cache-Control": "no-store",
+                                                          "Referrer-Policy": "no-referrer", "X-Robots-Tag": "noindex, nofollow"})
+
+
+def proxy_fetch(method: str, url: str, data: Optional[bytes] = None, ctype: str = ""):
+    """(final url, response, body) through public addresses only, every redirect checked; or raises HTTPException."""
+    session = requests.Session()
+    session.trust_env = False
+    headers = {"User-Agent": PROXY_UA, "Accept": "text/html,application/xhtml+xml,image/avif,image/webp,*/*;q=0.8",
+               "Accept-Language": "en-GB,en;q=0.9,it;q=0.8"}
+    if ctype:
+        headers["Content-Type"] = ctype
+    for _ in range(6):
+        if not public_url(url):
+            raise HTTPException(status_code=400, detail="Only public websites can be opened through the proxy.")
+        try:
+            res = session.request(method, url, headers=headers, data=data, timeout=PROXY_TIMEOUT,
+                                  allow_redirects=False, stream=True)
+        except requests.RequestException:
+            raise HTTPException(status_code=502, detail="That site could not be reached.")
+        if res.status_code in (301, 302, 303, 307, 308) and res.headers.get("Location"):
+            nxt = urllib.parse.urljoin(url, res.headers["Location"])
+            res.close()
+            if res.status_code in (301, 302, 303):
+                method, data = "GET", None
+                headers.pop("Content-Type", None)
+            url = nxt
+            continue
+        declared = res.headers.get("Content-Length", "")
+        if declared.isdigit() and int(declared) > PROXY_MAX_BYTES:
+            res.close()
+            raise HTTPException(status_code=413, detail="That file is too large for the proxy (12 MB at most).")
+        body = bytearray()
+        try:
+            for chunk in res.iter_content(chunk_size=65536):
+                body.extend(chunk)
+                if len(body) > PROXY_MAX_BYTES:
+                    res.close()
+                    raise HTTPException(status_code=413, detail="That file is too large for the proxy (12 MB at most).")
+        except requests.RequestException:
+            raise HTTPException(status_code=502, detail="That site stopped answering.")
+        return url, res, bytes(body)
+    raise HTTPException(status_code=508, detail="Too many redirects.")
+
+
+def proxy_answer(request: Request, method: str, url: str, data: Optional[bytes] = None, ctype: str = ""):
+    if not proxy_password():
+        return proxy_message("The proxy is off", "The owner has not set a proxy password (PROXY_PASSWORD) on this server.", url, 403)
+    if not proxy_allowed(request):
+        return RedirectResponse("/#/proxy", status_code=303)
+    url = proxy_target(url)
+    if not url:
+        return proxy_message("piii.app proxy", "Type an address above.")
+    host = (urllib.parse.urlsplit(url).hostname or "").lower()
+    own = (request.headers.get("host") or "").split(":")[0].lower()
+    if host and (host == own or host.endswith("." + own) or host in ("piii.app", "www.piii.app")):
+        return RedirectResponse("/", status_code=303)
+    proxy_rate(request)
+    try:
+        final, res, body = proxy_fetch(method, url, data, ctype)
+    except HTTPException as e:
+        return proxy_message("Not opened", str(e.detail), url, e.status_code)
+    kind = (res.headers.get("Content-Type") or "application/octet-stream").split(";")[0].strip().lower()
+    common = {"Content-Security-Policy": PROXY_CSP, "Referrer-Policy": "no-referrer", "X-Content-Type-Options": "nosniff",
+              "X-Robots-Tag": "noindex, nofollow", "Cache-Control": "private, max-age=300"}
+    if kind in ("text/html", "application/xhtml+xml"):
+        enc = res.encoding if res.encoding and "charset" in (res.headers.get("Content-Type") or "").lower() else None
+        if not enc:
+            m = re.search(rb'<meta[^>]+charset=["\']?([a-zA-Z0-9_-]+)', body[:4096], re.I)
+            enc = m.group(1).decode() if m else "utf-8"
+        try:
+            page = proxy_page(body, final, enc)
+        except LookupError:
+            page = proxy_page(body, final, "utf-8")
+        return HTMLResponse(page, status_code=res.status_code if res.status_code < 600 else 200, headers=common)
+    if kind == "text/css":
+        css = proxy_css(body.decode(res.encoding or "utf-8", errors="replace"), final)
+        return Response(css, media_type="text/css", status_code=res.status_code, headers=common)
+    if kind in ("application/javascript", "text/javascript", "application/x-javascript"):
+        return Response(b"", media_type="text/javascript", headers=common)
+    if kind == "image/svg+xml":
+        common["Content-Disposition"] = "inline"
+    return Response(body, media_type=kind, status_code=res.status_code, headers=common)
+
+
+@proxy_router.get("/proxy", include_in_schema=False)
+def proxy_get(request: Request, u: str = Query(default="")):
+    return proxy_answer(request, "GET", u)
+
+
+@proxy_router.get("/proxy/form", include_in_schema=False)
+def proxy_form_get(request: Request):
+    params = [(k, v) for k, v in request.query_params.multi_items() if k != "__u"]
+    to = request.query_params.get("__u", "")
+    if not to:
+        return proxy_message("Not opened", "That form gave no address.")
+    parts = urllib.parse.urlsplit(to)
+    target = urllib.parse.urlunsplit((parts.scheme, parts.netloc, parts.path, urllib.parse.urlencode(params), ""))
+    return proxy_answer(request, "GET", target)
+
+
+@proxy_router.post("/proxy/form", include_in_schema=False)
+async def proxy_form_post(request: Request):
+    raw = await request.body()
+    if len(raw) > 1024 * 1024:
+        return proxy_message("Not sent", "That form is too large for the proxy.")
+    ctype = request.headers.get("content-type", "")
+    if "application/x-www-form-urlencoded" not in ctype:
+        return proxy_message("Not sent", "Only simple forms work through the proxy (no file uploads).")
+    pairs = urllib.parse.parse_qsl(raw.decode("utf-8", errors="replace"), keep_blank_values=True)
+    to = next((v for k, v in pairs if k == "__u"), "")
+    body = urllib.parse.urlencode([(k, v) for k, v in pairs if k != "__u"]).encode()
+    if not to:
+        return proxy_message("Not sent", "That form gave no address.")
+    return proxy_answer(request, "POST", to, body, "application/x-www-form-urlencoded")
+
+
+class ProxyEnter(BaseModel):
+    password: str = ""
+
+
+@proxy_router.get("/api/proxy/status")
+def proxy_status(request: Request):
+    return {"enabled": bool(proxy_password()), "allowed": proxy_allowed(request)}
+
+
+@proxy_router.post("/api/proxy/enter")
+def proxy_enter(payload: ProxyEnter, request: Request):
+    check_rate_limit(get_client_ip(request), bucket="proxy_enter")
+    pw = proxy_password()
+    if not pw:
+        raise HTTPException(status_code=403, detail="The proxy is off: no proxy password is set on this server.")
+    if not hmac.compare_digest(payload.password.strip().encode(), pw.encode()):
+        raise HTTPException(status_code=401, detail="That is not the proxy password.")
+    r = JSONResponse({"allowed": True})
+    secure = request.url.scheme == "https" or request.headers.get("x-forwarded-proto") == "https"
+    r.set_cookie(PROXY_COOKIE, proxy_token(pw), max_age=60 * 60 * 24 * 30, httponly=True, samesite="lax", secure=secure, path="/")
+    return r
+
+
+@proxy_router.post("/api/proxy/leave")
+def proxy_leave():
+    r = JSONResponse({"allowed": False})
+    r.delete_cookie(PROXY_COOKIE, path="/")
+    return r
+
+
 # ==============================================================================================================
 # routes/chain.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
@@ -27348,6 +27745,7 @@ app.include_router(admin_router)
 app.include_router(reviewing_router)
 app.include_router(bugreport_router)
 app.include_router(portal_router)
+app.include_router(proxy_router)
 app.include_router(assess_router)
 app.include_router(discover_router)
 app.include_router(scilem_router)

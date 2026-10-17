@@ -350,6 +350,7 @@ struct State {
     vpn: Vpn,
     osf: OsFlash,
     portal: OpenPortal,
+    proxy: WebProxy,
     boards: Vec<Board>,
     board_drag: Option<BoardDrag>,
     /// the program drawn on the canvas (program.rs)
@@ -384,7 +385,7 @@ pub fn start() {
     host::append_child(shape, rule_node);
     host::append_child(head, shape);
     let tools = host::create_el("style");
-    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS, INTERN_CSS, VPN_CSS, OS_CSS, PORTAL_CSS));
+    let tools_css = host::create_text(&format!("{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}{}", TOOLS_CSS, PROG_CSS, TOOLS2_CSS, QUVI_CSS, FACE_CSS, MAP_CSS, STUDIO_CSS, SCIM_CSS, REV_CSS, OWNER_CSS, LEDGER_CSS, LEARN_CSS, HAL_CSS, BOARD_CSS, DOSSIER_CSS, INTERN_CSS, VPN_CSS, OS_CSS, PORTAL_CSS, PROXY_CSS));
     host::append_child(tools, tools_css);
     host::append_child(head, tools);
     let meta = host::create_el("meta");
@@ -529,6 +530,7 @@ pub fn start() {
         vpn: Vpn::default(),
         osf: OsFlash::default(),
         portal: OpenPortal::default(),
+        proxy: WebProxy::default(),
         boards: Vec::new(),
         board_drag: None,
         prog: Prog::default(),
@@ -993,6 +995,11 @@ fn route() {
             };
         }
         "library" => s.page = Page::Library,
+        // where the proxy sends a visitor without its password
+        "proxy" => {
+            host::replace_url(&member_href("Web proxy"));
+            return route();
+        }
         "account" => s.page = Page::Account,
         "paper" => {
             let h = parts.next().unwrap_or("").to_string();
@@ -3584,6 +3591,7 @@ include!("intern.rs");
 include!("vpn.rs");
 include!("os.rs");
 include!("portal.rs");
+include!("proxy.rs");
 
 /// Save, lock, chain and reset, floating over an open super as they sit on the canvas.
 fn ctl_bar(s: &State) -> N {
