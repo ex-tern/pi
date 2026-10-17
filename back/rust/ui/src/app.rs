@@ -1022,12 +1022,11 @@ fn route_page() {
     match parts.next().unwrap_or("") {
         // the site starts as an empty canvas, zoomed all the way out: zoom in to find it, or out to Super AI (owner,
         // 2026-10-17: "the web starts as an empty canvas. We have to zoom in to find out")
-        "" if first && !href.contains('#') => {
+        // the welcome page (owner, 2026-10-17: "this is the initial state of the site"): every visit opens on the
+        // ring of places round Super AI, centred and whole; the bubble and the prompt are further out
+        "" if first => {
             s.page = Page::Home;
-            let lo = canvas_zoom_limits(s).0;
-            st().zoom = lo;
-            // and above it all, the bubble: zoom in to enter Super AI, then the site
-            st().ai_level = 2;
+            welcome_view();
         }
         "" => s.page = Page::Home,
         "map" => s.page = Page::Map,

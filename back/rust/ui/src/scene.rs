@@ -1438,7 +1438,14 @@ fn scene_view(s: &State, mini: bool) -> N {
             let (bx, by, bw, bh) = rect(&g, b);
             let (c1, c2) = ((ax + aw / 2.0, ay + ah / 2.0), (bx + bw / 2.0, by + bh / 2.0));
             let (dx, dy) = (c2.0 - c1.0, c2.1 - c1.1);
-            let edge = |w: f64, h: f64| -> f64 { (w / 2.0 / dx.abs().max(1e-9)).min(h / 2.0 / dy.abs().max(1e-9)) };
+            // where the line leaves the outline |x/a|^π + |y/b|^π = 1
+            let n = core::f64::consts::PI;
+            let edge = |w: f64, h: f64| -> f64 {
+                let (u, v) = ((dx / (w / 2.0)).abs(), (dy / (h / 2.0)).abs());
+                let p = |x: f64| if x <= 0.0 { 0.0 } else { powf(x, n) };
+                let sum = p(u) + p(v);
+                if sum <= 0.0 { 0.0 } else { 1.0 / powf(sum, 1.0 / n) }
+            };
             let (t1, t2) = (edge(aw, ah), 1.0 - edge(bw, bh));
             Some(format!("M{:.1},{:.1} L{:.1},{:.1}", c1.0 + dx * t1, c1.1 + dy * t1, c1.0 + dx * t2, c1.1 + dy * t2))
         } else {
@@ -2654,6 +2661,23 @@ fn merges(s: &State, g: &Geo) -> BTreeMap<usize, (Option<(f64, f64)>, usize)> {
         }
     }
     out
+}
+
+/// The welcome view: the home canvas zoomed out to its ring of places, Super AI in the middle of the window.
+fn welcome_view() {
+    let s = st();
+    s.ai_level = 0;
+    s.zoom = canvas_zoom_limits(s).0;
+    let hub = s.prog.nodes.iter().find(|n| world_of(&n.text) == Some(WORLD_HUB)).map(|n| n.id);
+    if let Some(id) = hub {
+        let g = geo(s);
+        let (x, y, w, h) = rect(&g, id);
+        // move the view so the hub's middle is the window's
+        let (sx, sy) = (g.ox + (x + w / 2.0) * g.k, g.oy + (y + h / 2.0) * g.k);
+        let (vw, vh) = (host::vw(), host::vh());
+        s.pan = (s.pan.0 + (vw / 2.0 + 30.0 - sx) / g.k, s.pan.1 + (vh / 2.0 - sy) / g.k);
+    }
+    layout_save();
 }
 
 /// Round the loop: past the deepest zoom is the highest level again.
