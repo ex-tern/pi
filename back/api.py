@@ -459,9 +459,14 @@ def claude_ask(prompt: str, max_tokens: int = 700) -> Dict:
     """One answer from Claude, through Anthropic's Messages API: {"answer", "model"} or {"failed"}."""
     if not ANTHROPIC_API_KEY:
         return {"failed": "not configured on this deployment"}
-    headers = {"x-api-key": ANTHROPIC_API_KEY, "anthropic-version": "2023-06-01", "content-type": "application/json"}
-    if ANTHROPIC_WORKSPACE_ID:
-        headers["anthropic-workspace-id"] = ANTHROPIC_WORKSPACE_ID
+    # a key or workspace ID copied with a stray character (a placeholder's "…", a curly quote) is said plainly
+    key, ws = ANTHROPIC_API_KEY.strip().strip("'\""), ANTHROPIC_WORKSPACE_ID.strip().strip("'\"")
+    for name, v in (("ANTHROPIC_API_KEY", key), ("ANTHROPIC_WORKSPACE_ID", ws)):
+        if v and (not v.isascii() or "…" in v or " " in v):
+            return {"failed": f"{name} in /etc/piii-site.env has a character that can't be sent (a placeholder's “…”?): put the real value there"}
+    headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    if ws:
+        headers["anthropic-workspace-id"] = ws
     try:
         r = requests.post("https://api.anthropic.com/v1/messages", headers=headers, timeout=60,
                           json={"model": CLAUDE_MODEL, "max_tokens": max_tokens,
