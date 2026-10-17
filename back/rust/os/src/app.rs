@@ -137,7 +137,7 @@ const DIGITS: [usize; 4] = [100, 1000, 5000, 20000];
 /// (owner, again: "piii os mouse still too sensitive"): slower steps at the bottom, and it starts slower; the choice
 /// is kept in the computer's memory (NVRAM) from one start to the next
 pub const SPEEDS: [f64; 10] = [0.06, 0.09, 0.12, 0.16, 0.2, 0.26, 0.35, 0.5, 0.75, 1.1];
-const SPEED_START: usize = 3;
+const SPEED_START: usize = 2;
 
 pub struct App {
     pub w: usize,
@@ -244,9 +244,9 @@ impl App {
     pub fn event(&mut self, e: Event) {
         match e {
             Event::Move(dx, dy) => {
-                // slow moves exact, quick ones go further (up to twice as far), as a computer's mouse feels
-                let m = crate::num::sqrt(dx * dx + dy * dy);
-                let k = SPEEDS[self.speed] * (1.0 + 0.4 * ((m - 4.0) / 12.0).clamp(0.0, 1.0));
+                // no acceleration (owner: "too sensitive and inaccurate"): the same move of the mouse always takes
+                // the pointer the same distance, so the hand learns it
+                let k = SPEEDS[self.speed];
                 let (mx, my) = (dx * k + self.rest.0, dy * k + self.rest.1);
                 let (ix, iy) = (mx as i64 as f64, my as i64 as f64);
                 self.rest = (mx - ix, my - iy);

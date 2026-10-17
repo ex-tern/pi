@@ -111,7 +111,13 @@ fn ts_guest() -> N {
         .kid(
             el("ol")
                 .cls("ts-steps")
-                .kid(el("li").kid(txt("Install Tailscale on your phone or computer: ")).kid(ext_link("https://tailscale.com/download", "tailscale.com/download ↗")))
+                .kid(
+                    el("li")
+                        .kid(txt("Install Tailscale on your phone or computer: "))
+                        .kid(ext_link("https://tailscale.com/download", "tailscale.com/download ↗"))
+                        .kid(el("div").cls("ts-get").kid(txt("Android: ")).kid(ext_link("https://play.google.com/store/apps/details?id=com.tailscale.ipn", "Google Play ↗")).kid(txt(" · or the APK file, no Google account needed: ")).kid(ext_link("https://f-droid.org/packages/com.tailscale.ipn/", "F-Droid ↗")))
+                        .kid(el("div").cls("ts-get").kid(txt("iPhone, iPad and Mac: ")).kid(ext_link("https://apps.apple.com/app/tailscale/id1470499037", "App Store ↗"))),
+                )
                 .kid(el("li").text("Open the invite link you were sent, sign in (Google, Apple, Microsoft or GitHub: a free account), and accept."))
                 .kid(el("li").text("In the Tailscale app, choose Exit node → piii. Everything you do online now goes out through it; turn the exit node off to stop.")),
         )
@@ -258,4 +264,5 @@ const TS_CSS: &str = "\
 .ts-list{list-style:none;padding:0;margin:6px 0}.ts-list li{display:flex;gap:8px;align-items:center;flex-wrap:wrap;padding:6px 0;border-top:1px solid var(--line)}\
 .ts-list li .btn:first-of-type{margin-left:auto}\
 .ts-owner{margin-top:10px;font-size:14px}\
+.ts-get{font-size:13px;margin:2px 0}\
 ";

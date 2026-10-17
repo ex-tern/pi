@@ -21,9 +21,20 @@ static REPORTS: AtomicU32 = AtomicU32::new(0);
 /// the left button's presses and releases since last asked (a quick click is both, between two looks)
 static DOWNS: AtomicU32 = AtomicU32::new(0);
 static UPS: AtomicU32 = AtomicU32::new(0);
+/// the last report as it came (its first 8 bytes, and its length), to show in Devices
+static LAST: [core::sync::atomic::AtomicU8; 8] = [const { core::sync::atomic::AtomicU8::new(0) }; 8];
+static LAST_LEN: AtomicU32 = AtomicU32::new(0);
+/// whether each mouse took the boot protocol (buttons, x, y): 1 yes, 2 no
+static BOOT_OK: AtomicU32 = AtomicU32::new(0);
 
 /// What a report says: the buttons, then how far in x and in y.
 fn feed(b: &[u8]) {
+    if b.len() >= 3 && b[1..].iter().any(|x| *x != 0) {
+        for (i, x) in b.iter().take(8).enumerate() {
+            LAST[i].store(*x, Ordering::Relaxed);
+        }
+        LAST_LEN.store(b.len() as u32, Ordering::Relaxed);
+    }
     if b.len() >= 3 {
         let before = BUTTONS.swap(b[0] as u32, Ordering::Relaxed) & 1;
         let now = b[0] as u32 & 1;
@@ -46,6 +57,21 @@ extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: 
         feed(unsafe { core::slice::from_raw_parts(data, len) });
     }
     SUCCESS
+}
+
+/// The last report that moved something, in hexadecimal, and whether the mouse took the boot protocol.
+pub fn last_report() -> String {
+    let n = (LAST_LEN.load(Ordering::Relaxed) as usize).min(8);
+    let mut s = String::new();
+    for i in 0..n {
+        s.push_str(&format!("{:02x} ", LAST[i].load(Ordering::Relaxed)));
+    }
+    let boot = match BOOT_OK.load(Ordering::Relaxed) {
+        1 => "took the simple (boot) format",
+        2 => "refused the simple (boot) format",
+        _ => "",
+    };
+    format!("{}({} bytes){}{}", s, LAST_LEN.load(Ordering::Relaxed), if boot.is_empty() { "" } else { "; it " }, boot)
 }
 
 /// The reports seen since piii OS started (to count how many a second arrive).
@@ -97,7 +123,9 @@ pub fn start() -> Mice {
         let mut set_idle = UsbRequest { kind: 0x21, request: 0x0A, value: 0, index: ifd.number as u16, length: 0 };
         unsafe {
             // 2: no data stage
-            ((*io).control)(io, &mut set_protocol, 2, 1000, core::ptr::null_mut(), 0, &mut st);
+            let r = ((*io).control)(io, &mut set_protocol, 2, 1000, core::ptr::null_mut(), 0, &mut st);
+            BOOT_OK.store(if r == SUCCESS { 1 } else { 2 }, Ordering::Relaxed);
+            uefi::log(&format!("piii OS: boot protocol: {}", if r == SUCCESS { "yes" } else { "refused" }));
             ((*io).control)(io, &mut set_idle, 2, 1000, core::ptr::null_mut(), 0, &mut st);
         }
         // Asked directly at each look of piii OS's own loop (about 200 a second) when the firmware lets it: an older

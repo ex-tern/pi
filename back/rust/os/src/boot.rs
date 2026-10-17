@@ -147,10 +147,11 @@ impl Input {
             unsafe {
                 ((*p).reset)(p, 0);
                 let m = (*p).mode;
-                let (rx, ry) = if m.is_null() { (0.0, 0.0) } else { ((*m).res_x as f64, (*m).res_y as f64) };
-                // a move of `res` counts is a millimetre; about eight pixels to one
-                let k = |r: f64| if r > 0.0 { (8.0 / r).clamp(0.05, 8.0) } else { 1.0 };
-                rel.push((p, k(rx), k(ry)));
+                let (rx, ry) = if m.is_null() { (0, 0) } else { ((*m).res_x, (*m).res_y) };
+                uefi::log(&format!("piii OS: firmware pointer, resolution {} × {} counts a millimetre", rx, ry));
+                // counts as they come, as from piii OS's own USB driver: the resolution a firmware gives is often
+                // wrong (a Mac's can make every move eight times too large), and the speed setting scales both
+                rel.push((p, 1.0, 1.0));
             }
         }
         let gathered_abs = handle_protocol::<AbsPointer>(st.con_in_handle, &ABS_POINTER);
@@ -408,6 +409,7 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
                 ("Mouse reports".into(), format!("{} a second (a moving mouse sends 60 to 125)", r - reports0)),
                 ("Looks a second".into(), format!("{} (how often piii OS reads the mouse and keys)", looks)),
                 ("Drawing".into(), format!("{} whole drawings in the last second, the slowest {} ms", draws, worst / per_ms)),
+                ("Mouse's last report".into(), crate::usb::last_report()),
             ];
             if app.devices_open() {
                 app.dirty = true;
