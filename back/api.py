@@ -28221,8 +28221,15 @@ def _hsl(h, s, l, a=1.0):
     return f"hsla({h % 360:.0f},{s:.0f}%,{l:.0f}%,{a:.2f})"
 
 
-def paint_picture(prompt: str, size: int = 512) -> str:
-    """A picture of the words, painted here: an SVG data URL."""
+def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
+    """A picture of the words, painted here: an SVG data URL. Moving (a video super): its clouds drift, stars twinkle,
+    waves roll, rain falls, the sun glows and what it is of breathes, in a loop."""
+    def anim_move(dx, dy, dur):
+        return (f'<animateTransform attributeName="transform" type="translate" values="0 0;{dx} {dy};0 0" dur="{dur}s" '
+                'repeatCount="indefinite" calcMode="spline" keySplines=".45 0 .55 1;.45 0 .55 1"/>') if moving else ""
+
+    def anim_blink(dur):
+        return f'<animate attributeName="opacity" values="1;.2;1" dur="{dur:.1f}s" repeatCount="indefinite"/>' if moving else ""
     words = _pre.findall(r"[a-z]+", prompt.lower())
     ws = set(words)
     rnd = _prand.Random(int(_phash.sha256(prompt.strip().lower().encode()).hexdigest()[:16], 16))
@@ -28286,7 +28293,7 @@ def paint_picture(prompt: str, size: int = 512) -> str:
     horizon = S * (0.62 + rnd.uniform(-0.04, 0.04))
     if space:
         for _ in range(140):
-            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(.4,1.8):.1f}" fill="#fff" opacity="{rnd.uniform(.3,1):.2f}"/>')
+            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(.4,1.8):.1f}" fill="#fff" opacity="{rnd.uniform(.3,1):.2f}">{anim_blink(rnd.uniform(1.5,4))}</circle>')
         for k in range(3):
             h = (base_h + k * 70) % 360
             defs.append(f'<radialGradient id="neb{k}"><stop offset="0" stop-color="{_hsl(h,80,60,.55)}"/><stop offset="1" stop-color="{_hsl(h,80,40,0)}"/></radialGradient>')
@@ -28299,23 +28306,25 @@ def paint_picture(prompt: str, size: int = 512) -> str:
     elif not under:
         if night or style == "neon":
             for _ in range(70):
-                out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,horizon*.8):.0f}" r="{rnd.uniform(.5,1.6):.1f}" fill="#fff" opacity="{rnd.uniform(.4,1):.2f}"/>')
+                out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,horizon*.8):.0f}" r="{rnd.uniform(.5,1.6):.1f}" fill="#fff" opacity="{rnd.uniform(.4,1):.2f}">{anim_blink(rnd.uniform(1.5,4))}</circle>')
             mx, my = rnd.uniform(.15, .85) * S, rnd.uniform(.1, .25) * S
             out.append(f'<circle cx="{mx:.0f}" cy="{my:.0f}" r="{S*.06:.0f}" fill="#f4f1d8"/><circle cx="{mx+S*.025:.0f}" cy="{my-S*.012:.0f}" r="{S*.055:.0f}" fill="{sky[0]}"/>')
         elif not rain:
             sx, sy = rnd.uniform(.15, .85) * S, (horizon - S * .05) if sunset else rnd.uniform(.1, .22) * S
             sc = "#ffd166" if not sunset else "#ff9f5a"
             defs.append(f'<radialGradient id="sun"><stop offset=".55" stop-color="{sc}"/><stop offset="1" stop-color="{sc}" stop-opacity="0"/></radialGradient>')
-            out.append(f'<circle cx="{sx:.0f}" cy="{sy:.0f}" r="{S*.13:.0f}" fill="url(#sun)"/>')
+            glow = f'<animate attributeName="r" values="{S*.13:.0f};{S*.15:.0f};{S*.13:.0f}" dur="5s" repeatCount="indefinite"/>' if moving else ""
+            out.append(f'<circle cx="{sx:.0f}" cy="{sy:.0f}" r="{S*.13:.0f}" fill="url(#sun)">{glow}</circle>')
         for _ in range(rnd.randrange(2, 5) + (3 if rain else 0)):
             cx, cy, w = rnd.uniform(0, S), rnd.uniform(.08, .35) * S, rnd.uniform(.12, .26) * S
             col = "#e9edf2" if not rain else "#9aa3ae"
             if not (night and not rain) and style != "neon":
-                out.append(f'<g fill="{col}" opacity=".92"><ellipse cx="{cx:.0f}" cy="{cy:.0f}" rx="{w:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx-w*.3:.0f}" cy="{cy-w*.15:.0f}" rx="{w*.42:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx+w*.25:.0f}" cy="{cy-w*.2:.0f}" rx="{w*.38:.0f}" ry="{w*.34:.0f}"/></g>')
+                out.append(f'<g fill="{col}" opacity=".92">{anim_move(rnd.choice([-1,1])*rnd.uniform(25,60), 0, rnd.uniform(9,16))}<ellipse cx="{cx:.0f}" cy="{cy:.0f}" rx="{w:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx-w*.3:.0f}" cy="{cy-w*.15:.0f}" rx="{w*.42:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx+w*.25:.0f}" cy="{cy-w*.2:.0f}" rx="{w*.38:.0f}" ry="{w*.34:.0f}"/></g>')
         if rain:
             for _ in range(90):
                 x, y = rnd.uniform(0, S), rnd.uniform(0, S)
-                out.append(f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{x-4:.0f}" y2="{y+14:.0f}" stroke="#d9e2ec" stroke-width="1.2" opacity=".6"/>')
+                fall = f'<animateTransform attributeName="transform" type="translate" values="0 -40;-12 {S*.25:.0f}" dur="{rnd.uniform(.6,1.1):.2f}s" repeatCount="indefinite"/>' if moving else ""
+                out.append(f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{x-4:.0f}" y2="{y+14:.0f}" stroke="#d9e2ec" stroke-width="1.2" opacity=".6">{fall}</line>')
     # ---------------------------------------------------------------- the land, or the sea
     def ridge(y0, amp, col, n=7):
         pts = [(0, S)]
@@ -28325,7 +28334,8 @@ def paint_picture(prompt: str, size: int = 512) -> str:
         return f'<polygon points="{" ".join(f"{x:.0f},{y:.0f}" for x, y in pts)}" fill="{col}"/>'
     if under:
         for _ in range(26):
-            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(2,7):.0f}" fill="none" stroke="#e8f6ff" stroke-width="1.2" opacity=".55"/>')
+            rise = f'<animateTransform attributeName="transform" type="translate" values="0 0;0 -{S*.3:.0f}" dur="{rnd.uniform(3,6):.1f}s" repeatCount="indefinite"/>' if moving else ""
+            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(2,7):.0f}" fill="none" stroke="#e8f6ff" stroke-width="1.2" opacity=".55">{rise}</circle>')
         out.append(ridge(S * .92, S * .05, _hsl(42, 45, 62)))
         for _ in range(5):
             x = rnd.uniform(0, S)
@@ -28353,7 +28363,7 @@ def paint_picture(prompt: str, size: int = 512) -> str:
             out.append(f'<rect x="0" y="{horizon:.0f}" width="{S}" height="{S-horizon:.0f}" fill="{_hsl(205,65,40 if not night else 20)}"/>')
             for i in range(9):
                 y = horizon + (i + 1) * (S - horizon) / 10
-                out.append(f'<path d="M0,{y:.0f} q{S/16:.0f},-6 {S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0" fill="none" stroke="#dff1ff" stroke-width="1.6" opacity=".45"/>')
+                out.append(f'<path d="M0,{y:.0f} q{S/16:.0f},-6 {S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0" fill="none" stroke="#dff1ff" stroke-width="1.6" opacity=".45">{anim_move((-1)**i*S/16, 0, 3+i*.4)}</path>')
             if "beach" in ws:
                 out.append(f'<path d="M0,{S:.0f} L0,{S*.84:.0f} Q{S*.5:.0f},{S*.78:.0f} {S},{S*.88:.0f} L{S},{S}Z" fill="{_hsl(42,60,72)}"/>')
                 horizon = S * .86
@@ -28507,7 +28517,11 @@ def paint_picture(prompt: str, size: int = 512) -> str:
                 cy = S * rnd.uniform(.3, .7)
             h = hue + (i * 23 if count > 1 else 0)
             out.append(f'<ellipse cx="{cx:.0f}" cy="{horizon+r*.7:.0f}" rx="{r*1.1:.0f}" ry="{r*.16:.0f}" fill="#000" opacity=".16"/>' if cy > horizon - r else "")
-            out.append((creature if subject in PAINT_ANIMALS else thing)(subject, round(cx, 1), round(cy, 1), round(r, 1), h))
+            body = (creature if subject in PAINT_ANIMALS else thing)(subject, round(cx, 1), round(cy, 1), round(r, 1), h)
+            if moving:
+                dx, dy = (r * .5, -r * .15) if subject in ("fish", "bird", "rocket", "balloon") else (0, -r * .12)
+                body = f'<g>{anim_move(round(dx,1), round(dy,1), 2.2 + i * .3)}{body}</g>'
+            out.append(body)
     elif not any((space, sea, mount, forest, city, desert, snow, garden)):
         # nothing named that can be drawn: an arrangement in the site's own shape, the superellipse
         for _ in range(9):
@@ -28519,7 +28533,7 @@ def paint_picture(prompt: str, size: int = 512) -> str:
                 ct, st = _pmath.cos(t), _pmath.sin(t)
                 pts.append(f"{cx+r*_pmath.copysign(abs(ct)**(2/n),ct):.1f},{cy+r*_pmath.copysign(abs(st)**(2/n),st):.1f}")
             h = (base_h + rnd.uniform(-60, 60)) % 360
-            out.append(f'<polygon points="{" ".join(pts)}" fill="{_hsl(h,65,60,.75)}" stroke="{_hsl(h,60,35,.6)}" stroke-width="2"/>')
+            out.append(f'<polygon points="{" ".join(pts)}" fill="{_hsl(h,65,60,.75)}" stroke="{_hsl(h,60,35,.6)}" stroke-width="2">{anim_move(rnd.uniform(-30,30), rnd.uniform(-30,30), rnd.uniform(5,9))}</polygon>')
     # ---------------------------------------------------------------- the style
     filt = ""
     if style == "water":
@@ -28540,6 +28554,45 @@ class PictureAsk(BaseModel):
     prompt: str
 
 
+def _svg_clean(text: str) -> Optional[str]:
+    """An SVG Claude drew, made safe to show: the <svg> alone, no scripts, no event handlers, nothing fetched from
+    elsewhere."""
+    m = re.search(r"<svg[\s\S]*?</svg>", text or "", re.I)
+    if not m:
+        return None
+    svg = m.group(0)
+    svg = re.sub(r"<script[\s\S]*?</script>", "", svg, flags=re.I)
+    svg = re.sub(r"<foreignObject[\s\S]*?</foreignObject>", "", svg, flags=re.I)
+    svg = re.sub(r"\son[a-z]+\s*=\s*(\"[^\"]*\"|'[^']*')", "", svg, flags=re.I)
+    svg = re.sub(r"(href\s*=\s*[\"'])(?!#)[^\"']*([\"'])", r"\1#\2", svg, flags=re.I)
+    if "xmlns=" not in svg[:200]:
+        svg = svg.replace("<svg", '<svg xmlns="http://www.w3.org/2000/svg"', 1)
+    if len(svg) < 200 or len(svg) > 400_000:
+        return None
+    return svg
+
+
+def claude_picture(prompt: str, moving: bool = False) -> Optional[str]:
+    """Claude draws the words (owner, 2026-10-17: "use the cloud AI for help"): an SVG illustration, moving in a loop
+    for a video super. None when Claude is not set up or did not draw."""
+    if not ANTHROPIC_API_KEY:
+        return None
+    ask = ("Draw this as a single self-contained SVG illustration, viewBox 0 0 512 512, width 512, height 512: "
+           f"\"{prompt}\". A clear, colourful, friendly scene in a flat illustrated style with soft gradients; the "
+           "subject large and recognisable; no text or letters in the picture. ")
+    if moving:
+        ask += ("Make it a short looping animation with SVG SMIL (<animate>, <animateTransform>, <animateMotion>), "
+                "4 to 10 seconds, gentle and continuous: things that would move in this scene move. ")
+    ask += "Reply with the SVG markup only, starting with <svg and ending with </svg>; no scripts, no external images."
+    r = claude_ask(ask, max_tokens=12000)
+    svg = _svg_clean(r.get("answer", "")) if not r.get("failed") else None
+    if not svg:
+        if r.get("failed"):
+            logging.info("picture: Claude did not draw: %s", r["failed"])
+        return None
+    return "data:image/svg+xml;base64," + base64.b64encode(svg.encode()).decode()
+
+
 def picture_engine() -> str:
     """Who makes pictures: piii Paint, the site's own (the default), or an outside model first (PICTURE_ENGINE=outside),
     piii Paint answering when none does."""
@@ -28551,9 +28604,21 @@ def picture_make(prompt: str) -> Optional[str]:
     as a data URL. With PICTURE_ENGINE=outside: Together's FLUX first, then Google's image model, kept on disk so the
     same words make the same picture without asking again; piii Paint otherwise, and whenever no outside model
     answers."""
-    if picture_engine() == "home":
-        return paint_picture(prompt)
     key = hashlib.sha256(prompt.strip().lower().encode()).hexdigest()
+    cdir = os.path.join(BASE_DIR, "pictures")
+    cpath = os.path.join(cdir, key + ".txt")
+    if picture_engine() == "home":
+        if os.path.isfile(cpath):
+            with open(cpath) as f:
+                return f.read()
+        # Claude draws it when it can, piii Paint when not; what Claude drew is kept
+        img = claude_picture(prompt)
+        if img:
+            os.makedirs(cdir, exist_ok=True)
+            with open(cpath, "w") as f:
+                f.write(img)
+            return img
+        return paint_picture(prompt)
     cdir = os.path.join(BASE_DIR, "pictures")
     cpath = os.path.join(cdir, key + ".txt")
     if os.path.isfile(cpath):
@@ -28991,7 +29056,7 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         if not prompt:
             raise HTTPException(status_code=400, detail="Wire some words into it first.")
         # piii Paint stays here; an outside model only for those who allow it
-        if picture_engine() == "outside" and declined(request, "ext"):
+        if declined(request, "ext"):
             _limit_one(request, "picture")
             return {"image": paint_picture(prompt), "engine": "piii Paint"}
         _limit_one(request, "picture")
@@ -28999,6 +29064,28 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         if not img:
             raise HTTPException(status_code=503, detail="No picture model answered (needs a Together or Gemini key).")
         return {"image": img}
+
+    @router.post("/video")
+    def video(req: PictureAsk, request: Request):
+        """A video of the words wired into a video super (owner, 2026-10-17: "the picture should generate a video"): a
+        moving picture, drawn by Claude when it can and by piii Paint when not, looping."""
+        prompt = re.sub(r"\s+", " ", (req.prompt or "")).strip()[:600]
+        if not prompt:
+            raise HTTPException(status_code=400, detail="Wire some words into it first.")
+        _limit_one(request, "picture")
+        key = hashlib.sha256(("video:" + prompt.lower()).encode()).hexdigest()
+        cdir = os.path.join(BASE_DIR, "pictures")
+        cpath = os.path.join(cdir, key + ".txt")
+        if os.path.isfile(cpath):
+            with open(cpath) as f:
+                return {"video": f.read(), "engine": "kept"}
+        vid = None if declined(request, "ext") else claude_picture(prompt, moving=True)
+        if vid:
+            os.makedirs(cdir, exist_ok=True)
+            with open(cpath, "w") as f:
+                f.write(vid)
+            return {"video": vid, "engine": "Claude"}
+        return {"video": paint_picture(prompt, moving=True), "engine": "piii Paint"}
 
     @router.post("/attach")
     async def attach(request: Request, file: UploadFile = File(...)):

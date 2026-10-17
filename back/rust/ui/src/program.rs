@@ -1629,15 +1629,24 @@ fn pic_words(s: &State, n: &UNode) -> Option<String> {
         return None;
     }
     let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
-    if !(BAND[2]..BAND[3]).contains(&w.min(h)) {
+    // a picture super, or a video super (its words make a moving picture: owner, 2026-10-17, "the picture should
+    // generate a video")
+    let video = (BAND[3]..BAND[4]).contains(&w.min(h));
+    if !(BAND[2]..BAND[4]).contains(&w.min(h)) {
         return None;
     }
-    match s.prog.vals.get(&n.id) {
+    let words = match s.prog.vals.get(&n.id) {
         Some(Value::Str(t)) if !t.trim().is_empty() => Some(t.trim().to_string()),
         Some(v) if !v.is_null() => Some(vtext(v)).filter(|t| !t.trim().is_empty()),
         _ => None,
-    }
+    }?;
+    // a picture flowing into a video super is not words: the words it was made of are further back
+    let words = if video && words.starts_with("data:image/") { return None } else { words };
+    Some(if video { format!("{}{}", VIDEO_KEY, words) } else { words })
 }
+
+/// What marks a video's words in the list of pictures made.
+const VIDEO_KEY: &str = "\u{1}video:";
 
 /// Words that ask something: a question mark, or a question's first word.
 fn is_question(t: &str) -> bool {
@@ -1690,7 +1699,8 @@ fn pictures_want() {
         s.pics.push((q.clone(), String::new()));
         let n = s.pics.len().saturating_sub(24);
         s.pics.drain(..n);
-        request(Want::ProgPic(q.clone()), "POST", "/api/super/picture", &format!("{{\"prompt\":{}}}", json::quote(&q)), 0);
+        let (url, words) = match q.strip_prefix(VIDEO_KEY) { Some(w) => ("/api/super/video", w.to_string()), None => ("/api/super/picture", q.clone()) };
+        request(Want::ProgPic(q.clone()), "POST", url, &format!("{{\"prompt\":{}}}", json::quote(&words)), 0);
     }
 }
 
@@ -1698,7 +1708,7 @@ fn pic_apply(q: String, v: Value, err: Option<String>) {
     let s = st();
     let got = match err {
         Some(e) => format!("!{}", e),
-        None => v.get("image").str().to_string(),
+        None => if v.get("video").is_null() { v.get("image").str().to_string() } else { v.get("video").str().to_string() },
     };
     if let Some(p) = s.pics.iter_mut().find(|p| p.0 == q) {
         p.1 = if got.is_empty() { "!no picture came back".to_string() } else { got };
@@ -2514,7 +2524,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .cls_if(matches!(k, Kind::Ask(_)), "u-asks")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
-        .attr("title", format!("{}: {}", kind_name(&k), n.text))
+        .attr_if(!n.text.trim().is_empty(), "title", format!("{}: {}", kind_name(&k), n.text))
         .style(format!(
             "left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px{}",
             r.0, r.1, r.2, r.3,
@@ -2544,7 +2554,6 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .kid(el("svg:svg").attr("viewBox", "0 0 24 24").attr("aria-hidden", "true")
                     .kid(el("svg:rect").attr("x", "2.5").attr("y", "6").attr("width", "14").attr("height", "12").attr("rx", "3"))
                     .kid(el("svg:path").attr("d", "M16.5 10.5 21.5 7.5v9l-5-3z")))
-                .kid(el("span").cls("u-mode-t").text("a video"))
                 .kid(el("input").attr("type", "file").attr("accept", "video/*").attr("hidden", "").cls("u-vid-in"))
                 .into()
         })
@@ -2569,7 +2578,6 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                     .kid(el("svg:rect").attr("x", "3").attr("y", "5").attr("width", "18").attr("height", "14").attr("rx", "3"))
                     .kid(el("svg:circle").attr("cx", "9").attr("cy", "10").attr("r", "1.6"))
                     .kid(el("svg:path").attr("d", "M4 17l5-5 4 4 2.5-2.5L20 18")))
-                .kid(el("span").cls("u-mode-t").text("a picture"))
                 .kid(el("input").attr("type", "file").attr("accept", "image/*").attr("hidden", "").cls("u-pic-in"))
                 .into()
         })
