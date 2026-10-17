@@ -1,0 +1,215 @@
+Oct 17 11:46:29 runnervm8k3b6 systemd[1]: Started piii-site.service - piii.app on this computer.
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:30 +0000] [3095] [INFO] Starting gunicorn 23.0.0
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:30 +0000] [3095] [INFO] Listening at: http://127.0.0.1:8000 (3095)
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:30 +0000] [3095] [INFO] Using worker: uvicorn.workers.UvicornWorker
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:30 +0000] [3099] [INFO] Booting worker with pid: 3099
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:30 +0000] [3100] [INFO] Booting worker with pid: 3100
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3099]: warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Oct 17 11:46:30 runnervm8k3b6 gunicorn[3100]: warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,552 [WARNING] STORAGE: Starting with an EMPTY data directory (/var/lib/piii-site). If this is not a first install, your storage is ephemeral and the previous ledger, piQ balances and assessments were lost on redeploy. Attach a persistent volume and mount it at this path, then set SCHOLARPI_DATA_DIR to it. On Railway/Render/Fly this is a 'Volume'; with Docker Compose the bundled 'scholarpi_data' volume already does it.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,564 [INFO] STORAGE: persistent (boot #2, db not yet created)
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:33 +0000] [3100] [INFO] Started server process [3100]
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:33 +0000] [3099] [INFO] Started server process [3099]
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:33 +0000] [3100] [INFO] Waiting for application startup.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:33 +0000] [3099] [INFO] Waiting for application startup.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] Environment: production
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] Environment: production
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] Data directory: /var/lib/piii-site
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] Data directory: /var/lib/piii-site
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] CORS allowed origins: ['http://localhost:8000']
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] CORS allowed origins: ['http://localhost:8000']
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] LLM judge — Groq: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] LLM judge — Groq: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] LLM judge — OpenRouter (Mistral/Qwen + fallback): NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] LLM judge — OpenRouter (Mistral/Qwen + fallback): NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] LLM judge — Gemini: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] LLM judge — Gemini: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] IPFS backup (Pinata): NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,758 [INFO] IPFS backup (Pinata): NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,758 [INFO] On-chain state registry: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,759 [INFO] ORCID login: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,759 [INFO] On-chain state registry: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,759 [INFO] SciLM (siM) local chat model: DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,759 [INFO] ORCID login: NOT configured
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,759 [INFO] NOTE: no external LLM keys configured — assessments will run entirely on the local SciLM (siM) model + deterministic heuristics.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,759 [INFO] No backup encryption key configured; skipping restore.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,759 [INFO] SciLM (siM) local chat model: DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,759 [INFO] NOTE: no external LLM keys configured — assessments will run entirely on the local SciLM (siM) model + deterministic heuristics.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,759 [INFO] No backup encryption key configured; skipping restore.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,794 [INFO] Idle assessments are disabled (ENABLE_IDLE_ASSESSMENTS is not set).
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,794 [INFO] Automatic settlement on: up to 5 records every 600s.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 2026-10-17 11:46:33,794 [INFO] Backend started.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:33 +0000] [3099] [INFO] Application startup complete.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,799 [INFO] Idle assessments are disabled (ENABLE_IDLE_ASSESSMENTS is not set).
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,799 [INFO] Automatic settlement runs in another worker.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: 2026-10-17 11:46:33,799 [INFO] Backend started.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:33 +0000] [3100] [INFO] Application startup complete.
+Oct 17 11:46:33 runnervm8k3b6 gunicorn[3099]: 127.0.0.1:60848 - "GET /api/health HTTP/1.1" 200
+Oct 17 11:46:35 runnervm8k3b6 systemd[1]: Started piii-site-tunnel.service - piii.app on this computer: a temporary public address (Cloudflare quick tunnel).
+Oct 17 11:46:35 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:35Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps
+Oct 17 11:46:35 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:35Z INF Requesting new quick Tunnel on trycloudflare.com...
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF +--------------------------------------------------------------------------------------------+
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF |  https://dating-constant-shaped-joined.trycloudflare.com                                   |
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF +--------------------------------------------------------------------------------------------+
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp /etc/cloudflared /usr/local/etc/cloudflared]
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Version 2026.10.1 (Checksum 3bfc539f45d2620c71debb7a86be0efa737ed5ccbad9eb85c787116900e5c586)
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF GOOS: linux, GOVersion: go1.27.2, GoArch: amd64
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Settings: map[ha-connections:1 no-autoupdate:true protocol:quic url:http://127.0.0.1:8000]
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF cloudflared will not automatically update if installed by a package manager.
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Generated Connector ID: 9559764d-e152-4622-88d8-8db94d0b3813
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Initial protocol quic
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF ICMP proxy will use 10.1.0.150 as source for IPv4
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF ICMP proxy will use fe80::7eed:8dff:fe8a:4f2f in zone eth0 as source for IPv6
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z WRN The user running cloudflared process has a GID (group ID) that is not within ping_group_range. You might need to add that user to a group within that range, or instead update the range to encompass a group the user is already in by modifying /proc/sys/net/ipv4/ping_group_range. Otherwise cloudflared will not be able to ping this network error="Group ID 987 is not between ping group 1 to 0"
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z WRN ICMP proxy feature is disabled error="cannot create ICMPv4 proxy: Group ID 987 is not between ping group 1 to 0 nor ICMPv6 proxy: socket: permission denied"
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026/10/17 11:46:38 failed to sufficiently increase receive buffer size (was: 1024 kiB, wanted: 7168 kiB, got: 2048 kiB). See https://github.com/quic-go/quic-go/wiki/UDP-Buffer-Sizes for details.
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF ICMP proxy will use 10.1.0.150 as source for IPv4
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF ICMP proxy will use fe80::7eed:8dff:fe8a:4f2f in zone eth0 as source for IPv6
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Starting metrics server on 127.0.0.1:20241/metrics
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256] connIndex=0 event=0 ip=198.41.192.227
+Oct 17 11:46:38 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:38Z INF Registered tunnel connection connIndex=0 connection=e6a92ebf-f31c-4c64-a025-79fad0c0e2a4 event=0 ip=198.41.192.227 location=sea11 protocol=quic
+Oct 17 11:46:41 runnervm8k3b6 systemd[1]: Stopping piii-site.service - piii.app on this computer...
+Oct 17 11:46:41 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:41 +0000] [3095] [INFO] Handling signal: term
+Oct 17 11:46:41 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:41 +0000] [3099] [INFO] Shutting down
+Oct 17 11:46:41 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:41 +0000] [3099] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+Oct 17 11:46:41 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:41 +0000] [3100] [INFO] Shutting down
+Oct 17 11:46:41 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:41 +0000] [3100] [INFO] Error while closing socket [Errno 9] Bad file descriptor
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:42 +0000] [3099] [INFO] Waiting for application shutdown.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:42 +0000] [3099] [INFO] Application shutdown complete.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3099]: [2026-10-17 11:46:42 +0000] [3099] [INFO] Finished server process [3099]
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:42 +0000] [3100] [INFO] Waiting for application shutdown.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:42 +0000] [3100] [INFO] Application shutdown complete.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3100]: [2026-10-17 11:46:42 +0000] [3100] [INFO] Finished server process [3100]
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:42 +0000] [3095] [ERROR] Worker (pid:3099) was sent SIGTERM!
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:42 +0000] [3095] [ERROR] Worker (pid:3100) was sent SIGTERM!
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3095]: [2026-10-17 11:46:42 +0000] [3095] [INFO] Shutting down: Master
+Oct 17 11:46:42 runnervm8k3b6 systemd[1]: piii-site.service: Deactivated successfully.
+Oct 17 11:46:42 runnervm8k3b6 systemd[1]: Stopped piii-site.service - piii.app on this computer.
+Oct 17 11:46:42 runnervm8k3b6 systemd[1]: piii-site.service: Consumed 7.667s CPU time, 383.3M memory peak, 0B memory swap peak.
+Oct 17 11:46:42 runnervm8k3b6 systemd[1]: Started piii-site.service - piii.app on this computer.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3765]: [2026-10-17 11:46:42 +0000] [3765] [INFO] Starting gunicorn 23.0.0
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3765]: [2026-10-17 11:46:42 +0000] [3765] [INFO] Listening at: http://127.0.0.1:8000 (3765)
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3765]: [2026-10-17 11:46:42 +0000] [3765] [INFO] Using worker: uvicorn.workers.UvicornWorker
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3769]: [2026-10-17 11:46:42 +0000] [3769] [INFO] Booting worker with pid: 3769
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3770]: [2026-10-17 11:46:42 +0000] [3770] [INFO] Booting worker with pid: 3770
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3769]: warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Oct 17 11:46:42 runnervm8k3b6 gunicorn[3770]: warning: The `fitz` API is deprecated and will be removed in future. Use `import pymupdf` instead.
+Oct 17 11:46:43 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:43,870 [INFO] STORAGE: persistent (boot #3, db 274432 bytes)
+Oct 17 11:46:43 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:43,885 [INFO] STORAGE: persistent (boot #4, db 274432 bytes)
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: [2026-10-17 11:46:44 +0000] [3770] [INFO] Started server process [3770]
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: [2026-10-17 11:46:44 +0000] [3770] [INFO] Waiting for application startup.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] Environment: production
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] Data directory: /var/lib/piii-site
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] CORS allowed origins: ['http://localhost:8000']
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] LLM judge — Groq: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] LLM judge — OpenRouter (Mistral/Qwen + fallback): NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: [2026-10-17 11:46:44 +0000] [3769] [INFO] Started server process [3769]
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,020 [INFO] LLM judge — Gemini: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: [2026-10-17 11:46:44 +0000] [3769] [INFO] Waiting for application startup.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] IPFS backup (Pinata): NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] On-chain state registry: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] Environment: production
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] ORCID login: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] Data directory: /var/lib/piii-site
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] SciLM (siM) local chat model: DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] CORS allowed origins: ['http://localhost:8000']
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] NOTE: no external LLM keys configured — assessments will run entirely on the local SciLM (siM) model + deterministic heuristics.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] LLM judge — Groq: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,021 [INFO] No backup encryption key configured; skipping restore.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] LLM judge — OpenRouter (Mistral/Qwen + fallback): NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] LLM judge — Gemini: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,021 [INFO] IPFS backup (Pinata): NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,022 [INFO] On-chain state registry: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,022 [INFO] ORCID login: NOT configured
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,022 [INFO] SciLM (siM) local chat model: DISABLED (ENABLE_SCILEM_LOCAL_MODEL=false)
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,022 [INFO] NOTE: no external LLM keys configured — assessments will run entirely on the local SciLM (siM) model + deterministic heuristics.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,022 [INFO] No backup encryption key configured; skipping restore.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,024 [INFO] Idle assessments are disabled (ENABLE_IDLE_ASSESSMENTS is not set).
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,025 [INFO] Automatic settlement on: up to 5 records every 600s.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,025 [INFO] Idle assessments are disabled (ENABLE_IDLE_ASSESSMENTS is not set).
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,025 [INFO] Backend started.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: [2026-10-17 11:46:44 +0000] [3770] [INFO] Application startup complete.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,026 [INFO] Automatic settlement runs in another worker.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,026 [INFO] Backend started.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: [2026-10-17 11:46:44 +0000] [3769] [INFO] Application startup complete.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 127.0.0.1:52050 - "GET /api/health HTTP/1.1" 200
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |                               CONNECTIVITY PRE-CHECKS                               |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  COMPONENT         TARGET                     STATUS  DETAILS                       |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  DNS Resolution    region1.v2.argotunnel.com  PASS    DNS Resolved successfully     |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  DNS Resolution    region2.v2.argotunnel.com  PASS    DNS Resolved successfully     |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  UDP Connectivity  region1.v2.argotunnel.com  PASS    QUIC connection successful    |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  UDP Connectivity  region2.v2.argotunnel.com  PASS    QUIC connection successful    |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  TCP Connectivity  region1.v2.argotunnel.com  PASS    HTTP/2 connection successful  |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  TCP Connectivity  region2.v2.argotunnel.com  PASS    HTTP/2 connection successful  |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  Cloudflare API    api.cloudflare.com:443     PASS    API is reachable              |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |                                                                                     |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF |  SUMMARY: Environment is healthy. cloudflared will use 'quic' as primary protocol.  |
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck component="Cloudflare API" details="API is reachable" run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d status=pass target=api.cloudflare.com:443
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF precheck complete hard_fail=false run_id=594ad8f0-b03f-4bf4-ba0c-09aac88aa61d suggested_protocol=quic
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF Initiating graceful shutdown due to signal terminated ...
+Oct 17 11:46:44 runnervm8k3b6 systemd[1]: Stopping piii-site-tunnel.service - piii.app on this computer: a temporary public address (Cloudflare quick tunnel)...
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF Retrying connection in up to 2s connIndex=0 event=0 ip=198.41.192.227
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z ERR Connection terminated connIndex=0
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z ERR no more connections active and exiting
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF Tunnel server stopped
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3258]: 2026-10-17T11:46:44Z INF Metrics server stopped
+Oct 17 11:46:44 runnervm8k3b6 systemd[1]: piii-site-tunnel.service: Deactivated successfully.
+Oct 17 11:46:44 runnervm8k3b6 systemd[1]: Stopped piii-site-tunnel.service - piii.app on this computer: a temporary public address (Cloudflare quick tunnel).
+Oct 17 11:46:44 runnervm8k3b6 systemd[1]: Started piii-site-tunnel.service - piii.app on this computer: a temporary public address (Cloudflare quick tunnel).
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:44Z INF Thank you for trying Cloudflare Tunnel. Doing so, without a Cloudflare account, is a quick way to experiment and try it out. However, be aware that these account-less Tunnels have no uptime guarantee, are subject to the Cloudflare Online Services Terms of Use (https://www.cloudflare.com/website-terms/), and Cloudflare reserves the right to investigate your use of Tunnels for violations of such terms. If you intend to use Tunnels in production you should use a pre-created named tunnel by following: https://developers.cloudflare.com/cloudflare-one/connections/connect-apps
+Oct 17 11:46:44 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:44Z INF Requesting new quick Tunnel on trycloudflare.com...
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF +--------------------------------------------------------------------------------------------+
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF |  Your quick Tunnel has been created! Visit it at (it may take some time to be reachable):  |
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF |  https://numbers-waiting-opens-pre.trycloudflare.com                                       |
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF +--------------------------------------------------------------------------------------------+
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Cannot determine default configuration path. No file [config.yml config.yaml] in [~/.cloudflared ~/.cloudflare-warp ~/cloudflare-warp /etc/cloudflared /usr/local/etc/cloudflared]
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Version 2026.10.1 (Checksum 3bfc539f45d2620c71debb7a86be0efa737ed5ccbad9eb85c787116900e5c586)
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF GOOS: linux, GOVersion: go1.27.2, GoArch: amd64
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Settings: map[ha-connections:1 no-autoupdate:true protocol:quic url:http://127.0.0.1:8000]
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF cloudflared will not automatically update if installed by a package manager.
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Generated Connector ID: 02c46494-ce27-4633-bd60-d26ea58571ac
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Initial protocol quic
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF ICMP proxy will use 10.1.0.150 as source for IPv4
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF ICMP proxy will use fe80::7eed:8dff:fe8a:4f2f in zone eth0 as source for IPv6
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z WRN The user running cloudflared process has a GID (group ID) that is not within ping_group_range. You might need to add that user to a group within that range, or instead update the range to encompass a group the user is already in by modifying /proc/sys/net/ipv4/ping_group_range. Otherwise cloudflared will not be able to ping this network error="Group ID 987 is not between ping group 1 to 0"
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z WRN ICMP proxy feature is disabled error="cannot create ICMPv4 proxy: Group ID 987 is not between ping group 1 to 0 nor ICMPv6 proxy: socket: permission denied"
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF ICMP proxy will use 10.1.0.150 as source for IPv4
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF ICMP proxy will use fe80::7eed:8dff:fe8a:4f2f in zone eth0 as source for IPv6
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Starting metrics server on 127.0.0.1:20241/metrics
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Tunnel connection curve preferences: [X25519MLKEM768 CurveID(65074) CurveP256] connIndex=0 event=0 ip=198.41.192.167
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026/10/17 11:46:48 failed to sufficiently increase receive buffer size (was: 1024 kiB, wanted: 7168 kiB, got: 2048 kiB). See https://github.com/quic-go/quic-go/wiki/UDP-Buffer-Sizes for details.
+Oct 17 11:46:48 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:48Z INF Registered tunnel connection connIndex=0 connection=61d4714f-53a3-4e78-af52-f031bc0d918f event=0 ip=198.41.192.167 location=sea01 protocol=quic
+Oct 17 11:46:54 runnervm8k3b6 gunicorn[3770]: 4.242.44.193:0 - "GET /api/health HTTP/1.1" 200
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |                               CONNECTIVITY PRE-CHECKS                               |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  COMPONENT         TARGET                     STATUS  DETAILS                       |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  DNS Resolution    region1.v2.argotunnel.com  PASS    DNS Resolved successfully     |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  DNS Resolution    region2.v2.argotunnel.com  PASS    DNS Resolved successfully     |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  UDP Connectivity  region1.v2.argotunnel.com  PASS    QUIC connection successful    |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  UDP Connectivity  region2.v2.argotunnel.com  PASS    QUIC connection successful    |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  TCP Connectivity  region1.v2.argotunnel.com  PASS    HTTP/2 connection successful  |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  TCP Connectivity  region2.v2.argotunnel.com  PASS    HTTP/2 connection successful  |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  Cloudflare API    api.cloudflare.com:443     PASS    API is reachable              |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |                                                                                     |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  SUMMARY: Environment is healthy. cloudflared will use 'quic' as primary protocol.  |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="Cloudflare API" details="API is reachable" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=api.cloudflare.com:443
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck complete hard_fail=false run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 suggested_protocol=quic
+Oct 17 11:46:54 runnervm8k3b6 gunicorn[3770]: 4.242.44.193:0 - "GET / HTTP/1.1" 401

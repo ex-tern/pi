@@ -1,0 +1,43 @@
+● piii-site.service - piii.app on this computer
+     Loaded: loaded (/etc/systemd/system/piii-site.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-10-17 11:46:42 UTC; 12s ago
+   Main PID: 3765 (gunicorn)
+      Tasks: 11 (limit: 19151)
+     Memory: 249.3M (peak: 249.3M)
+        CPU: 3.745s
+     CGroup: /system.slice/piii-site.service
+             ├─3765 /opt/piii-site/venv/bin/python /opt/piii-site/venv/bin/gunicorn api:app -c back/gunicorn.conf.py
+             ├─3769 /opt/piii-site/venv/bin/python /opt/piii-site/venv/bin/gunicorn api:app -c back/gunicorn.conf.py
+             └─3770 /opt/piii-site/venv/bin/python /opt/piii-site/venv/bin/gunicorn api:app -c back/gunicorn.conf.py
+
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,025 [INFO] Automatic settlement on: up to 5 records every 600s.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,025 [INFO] Idle assessments are disabled (ENABLE_IDLE_ASSESSMENTS is not set).
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 2026-10-17 11:46:44,025 [INFO] Backend started.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: [2026-10-17 11:46:44 +0000] [3770] [INFO] Application startup complete.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,026 [INFO] Automatic settlement runs in another worker.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: 2026-10-17 11:46:44,026 [INFO] Backend started.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3769]: [2026-10-17 11:46:44 +0000] [3769] [INFO] Application startup complete.
+Oct 17 11:46:44 runnervm8k3b6 gunicorn[3770]: 127.0.0.1:52050 - "GET /api/health HTTP/1.1" 200
+Oct 17 11:46:54 runnervm8k3b6 gunicorn[3770]: 4.242.44.193:0 - "GET /api/health HTTP/1.1" 200
+Oct 17 11:46:54 runnervm8k3b6 gunicorn[3770]: 4.242.44.193:0 - "GET / HTTP/1.1" 401
+
+● piii-site-tunnel.service - piii.app on this computer: a temporary public address (Cloudflare quick tunnel)
+     Loaded: loaded (/etc/systemd/system/piii-site-tunnel.service; enabled; preset: enabled)
+     Active: active (running) since Sat 2026-10-17 11:46:44 UTC; 9s ago
+   Main PID: 3908 (cloudflared)
+      Tasks: 9 (limit: 19151)
+     Memory: 22.1M (peak: 22.7M)
+        CPU: 103ms
+     CGroup: /system.slice/piii-site-tunnel.service
+             └─3908 /usr/bin/cloudflared tunnel --no-autoupdate --url http://127.0.0.1:8000
+
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF |  SUMMARY: Environment is healthy. cloudflared will use 'quic' as primary protocol.  |
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF +-------------------------------------------------------------------------------------+
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="DNS Resolution" details="DNS Resolved successfully" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="UDP Connectivity" details="QUIC connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region1.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="TCP Connectivity" details="HTTP/2 connection successful" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=region2.v2.argotunnel.com
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck component="Cloudflare API" details="API is reachable" run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 status=pass target=api.cloudflare.com:443
+Oct 17 11:46:54 runnervm8k3b6 cloudflared[3908]: 2026-10-17T11:46:54Z INF precheck complete hard_fail=false run_id=925b45d5-fc94-4f92-b281-f11b4561bbe2 suggested_protocol=quic
