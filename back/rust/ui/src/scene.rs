@@ -433,6 +433,19 @@ fn canvas_switch() {
     groups_load();
     locked_load();
     wires_load();
+    // sparkles left alone, wired to nothing, go once (owner, 2026-10-17: "fix this", a stray one on Explore): a
+    // sparkle is a junction, and one that joins nothing does nothing
+    if host::store_get(&ckey("piii:sparkle-clean")).as_deref() != Some("1") {
+        let s = st();
+        let lone: Vec<usize> = s.prog.nodes.iter().filter(|n| n.text == SPARKLE).map(|n| n.id)
+            .filter(|id| !s.wires.iter().any(|w| w.0 == *id || w.1 == *id) && !s.passes.iter().any(|p| p.0 == *id || p.2 == *id))
+            .collect();
+        if !lone.is_empty() {
+            s.prog.nodes.retain(|n| !lone.contains(&n.id));
+            prog_save();
+        }
+        host::store_set(&ckey("piii:sparkle-clean"), "1");
+    }
     // a group's page: its members are π supers on its canvas (and, the first time, its old board comes over)
     if let Page::Group(g) = st().page {
         group_canvas(g as usize, fresh);
