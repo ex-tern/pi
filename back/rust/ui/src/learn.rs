@@ -351,52 +351,117 @@ fn learn_view(s: &State) -> N {
     }));
     let code = learn_code(l);
     let running = l.run.is_some();
+    let n = LESSONS.len();
+    let pct = 100 * l.done.len() / n;
+    let lines = code.lines().count().max(1);
+    // (owner, 2026-10-17: "improve the Learn Programming page"): a course you can see the end of, a lesson that reads
+    // as one, an editor with line numbers that runs on Ctrl+Enter, and a way on to the next
+    let toc = el("nav")
+        .cls("learn-toc")
+        .attr("aria-label", "Lessons")
+        .kid(
+            el("div")
+                .cls("learn-progress")
+                .kid(el("div").cls("ring").style(format!("--p:{}", pct)).kid(el("span").text(format!("{}/{}", l.done.len(), n))))
+                .kid(el("div").cls("learn-progress-t").kid(el("b").text("SuperAI course")).kid(el("span").text(if l.done.len() == n { "finished".to_string() } else { format!("{}% done", pct) }))),
+        )
+        .kid(toc);
+    let nav_btn = |i: usize, label: String| -> N {
+        el("button").attr("type", "button").cls("btn ghost learn-nav-b").on("click", Msg::T(Tool::Learn, 1, format!("{}", i))).text(label).into()
+    };
     el("div")
         .cls("tool learn")
         .kid(el("p").cls("lede").text("Learn to program with SuperAI: nine short lessons, from your first line to asking an AI. Each explains one idea, shows it running, then gives you a small challenge the page checks for you."))
-        .kid(el("div").cls("learn-bar").kid(el("div").style(format!("width:{}%", 100 * l.done.len() / LESSONS.len()))))
         .kid(
             el("div")
                 .cls("learn-grid")
                 .kid(toc)
                 .kid(
-                    el("div")
+                    el("article")
                         .cls("learn-main")
-                        .kid(el("h2").text(format!("{}. {}", l.at + 1, lesson.t)))
+                        .kid(el("div").cls("learn-kicker").text(format!("Lesson {} of {}", l.at + 1, n)))
+                        .kid(el("h2").cls("learn-title").text(lesson.t))
                         .kid(doc_view(lesson.idea, "learn-idea"))
                         .kid(el("div").cls("learn-task").kids(rich(lesson.task)))
-                        .kid(el("div").cls("learn-tools").kids(SIGNS.iter().map(|(sg, t)| -> N { el("button").attr("type", "button").attr("title", format!("Insert {}", t)).attr("aria-label", format!("Insert {}", t)).on("click", Msg::T(Tool::Learn, 7, sg.to_string())).text(sg.to_string()).into() })))
-                        .kid(el("textarea").cls("learn-code").attr("spellcheck", "false").attr("aria-label", "Your program").attr("rows", format!("{}", code.lines().count().max(6) + 2)).prop("value", code).on("input", Msg::TV(Tool::Learn, 2)))
                         .kid(
                             el("div")
-                                .cls("row")
-                                .kid(el("button").attr("type", "button").cls("btn primary").attr_if(running, "disabled", "").on("click", Msg::T(Tool::Learn, 6, String::new())).text(if running { "Running…" } else { "Check" }))
-                                .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Learn, 3, String::new())).text("Hint"))
-                                .kid(el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Learn, 4, String::new())).text("Show an answer"))
-                                .kid(el("button").attr("type", "button").cls("btn ghost").on("click", Msg::T(Tool::Learn, 5, String::new())).text("Start over")),
+                                .cls("learn-editor")
+                                .kid(
+                                    el("div")
+                                        .cls("learn-ed-head")
+                                        .kid(el("span").cls("learn-file").text(format!("{}.pi", lesson.func)))
+                                        .kid(el("div").cls("learn-tools").kids(SIGNS.iter().map(|(sg, t)| -> N {
+                                            el("button").attr("type", "button").attr("title", format!("Insert {}", t)).attr("aria-label", format!("Insert {}", t)).on("click", Msg::T(Tool::Learn, 7, sg.to_string())).text(sg.to_string()).into()
+                                        }))),
+                                )
+                                .kid(
+                                    el("div")
+                                        .cls("learn-ed-body")
+                                        .kid(el("pre").cls("learn-gutter").attr("aria-hidden", "true").text((1..=lines).map(|k| format!("{}", k)).collect::<Vec<_>>().join("\n")))
+                                        .kid(
+                                            el("textarea")
+                                                .cls("learn-code")
+                                                .attr("spellcheck", "false")
+                                                .attr("aria-label", "Your program")
+                                                .attr("rows", format!("{}", lines.max(6) + 1))
+                                                .prop("value", code)
+                                                .on("input", Msg::TV(Tool::Learn, 2))
+                                                .on("ctrlenter", Msg::T(Tool::Learn, 6, String::new())),
+                                        ),
+                                )
+                                .kid(
+                                    el("div")
+                                        .cls("learn-ed-foot")
+                                        .kid(el("button").attr("type", "button").cls("btn primary").attr_if(running, "disabled", "").on("click", Msg::T(Tool::Learn, 6, String::new())).text(if running { "Running…" } else { "Check ▶" }))
+                                        .kid(el("span").cls("hint learn-kbd").text("Ctrl + Enter"))
+                                        .kid(el("span").cls("learn-sp"))
+                                        .kid(el("button").attr("type", "button").cls("btn ghost").on("click", Msg::T(Tool::Learn, 3, String::new())).text("Hint"))
+                                        .kid(el("button").attr("type", "button").cls("btn ghost").on("click", Msg::T(Tool::Learn, 4, String::new())).text("Show an answer"))
+                                        .kid(el("button").attr("type", "button").cls("btn ghost").on("click", Msg::T(Tool::Learn, 5, String::new())).text("Start over")),
+                                ),
                         )
-                        .kid_if(l.hint, || el("p").cls("hint learn-hint").text(format!("Hint: {}", lesson.hint)).into())
-                        .kid(el("h4").text("Result"))
-                        .kid(el("pre").cls("learn-out").cls_if(l.bad, "bad").text(l.out.clone()))
-                        .kid_if(!l.rows.is_empty(), || {
-                            el("table")
-                                .cls("data-table learn-tests")
-                                .kid(el("tbody").kids(l.rows.iter().map(|(ok, ins, got, want)| -> N {
-                                    el("tr").kid(el("td").cls(if *ok { "ok" } else { "no" }).text(if *ok { "✓" } else { "✗" })).kid(el("td").text(ins.clone())).kid(el("td").text(got.clone())).kid(el("td").cls("hint").text(want.clone())).into()
-                                })))
+                        .kid_if(l.hint, || el("p").cls("learn-hint").text(format!("Hint: {}", lesson.hint)).into())
+                        .kid_if(!l.out.is_empty() || !l.rows.is_empty(), || {
+                            el("div")
+                                .cls("learn-result")
+                                .cls_if(l.bad, "bad")
+                                .cls_if(l.won, "won")
+                                .kid_if(!l.out.is_empty(), || el("pre").cls("learn-out").cls_if(l.bad, "bad").text(l.out.clone()).into())
+                                .kid_if(!l.rows.is_empty(), || {
+                                    el("table")
+                                        .cls("data-table learn-tests")
+                                        .kid(el("tbody").kids(l.rows.iter().map(|(ok, ins, got, want)| -> N {
+                                            el("tr").kid(el("td").cls(if *ok { "ok" } else { "no" }).text(if *ok { "✓" } else { "✗" })).kid(el("td").text(ins.clone())).kid(el("td").kid(el("code").text(got.clone()))).kid(el("td").cls("hint").text(want.clone())).into()
+                                        })))
+                                        .into()
+                                })
+                                .kid_if(!l.asked.is_empty(), || el("pre").cls("learn-log").text(l.asked.join("\n")).into())
                                 .into()
                         })
-                        .kid_if(!l.asked.is_empty(), || el("pre").cls("learn-log").text(l.asked.join("\n")).into())
                         .kid_if(l.won, || {
                             let next = l.at + 1;
                             el("div")
                                 .cls("learn-win")
-                                .text(if next < LESSONS.len() { "Well done. " } else { "Well done: you finished the course. Try writing your own program from scratch." })
-                                .kid_if(next < LESSONS.len(), || el("button").attr("type", "button").cls("btn").on("click", Msg::T(Tool::Learn, 1, format!("{}", next))).text(format!("Next: {} →", LESSONS.get(next).map(|x| x.t).unwrap_or(""))).into())
+                                .kid(el("b").text(if next < n { "Well done." } else { "Well done: you finished the course." }))
+                                .kid(el("span").text(if next < n { " On to the next idea." } else { " Try writing your own program from scratch." }))
+                                .kid_if(next < n, || el("button").attr("type", "button").cls("btn primary").on("click", Msg::T(Tool::Learn, 1, format!("{}", next))).text(format!("Next: {} →", LESSONS.get(next).map(|x| x.t).unwrap_or(""))).into())
                                 .into()
                         })
-                        .kid(el("h4").text("Words you know so far"))
-                        .kid(el("table").cls("data-table learn-sheet").kid(el("tbody").kids(known.iter().filter_map(|k| WORDS.iter().find(|w| w.0 == *k)).map(|w| -> N { el("tr").kid(el("td").kid(el("code").text(w.1))).kid(el("td").text(w.2)).into() })))),
+                        .kid(
+                            el("div")
+                                .cls("learn-nav")
+                                .kid_if(l.at > 0, || nav_btn(l.at - 1, format!("← {}", LESSONS[l.at - 1].t)))
+                                .kid(el("span").cls("learn-sp"))
+                                .kid_if(l.at + 1 < n, || nav_btn(l.at + 1, format!("{} →", LESSONS[l.at + 1].t))),
+                        )
+                        .kid(
+                            el("details")
+                                .cls("learn-words")
+                                .kid(el("summary").text(format!("Words you know so far ({})", known.len())))
+                                .kid(el("div").cls("learn-chips").kids(known.iter().filter_map(|k| WORDS.iter().find(|w| w.0 == *k)).map(|w| -> N {
+                                    el("div").cls("learn-chip").kid(el("code").text(w.1)).kid(el("span").text(w.2)).into()
+                                }))),
+                        ),
                 ),
         )
         .into()
@@ -411,21 +476,43 @@ fn paper_doc_view() -> N {
 }
 
 const LEARN_CSS: &str = "\
-.learn-bar{height:4px;background:var(--line);border-radius:2px;margin:10px 0 16px;overflow:hidden}.learn-bar div{height:100%;background:var(--accent,#2563eb);transition:width .3s}\
-.learn-grid{display:grid;grid-template-columns:220px 1fr;gap:24px}@media(max-width:760px){.learn-grid{grid-template-columns:1fr}}\
-.learn-toc{display:flex;flex-direction:column;gap:4px}.learn-toc button{display:flex;gap:8px;align-items:center;text-align:left;padding:7px 9px;border:1px solid transparent;border-radius:8px;background:none;font:inherit;cursor:pointer;color:var(--ink)}\
-.learn-toc button:hover{background:rgba(0,0,0,.03)}.learn-toc button.on{border-color:var(--line2);background:#fff}\
-.learn-toc .tick{display:inline-flex;width:22px;height:22px;border-radius:11px;align-items:center;justify-content:center;font-size:12px;background:#f1f1ef;flex:none}.learn-toc .done .tick{background:#16a34a;color:#fff}\
-.learn-idea p{margin:8px 0}.learn-idea code,.learn-task code,.learn-sheet code{font-family:var(--mono,monospace);font-size:.92em;background:#f3f3f1;padding:1px 4px;border-radius:4px}\
-pre.ex,.learn-out,.learn-log{font-family:var(--mono,monospace);font-size:13px;background:#f7f7f5;border:1px solid var(--line);border-radius:8px;padding:10px 12px;white-space:pre-wrap;overflow:auto}\
-.learn-out.bad{border-color:#dc2626;color:#991b1b}\
-.stack-pic{display:flex;flex-wrap:wrap;gap:14px;margin:12px 0}.stack-pic figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}\
-.stack-pic .col{display:flex;flex-direction:column-reverse;justify-content:flex-start;min-height:60px;min-width:56px;border:1px solid var(--line2);border-top:none;border-radius:0 0 8px 8px;padding:4px;gap:3px}\
-.stack-pic .col span{background:#fff;border:1px solid var(--line2);border-radius:5px;padding:2px 8px;font:12px var(--mono,monospace);text-align:center}\
-.learn-task{margin:14px 0 8px;padding:10px 12px;border-left:3px solid var(--accent,#2563eb);background:rgba(37,99,235,.05)}\
-.learn-tools{display:flex;flex-wrap:wrap;gap:4px;margin:6px 0}.learn-tools button{min-width:30px;height:28px;border:1px solid var(--line2);border-radius:6px;background:#fff;cursor:pointer;font:14px inherit}\
-.learn-code{width:100%;box-sizing:border-box;font:13px/1.5 var(--mono,monospace);padding:10px 12px;border:1px solid var(--line2);border-radius:8px;background:#fff;tab-size:2}\
-.learn-tests td.ok{color:#16a34a;font-weight:600}.learn-tests td.no{color:#dc2626;font-weight:600}\
-.learn-win{margin:12px 0;padding:10px 12px;border-radius:8px;background:rgba(22,163,74,.08);display:flex;gap:10px;align-items:center;flex-wrap:wrap}\
+.learn{max-width:1100px}\
+.learn-grid{display:grid;grid-template-columns:230px 1fr;gap:32px;margin-top:18px;align-items:start}@media(max-width:760px){.learn-grid{grid-template-columns:1fr;gap:18px}}\
+.learn-toc{position:sticky;top:8px;display:flex;flex-direction:column;gap:2px}\
+.learn-progress{display:flex;align-items:center;gap:12px;padding:6px 6px 14px;margin-bottom:6px;border-bottom:1px solid var(--line)}\
+.learn-progress .ring{width:44px;height:44px;border-radius:50%;display:grid;place-items:center;background:conic-gradient(var(--accent) calc(var(--p) * 1%),#ecebe6 0);flex:none}\
+.learn-progress .ring span{width:34px;height:34px;border-radius:50%;background:var(--paper,#fff);display:grid;place-items:center;font:600 11px var(--mono,monospace)}\
+.learn-progress-t{display:flex;flex-direction:column;gap:2px}.learn-progress-t span{font-size:12px;color:#8a877f}\
+.learn-toc nav,.learn-toc>.learn-toc{display:flex;flex-direction:column;gap:2px}\
+.learn-toc button{display:flex;gap:10px;align-items:center;text-align:left;padding:7px 9px;border:0;border-radius:10px;background:none;font:inherit;font-size:14px;cursor:pointer;color:var(--ink);transition:background .15s}\
+.learn-toc button:hover{background:rgba(0,0,0,.035)}.learn-toc button.on{background:var(--accent-soft);color:var(--accent);font-weight:600}\
+.learn-toc .tick{display:inline-flex;width:22px;height:22px;border-radius:11px;align-items:center;justify-content:center;font-size:11.5px;background:#f1f1ef;flex:none;color:#6b6963}.learn-toc .done .tick{background:#16a34a;color:#fff}.learn-toc button.on .tick{background:var(--accent);color:#fff}\
+.learn-main{min-width:0;max-width:760px}\
+.learn-kicker{font:600 11.5px var(--mono,monospace);letter-spacing:.08em;text-transform:uppercase;color:var(--accent)}\
+.learn-title{font-size:30px;margin:4px 0 6px;letter-spacing:-.01em}\
+.learn-idea{font-size:16px;line-height:1.65}.learn-idea p{margin:10px 0}\
+.learn-idea code,.learn-task code,.learn-chip code,.learn-tests code{font-family:var(--mono,monospace);font-size:.9em;background:#f1f0ec;padding:1px 5px;border-radius:5px}\
+pre.ex{font-family:var(--mono,monospace);font-size:13.5px;line-height:1.55;background:#1f1f1d;color:#f4f3ee;border:0;border-radius:12px;padding:14px 16px;white-space:pre-wrap;overflow:auto}\
+.stack-pic{display:flex;flex-wrap:wrap;gap:16px;margin:14px 0}.stack-pic figure{margin:0;display:flex;flex-direction:column;align-items:center;gap:6px}.stack-pic figcaption,.stack-pic code{font-size:12px}\
+.stack-pic .col{display:flex;flex-direction:column-reverse;justify-content:flex-start;min-height:60px;min-width:58px;border:1.5px solid #c9c6bd;border-top:none;border-radius:0 0 10px 10px;padding:4px;gap:3px}\
+.stack-pic .col span{background:#fff;border:1px solid #d9d6cc;border-radius:6px;padding:2px 8px;font:12px var(--mono,monospace);text-align:center}\
+.learn-task{margin:18px 0 12px;padding:12px 14px;border-radius:12px;background:var(--accent-soft);color:var(--ink);font-size:15.5px}\
+.learn-editor{border:1.5px solid #2b2b2b;border-radius:14px;overflow:hidden;background:#fff}\
+.learn-ed-head{display:flex;align-items:center;gap:10px;padding:6px 8px 6px 14px;border-bottom:1px solid #ecebe6;background:#faf9f6}\
+.learn-file{font:600 12px var(--mono,monospace);color:#6b6963}\
+.learn-tools{display:flex;flex-wrap:wrap;gap:2px;margin-left:auto}.learn-tools button{min-width:26px;height:26px;border:0;border-radius:6px;background:none;cursor:pointer;font:13px inherit;color:#6b6963}.learn-tools button:hover{background:#efeee9;color:var(--ink)}\
+.learn-ed-body{display:flex;align-items:stretch}\
+.learn-gutter{margin:0;padding:12px 10px 12px 14px;font:13.5px/1.6 var(--mono,monospace);color:#b3b1aa;text-align:right;user-select:none;background:#faf9f6;border-right:1px solid #ecebe6}\
+.learn-code{flex:1;min-width:0;box-sizing:border-box;font:13.5px/1.6 var(--mono,monospace);padding:12px 14px;border:0!important;border-radius:0!important;outline:none;background:#fff;tab-size:2;resize:vertical;box-shadow:none!important}\
+.learn-ed-foot{display:flex;align-items:center;gap:8px;flex-wrap:wrap;padding:8px 10px;border-top:1px solid #ecebe6;background:#faf9f6}.learn-sp{flex:1}.learn-kbd{font:11px var(--mono,monospace)}\
+.learn-hint{margin:12px 0;padding:10px 14px;border-radius:10px;background:#fff7e6;color:#7a5400;font-size:14.5px}\
+.learn-result{margin:14px 0;display:flex;flex-direction:column;gap:10px;animation:pi-dissolve .35s ease-out both}\
+.learn-out,.learn-log{margin:0;font-family:var(--mono,monospace);font-size:13px;background:#f7f7f5;border:1px solid #ecebe6;border-radius:10px;padding:10px 12px;white-space:pre-wrap;overflow:auto}\
+.learn-out.bad{border-color:#f0b4b4;background:#fff6f6;color:#991b1b}\
+.learn-tests td.ok{color:#16a34a;font-weight:700}.learn-tests td.no{color:#dc2626;font-weight:700}\
+.learn-win{margin:12px 0;padding:12px 14px;border-radius:12px;background:rgba(22,163,74,.09);display:flex;gap:8px;align-items:center;flex-wrap:wrap}.learn-win .btn{margin-left:auto}\
+.learn-nav{display:flex;gap:10px;align-items:center;margin:26px 0 8px;padding-top:14px;border-top:1px solid var(--line)}.learn-nav-b{font-size:14px}\
+.learn-words{margin:10px 0 24px}.learn-words summary{cursor:pointer;font-weight:600;font-size:14px;color:#6b6963;padding:6px 0}\
+.learn-chips{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:8px;margin-top:8px}.learn-chip{display:flex;flex-direction:column;gap:4px;padding:8px 10px;border:1px solid #ecebe6;border-radius:10px;background:#fff;font-size:13px;color:#6b6963}\
 .wp-body{max-width:760px}.wp-body h2{font-size:24px;margin:8px 0}.wp-body h3{margin:22px 0 8px}.wp-body p{line-height:1.6;margin:8px 0}\
 ";

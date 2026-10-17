@@ -210,6 +210,11 @@ const host = {
       const key = e.key;
       if (key.length === 1 || key === "Enter" || key === "Backspace" || key === "Escape" || key === "Tab") { e.preventDefault(); e.stopPropagation(); send(id, k, key); }
     });
+    // Ctrl/⌘ + Enter in a field: its "run it" (the Learn page's Check); Tab types two spaces
+    else if (k === "ctrlenter") n.addEventListener("keydown", (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === "Enter") { e.preventDefault(); send(id, k, ""); }
+      else if (e.key === "Tab" && !e.shiftKey) { e.preventDefault(); const a = n.selectionStart, z = n.selectionEnd; n.setRangeText("  ", a, z, "end"); n.dispatchEvent(new Event("input", { bubbles: true })); }
+    });
     else if (k === "files") n.addEventListener("change", () => { const v = fileList(n.files); n.value = ""; send(id, k, v); });
     else if (k === "drop") {
       n.addEventListener("dragover", (e) => e.preventDefault());
