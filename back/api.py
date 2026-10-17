@@ -455,6 +455,25 @@ ANTHROPIC_OPENAI_BASE = "https://api.anthropic.com/v1"
 ANTHROPIC_WORKSPACE_ID = (os.getenv("ANTHROPIC_WORKSPACE_ID") or "").strip()
 
 
+_claude_ws: Dict = {}
+
+
+def claude_workspace(key: str) -> str:
+    """The account's workspace, for a key that is not scoped to one: the first active one it can list ("" if none)."""
+    for url in ("https://api.anthropic.com/v1/organizations/workspaces?limit=20", "https://api.anthropic.com/v1/workspaces?limit=20"):
+        try:
+            r = requests.get(url, headers={"x-api-key": key, "anthropic-version": "2023-06-01"}, timeout=20)
+            if r.ok:
+                for w in (r.json().get("data") or []):
+                    if w.get("id") and not w.get("archived_at"):
+                        return str(w["id"])
+            else:
+                logging.info("Claude: listing workspaces at %s: %s %s", url, r.status_code, r.text[:200])
+        except Exception as e:                           # noqa: BLE001
+            logging.info("Claude: listing workspaces failed: %s", e)
+    return ""
+
+
 def claude_ask(prompt: str, max_tokens: int = 700) -> Dict:
     """One answer from Claude, through Anthropic's Messages API: {"answer", "model"} or {"failed"}."""
     if not ANTHROPIC_API_KEY:
@@ -465,6 +484,7 @@ def claude_ask(prompt: str, max_tokens: int = 700) -> Dict:
         if v and (not v.isascii() or "…" in v or " " in v):
             return {"failed": f"{name} in /etc/piii-site.env has a character that can't be sent (a placeholder's “…”?): put the real value there"}
     headers = {"x-api-key": key, "anthropic-version": "2023-06-01", "content-type": "application/json"}
+    ws = ws or _claude_ws.get("id", "")
     if ws:
         headers["anthropic-workspace-id"] = ws
     try:
@@ -476,6 +496,16 @@ def claude_ask(prompt: str, max_tokens: int = 700) -> Dict:
         return {"failed": f"Claude could not be reached ({type(e).__name__})"}
     if not r.ok:
         msg = ((d.get("error") or {}).get("message") or r.text or "")[:240]
+        # a key not scoped to a workspace: find the account's workspace once, and ask again with it
+        if "workspace" in msg and not ws and not _claude_ws.get("tried"):
+            _claude_ws["tried"] = True
+            found = claude_workspace(key)
+            if found:
+                _claude_ws["id"] = found
+                logging.info("Claude: using workspace %s", found)
+                return claude_ask(prompt, max_tokens)
+            msg += (" Set ANTHROPIC_WORKSPACE_ID in /etc/piii-site.env (Console → Settings → Workspaces), or use a key"
+                    " made inside a workspace (sk-ant-api03-…).")
         logging.warning("Claude: %s %s", r.status_code, msg)
         return {"failed": "Claude: " + (msg or f"HTTP {r.status_code}")}
     text = "".join(b.get("text", "") for b in (d.get("content") or []) if b.get("type") == "text").strip()
