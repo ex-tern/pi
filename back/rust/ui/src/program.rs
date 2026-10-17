@@ -92,6 +92,8 @@ fn unode(s: &State, id: usize) -> Option<&UNode> {
 /// sparkle. Make it bigger. And right clicking makes a super. Make it same size as the sparkle. Uniform."). A super
 /// only widens when what is typed in it needs the room.
 const MADE: f64 = 88.0;
+/// A new super's side: the smallest, a voice message
+const SUPER_START: f64 = 52.0;
 
 fn unode_size(text: &str) -> (f64, f64) {
     if text == SPARKLE {
@@ -1488,14 +1490,23 @@ fn canvas_add(sup: bool, at: &str) {
     let (px, py, _, _) = rect(&g, S_PROG);
     let text = if sup { "" } else { SPARKLE };
     let (w, h) = unode_size(text);
+    // a super starts at the smallest, a voice message (owner, 2026-10-17: "a super starts at the smallest, like the
+    // voice message"); made bigger it takes a file, then typing, then a picture
+    let (w, h) = if sup { (SUPER_START, SUPER_START) } else { (w, h) };
     let id = prog_add(text, p.0 - px - w / 2.0, p.1 - py - h / 2.0);
+    if sup {
+        if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.id == id) {
+            n.w = SUPER_START;
+            n.h = SUPER_START;
+        }
+    }
     // the new one is selected, locked like every super; whatever was unlocked before locks again
     relock_except(None, None, false);
     st().sup_pick = None;
     st().prog.sel = Some(id);
     prog_save();
     note(if sup {
-        "A super: type in it what it does (3, +, reg 0, stop…)".to_string()
+        "A super: press its microphone to speak into it; make it bigger for a file, typing, then a picture".to_string()
     } else {
         "A sparkle: a junction that passes on what arrives".to_string()
     });
