@@ -315,6 +315,9 @@ struct State {
     icons_loaded: bool,
     /// sparkles (0) and supers (1) drawn on pages, by the page's address: kind, x, y, label
     layers: BTreeMap<String, Vec<(u8, f64, f64, String)>>,
+    /// whose π canvas is in use: "" the home canvas, else the page's address (owner, 2026-10-17: "Make the pi canvas
+    /// work in every canvas"): every page has a canvas of its own, drawn over it, with everything the home one does
+    ctx: String,
     /// where the open window has been moved to (px from its place), once unlocked
     win_off: (f64, f64),
     /// a pan of the canvas by dragging its bare background: press x, y and the pan then
@@ -506,6 +509,7 @@ pub fn start() {
         icon_sent: Vec::new(),
         icons_loaded: false,
         layers: BTreeMap::new(),
+        ctx: String::new(),
         win_off: (0.0, 0.0),
         pan_drag: None,
         port_drag: None,
@@ -593,7 +597,7 @@ pub fn start() {
     st().pzoom = host::store_get("piii:pzoom").and_then(|v| v.parse::<f64>().ok()).filter(|z| z.is_finite() && *z > 0.0).unwrap_or(1.0);
     prog_load();
     groups_load();
-    st().locked = host::store_get("piii:locked").unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+    locked_load();
     wires_load();
     // the canvas starts empty (owner, 2026-10-14: "delete all these things"): no example program, and the one kept in
     // this browser from before is cleared, once
@@ -887,6 +891,12 @@ fn render() {
 }
 
 fn route() {
+    route_page();
+    // the page's own π canvas (or the home one) comes with it
+    canvas_switch();
+}
+
+fn route_page() {
     let href = host::href();
     let frag = fragment(&href).trim_start_matches('/').to_string();
     let mut parts = frag.split('/');
@@ -1838,12 +1848,15 @@ fn view(s: &State) -> N {
         if s.peek && host::vw() >= 700.0 {
             el("div").cls("focus peek").kid(scene_view(s, false)).kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).into()
         } else {
-            // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back
-            el("div").cls("focus").kid(rail(s)).kid(window_frame(s, page)).kid(ctl_bar(s)).into()
+            // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back.
+            // The page's own π canvas is over it (owner, 2026-10-17: "Make the pi canvas work in every canvas"): what is
+            // drawn on this page, with every move the home canvas has; the page itself stays usable under it
+            el("div").cls("focus").kid(rail(s)).kid(window_frame(s, page)).kid(scene_view(s, false)).kid(ctl_bar(s)).into()
         }
     };
     // the canvas shows its own note; elsewhere it floats over the page, so the lock's answers are always seen
-    let page_note = s.page != Page::Home && !s.peek && !s.note.is_empty();
+    // (the page's own canvas shows the note now)
+    let page_note = false;
     el("div").cls("app").cls_if(s.wire_mode, "wire-on").kid(body).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
 }
 
@@ -2192,6 +2205,8 @@ fn window_frame(s: &State, content: N) -> N {
         // and under its content are canvas too (owner, 2026-10-14: "outside Connect is also canvas")
         .on("pdbl", Msg::TV(Tool::Grid, 80))
         .on("pdbl2", Msg::TV(Tool::Grid, 81))
+        // the right button held and dragged: a box that selects and groups what is drawn on the page's canvas
+        .on("rsel", Msg::TV(Tool::Grid, 90))
         .kid(
             el("div")
                 .cls("win-head")
@@ -2204,8 +2219,7 @@ fn window_frame(s: &State, content: N) -> N {
             el("div")
                 .cls("win-in")
                 .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("zoom:{:.4};transform:translate({:.1}px,{:.1}px)", s.pzoom, s.ppan.0 / s.pzoom, s.ppan.1 / s.pzoom))
-                .kid(content)
-                .kid(layer_view()),
+                .kid(content),
         ))
         .kid_if(s.win_free, || el("div").cls("win-grip c").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 60)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())
         .kid_if(s.win_free, || el("div").cls("win-grip r").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 63)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())

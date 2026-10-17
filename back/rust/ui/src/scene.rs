@@ -353,14 +353,14 @@ fn wires_save() {
     for (a, ta, b, tb) in &s.passes {
         out.push_str(&format!("p{}-{}-{}-{};", a, ta.code(), b, tb.code()));
     }
-    host::store_set("piii:wires2", &out);
+    host::store_set(&ckey("piii:wires2"), &out);
 }
 
 fn wires_load() {
     let s = st();
     s.wires = START_WIRES.to_vec();
     s.passes = START_PASSES.to_vec();
-    let Some(v) = host::store_get("piii:wires2") else { return };
+    let Some(v) = host::store_get(&ckey("piii:wires2")) else { return };
     let mut it = v.split(';');
     let version = it.next();
     if version != Some("v2") && version != Some("v3") {
@@ -410,9 +410,89 @@ fn locked(s: &State, id: usize) -> bool {
     !s.free.contains(&id)
 }
 
+/// A canvas's storage key: the home canvas's as it always was; a page's, its own beside it.
+fn ckey(base: &str) -> String {
+    let c = &st().ctx;
+    if c.is_empty() { base.to_string() } else { format!("{}@{}", base, c) }
+}
+
+fn locked_load() {
+    st().locked = host::store_get(&ckey("piii:locked")).unwrap_or_default().split(',').filter_map(|x| x.parse().ok()).collect();
+}
+
+/// The canvas a page has: "" for the home canvas (and a page opened over it, the canvas live around it), else the
+/// page's address.
+fn page_ctx(s: &State) -> String {
+    if s.page == Page::Home || s.peek {
+        return String::new();
+    }
+    let href = host::href();
+    fragment(&href).trim_start_matches('/').split('?').next().unwrap_or("").to_string()
+}
+
+/// Called whenever the page may have changed: the canvas in use becomes the page's, with what was drawn on it.
+fn canvas_switch() {
+    let want = page_ctx(st());
+    if st().ctx == want {
+        return;
+    }
+    let s = st();
+    s.ctx = want;
+    s.prog.vals.clear();
+    s.prog.regs.clear();
+    s.prog.steps = 0;
+    s.prog.status.clear();
+    s.prog.sel = None;
+    s.sup_pick = None;
+    s.held_port = None;
+    s.wire_sel = None;
+    s.marquee = None;
+    s.drag = None;
+    s.undo.clear();
+    s.undo_at = 0.0;
+    host::capture(false);
+    if !prog_load() {
+        st().prog.nodes.clear();
+        st().prog.next = UBASE;
+        canvas_adopt_layer();
+    }
+    groups_load();
+    locked_load();
+    wires_load();
+}
+
+/// What was drawn on this page before it had a canvas of its own (sparkles and named supers, in the page's own
+/// coordinates), moved onto its canvas once, roughly where it showed.
+fn canvas_adopt_layer() {
+    let key = layer_key();
+    let Some(t) = host::store_get(&key) else { return };
+    let s = st();
+    let g = geo(s);
+    let (px, py, _, _) = rect(&g, S_PROG);
+    let z = s.pzoom.max(0.01);
+    let (left, top) = (if host::vw() < 700.0 { 12.0 } else { 104.0 }, 74.0);
+    let mut n = 0;
+    for l in t.lines() {
+        let f: Vec<&str> = l.splitn(4, '\t').collect();
+        if let [k, x, y, label] = f.as_slice() {
+            if let (Ok(k), Ok(x), Ok(y)) = (k.parse::<u8>(), x.parse::<f64>(), y.parse::<f64>()) {
+                let (sx, sy) = (left + x * z + s.ppan.0, top + y * z + s.ppan.1);
+                let text = if k == 0 { SPARKLE.to_string() } else { label.to_string() };
+                prog_add(&text, (sx - g.ox) / g.k - px, (sy - g.oy) / g.k - py);
+                n += 1;
+            }
+        }
+    }
+    if n > 0 {
+        prog_save();
+    }
+    host::store_del(&key);
+    st().layers.remove(&key);
+}
+
 fn locked_save() {
     let out: Vec<String> = st().locked.iter().map(|x| x.to_string()).collect();
-    host::store_set("piii:locked", &out.join(","));
+    host::store_set(&ckey("piii:locked"), &out.join(","));
 }
 
 /// A super under this share of the window's width or height, as drawn now, is an icon; at or over both, a canvas (owner,
@@ -496,7 +576,8 @@ fn icon_view(id: usize) -> N {
 /// Is the main canvas the one in use (its selection is what the lock acts on)? A selection left on it does not
 /// follow you to another page.
 fn canvas_live(s: &State) -> bool {
-    s.page == Page::Home || s.peek
+    // every page has its π canvas now (its ctx): what is selected on it is what the lock acts on
+    s.page == Page::Home || s.peek || !s.ctx.is_empty()
 }
 
 fn lock_target_free(s: &State) -> Option<bool> {
@@ -1328,6 +1409,8 @@ fn scene_view(s: &State, mini: bool) -> N {
     }
     el("div")
         .cls("scene")
+        // a page's own canvas, drawn over the page: only what is drawn on it takes the pointer
+        .cls_if(!s.ctx.is_empty(), "over")
         // the main canvas is selected whenever nothing on it is: its frame is blue then
         .cls_if(s.sup_pick.is_none() && s.prog.sel.is_none(), "picked")
         .cls_if(s.wiring.is_some() || s.held_port.is_some(), "wiring")
@@ -2297,8 +2380,14 @@ pub fn on_resize() {
 }
 
 /// What undo keeps of the canvas: its supers and sparkles, their sizes, the wires, and the layout (its view, pan and
-/// zoom, left out: moving the view is not a change to undo).
+/// zoom, left out: moving the view is not a change to undo). On a page's own canvas: what is drawn there, nothing of
+/// the home canvas's layout.
 const UNDO_KEYS: [&str; 5] = ["piii:program", "piii:program-sizes", "piii:wires2", "piii:layout2", "piii:groups"];
+
+fn undo_keys() -> Vec<String> {
+    let home = st().ctx.is_empty();
+    UNDO_KEYS.iter().filter(|k| home || **k != "piii:layout2").map(|k| ckey(k)).collect()
+}
 
 /// The layout's parts undo leaves as they are now: the view (pan, zoom), the locks and the chain.
 fn keeps_now(i: usize) -> bool {
@@ -2310,11 +2399,11 @@ fn layout_no_view(v: &str) -> String {
 }
 
 fn undo_snapshot() -> String {
-    UNDO_KEYS
+    undo_keys()
         .iter()
         .map(|k| {
             let v = host::store_get(k).unwrap_or_default();
-            if *k == "piii:layout2" { layout_no_view(&v) } else { v }
+            if k == "piii:layout2" { layout_no_view(&v) } else { v }
         })
         .collect::<Vec<_>>()
         .join("\u{1}")
@@ -2353,8 +2442,8 @@ fn undo() {
         return;
     };
     let view: Vec<String> = host::store_get("piii:layout2").unwrap_or_default().split('|').map(|x| x.to_string()).collect();
-    for (k, v) in UNDO_KEYS.iter().zip(snap.split('\u{1}')) {
-        let v = if *k == "piii:layout2" && !v.is_empty() {
+    for (k, v) in undo_keys().iter().zip(snap.split('\u{1}')) {
+        let v = if k == "piii:layout2" && !v.is_empty() {
             // the view stays where it is now
             v.split('|').enumerate().map(|(i, p)| if keeps_now(i) && view.len() > i { view[i].clone() } else { p.to_string() }).collect::<Vec<_>>().join("|")
         } else {
@@ -2371,14 +2460,18 @@ fn undo() {
     s.prog.vals.clear();
     s.prog.regs.clear();
     s.prog.sel = None;
-    s.offs = [(0.0, 0.0); NSUP];
-    s.sizes = [(0.0, 0.0); NSUP];
+    if s.ctx.is_empty() {
+        s.offs = [(0.0, 0.0); NSUP];
+        s.sizes = [(0.0, 0.0); NSUP];
+    }
     s.wire_sel = None;
     s.held_port = None;
     prog_load();
     groups_load();
     wires_load();
-    layout_load();
+    if st().ctx.is_empty() {
+        layout_load();
+    }
     // the next change starts a step of its own
     st().undo_at = 0.0;
     note("Undone".to_string());
@@ -2394,12 +2487,12 @@ fn group_with(s: &State, id: usize) -> Vec<usize> {
 
 fn groups_save() {
     let out: Vec<String> = st().groups.iter().map(|g| g.iter().map(|x| x.to_string()).collect::<Vec<_>>().join(",")).collect();
-    host::store_set("piii:groups", &out.join(";"));
+    host::store_set(&ckey("piii:groups"), &out.join(";"));
 }
 
 fn groups_load() {
     let s = st();
-    s.groups = host::store_get("piii:groups")
+    s.groups = host::store_get(&ckey("piii:groups"))
         .unwrap_or_default()
         .split(';')
         .map(|g| g.split(',').filter_map(|x| x.parse::<usize>().ok()).filter(|x| is_unode(*x)).collect::<Vec<usize>>())
@@ -2532,12 +2625,25 @@ fn activate(id: usize, member: Option<u8>) {
         }
         // on a super's own canvas the reset puts that canvas back (owner, 2026-10-14: "merge the reset this canvas
         // button with this")
-        S_RESET if matches!(s.page, Page::Group(_)) => {
+        // on a page's own canvas: that canvas is cleared (and a group's board put back), never the home canvas
+        S_RESET if !s.ctx.is_empty() => {
             if let Page::Group(g) = s.page {
                 board_reset(g as usize);
             }
-            layer().clear();
-            layer_save();
+            undo_mark();
+            program_clear();
+            let s = st();
+            s.wires.clear();
+            s.passes.clear();
+            s.wire_sel = None;
+            s.held_port = None;
+            wires_save();
+            s.groups.clear();
+            groups_save();
+            st().locked.clear();
+            locked_save();
+            prog_clear();
+            note("This page's canvas is cleared (the reset button, clicked, undoes it)".to_string());
         }
         S_RESET => {
             // undo can bring it all back

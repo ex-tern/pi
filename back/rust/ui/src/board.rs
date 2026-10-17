@@ -455,7 +455,8 @@ fn board_update(a: u16, v: String) {
     }
     // the open window: its corner resizes it, and so does the middle button on its head
     if a == 80 || a == 81 {
-        layer_add(if a == 80 { 0 } else { 1 }, &v);
+        // a double click on an open page (client x, y): a sparkle, or with the right button a super, on its π canvas
+        canvas_add(a == 81, &v);
         return;
     }
     if (3000..4000).contains(&a) {
@@ -591,15 +592,10 @@ fn board_update(a: u16, v: String) {
             b.held = None;
         }
         // a double click on the bare board: client x, y, then x, y within it
+        // (they are the page's π canvas's now, as everywhere: wired, run, grouped and undone the same way)
         4 | 5 => {
-            let (x, y) = (nums.get(2).copied().unwrap_or(40.0), nums.get(3).copied().unwrap_or(40.0));
-            let b = board(gi);
-            if a == 4 {
-                b.extra.push((0, (x - SPARK / 2.0).max(0.0), (y - SPARK / 2.0).max(0.0), String::new()));
-            } else {
-                b.extra.push((1, (x - USW / 2.0).max(0.0), (y - USH / 2.0).max(0.0), String::new()));
-            }
-            board_save(gi);
+            let _ = gi;
+            canvas_add(a == 5, &v);
         }
         7 => board_reset(gi),
         _ => {}

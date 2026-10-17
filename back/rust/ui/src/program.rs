@@ -770,21 +770,21 @@ fn prog_save() {
     }
     // sizes given by resizing, kept beside (a v1 reader ignores them)
     let sizes: Vec<String> = s.prog.nodes.iter().filter(|n| n.w > 0.0).map(|n| format!("{}:{:.1}:{:.1}", n.id, n.w, n.h)).collect();
-    host::store_set("piii:program-sizes", &sizes.join(","));
-    host::store_set("piii:program", &out);
+    host::store_set(&ckey("piii:program-sizes"), &sizes.join(","));
+    host::store_set(&ckey("piii:program"), &out);
     wires_save();
 }
 
 /// The program from this browser; answers false when there is none saved yet.
 fn prog_load() -> bool {
     let s = st();
-    let Some(v) = host::store_get("piii:program") else { return false };
+    let Some(v) = host::store_get(&ckey("piii:program")) else { return false };
     let mut lines = v.lines();
     if lines.next() != Some("v1") {
         return false;
     }
     s.prog.nodes.clear();
-    let sizes: Vec<(usize, f64, f64)> = host::store_get("piii:program-sizes")
+    let sizes: Vec<(usize, f64, f64)> = host::store_get(&ckey("piii:program-sizes"))
         .map(|v| v.split(',').filter_map(|e| {
             let f: Vec<&str> = e.split(':').collect();
             Some((f.first()?.parse().ok()?, f.get(1)?.parse().ok()?, f.get(2)?.parse().ok()?))

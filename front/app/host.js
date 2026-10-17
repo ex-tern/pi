@@ -94,8 +94,8 @@ const host = {
     // canvas and the fields being typed in keep their own double clicks
     else if (k === "pdbl") n.addEventListener("dblclick", (e) => {
       if (e.target.closest("input, textarea, select, [contenteditable], .board, [data-layer], .win-grip, .ports-svg")) return;
-      // where on the page's own column (what is drawn moves with it), wherever on the window the click was
-      e.preventDefault(); const r = (n.querySelector(".win-in") || n).getBoundingClientRect(); send(id, k, (e.clientX - r.left) + "," + (e.clientY - r.top));
+      // where on the screen: the page's own π canvas is drawn over it
+      e.preventDefault(); send(id, k, e.clientX + "," + e.clientY);
     });
     else if (k === "pdbl2") {
       let last = 0;
@@ -103,7 +103,8 @@ const host = {
         if (e.target.closest("input, textarea, select, [contenteditable], .board, [data-layer], .win-grip, .ports-svg")) return;
         e.preventDefault();
         const t = Date.now();
-        if (t - last < 450) { last = 0; const r = (n.querySelector(".win-in") || n).getBoundingClientRect(); send(id, k, (e.clientX - r.left) + "," + (e.clientY - r.top)); } else last = t;
+        // two right clicks with no box drawn between them
+        if (t - last < 450 && last > rdragAt) { last = 0; send(id, k, e.clientX + "," + e.clientY); } else last = t;
       });
     }
     // the right button held and dragged: a box (x0, y0, x1, y1, phase: 0 moving, 1 let go) that selects and groups

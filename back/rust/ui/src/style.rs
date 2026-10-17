@@ -265,6 +265,9 @@ font-size:20px;line-height:1;color:var(--muted)}
 @media print{.rail,.win-head,.foot,.consent{display:none!important}.win{position:static;border:0;box-shadow:none}.win-body{overflow:visible}}
 /* the canvas, as the site has always looked */
 .scene{position:fixed;inset:0;overflow:hidden;user-select:none;-webkit-user-select:none;touch-action:none}
+.scene.over{z-index:9;pointer-events:none;background:transparent;touch-action:auto}.scene.over>.frame{display:none}
+.scene.over .sx{pointer-events:auto}.scene.over .wire-note{position:fixed;left:50%;right:auto;bottom:24px;transform:translateX(-50%);z-index:2147483001;max-width:calc(100vw - 32px)}
+@media (max-width:699px){.scene.over .wire-note{bottom:auto;top:12px;left:12px;right:12px;transform:none;max-width:none}}
 .frame{position:absolute;inset:0;border:2px solid var(--accent);pointer-events:none;z-index:3}.scene:not(.floating):not(.picked)>.frame{border-color:#d6d6d1}
 .stage{position:absolute;left:0;top:0;width:1440px;height:900px;transform-origin:0 0}
 .wires{position:absolute;left:0;top:0;overflow:visible;pointer-events:none}
