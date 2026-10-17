@@ -29476,8 +29476,20 @@ def _super_route_call(juror, prompt, routes):
 
 def _super_ask_juror(juror, prompt):
     if juror == "claude":
-        # Claude alone, through Anthropic's own API: never another model answering under its name
-        return claude_ask(prompt)
+        # Claude, through Anthropic's own API; when it cannot answer (no credits, a bad key) the question still gets
+        # an answer, from the site's other models, saying so, and Claude rests a while
+        r = claude_ask(prompt)
+        if not r.get("failed"):
+            return r
+        _claude_ws["down_until"] = time.time() + 600
+        for j in _super_jurors():
+            if j["key"] == "claude" or not _super_juror_ready(j["key"]):
+                continue
+            alt = _super_route_call(j["key"], prompt, build_routes(j["key"]))
+            if not alt.get("failed") and alt.get("answer"):
+                alt["model"] = f'{alt.get("model", j["label"])} (Claude unavailable: {r["failed"][:120]})'
+                return alt
+        return r
     return _super_route_call(juror, prompt, build_routes(juror))
 
 
@@ -29488,7 +29500,7 @@ def _super_judge(prompt):
 
 def _super_juror_ready(juror):
     if juror == "claude":
-        return bool(ANTHROPIC_API_KEY)
+        return bool(ANTHROPIC_API_KEY) and time.time() >= _claude_ws.get("down_until", 0)
     return bool(build_routes(juror))
 
 

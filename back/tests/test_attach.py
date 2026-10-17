@@ -44,3 +44,14 @@ def test_chat_remembers_and_site_learned_is_served():
     assert api.history_block([]) == ""
     r = c.get("/api/super/learned")
     assert r.status_code == 200 and isinstance(r.json()["text"], str)
+
+
+def test_claude_without_credits_still_gets_an_answer(monkeypatch):
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "k")
+    monkeypatch.setattr(api, "claude_ask", lambda p, max_tokens=700: {"failed": "Claude: Your credit balance is too low"})
+    monkeypatch.setattr(api, "_super_route_call", lambda j, p, routes: {"answer": "Paris.", "model": "other"})
+    monkeypatch.setattr(api, "_super_juror_ready", lambda j: j != "claude")
+    api._claude_ws.pop("down_until", None)
+    r = api._super_ask_juror("claude", "capital of France?")
+    assert r["answer"] == "Paris." and "Claude unavailable" in r["model"]
+    api._claude_ws.pop("down_until", None)
