@@ -1300,7 +1300,8 @@ fn control_icon(id: usize, s: &State) -> N {
         S_CHAIN => svg_icon(
             &["M9 12h6", "M8 8H6.5a4 4 0 0 0 0 8H8", "M16 8h1.5a4 4 0 0 1 0 8H16"],
             "28",
-            if ctl_wired(s, S_CHAIN) { "ci accent" } else if s.chained { "ci" } else { "ci faint" },
+            // the grouping button (owner, 2026-10-17: "fix the grouping button"): ink like every icon, accent while on
+            if s.group_mode { "ci accent" } else { "ci" },
         ),
         S_RESET => svg_icon(&["M4 4v6h6", "M4.6 15a8 8 0 1 0 1.9-8.3L4 10"], "24", "ci"),
         S_LEFT => svg_icon(&["M19 12H5", "M11 6l-6 6 6 6"], "26", "ci"),
@@ -1620,6 +1621,7 @@ fn scene_view(s: &State, mini: bool) -> N {
             sx = sx.attr("tabindex", "0").attr("role", "button").attr("aria-label", label).on("enter", Msg::Activate(id as u8));
         }
         let icon = icon_kind(id) && icon_area(w * g.k, h * g.k);
+        sx = sx.cls_if(id == S_CHAIN && s.group_mode, "on");
         sx = match id {
             _ if icon => sx.cls("icon").attr("title", label).kid(icon_view(id)),
             S_TITLE => sx.cls("title").text("piii lab"),

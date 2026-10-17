@@ -1621,6 +1621,23 @@ fn ai_level_view(s: &State) -> N {
                                 .on("input", Msg::TV(Tool::Prog, P_AI_DRAFT))
                                 .on("enter", Msg::T(Tool::Prog, P_AI_SEND, String::new())),
                         )
+                        // speak instead of typing (owner, 2026-10-17: "add a microphone button"); host.js listens
+                        // and fills the field, then sends
+                        .kid(
+                            el("button")
+                                .attr("type", "button")
+                                .cls("ai-mic")
+                                .attr("aria-label", "Speak")
+                                .attr("title", "Speak")
+                                .attr_if(s.ai_busy, "disabled", "")
+                                .kid(
+                                    el("svg:svg")
+                                        .attr("viewBox", "0 0 24 24")
+                                        .attr("aria-hidden", "true")
+                                        .kid(el("svg:rect").attr("x", "9").attr("y", "3").attr("width", "6").attr("height", "11").attr("rx", "3"))
+                                        .kid(el("svg:path").attr("d", "M5.5 11a6.5 6.5 0 0 0 13 0M12 17.5V21M8.5 21h7")),
+                                ),
+                        )
                         .kid(
                             el("button")
                                 .attr("type", "button")
@@ -2140,6 +2157,11 @@ const PROG_CSS: &str = "\
 .ai-row input{flex:1;min-width:0;font:inherit;font-size:18px;padding:10px 2px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:transparent!important;outline:none;color:var(--ink);text-align:center}\
 .ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
 .ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
+.ai-mic{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:50%!important;box-shadow:none!important;background:none!important;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s,background .2s}\
+.ai-mic:hover:not([disabled]){color:var(--accent);transform:scale(1.1)}.ai-mic[disabled]{opacity:.22;cursor:default}\
+.ai-mic svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}\
+.mic-on .ai-mic{color:#fff;background:var(--accent)!important;animation:ai-mic 1.2s ease-in-out infinite}\
+@keyframes ai-mic{0%,100%{transform:scale(1)}50%{transform:scale(1.14)}}\
 .ai-play svg{width:22px;height:22px;display:block}.ai-play svg path{fill:currentColor;stroke:currentColor;stroke-width:1.5;stroke-linejoin:round}\
 .ai-answer{width:100%;max-width:460px;flex:1 1 auto;min-height:0;overflow:auto;margin-top:4px;padding-bottom:14%;animation:pi-dissolve .4s ease-out both;-webkit-mask-image:linear-gradient(#000 calc(100% - 28px),transparent)}\
 .ai-q{font-size:13px;color:#8a877f;margin-bottom:8px}.ai-a{font-size:15.5px;line-height:1.55;color:#2b2b2b;white-space:pre-wrap;overflow-wrap:anywhere}\

@@ -443,6 +443,32 @@ function rtc(a) {
 // what the last press was made with: a finger ("touch"), a mouse or a pen
 let lastPointer = "mouse";
 addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse"; }, true);
+
+// The Super AI microphone (owner, 2026-10-17: "add a microphone button"): what is said fills the question field as it
+// is heard and, once it ends, is sent; a second press stops listening.
+let micRec = null;
+addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".ai-mic");
+  if (!b || b.disabled) return;
+  e.preventDefault(); e.stopPropagation();
+  if (micRec) { micRec.stop(); return; }
+  const SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  const field = () => b.closest(".ai-row")?.querySelector("input") || document.querySelector(".ai-row input");
+  if (!SR) { const f = field(); if (f) { f.placeholder = "Speaking isn't available in this browser"; f.focus(); } return; }
+  const rec = new SR();
+  rec.lang = navigator.language || "en-US"; rec.interimResults = true; rec.continuous = false;
+  let said = "";
+  rec.onresult = (ev) => {
+    said = Array.from(ev.results).map((r) => r[0].transcript).join("").trim();
+    const f = field(); if (f) { f.value = said; f.dispatchEvent(new Event("input", { bubbles: true })); }
+  };
+  const done = () => {
+    micRec = null; document.documentElement.classList.remove("mic-on");
+    if (said) setTimeout(() => { const go = document.querySelector(".ai-play"); if (go && !go.disabled) go.click(); }, 80);
+  };
+  rec.onend = done; rec.onerror = done;
+  try { rec.start(); micRec = rec; document.documentElement.classList.add("mic-on"); } catch (_) { done(); }
+}, true);
 // HEIC/HEIF (an iPhone's photos): Safari decodes them itself; elsewhere libheif (WebAssembly, LGPL, loaded from
 // /facemace/heic/ only when such a photo is chosen) does. A small JPEG of each is kept as its thumbnail.
 const isHeic = (f) => /\.(heic|heif)$/i.test(f.name || "") || /image\/hei[cf]/i.test(f.type || "");

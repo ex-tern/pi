@@ -23,7 +23,9 @@ import fitz
 import hashlib
 import hmac
 import ipaddress
+import html
 import json
+import mimetypes
 import logging
 import logging.handlers
 import math
@@ -25828,6 +25830,121 @@ def apk_info():
 
 
 # ==============================================================================================================
+# Photos on this server, for Face Mace, behind a password (owner, 2026-10-17: "the passworded portal from face mace
+# to these photos"). A folder on the machine the site runs on (SERVER_PHOTOS_DIR, e.g. /mnt/photos) is offered to
+# Face Mace as "Your photos on this server": /photos asks for PHOTOS_PASSWORD once and keeps a cookie; the list and
+# the files are read-only, and only from inside that folder.
+# ==============================================================================================================
+PHOTOS_COOKIE = "pi_photos"
+PHOTOS_MEDIA = re.compile(r"\.(jpe?g|png|gif|webp|heic|heif|bmp|tiff?|avif|mp4|mov|m4v|webm|avi|mkv|3gp)$", re.I)
+PHOTOS_SKIP = re.compile(r"^(\$RECYCLE\.BIN|System Volume Information|FOUND\.\d+|\..*|~\$.*|lost\+found)$", re.I)
+PHOTOS_MAX = 100_000
+photos_router = APIRouter()
+
+
+def photos_root() -> Optional[str]:
+    d = (os.getenv("SERVER_PHOTOS_DIR") or "").strip()
+    return os.path.realpath(d) if d and os.path.isdir(d) else None
+
+
+def photos_password() -> str:
+    return (os.getenv("PHOTOS_PASSWORD") or "").strip()
+
+
+def photos_token(pw: str) -> str:
+    secret = os.getenv("SESSION_SECRET", "").strip() or pw
+    return hmac.new(secret.encode(), ("photos:" + pw).encode(), hashlib.sha256).hexdigest()
+
+
+def photos_allowed(request: Request) -> bool:
+    pw = photos_password()
+    got = request.cookies.get(PHOTOS_COOKIE) or ""
+    return bool(pw) and bool(got) and hmac.compare_digest(got, photos_token(pw))
+
+
+def photos_guard(request: Request) -> str:
+    root = photos_root()
+    if not root or not photos_password():
+        raise HTTPException(status_code=404, detail="No photos are offered on this server.")
+    if not photos_allowed(request):
+        raise HTTPException(status_code=401, detail="Enter the photos password first, at /photos.")
+    return root
+
+
+def _photos_page(title: str, body: str, status: int = 200) -> HTMLResponse:
+    return HTMLResponse(
+        '<!doctype html><html lang="en"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">'
+        f'<title>{html.escape(title)}</title><link rel="icon" href="/icon.svg"><style>'
+        "body{margin:0;min-height:100vh;display:grid;place-items:center;background:#f7f5ef;color:#1d1d1b;"
+        "font:16px/1.5 system-ui,-apple-system,Segoe UI,sans-serif}"
+        "main{width:min(380px,calc(100vw - 32px));text-align:center}h1{font-size:28px;margin:0 0 6px}"
+        "p{color:#6b6963;margin:0 0 20px}form{display:flex;gap:8px}"
+        "input{flex:1;min-width:0;font:inherit;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:#fff}"
+        "button{font:inherit;font-weight:600;padding:12px 18px;border:0;border-radius:14px;background:#2b2b2b;color:#fff;cursor:pointer}"
+        ".bad{color:#b42318}</style><main>" + body + "</main></html>", status_code=status)
+
+
+@photos_router.get("/photos", include_in_schema=False)
+def photos_gate(request: Request, wrong: int = 0):
+    if not photos_root() or not photos_password():
+        return _photos_page("Photos", "<h1>No photos here</h1><p>This server does not offer a photo folder.</p>", 404)
+    if photos_allowed(request):
+        return RedirectResponse("/facemace", status_code=303)
+    return _photos_page("Photos", "<h1>Photos</h1><p>Enter the password to open the photos on this server in Face Mace.</p>"
+                        + ('<p class="bad">That password is not right.</p>' if wrong else "")
+                        + '<form method="post" action="/photos"><input type="password" name="password" autocomplete="current-password" '
+                          'aria-label="Password" autofocus required><button>Open</button></form>')
+
+
+@photos_router.post("/photos", include_in_schema=False)
+async def photos_enter(request: Request):
+    form = await request.form()
+    pw = photos_password()
+    got = str(form.get("password") or "").strip()
+    rate_limit(request)
+    if not pw or not hmac.compare_digest(got.encode(), pw.encode()):
+        return RedirectResponse("/photos?wrong=1", status_code=303)
+    r = RedirectResponse("/facemace", status_code=303)
+    r.set_cookie(PHOTOS_COOKIE, photos_token(pw), max_age=30 * 86400, httponly=True, samesite="lax",
+                 secure=request.url.scheme == "https")
+    return r
+
+
+@photos_router.get("/api/photos/list")
+def photos_list(request: Request):
+    """Every photo and video under the folder (system folders and hidden files left out), for Face Mace."""
+    root = photos_guard(request)
+    out = []
+    for d, dirs, files in os.walk(root):
+        dirs[:] = sorted(x for x in dirs if not PHOTOS_SKIP.match(x))
+        for f in sorted(files):
+            if PHOTOS_SKIP.match(f) or not PHOTOS_MEDIA.search(f):
+                continue
+            full = os.path.join(d, f)
+            try:
+                st_ = os.stat(full)
+            except OSError:
+                continue
+            rel = os.path.relpath(full, root).replace(os.sep, "/")
+            out.append({"id": hashlib.sha1(rel.encode()).hexdigest()[:24], "name": rel, "size": st_.st_size,
+                        "mtime": int(st_.st_mtime * 1000), "type": mimetypes.guess_type(f)[0] or "",
+                        "url": "/api/photos/file/" + urllib.parse.quote(rel)})
+            if len(out) >= PHOTOS_MAX:
+                return {"photos": out, "more": True}
+    return {"photos": out}
+
+
+@photos_router.get("/api/photos/file/{rel:path}")
+def photos_file(request: Request, rel: str):
+    root = photos_guard(request)
+    full = os.path.realpath(os.path.join(root, rel))
+    # never outside the folder (a ../ or a link out of it is refused)
+    if not (full == root or full.startswith(root + os.sep)) or not os.path.isfile(full) or not PHOTOS_MEDIA.search(full):
+        raise HTTPException(status_code=404, detail="No such photo.")
+    return FileResponse(full, headers={"Cache-Control": "private, max-age=86400"})
+
+
+# ==============================================================================================================
 # routes/chain.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
 """routes/chain.py: the chain: contracts, backups, chain status, donations. Split from api.py; see DESIGN.md section 5."""
@@ -28197,6 +28314,7 @@ app.include_router(reviewing_router)
 app.include_router(bugreport_router)
 app.include_router(portal_router)
 app.include_router(proxy_router)
+app.include_router(photos_router)
 app.include_router(ts_router)
 app.include_router(apk_router)
 app.include_router(assess_router)
@@ -28696,8 +28814,10 @@ def rust_loader(intern: bool = False, facemace: bool = False) -> str:
                 f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script>'
                 '<script>if("serviceWorker" in navigator)navigator.serviceWorker.register("/intern/sw.js",{scope:"/intern/"}).catch(function(){});</script></html>')
     if facemace:
-        # Face Mace alone: the same page the desktop program (back/rust/facemace-desktop) serves
-        return ('<!doctype html><html lang="en"><meta charset="utf-8">'
+        # Face Mace alone: the same page the desktop program (back/rust/facemace-desktop) serves; where the server
+        # offers a photo folder (/photos), Face Mace can open it as "Your photos on this server"
+        lib = ' data-library="/api/photos/list"' if photos_root() and photos_password() else ""
+        return (f'<!doctype html><html lang="en"{lib}><meta charset="utf-8">'
                 '<meta name="viewport" content="width=device-width,initial-scale=1"><title>Face Mace</title>'
                 '<link rel="icon" href="/icon.svg">'
                 f'<script type="module" src="/app/host.js?v={h.hexdigest()[:12]}"></script></html>')
