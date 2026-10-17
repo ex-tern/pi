@@ -65,3 +65,27 @@ def test_preview_is_small(monkeypatch):
     import io
     assert max(Image.open(io.BytesIO(r.content)).size) <= 360
     assert c.get("/api/photos/thumb/big.jpg").status_code == 200  # the second time, from the disk
+
+
+def test_strong_password_hash_and_lockout(monkeypatch):
+    d = tempfile.mkdtemp()
+    open(os.path.join(d, "a.jpg"), "w").write("x")
+    monkeypatch.setenv("SERVER_PHOTOS_DIR", d)
+    monkeypatch.delenv("PHOTOS_PASSWORD", raising=False)
+    h = api.photos_hash("correct horse battery staple", rounds=1000)
+    assert h.startswith("pbkdf2_sha256$1000$") and "correct" not in h
+    monkeypatch.setenv("PHOTOS_PASSWORD_HASH", h)
+    monkeypatch.setattr(api, "PHOTOS_LOCK_TRIES", 3)
+    real_sleep = api.asyncio.sleep
+    monkeypatch.setattr(api.asyncio, "sleep", lambda s: real_sleep(0))
+    api._PHOTOS_FAILS.clear()
+    c = TestClient(api.app)
+    assert "wrong" in c.post("/photos", data={"password": "nope"}, follow_redirects=False).headers["location"]
+    r = c.post("/photos", data={"password": "correct horse battery staple"}, follow_redirects=False)
+    assert r.headers["location"] == "/photos/browse"
+    assert c.get("/api/photos/page").status_code == 200
+    for _ in range(3):
+        TestClient(api.app).post("/photos", data={"password": "nope"}, follow_redirects=False)
+    assert TestClient(api.app).post("/photos", data={"password": "correct horse battery staple"},
+                                    follow_redirects=False).status_code == 429
+    api._PHOTOS_FAILS.clear()

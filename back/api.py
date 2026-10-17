@@ -25848,8 +25848,39 @@ def photos_root() -> Optional[str]:
     return os.path.realpath(d) if d and os.path.isdir(d) else None
 
 
+# A strong password (owner, 2026-10-17: "a stronger password, SHA-256, or very strong"): kept on the server only as a
+# salted PBKDF2-HMAC-SHA256 hash of 600,000 rounds (PHOTOS_PASSWORD_HASH, as photos_hash makes it),
+# at least 12 characters; ten wrong tries from one address lock it out for 15 minutes. A plain PHOTOS_PASSWORD still
+# works, so a server set up before keeps working.
+PHOTOS_ROUNDS = 600_000
+PHOTOS_MIN_LEN = 12
+
+
+def photos_hash(pw: str, salt: Optional[bytes] = None, rounds: int = PHOTOS_ROUNDS) -> str:
+    salt = salt or secrets.token_bytes(16)
+    dk = hashlib.pbkdf2_hmac("sha256", pw.encode(), salt, rounds)
+    return "pbkdf2_sha256${}${}${}".format(rounds, base64.b64encode(salt).decode(), base64.b64encode(dk).decode())
+
+
 def photos_password() -> str:
-    return (os.getenv("PHOTOS_PASSWORD") or "").strip()
+    """What the password is checked against: its hash (or, set up the old way, the password itself). Empty: no portal."""
+    return (os.getenv("PHOTOS_PASSWORD_HASH") or "").strip() or (os.getenv("PHOTOS_PASSWORD") or "").strip()
+
+
+def photos_check(got: str) -> bool:
+    h = (os.getenv("PHOTOS_PASSWORD_HASH") or "").strip()
+    if h:
+        try:
+            algo, rounds, salt, want = h.split("$")
+            if algo != "pbkdf2_sha256":
+                return False
+            dk = hashlib.pbkdf2_hmac("sha256", got.encode(), base64.b64decode(salt), int(rounds))
+            return hmac.compare_digest(dk, base64.b64decode(want))
+        except (ValueError, TypeError):
+            logging.warning("photos: PHOTOS_PASSWORD_HASH is not a pbkdf2_sha256 hash")
+            return False
+    pw = (os.getenv("PHOTOS_PASSWORD") or "").strip()
+    return bool(pw) and hmac.compare_digest(got.encode(), pw.encode())
 
 
 def photos_token(pw: str) -> str:
@@ -25861,6 +25892,20 @@ def photos_allowed(request: Request) -> bool:
     pw = photos_password()
     got = request.cookies.get(PHOTOS_COOKIE) or ""
     return bool(pw) and bool(got) and hmac.compare_digest(got, photos_token(pw))
+
+
+_PHOTOS_FAILS: Dict[str, List[float]] = {}
+PHOTOS_LOCK_TRIES, PHOTOS_LOCK_SECONDS = 10, 900
+
+
+def _photos_locked(ip: str) -> bool:
+    now = time.time()
+    tries = [t for t in _PHOTOS_FAILS.get(ip, []) if now - t < PHOTOS_LOCK_SECONDS]
+    _PHOTOS_FAILS[ip] = tries
+    if len(_PHOTOS_FAILS) > 5000:  # never grows without end
+        for k in list(_PHOTOS_FAILS)[:1000]:
+            _PHOTOS_FAILS.pop(k, None)
+    return len(tries) >= PHOTOS_LOCK_TRIES
 
 
 def photos_guard(request: Request) -> str:
@@ -25901,10 +25946,17 @@ def photos_gate(request: Request, wrong: int = 0):
 async def photos_enter(request: Request):
     form = await request.form()
     pw = photos_password()
-    got = str(form.get("password") or "").strip()
-    if not pw or not hmac.compare_digest(got.encode(), pw.encode()):
+    got = str(form.get("password") or "").strip()[:200]
+    ip = client_ip(request)
+    if _photos_locked(ip):
+        return _photos_page("Photos", "<h1>Wait a while</h1><p>Too many wrong passwords from here. Try again in 15 "
+                            "minutes.</p>", 429)
+    if not pw or not await run_in_threadpool(photos_check, got):
+        _PHOTOS_FAILS.setdefault(ip, []).append(time.time())
+        logging.warning("photos: wrong password from %s", ip)
         await asyncio.sleep(1.5)  # a wrong guess costs time, so guessing many is slow
         return RedirectResponse("/photos?wrong=1", status_code=303)
+    _PHOTOS_FAILS.pop(ip, None)
     r = RedirectResponse("/photos/browse", status_code=303)
     r.set_cookie(PHOTOS_COOKIE, photos_token(pw), max_age=30 * 86400, httponly=True, samesite="lax",
                  secure=request.url.scheme == "https")
