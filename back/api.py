@@ -28278,7 +28278,8 @@ PAINT_DIR = os.path.join(BASE_DIR, "paint-learned")
 
 def paint_word(w: str) -> str:
     w = w.lower()
-    return w[:-3] + "y" if w.endswith("ies") and len(w) > 4 else w[:-2] if w.endswith(("ches", "shes", "xes")) else w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 3 else w
+    return (w[:-3] + "y" if w.endswith("ies") and len(w) > 4 else w[:-2] if w.endswith(("ches", "shes", "xes")) else
+            w[:-1] if w.endswith("s") and not w.endswith(("ss", "us", "is")) and len(w) > 3 else w)
 
 
 # what it was taught before it shipped (drawn by Claude for its starting vocabulary), beside the code
@@ -28288,8 +28289,9 @@ PAINT_SHIPPED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paint-
 def paint_learned(w: str) -> Optional[str]:
     """What piii Paint learned to draw for a word: the drawing as a data URL, or None. What it learned on this server
     comes first, then what it shipped knowing."""
-    name = re.sub(r"[^a-z]", "", paint_word(w)) + ".svg"
-    path = next((p for p in (os.path.join(PAINT_DIR, name), os.path.join(PAINT_SHIPPED, name)) if os.path.isfile(p)), None)
+    # the word as it is first (an octopus, a cactus), then its singular (giraffes)
+    names = [re.sub(r"[^a-z]", "", v) + ".svg" for v in dict.fromkeys((w.lower(), paint_word(w)))]
+    path = next((p for n in names for p in (os.path.join(PAINT_DIR, n), os.path.join(PAINT_SHIPPED, n)) if os.path.isfile(p)), None)
     if not path:
         return None
     with open(path, "rb") as f:
@@ -28409,7 +28411,7 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
         if w not in PAINT_STOP and paint_word(w) not in PAINT_ANIMALS + PAINT_THINGS:
             learned = paint_learned(w)
             if learned:
-                subject = "learned:" + paint_word(w)
+                subject = "learned:" + w
                 break
         subject = one(w)
         if subject:
@@ -28419,9 +28421,12 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
         subject = "fish" if under else rnd.choice([a for a in PAINT_ANIMALS if a != "fish"])
     count = 1
     for i, w in enumerate(words[:-1]):
-        if w in PAINT_NUMBERS and (one(words[i + 1]) or (subject or "").startswith("learned:") and paint_word(words[i + 1]) == subject[8:]):
+        if w in PAINT_NUMBERS and (one(words[i + 1]) or (subject or "").startswith("learned:") and paint_word(words[i + 1]) == paint_word(subject[8:])):
             count = PAINT_NUMBERS[w]
     if subject and count == 1 and any(w.endswith("s") and w != subject and one(w) == subject for w in words):
+        count = 2 + rnd.randrange(2)
+    # a taught thing asked for in the plural ("penguins") is a few of them
+    if (subject or "").startswith("learned:") and count == 1 and paint_word(subject[8:]) != subject[8:]:
         count = 2 + rnd.randrange(2)
     count = max(1, min(count, 5))
     # ---------------------------------------------------------------- the sky
@@ -28666,6 +28671,8 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
             cy = horizon - r * .2 if subject not in ("fish", "bird", "star", "heart", "balloon", "rocket") else S * rnd.uniform(.35, .55)
             if under and subject == "fish":
                 cy = S * rnd.uniform(.3, .7)
+            if space or (under and learned):
+                cy = S * (.5 + rnd.uniform(-.08, .08)) + (r * .6 if learned else 0)
             h = hue + (i * 23 if count > 1 else 0)
             out.append(f'<ellipse cx="{cx:.0f}" cy="{horizon+r*.7:.0f}" rx="{r*1.1:.0f}" ry="{r*.16:.0f}" fill="#000" opacity=".16"/>' if cy > horizon - r else "")
             if learned:
