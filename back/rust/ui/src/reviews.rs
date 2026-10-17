@@ -955,7 +955,8 @@ fn modal_view(s: &State) -> N {
         .cls("modal-veil")
         .attr("role", "dialog")
         .attr("aria-modal", "true")
-        .kid(el("div").cls("modal-box").kid(el("button").attr("type", "button").cls("modal-x").attr("aria-label", "Close").on("click", Msg::T(Tool::Rev, RV_CLOSE, String::new())).text("✕")).kid(body))
+        // no close button (owner, 2026-10-17): it opens by zooming in and closes by zooming out (or Esc)
+        .kid(el("div").cls("modal-box zoomed").kid(body))
         .into()
 }
 

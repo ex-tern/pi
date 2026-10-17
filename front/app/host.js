@@ -1063,8 +1063,9 @@ addEventListener("pointercancel", (e) => { if (capturing) W.pointer(2, e.clientX
 // the last place the pointer was; a page change lets go of what was left of the step
 let zq = 0, zx = 0, zy = 0, zraf = 0;
 const zstep = () => {
-  // a long, soft glide: a sixth of what is left each frame
-  const d = Math.abs(zq) < 1 ? zq : zq * 0.16;
+  // as quick as a scroll (owner, 2026-10-17: "zooming and scrolling speed are the same"): most of a step in the first
+  // frames, the rest eased
+  const d = Math.abs(zq) < 1 ? zq : zq * 0.45;
   zq -= d;
   W.zoomed(d, zx, zy);
   zraf = Math.abs(zq) > 0.01 ? requestAnimationFrame(zstep) : 0;

@@ -2090,10 +2090,12 @@ const PROG_CSS: &str = "\
 .sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
 .wires .w-val{paint-order:stroke fill}\
 .sx.unode .u-val.t-num{color:#b4651a}.sx.unode .u-val.t-bool{color:#2f8f4e}.sx.unode .u-val.t-text{color:#c2185b}.sx.unode .u-val.t-list{color:#6a4fb3}\
-.ladder{position:fixed;right:10px;top:50%;transform:translateY(-50%);z-index:2147483100;display:flex;flex-direction:column;gap:2px;padding:6px;border-radius:14px;background:color-mix(in srgb,var(--paper) 85%,transparent);backdrop-filter:blur(6px)}\
-.ladder .rung{font:500 11px/1.2 'Geist Mono',ui-monospace,monospace;color:#8a877f;background:none;border:0;padding:4px 8px;border-radius:8px;text-align:right;cursor:pointer;box-shadow:none}\
-.ladder .rung:hover{color:#2b2b2b}.ladder .rung.at{color:var(--accent);background:var(--accent-soft);font-weight:700}\
-@media (max-width:699px){.ladder{top:auto;bottom:8px;right:50%;transform:translateX(50%);flex-direction:row;overflow-x:auto;max-width:calc(100vw - 16px)}}\
+.ladder{position:fixed;right:14px;top:50%;transform:translateY(-50%);z-index:2147483100;display:flex;flex-direction:column;align-items:flex-end;gap:0;padding:4px 0;background:none;opacity:.7;transition:opacity .3s}.ladder:hover{opacity:1}\
+.ladder .rung{display:flex;align-items:center;justify-content:flex-end;gap:8px;font:500 10.5px/1 'Geist Mono',ui-monospace,monospace;color:#8a877f;background:none!important;border:0;padding:4px 2px;cursor:pointer;box-shadow:none;border-radius:0}\
+.ladder .rung::after{content:'';width:5px;height:5px;border-radius:50%;background:#c9c6bd;flex:none;transition:transform .3s,background .3s}\
+.ladder .rung.at{color:var(--accent);font-weight:600}.ladder .rung.at::after{background:var(--accent);transform:scale(1.6)}\
+.ladder .rung:not(.at){font-size:0;gap:0}.ladder:hover .rung:not(.at){font-size:10.5px;gap:8px}\
+@media (max-width:699px){.ladder{right:8px;top:auto;bottom:150px;transform:none;opacity:.8}.ladder:hover .rung:not(.at){font-size:0;gap:0}.ladder .rung{padding:3px 2px}}\
 .ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 46%,color-mix(in srgb,var(--accent) 7%,var(--paper)) 0,var(--paper) 62%);animation:pi-fade .4s ease-out both}\
 .ai-bubble{position:relative;width:min(74vmin,640px);height:min(66vmin,580px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 9%;box-sizing:border-box;animation:pi-rise .6s cubic-bezier(.2,.75,.15,1) both;transition:height .45s cubic-bezier(.2,.75,.15,1)}\
 .ai-bubble.answered{justify-content:flex-start;padding-top:12%}\
@@ -2114,6 +2116,7 @@ const PROG_CSS: &str = "\
 .ai-q{font-size:13px;color:#8a877f;margin-bottom:8px}.ai-a{font-size:15.5px;line-height:1.55;color:#2b2b2b;white-space:pre-wrap;overflow-wrap:anywhere}\
 .ai-dots{display:flex;gap:6px;padding:6px 0}.ai-dots i{width:7px;height:7px;border-radius:50%;background:var(--accent);animation:ai-dot 1s ease-in-out infinite}.ai-dots i:nth-child(2){animation-delay:.15s}.ai-dots i:nth-child(3){animation-delay:.3s}\
 @keyframes ai-dot{0%,100%{opacity:.25;transform:translateY(0)}50%{opacity:1;transform:translateY(-4px)}}\
+.modal-box.zoomed{animation:pi-rise .45s cubic-bezier(.2,.75,.15,1) both}\
 .push-ring{display:none}.push-ring.on{display:block;position:fixed;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;z-index:2147483200;pointer-events:none;background:conic-gradient(var(--accent) calc(var(--p) * 360deg),color-mix(in srgb,var(--accent) 14%,transparent) 0);-webkit-mask:radial-gradient(circle,transparent 25px,#000 26px);mask:radial-gradient(circle,transparent 25px,#000 26px);animation:pi-fade .15s ease-out both}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
 @keyframes pi-grow{from{transform:translate(var(--fx,0),var(--fy,0)) scale(var(--fsx,.2),var(--fsy,.2));opacity:.55;border-radius:48px}60%{opacity:1}to{transform:none;opacity:1}}\
@@ -2128,7 +2131,7 @@ const PROG_CSS: &str = "\
 .win-in.wl-0{animation:wl0 .45s ease-out}.win-in.wl-1{animation:wl1 .45s ease-out}.win-in.wl-2{animation:wl2 .45s ease-out}.win-in.wl-3{animation:wl3 .45s ease-out}\
 @keyframes pi-dissolve{from{opacity:0;filter:blur(6px)}to{opacity:1;filter:none}}\
 .u-deep,.u-icon,.sx.unode .u-text,.sx.unode .u-val,.sx.unode .u-mark,.sx.unode .tag{animation:pi-dissolve .4s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
-.ladder .rung{transition:color .35s,background-color .35s,transform .35s}.ladder .rung.at{transform:translateX(-4px)}\
+.ladder .rung{transition:color .3s,font-size .25s,gap .25s}\
 .sx.unode.k-member{flex-direction:column;gap:6px}.u-mark{display:grid;place-items:center;color:#2b2b2b}.u-mark svg{width:26px;height:26px}\
 .u-icon svg{width:20px;height:20px;display:block}.sx.unode.k-member.u-iconic{flex-direction:row}\
 .u-wrap{position:absolute;left:0;top:0;width:0;height:0;transition:transform .45s cubic-bezier(.2,.75,.15,1),opacity .45s}\

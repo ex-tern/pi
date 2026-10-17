@@ -2712,10 +2712,8 @@ fn consent_panel(s: &State) -> N {
                 .style("margin-top:12px")
                 .kid(el("button").cls("btn primary").text("Allow all").on("click", Msg::ConsentAll))
                 .kid(el("button").cls("btn").text("Save choices").on("click", Msg::ConsentSave))
-                .kid(el("button").cls("btn").text("Only necessary").on("click", Msg::ConsentMin))
-                .kid_if(s.consent.is_some(), || {
-                    el("button").cls("btn link").text("Close").on("click", Msg::ConsentClose).into()
-                }),
+                // no Close (owner, 2026-10-17): zooming out closes it, as any choice does
+                .kid(el("button").cls("btn").text("Only necessary").on("click", Msg::ConsentMin)),
         )
         .into()
 }

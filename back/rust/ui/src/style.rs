@@ -342,7 +342,7 @@ border-radius:0 0 0 6px}
 .win{border-radius:0;border:1.5px solid #2b2b2b;overflow:visible;box-shadow:0 18px 50px -30px rgba(20,20,30,.35)}
 .win-body{border-radius:0}
 .win-head{border-bottom:0}
-.win-title.tag{flex:none;color:var(--ink);font-size:15px;max-width:calc(100% - 60px)}
+.win-title.tag{flex:none;color:var(--ink);font-size:21px;padding:3px 14px;max-width:calc(100% - 60px)}
 .win-head{justify-content:space-between}
 .win-x{border-radius:0;border:1.5px solid #2b2b2b;color:var(--ink)}
 .members{display:grid;grid-template-columns:repeat(auto-fill,minmax(220px,1fr));gap:22px}
