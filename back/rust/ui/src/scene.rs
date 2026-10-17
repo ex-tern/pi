@@ -493,9 +493,9 @@ fn group_canvas(gi: usize, fresh: bool) {
     }
     // laid out and wired by meaning once (owner, 2026-10-17: "reorganize everything", "rewire everything"): your own
     // sparkles and supers stay where they are, with their wires
-    if host::store_get(&ckey("piii:canvas-v")).as_deref() != Some("3") {
+    if host::store_get(&ckey("piii:canvas-v")).as_deref() != Some("4") {
         group_members_place(gi, false);
-        host::store_set(&ckey("piii:canvas-v"), "3");
+        host::store_set(&ckey("piii:canvas-v"), "4");
         changed = true;
     }
     // every member the site has now, there; one it no longer has here, gone
@@ -936,7 +936,6 @@ const GROUPS: [Group; 6] = [
             )),
             ("Architecture", Target::Tool(Tool::Arch)),
             ("Whitepaper", Target::Tool(Tool::Whitepaper)),
-            ("Assessment results", Target::Hash("#/assess")),
             ("The journal", Target::Hash("#/explore/journal")),
             ("The Global Map of Science", Target::Tool(Tool::Map)),
         ],
@@ -961,9 +960,8 @@ const GROUPS: [Group; 6] = [
                 "Signing in with ORCID links your assessments to you: they stay in your history, and the piQ they earn \
                  is minted to you instead of held in escrow. Anonymous visitors have a short free trial.",
             )),
+            // your assessments and the piQ held for you are on it (owner, 2026-10-17: "simplify everything")
             ("Your account", Target::Hash("#/account")),
-            ("Your assessments", Target::Hash("#/account")),
-            ("piQ held for you", Target::Hash("#/account")),
             ("Research profile", Target::Tool(Tool::Profile)),
             ("Private projects", Target::Tool(Tool::Private)),
             ("Permission requests", Target::Tool(Tool::Requests)),
@@ -1003,7 +1001,7 @@ const FLOWS: [&[(&str, &str)]; 6] = [
         ("Learn to program", "Architecture"),
         ("Capabilities", "Architecture"),
         ("Architecture", "Whitepaper"),
-        ("Assessment results", "The journal"),
+        ("Whitepaper", "The journal"),
         ("The journal", "The Global Map of Science"),
     ],
     // Lab: the operating systems, the old one before the new; study medicine, then practise neuroscience
@@ -1011,8 +1009,6 @@ const FLOWS: [&[(&str, &str)]; 6] = [
     // Connect: why sign in, then your account and what hangs off it; invite people to the open portal
     &[
         ("Why sign in", "Your account"),
-        ("Your account", "Your assessments"),
-        ("Your account", "piQ held for you"),
         ("Your account", "Research profile"),
         ("Research profile", "Private projects"),
         ("Private projects", "Permission requests"),
