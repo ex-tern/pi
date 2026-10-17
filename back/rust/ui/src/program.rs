@@ -1116,6 +1116,33 @@ fn unode_inside(s: &State, id: usize) -> Vec<usize> {
         .collect()
 }
 
+/// The superellipse |x|^π + |y|^π = 1 as an SVG path in a −1…1 box, stretched over a super by its viewBox (owner,
+/// 2026-10-17: "improve the super"): the whole outline is the π shape, not a box with rounded corners.
+fn se_path() -> String {
+    let n = core::f64::consts::PI;
+    let mut d = String::new();
+    for i in 0..96 {
+        let t = i as f64 / 96.0 * core::f64::consts::TAU;
+        let (c, sn) = (libm_cos(t), libm_cos(t - core::f64::consts::FRAC_PI_2));
+        let x = c.signum() * powf(c.abs(), 2.0 / n);
+        let y = sn.signum() * powf(sn.abs(), 2.0 / n);
+        d.push_str(&format!("{}{:.4},{:.4}", if i == 0 { "M" } else { "L" }, x, y));
+    }
+    d.push('Z');
+    d
+}
+
+/// A super's outline, behind what is in it.
+fn se_shape() -> N {
+    el("svg:svg")
+        .cls("u-shape")
+        .attr("viewBox", "-1.02 -1.02 2.04 2.04")
+        .attr("preserveAspectRatio", "none")
+        .attr("aria-hidden", "true")
+        .kid(el("svg:path").attr("d", se_path()))
+        .into()
+}
+
 fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
     let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
     let pien = st().t2.pien.pick.as_deref() == Some(name);
@@ -1132,6 +1159,7 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str) -> N {
         .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .on("enter", Msg::TV(Tool::Prog, P_OPEN | (((n.id - UBASE) as u16) << 4)))
+        .kid(se_shape())
         .kid(el("span").cls("tag").text(name.to_string()))
         .kid_if(!v.is_empty(), || el("span").cls("u-val").text(v.clone()).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
@@ -1177,9 +1205,11 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
         .attr("title", format!("{}: {}", kind_name(&k), n.text))
         .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
+        .kid(se_shape())
         .kid(
             el("input")
                 .cls("u-text")
+                .attr("placeholder", "type…")
                 .attr("aria-label", "What this node does")
                 .attr("spellcheck", "false")
                 .attr("autocomplete", "off")
@@ -1245,30 +1275,36 @@ const PROG_CSS: &str = "\
 .sx.prog{background:rgba(255,255,255,.55);border:1px solid #b9b9b4;box-shadow:none;cursor:grab}\
 .sx.prog>.tag{position:absolute;left:14px;top:12px}\
 .p-status{position:absolute;left:110px;right:14px;top:14px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
-.sx.unode{background:#fff;border:1.5px solid #2b2b2b;display:flex;flex-direction:column;justify-content:center;padding:4px 10px;cursor:grab;z-index:2}\
+.sx.unode{background:transparent;border:0;box-shadow:none;overflow:visible;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;cursor:grab;z-index:2}\
+.u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;pointer-events:none;filter:drop-shadow(0 8px 14px rgba(25,25,25,.12))}\
+.u-shape path{fill:#fff;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}\
+.unode.sel .u-shape path{stroke:var(--accent);stroke-width:calc(2.6px * var(--wz, 1) / var(--k, 1))}.sx.unode.sel:not(.sparkle){outline:0}\
+.unode.k-reg .u-shape path{stroke:var(--accent)}.unode.k-stop .u-shape path{stroke:var(--bad)}\
+.unode.k-ask .u-shape path{stroke:var(--accent)}.unode.k-const .u-shape path{fill:#fbfbf9}\
+.sx.unode.k-member.pien .u-shape path{stroke:var(--accent)}\
 .sx.unode.sparkle{background:transparent;border:0;padding:0;box-shadow:none;overflow:visible;display:grid;place-items:center}\
-.sparkle svg{display:block}.sparkle path{fill:none;stroke:var(--ink);stroke-width:calc(1.5px * var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}.sparkle.sel path{fill:none;stroke:var(--accent)}.sx.unode.sparkle.sel{outline:0}\
+.sparkle svg{display:block}.sparkle path{fill:none;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}.sparkle.sel path{fill:none;stroke:var(--accent)}.sx.unode.sparkle.sel{outline:0}\
 .sp-val{position:absolute;top:100%;left:50%;transform:translateX(-50%);font-size:11.5px;color:var(--magenta);font-weight:600;white-space:nowrap}\
 .sx.unode.sel{outline:2px solid var(--accent);outline-offset:3px}\
 .u-grip{position:absolute;right:calc(2px / var(--k, 1));bottom:calc(2px / var(--k, 1));width:calc(16px / var(--k, 1));height:calc(16px / var(--k, 1));cursor:nwse-resize;touch-action:none;z-index:3;background:none;border:0}\
 .u-grip::after{content:\"\";position:absolute;right:calc(3px / var(--k, 1));bottom:calc(3px / var(--k, 1));width:calc(8px / var(--k, 1));height:calc(8px / var(--k, 1));border-radius:50%;background:var(--accent)}\
 @media (pointer:coarse){.u-grip{width:calc(26px / var(--k, 1));height:calc(26px / var(--k, 1))}}\
-.sx.unode.u-canvas{justify-content:flex-start;align-items:flex-start;padding:12px 14px;border-radius:18px}\
-.sx.unode.u-canvas .u-text,.sx.unode.u-canvas.empty .u-text{width:auto;field-sizing:content;min-width:5ch;max-width:100%;border:1.5px solid #2b2b2b;border-radius:9px;padding:1px 7px;background:#fff;text-align:left}\
+.sx.unode.u-canvas{justify-content:flex-start;align-items:flex-start;padding:14% 16% 12%}\
+.sx.unode.u-canvas .u-text,.sx.unode.u-canvas.empty .u-text{width:auto;field-sizing:content;min-width:5ch;max-width:100%;border:0;border-bottom:1.5px solid #d9d6cc;padding:1px 2px;background:transparent;text-align:left}\
 .sx.unode.u-canvas .u-val{margin-top:auto;align-self:flex-end;max-width:100%}\
 .sx.unode.u-canvas.empty .u-text{display:none}\
 .sx.unode.u-canvas .u-val{white-space:pre-wrap;overflow:hidden;text-overflow:clip;text-align:left;align-self:stretch;margin-top:8px;font-size:13px;line-height:1.45;color:var(--ink);font-weight:400}\
-.unode.k-ask{border-color:var(--accent)}.unode.k-ask .u-val{color:var(--accent)}\
+.unode.k-ask .u-val{color:var(--accent)}\
 .u-text{font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;border:0;background:transparent;width:100%;padding:0;color:var(--ink);text-align:center;outline:none;cursor:text}\
-.sx.unode.empty .u-text{border:1.5px solid #9a9a95;background:#fbfbf9;padding:7px 4px}.sx.unode.empty .u-text:focus{border-color:var(--accent)}\
+.u-text::placeholder{color:#b3b1aa;font-size:12.5px}.sx.unode.empty .u-text{border-bottom:1.5px dashed transparent;padding:4px 2px}.sx.unode.empty .u-text:focus,.sx.unode .u-text:focus{border-bottom:1.5px solid var(--accent)}\
 .u-val{font-size:11.5px;color:var(--faint);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}\
 .unode.has-val .u-val{color:var(--magenta);font-weight:600;font-size:12.5px}\
-.unode.k-reg{border-color:var(--accent);border-width:2px}.unode.k-reg .u-val{color:var(--accent)}\
-.unode.k-stop{border-color:var(--bad)}.unode.k-const{background:#fbfbf9}\
+.unode.k-reg .u-val{color:var(--accent)}\
+\
 .unode.k-show .u-val{font-size:15px}\
-.sx.unode.k-member{justify-content:flex-start;align-items:flex-start;padding:14px 16px;border-radius:18px;border:1.5px solid #2b2b2b;cursor:pointer}\
-.sx.unode.k-member .tag{font:400 14px/1.35 'Geist Mono',ui-monospace,monospace;white-space:normal}\
-.sx.unode.k-member .u-val{margin-top:auto;align-self:flex-end}.sx.unode.k-member.pien{border-color:var(--accent)}\
+.sx.unode.k-member{justify-content:center;align-items:center;text-align:center;padding:16px 26px;cursor:pointer}\
+.sx.unode.k-member .tag{font:500 15px/1.3 'Geist',system-ui,sans-serif;font-size:max(15px, calc(10px / var(--k, 1)));white-space:normal;border:0;background:none;padding:0;border-radius:0;box-shadow:none}\
+.sx.unode.k-member .u-val{position:absolute;right:22%;bottom:16%}\
 .sx.palette,.sx.examples{background:#fff;padding:38px 10px 10px;cursor:grab;display:block}\
 .sx.palette>.tag,.sx.examples>.tag{position:absolute;left:12px;top:9px}\
 .chips{display:flex;flex-wrap:wrap;gap:6px}\

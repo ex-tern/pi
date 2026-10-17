@@ -287,6 +287,9 @@ struct State {
     pzoom: f64,
     /// how far the open page has been panned (px); back to 0 when another page opens
     ppan: (f64, f64),
+    /// where the open page's content starts on screen, before its zoom and pan (measured after each render): the
+    /// page's π canvas zooms and pans with it from there
+    porg: (f64, f64),
     /// the example program is on the canvas (put there by its sidebar icon; hidden again on the next visit)
     example_on: bool,
     /// wiring is on (the + on the bar): every tip shows and wires; off, tips stay out of the way
@@ -493,6 +496,7 @@ pub fn start() {
         note: String::new(),
         pzoom: 1.0,
         ppan: (0.0, 0.0),
+        porg: (0.0, 0.0),
         example_on: false,
         wire_mode: false,
         lock_blink: 0.0,
@@ -746,7 +750,17 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             canvas_zoom(&format!("{},{},{}", dy, x, y));
         }
     } else {
-        let z = if dy == 0.0 { 1.0 } else { zoom_within(s.pzoom, libm_exp(-dy * 0.0015), page_zoom_limits(s)) };
+        // about the pointer (owner, 2026-10-17: "improve zooming out and zooming in"): what is under it stays under it,
+        // the page and what is drawn on it alike
+        let z0 = s.pzoom.max(1e-6);
+        let z = if dy == 0.0 { 1.0 } else { zoom_within(z0, libm_exp(-dy * 0.0015), page_zoom_limits(s)) };
+        if dy == 0.0 {
+            s.ppan = (0.0, 0.0);
+        } else {
+            let (ox, oy) = s.porg;
+            let c = ((x - ox - s.ppan.0) / z0, (y - oy - s.ppan.1) / z0);
+            s.ppan = (x - ox - z * c.0, y - oy - z * c.1);
+        }
         s.pzoom = z;
         host::store_set("piii:pzoom", &format!("{:.4}", z));
     }
@@ -837,6 +851,13 @@ fn render() {
     if let Some(d) = DOM.get().as_mut() {
         d.render(view);
     }
+    // the page's content may sit elsewhere now (another page, a resized window): its canvas follows it
+    if page_origin_measure() {
+        let view = self::view(st());
+        if let Some(d) = DOM.get().as_mut() {
+            d.render(view);
+        }
+    }
     icons_flush();
     prog_ai_flush();
     hal_paint();
@@ -854,6 +875,25 @@ fn render() {
         Page::Paper => "ScholarPi · Dossier",
     } };
     host::set_title(t);
+}
+
+/// Where the open page's content starts, unzoomed and unpanned. True when it moved.
+fn page_origin_measure() -> bool {
+    let s = st();
+    if s.ctx.is_empty() {
+        return false;
+    }
+    let Some(r) = host::call("rect", ".win-in") else { return false };
+    let n: Vec<f64> = r.split(',').filter_map(|v| v.parse().ok()).collect();
+    if n.len() < 2 {
+        return false;
+    }
+    let o = (n[0] - s.ppan.0, n[1] - s.ppan.1);
+    if (o.0 - s.porg.0).abs() < 0.5 && (o.1 - s.porg.1).abs() < 0.5 {
+        return false;
+    }
+    s.porg = o;
+    true
 }
 
 fn route() {
@@ -2193,7 +2233,8 @@ fn window_frame(s: &State, content: N) -> N {
         .kid(el("div").cls("win-body").kid(
             el("div")
                 .cls("win-in")
-                .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("zoom:{:.4};transform:translate({:.1}px,{:.1}px)", s.pzoom, s.ppan.0 / s.pzoom, s.ppan.1 / s.pzoom))
+                // one transform, as the canvas's: the page scales as a whole (no reflow), so what is drawn over it stays put
+                .attr_if(s.pzoom != 1.0 || s.ppan != (0.0, 0.0), "style", format!("transform-origin:0 0;transform:translate({:.1}px,{:.1}px) scale({:.4})", s.ppan.0, s.ppan.1, s.pzoom))
                 .kid(content),
         ))
         .kid_if(s.win_free, || el("div").cls("win-grip c").attr("title", "Drag to resize; double click for the full size").on("pdown", Msg::TV(Tool::Grid, 60)).on("dblclick", Msg::T(Tool::Grid, 61, String::new())).into())

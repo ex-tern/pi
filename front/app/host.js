@@ -673,6 +673,8 @@ const ops = {
     }).catch(() => { if (fallback) window.open(fallback, "_blank", "noopener"); else alert("The paper's file is not available to you: it stays private until its author publishes it."); });
     return "1";
   },
+  // an element's box on screen: left,top,width,height
+  rect: (a) => { const e = document.querySelector(a); if (!e) return null; const r = e.getBoundingClientRect(); return `${r.left},${r.top},${r.width},${r.height}`; },
   copy: (a) => { navigator.clipboard && navigator.clipboard.writeText(a).catch(() => {}); return "1"; },
   // a chosen picture, decoded by the browser (HEIC/HEIF too: see decodeImage) and shrunk to fit max × max: its RGBA pixels
   rgba: (a) => {

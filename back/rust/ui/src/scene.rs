@@ -493,9 +493,9 @@ fn group_canvas(gi: usize, fresh: bool) {
     }
     // laid out and wired by meaning once (owner, 2026-10-17: "reorganize everything", "rewire everything"): your own
     // sparkles and supers stay where they are, with their wires
-    if host::store_get(&ckey("piii:canvas-v")).as_deref() != Some("2") {
+    if host::store_get(&ckey("piii:canvas-v")).as_deref() != Some("3") {
         group_members_place(gi, false);
-        host::store_set(&ckey("piii:canvas-v"), "2");
+        host::store_set(&ckey("piii:canvas-v"), "3");
         changed = true;
     }
     // every member the site has now, there; one it no longer has here, gone
@@ -1132,7 +1132,18 @@ fn rect(g: &Geo, id: usize) -> Rect {
 
 fn geo(s: &State) -> Geo {
     let (w, h) = (host::vw(), host::vh());
-    let mut g = geo_zoom(s, w, h, w < 700.0, s.zoom);
+    let mut g = if s.ctx.is_empty() {
+        geo_zoom(s, w, h, w < 700.0, s.zoom)
+    } else {
+        // a page's canvas zooms and pans with the page (owner, 2026-10-17: "improve zooming out and zooming in"): its
+        // drawings stay on what they were drawn over, and the home canvas's view never reaches it
+        let mut g = geo_view(s, w, h, w < 700.0, 1.0, (0.0, 0.0));
+        let z = s.pzoom.max(1e-6);
+        g.ox = s.porg.0 * (1.0 - z) + s.ppan.0 + z * g.ox;
+        g.oy = s.porg.1 * (1.0 - z) + s.ppan.1 + z * g.oy;
+        g.k *= z;
+        g
+    };
     // the bar's controls and the sidebar's icons stay where they show, so their wires meet them
     for (i, id) in BAR.iter().enumerate() {
         let (x, y, bw, bh) = bar_slot(i, w, h);
@@ -1166,6 +1177,11 @@ fn geo_box(s: &State, w: f64, h: f64, narrow: bool) -> Geo {
 
 /// The canvas at a zoom (the whole page zooms without end, in or out; the floating copy always fits).
 fn geo_zoom(s: &State, w: f64, h: f64, narrow: bool, zoom: f64) -> Geo {
+    geo_view(s, w, h, narrow, zoom, s.pan)
+}
+
+/// The canvas at a zoom and a pan.
+fn geo_view(s: &State, w: f64, h: f64, narrow: bool, zoom: f64, view_pan: (f64, f64)) -> Geo {
     let (b, dw, dh) = base(narrow);
     let zoom = if zoom.is_finite() && zoom > 0.0 { zoom } else { 1.0 };
     // on a phone the canvas is drawn at its own size, so what is drawn is as big under a finger as on a screen
@@ -1176,7 +1192,7 @@ fn geo_zoom(s: &State, w: f64, h: f64, narrow: bool, zoom: f64) -> Geo {
     let mut rects = b;
     for (i, r) in rects.iter_mut().enumerate() {
         let (dx, dy) = s.offs[i];
-        let pan = if i >= S_SITE && !matches!(i, S_RUN | S_STEP | S_CLEAR) { s.pan } else { (0.0, 0.0) };
+        let pan = if i >= S_SITE && !matches!(i, S_RUN | S_STEP | S_CLEAR) { view_pan } else { (0.0, 0.0) };
         r.0 += dx + pan.0;
         r.1 += dy + pan.1;
         r.2 += s.sizes[i].0;
@@ -1497,7 +1513,9 @@ fn scene_view(s: &State, mini: bool) -> N {
         .cls("stage")
         // its scale as --k too: a sparkle's line (drawn in screen px) is as thick as a super's border, which scales
         // with the stage (owner, 2026-10-14: "thickness of the lines should be same")
-        .style(format!("transform:translate({:.1}px,{:.1}px) scale({:.4});--k:{:.4}", g.ox, g.oy, g.k, g.k))
+        // and --wz: every line (a wire, a super's outline, a sparkle, a box's border) is one thickness on screen,
+        // growing gently with the zoom (owner, 2026-10-17: "uniform everything")
+        .style(format!("transform:translate({:.1}px,{:.1}px) scale({:.4});--k:{:.4};--wz:{:.3}", g.ox, g.oy, g.k, g.k, wire_scale(g.k)))
         .kid(wires);
     for id in 0..NSUP {
         if id == S_SITE || is_gone(id) {
@@ -1686,7 +1704,7 @@ fn elbow(px: f64, py: f64, qx: f64, qy: f64, e: f64) -> String {
 fn wire_scale(z: f64) -> f64 {
     let z = if z.is_finite() && z > 0.0 { z } else { 1.0 };
     // the square root of the zoom: twice as big a canvas, wires about 1.4 times as thick
-    z.sqrt_c().clamp(0.6, 1.7)
+    z.sqrt_c().clamp(0.75, 1.4)
 }
 
 /// An arrowhead `size` user units across.
@@ -2566,7 +2584,8 @@ fn canvas_zoom_limits(s: &State) -> (f64, f64) {
     }
     let all = (r - l).max(b - t).max(1e-9);
     let hi = m / small.max(1e-9) / base;
-    let lo = (0.1 * m / all / base).min(hi * 0.1);
+    // out until the whole drawing is a third of the window (further, it is only specks)
+    let lo = (0.33 * m / all / base).min(hi * 0.33).min(1.0);
     (lo, hi)
 }
 

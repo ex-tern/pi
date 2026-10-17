@@ -246,34 +246,10 @@ fn board_open(gi: usize, m: usize) {
 
 /// The pointer, while a board super is held. True: it was the board's.
 /// The open window's size as the page lays it out (before any resizing).
-/// How far an open page zooms, in proportion to what it shows (owner, 2026-10-14: "use proportional zoom limits"): a
-/// super's canvas out until all of it is a tenth of the window and in until its smallest super fills it; any other
-/// page out until its column is a fifth of the window and in until it is five windows wide.
-fn page_zoom_limits(s: &State) -> (f64, f64) {
-    let (aw, ah) = s.win_size.unwrap_or_else(win_default);
-    let (aw, ah) = (aw.max(1.0), (ah - 44.0).max(1.0));
-    if let Page::Group(gi) = s.page {
-        let gi = gi as usize;
-        let b = board(gi).clone();
-        let total = b.pos.len() + b.extra.len();
-        let (mut w, mut h, mut small) = (0.0f64, 0.0f64, f64::MAX);
-        for i in 0..total {
-            if member_hidden(gi, i) {
-                continue;
-            }
-            let (x, y, bw, bh) = bnode(&b, i);
-            w = w.max(x + bw + 40.0);
-            h = h.max(y + bh + 40.0);
-            small = small.min(bw.max(bh));
-        }
-        if small < f64::MAX && w > 0.0 && h > 0.0 {
-            let m = aw.min(ah);
-            let hi = m / small.max(1e-9);
-            return ((0.1 * m / w.max(h)).min(hi * 0.1), hi);
-        }
-    }
-    let col = aw.min(1000.0);
-    (0.2 * aw / col, 5.0 * aw / col)
+/// How far an open page zooms (owner, 2026-10-17: "improve zooming out and zooming in"): one range for every page,
+/// out to about a third (the whole page at a glance, still readable as shapes) and in to four times.
+fn page_zoom_limits(_: &State) -> (f64, f64) {
+    (0.35, 4.0)
 }
 
 fn win_default() -> (f64, f64) {
