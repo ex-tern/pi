@@ -1115,6 +1115,7 @@ addEventListener("pointercancel", (e) => { if (capturing) W.pointer(2, e.clientX
 // smooth (owner, 2026-10-17: "make the transition more smoother"): a wheel step is eased in over a few frames, about
 // the last place the pointer was; a page change lets go of what was left of the step
 let zq = 0, zx = 0, zy = 0, zraf = 0;
+let wheelAt = 0, wheelV = 0, wheelDir = 0;
 const zstep = () => {
   // as quick as a scroll (owner, 2026-10-17: "zooming and scrolling speed are the same"): most of a step in the first
   // frames, the rest eased
@@ -1127,6 +1128,7 @@ const zstep = () => {
 };
 const zoomBy = (dy, x, y) => {
   if (dy === 0) { zq = 0; W.zoomed(0, x, y); return; }
+  if (zq && Math.sign(zq) !== Math.sign(dy)) zq = 0;
   zq += dy; zx = x; zy = y;
   if (!zraf) zraf = requestAnimationFrame(zstep);
 };
@@ -1146,6 +1148,17 @@ addEventListener("wheel", (e) => {
   const pad = e.deltaMode === 0 && (e.ctrlKey || e.deltaX !== 0 || Math.abs(dy) % 1 !== 0 || Math.abs(dy) < 40);
   if (pad && e.ctrlKey && !e.metaKey) dy *= 4.5;
   else if (pad) dy = Math.sign(dy) * Math.min(Math.abs(dy) * 0.5, 60);
+  // speed and acceleration (owner, 2026-10-17: "speed and acceleration of scrolling and zooming, apply these
+  // factors"): how fast the wheel or the fingers are going sets how far a step goes. Slow is fine (about half a
+  // step, for placing things precisely); one wheel click is one step; a quick spin or flick builds up to two and a
+  // half, to cross levels fast. A change of direction starts over, so turning back is never thrown.
+  if (dy) {
+    const now = performance.now(), dt = Math.max(8, now - wheelAt);
+    const v = Math.abs(dy) / Math.min(dt, 120);
+    wheelV = dt > 150 || Math.sign(dy) !== wheelDir ? v : wheelV * 0.6 + v * 0.4;
+    wheelAt = now; wheelDir = Math.sign(dy);
+    dy *= Math.min(2.5, Math.max(0.55, 0.6 + 0.5 * wheelV));
+  }
   if (dy) zoomBy(dy, e.clientX, e.clientY);
 }, { passive: false, capture: true });
 addEventListener("keydown", (e) => {

@@ -479,7 +479,7 @@ color:var(--paper);font-size:16px;line-height:1}
 /* one header on every page (owner, 2026-10-17: "uniform the site"): its title and a line under it; which place it is
    in, the window's name, the sidebar and the ladder already say */
 .head .eyebrow{display:none!important}
-.field.row-search{display:flex;gap:8px;align-items:stretch;flex-wrap:nowrap}.field.row-search .input{flex:1;min-width:0;width:auto}.field.row-search .btn{flex:none;width:auto}
+.field.row-search{display:flex;gap:8px;align-items:stretch;flex-wrap:nowrap;flex-direction:row!important}.field.row-search .input{flex:1;min-width:0;width:auto}.field.row-search .btn{flex:none;width:auto!important}
 .head .eyebrow{display:block;font:600 11.5px/1 "Geist Mono",ui-monospace,monospace;letter-spacing:.09em;text-transform:uppercase;color:var(--muted);margin-bottom:10px}
 .head h1{letter-spacing:-.02em}
 h2,h3{letter-spacing:-.01em}
