@@ -1,0 +1,126 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+piii OS: starting
+piii OS: Graphics Output Protocol, 1280 × 800
+piii OS: firmware pointer, resolution 65536 × 65536 counts a millimetre
+piii OS: boot protocol: yes
+piii OS: USB mouse 0627:0001, asked directly
+piii OS: Computer: QEMU Virtual CPU version 2.5+
+piii OS: Firmware: Ubuntu distribution of EDK II (revision 0x10000), EFI 2.7
+piii OS: Screen: Graphics Output Protocol, 1280 × 800
+piii OS: Keyboard: the firmware's keyboard (Simple Text Input Ex)
+piii OS: Pointers: USB mouse 0627:0001, asked directly (read by piii OS's own USB driver)
+piii OS: frame 1
+piii OS: second: 0 reports, 230 looks, 1 drawings, slowest 64 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: frame 2
+piii OS: second: 0 reports, 233 looks, 1 drawings, slowest 44 ms
+piii OS: key scan 0x0 char 0xd
+piii OS: frame 3
+piii OS: second: 0 reports, 241 looks, 1 drawings, slowest 15 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x17 char 0x0
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0xd
+piii OS: second: 0 reports, 217 looks, 3 drawings, slowest 43 ms
+piii OS: second: 0 reports, 245 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x0 char 0x35
+piii OS: key scan 0x0 char 0x72
+piii OS: second: 0 reports, 217 looks, 2 drawings, slowest 57 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x17 char 0x0
+piii OS: key scan 0x0 char 0x9
+piii OS: second: 0 reports, 225 looks, 2 drawings, slowest 44 ms
+piii OS: key scan 0x0 char 0xd
+piii OS: second: 0 reports, 234 looks, 2 drawings, slowest 21 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x17 char 0x0
+piii OS: key scan 0x0 char 0x9
+piii OS: second: 0 reports, 225 looks, 2 drawings, slowest 44 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: second: 0 reports, 213 looks, 3 drawings, slowest 44 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0xd
+piii OS: second: 0 reports, 222 looks, 3 drawings, slowest 44 ms
+piii OS: second: 0 reports, 241 looks, 1 drawings, slowest 20 ms
+piii OS: key scan 0x17 char 0x0
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 3 kept
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 4 kept
+piii OS: second: 0 reports, 204 looks, 4 drawings, slowest 43 ms
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 5 kept
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 6 kept
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 7 kept
+piii OS: second: 0 reports, 208 looks, 3 drawings, slowest 43 ms
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 8 kept
+piii OS: key scan 0x0 char 0x3d
+piii OS: pointer speed 9 kept
+piii OS: second: 2 reports, 209 looks, 3 drawings, slowest 45 ms
+piii OS: second: 38 reports, 228 looks, 2 drawings, slowest 43 ms
+piii OS: second: 48 reports, 251 looks, 0 drawings, slowest 0 ms
+piii OS: second: 48 reports, 251 looks, 0 drawings, slowest 0 ms
+piii OS: second: 46 reports, 240 looks, 1 drawings, slowest 43 ms
+piii OS: second: 11 reports, 247 looks, 0 drawings, slowest 0 ms
+piii OS: usb button down
+piii OS: second: 6 reports, 181 looks, 6 drawings, slowest 46 ms
+piii OS: frame 50
+piii OS: second: 13 reports, 108 looks, 13 drawings, slowest 43 ms
+piii OS: usb button up
+piii OS: second: 10 reports, 148 looks, 9 drawings, slowest 46 ms
+piii OS: second: 0 reports, 245 looks, 0 drawings, slowest 0 ms
+piii OS: usb button down
+piii OS: usb button up
+piii OS: second: 2 reports, 231 looks, 2 drawings, slowest 46 ms
+piii OS: second: 0 reports, 245 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x17 char 0x0
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: second: 0 reports, 213 looks, 3 drawings, slowest 46 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: second: 0 reports, 212 looks, 3 drawings, slowest 46 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0xd
+piii OS: network card 52:54:00:12:34:56 (1 firmware drivers let go)
+piii OS: network: Ethernet, address 10.0.2.15 (gateway 10.0.2.2, names from 10.0.2.3)
+piii OS: GET http://piii.app/api/portal?limit=50: 200 (659 bytes)
+piii OS: second: 0 reports, 207 looks, 3 drawings, slowest 47 ms
+piii OS: second: 0 reports, 240 looks, 1 drawings, slowest 25 ms
+piii OS: second: 0 reports, 245 looks, 0 drawings, slowest 0 ms
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0x9
+piii OS: key scan 0x0 char 0xd
+piii OS: second: 0 reports, 227 looks, 3 drawings, slowest 26 ms
+piii OS: key scan 0x0 char 0x31
+piii OS: key scan 0x0 char 0x30
+piii OS: key scan 0x0 char 0x2e
+piii OS: key scan 0x0 char 0x30
+piii OS: second: 0 reports, 222 looks, 4 drawings, slowest 24 ms
+piii OS: key scan 0x0 char 0x2e
+piii OS: key scan 0x0 char 0x32
+piii OS: key scan 0x0 char 0x2e
+piii OS: key scan 0x0 char 0x32
+piii OS: key scan 0x0 char 0x3a
+piii OS: second: 0 reports, 216 looks, 5 drawings, slowest 24 ms
+piii OS: key scan 0x0 char 0x38
+piii OS: key scan 0x0 char 0x30
+piii OS: key scan 0x0 char 0x38
+piii OS: key scan 0x0 char 0x30
+piii OS: key scan 0x0 char 0x2f
+piii OS: second: 0 reports, 216 looks, 5 drawings, slowest 24 ms
+piii OS: key scan 0x0 char 0xd
+piii OS: GET http://10.0.2.2:8080/: 200 (234 bytes)
+piii OS: second: 0 reports, 158 looks, 2 drawings, slowest 22 ms
+piii OS: second: 0 reports, 245 looks, 0 drawings, slowest 0 ms

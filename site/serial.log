@@ -1,0 +1,15 @@
+[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01H[2J[01;01H[=3h[2J[01;01HBdsDxe: loading Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+BdsDxe: starting Boot0001 "UEFI QEMU HARDDISK QM00001 " from PciRoot(0x0)/Pci(0x1F,0x2)/Sata(0x0,0xFFFF,0x0)
+piii OS: starting
+piii OS: Graphics Output Protocol, 1280 × 800
+piii OS: firmware pointer, resolution 65536 × 65536 counts a millimetre
+piii OS: boot protocol: yes
+piii OS: USB mouse 0627:0001, asked directly
+piii OS: Computer: QEMU Virtual CPU version 2.5+
+piii OS: Firmware: Ubuntu distribution of EDK II (revision 0x10000), EFI 2.7
+piii OS: Screen: Graphics Output Protocol, 1280 × 800
+piii OS: Keyboard: the firmware's keyboard (Simple Text Input Ex)
+piii OS: Pointers: USB mouse 0627:0001, asked directly (read by piii OS's own USB driver)
+piii OS: frame 1
+piii OS: second: 0 reports, 232 looks, 1 drawings, slowest 58 ms
+piii OS: second: 0 reports, 246 looks, 0 drawings, slowest 0 ms
