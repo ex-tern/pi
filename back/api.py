@@ -28281,10 +28281,16 @@ def paint_word(w: str) -> str:
     return w[:-3] + "y" if w.endswith("ies") and len(w) > 4 else w[:-2] if w.endswith(("ches", "shes", "xes")) else w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 3 else w
 
 
+# what it was taught before it shipped (drawn by Claude for its starting vocabulary), beside the code
+PAINT_SHIPPED = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paint-learned")
+
+
 def paint_learned(w: str) -> Optional[str]:
-    """What piii Paint learned to draw for a word: the drawing as a data URL, or None."""
-    path = os.path.join(PAINT_DIR, re.sub(r"[^a-z]", "", paint_word(w)) + ".svg")
-    if not os.path.isfile(path):
+    """What piii Paint learned to draw for a word: the drawing as a data URL, or None. What it learned on this server
+    comes first, then what it shipped knowing."""
+    name = re.sub(r"[^a-z]", "", paint_word(w)) + ".svg"
+    path = next((p for p in (os.path.join(PAINT_DIR, name), os.path.join(PAINT_SHIPPED, name)) if os.path.isfile(p)), None)
+    if not path:
         return None
     with open(path, "rb") as f:
         return "data:image/svg+xml;base64," + _pb64.b64encode(f.read()).decode()
@@ -28346,8 +28352,7 @@ def paint_learn_later(prompt: str, most: int = 2) -> None:
 
 def paint_train(words: Optional[List[str]] = None) -> Tuple[int, int]:
     """A training run: Claude teaches piii Paint every word of the list it does not know yet. (learned, tried)."""
-    todo = [w for w in (words or PAINT_SEED_WORDS) if not paint_learned(w)
-            and PAINT_ALIASES.get(paint_word(w), paint_word(w)) not in PAINT_ANIMALS + PAINT_THINGS]
+    todo = [w for w in (words or PAINT_SEED_WORDS) if not paint_learned(w) and paint_word(w) not in PAINT_ANIMALS + PAINT_THINGS]
     got = 0
     for i, w in enumerate(todo, 1):
         ok = paint_learn(w)
@@ -28398,19 +28403,17 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
             if v in PAINT_ANIMALS or v in PAINT_THINGS:
                 return v
         return None
-    for w in words:
-        subject = one(w)
-        if subject:
-            break
     learned = None
-    if subject is None:
-        for w in words:
-            if w in PAINT_STOP:
-                continue
+    for w in words:
+        # a word it was taught comes before a look-alike it draws itself (a penguin, not just a bird)
+        if w not in PAINT_STOP and paint_word(w) not in PAINT_ANIMALS + PAINT_THINGS:
             learned = paint_learned(w)
             if learned:
                 subject = "learned:" + paint_word(w)
                 break
+        subject = one(w)
+        if subject:
+            break
     if subject is None and ws & {"animal", "animals", "pet", "pets", "creature", "creatures", "zoo"}:
         # land animals on land, fish in water
         subject = "fish" if under else rnd.choice([a for a in PAINT_ANIMALS if a != "fish"])
@@ -29221,7 +29224,7 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
     @router.get("/paint")
     def paint_knows():
         """What piii Paint can draw: built in, and learned."""
-        learned = sorted(f[:-4] for f in os.listdir(PAINT_DIR) if f.endswith(".svg")) if os.path.isdir(PAINT_DIR) else []
+        learned = sorted({f[:-4] for d in (PAINT_DIR, PAINT_SHIPPED) if os.path.isdir(d) for f in os.listdir(d) if f.endswith(".svg")})
         return {"built_in": PAINT_ANIMALS + PAINT_THINGS, "learned": learned, "teacher": bool(ANTHROPIC_API_KEY)}
 
     @router.post("/video")
