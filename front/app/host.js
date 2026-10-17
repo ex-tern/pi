@@ -85,6 +85,32 @@ const host = {
       }, k === "mwheel" ? { passive: false } : undefined);
       if (k === "mup") n.addEventListener("pointercancel", (e) => { const r = n.getBoundingClientRect(); send(id, k, (e.clientX - r.left) + "," + (e.clientY - r.top) + "," + r.width + "," + r.height); });
     }
+    // a sidebar icon dragged out onto the canvas: a copy of it lands there (owner, 2026-10-17: "the side icons are drag
+    // and droppable to the canvas. Drag and dropping copies everything"). Sends "name<TAB>x<TAB>y" on the drop.
+    else if (k === "pdrop") n.addEventListener("pointerdown", (e) => {
+      if (e.button !== 0) return;
+      const x0 = e.clientX, y0 = e.clientY; let ghost = null;
+      const mv = (ev) => {
+        if (!ghost && Math.abs(ev.clientX - x0) + Math.abs(ev.clientY - y0) < 8) return;
+        if (!ghost) {
+          ghost = n.cloneNode(true);
+          Object.assign(ghost.style, { position: "fixed", pointerEvents: "none", zIndex: 2147483600, opacity: ".85", transform: "scale(1.15)", transition: "transform .15s", margin: 0 });
+          document.body.appendChild(ghost);
+        }
+        ghost.style.left = (ev.clientX - 22) + "px"; ghost.style.top = (ev.clientY - 22) + "px";
+      };
+      const up = (ev) => {
+        removeEventListener("pointermove", mv); removeEventListener("pointerup", up);
+        if (!ghost) return;
+        ghost.remove();
+        // the click that ends a drag does not also follow the link
+        addEventListener("click", (c) => { c.preventDefault(); c.stopPropagation(); }, { capture: true, once: true });
+        const over = document.elementFromPoint(ev.clientX, ev.clientY);
+        if (over && over.closest(".rail")) return;
+        send(id, k, (n.dataset.drag || "") + "\t" + ev.clientX + "\t" + ev.clientY);
+      };
+      addEventListener("pointermove", mv); addEventListener("pointerup", up);
+    });
     // a press on the bare background (nothing solid under it): the canvas pans from here
     else if (k === "bgdown") n.addEventListener("pointerdown", (e) => {
       if (e.button !== 0 || e.target.closest("[data-solid], button, a, input, textarea, select, label")) return;

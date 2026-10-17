@@ -1121,6 +1121,8 @@ const P_OPEN: u16 = 6;
 const P_AI_DRAFT: u16 = 7;
 const P_AI_SEND: u16 = 8;
 const P_LADDER: u16 = 9;
+/// a sidebar icon dropped on the canvas: "name<TAB>x<TAB>y"
+const P_DROP: u16 = 10;
 
 fn prog_update(a: u16, v: String) {
     let s = st();
@@ -1143,6 +1145,22 @@ fn prog_update(a: u16, v: String) {
         }
         P_EXAMPLE => example_load(v.parse::<usize>().unwrap_or(0)),
         P_AI_DRAFT => s.ai_draft = v,
+        P_DROP => {
+            let f: Vec<&str> = v.split('\t').collect();
+            if let [name, x, y] = f.as_slice() {
+                if let (Ok(x), Ok(y)) = (x.parse::<f64>(), y.parse::<f64>()) {
+                    if WORLD.contains(name) {
+                        let text = format!("{}{}", MEMBER, name);
+                        let (nx, ny) = screen_to_node(x, y);
+                        let (w, h) = unode_size(&text);
+                        let id = prog_add(&text, nx - w / 2.0, ny - h / 2.0);
+                        st().prog.sel = Some(id);
+                        prog_save();
+                        note(format!("A copy of {}: zoom into it, or double click it, to open it", name));
+                    }
+                }
+            }
+        }
         // a rung of the ladder: the top is Super AI; the site's places are the home canvas
         P_LADDER => match (a >> 4) as usize {
             0 => {
@@ -1968,6 +1986,9 @@ const PROG_CSS: &str = "\
 .ladder .rung{transition:color .35s,background-color .35s,transform .35s}.ladder .rung.at{transform:translateX(-4px)}\
 .sx.unode.k-member{flex-direction:column;gap:6px}.u-mark{display:grid;place-items:center;color:#2b2b2b}.u-mark svg{width:26px;height:26px}\
 .u-icon svg{width:20px;height:20px;display:block}.sx.unode.k-member.u-iconic{flex-direction:row}\
+.u-wrap{position:absolute;left:0;top:0;width:0;height:0;transition:transform .45s cubic-bezier(.2,.75,.15,1),opacity .45s}\
+.u-wrap.merged{opacity:0;pointer-events:none}.u-wrap.merged *{pointer-events:none!important}\
+.u-count{position:absolute;transform:translate(-60%,-40%);z-index:3;font-family:'Geist Mono',ui-monospace,monospace;font-weight:700;color:#fff;background:var(--accent);border-radius:999px;padding:.1em .45em;pointer-events:none;animation:pi-fade .3s ease-out both}\
 .sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\
 .u-icon{font:600 22px/1 'Geist Mono',ui-monospace,monospace;color:#2b2b2b;transform:scale(calc(1 / var(--k, 1)));white-space:nowrap}\
 .sx.unode.u-deeper{padding:0;cursor:grab}\

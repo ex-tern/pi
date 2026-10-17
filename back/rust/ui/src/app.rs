@@ -797,6 +797,12 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             render();
             return;
         }
+        // in past the deepest (a page's words are bits by then): round to Super AI
+        if dy < 0.0 && z == z0 && host::now() - s.zoom_nav_at > 700.0 {
+            loop_to_ai();
+            render();
+            return;
+        }
         if dy == 0.0 {
             s.ppan = (0.0, 0.0);
         } else {
@@ -2161,9 +2167,17 @@ fn rail(s: &State) -> N {
     let icon = |page: Page, arg: &str| -> N {
         let name = super_name(s, page, arg);
         let open = s.open.iter().any(|(p, a)| *p == page && a == arg);
+        // the place it stands for, as the home canvas names it: dragged onto a canvas, a copy of it lands there
+        let place = match page {
+            Page::Group(g) => WORLD.get(g as usize).copied().unwrap_or(""),
+            Page::Map => "The map",
+            _ => "",
+        };
         el("a")
             .cls("ric")
             .attr("draggable", "false")
+            .attr_if(!place.is_empty(), "data-drag", place)
+            .on_if(!place.is_empty(), "pdrop", Msg::TV(Tool::Prog, P_DROP))
             .cls_if(open, "open")
             .cls_if(is_current(s, page, arg), "on")
             .attr("href", hash_of(page, arg))
@@ -2260,6 +2274,9 @@ fn rail(s: &State) -> N {
             .into()
     };
     let foot = |e: El<Msg>, name: &str, d: &[&str], pin: usize| -> N {
+        // privacy and the API can be dragged onto a canvas too
+        let place = match name { "Privacy choices" => "Privacy", "API" => "API", _ => "" };
+        let e = if place.is_empty() { e } else { e.attr("data-drag", place).on("pdrop", Msg::TV(Tool::Prog, P_DROP)) };
         e.cls("ric").attr("aria-label", name).kid(el("span").cls("g").kid(mark(d))).kid(el("span").cls("tip").text(name)).kid(tips(Some(pin))).into()
     };
     let mut f = el("div").cls("rfoot");

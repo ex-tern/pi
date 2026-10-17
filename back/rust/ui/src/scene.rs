@@ -1592,8 +1592,28 @@ fn scene_view(s: &State, mini: bool) -> N {
     let mut order: Vec<&UNode> = s.prog.nodes.iter().collect();
     let area = |n: &UNode| { let r = rect(&g, n.id); r.2 * r.3 };
     order.sort_by(|a, b| area(b).partial_cmp(&area(a)).unwrap_or(core::cmp::Ordering::Equal));
+    // the same thing, close together on screen, is one thing (owner, 2026-10-17: "icons merge to icons, words merge to
+    // words, same icons into same icons, same words into same words"): zoomed out, copies of a super glide into the
+    // first of them, which counts them; zoomed in, they come apart again
+    let merged = merges(s, &g);
     for n in order {
-        stage = stage.kid(unode_view(s, n, rect(&g, n.id), mini, g.k));
+        let r = rect(&g, n.id);
+        let (into, count) = merged.get(&n.id).copied().unwrap_or((None, 1));
+        let wrap = el("div").cls("u-wrap").cls_if(into.is_some(), "merged");
+        let wrap = match into {
+            Some((dx, dy)) => wrap.style(format!("transform:translate({:.1}px,{:.1}px)", dx, dy)),
+            None => wrap,
+        };
+        stage = stage.kid(
+            wrap.kid(unode_view(s, n, r, mini, g.k))
+                .kid_if(count > 1 && !mini, || {
+                    el("span")
+                        .cls("u-count")
+                        .style(format!("left:{:.1}px;top:{:.1}px;font-size:{:.2}px", r.0 + r.2, r.1, 12.0 / g.k.max(1e-6)))
+                        .text(format!("×{}", count))
+                        .into()
+                }),
+        );
     }
     // the selected super's group, outlined
     if !mini {
@@ -2574,6 +2594,11 @@ fn canvas_zoom(v: &str) {
     let f = libm_exp(-dy * 0.0015);
     let z = zoom_within(s.zoom, f, canvas_zoom_limits(s));
     if !(z.is_finite() && z > 1e-300 && z < 1e300) || z == s.zoom {
+        // in past the 0s and 1s: round again to the top, Super AI (owner, 2026-10-17: "if you zoom in, things loop
+        // back to Super AI")
+        if dy < 0.0 && host::now() - s.zoom_nav_at > 700.0 && anything_on_screen(s) {
+            loop_to_ai();
+        }
         return;
     }
     let (z0, pan0) = (s.zoom, s.pan);
@@ -2588,6 +2613,48 @@ fn canvas_zoom(v: &str) {
         return;
     }
     layout_save();
+}
+
+/// Which supers are drawn as one: the same text, centres within 56px of each other on screen or overlapping. For each super merged
+/// into another, where it glides to (design units); for each that takes others in, how many it stands for.
+fn merges(s: &State, g: &Geo) -> BTreeMap<usize, (Option<(f64, f64)>, usize)> {
+    let mut out: BTreeMap<usize, (Option<(f64, f64)>, usize)> = BTreeMap::new();
+    let mut leaders: Vec<(usize, &str, f64, f64)> = Vec::new();
+    for n in s.prog.nodes.iter() {
+        let t = n.text.trim();
+        // what is being dragged stays itself
+        if t.is_empty() || s.drag.as_ref().map(|d| d.id == n.id).unwrap_or(false) {
+            continue;
+        }
+        let (x, y, w, h) = rect(g, n.id);
+        let (cx, cy) = (x + w / 2.0, y + h / 2.0);
+        // close: within 56px, or overlapping each other on screen
+        let (tx, ty) = ((0.5 * w * g.k).max(56.0), (0.5 * h * g.k).max(56.0));
+        let near = leaders.iter().find(|l| l.1 == t && ((l.2 - cx) * g.k).abs() < tx && ((l.3 - cy) * g.k).abs() < ty).map(|l| (l.0, l.2, l.3));
+        match near {
+            Some((lid, lx, ly)) => {
+                out.insert(n.id, (Some((lx - cx, ly - cy)), 1));
+                out.entry(lid).or_insert((None, 1)).1 += 1;
+            }
+            None => leaders.push((n.id, t, cx, cy)),
+        }
+    }
+    out
+}
+
+/// Round the loop: past the deepest zoom is the highest level again.
+fn loop_to_ai() {
+    let s = st();
+    s.zoom_nav_at = host::now();
+    s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
+    s.zoom = canvas_zoom_limits(s).0;
+    s.pzoom = 1.0;
+    host::store_set("piii:pzoom", "1");
+    s.ai_level = true;
+    layout_save();
+    if s.page != Page::Home || s.peek {
+        host::go("#/");
+    }
 }
 
 /// Is any super or sparkle of the canvas at least partly in the window?
