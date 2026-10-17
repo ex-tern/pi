@@ -2012,6 +2012,7 @@ const PROG_CSS: &str = "\
 @media (max-width:699px){.ladder{top:auto;bottom:8px;right:50%;transform:translateX(50%);flex-direction:row;overflow-x:auto;max-width:calc(100vw - 16px)}}\
 .ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:blur(3px)}\
 .ai-in{width:min(640px,calc(100vw - 32px));text-align:center}.ai-in h1{font-size:44px;margin:4px 0 10px}\
+.push-ring{display:none}.push-ring.on{display:block;position:fixed;left:50%;top:50%;width:64px;height:64px;margin:-32px 0 0 -32px;border-radius:50%;z-index:2147483200;pointer-events:none;background:conic-gradient(var(--accent) calc(var(--p) * 360deg),color-mix(in srgb,var(--accent) 14%,transparent) 0);-webkit-mask:radial-gradient(circle,transparent 25px,#000 26px);mask:radial-gradient(circle,transparent 25px,#000 26px);animation:pi-fade .15s ease-out both}\
 .ai-bubble-wrap{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:var(--paper);animation:pi-fade .4s ease-out both}\
 .ai-bubble{position:relative;width:min(34vmin,320px);height:min(31vmin,292px);border:0;background:none;box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-in;animation:pi-rise .55s cubic-bezier(.2,.75,.15,1) both}\
 .ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 14px 30px rgba(25,25,25,.14))}\

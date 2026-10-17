@@ -2617,7 +2617,7 @@ fn canvas_zoom(v: &str) {
     if !(z.is_finite() && z > 1e-300 && z < 1e300) || z == s.zoom {
         // in past the 0s and 1s: round again to the top, Super AI (owner, 2026-10-17: "if you zoom in, things loop
         // back to Super AI")
-        if dy < 0.0 && host::now() - s.zoom_nav_at > 700.0 && anything_on_screen(s) {
+        if dy < 0.0 && host::now() - s.zoom_nav_at > 700.0 && anything_on_screen(s) && push_through(dy, 1200.0) {
             loop_to_ai();
         }
         return;
@@ -2667,7 +2667,17 @@ fn merges(s: &State, g: &Geo) -> BTreeMap<usize, (Option<(f64, f64)>, usize)> {
 fn welcome_view() {
     let s = st();
     s.ai_level = 0;
-    s.zoom = canvas_zoom_limits(s).0;
+    // the whole ring filling most of the window beside the sidebar
+    s.zoom = 1.0;
+    let g = geo(s);
+    let world: Vec<Rect> = s.prog.nodes.iter().filter(|n| world_of(&n.text).is_some()).map(|n| rect(&g, n.id)).collect();
+    if !world.is_empty() {
+        let (l, t) = world.iter().fold((f64::MAX, f64::MAX), |a, r| (a.0.min(r.0), a.1.min(r.1)));
+        let (r, b) = world.iter().fold((f64::MIN, f64::MIN), |a, q| (a.0.max(q.0 + q.2), a.1.max(q.1 + q.3)));
+        let (vw, vh) = (host::vw() - 300.0, host::vh() - 120.0);
+        let fit = (vw.max(200.0) / ((r - l) * g.k)).min(vh.max(200.0) / ((b - t) * g.k));
+        s.zoom = fit.max(canvas_zoom_limits(s).0);
+    }
     let hub = s.prog.nodes.iter().find(|n| world_of(&n.text) == Some(WORLD_HUB)).map(|n| n.id);
     if let Some(id) = hub {
         let g = geo(s);
@@ -2678,6 +2688,29 @@ fn welcome_view() {
         s.pan = (s.pan.0 + (vw / 2.0 + 30.0 - sx) / g.k, s.pan.1 + (vh / 2.0 - sy) / g.k);
     }
     layout_save();
+}
+
+/// Pushing against a level's edge: true once the wheel has pushed hard enough (`need`, in wheel units: about four
+/// notches for the usual crossing) in one direction without letting up. The push is shown as a growing ring.
+fn push_through(dy: f64, need: f64) -> bool {
+    let s = st();
+    let now = host::now();
+    let dir = if dy < 0.0 { -1.0 } else { 1.0 };
+    if now - s.resist.2 > 450.0 || s.resist.1 != dir {
+        s.resist.0 = 0.0;
+    }
+    s.resist = (s.resist.0 + dy.abs(), dir, now);
+    if s.resist.0 >= need {
+        s.resist = (0.0, 0.0, now);
+        return true;
+    }
+    false
+}
+
+/// How far a push against an edge has got (0…1), for the ring that shows it.
+fn push_shown() -> f64 {
+    let s = st();
+    if host::now() - s.resist.2 > 450.0 { 0.0 } else { (s.resist.0 / 700.0).min(1.0) }
 }
 
 /// Round the loop: past the deepest zoom is the highest level again.
@@ -3217,6 +3250,40 @@ fn world_sync() {
         }
         host::store_set("piii:world-v", "3");
     }
+    // the welcome page's dashed links, tip to tip (owner, 2026-10-17: "make the initial state exactly look like this
+    // with the wiring"): the places pass on to their neighbours down each side of the ring, and they all reach
+    // Super AI's control from above, which passes down to Insights and Connect
+    if host::store_get("piii:world-v").as_deref() != Some("4") {
+        let id_of = |name: &str| st().prog.nodes.iter().find(|n| n.text.strip_prefix(MEMBER) == Some(name)).map(|n| n.id);
+        let links: [(&str, Tip, &str, Tip); 14] = [
+            ("Tools", Tip::In, "API", Tip::Control),
+            ("Tools", Tip::Out, "Explore", Tip::Control),
+            ("API", Tip::In, "Privacy", Tip::Control),
+            ("Privacy", Tip::Gate, "The map", Tip::Control),
+            ("Explore", Tip::Out, "Library", Tip::Control),
+            ("Library", Tip::Gate, "Lab", Tip::Control),
+            ("Tools", Tip::Gate, "Super AI", Tip::Control),
+            ("API", Tip::Out, "Super AI", Tip::Control),
+            ("Explore", Tip::In, "Super AI", Tip::Control),
+            ("Privacy", Tip::Out, "Super AI", Tip::Control),
+            ("Library", Tip::In, "Super AI", Tip::Control),
+            ("Super AI", Tip::Control, "Insights", Tip::Control),
+            ("Super AI", Tip::Control, "Connect", Tip::Control),
+            ("Tools", Tip::Control, "Tools", Tip::Control),
+        ];
+        for (a, ta, b, tb) in links.iter() {
+            if a == b {
+                continue;
+            }
+            if let (Some(x), Some(y)) = (id_of(a), id_of(b)) {
+                if !st().passes.iter().any(|p| p.0 == x && p.1 == *ta && p.2 == y && p.3 == *tb) {
+                    st().passes.push((x, *ta, y, *tb));
+                }
+            }
+        }
+        wires_save();
+        host::store_set("piii:world-v", "4");
+    }
     if changed {
         prog_save();
     }
@@ -3224,7 +3291,7 @@ fn world_sync() {
 
 /// Zoomed far enough into a place, it opens (owner, 2026-10-17: "zooming inside each other opens them"): one that is
 /// under the pointer and fills most of the window. True if one opened.
-fn zoom_into_place(px: f64, py: f64) -> bool {
+fn zoom_into_place(px: f64, py: f64, dy: f64) -> bool {
     let s = st();
     if host::now() - s.zoom_nav_at < 700.0 {
         return false;
@@ -3236,6 +3303,11 @@ fn zoom_into_place(px: f64, py: f64) -> bool {
         let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
         (px >= sx && px <= sx + sw && py >= sy && py <= sy + sh && sw.min(sh) >= 0.6 * m).then(|| (n.text.clone(), (sx, sy, sw, sh)))
     });
+    // a place under the pointer filling the window opens only after a push into it
+    let hit = match hit {
+        Some(h) if push_through(dy, 700.0) => Some(h),
+        _ => None,
+    };
     match hit {
         Some((t, r)) => {
             // the page grows out of the super it was

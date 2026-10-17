@@ -257,6 +257,9 @@ struct State {
     /// 2026-10-17: "make the website start above super AI bubble, like almost a circle in the center")
     ai_level: u8,
     ai_draft: String,
+    /// resistance at a level's edge (owner, 2026-10-17: "add some resistance to go to extreme levels"): how hard the
+    /// wheel has pushed against it, which way, and when last
+    resist: (f64, f64, f64),
     /// the transition under way (owner, 2026-10-17: "make the transition more smoother and graphical"): 1 into a
     /// place, from its super's box on screen (x, y, w, h); 2 out to the level above; 3 up into Super AI; and when
     trans: (u8, (f64, f64, f64, f64), f64),
@@ -487,6 +490,7 @@ pub fn start() {
         zoom_nav_at: 0.0,
         ai_level: 0,
         ai_draft: String::new(),
+        resist: (0.0, 0.0, 0.0),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
         win_free: true,
@@ -772,7 +776,8 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             layout_save();
         } else if s.ai_level > 0 {
             // in: the bubble → Super AI → the site; out: back up to the bubble, the outermost
-            if host::now() - s.zoom_nav_at > 900.0 {
+            if host::now() - s.zoom_nav_at > 600.0 && push_through(dy, 700.0) {
+                let s = st();
                 if dy < 0.0 {
                     s.ai_level -= 1;
                     s.zoom_nav_at = host::now();
@@ -788,9 +793,9 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             canvas_zoom(&format!("{},{},{}", dy, x, y));
             let s = st();
             if dy < 0.0 {
-                zoom_into_place(x, y);
-            } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 {
-                // as far out as the canvas goes: one more step is the AI language
+                zoom_into_place(x, y, dy);
+            } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 && push_through(dy, 700.0) {
+                // as far out as the canvas goes: one more push is the AI language
                 s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
                 s.ai_level = 1;
                 s.zoom_nav_at = host::now();
@@ -802,12 +807,12 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
         let z0 = s.pzoom.max(1e-6);
         let z = if dy == 0.0 { 1.0 } else { zoom_within(z0, libm_exp(-dy * 0.0015), page_zoom_limits(s)) };
         // out past the farthest: up a level; in on a place on this page's canvas: into it
-        if dy > 0.0 && z == z0 && zoom_out_of_page() {
+        if dy > 0.0 && z == z0 && host::now() - s.zoom_nav_at > 700.0 && push_through(dy, 700.0) && zoom_out_of_page() {
             render();
             return;
         }
         // in past the deepest (a page's words are bits by then): round to Super AI
-        if dy < 0.0 && z == z0 && host::now() - s.zoom_nav_at > 700.0 {
+        if dy < 0.0 && z == z0 && host::now() - s.zoom_nav_at > 700.0 && push_through(dy, 1200.0) {
             loop_to_ai();
             render();
             return;
@@ -821,7 +826,7 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
         }
         s.pzoom = z;
         host::store_set("piii:pzoom", &format!("{:.4}", z));
-        if dy < 0.0 && zoom_into_place(x, y) {
+        if dy < 0.0 && zoom_into_place(x, y, dy) {
             render();
             return;
         }
@@ -1973,7 +1978,10 @@ fn view(s: &State) -> N {
     // the canvas shows its own note; elsewhere it floats over the page, so the lock's answers are always seen
     // (the page's own canvas shows the note now)
     let page_note = false;
-    el("div").cls("app").cls_if(s.wire_mode, "wire-on").kid(body).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
+    // the push against a level's edge, as a ring filling in the middle of the window
+    let push = push_shown();
+    el("div").cls("app").cls_if(s.wire_mode, "wire-on").kid(body)
+        .kid(el("div").cls("push-ring").cls_if(push > 0.02, "on").style(format!("--p:{:.3}", push))).kid_if(page_note, || el("div").cls("wire-note page-note").attr("role", "status").text(s.note.clone()).into()).kid_if(s.consent_open, || consent_panel(s)).kid(modal_view(s)).kid(toasts_view(s)).into()
 }
 
 
