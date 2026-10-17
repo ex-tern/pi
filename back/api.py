@@ -445,6 +445,12 @@ CEREBRAS_API_KEY = get_secret("CEREBRAS_API_KEY")
 MISTRAL_API_KEY = get_secret("MISTRAL_API_KEY")
 DEEPSEEK_API_KEY = get_secret("DEEPSEEK_API_KEY")
 TOGETHER_API_KEY = get_secret("TOGETHER_API_KEY")
+# Claude, through the Anthropic API (owner, 2026-10-17: "can I use my Claude Max as API for the site?": a Max plan's
+# monthly API credits, linked to a Console organization, pay for a key made there). Only Super AI asks it; the
+# assessment panel is unchanged.
+ANTHROPIC_API_KEY = get_secret("ANTHROPIC_API_KEY")
+CLAUDE_MODEL = (os.getenv("CLAUDE_MODEL") or "claude-haiku-5-5").strip()
+ANTHROPIC_OPENAI_BASE = "https://api.anthropic.com/v1"
 GITHUB_MODELS_TOKEN = get_secret("GITHUB_MODELS_TOKEN")
 ORCID_CLIENT_ID = get_secret("ORCID_CLIENT_ID")
 ORCID_CLIENT_SECRET = get_secret("ORCID_CLIENT_SECRET")
@@ -28828,7 +28834,10 @@ def _super_route_call(juror, prompt, routes):
 
 
 def _super_ask_juror(juror, prompt):
-    pass
+    if juror == "claude":
+        # Claude alone: never another model answering under its name
+        r = _route(CLAUDE_MODEL, ANTHROPIC_API_KEY, ANTHROPIC_OPENAI_BASE, "Anthropic")
+        return _super_route_call(juror, prompt, [r] if r else [])
     return _super_route_call(juror, prompt, build_routes(juror))
 
 
@@ -28838,13 +28847,16 @@ def _super_judge(prompt):
 
 
 def _super_juror_ready(juror):
-    pass
+    if juror == "claude":
+        return bool(ANTHROPIC_API_KEY)
     return bool(build_routes(juror))
 
 
 def _super_jurors():
-    pass
-    return [{"key": k, "label": v["label"].split(" (")[0]} for k, v in MODEL_REGISTRY.items() if v.get("kind") == "external"]
+    out = [{"key": k, "label": v["label"].split(" (")[0]} for k, v in MODEL_REGISTRY.items() if v.get("kind") == "external"]
+    if ANTHROPIC_API_KEY:
+        out.insert(0, {"key": "claude", "label": "Claude"})
+    return out
 
 
 app.include_router(super_engine_build_router(
