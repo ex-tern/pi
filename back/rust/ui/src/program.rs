@@ -1317,10 +1317,10 @@ fn prog_update(a: u16, v: String) {
         // a rung of the ladder: the top is Super AI; the site's places are the home canvas
         P_LADDER => match (a >> 4) as usize {
             0 => {
-                s.ai_level = 1;
                 if s.page != Page::Home {
                     host::go("#/");
                 }
+                ai_home();
             }
             1 => {
                 s.ai_level = 0;
@@ -1356,7 +1356,7 @@ fn prog_update(a: u16, v: String) {
             if !s.ai_chat_wait.contains(&q) {
                 s.ai_chat_wait.push(q.clone());
             }
-            ai_ask_on_canvas(&q, s.ai_level > 0);
+            ai_ask_on_canvas(&q, false);
         }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
@@ -2022,21 +2022,13 @@ fn pi_logo(big: bool) -> N {
 /// Super AI: the outermost layer and the site's centre, one bubble (owner, 2026-10-17: "fix the super AI bubble and
 /// page and merge them all together. Make it nicer"). Almost a circle; in it, its sparkle, a line to say what to
 /// make or ask, and the answer. A π program in an answer lands on the home canvas, running.
-fn ai_level_view(s: &State) -> N {
-    let answered = !s.ai_answer.is_empty() || s.ai_busy;
-    el("div")
-        .cls("ai-level")
-        .attr("data-stop", "1")
-        .kid(
-            el("div")
-                .cls("ai-bubble")
-                .cls_if(answered, "answered")
-                .cls_if(!answered && !s.ai_chat.is_empty(), "chatting")
-                .cls_if(s.ai_busy, "busy")
-                .kid(se_shape_n(2.25))
-                .kid(ai_chat(s, 4)),
-        )
-        .into()
+/// Super AI: the start canvas with the Super AI super, its chat, in the middle of the window. There is no bubble of its
+/// own over the canvas any more (owner, 2026-10-17: "delete this"); the chat is in the super.
+fn ai_home() {
+    welcome_view();
+    let s = st();
+    s.ai_level = 1;
+    s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
 }
 
 /// What Super AI's bubble holds: π, the question with a file, the microphone and ▶, the conversation (its last turns)
@@ -2719,20 +2711,15 @@ const PROG_CSS: &str = "\
 .ladder .rung.at{color:var(--accent);font-weight:600}.ladder .rung.at::after{background:var(--accent);transform:scale(1.6)}\
 .ladder .rung:not(.at){font-size:0;gap:0}.ladder:hover .rung:not(.at){font-size:10.5px;gap:8px}\
 @media (max-width:699px){.ladder{right:8px;top:auto;bottom:150px;transform:none;opacity:.8}.ladder:hover .rung:not(.at){font-size:0;gap:0}.ladder .rung{padding:3px 2px}}\
-.ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:radial-gradient(ellipse at 50% 46%,color-mix(in srgb,var(--accent) 7%,var(--paper)) 0,var(--paper) 62%);animation:pi-fade .4s ease-out both}\
-.ai-bubble{position:relative;width:min(74vmin,640px);height:min(66vmin,580px);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:14px;padding:0 9%;box-sizing:border-box;animation:pi-rise .6s cubic-bezier(.2,.75,.15,1) both;transition:height .45s cubic-bezier(.2,.75,.15,1)}\
-.ai-bubble.answered{justify-content:flex-start;padding-top:12%}\
-.ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 26px 50px rgba(25,25,25,.16))}\
-.ai-bubble .u-shape path{fill:var(--surface);stroke:var(--ink2);stroke-width:1.8px;vector-effect:non-scaling-stroke}\
 .pi-logo{display:block;overflow:visible}.pi-logo .pi-glyph{fill:none;stroke-width:4.6;stroke-linecap:round;stroke-linejoin:round}\
 .ai-spark .pi-logo{width:84px;height:84px;filter:drop-shadow(0 6px 16px color-mix(in srgb,var(--accent) 28%,transparent))}\
 .pi-logo .pi-orbit{fill:none;stroke:var(--accent);stroke-opacity:.22;stroke-width:1.3}\
 .pi-logo .pi-spark{fill:var(--violet);transform-origin:32px 32px;animation:pi-orbit 9s linear infinite}\
 @keyframes pi-orbit{to{transform:rotate(360deg)}}\
-.ai-bubble.busy .pi-logo .pi-spark{animation-duration:1.4s}\
+.ai-hub.busy .pi-logo .pi-spark{animation-duration:1.4s}\
 .pi-mark{display:block;font:500 24px/1 'Geist',system-ui,sans-serif;color:inherit;letter-spacing:0}.ai-spark .pi-mark{font-size:56px;line-height:.9}\
 .ai-spark{color:var(--accent);display:grid;place-items:center;animation:ai-breathe 3.2s ease-in-out infinite}.ai-spark svg{width:46px;height:46px}\
-.ai-bubble.busy .ai-spark{animation:ai-breathe 1.2s ease-in-out infinite}\
+.ai-hub.busy .ai-spark{animation:ai-breathe 1.2s ease-in-out infinite}\
 @keyframes ai-breathe{0%,100%{transform:scale(1)}50%{transform:scale(1.12)}}@keyframes ai-spin{to{transform:rotate(360deg)}}\
 .ai-title{font:600 30px/1.1 'Geist',system-ui,sans-serif;color:var(--ink2);letter-spacing:-.01em}\
 .ai-row{display:flex;align-items:center;gap:6px;width:100%;max-width:440px;margin:4px 0 0;padding:0 0 4px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:0 1.5px 0 #d9d6cc;background:none;transition:box-shadow .25s}\
@@ -2746,7 +2733,6 @@ const PROG_CSS: &str = "\
 .sx.unode .u-text.u-prompt,.sx.unode.u-canvas .u-text.u-prompt{display:block;width:100%!important;max-width:100%;min-height:1.5em;max-height:72%;field-sizing:content;resize:none;overflow:hidden;white-space:pre-wrap;overflow-wrap:anywhere;font:400 16px/1.45 Geist,system-ui,sans-serif;letter-spacing:0;text-align:left;padding:6px 2px;border:0;border-bottom:1.5px solid var(--line)}\
 .sx.unode:not(.u-canvas) .u-text.u-prompt{text-align:center;max-height:80%}\
 .sx.unode .u-text.u-prompt:focus{border-bottom-color:var(--accent)}\
-.ai-bubble.chatting{justify-content:flex-start;padding-top:9%}\
 .ai-thread{width:100%;max-height:44%;overflow:hidden;display:flex;flex-direction:column;justify-content:flex-end;justify-content:flex-end;gap:12px;padding:4px 2px 2px;mask-image:linear-gradient(transparent,#000 14px)}\
 .ai-turn{display:flex;flex-direction:column;gap:4px}\
 .ai-tq{align-self:flex-end;max-width:85%;padding:6px 12px;border-radius:14px 14px 4px 14px;background:var(--accent-soft);color:var(--ink);font-size:13.5px;line-height:1.4}\

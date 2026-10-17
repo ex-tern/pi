@@ -826,6 +826,12 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             s.zoom = 1.0;
             s.ai_level = 0;
             layout_save();
+        } else if s.ai_level > 0 && host::store_get("piii:loop-from").is_none() {
+            // at Super AI on the canvas, the outermost: out goes no further; in carries on as ever
+            if dy < 0.0 {
+                s.ai_level = 0;
+                canvas_zoom(&format!("{},{},{}", dy, x, y));
+            }
         } else if s.ai_level > 0 {
             // Super AI's bubble is the outermost: in, with a push, back to the site
             if dy < 0.0 && host::now() - s.zoom_nav_at > 600.0 && push_through(dy, 700.0) {
@@ -844,9 +850,8 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
                 zoom_into_place(x, y, dy);
             } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 && push_through(dy, 700.0) {
                 // as far out as the canvas goes: one more push is the AI language
-                s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
-                s.ai_level = 1;
                 s.zoom_nav_at = host::now();
+                ai_home();
             }
         }
     } else {
@@ -1980,7 +1985,6 @@ fn view(s: &State) -> N {
             // the legacy navigation stays beside the zoom (owner, 2026-10-17: "keep the legacy navigation")
             .kid(rail(s))
             .kid(ctl_bar(s))
-            .kid_if(s.ai_level > 0, || ai_level_view(s))
             .kid(ladder_view(s))
             .into()
     } else {

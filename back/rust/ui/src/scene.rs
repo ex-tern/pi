@@ -2830,17 +2830,14 @@ fn loop_to_ai() {
         &format!("{}|{}|{}|{}|{}|{}|{}", here(), s.zoom, s.pan.0, s.pan.1, s.pzoom, s.ppan.0, s.ppan.1),
     );
     s.zoom_nav_at = host::now();
-    s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
-    s.zoom = canvas_zoom_limits(s).0;
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
-    s.ai_level = 1;
     // arriving home this way is Super AI, not the welcome view
     s.welcome_next = false;
-    layout_save();
     if s.page != Page::Home || s.peek {
         host::go("#/");
     }
+    ai_home();
 }
 
 /// Zooming in from Super AI after coming round from the bits: back to the page and the place it came from, a step out
@@ -3343,12 +3340,10 @@ fn open_place(text: &str) -> bool {
         }
         Some(8) => open_modal(Modal::Info("The API".into(), API_GUIDE.into())),
         Some(WORLD_HUB) => {
-            let s = st();
-            s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
-            s.ai_level = 1;
-            if s.page != Page::Home {
+            if st().page != Page::Home {
                 host::go("#/");
             }
+            ai_home();
         }
         _ => return false,
     }
