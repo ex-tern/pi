@@ -1310,7 +1310,7 @@ const MAP_CSS: &str = "\
 .am-msg{position:absolute;left:12px;bottom:12px;max-width:60%;margin:0;background:rgba(255,255,255,.95);padding:6px 10px;font-size:13px;border:1px solid var(--line2)}\
 .am-msg.good{border-color:var(--good);color:var(--good)}.am-msg.bad{border-color:var(--bad);color:var(--bad)}\
 .am-overlay{position:absolute;inset:0;display:grid;place-items:center;background:rgba(246,246,244,.7)}\
-.am-overlay-card{background:#fff;border:1.4px solid #2b2b2b;padding:20px 24px;max-width:420px}\
+.am-overlay-card{background:var(--surface);border:1.4px solid var(--ink2);padding:20px 24px;max-width:420px}\
 .am-reward{color:var(--good);font-weight:600}\
 .am-side .card,.am-group{margin-bottom:10px}.am-group summary{cursor:pointer;font-weight:600;margin-bottom:6px}\
 .am-check{display:flex;gap:6px;align-items:center;font-size:14px;margin:6px 0}\

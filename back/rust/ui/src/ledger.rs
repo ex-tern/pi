@@ -892,7 +892,7 @@ fn wallet_card(s: &State) -> N {
 }
 
 const LEDGER_CSS: &str = "\
-.help-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:8px;border-radius:50%;border:1px solid var(--line2);background:#fff;color:var(--faint);font:600 12px/1 inherit;cursor:pointer;vertical-align:middle}\
+.help-btn{display:inline-flex;align-items:center;justify-content:center;width:20px;height:20px;margin-left:8px;border-radius:50%;border:1px solid var(--line2);background:var(--surface);color:var(--faint);font:600 12px/1 inherit;cursor:pointer;vertical-align:middle}\
 .help-btn:hover{color:var(--ink);border-color:var(--ink)}\
 .help-modal ul{margin:6px 0 10px 18px}.help-modal p{margin:8px 0}\
 .addr-item{margin:10px 0}.addr-item code.wrap,.addr-row code.wrap{word-break:break-all}\
@@ -901,7 +901,7 @@ const LEDGER_CSS: &str = "\
 .clickable-row{cursor:pointer}.clickable-row:hover td{background:rgba(0,0,0,.025)}\
 .data-table tr.picked td{background:rgba(37,99,235,.06)}\
 .pagination{display:flex;align-items:center;gap:12px;justify-content:center;margin:10px 0}\
-.rank{display:inline-flex;min-width:24px;height:24px;align-items:center;justify-content:center;border-radius:12px;font-size:12px;font-weight:600;background:#f1f1ef}\
+.rank{display:inline-flex;min-width:24px;height:24px;align-items:center;justify-content:center;border-radius:12px;font-size:12px;font-weight:600;background:var(--soft)}\
 .rank-1{background:#f6d365}.rank-2{background:#dcdcdc}.rank-3{background:#e8b48a}\
 .lb-held{display:block;font-size:11px;font-weight:400;color:var(--faint)}\
 .chain-badge{display:inline-flex;align-items:center;gap:6px;font-size:12px;padding:3px 10px;border-radius:12px;border:1px solid var(--line2)}\

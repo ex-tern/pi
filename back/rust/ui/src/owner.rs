@@ -580,5 +580,5 @@ const OWNER_CSS: &str = "\
 .reset-row{align-items:flex-start;margin:8px 0}\
 .ip-days{gap:6px;align-items:center;flex-wrap:wrap;margin:0 0 8px}.ip-wrap{overflow-x:auto}.ip-table td,.ip-table th{white-space:nowrap}.ip-table td.ip-top{white-space:normal;font-size:12px;color:var(--muted);min-width:220px}.ip-table tr.sel td{background:color-mix(in srgb,var(--accent,#3b82f6) 8%,transparent)}\
 .linkish{border:0;background:none;padding:0;font:inherit;color:var(--accent,#2563eb);cursor:pointer;text-decoration:underline}.ip-one{margin-top:12px}.ip-one h4{margin:12px 0 6px}.ip-path{font-family:var(--mono,monospace);font-size:12px;word-break:break-all}\
-.bug textarea,.bug input,.bug select,.owner input,.owner select{font:inherit;padding:7px 9px;border:1px solid var(--line2);background:#fff}\
+.bug textarea,.bug input,.bug select,.owner input,.owner select{font:inherit;padding:7px 9px;border:1px solid var(--line2);background:var(--surface)}\
 ";

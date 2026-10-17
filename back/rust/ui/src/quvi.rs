@@ -839,30 +839,30 @@ fn bloch_svg(x: f64, y: f64, z: f64) -> N {
 
 const QUVI_CSS: &str = "\
 .quvi .q-controls{align-items:center;gap:14px;margin:12px 0}\
-.q-ex select,.q-angle input{font:inherit;padding:5px 8px;border:1px solid var(--line2);background:#fff}\
+.q-ex select,.q-angle input{font:inherit;padding:5px 8px;border:1px solid var(--line2);background:var(--surface)}\
 .q-qubits{display:flex;align-items:center;gap:6px}.q-qubits span{color:var(--muted)}\
-.q-palette{margin:10px 0}.q-palette .chip.on{background:var(--ink);color:#fff;border-color:var(--ink)}\
+.q-palette{margin:10px 0}.q-palette .chip.on{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}\
 .q-angle{display:inline-flex;align-items:center;gap:4px;margin-top:8px}.q-angle input{width:80px}\
-.q-wrap{overflow-x:auto;border:1px solid var(--line);background:#fff;padding:10px}\
+.q-wrap{overflow-x:auto;border:1px solid var(--line);background:var(--surface);padding:10px}\
 .q-diagram{display:grid;align-items:center}\
 .q-colhead{height:22px;border:0;background:none;font:12px 'Geist Mono',ui-monospace,monospace;color:var(--faint);cursor:pointer}\
 .q-colhead.at{color:var(--accent);font-weight:700}\
 .q-wire{font:13px 'Geist Mono',ui-monospace,monospace;white-space:pre;padding-right:10px;color:var(--muted)}\
 .q-cell{position:relative;width:40px;height:44px;border:0;background:none;padding:0;cursor:pointer}\
-.q-slot{position:absolute;left:0;right:0;top:50%;border-top:1.5px solid #2b2b2b}\
+.q-slot{position:absolute;left:0;right:0;top:50%;border-top:1.5px solid var(--ink2)}\
 .q-cell:hover{background:var(--accent-soft)}\
 .q-cell.future{opacity:.35}\
-.q-cell.link::before{content:'';position:absolute;left:calc(50% - .75px);width:1.5px;background:#2b2b2b;top:0;bottom:0}\
+.q-cell.link::before{content:'';position:absolute;left:calc(50% - .75px);width:1.5px;background:var(--ink2);top:0;bottom:0}\
 .q-cell.link-top::before{top:50%}.q-cell.link-bot::before{bottom:50%}.q-cell.link-top.link-bot::before{display:none}\
-.q-gate{position:relative;z-index:1;display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 3px;background:#fff;border:1.5px solid #2b2b2b;font:600 12px 'Geist Mono',ui-monospace,monospace}\
-.q-gate.q-m{background:#fbfbf9}\
-.q-ctrl{position:relative;z-index:1;display:inline-block;width:12px;height:12px;border-radius:50%;background:#2b2b2b}\
-.q-ctrl.anti{background:#fff;border:1.5px solid #2b2b2b}\
-.q-swap{position:relative;z-index:1;font-size:20px;font-weight:700;background:#fff;line-height:1}\
+.q-gate{position:relative;z-index:1;display:inline-grid;place-items:center;min-width:30px;height:30px;padding:0 3px;background:var(--surface);border:1.5px solid var(--ink2);font:600 12px 'Geist Mono',ui-monospace,monospace}\
+.q-gate.q-m{background:var(--card)}\
+.q-ctrl{position:relative;z-index:1;display:inline-block;width:12px;height:12px;border-radius:50%;background:var(--ink2)}\
+.q-ctrl.anti{background:var(--surface);border:1.5px solid var(--ink2)}\
+.q-swap{position:relative;z-index:1;font-size:20px;font-weight:700;background:var(--surface);line-height:1}\
 .q-timeline{display:flex;flex-direction:column;gap:6px;margin:14px 0}\
 .q-tabs{display:flex;gap:6px;flex-wrap:wrap;margin:6px 0 10px}\
-.q-tabs button{font:inherit;font-size:13.5px;border:1px solid var(--line2);background:#fff;padding:5px 12px;cursor:pointer}\
-.q-tabs button[aria-selected=true]{background:var(--ink);color:#fff;border-color:var(--ink)}\
+.q-tabs button{font:inherit;font-size:13.5px;border:1px solid var(--line2);background:var(--surface);padding:5px 12px;cursor:pointer}\
+.q-tabs button[aria-selected=true]{background:var(--ink);color:var(--on-ink);border-color:var(--ink)}\
 .q-bars{display:grid;grid-template-columns:max-content 1fr 60px;gap:6px 10px;align-items:center;max-width:620px}\
 .q-bars .k{font:13px 'Geist Mono',ui-monospace,monospace}.q-bars .v{text-align:right;font-size:13px}\
 .mono{font-family:'Geist Mono',ui-monospace,monospace}.q-phase{vertical-align:middle}\

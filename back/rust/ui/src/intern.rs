@@ -1259,8 +1259,8 @@ const INTERN_CSS: &str = "\
 .intern-form{display:grid;gap:10px;margin-bottom:14px;padding:14px}.ifield{display:grid;gap:4px}.ifield span{font-size:13px;color:var(--muted)}\
 .intern-file h3{margin:12px 0 2px}.intern-file h4{margin:18px 0 8px}.intern-notes{display:grid;gap:8px}.intern-note p{margin:4px 0 0;white-space:pre-wrap}\
 .intern-add-note{display:grid;gap:8px;margin-top:10px}\
-.intern-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:10px}.intern-photos figure{margin:0;display:grid;gap:4px}.intern-photos img{width:100%;aspect-ratio:1;object-fit:cover;border:1.5px solid #2b2b2b}\
-.intern-sent{white-space:pre-wrap;background:#fbfbf9;border:1px solid var(--line2);padding:10px;font-size:13px;max-height:220px;overflow:auto}\
+.intern-photos{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:10px;margin-bottom:10px}.intern-photos figure{margin:0;display:grid;gap:4px}.intern-photos img{width:100%;aspect-ratio:1;object-fit:cover;border:1.5px solid var(--ink2)}\
+.intern-sent{white-space:pre-wrap;background:var(--card);border:1px solid var(--line2);padding:10px;font-size:13px;max-height:220px;overflow:auto}\
 .intern-consent{display:flex;gap:8px;align-items:flex-start;margin:10px 0}\
 .intern-result{margin-top:12px;padding:14px}.btn.danger{color:var(--bad);border-color:var(--bad)}\
 .intern-doc{display:grid;gap:6px;padding:12px 14px}.intern-dot{display:inline-block;width:8px;height:8px;border-radius:50%;background:#2e9e5b;margin-left:8px}\

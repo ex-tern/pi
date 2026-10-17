@@ -1233,14 +1233,14 @@ const TOOLS2_CSS: &str = "\
 .fc-track b{position:absolute;top:2px;bottom:2px;border-radius:4px;min-width:2px}.fc-val{text-align:right;font-variant-numeric:tabular-nums}\
 @media (max-width:699px){.fc-row{grid-template-columns:110px 1fr 58px;gap:6px;font-size:12px}}\
 .arch-flow{list-style:none;padding:0;margin:16px 0;display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:8px}\
-.arch-step{width:100%;height:100%;text-align:left;border:1.4px solid #2b2b2b;background:#fff;padding:10px 12px;font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:3px}\
+.arch-step{width:100%;height:100%;text-align:left;border:1.4px solid var(--ink2);background:var(--surface);padding:10px 12px;font:inherit;cursor:pointer;display:flex;flex-direction:column;gap:3px}\
 .arch-step[aria-pressed=true]{border-color:var(--accent);box-shadow:0 0 0 3px var(--accent-soft)}\
 .arch-n{font:600 12px/1 'Geist Mono',ui-monospace,monospace;color:var(--accent)}.arch-k{font-weight:600}.arch-s{font-size:12.5px;color:var(--muted)}\
 .arch-detail ul,.arch-note ul{padding-left:20px;line-height:1.6}.arch-note{margin:16px 0}\
 .rc-list{list-style:none;padding:0;margin:14px 0}.rc-list li{display:grid;grid-template-columns:minmax(120px,1fr) 2fr 50px 150px;gap:10px;align-items:center;padding:6px 0;border-top:1px solid var(--line);font-size:14px}\
 @media (max-width:600px){.rc-list li{grid-template-columns:1fr 60px}.rc-list .md-bar,.rc-list .hint{grid-column:1/-1}}\
 .perf-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:14px 0}\
-.perf-card{border:1px solid var(--line2);background:#fff;padding:12px 14px}.perf-card .hint{margin:4px 0 8px}\
+.perf-card{border:1px solid var(--line2);background:var(--surface);padding:12px 14px}.perf-card .hint{margin:4px 0 8px}\
 .pc-head{display:flex;justify-content:space-between;gap:8px;align-items:baseline}.pc-tag{font-size:12px;color:var(--accent);border:1px solid var(--accent-soft);padding:1px 7px}\
 .pc-status{font-size:13.5px;margin-top:8px}.perf-more{margin-top:14px}.perf .card{margin-top:12px}\
 .tr-chart{width:100%;height:auto;max-width:720px;display:block;margin-top:8px}\
@@ -1248,12 +1248,12 @@ const TOOLS2_CSS: &str = "\
 .tr-bar{fill:var(--accent)}.tr-bar.on{fill:var(--magenta)}.tr-hit{fill:transparent;cursor:pointer}.tr-tip{font-size:13px;color:var(--muted);min-height:1.3em}\
 .data-table{border-collapse:collapse;font-size:13px;margin-top:8px}.data-table th,.data-table td{border:1px solid var(--line);padding:4px 8px;text-align:left}\
 .table-scroll{overflow:auto;max-height:480px}\
-.lab-project{margin:12px 0}.lab-doc{width:100%;height:560px;border:1px solid var(--line2);margin-top:10px;background:#fff}\
-.lab-img{max-width:100%;margin-top:10px}.lab-text{white-space:pre-wrap;font-size:13px;background:#fff;border:1px solid var(--line);padding:10px;max-height:480px;overflow:auto}\
+.lab-project{margin:12px 0}.lab-doc{width:100%;height:560px;border:1px solid var(--line2);margin-top:10px;background:var(--surface)}\
+.lab-img{max-width:100%;margin-top:10px}.lab-text{white-space:pre-wrap;font-size:13px;background:var(--surface);border:1px solid var(--line);padding:10px;max-height:480px;overflow:auto}\
 .field{display:flex;flex-direction:column;gap:4px;margin:10px 0}.field span{font-size:13px;color:var(--muted)}\
-.field input,.field textarea,.tool .row input[type=text]{font:inherit;padding:7px 9px;border:1px solid var(--line2);background:#fff}\
+.field input,.field textarea,.tool .row input[type=text]{font:inherit;padding:7px 9px;border:1px solid var(--line2);background:var(--surface)}\
 .consent-item{margin:10px 0}.consent-item input{flex:1;min-width:200px}\
-.ask-form{display:flex;flex-direction:column;gap:8px;margin:14px 0}.ask-form textarea{font:inherit;padding:10px;border:1px solid var(--line2);background:#fff}\
+.ask-form{display:flex;flex-direction:column;gap:8px;margin:14px 0}.ask-form textarea{font:inherit;padding:10px;border:1px solid var(--line2);background:var(--surface)}\
 .ask-form .btn{align-self:flex-start}.ask-card{margin:10px 0}.ask-card.err{opacity:.7}.ask-card.verdict{border-color:var(--accent)}\
 .member.pien,.ric.pien{box-shadow:0 0 0 4px var(--accent-soft),0 0 18px var(--accent-soft)}\
 .member .pien-tag{font-size:11.5px;color:var(--accent)}\

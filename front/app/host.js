@@ -446,6 +446,20 @@ addEventListener("pointerdown", (e) => { lastPointer = e.pointerType || "mouse";
 
 // The Super AI microphone (owner, 2026-10-17: "add a microphone button"): what is said fills the question field as it
 // is heard and, once it ends, is sent; a second press stops listening.
+// Light or dark (owner, 2026-10-17: "add darkmode"): the computer's setting until the switch at the foot of the sidebar
+// is pressed; then the choice is kept in this browser.
+const themeOf = () => { try { return localStorage.getItem("piii:theme") || ""; } catch (_) { return ""; } };
+const themeSet = (t) => { if (t) document.documentElement.dataset.theme = t; else delete document.documentElement.dataset.theme; };
+themeSet(themeOf());
+addEventListener("click", (e) => {
+  const b = e.target.closest && e.target.closest(".theme-btn");
+  if (!b) return;
+  e.preventDefault(); e.stopPropagation();
+  const dark = document.documentElement.dataset.theme ? document.documentElement.dataset.theme === "dark" : matchMedia("(prefers-color-scheme: dark)").matches;
+  const t = dark ? "light" : "dark";
+  themeSet(t);
+  try { localStorage.setItem("piii:theme", t); } catch (_) {}
+}, true);
 let micRec = null;
 // a prompt on the canvas: Enter is done (Shift+Enter a new line)
 addEventListener("keydown", (e) => {

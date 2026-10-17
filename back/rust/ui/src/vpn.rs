@@ -966,7 +966,7 @@ const VPN_CSS: &str = "\
 .vp-warn{border-left:3px solid #b4561b;padding:8px 12px;background:var(--card);font-size:14px}\
 .vp-msg{font-size:14px;min-height:1em}.vp-msg.warn{color:#b3261e}.vp-msg.ok{color:#1f8a4c}\
 .vp-conf{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start;margin:14px 0;padding:14px;border:1px solid var(--line);background:var(--card)}\
-.vp-conf img{width:240px;height:240px;background:#fff;display:block}\
+.vp-conf img{width:240px;height:240px;background:var(--surface);display:block}\
 .vp-conf h3{margin-top:0}\
 .vp-steps{padding-left:20px;line-height:1.6;font-size:14px}\
 .vp-pre{font-size:12.5px;white-space:pre-wrap;word-break:break-all;background:var(--card);border:1px solid var(--line);padding:10px;margin:8px 0}\

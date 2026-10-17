@@ -742,7 +742,7 @@ const TOOLS_CSS: &str = "\
 .nf-diff{display:flex;gap:8px;align-items:center;margin:16px 0 6px;flex-wrap:wrap}\
 .nf-diff span{color:var(--muted);margin-right:4px}\
 .nf-diff button{border:1px solid var(--line2);background:var(--card);padding:6px 14px;font:inherit;cursor:pointer}\
-.nf-diff button.on{border-color:var(--ink);background:var(--ink);color:#fff}\
+.nf-diff button.on{border-color:var(--ink);background:var(--ink);color:var(--on-ink)}\
 .nf-best{margin:12px 0}\
 .nf-top{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin:18px 0 10px;padding-right:110px}\
 .nf-level{padding:2px 10px;border:1px solid var(--line2);font-size:13px}\
@@ -752,7 +752,7 @@ const TOOLS_CSS: &str = "\
 .nf-clock i.low{background:var(--bad)}\
 .nf-time{color:var(--muted);font-size:13px;margin:6px 0 14px;min-height:1.2em}\
 .nf-text{font-size:18px;line-height:2.1}\
-.nf-blank{font:inherit;font-size:16px;width:150px;padding:2px 8px;margin:0 4px;border:0;border-bottom:2px solid var(--ink);background:#fff}\
+.nf-blank{font:inherit;font-size:16px;width:150px;padding:2px 8px;margin:0 4px;border:0;border-bottom:2px solid var(--ink);background:var(--surface)}\
 .nf-blank.ok{border-color:var(--good);color:var(--good);background:var(--good-soft)}\
 .nf-blank.no{border-color:var(--bad);color:var(--bad);background:var(--bad-soft)}\
 .nf-hint{margin:10px 0}.nf-hint p{margin:6px 0;color:var(--muted)}\

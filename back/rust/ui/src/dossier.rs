@@ -453,13 +453,13 @@ const DOSSIER_CSS: &str = "\
 .dossier-sec summary{cursor:pointer;list-style:none}.dossier-sec summary::-webkit-details-marker{display:none}.dossier-sec summary h2{display:inline;font-size:18px}.dossier-sec summary::after{content:' ▸';color:var(--faint)}.dossier-sec[open] summary::after{content:' ▾'}\
 .dossier-sec[open] summary{margin-bottom:10px}.dossier-details{margin:10px 0}.dossier-details summary{cursor:pointer;color:var(--muted)}\
 .diag-item{border-left:3px solid var(--line2);padding:6px 12px;margin:8px 0}.diag-item p{margin:4px 0}\
-.diag-badge{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:#eee}\
+.diag-badge{font-size:11px;font-weight:600;text-transform:uppercase;letter-spacing:.04em;padding:2px 6px;border-radius:6px;background:var(--soft)}\
 .diag-critical{border-color:#dc2626}.diag-critical .diag-badge{background:#fde2e2;color:#991b1b}\
 .diag-major{border-color:#ea580c}.diag-major .diag-badge{background:#ffedd5;color:#9a3412}\
 .diag-minor{border-color:#ca8a04}.diag-positive{border-color:#16a34a}.diag-positive .diag-badge{background:#dcfce7;color:#166534}\
 .ok-box{padding:10px 12px;border-radius:8px;background:rgba(22,163,74,.07);color:#166534}\
 .ref-list{font-size:13px;padding-left:22px}.ref-list li{margin:3px 0}\
 .llm-card{border:1px solid var(--line);border-radius:10px;padding:10px 12px;margin:8px 0}\
-.md table{border-collapse:collapse;margin:8px 0}.md td{border:1px solid var(--line);padding:4px 8px}.md blockquote{border-left:3px solid var(--line2);margin:8px 0;padding:2px 12px;color:var(--muted)}.md code{font-family:var(--mono,monospace);background:#f3f3f1;padding:1px 4px;border-radius:4px}\
+.md table{border-collapse:collapse;margin:8px 0}.md td{border:1px solid var(--line);padding:4px 8px}.md blockquote{border-left:3px solid var(--line2);margin:8px 0;padding:2px 12px;color:var(--muted)}.md code{font-family:var(--mono,monospace);background:var(--soft);padding:1px 4px;border-radius:4px}\
 .crit tr.gap td{background:rgba(234,88,12,.08)}.crit .override{color:#9a3412}\
 ";

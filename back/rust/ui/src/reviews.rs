@@ -982,10 +982,10 @@ fn toasts_view(s: &State) -> N {
 
 const REV_CSS: &str = "\
 .modal-veil{position:fixed;inset:0;z-index:2147483400;background:rgba(25,25,25,.35);display:grid;place-items:center;padding:16px}\
-.modal-box{position:relative;background:var(--paper);border:1.4px solid #2b2b2b;max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px}\
+.modal-box{position:relative;background:var(--paper);border:1.4px solid var(--ink2);max-width:680px;width:100%;max-height:88vh;overflow:auto;padding:22px 24px}\
 .modal-box h2{margin:0 0 10px;padding-right:30px}.modal-box h3{margin:16px 0 6px}\
 .modal-x{position:absolute;right:10px;top:8px;border:0;background:none;font-size:18px;cursor:pointer;color:var(--muted)}\
-.opt-card{border:1px solid var(--line2);background:#fff;padding:12px 14px;margin:12px 0}\
+.opt-card{border:1px solid var(--line2);background:var(--surface);padding:12px 14px;margin:12px 0}\
 .opt-done{border-left:3px solid var(--good);padding:6px 10px;margin:8px 0;background:var(--good-soft)}\
 .opt-inactive,.opt-blocked{border-left:3px solid var(--warn);padding:6px 10px;margin:8px 0;background:var(--warn-soft)}\
 .opt-ok{border-left:3px solid var(--good);padding:6px 10px;margin:8px 0}\
@@ -993,7 +993,7 @@ const REV_CSS: &str = "\
 .confirm-box{border:1.4px solid var(--accent);background:var(--accent-soft);padding:10px 12px;margin:12px 0}\
 .rebuttal{border-left:3px solid var(--accent);padding:6px 10px;margin:10px 0;background:var(--accent-soft)}\
 .btn.danger{border-color:var(--bad);color:var(--bad)}\
-.seal{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:11.5px;padding:1px 7px;margin-left:6px;border:1px solid var(--line2);background:#fff;vertical-align:middle}\
+.seal{display:inline-flex;align-items:center;gap:4px;font:inherit;font-size:11.5px;padding:1px 7px;margin-left:6px;border:1px solid var(--line2);background:var(--surface);vertical-align:middle}\
 button.seal{cursor:pointer}.seal-mark{font-size:10px}\
 .seal-journal{border-color:#bf8c3e;color:#8a5e17}.seal-author{border-color:var(--good);color:var(--good)}\
 .seal-peer{border-color:var(--accent);color:var(--accent)}.seal-llm{border-color:#8a6cb6;color:#6a4c96}.seal-requested{border-style:dashed;color:var(--muted)}\
@@ -1001,5 +1001,5 @@ button.seal{cursor:pointer}.seal-mark{font-size:10px}\
 .row.spread{justify-content:space-between;align-items:center;margin:8px 0}\
 .author-actions summary{cursor:pointer;font-weight:600}\
 .toasts{position:fixed;right:16px;bottom:16px;z-index:2147483300;display:flex;flex-direction:column;gap:8px;max-width:340px}\
-.toast{position:relative;background:#fff;border:1.4px solid var(--good);padding:10px 30px 10px 12px;font-size:13.5px}.toast.warn{border-color:var(--warn)}\
+.toast{position:relative;background:var(--surface);border:1.4px solid var(--good);padding:10px 30px 10px 12px;font-size:13.5px}.toast.warn{border-color:var(--warn)}\
 ";

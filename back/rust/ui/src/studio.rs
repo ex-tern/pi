@@ -546,15 +546,15 @@ fn corpus_view(s: &State) -> N {
 }
 
 const STUDIO_CSS: &str = "\
-.tag-input{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line2);background:#fff;padding:6px}\
+.tag-input{display:flex;flex-wrap:wrap;gap:6px;align-items:center;border:1px solid var(--line2);background:var(--surface);padding:6px}\
 .tag-input input{flex:1;min-width:160px;border:0;outline:none;font:inherit;padding:3px}\
 .tag-chip{display:inline-flex;align-items:center;gap:4px;border:1px solid var(--line2);background:var(--card);padding:2px 4px 2px 9px;font-size:13.5px}\
 .tag-x{border:0;background:none;cursor:pointer;font-size:15px;line-height:1;color:var(--muted)}\
-.pf-slots select,.pf-slots input{font:inherit;padding:6px 9px;border:1px solid var(--line2);background:#fff}\
+.pf-slots select,.pf-slots input{font:inherit;padding:6px 9px;border:1px solid var(--line2);background:var(--surface)}\
 .hint.ok{color:var(--good)}.hint.warn{color:var(--warn)}\
 .checklist{list-style:none;padding:0;margin:10px 0}.checklist li{margin:6px 0}.checklist .mark{display:inline-block;width:20px;color:var(--muted)}.checklist li.done .mark{color:var(--good)}\
 .rs-cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(220px,1fr));gap:10px;margin:10px 0}\
-.rs-card{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line2);background:#fff;padding:10px 12px;color:var(--ink);text-decoration:none}\
+.rs-card{display:flex;flex-direction:column;gap:4px;border:1px solid var(--line2);background:var(--surface);padding:10px 12px;color:var(--ink);text-decoration:none}\
 .rs-card:hover{border-color:var(--accent)}.rs-card.no{border-left:3px solid var(--warn)}.rs-card.yes{border-left:3px solid var(--good)}\
 .rs-why{font-size:13px}.rs-hot{padding-left:20px}.rs-hot li{margin:8px 0}.rs-hot .md-bar{margin-top:4px}\
 td.up{color:var(--good)}td.down{color:var(--bad)}\
@@ -675,11 +675,11 @@ fn scim_view(s: &State) -> N {
 }
 
 const SCIM_CSS: &str = "\
-.chat{display:flex;flex-direction:column;gap:8px;margin:12px 0;max-height:55vh;overflow:auto;border:1px solid var(--line);background:#fff;padding:12px}\
+.chat{display:flex;flex-direction:column;gap:8px;margin:12px 0;max-height:55vh;overflow:auto;border:1px solid var(--line);background:var(--surface);padding:12px}\
 .chat-msg{max-width:85%;padding:8px 12px;border:1px solid var(--line2);background:var(--card);font-size:14.5px}\
-.chat-msg.you{align-self:flex-end;background:var(--ink);color:#fff;border-color:var(--ink)}\
+.chat-msg.you{align-self:flex-end;background:var(--ink);color:var(--on-ink);border-color:var(--ink)}\
 .chat-src{display:block;margin-top:4px;font-size:11.5px;color:var(--muted)}\
-.chat-form input{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line2);background:#fff}\
+.chat-form input{flex:1;font:inherit;padding:8px 10px;border:1px solid var(--line2);background:var(--surface)}\
 .scim .chips{margin:6px 0 10px}\
 .ask-scim-h{margin:28px 0 4px;font-size:17px}\
 ";

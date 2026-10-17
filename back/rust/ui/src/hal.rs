@@ -2434,7 +2434,7 @@ fn hal_view(s: &State) -> N {
 }
 
 const HAL_CSS: &str = "\
-.hal-screen{background:#000;color:#aaa;font:15px/1.2 var(--mono,ui-monospace,monospace);padding:10px;border-radius:10px;overflow:auto;white-space:pre;outline:none;box-shadow:inset 0 0 0 1px #222;cursor:text;max-width:100%}\
+.hal-screen{background:#000;color:var(--faint);font:15px/1.2 var(--mono,ui-monospace,monospace);padding:10px;border-radius:10px;overflow:auto;white-space:pre;outline:none;box-shadow:inset 0 0 0 1px #222;cursor:text;max-width:100%}\
 .hal-screen.gfx{padding:0;line-height:0;display:inline-block}.hal-vga{width:640px;max-width:100%;aspect-ratio:4/3;image-rendering:pixelated;display:block;border-radius:10px}\
 .hal-screen:focus{box-shadow:inset 0 0 0 2px #2563eb}\
 .hal-row{height:1.2em}\
