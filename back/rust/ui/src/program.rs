@@ -1902,7 +1902,12 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
         .attr("title", format!("{}: {}", kind_name(&k), n.text))
-        .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
+        .style(format!(
+            "left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px{}",
+            r.0, r.1, r.2, r.3,
+            // a canvas super's room, inside its curves: in its own size (a percentage would be of the stage's)
+            if canvas { format!(";padding:{:.1}px {:.1}px {:.1}px!important", r.3 * 0.15, r.2 * 0.17, r.3 * 0.14) } else { String::new() }
+        ))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(r.2.min(r.3) * kz) }))
         .kid(
@@ -1993,6 +1998,9 @@ const PROG_CSS: &str = "\
 .sx.unode.u-canvas .u-val{margin-top:auto;align-self:flex-end;max-width:100%}\
 .sx.unode.u-canvas.empty .u-text{display:none}\
 .sx.unode.u-canvas .u-val{white-space:pre-wrap;overflow:hidden;text-overflow:clip;text-align:left;align-self:stretch;margin-top:8px;font-size:13px;line-height:1.45;color:var(--ink);font-weight:400}\
+.sx.unode.u-canvas{box-sizing:border-box}\
+.sx.unode.u-canvas .u-text{flex:none}\
+.sx.unode.u-canvas .u-val{flex:1 1 auto;min-height:0;width:100%;max-width:100%;box-sizing:border-box;padding:0 2px;overflow:auto;overflow-wrap:anywhere;scrollbar-width:thin;-webkit-mask-image:linear-gradient(#000 calc(100% - 18px),transparent)}\
 .unode.k-ask .u-val{color:var(--accent)}\
 .u-text{font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;border:0;background:transparent;width:100%;padding:0;color:var(--ink);text-align:center;outline:none;cursor:text}\
 .sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
