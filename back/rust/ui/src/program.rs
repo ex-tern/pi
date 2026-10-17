@@ -1507,11 +1507,34 @@ fn place_mark(name: &str) -> N {
     }
 }
 
+/// The account's state, on its super in Connect (owner, 2026-10-17: "show the your account status in Connect").
+fn account_status(s: &State) -> String {
+    if signed_in(s) {
+        let who = if !s.name.is_empty() {
+            s.name.clone()
+        } else if !s.orcid.is_empty() {
+            format!("ORCID {}", s.orcid)
+        } else {
+            let w = &s.wallet;
+            if w.len() > 10 { format!("{}…{}", &w[..6], &w[w.len() - 4..]) } else { w.clone() }
+        };
+        format!("Signed in · {}", who)
+    } else {
+        match &s.trial.data {
+            Some(t) if !t.get("remaining").is_null() => {
+                format!("Not signed in · trial {}/{}", t.get("remaining").text(), t.get("documents_allowed").text())
+            }
+            _ => "Not signed in".to_string(),
+        }
+    }
+}
+
 fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -> N {
     // far out a place is a speck, then a mark; it reads as itself once it is big enough (owner, 2026-10-17: "the web
     // starts as an empty canvas. We have to zoom in to find out")
     let px = r.2.min(r.3) * kz;
     let v = vtext(s.prog.vals.get(&n.id).unwrap_or(&Value::Null));
+    let v = if name == "Your account" && v.is_empty() { account_status(s) } else { v };
     let pien = st().t2.pien.pick.as_deref() == Some(name);
     el("div")
         .cls("sx unode k-member")
