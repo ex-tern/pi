@@ -1431,7 +1431,21 @@ fn scene_view(s: &State, mini: bool) -> N {
         let (a, b, tip) = (*a, *b, *tip);
         let (px, py) = leave_point(&g, a, tip);
         let (qx, qy) = tip_point(&g, b, tip);
+        // spokes: the home canvas's Super AI reaches each place in a straight line, centre to centre, from edge to edge
+        let hub = s.ctx.is_empty() && unode(s, a).map(|n| world_of(&n.text) == Some(WORLD_HUB)).unwrap_or(false);
+        let spoke = if hub && tip == Tip::In {
+            let (ax, ay, aw, ah) = rect(&g, a);
+            let (bx, by, bw, bh) = rect(&g, b);
+            let (c1, c2) = ((ax + aw / 2.0, ay + ah / 2.0), (bx + bw / 2.0, by + bh / 2.0));
+            let (dx, dy) = (c2.0 - c1.0, c2.1 - c1.1);
+            let edge = |w: f64, h: f64| -> f64 { (w / 2.0 / dx.abs().max(1e-9)).min(h / 2.0 / dy.abs().max(1e-9)) };
+            let (t1, t2) = (edge(aw, ah), 1.0 - edge(bw, bh));
+            Some(format!("M{:.1},{:.1} L{:.1},{:.1}", c1.0 + dx * t1, c1.1 + dy * t1, c1.0 + dx * t2, c1.1 + dy * t2))
+        } else {
+            None
+        };
         let d = match tip {
+            _ if spoke.is_some() => spoke.clone().unwrap_or_default(),
             Tip::In | Tip::Out => elbow(px, py, qx, qy, 24.0 * du),
             _ => {
                 // top-to-bottom wires curve (owner, 2026-10-14): leave the way the tip faces, arrive straight down
@@ -2650,7 +2664,7 @@ fn loop_to_ai() {
     s.zoom = canvas_zoom_limits(s).0;
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
-    s.ai_level = true;
+    s.ai_level = 2;
     layout_save();
     if s.page != Page::Home || s.peek {
         host::go("#/");
@@ -3078,7 +3092,11 @@ fn activate(id: usize, member: Option<u8>) {
 
 /// The home canvas's own places, where the sidebar was (owner, 2026-10-17: "remove all sidebar and top bar and merge
 /// them into each other as in zooming inside each other opens them"): the six groups, the map, privacy and the API.
-const WORLD: [&str; 9] = ["Tools", "Explore", "Library", "Lab", "Connect", "Insights", "The map", "Privacy", "API"];
+const WORLD: [&str; 10] = ["Tools", "Explore", "Library", "Lab", "Connect", "Insights", "The map", "Privacy", "API", "Super AI"];
+
+/// The one in the middle, wired out to all the others (owner, 2026-10-17: "put a super AI bubble in the middle and
+/// make it connected to the other bubbles").
+const WORLD_HUB: usize = 9;
 
 fn world_of(text: &str) -> Option<usize> {
     let name = text.strip_prefix(MEMBER)?;
@@ -3092,7 +3110,9 @@ fn is_place(text: &str) -> bool {
 
 /// Open the place a super stands for. True if it was one.
 fn open_place(text: &str) -> bool {
-    if let Some((gi, m)) = member_of(text) {
+    // on the home canvas its own places come first (its Super AI is the AI language, not the Tools page of that name)
+    let home_place = st().ctx.is_empty() && world_of(text).is_some();
+    if let (false, Some((gi, m))) = (home_place, member_of(text)) {
         open_member(gi, m);
         return true;
     }
@@ -3105,6 +3125,14 @@ fn open_place(text: &str) -> bool {
             s.consent_open = true;
         }
         Some(8) => open_modal(Modal::Info("The API".into(), API_GUIDE.into())),
+        Some(WORLD_HUB) => {
+            let s = st();
+            s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
+            s.ai_level = 1;
+            if s.page != Page::Home {
+                host::go("#/");
+            }
+        }
         _ => return false,
     }
     true
@@ -3117,15 +3145,21 @@ fn world_sync() {
     if !st().ctx.is_empty() {
         return;
     }
-    let again = host::store_get("piii:world-v").as_deref() != Some("2");
+    let again = host::store_get("piii:world-v").as_deref() != Some("3");
     let (cx, cy) = screen_to_node(host::vw() / 2.0, host::vh() / 2.0);
     let (rx, ry) = (430.0, 300.0);
     let mut changed = false;
+    let ring = WORLD.len() - 1;
     for (i, w) in WORLD.iter().enumerate() {
         let text = format!("{}{}", MEMBER, w);
-        let a = i as f64 / WORLD.len() as f64 * core::f64::consts::TAU - core::f64::consts::FRAC_PI_2;
+        let a = i as f64 / ring as f64 * core::f64::consts::TAU - core::f64::consts::FRAC_PI_2;
         let (w0, h0) = unode_size(&text);
-        let (x, y) = (cx + rx * libm_cos(a) - w0 / 2.0, cy + ry * libm_cos(a - core::f64::consts::FRAC_PI_2) - h0 / 2.0);
+        // the ring, and Super AI in its middle
+        let (x, y) = if i == WORLD_HUB {
+            (cx - w0 / 2.0, cy - h0 / 2.0)
+        } else {
+            (cx + rx * libm_cos(a) - w0 / 2.0, cy + ry * libm_cos(a - core::f64::consts::FRAC_PI_2) - h0 / 2.0)
+        };
         match st().prog.nodes.iter_mut().find(|n| n.text == text) {
             Some(n) if again => {
                 n.x = x;
@@ -3141,8 +3175,23 @@ fn world_sync() {
             }
         }
     }
+    // Super AI wired out to every place, once (a wire taken away later stays away)
     if again {
-        host::store_set("piii:world-v", "2");
+        let id_of = |name: &str| st().prog.nodes.iter().find(|n| n.text.strip_prefix(MEMBER) == Some(name)).map(|n| n.id);
+        if let Some(hub) = id_of(WORLD[WORLD_HUB]) {
+            for (i, w) in WORLD.iter().enumerate() {
+                if i == WORLD_HUB {
+                    continue;
+                }
+                if let Some(to) = id_of(w) {
+                    if !st().wires.iter().any(|x| x.0 == hub && x.1 == to) {
+                        st().wires.push((hub, to, Tip::In));
+                    }
+                }
+            }
+            wires_save();
+        }
+        host::store_set("piii:world-v", "3");
     }
     if changed {
         prog_save();

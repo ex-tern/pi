@@ -1164,16 +1164,16 @@ fn prog_update(a: u16, v: String) {
         // a rung of the ladder: the top is Super AI; the site's places are the home canvas
         P_LADDER => match (a >> 4) as usize {
             0 => {
-                s.ai_level = true;
+                s.ai_level = 1;
                 if s.page != Page::Home {
                     host::go("#/");
                 }
             }
             1 => {
-                s.ai_level = false;
+                s.ai_level = 0;
                 host::go("#/");
             }
-            _ => s.ai_level = false,
+            _ => s.ai_level = 0,
         },
         P_AI_SEND => {
             let q = s.ai_draft.trim().to_string();
@@ -1183,7 +1183,7 @@ fn prog_update(a: u16, v: String) {
             // what is said becomes a super of words wired to a show, in the middle of the canvas: Super AI answers
             // there, and a π program it writes lands beside it, running
             s.ai_draft.clear();
-            s.ai_level = false;
+            s.ai_level = 0;
             s.zoom_nav_at = host::now();
             // back down at the usual size, so what is made is readable
             s.zoom = 1.0;
@@ -1419,8 +1419,7 @@ fn unode_inside(s: &State, id: usize) -> Vec<usize> {
 
 /// The superellipse |x|^π + |y|^π = 1 as an SVG path in a −1…1 box, stretched over a super by its viewBox (owner,
 /// 2026-10-17: "improve the super"): the whole outline is the π shape, not a box with rounded corners.
-fn se_path() -> String {
-    let n = core::f64::consts::PI;
+fn se_path(n: f64) -> String {
     let mut d = String::new();
     for i in 0..96 {
         let t = i as f64 / 96.0 * core::f64::consts::TAU;
@@ -1433,15 +1432,30 @@ fn se_path() -> String {
     d
 }
 
-/// A super's outline, behind what is in it.
+/// A super's outline, behind what is in it: the π superellipse.
 fn se_shape() -> N {
+    se_shape_n(core::f64::consts::PI)
+}
+
+/// The outline with exponent n: 2 a circle (an ellipse, stretched), π the super's own, larger squarer (owner,
+/// 2026-10-17: "transitions change the n value of super ellipses").
+fn se_shape_n(n: f64) -> N {
+    let d = se_path(n);
     el("svg:svg")
         .cls("u-shape")
         .attr("viewBox", "-1.02 -1.02 2.04 2.04")
         .attr("preserveAspectRatio", "none")
         .attr("aria-hidden", "true")
-        .kid(el("svg:path").attr("d", se_path()))
+        .kid(el("svg:path").attr("d", d.clone()).style(format!("d:path('{}')", d)))
         .into()
+}
+
+/// The exponent for a super shown px across: rounder the further out, squarer the further in, π at its usual size;
+/// it changes as smoothly as the zoom does (roughly ×1.27 for each doubling).
+fn se_n_for(px: f64) -> f64 {
+    let n = core::f64::consts::PI * powf((px / 200.0).max(1e-6), 0.35);
+    // two decimals: the outline only changes when it shows
+    floor_f(n.clamp(2.05, 16.0) * 50.0 + 0.5) / 50.0
 }
 
 /// A line drawing, as the sidebar drew its icons.
@@ -1467,6 +1481,8 @@ fn place_mark(name: &str) -> N {
         Some(6) => mark_of(Page::Map, name),
         Some(7) => line_icon(&["M12 3l8 3v6c0 5-3.4 8.2-8 9-4.6-.8-8-4-8-9V6z", "M12 10.5v3.5"]),
         Some(8) => line_icon(&["M8 7l-5 5 5 5", "M16 7l5 5-5 5"]),
+        // a sparkle: Super AI
+        Some(9) => line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"]),
         _ => ai_mark(name),
     }
 }
@@ -1492,7 +1508,7 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -
         .on("enter", Msg::TV(Tool::Prog, P_OPEN | (((n.id - UBASE) as u16) << 4)))
         .cls_if(px < 8.0, "u-speck")
         .cls_if((8.0..30.0).contains(&px), "u-iconic")
-        .kid(se_shape())
+        .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(px) }))
         // the site's places have line drawings; a group's member is its name (its initials when small)
         .kid_if(px >= 30.0 && WORLD.contains(&name), || el("span").cls("u-mark").kid(place_mark(name)).into())
         .kid_if(px >= 30.0, || el("span").cls("tag").text(name.to_string()).into())
@@ -1507,7 +1523,7 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -
 /// Where the view is on the ladder, from the top: 0 Super AI, 1 the site's places, 2 graphical, then the depths of the
 /// super in the middle of the window.
 fn ladder_at(s: &State) -> usize {
-    if s.ai_level {
+    if s.ai_level > 0 {
         return 0;
     }
     let g = geo(s);
@@ -1555,6 +1571,26 @@ fn ladder_view(s: &State) -> N {
                 .text(*l)
                 .into()
         }))
+        .into()
+}
+
+/// The outermost layer: Super AI as one bubble, almost a circle, in the middle of an empty canvas. Zoomed into (or
+/// clicked), it opens.
+fn ai_bubble_view(_: &State) -> N {
+    el("div")
+        .cls("ai-bubble-wrap")
+        .attr("data-stop", "1")
+        .kid(
+            el("button")
+                .attr("type", "button")
+                .cls("ai-bubble")
+                .attr("aria-label", "Super AI: zoom in, or click, to enter")
+                .attr("title", "Zoom in to enter")
+                .on("click", Msg::TV(Tool::Prog, P_LADDER))
+                .kid(se_shape_n(2.2))
+                .kid(el("span").cls("u-mark").kid(line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"])))
+                .kid(el("span").cls("ai-bubble-t").text("Super AI")),
+        )
         .into()
 }
 
@@ -1851,7 +1887,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
             .attr("title", format!("{}: {} — {}", kind_name(&k), n.text, DEPTH_NAMES[depth as usize]))
             .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
             .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
-            .kid(se_shape())
+            .kid(se_shape_n(se_n_for(r.2.min(r.3) * kz)))
             .kid(tag)
             .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
             .into();
@@ -1868,7 +1904,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
         .attr("title", format!("{}: {}", kind_name(&k), n.text))
         .style(format!("left:{:.1}px;top:{:.1}px;width:{:.1}px;height:{:.1}px", r.0, r.1, r.2, r.3))
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
-        .kid(se_shape())
+        .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(r.2.min(r.3) * kz) }))
         .kid(
             el("input")
                 .cls("u-text")
@@ -1940,7 +1976,7 @@ const PROG_CSS: &str = "\
 .p-status{position:absolute;left:110px;right:14px;top:14px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
 .sx.unode{background:transparent;border:0;box-shadow:none;overflow:visible;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;cursor:grab;z-index:2}\
 .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;pointer-events:none;filter:drop-shadow(0 8px 14px rgba(25,25,25,.12))}\
-.u-shape path{fill:#fff;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}\
+.u-shape path{transition:d .45s cubic-bezier(.2,.75,.15,1);fill:#fff;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}\
 .unode.sel .u-shape path{stroke:var(--accent);stroke-width:calc(2.6px * var(--wz, 1) / var(--k, 1))}.sx.unode.sel:not(.sparkle){outline:0}\
 .unode.k-reg .u-shape path{stroke:var(--accent)}.unode.k-stop .u-shape path{stroke:var(--bad)}\
 .unode.k-ask .u-shape path{stroke:var(--accent)}.unode.k-const .u-shape path{fill:#fbfbf9}\
@@ -1968,6 +2004,12 @@ const PROG_CSS: &str = "\
 @media (max-width:699px){.ladder{top:auto;bottom:8px;right:50%;transform:translateX(50%);flex-direction:row;overflow-x:auto;max-width:calc(100vw - 16px)}}\
 .ai-level{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:color-mix(in srgb,var(--paper) 82%,transparent);backdrop-filter:blur(3px)}\
 .ai-in{width:min(640px,calc(100vw - 32px));text-align:center}.ai-in h1{font-size:44px;margin:4px 0 10px}\
+.ai-bubble-wrap{position:fixed;inset:0;z-index:2147483050;display:grid;place-items:center;background:var(--paper);animation:pi-fade .4s ease-out both}\
+.ai-bubble{position:relative;width:min(34vmin,320px);height:min(31vmin,292px);border:0;background:none;box-shadow:none;display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;cursor:zoom-in;animation:pi-rise .55s cubic-bezier(.2,.75,.15,1) both}\
+.ai-bubble .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;filter:drop-shadow(0 14px 30px rgba(25,25,25,.14))}\
+.ai-bubble .u-shape path{fill:#fff;stroke:#2b2b2b;stroke-width:1.8px;vector-effect:non-scaling-stroke}\
+.ai-bubble .u-mark svg{width:40px;height:40px}.ai-bubble-t{font:600 24px/1.1 'Geist',system-ui,sans-serif;color:#2b2b2b}\
+.ai-bubble:hover .u-shape path{stroke:var(--accent)}\
 .ai-k{font:600 12px/1 'Geist Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 .ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-play{display:grid;place-items:center;width:52px;padding:0}.ai-play svg{width:22px;height:22px;fill:currentColor}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\

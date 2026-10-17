@@ -253,7 +253,9 @@ struct State {
     /// when a zoom last opened or left a place (a wheel's run of steps does only one)
     zoom_nav_at: f64,
     /// the canvas zoomed all the way out: the AI language, Super AI (owner, 2026-10-17: "the maximum is super AI")
-    ai_level: bool,
+    /// how far out past the site: 0 the canvas, 1 Super AI (its prompt), 2 the bubble, the outermost layer (owner,
+    /// 2026-10-17: "make the website start above super AI bubble, like almost a circle in the center")
+    ai_level: u8,
     ai_draft: String,
     /// the transition under way (owner, 2026-10-17: "make the transition more smoother and graphical"): 1 into a
     /// place, from its super's box on screen (x, y, w, h); 2 out to the level above; 3 up into Super AI; and when
@@ -483,7 +485,7 @@ pub fn start() {
         sup_locked: Vec::new(),
         autorun_at: 0.0,
         zoom_nav_at: 0.0,
-        ai_level: false,
+        ai_level: 0,
         ai_draft: String::new(),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
@@ -766,13 +768,20 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
     if s.page == Page::Home || s.peek {
         if dy == 0.0 {
             s.zoom = 1.0;
-            s.ai_level = false;
+            s.ai_level = 0;
             layout_save();
-        } else if s.ai_level {
-            // in from Super AI: back to the canvas
-            if dy < 0.0 && host::now() - s.zoom_nav_at > 400.0 {
-                s.ai_level = false;
-                s.zoom_nav_at = host::now();
+        } else if s.ai_level > 0 {
+            // in: the bubble → Super AI → the site; out: back up to the bubble, the outermost
+            if host::now() - s.zoom_nav_at > 900.0 {
+                if dy < 0.0 {
+                    s.ai_level -= 1;
+                    s.zoom_nav_at = host::now();
+                    s.trans = (if s.ai_level == 0 { 2 } else { 4 }, (0.0, 0.0, 0.0, 0.0), host::now());
+                } else if s.ai_level < 2 {
+                    s.ai_level += 1;
+                    s.zoom_nav_at = host::now();
+                    s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
+                }
             }
         } else {
             let z0 = s.zoom;
@@ -783,7 +792,7 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
             } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 {
                 // as far out as the canvas goes: one more step is the AI language
                 s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
-                s.ai_level = true;
+                s.ai_level = 1;
                 s.zoom_nav_at = host::now();
             }
         }
@@ -1017,6 +1026,8 @@ fn route_page() {
             s.page = Page::Home;
             let lo = canvas_zoom_limits(s).0;
             st().zoom = lo;
+            // and above it all, the bubble: zoom in to enter Super AI, then the site
+            st().ai_level = 2;
         }
         "" => s.page = Page::Home,
         "map" => s.page = Page::Map,
@@ -1909,7 +1920,8 @@ fn view(s: &State) -> N {
             // the legacy navigation stays beside the zoom (owner, 2026-10-17: "keep the legacy navigation")
             .kid(rail(s))
             .kid(ctl_bar(s))
-            .kid_if(s.ai_level, || ai_level_view(s))
+            .kid_if(s.ai_level == 1, || ai_level_view(s))
+            .kid_if(s.ai_level == 2, || ai_bubble_view(s))
             .kid(ladder_view(s))
             .into()
     } else {
