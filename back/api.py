@@ -27753,6 +27753,8 @@ class PanelAsk(BaseModel):
 class OneAsk(BaseModel):
     engine: str
     prompt: str
+    # asked from a super on the π canvas: the answer may be a π program (owner, 2026-10-17: "teach the superAI")
+    pi: bool = False
 
 
 class WeighAsk(BaseModel):
@@ -27771,6 +27773,92 @@ PROJECT_ENGINES = [
 
 PANEL_BUDGET = 40.0
 AGREEMENT = ("high", "moderate", "low")
+
+
+# The π programming language, as Super AI is taught it (owner, 2026-10-17: "pi programming language is turing complete,
+# and add elements to the smart language, teach the superAI"). The same rules as the canvas's engine (program.rs).
+PI_LANGUAGE = """THE π LANGUAGE (piii.app's canvas). A program is supers (nodes) joined by wires, run as dataflow, like
+LabVIEW. Each super has four tips: out (right, its value), in (left, the values it works on, taken top to bottom),
+control (top: it runs only once something arrives there) and gate (bottom: it runs only when what arrives is true).
+What a super does is the text typed in it:
+  3, -2.5, true, "words", [1, 2, 3]     constants;  π e φ τ  the constants of maths
+  + − × ÷ % ^ min max                   arithmetic (+ on words joins with a space; & joins with none)
+  < > = ≠ ≤ ≥ and or not                comparison and logic
+  round floor ceil abs sign √ sin cos tan ln exp     maths on one value
+  if                                    three ins: if the first is true, the second, else the third
+  reg 0                                 a register: gives what it holds; at the end of each step it takes what arrives.
+                                        Loops must pass through a register. A false gate keeps what it holds.
+  pick                                  the first value that arrives (with gates: a choice)
+  list at set len push                  lists: build, read item i, write item i, length, append
+  range sum avg sort reverse            [0 … n−1] (or [a … b−1]), total, mean, sorted, reversed
+  upper lower split text number         words
+  random now                            a number in [0,1) (with n: a whole number below n); the time in ms
+  show                                  shows what arrives;  stop  ends the run when what arrives is true
+  open                                  opens the address that arrives when the run ends
+  any other words                       a prompt to Super AI; its answer is the super's value
+Running: each step every super computes once in wire order, then every register takes its new value; the run ends at
+a stop that gets true, when the registers stop changing, or after 100 000 steps. Registers, unbounded lists (push,
+at, set) and gates make it Turing complete: a tape (a list), a head and a state in registers and a table read with
+at run a Turing machine.
+
+WRITING A PROGRAM. Answer with a fenced block that starts ```pi, one super per line as  name: text  and one wire per
+line as  a -> b  (into b's in), or  a -> b control  /  a -> b gate.  Example, the sum of 1 to 10:
+```pi
+n: 11
+r: range
+s: sum
+x: show
+n -> r
+r -> s
+s -> x
+```
+(range of 11 gives 0 … 10.) A counter that stops at 5:
+```pi
+c: reg 0
+one: 1
+add: +
+done: ≥
+five: 5
+stop: stop
+c -> add
+one -> add
+add -> c
+add -> done
+five -> done
+done -> stop
+```"""
+
+
+def pi_asked(prompt: str) -> bool:
+    """Is this a question about the π language (or a request for a π program)?"""
+    p = prompt.lower()
+    return any(w in p for w in ("π language", "pi language", "π program", "pi program", "π canvas", "pi canvas",
+                                "piii canvas", "programming language", "π code", "pi code"))
+
+
+def pi_prompt(prompt: str) -> str:
+    return ("You know the π programming language below, and answer in it when a program is asked for. Keep any "
+            "words short (at most 120 words besides the program).\n\n" + PI_LANGUAGE + "\n\nQUESTION:\n" + prompt
+            + '\n\nReturn JSON with exactly these keys: "answer": string (the ```pi block inside it, if any), '
+            '"confidence": integer 0-100.')
+
+
+def pi_local(prompt: str) -> str:
+    """The lab's own engine knows the language too, without an outside model: its reference, and a program for the
+    few things it can build itself (a sum or a count to n)."""
+    import re as _re
+    p = prompt.lower()
+    m = _re.search(r"(?:sum|add up|total)\D*(\d+)\D+(\d+)", p) or _re.search(r"(?:sum|add up|total)\D*(\d+)", p)
+    if m:
+        a, b = (int(m.group(1)), int(m.group(2))) if m.lastindex == 2 else (1, int(m.group(1)))
+        return (f"The sum of {a} to {b}:\n```pi\na: {a}\nb: {b + 1}\nr: range\ns: sum\nx: show\n"
+                "a -> r\nb -> r\nr -> s\ns -> x\n```")
+    m = _re.search(r"count\D*(\d+)", p)
+    if m:
+        n = int(m.group(1))
+        return (f"A counter that stops at {n}:\n```pi\nc: reg 0\none: 1\nadd: +\ndone: ≥\nn: {n}\nstop: stop\n"
+                "c -> add\none -> add\nadd -> c\nadd -> done\nn -> done\ndone -> stop\n```")
+    return PI_LANGUAGE
 
 
 def panel_prompt(prompt: str, context: str) -> str:
@@ -27998,6 +28086,11 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
     def engines():
         return {"engines": _engines(), "judge": bool(judge)}
 
+    @router.get("/pi-language")
+    def pi_language():
+        """What Super AI is taught of the π language, for anyone (and any other model) to read."""
+        return {"text": PI_LANGUAGE}
+
     @router.post("/one")
     def one(req: OneAsk, request: Request):
         import time
@@ -28018,8 +28111,13 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         _limit_one(request, eid)
         t0 = time.time()
         out: Dict = {"engine": eid}
+        # about the language, or (from a super on the canvas) asking for a program
+        pi = pi_asked(prompt) or (req.pi and bool(re.search(r"\bprogram|\bloop\b|\bcount\b|\bsum of\b|\bwire", prompt.lower())))
         try:
-            if eid == "sim":
+            if pi and (eid == "sim" or eid not in ("rib", "pid", "pien") and not known[eid]["ready"]):
+                # the lab's own engine knows the language too
+                out.update(ok=True, text=pi_local(prompt), model="π")
+            elif eid == "sim":
                 res = answer(prompt) or {}
                 text = res.get("response") or ""
                 out.update(ok=bool(text), text=text or "The SciM assistant is switched off here.",
@@ -28036,7 +28134,7 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
             elif not known[eid]["ready"]:
                 out.update(ok=False, text="No API key for this model on this site yet.")
             else:
-                r = ask_juror(eid, panel_prompt(prompt, "")) or {}
+                r = ask_juror(eid, pi_prompt(prompt) if pi else panel_prompt(prompt, "")) or {}
                 ans = str(r.get("answer") or "").strip()
                 if r.get("failed") or not ans:
                     out.update(ok=False, text=str(r.get("failed") or "no answer"))

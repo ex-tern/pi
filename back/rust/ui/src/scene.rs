@@ -843,7 +843,8 @@ fn name_of(id: usize) -> String {
         _ if is_unode(id) => match unode(st(), id) {
             Some(n) if n.text.trim().is_empty() => "a super".to_string(),
             Some(n) if n.text == SPARKLE => "a sparkle".to_string(),
-            Some(n) => format!("“{}”", n.text),
+            // words already in quotes are not quoted again
+            Some(n) => format!("“{}”", n.text.trim().trim_matches(|c| c == '"' || c == '“' || c == '”')),
             None => "a node".to_string(),
         },
         _ => sup_label(id).split(':').next().unwrap_or("").to_string(),
@@ -1448,6 +1449,27 @@ fn scene_view(s: &State, mini: bool) -> N {
             }
         };
         wires = draw_link(wires, mini, s.wire_sel == Some(i), i, &d, tip);
+        // the logic, shown (owner, 2026-10-17: "show wiring by adding logic to pi programming language"): after a run
+        // each wire is coloured by what it carries (a number, true or false, words, a list) and says it at its middle
+        if let (false, Some(v)) = (mini, s.prog.vals.get(&a).filter(|v| !v.is_null())) {
+            let (ty, mut t) = (value_type(v), vtext(v));
+            if t.chars().count() > 18 {
+                t = t.chars().take(17).collect::<String>() + "…";
+            }
+            // just after the out it leaves, where wires that meet later are still apart
+            let (mx, my) = (px + ((qx - px) / 2.0).clamp(-34.0 * du, 34.0 * du), py - 6.0 * du);
+            wires = wires.kid(
+                el("svg:text")
+                    .cls("w-val")
+                    .cls(ty)
+                    .attr("x", format!("{:.1}", mx))
+                    .attr("y", format!("{:.1}", my))
+                    .attr("text-anchor", "middle")
+                    .attr("font-size", format!("{:.2}", 12.0 * du))
+                    .attr("stroke-width", format!("{:.2}", 4.0 * du))
+                    .text(t),
+            );
+        }
     }
     for (j, (a, ta, b, tb)) in s.passes.iter().enumerate() {
         let (a, ta, b, tb) = (*a, *ta, *b, *tb);
@@ -1725,7 +1747,20 @@ fn arrowhead(id: &'static str, cls: &'static str, size: f64) -> N {
 
 /// A wire or pass on the canvas: its kind by where it arrives (flow into in, control, gate), an arrowhead, and on
 /// the whole canvas a wider unseen line over it to take the click.
+/// What kind of value a wire carries, as a class: LabVIEW's habit of colouring wires by type.
+fn value_type(v: &Value) -> &'static str {
+    match v {
+        Value::Num(_) => "t-num",
+        Value::Bool(_) => "t-bool",
+        Value::Str(_) => "t-text",
+        Value::Arr(_) | Value::Obj(_) => "t-list",
+        Value::Null => "t-none",
+    }
+}
+
 fn draw_link(mut wires: crate::dom::El<Msg>, mini: bool, sel: bool, i: usize, d: &str, arrives: Tip) -> crate::dom::El<Msg> {
+    // the value on it, if the program has run: its colour
+    let ty = st().wires.get(i).and_then(|w| st().prog.vals.get(&w.0)).filter(|v| !v.is_null()).map(value_type);
     let kind = match arrives {
         Tip::In | Tip::Out => "flow",
         Tip::Control => "control",
@@ -1736,6 +1771,7 @@ fn draw_link(mut wires: crate::dom::El<Msg>, mini: bool, sel: bool, i: usize, d:
             .cls("w")
             .cls(kind)
             .cls_if(sel, "sel")
+            .cls_if(ty.is_some(), ty.unwrap_or(""))
             .attr("d", d)
             .attr("marker-end", if kind == "flow" { "url(#ah-flow)" } else { "url(#ah-ink)" }),
     );

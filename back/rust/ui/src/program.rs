@@ -14,8 +14,16 @@
 //
 // What a node does follows what is typed in it (a node in the Program super; the palette adds them):
 //   3, -2.5, true, "words", [1, 2, 3]       a constant (a list in brackets)
+//   π (pi)  e  φ (phi)  τ (tau)             the constants
 //   + − × ÷ % ^ min max                     arithmetic on what arrives (+ joins words with a space; & with none)
 //   < > = ≠ ≤ ≥ and or not round floor abs  comparisons and logic
+//   √ (sqrt) sin cos tan ln exp ceil sign   more math on the first value
+//   if                                      three values: the first true → the second, else the third
+//   random  now                             no input needed: a number in [0, 1) (with n: a whole number below n);
+//                                           the time, in milliseconds
+//   range  sum  avg  sort  reverse          lists: [0 … n−1] (or [a … b−1]), their total, their mean, sorted, reversed
+//   upper  lower  split  text  number       words: capitals, small letters, cut at a separator (a space if none),
+//                                           any value as words, words as a number
 //   reg 0                                   a register (LabVIEW's shift register): it gives what it holds, and at the
 //                                           end of each step it takes what arrives at its in. Its gate, if false,
 //                                           keeps what it holds. Loops must pass through a register.
@@ -178,6 +186,13 @@ fn kind_of(text: &str) -> Kind {
         "open" | "go" => return Kind::Open,
         _ => {}
     }
+    match low.as_str() {
+        "pi" | "π" => return Kind::Const(Value::Num(core::f64::consts::PI)),
+        "e" => return Kind::Const(Value::Num(core::f64::consts::E)),
+        "phi" | "φ" => return Kind::Const(Value::Num(1.618_033_988_749_895)),
+        "tau" | "τ" => return Kind::Const(Value::Num(core::f64::consts::TAU)),
+        _ => {}
+    }
     if let Some(v) = literal(t) {
         return Kind::Const(v);
     }
@@ -203,6 +218,27 @@ fn kind_of(text: &str) -> Kind {
         "floor" => "floor",
         "abs" => "abs",
         "&" | "join" => "&",
+        "sqrt" | "√" => "√",
+        "sin" => "sin",
+        "cos" => "cos",
+        "tan" => "tan",
+        "ln" | "log" => "ln",
+        "exp" => "exp",
+        "ceil" => "ceil",
+        "sign" => "sign",
+        "if" | "?" => "if",
+        "random" | "rand" => "random",
+        "now" | "time" => "now",
+        "range" => "range",
+        "sum" | "total" => "sum",
+        "avg" | "mean" | "average" => "avg",
+        "sort" => "sort",
+        "reverse" => "reverse",
+        "upper" => "upper",
+        "lower" => "lower",
+        "split" => "split",
+        "text" | "str" => "text",
+        "number" | "num" => "number",
         _ => return Kind::Ask(t.to_string()),
     };
     Kind::Op(op)
@@ -276,8 +312,86 @@ fn vtext(v: &Value) -> String {
 
 /// An operation on what arrives (all of it must have arrived: a node waits for its inputs, as in LabVIEW).
 fn apply_op(op: &str, xs: &[Value]) -> Value {
+    // the sources: they need nothing to arrive
+    match op {
+        "random" => {
+            let r = rand_unit();
+            return match xs.iter().find(|x| !x.is_null()).and_then(vnum) {
+                Some(n) if n >= 1.0 => Value::Num(floor_f(r * floor_f(n))),
+                _ => Value::Num(r),
+            };
+        }
+        "now" => return Value::Num(host::now()),
+        _ => {}
+    }
     if xs.is_empty() || xs.iter().any(|x| x.is_null()) {
         return Value::Null;
+    }
+    // one list in
+    let list = |v: &Value| -> Option<Vec<Value>> { if let Value::Arr(a) = v { Some(a.clone()) } else { None } };
+    match op {
+        "if" => return if xs.len() >= 3 { if vtruthy(&xs[0]) { xs[1].clone() } else { xs[2].clone() } } else { Value::Null },
+        "range" => {
+            let (a, b) = match (vnum(&xs[0]), xs.get(1).and_then(vnum)) {
+                (Some(a), Some(b)) => (a, b),
+                (Some(b), None) => (0.0, b),
+                _ => return Value::Null,
+            };
+            let (a, b) = (floor_f(a), floor_f(b));
+            if b - a > 100_000.0 {
+                return Value::Null;
+            }
+            let mut v = Vec::new();
+            let mut i = a;
+            while i < b {
+                v.push(Value::Num(i));
+                i += 1.0;
+            }
+            return Value::Arr(v);
+        }
+        "sum" | "avg" => {
+            let a = list(&xs[0]).unwrap_or_else(|| xs.to_vec());
+            let n: Option<Vec<f64>> = a.iter().map(vnum).collect();
+            return match n {
+                Some(n) if !n.is_empty() || op == "sum" => {
+                    let t: f64 = n.iter().sum();
+                    Value::Num(if op == "avg" { t / n.len() as f64 } else { t })
+                }
+                _ => Value::Null,
+            };
+        }
+        "sort" | "reverse" => {
+            let Some(mut a) = list(&xs[0]) else {
+                return match &xs[0] {
+                    Value::Str(s) if op == "reverse" => Value::Str(s.chars().rev().collect()),
+                    _ => Value::Null,
+                };
+            };
+            if op == "reverse" {
+                a.reverse();
+            } else {
+                a.sort_by(|x, y| match (vnum(x), vnum(y)) {
+                    (Some(p), Some(q)) => p.partial_cmp(&q).unwrap_or(core::cmp::Ordering::Equal),
+                    _ => vtext(x).cmp(&vtext(y)),
+                });
+            }
+            return Value::Arr(a);
+        }
+        "upper" => return Value::Str(vtext(&xs[0]).to_uppercase()),
+        "lower" => return Value::Str(vtext(&xs[0]).to_lowercase()),
+        "text" => return Value::Str(vtext(&xs[0])),
+        "number" => return vtext(&xs[0]).trim().parse::<f64>().map(Value::Num).unwrap_or(Value::Null),
+        "split" => {
+            let t = vtext(&xs[0]);
+            let sep = xs.get(1).map(vtext).unwrap_or_default();
+            let parts: Vec<Value> = if sep.is_empty() {
+                t.split_whitespace().map(|p| Value::Str(p.to_string())).collect()
+            } else {
+                t.split(sep.as_str()).map(|p| Value::Str(p.to_string())).collect()
+            };
+            return Value::Arr(parts);
+        }
+        _ => {}
     }
     let nums: Option<Vec<f64>> = xs.iter().map(vnum).collect();
     match op {
@@ -306,6 +420,14 @@ fn apply_op(op: &str, xs: &[Value]) -> Value {
                     "round" => Value::Num(floor_f(n[0] + 0.5)),
                     "floor" => Value::Num(floor_f(n[0])),
                     "abs" => Value::Num(if n[0] < 0.0 { -n[0] } else { n[0] }),
+                    "√" => Value::Num(if n[0] < 0.0 { f64::NAN } else { n[0].sqrt_c() }),
+                    "sin" => Value::Num(libm_cos(n[0] - core::f64::consts::FRAC_PI_2)),
+                    "cos" => Value::Num(libm_cos(n[0])),
+                    "tan" => Value::Num(libm_cos(n[0] - core::f64::consts::FRAC_PI_2) / libm_cos(n[0])),
+                    "ln" => Value::Num(if n[0] <= 0.0 { f64::NAN } else { ln_f(n[0]) }),
+                    "exp" => Value::Num(exp_f(n[0])),
+                    "ceil" => Value::Num(-floor_f(-n[0])),
+                    "sign" => Value::Num(if n[0] > 0.0 { 1.0 } else if n[0] < 0.0 { -1.0 } else { 0.0 }),
                     _ => Value::Num(n[1..].iter().fold(n[0], |a, &b| match op {
                         "+" => a + b,
                         "−" => a - b,
@@ -321,6 +443,21 @@ fn apply_op(op: &str, xs: &[Value]) -> Value {
             }
         },
     }
+}
+
+/// A number in [0, 1), from a small generator seeded by the clock.
+fn rand_unit() -> f64 {
+    static SEED: Global<u64> = Global::new(0);
+    let s = SEED.get();
+    if *s == 0 {
+        *s = (host::now() * 1000.0) as u64 | 1;
+    }
+    let mut x = *s;
+    x ^= x << 13;
+    x ^= x >> 7;
+    x ^= x << 17;
+    *s = x;
+    (x >> 11) as f64 / (1u64 << 53) as f64
 }
 
 fn powf(a: f64, b: f64) -> f64 {
@@ -471,7 +608,8 @@ fn prog_ai_flush() {
     let engine = ai_engine(s).unwrap_or_else(|| "sim".to_string());
     let want = core::mem::take(&mut s.prog.ai_want);
     for q in want {
-        let body = format!("{{\"engine\":{},\"prompt\":{}}}", json::quote(&engine), json::quote(&q));
+        // pi: asked from the canvas, so a request for a program is answered in the π language
+        let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true}}", json::quote(&engine), json::quote(&q));
         st().prog.ai_busy.push(q.clone());
         request(Want::ProgAi(q), "POST", "/api/super/one", &body, 0);
     }
@@ -487,10 +625,95 @@ fn prog_ai_apply(q: String, v: Value, err: Option<String>) {
         None if v.get("ok").truthy() => v.get("text").text(),
         None => format!("Super AI could not answer: {}", v.get("text").text()),
     };
+    // a π program in the answer (Super AI knows the language: owner, 2026-10-17, "teach the superAI"): it is put on
+    // the canvas beside the super that asked, wired, ready to run
+    let mut text = text;
+    if let Some(prog) = pi_block(&text) {
+        // what flows on from the super that asked is the words around the program, not the program again
+        if let (Some(a), Some(b)) = (text.find("```pi"), text.rfind("```")) {
+            let words = format!("{} {}", text[..a].trim(), if b > a + 4 { text[b + 3..].trim() } else { "" });
+            let words = words.trim().trim_end_matches(':').trim().to_string();
+            text = if words.is_empty() { "A π program, put on the canvas.".to_string() } else { words };
+        }
+        let asker = s.prog.nodes.iter().find(|n| matches!(kind_of(&n.text), Kind::Ask(ref t) if q.starts_with(t.as_str()))).map(|n| n.id);
+        if let Some(a) = asker {
+            let n = pi_place(a, &prog);
+            if n > 0 {
+                st().prog.status = format!("Super AI wrote a π program: {} supers, beside the one that asked. Press ▶ to run it.", n);
+            }
+        }
+    }
+    let s = st();
     s.prog.ai.insert(q, text);
     if s.prog.ai_busy.is_empty() {
         prog_run(None);
     }
+}
+
+/// The π program in an answer: the lines of its ```pi block.
+fn pi_block(text: &str) -> Option<String> {
+    let start = text.find("```pi")?;
+    let rest = &text[start + 5..];
+    let rest = rest.strip_prefix('\n').unwrap_or(rest.trim_start_matches(|c: char| c != '\n').trim_start_matches('\n'));
+    let end = rest.find("```").unwrap_or(rest.len());
+    let body = rest[..end].trim();
+    if body.is_empty() { None } else { Some(body.to_string()) }
+}
+
+/// A π program, as written (`name: text` and `a -> b [control|gate]`), put on the canvas to the right of `beside`:
+/// in columns by what leads to what, wired. Returns how many supers it made.
+fn pi_place(beside: usize, prog: &str) -> usize {
+    let mut names: Vec<(String, String)> = Vec::new();
+    let mut links: Vec<(usize, usize, Tip)> = Vec::new();
+    for l in prog.lines().map(str::trim).filter(|l| !l.is_empty() && !l.starts_with('#') && !l.starts_with("//")) {
+        if let Some((a, b)) = l.split_once("->") {
+            let a = a.trim();
+            let mut bw = b.split_whitespace();
+            let b = bw.next().unwrap_or("");
+            let tip = match bw.next().map(|t| t.to_lowercase()) {
+                Some(t) if t == "control" => Tip::Control,
+                Some(t) if t == "gate" => Tip::Gate,
+                _ => Tip::In,
+            };
+            if let (Some(i), Some(j)) = (names.iter().position(|n| n.0 == a), names.iter().position(|n| n.0 == b)) {
+                links.push((i, j, tip));
+            }
+        } else if let Some((n, t)) = l.split_once(':') {
+            if names.len() < 60 && !names.iter().any(|x| x.0 == n.trim()) {
+                names.push((n.trim().to_string(), t.trim().to_string()));
+            }
+        }
+    }
+    if names.is_empty() {
+        return 0;
+    }
+    // columns: the longest way in; a register starts a column of its own (what loops back into it is not counted)
+    let reg = |i: usize| matches!(kind_of(&names[i].1), Kind::Reg(_));
+    let mut col = alloc::vec![0usize; names.len()];
+    for _ in 0..names.len() {
+        for &(a, b, _) in &links {
+            if !reg(b) && col[b] < col[a] + 1 {
+                col[b] = (col[a] + 1).min(names.len());
+            }
+        }
+    }
+    let Some(n0) = unode(st(), beside) else { return 0 };
+    let (w0, _) = if n0.w > 0.0 { (n0.w, n0.h) } else { unode_size(&n0.text) };
+    let (x0, y0) = (n0.x + w0 + 90.0, n0.y);
+    let mut rows = alloc::vec![0usize; names.len() + 1];
+    let mut ids = Vec::new();
+    for (i, (_, t)) in names.iter().enumerate() {
+        let c = col[i].min(names.len());
+        let id = prog_add(t, x0 + c as f64 * 150.0, y0 + rows[c] as f64 * 120.0);
+        rows[c] += 1;
+        ids.push(id);
+    }
+    for (a, b, t) in links {
+        st().wires.push((ids[a], ids[b], t));
+    }
+    wires_save();
+    prog_save();
+    ids.len()
 }
 
 fn node_kind(s: &State, id: usize) -> Option<Kind> {
@@ -774,7 +997,7 @@ fn prog_clear() {
 
 fn node_label(s: &State, id: usize) -> String {
     match unode(s, id) {
-        Some(n) => format!("“{}”", n.text),
+        Some(_) => name_of(id),
         None => name_of(id).to_string(),
     }
 }
@@ -917,7 +1140,7 @@ fn prog_update(a: u16, v: String) {
 }
 
 /// The palette: what each chip adds.
-const PALETTE: [(&str, &str); 20] = [
+const PALETTE: [(&str, &str); 28] = [
     ("1", "1"),
     ("text", "\"words\""),
     ("+", "+"),
@@ -938,6 +1161,14 @@ const PALETTE: [(&str, &str); 20] = [
     ("at", "at"),
     ("set", "set"),
     ("push", "push"),
+    ("if", "if"),
+    ("π", "π"),
+    ("√", "√"),
+    ("sin", "sin"),
+    ("random", "random"),
+    ("range", "range"),
+    ("sum", "sum"),
+    ("split", "split"),
 ];
 
 // ---------------------------------------------------------------------------------------------- examples
@@ -1217,7 +1448,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool) -> N {
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").text(if shown.is_empty() { kind_name(&k).to_string() } else { shown }).into())
+        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if shown.is_empty() { kind_name(&k).to_string() } else { shown }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -1296,6 +1527,8 @@ const PROG_CSS: &str = "\
 .sx.unode.u-canvas .u-val{white-space:pre-wrap;overflow:hidden;text-overflow:clip;text-align:left;align-self:stretch;margin-top:8px;font-size:13px;line-height:1.45;color:var(--ink);font-weight:400}\
 .unode.k-ask .u-val{color:var(--accent)}\
 .u-text{font:500 15px/1.2 'Geist Mono',ui-monospace,monospace;border:0;background:transparent;width:100%;padding:0;color:var(--ink);text-align:center;outline:none;cursor:text}\
+.sx.unode .u-val{max-width:100%;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}\
+.sx.unode .u-val.t-num{color:#b4651a}.sx.unode .u-val.t-bool{color:#2f8f4e}.sx.unode .u-val.t-text{color:#c2185b}.sx.unode .u-val.t-list{color:#6a4fb3}\
 .u-text::placeholder{color:#b3b1aa;font-size:12.5px}.sx.unode.empty .u-text{border-bottom:1.5px dashed transparent;padding:4px 2px}.sx.unode.empty .u-text:focus,.sx.unode .u-text:focus{border-bottom:1.5px solid var(--accent)}\
 .u-val{font-size:11.5px;color:var(--faint);text-align:center;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;margin-top:2px}\
 .unode.has-val .u-val{color:var(--magenta);font-weight:600;font-size:12.5px}\

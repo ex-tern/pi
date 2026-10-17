@@ -374,6 +374,9 @@ border:1.2px solid #2b2b2b;color:var(--ink)}
 .ric.open::after,.super.open::after{content:none!important;display:none!important}
 /* wiring */
 .wires .w-hit{fill:none;stroke:transparent;stroke-width:calc(14px * max(1, var(--wz, 1)) / var(--k, 1));pointer-events:stroke;cursor:pointer}
+.wires .w.t-num{stroke:#d9822b}.wires .w.t-bool{stroke:#2f8f4e}.wires .w.t-text{stroke:#c2185b}.wires .w.t-list{stroke:#6a4fb3}
+.wires .w-val{font-family:'Geist Mono',ui-monospace,monospace;font-weight:600;fill:#2b2b2b;stroke:var(--paper);paint-order:stroke;stroke-linejoin:round;pointer-events:none}
+.wires .w-val.t-num{fill:#b4651a}.wires .w-val.t-bool{fill:#2f8f4e}.wires .w-val.t-text{fill:#c2185b}.wires .w-val.t-list{fill:#6a4fb3}
 .wires .w.sel{stroke:var(--accent);stroke-width:calc(3px * var(--wz, 1) / var(--k, 1))}
 .wires .w-temp{fill:none;stroke:var(--accent);stroke-width:calc(2px * var(--wz, 1) / var(--k, 1));stroke-dasharray:calc(6px * var(--wz, 1) / var(--k, 1)) calc(5px * var(--wz, 1) / var(--k, 1));stroke-linecap:round;stroke-linejoin:round}.wires .w-temp.snapped{stroke-dasharray:none;stroke-width:calc(2.4px * var(--wz, 1) / var(--k, 1))}
 .ports-svg .port.snap .mark{fill:var(--accent);stroke:var(--accent);opacity:1;transform-box:fill-box;transform-origin:center;transform:scale(1.7)}
