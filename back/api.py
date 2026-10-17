@@ -28252,6 +28252,110 @@ PAINT_THINGS = ["house", "tree", "car", "boat", "rocket", "heart", "star", "flow
 PAINT_NUMBERS = {"two": 2, "three": 3, "four": 4, "five": 5, "a": 1, "an": 1, "one": 1, "some": 3, "many": 5, "pair": 2}
 
 
+# ---------------------------------------------------------------- what piii Paint has learned
+# Trained with Claude as its teacher (owner, 2026-10-17: "train the homegrown paint ai"): for a word piii Paint cannot
+# draw, Claude draws that one thing once, on its own; piii Paint keeps it and puts it in its own scenes from then on,
+# with no outside model. It learns a starting vocabulary when trained (python3 api.py paint-train) and a new word
+# whenever someone asks for a thing it does not know and Claude is there to show it.
+PAINT_STOP = set("""a an the of in on at to and or with without for from by into onto over under near behind beside
+between above below inside outside around through across along up down is are was were be been being this that these those
+it its my your our their his her very really some many few lots lot one two three four five six seven eight nine ten
+picture image photo drawing painting video movie scene create make draw show me please of style styled like big small
+little tiny huge giant cute happy sad funny beautiful pretty old new young dark light bright colorful colourful
+day night morning evening sunset sunrise dawn dusk sky sea ocean beach mountain mountains forest woods city town desert
+snow snowy winter summer spring autumn fall garden field meadow space galaxy rain rainy storm water underwater lake river
+watercolor watercolour neon sketch pencil glow glowing realistic cartoon flat simple abstract something anything""".split())
+PAINT_SEED_WORDS = ("giraffe zebra horse cow pig sheep goat chicken frog snake monkey panda koala kangaroo penguin "
+                    "dolphin whale octopus crab butterfly bee ladybug snail dinosaur dragon unicorn deer squirrel "
+                    "hedgehog camel crocodile flamingo peacock swan castle tower bridge lighthouse windmill church "
+                    "tent igloo pyramid train bus bicycle motorcycle airplane helicopter ship submarine tractor "
+                    "guitar piano drum violin book lamp clock chair table cup teapot cake pizza burger apple banana "
+                    "strawberry cherry watermelon carrot mushroom cactus palm sunflower tulip rose umbrella kite "
+                    "ball crown key gift candle snowman astronaut wizard pirate knight princess ghost alien "
+                    "planet comet volcano island rainbow").split()
+PAINT_DIR = os.path.join(BASE_DIR, "paint-learned")
+
+
+def paint_word(w: str) -> str:
+    w = w.lower()
+    return w[:-3] + "y" if w.endswith("ies") and len(w) > 4 else w[:-2] if w.endswith(("ches", "shes", "xes")) else w[:-1] if w.endswith("s") and not w.endswith("ss") and len(w) > 3 else w
+
+
+def paint_learned(w: str) -> Optional[str]:
+    """What piii Paint learned to draw for a word: the drawing as a data URL, or None."""
+    path = os.path.join(PAINT_DIR, re.sub(r"[^a-z]", "", paint_word(w)) + ".svg")
+    if not os.path.isfile(path):
+        return None
+    with open(path, "rb") as f:
+        return "data:image/svg+xml;base64," + _pb64.b64encode(f.read()).decode()
+
+
+def paint_unknown(prompt: str) -> List[str]:
+    """The words of a prompt that look like things piii Paint cannot draw yet."""
+    out = []
+    for w in re.findall(r"[a-z]+", prompt.lower()):
+        b = paint_word(w)
+        if len(b) < 3 or w in PAINT_STOP or b in PAINT_STOP or b in PAINT_COLORS or b in PAINT_NUMBERS:
+            continue
+        if PAINT_ALIASES.get(b, b) in PAINT_ANIMALS or PAINT_ALIASES.get(b, b) in PAINT_THINGS or paint_learned(b):
+            continue
+        if b not in out:
+            out.append(b)
+    return out
+
+
+def paint_learn(word: str) -> bool:
+    """Claude draws one thing for piii Paint to keep. True if it learned it."""
+    w = re.sub(r"[^a-z]", "", paint_word(word))
+    if not w or paint_learned(w):
+        return bool(w)
+    r = claude_ask("Draw a single " + w + " as a self-contained SVG, viewBox 0 0 200 200, width 200, height 200: the "
+                   + w + " alone, filling most of the frame, seen from the side or front, in a flat friendly illustrated "
+                   "style with a few soft colours; a transparent background (no sky, ground, frame or shadow box); "
+                   "no text. Reply with the SVG markup only.", max_tokens=6000)
+    svg = _svg_clean(r.get("answer", "")) if not r.get("failed") else None
+    if not svg:
+        logging.info("piii Paint: could not learn %s: %s", w, r.get("failed") or "no drawing")
+        return False
+    os.makedirs(PAINT_DIR, exist_ok=True)
+    with open(os.path.join(PAINT_DIR, w + ".svg"), "w") as f:
+        f.write(svg)
+    return True
+
+
+_paint_learning: set = set()
+
+
+def paint_learn_later(prompt: str, most: int = 2) -> None:
+    """Learn, in the background, up to a couple of the prompt's words piii Paint does not know (when Claude is there)."""
+    if not ANTHROPIC_API_KEY:
+        return
+    words = [w for w in paint_unknown(prompt) if w not in _paint_learning][:most]
+    if not words:
+        return
+    _paint_learning.update(words)
+
+    def run():
+        for w in words:
+            try:
+                paint_learn(w)
+            finally:
+                _paint_learning.discard(w)
+    threading.Thread(target=run, daemon=True).start()
+
+
+def paint_train(words: Optional[List[str]] = None) -> Tuple[int, int]:
+    """A training run: Claude teaches piii Paint every word of the list it does not know yet. (learned, tried)."""
+    todo = [w for w in (words or PAINT_SEED_WORDS) if not paint_learned(w)
+            and PAINT_ALIASES.get(paint_word(w), paint_word(w)) not in PAINT_ANIMALS + PAINT_THINGS]
+    got = 0
+    for i, w in enumerate(todo, 1):
+        ok = paint_learn(w)
+        got += ok
+        print(f"[{i}/{len(todo)}] {w}: {'learned' if ok else 'not learned'}", flush=True)
+    return got, len(todo)
+
+
 def _hsl(h, s, l, a=1.0):
     return f"hsla({h % 360:.0f},{s:.0f}%,{l:.0f}%,{a:.2f})"
 
@@ -28298,12 +28402,21 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
         subject = one(w)
         if subject:
             break
+    learned = None
+    if subject is None:
+        for w in words:
+            if w in PAINT_STOP:
+                continue
+            learned = paint_learned(w)
+            if learned:
+                subject = "learned:" + paint_word(w)
+                break
     if subject is None and ws & {"animal", "animals", "pet", "pets", "creature", "creatures", "zoo"}:
         # land animals on land, fish in water
         subject = "fish" if under else rnd.choice([a for a in PAINT_ANIMALS if a != "fish"])
     count = 1
     for i, w in enumerate(words[:-1]):
-        if w in PAINT_NUMBERS and one(words[i + 1]):
+        if w in PAINT_NUMBERS and (one(words[i + 1]) or (subject or "").startswith("learned:") and paint_word(words[i + 1]) == subject[8:]):
             count = PAINT_NUMBERS[w]
     if subject and count == 1 and any(w.endswith("s") and w != subject and one(w) == subject for w in words):
         count = 2 + rnd.randrange(2)
@@ -28552,7 +28665,11 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
                 cy = S * rnd.uniform(.3, .7)
             h = hue + (i * 23 if count > 1 else 0)
             out.append(f'<ellipse cx="{cx:.0f}" cy="{horizon+r*.7:.0f}" rx="{r*1.1:.0f}" ry="{r*.16:.0f}" fill="#000" opacity=".16"/>' if cy > horizon - r else "")
-            body = (creature if subject in PAINT_ANIMALS else thing)(subject, round(cx, 1), round(cy, 1), round(r, 1), h)
+            if learned:
+                # what it learned: the drawing, standing where its own subjects stand
+                body = f'<image href="{learned}" x="{cx-r*1.25:.1f}" y="{cy-r*1.6:.1f}" width="{r*2.5:.1f}" height="{r*2.5:.1f}"/>'
+            else:
+                body = (creature if subject in PAINT_ANIMALS else thing)(subject, round(cx, 1), round(cy, 1), round(r, 1), h)
             if moving:
                 dx, dy = (r * .5, -r * .15) if subject in ("fish", "bird", "rocket", "balloon") else (0, -r * .12)
                 body = f'<g>{anim_move(round(dx,1), round(dy,1), 2.2 + i * .3)}{body}</g>'
@@ -29096,9 +29213,16 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
             return {"image": paint_picture(prompt), "engine": "piii Paint"}
         _limit_one(request, "picture")
         img = picture_make(prompt)
+        paint_learn_later(prompt)
         if not img:
             raise HTTPException(status_code=503, detail="No picture model answered (needs a Together or Gemini key).")
         return {"image": img}
+
+    @router.get("/paint")
+    def paint_knows():
+        """What piii Paint can draw: built in, and learned."""
+        learned = sorted(f[:-4] for f in os.listdir(PAINT_DIR) if f.endswith(".svg")) if os.path.isdir(PAINT_DIR) else []
+        return {"built_in": PAINT_ANIMALS + PAINT_THINGS, "learned": learned, "teacher": bool(ANTHROPIC_API_KEY)}
 
     @router.post("/video")
     def video(req: PictureAsk, request: Request):
@@ -29115,6 +29239,8 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
             with open(cpath) as f:
                 return {"video": f.read(), "engine": "kept"}
         vid = None if declined(request, "ext") else claude_picture(prompt, moving=True)
+        if not declined(request, "ext"):
+            paint_learn_later(prompt)
         if vid:
             os.makedirs(cdir, exist_ok=True)
             with open(cpath, "w") as f:
@@ -29837,6 +29963,12 @@ if __name__ == "__main__":
     elif _cmd == "reset-state":
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         _main_reset_state()
+    elif _cmd == "paint-train":
+        # python3 api.py paint-train [word word …]: Claude teaches piii Paint (its starting vocabulary, or these words)
+        if not ANTHROPIC_API_KEY:
+            sys.exit("piii Paint learns from Claude: set ANTHROPIC_API_KEY first.")
+        got, tried = paint_train(sys.argv[2:] or None)
+        print(f"piii Paint learned {got} of {tried} new words.")
     elif _cmd == "check-providers":
         sys.argv = [sys.argv[0]] + sys.argv[2:]
         _main_check_providers()

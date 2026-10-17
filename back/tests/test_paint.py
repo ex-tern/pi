@@ -54,3 +54,19 @@ def test_the_video_endpoint_paints_without_claude(monkeypatch):
     monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "")
     r = TestClient(api.app).post("/api/super/video", json={"prompt": "two cats in the rain"})
     assert r.status_code == 200 and "<animate" in svg(r.json()["video"])
+
+
+def test_it_learns_a_word_from_its_teacher_and_draws_it_after(monkeypatch, tmp_path):
+    monkeypatch.setattr(api, "PAINT_DIR", str(tmp_path))
+    monkeypatch.setattr(api, "ANTHROPIC_API_KEY", "test")
+    assert "giraffe" in api.paint_unknown("a giraffe in the savanna at sunset")
+    assert "sunset" not in api.paint_unknown("a giraffe at sunset") and "cat" not in api.paint_unknown("a cat")
+    before = svg(api.paint_picture("a giraffe on the beach"))
+    drawn = '<svg viewBox="0 0 200 200"><rect x="80" y="20" width="40" height="160" fill="#e8b04b"/>' + "<g/>" * 40 + "</svg>"
+    monkeypatch.setattr(api, "claude_ask", lambda prompt, max_tokens=700: {"answer": drawn})
+    got, tried = api.paint_train(["giraffes", "cat"])
+    assert (got, tried) == (1, 1)                                   # the cat it knew already
+    assert api.paint_learned("giraffe") and "giraffe" not in api.paint_unknown("a giraffe")
+    after = svg(api.paint_picture("a giraffe on the beach"))
+    assert "<image" in after and "<image" not in before
+    assert after.count("<image") == 1 and svg(api.paint_picture("three giraffes on the beach")).count("<image") == 3
