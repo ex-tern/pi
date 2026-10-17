@@ -261,6 +261,8 @@ struct State {
     ai_answer: String,
     ai_asked: String,
     ai_busy: bool,
+    /// the supers the bubble's questions opened, in order (each new one goes below)
+    ai_chain: Vec<usize>,
     /// resistance at a level's edge (owner, 2026-10-17: "add some resistance to go to extreme levels"): how hard the
     /// wheel has pushed against it, which way, and when last
     resist: (f64, f64, f64),
@@ -497,6 +499,7 @@ pub fn start() {
         ai_answer: String::new(),
         ai_asked: String::new(),
         ai_busy: false,
+        ai_chain: Vec::new(),
         resist: (0.0, 0.0, 0.0),
         trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,

@@ -1177,16 +1177,15 @@ fn prog_update(a: u16, v: String) {
         },
         P_AI_SEND => {
             let q = s.ai_draft.trim().to_string();
-            if q.is_empty() || s.ai_busy {
+            if q.is_empty() {
                 return;
             }
+            // what is asked opens as supers, wired (owner, 2026-10-17: "it should open in a new super and organized in a
+            // wiring matter"): Super AI → the question → its answer, a show grown big enough to read; each new one in a
+            // row below the last, right of the ring
             s.ai_draft.clear();
             s.ai_asked = q.clone();
-            s.ai_answer.clear();
-            s.ai_busy = true;
-            let engine = ai_engine(s).unwrap_or_else(|| "sim".to_string());
-            let body = format!("{{\"engine\":{},\"prompt\":{},\"pi\":true}}", json::quote(&engine), json::quote(&q));
-            request(Want::Tool(Tool::Prog, 1), "POST", "/api/super/one", &body, 0);
+            ai_ask_on_canvas(&q);
         }
         P_SEL => s.prog.sel = Some(id),
         P_DEL => prog_remove(id),
@@ -1617,6 +1616,57 @@ fn ai_level_view(s: &State) -> N {
                 }),
         )
         .into()
+}
+
+/// A question to Super AI on the home canvas: the hub wired into a super of the words, wired into a show that the
+/// answer opens in. The view goes down to them.
+fn ai_ask_on_canvas(q: &str) {
+    let s = st();
+    s.ai_level = 0;
+    s.zoom_nav_at = host::now();
+    s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
+    let world: Vec<(usize, f64, f64, f64, f64)> = s.prog.nodes.iter().filter(|n| world_of(&n.text).is_some()).map(|n| {
+        let (w, h) = if n.w > 0.0 { (n.w, n.h) } else { unode_size(&n.text) };
+        (n.id, n.x, n.y, w, h)
+    }).collect();
+    let hub = s.prog.nodes.iter().find(|n| world_of(&n.text) == Some(WORLD_HUB)).map(|n| n.id);
+    let right = world.iter().map(|w| w.1 + w.3).fold(f64::MIN, f64::max);
+    let top = world.iter().map(|w| w.2).fold(f64::MAX, f64::min);
+    // below the conversation so far
+    // (everything already out there, right of the ring: earlier questions, programs)
+    let asked: Vec<usize> = s.prog.nodes.iter().filter(|n| world_of(&n.text).is_none() && right > f64::MIN && n.x >= right + 100.0).map(|n| n.id).collect();
+    let y = asked.iter().filter_map(|id| unode(s, *id)).map(|n| n.y + if n.h > 0.0 { n.h } else { unode_size(&n.text).1 } + 70.0).fold(if top < f64::MAX { top } else { 0.0 }, f64::max);
+    let x = if right > f64::MIN { right + 160.0 } else { 0.0 };
+    let ask = prog_add(q, x, y);
+    let (aw, ah) = unode_size(q);
+    let show = prog_add("show", x + aw + 90.0, y - 40.0);
+    if let Some(n) = st().prog.nodes.iter_mut().find(|n| n.id == show) {
+        n.w = 380.0;
+        n.h = 260.0;
+    }
+    let s = st();
+    s.ai_chain.push(ask);
+    s.ai_chain.push(show);
+    if let Some(h) = hub {
+        s.wires.push((h, ask, Tip::In));
+    }
+    s.wires.push((ask, show, Tip::In));
+    s.prog.sel = Some(show);
+    wires_save();
+    prog_save();
+    // the view: both, filling the window
+    s.zoom = 1.0;
+    let g = geo(s);
+    let (l, t) = (rect(&g, ask).0, rect(&g, show).1);
+    let (r, b) = { let r = rect(&g, show); (r.0 + r.2, r.1 + r.3.max(ah)) };
+    let (vw, vh) = (host::vw() - 260.0, host::vh() - 160.0);
+    let fit = (vw / ((r - l) * g.k)).min(vh / ((b - t) * g.k)).min(1.6);
+    s.zoom = fit.max(0.2);
+    let g = geo(s);
+    let (cx, cy) = (g.ox + ((l + r) / 2.0) * g.k, g.oy + ((t + b) / 2.0) * g.k);
+    s.pan = (s.pan.0 + (host::vw() / 2.0 + 30.0 - cx) / g.k, s.pan.1 + (host::vh() / 2.0 - cy) / g.k);
+    let _ = ah;
+    layout_save();
 }
 
 /// Super AI answered in its bubble.

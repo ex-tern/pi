@@ -3202,7 +3202,8 @@ fn world_sync() {
     if !st().ctx.is_empty() {
         return;
     }
-    let again = host::store_get("piii:world-v").as_deref() != Some("3");
+    let v = host::store_get("piii:world-v");
+    let again = !matches!(v.as_deref(), Some("3") | Some("4"));
     let (cx, cy) = screen_to_node(host::vw() / 2.0, host::vh() / 2.0);
     let (rx, ry) = (430.0, 300.0);
     let mut changed = false;
@@ -3253,7 +3254,7 @@ fn world_sync() {
     // the welcome page's dashed links, tip to tip (owner, 2026-10-17: "make the initial state exactly look like this
     // with the wiring"): the places pass on to their neighbours down each side of the ring, and they all reach
     // Super AI's control from above, which passes down to Insights and Connect
-    if host::store_get("piii:world-v").as_deref() != Some("4") {
+    if host::store_get("piii:world-links").as_deref() != Some("1") {
         let id_of = |name: &str| st().prog.nodes.iter().find(|n| n.text.strip_prefix(MEMBER) == Some(name)).map(|n| n.id);
         let links: [(&str, Tip, &str, Tip); 14] = [
             ("Tools", Tip::In, "API", Tip::Control),
@@ -3282,7 +3283,7 @@ fn world_sync() {
             }
         }
         wires_save();
-        host::store_set("piii:world-v", "4");
+        host::store_set("piii:world-links", "1");
     }
     if changed {
         prog_save();
