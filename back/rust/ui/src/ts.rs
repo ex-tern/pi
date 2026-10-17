@@ -115,7 +115,14 @@ fn ts_guest() -> N {
                     el("li")
                         .kid(txt("Install Tailscale on your phone or computer: "))
                         .kid(ext_link("https://tailscale.com/download", "tailscale.com/download ↗"))
-                        .kid(el("div").cls("ts-get").kid(txt("Android: ")).kid(ext_link("https://play.google.com/store/apps/details?id=com.tailscale.ipn", "Google Play ↗")).kid(txt(" · or the APK file, no Google account needed: ")).kid(ext_link("https://f-droid.org/packages/com.tailscale.ipn/", "F-Droid ↗")))
+                        .kid(
+                            el("div")
+                                .cls("ts-get")
+                                .kid(txt("Android: "))
+                                .kid(el("a").cls("btn small primary").attr("href", "/downloads/tailscale.apk").attr("download", "").text("Download the APK from piii.app"))
+                                .kid(txt(" (the latest, from F-Droid; allow \"install unknown apps\" for your browser) · or "))
+                                .kid(ext_link("https://play.google.com/store/apps/details?id=com.tailscale.ipn", "Google Play ↗")),
+                        )
                         .kid(el("div").cls("ts-get").kid(txt("iPhone, iPad and Mac: ")).kid(ext_link("https://apps.apple.com/app/tailscale/id1470499037", "App Store ↗"))),
                 )
                 .kid(el("li").text("Open the invite link you were sent, sign in (Google, Apple, Microsoft or GitHub: a free account), and accept."))

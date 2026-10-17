@@ -25725,6 +25725,108 @@ def ts_invite_delete(invite_id: str, request: Request):
     return {"deleted": invite_id}
 
 
+# ---------------------------------------------------------------------------
+# Tailscale for Android, from piii.app itself (owner, 2026-10-17: "put apk there"). Not a copy that goes stale: the
+# server asks F-Droid (which builds the app from Tailscale's published source) for its current version at most once
+# a day, downloads that APK when it is new, and serves it. Without the internet it serves the last one it has.
+# ---------------------------------------------------------------------------
+apk_router = APIRouter()
+APK_PACKAGE = "com.tailscale.ipn"
+APK_API = f"https://f-droid.org/api/v1/packages/{APK_PACKAGE}"
+APK_URL = "https://f-droid.org/repo/" + APK_PACKAGE + "_{code}.apk"
+APK_MAX = 200 * 1024 * 1024
+APK_REFRESH = 24 * 3600
+_apk_lock = threading.Lock()
+
+
+def apk_dir() -> str:
+    d = os.path.join(BASE_DIR, "downloads")
+    os.makedirs(d, exist_ok=True)
+    return d
+
+
+def apk_meta() -> dict:
+    try:
+        with open(os.path.join(apk_dir(), "tailscale.json")) as f:
+            return json.load(f)
+    except (OSError, ValueError):
+        return {}
+
+
+def apk_save_meta(m: dict):
+    path = os.path.join(apk_dir(), "tailscale.json")
+    with open(path + ".tmp", "w") as f:
+        json.dump(m, f)
+    os.replace(path + ".tmp", path)
+
+
+def apk_current() -> dict:
+    """The APK on hand, fetched anew when F-Droid has a newer one (looked at once a day at most)."""
+    with _apk_lock:
+        m = apk_meta()
+        path = os.path.join(apk_dir(), "tailscale.apk")
+        have = bool(m) and os.path.exists(path)
+        if have and time.time() - m.get("checked", 0) < APK_REFRESH:
+            return m
+        try:
+            info = requests.get(APK_API, timeout=15).json()
+            code = int(info["suggestedVersionCode"])
+            name = next((p.get("versionName", "") for p in info.get("packages", []) if p.get("versionCode") == code), "")
+        except (requests.RequestException, ValueError, KeyError, TypeError):
+            if have:
+                return m
+            raise HTTPException(status_code=503, detail="F-Droid could not be reached to fetch the app. Try again later.")
+        if have and m.get("code") == code:
+            m["checked"] = time.time()
+            apk_save_meta(m)
+            return m
+        tmp = path + ".part"
+        h = hashlib.sha256()
+        size = 0
+        try:
+            with requests.get(APK_URL.format(code=code), timeout=60, stream=True) as r:
+                r.raise_for_status()
+                with open(tmp, "wb") as f:
+                    for chunk in r.iter_content(chunk_size=1 << 16):
+                        size += len(chunk)
+                        if size > APK_MAX:
+                            raise ValueError("too large")
+                        h.update(chunk)
+                        f.write(chunk)
+            with open(tmp, "rb") as f:
+                if f.read(4) != b"PK\x03\x04" or size < 1_000_000:
+                    raise ValueError("not an APK")
+        except (requests.RequestException, ValueError, OSError):
+            try:
+                os.remove(tmp)
+            except OSError:
+                pass
+            if have:
+                return m
+            raise HTTPException(status_code=503, detail="The app could not be downloaded from F-Droid. Try again later.")
+        os.replace(tmp, path)
+        m = {"code": code, "version": name, "size": size, "sha256": h.hexdigest(), "checked": time.time(), "fetched": time.time()}
+        apk_save_meta(m)
+        add_log(f"Tailscale for Android {name} fetched from F-Droid ({size // 1_000_000} MB).")
+        return m
+
+
+@apk_router.get("/downloads/tailscale.apk", include_in_schema=False)
+def apk_download():
+    m = apk_current()
+    version = re.sub(r"[^A-Za-z0-9._-]", "", m.get("version", "").split("-")[0]) or "latest"
+    return FileResponse(os.path.join(apk_dir(), "tailscale.apk"), media_type="application/vnd.android.package-archive",
+                        filename=f"tailscale-{version}.apk", headers={"Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff"})
+
+
+@apk_router.get("/api/downloads/tailscale")
+def apk_info():
+    """What /downloads/tailscale.apk is now (without fetching anything)."""
+    m = apk_meta()
+    return {"version": m.get("version", ""), "size": m.get("size", 0), "sha256": m.get("sha256", ""),
+            "source": "https://f-droid.org/packages/" + APK_PACKAGE + "/"}
+
+
 # ==============================================================================================================
 # routes/chain.py (was its own module; LicenseRef-PiTechLab-Proprietary)
 # ==============================================================================================================
@@ -27998,6 +28100,7 @@ app.include_router(bugreport_router)
 app.include_router(portal_router)
 app.include_router(proxy_router)
 app.include_router(ts_router)
+app.include_router(apk_router)
 app.include_router(assess_router)
 app.include_router(discover_router)
 app.include_router(scilem_router)
