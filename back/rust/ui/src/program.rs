@@ -1527,6 +1527,7 @@ fn member_view(s: &State, n: &UNode, r: Rect, mini: bool, name: &str, kz: f64) -
         .on_if(!mini, "pdown", Msg::PDown(n.id, String::new()))
         .on("enter", Msg::TV(Tool::Prog, P_OPEN | (((n.id - UBASE) as u16) << 4)))
         .cls_if(px < 8.0, "u-speck")
+        .cls_if(px > 300.0, "u-big")
         .cls_if((8.0..30.0).contains(&px), "u-iconic")
         .kid(se_shape_n(if mini { core::f64::consts::PI } else { se_n_for(px) }))
         // the site's places have line drawings; a group's member is its name (its initials when small)
@@ -2011,6 +2012,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
             .cls(kcls)
             .cls(if depth == 0 { "u-iconic" } else { "u-deeper" })
             .cls_if(speck, "u-speck")
+            .cls_if(r.2.min(r.3) * kz > 300.0, "u-big")
             .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
             .attr("data-s", format!("{}", n.id))
             .attr("data-solid", "1")
@@ -2025,10 +2027,14 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
     el("div")
         .cls("sx unode")
         .cls_if(canvas, "u-canvas")
+        .cls_if(r.2.min(r.3) * kz > 300.0, "u-big")
         .cls(kcls)
         .cls_if(s.prog.sel == Some(n.id), "sel").cls_if(!mini && locked(s, n.id), "is-locked")
         .cls_if(!shown.is_empty(), "has-val")
         .cls_if(n.text.trim().is_empty(), "empty")
+        // a show super carries no name tag, only what it shows (owner, 2026-10-17: "delete this"); selected, the
+        // name comes back to be retyped
+        .cls_if(matches!(k, Kind::Show), "u-nameless")
         .attr("data-s", format!("{}", n.id))
         .attr("data-solid", "1")
         .attr("title", format!("{}: {}", kind_name(&k), n.text))
@@ -2051,7 +2057,7 @@ fn unode_view(s: &State, n: &UNode, r: Rect, mini: bool, kz: f64) -> N {
                 .on("input", Msg::TV(Tool::Prog, P_TEXT | a)),
         )
         // an empty super shows what arrives at it, so a result can land in one
-        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if shown.is_empty() { kind_name(&k).to_string() } else { shown }).into())
+        .kid_if(!n.text.trim().is_empty() || !shown.is_empty(), || el("span").cls("u-val").cls(s.prog.vals.get(&n.id).filter(|v| !v.is_null()).map(value_type).unwrap_or("t-none")).text(if !shown.is_empty() { shown } else if matches!(k, Kind::Show) { String::new() } else { kind_name(&k).to_string() }).into())
         .kid_if(!mini && s.prog.sel == Some(n.id) && !locked(s, n.id), || grip())
         .into()
 }
@@ -2111,6 +2117,7 @@ const PROG_CSS: &str = "\
 .p-status{position:absolute;left:110px;right:14px;top:14px;font-size:12.5px;color:var(--muted);white-space:nowrap;overflow:hidden;text-overflow:ellipsis}\
 .sx.unode{background:transparent;border:0;box-shadow:none;overflow:visible;display:flex;flex-direction:column;justify-content:center;align-items:center;padding:4px 14px;cursor:grab;z-index:2}\
 .u-shape{position:absolute;inset:0;width:100%;height:100%;overflow:visible;z-index:-1;pointer-events:none;filter:drop-shadow(0 8px 14px rgba(25,25,25,.12))}\
+.u-big>.u-shape{filter:none}\
 .u-shape path{transition:d .45s cubic-bezier(.2,.75,.15,1);fill:#fff;stroke:#2b2b2b;stroke-width:calc(1.6px * var(--wz, 1) / var(--k, 1));vector-effect:non-scaling-stroke;stroke-linejoin:round}\
 .unode.sel .u-shape path{stroke:var(--accent);stroke-width:calc(2.6px * var(--wz, 1) / var(--k, 1))}.sx.unode.sel:not(.sparkle){outline:0}\
 .unode.k-reg .u-shape path{stroke:var(--accent)}.unode.k-stop .u-shape path{stroke:var(--bad)}\
@@ -2157,6 +2164,7 @@ const PROG_CSS: &str = "\
 .ai-row input{flex:1;min-width:0;font:inherit;font-size:18px;padding:10px 2px;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:transparent!important;outline:none;color:var(--ink);text-align:center}\
 .ai-play{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:0!important;corner-shape:round!important;box-shadow:none!important;background:none!important;color:var(--accent);cursor:pointer;transition:transform .2s,opacity .25s}\
 .ai-play:hover:not([disabled]){transform:translateX(3px) scale(1.12)}.ai-play[disabled]{opacity:.22;cursor:default;color:#2b2b2b}\
+.unode.u-nameless>.u-text{opacity:0;pointer-events:none}\
 .ai-mic{flex:none;display:grid;place-items:center;width:34px;height:34px;padding:0;border:0!important;border-radius:50%!important;box-shadow:none!important;background:none!important;color:#8a877f;cursor:pointer;transition:color .2s,transform .2s,background .2s}\
 .ai-mic:hover:not([disabled]){color:var(--accent);transform:scale(1.1)}.ai-mic[disabled]{opacity:.22;cursor:default}\
 .ai-mic svg{width:21px;height:21px;display:block;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round}\
