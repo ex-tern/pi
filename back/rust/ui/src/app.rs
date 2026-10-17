@@ -255,6 +255,9 @@ struct State {
     /// the canvas zoomed all the way out: the AI language, Super AI (owner, 2026-10-17: "the maximum is super AI")
     ai_level: bool,
     ai_draft: String,
+    /// the transition under way (owner, 2026-10-17: "make the transition more smoother and graphical"): 1 into a
+    /// place, from its super's box on screen (x, y, w, h); 2 out to the level above; 3 up into Super AI; and when
+    trans: (u8, (f64, f64, f64, f64), f64),
     float_free: bool,
     win_free: bool,
     /// the floating canvas or the open window selected by a click, for the lock
@@ -482,6 +485,7 @@ pub fn start() {
         zoom_nav_at: 0.0,
         ai_level: false,
         ai_draft: String::new(),
+        trans: (0, (0.0, 0.0, 0.0, 0.0), 0.0),
         float_free: true,
         win_free: true,
         float_pick: false,
@@ -515,7 +519,9 @@ pub fn start() {
         ppan: (0.0, 0.0),
         porg: (0.0, 0.0),
         example_on: false,
-        wire_mode: false,
+        // wiring is the pointer's, always (owner, 2026-10-17: "all the tools are in the pointers of the mouse. Wiring and
+        // connecting"): press a super's tip and drag to another, or click one tip and then another
+        wire_mode: true,
         lock_blink: 0.0,
         undo: Vec::new(),
         undo_at: 0.0,
@@ -776,6 +782,7 @@ pub fn on_zoom(dy: f64, x: f64, y: f64) {
                 zoom_into_place(x, y);
             } else if s.zoom == z0 && host::now() - s.zoom_nav_at > 700.0 {
                 // as far out as the canvas goes: one more step is the AI language
+                s.trans = (3, (0.0, 0.0, 0.0, 0.0), host::now());
                 s.ai_level = true;
                 s.zoom_nav_at = host::now();
             }
@@ -1889,7 +1896,13 @@ fn view(s: &State) -> N {
     let body: N = if s.page == Page::Home {
         // no sidebar and no bar (owner, 2026-10-17: "remove all sidebar and top bar ... the whole program is zooming
         // in or zooming out"): the site's places are supers on the canvas, opened by zooming into them
-        el("div").cls("focus home").kid(canvas_view(s)).kid_if(s.ai_level, || ai_level_view(s)).kid(ladder_view(s)).into()
+        el("div")
+            .cls("focus home")
+            .cls_if(s.trans.0 == 2 && host::now() - s.trans.2 < 600.0, "back-in")
+            .kid(canvas_view(s))
+            .kid_if(s.ai_level, || ai_level_view(s))
+            .kid(ladder_view(s))
+            .into()
     } else {
         let page = match s.page {
             Page::Assess => assess_page(s),
@@ -1914,7 +1927,25 @@ fn view(s: &State) -> N {
             // no floating copy of the canvas over a page (owner, 2026-10-14: "remove this"); π in the sidebar goes back.
             // The page's own π canvas is over it (owner, 2026-10-17: "Make the pi canvas work in every canvas"): what is
             // drawn on this page, with every move the home canvas has; the page itself stays usable under it
-            el("div").cls("focus").kid(window_frame(s, page)).kid(scene_view(s, false)).kid(ladder_view(s)).into()
+            // grown out of the super zoomed into, the window and what is drawn on it as one; or come back out to
+            let (tk, (fx, fy, fw, fh), tat) = s.trans;
+            let fresh = host::now() - tat < 600.0;
+            let (vw, vh) = (host::vw(), host::vh());
+            el("div")
+                .cls("focus")
+                .cls_if(tk == 1 && fresh, "grow-in")
+                .cls_if(tk == 2 && fresh, "back-in")
+                .attr_if(tk == 1 && fresh, "style", format!(
+                    "--fx:{:.0}px;--fy:{:.0}px;--fsx:{:.4};--fsy:{:.4}",
+                    fx + fw / 2.0 - vw / 2.0,
+                    fy + fh / 2.0 - vh / 2.0,
+                    (fw / vw).clamp(0.05, 1.0),
+                    (fh / vh).clamp(0.05, 1.0)
+                ))
+                .kid(window_frame(s, page))
+                .kid(scene_view(s, false))
+                .kid(ladder_view(s))
+                .into()
         }
     };
     // the canvas shows its own note; elsewhere it floats over the page, so the lock's answers are always seen

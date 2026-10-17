@@ -1924,6 +1924,15 @@ const PROG_CSS: &str = "\
 .ai-k{font:600 12px/1 'Geist Mono',ui-monospace,monospace;letter-spacing:.12em;text-transform:uppercase;color:var(--accent)}\
 .ai-row{display:flex;gap:10px;margin:18px 0 8px}.ai-row input{flex:1;min-width:0;font:inherit;font-size:16px;padding:12px 14px;border:1.5px solid #2b2b2b;border-radius:14px;background:var(--card)}\
 .sx.unode.u-speck .u-shape path{fill:#2b2b2b;stroke:none}.sx.unode.u-speck>*:not(.u-shape){display:none}.sx.unode.u-speck{box-shadow:none}\
+@keyframes pi-grow{from{transform:translate(var(--fx,0),var(--fy,0)) scale(var(--fsx,.2),var(--fsy,.2));opacity:.55;border-radius:48px}60%{opacity:1}to{transform:none;opacity:1}}\
+@keyframes pi-back{from{transform:scale(1.9);opacity:0;filter:blur(6px)}to{transform:none;opacity:1;filter:none}}\
+@keyframes pi-rise{from{transform:scale(.6);opacity:0;filter:blur(8px)}to{transform:none;opacity:1;filter:none}}\
+@keyframes pi-fade{from{opacity:0}to{opacity:1}}\
+.focus.grow-in>.win,.focus.grow-in>.scene{animation:pi-grow .5s cubic-bezier(.2,.75,.15,1) both;transform-origin:50vw 50vh}\
+.focus.back-in>.win,.focus.back-in>.scene{animation:pi-back .45s cubic-bezier(.2,.75,.15,1) both;transform-origin:50vw 50vh}\
+.ai-level{animation:pi-fade .35s ease-out both}.ai-level .ai-in{animation:pi-rise .45s cubic-bezier(.2,.75,.15,1) both}\
+.u-deep,.u-icon{animation:pi-fade .25s ease-out both}.sx.unode .u-shape path{transition:fill .25s,stroke .25s}\
+.ladder .rung{transition:color .2s,background-color .2s}\
 .sx.unode.u-iconic{padding:0;align-items:center;justify-content:center}\
 .u-icon{font:600 22px/1 'Geist Mono',ui-monospace,monospace;color:#2b2b2b;transform:scale(calc(1 / var(--k, 1)));white-space:nowrap}\
 .sx.unode.u-deeper{padding:0;cursor:grab}\

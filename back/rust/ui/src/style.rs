@@ -404,7 +404,7 @@ html.shift-on,html.shift-on *{cursor:move!important}
 /* wiring off: tips that hold no wire stay hidden and no tip takes a click; on: every tip shows and wires */
 .app:not(.wire-on) .ports-svg .port,.app:not(.wire-on) .bar-pts .pt{pointer-events:none!important}
 .app:not(.wire-on) .ports-svg .port:not(.wired) .mark{opacity:0!important}
-.app.wire-on .ports-svg .port .mark{opacity:1!important}
+.ports-svg .port .mark{transition:opacity .15s}.app.wire-on .ports-svg .port:not(.wired):not(.hov):not(:hover) .mark{opacity:0}.app.wire-on .ports-svg .port.hov .mark,.app.wire-on .ports-svg .port:hover .mark{opacity:1!important}
 .ctl-bar .ric.on{border-color:var(--accent);outline:2px solid var(--accent);outline-offset:3px}
 .win,.win-in{user-select:none;-webkit-user-select:none}.win-in{position:relative}.win-in input,.win-in textarea{user-select:text;-webkit-user-select:text}
 .page-layer{position:absolute;left:0;top:0;width:0;height:0;overflow:visible;z-index:6}

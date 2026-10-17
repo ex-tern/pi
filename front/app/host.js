@@ -1033,7 +1033,21 @@ addEventListener("pointerup", (e) => { if (capturing) W.pointer(1, e.clientX, e.
 addEventListener("pointercancel", (e) => { if (capturing) W.pointer(2, e.clientX, e.clientY); });
 // Zoom is piii's own, the same everywhere, and never the browser's (owner, 2026-10-14): a pinch, Ctrl/⌘ and the wheel,
 // or Ctrl/⌘ with +, − or 0 zoom what is shown (the canvas, or the open page) and the browser's zoom stays as it is.
-const zoomBy = (dy, x, y) => W.zoomed(dy, x, y);
+// smooth (owner, 2026-10-17: "make the transition more smoother"): a wheel step is eased in over a few frames, about
+// the last place the pointer was; a page change lets go of what was left of the step
+let zq = 0, zx = 0, zy = 0, zraf = 0;
+const zstep = () => {
+  const d = Math.abs(zq) < 2 ? zq : zq * 0.28;
+  zq -= d;
+  W.zoomed(d, zx, zy);
+  zraf = Math.abs(zq) > 0.01 ? requestAnimationFrame(zstep) : 0;
+};
+const zoomBy = (dy, x, y) => {
+  if (dy === 0) { zq = 0; W.zoomed(0, x, y); return; }
+  zq += dy; zx = x; zy = y;
+  if (!zraf) zraf = requestAnimationFrame(zstep);
+};
+addEventListener("hashchange", () => { zq = 0; });
 // No scrolling anywhere, only zoom (owner, 2026-10-14: "delete the scrolling function all over and just keep the zoom
 // function"): the wheel and two fingers zoom about the pointer; dragging pans. The sidebar's list alone still scrolls.
 addEventListener("wheel", (e) => {

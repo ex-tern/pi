@@ -2231,11 +2231,9 @@ pub fn on_key(key: &str) -> bool {
         return true;
     }
     // the bar's two buttons, as keys
+    // no wiring mode to turn on: the tips always take the pointer
     if key == "Wire" {
-        wire_mode_toggle();
-        note(if st().wire_mode { "Wiring on: click an out, then an in (W again: off)" } else { "Wiring off" }.to_string());
-        render();
-        return true;
+        return false;
     }
     if key == "Lock" {
         lock_toggle();
@@ -3060,10 +3058,12 @@ fn zoom_into_place(px: f64, py: f64) -> bool {
     let hit = s.prog.nodes.iter().filter(|n| is_place(&n.text)).find_map(|n| {
         let (x, y, w, h) = rect(&g, n.id);
         let (sx, sy, sw, sh) = (g.ox + x * g.k, g.oy + y * g.k, w * g.k, h * g.k);
-        (px >= sx && px <= sx + sw && py >= sy && py <= sy + sh && sw.min(sh) >= 0.6 * m).then(|| n.text.clone())
+        (px >= sx && px <= sx + sw && py >= sy && py <= sy + sh && sw.min(sh) >= 0.6 * m).then(|| (n.text.clone(), (sx, sy, sw, sh)))
     });
     match hit {
-        Some(t) => {
+        Some((t, r)) => {
+            // the page grows out of the super it was
+            st().trans = (1, r, host::now());
             st().zoom_nav_at = host::now();
             st().pzoom = 1.0;
             host::store_set("piii:pzoom", "1");
@@ -3081,6 +3081,7 @@ fn zoom_out_of_page() -> bool {
     }
     s.zoom_nav_at = host::now();
     // the level above opens at its usual size; the home canvas as it was left, around the place come out of
+    s.trans = (2, (0.0, 0.0, 0.0, 0.0), host::now());
     s.pzoom = 1.0;
     host::store_set("piii:pzoom", "1");
     match s.page {
