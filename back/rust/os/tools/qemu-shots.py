@@ -40,6 +40,8 @@ qemu = subprocess.Popen([
     "qemu-system-x86_64", "-machine", "q35", "-m", "512", *firmware(),
     "-drive", f"format=raw,file={IMG}",
     "-device", "qemu-xhci", "-device", "usb-mouse", "-device", "usb-kbd",
+    # a network card on QEMU's own small network: the build machine is 10.0.2.2, the internet beyond it
+    "-nic", "user,model=virtio-net-pci",
     "-vga", "std", "-display", "none",
     "-serial", f"file:{serial}",
     "-qmp", f"unix:{sock_path},server,nowait",
@@ -143,6 +145,15 @@ def steps(dx, dy, n):
         time.sleep(0.02)
 
 
+def type_text(t):
+    names = {".": "dot", "/": "slash", "-": "minus", " ": "spc", ":": ("shift", "semicolon")}
+    for c in t:
+        k = names.get(c, c)
+        ks = [k] if isinstance(k, str) else list(k)
+        cmd("send-key", keys=[{"type": "qcode", "data": x} for x in ks])
+        time.sleep(0.2)
+
+
 def button(down):
     cmd("input-send-event", events=[{"type": "btn", "data": {"down": down, "button": "left"}}])
     time.sleep(0.15)
@@ -190,6 +201,19 @@ try:
     time.sleep(0.2)
     button(False)
     shot("mouse-click-opens", 1.0)
+    # the browser: back to the canvas (the pointer on Welcome), Tab on to Browser, open it: it starts the network
+    # and loads piii.app's Open portal (over the internet); then a page on the build machine, by its address
+    keys("esc")
+    for _ in range(7):
+        keys("tab", gap=0.35)
+    keys("ret")
+    print("piii.app:", wait_for("GET http://piii.app/api/portal", 90), flush=True)
+    shot("browser-piii-app", 1.5)
+    keys("tab", "tab", "ret", gap=0.4)
+    type_text("10.0.2.2:8080/")
+    keys("ret")
+    print("local page:", wait_for("GET http://10.0.2.2:8080/", 60), flush=True)
+    shot("browser-local-page", 1.5)
 finally:
     print(log(), flush=True)
     qemu.kill()

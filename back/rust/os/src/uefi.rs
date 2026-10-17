@@ -19,6 +19,7 @@ pub const CONSOLE_CONTROL: Guid = Guid(0xf42f7782, 0x012e, 0x4c12, [0x99, 0x56, 
 pub const POINTER: Guid = Guid(0x31878c87, 0x0b75, 0x11d5, [0x9a, 0x4f, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d]);
 pub const ABS_POINTER: Guid = Guid(0x8d59d32b, 0xc655, 0x4ae9, [0x9b, 0x15, 0xf2, 0x59, 0x04, 0x99, 0x2a, 0x43]);
 pub const USB_IO: Guid = Guid(0x2b2f68d6, 0x0cd2, 0x44cf, [0x8e, 0x8b, 0xbb, 0xa2, 0x0b, 0x1b, 0x5b, 0x75]);
+pub const SNP: Guid = Guid(0xa19832b9, 0xac25, 0x11d3, [0x9a, 0x2d, 0x00, 0x90, 0x27, 0x3f, 0xc1, 0x4d]);
 pub const TEXT_IN_EX: Guid = Guid(0xdd9e7534, 0x7762, 0x4698, [0x8c, 0x14, 0xf5, 0x85, 0x17, 0xa6, 0x25, 0xaa]);
 
 #[repr(C)]
@@ -59,6 +60,9 @@ const ALLOCATE_POOL: usize = 5;
 const FREE_POOL: usize = 6;
 const HANDLE_PROTOCOL: usize = 16;
 const STALL: usize = 28;
+const CONNECT_CONTROLLER: usize = 30;
+const DISCONNECT_CONTROLLER: usize = 31;
+const OPEN_PROTOCOL_INFORMATION: usize = 34;
 const SET_WATCHDOG: usize = 29;
 const LOCATE_HANDLE_BUFFER: usize = 36;
 // runtime services
@@ -256,7 +260,7 @@ pub struct UsbIo {
     pub control: extern "efiapi" fn(*mut UsbIo, *mut UsbRequest, u32, u32, *mut c_void, usize, *mut u32) -> Status,
     pub bulk: usize,
     pub async_interrupt: extern "efiapi" fn(*mut UsbIo, u8, u8, usize, usize, Option<UsbCallback>, *mut c_void) -> Status,
-    pub sync_interrupt: usize,
+    pub sync_interrupt: extern "efiapi" fn(*mut UsbIo, u8, *mut c_void, *mut usize, usize, *mut u32) -> Status,
     pub isochronous: usize,
     pub async_isochronous: usize,
     pub device_desc: extern "efiapi" fn(*mut UsbIo, *mut UsbDeviceDesc) -> Status,
@@ -264,6 +268,58 @@ pub struct UsbIo {
     pub interface_desc: extern "efiapi" fn(*mut UsbIo, *mut UsbInterfaceDesc) -> Status,
     pub endpoint_desc: extern "efiapi" fn(*mut UsbIo, u8, *mut UsbEndpointDesc) -> Status,
 }
+
+/// A network card's address, as the firmware holds it (32 bytes; Ethernet uses the first 6).
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct MacAddr(pub [u8; 32]);
+
+#[repr(C)]
+pub struct SnpMode {
+    pub state: u32,
+    pub hw_address_size: u32,
+    pub media_header_size: u32,
+    pub max_packet_size: u32,
+    pub nvram_size: u32,
+    pub nvram_access_size: u32,
+    pub receive_filter_mask: u32,
+    pub receive_filter_setting: u32,
+    pub max_mcast_filter_count: u32,
+    pub mcast_filter_count: u32,
+    pub mcast_filter: [MacAddr; 16],
+    pub current_address: MacAddr,
+    pub broadcast_address: MacAddr,
+    pub permanent_address: MacAddr,
+    pub if_type: u8,
+    pub mac_address_changeable: u8,
+    pub multiple_tx_supported: u8,
+    pub media_present_supported: u8,
+    pub media_present: u8,
+}
+
+/// The Simple Network Protocol: a network card's frames in and out (EFI 1.10 has it; a Mac's Ethernet, for
+/// NetBoot).
+#[repr(C)]
+pub struct Snp {
+    pub revision: u64,
+    pub start: extern "efiapi" fn(*mut Snp) -> Status,
+    pub stop: extern "efiapi" fn(*mut Snp) -> Status,
+    pub initialize: extern "efiapi" fn(*mut Snp, usize, usize) -> Status,
+    pub reset: usize,
+    pub shutdown: usize,
+    pub receive_filters: extern "efiapi" fn(*mut Snp, u32, u32, u8, usize, *const MacAddr) -> Status,
+    pub station_address: usize,
+    pub statistics: usize,
+    pub mcast_ip_to_mac: usize,
+    pub nvdata: usize,
+    pub get_status: extern "efiapi" fn(*mut Snp, *mut u32, *mut *mut c_void) -> Status,
+    pub transmit: extern "efiapi" fn(*mut Snp, usize, usize, *mut c_void, *const MacAddr, *const MacAddr, *const u16) -> Status,
+    pub receive: extern "efiapi" fn(*mut Snp, *mut usize, *mut usize, *mut c_void, *mut MacAddr, *mut MacAddr, *mut u16) -> Status,
+    pub wait_for_packet: *mut c_void,
+    pub mode: *mut SnpMode,
+}
+
+pub const NOT_READY: Status = 0x8000_0000_0000_0006;
 
 // ------------------------------------------------------------------------------------------------- the tables
 
@@ -332,6 +388,83 @@ pub fn handles(g: &Guid) -> alloc::vec::Vec<Handle> {
         free_pool(buf as *mut u8);
     }
     out
+}
+
+/// Every handle there is.
+pub fn all_handles() -> alloc::vec::Vec<Handle> {
+    let f: extern "efiapi" fn(u32, *const Guid, *mut c_void, *mut usize, *mut *mut Handle) -> Status =
+        unsafe { core::mem::transmute(bs(LOCATE_HANDLE_BUFFER)) };
+    let (mut n, mut buf): (usize, *mut Handle) = (0, null_mut());
+    let mut out = alloc::vec::Vec::new();
+    // 0: AllHandles
+    if f(0, core::ptr::null(), null_mut(), &mut n, &mut buf) == SUCCESS && !buf.is_null() {
+        for i in 0..n {
+            out.push(unsafe { *buf.add(i) });
+        }
+        free_pool(buf as *mut u8);
+    }
+    out
+}
+
+/// Asks the firmware to start its drivers for a device (a network card's driver gives its Simple Network
+/// Protocol only once started; a fast-starting Mac leaves it off).
+pub fn connect(h: Handle) -> Status {
+    let f: extern "efiapi" fn(Handle, *mut Handle, *mut c_void, u8) -> Status = unsafe { core::mem::transmute(bs(CONNECT_CONTROLLER)) };
+    f(h, null_mut(), null_mut(), 0)
+}
+
+/// The firmware's own drivers that hold a protocol of a handle for themselves (BY_DRIVER or EXCLUSIVE): its own
+/// network stack, which would take the frames piii OS waits for, is told to let go.
+pub fn release_drivers(h: Handle, g: &Guid) -> usize {
+    #[repr(C)]
+    struct Entry {
+        agent: Handle,
+        controller: Handle,
+        attributes: u32,
+        count: u32,
+    }
+    let info: extern "efiapi" fn(Handle, *const Guid, *mut *mut Entry, *mut usize) -> Status =
+        unsafe { core::mem::transmute(bs(OPEN_PROTOCOL_INFORMATION)) };
+    let disconnect: extern "efiapi" fn(Handle, Handle, Handle) -> Status = unsafe { core::mem::transmute(bs(DISCONNECT_CONTROLLER)) };
+    let (mut buf, mut n): (*mut Entry, usize) = (null_mut(), 0);
+    let mut agents = alloc::vec::Vec::new();
+    if info(h, g, &mut buf, &mut n) == SUCCESS && !buf.is_null() {
+        for i in 0..n {
+            let e = unsafe { &*buf.add(i) };
+            if e.attributes & (0x10 | 0x20) != 0 && !agents.contains(&e.agent) {
+                agents.push(e.agent);
+            }
+        }
+        free_pool(buf as *mut u8);
+    }
+    let mut let_go = 0;
+    for a in agents {
+        if disconnect(h, a, null_mut()) == SUCCESS {
+            let_go += 1;
+        }
+    }
+    let_go
+}
+
+static mut PER_MS: u64 = 0;
+
+/// The processor's clock: how many of its ticks make a millisecond (measured once, against the firmware's wait).
+pub fn clock_start() -> u64 {
+    let t0 = tsc();
+    stall(20_000);
+    let per = ((tsc() - t0) / 20).max(1);
+    unsafe { PER_MS = per };
+    per
+}
+
+pub fn tsc() -> u64 {
+    unsafe { core::arch::x86_64::_rdtsc() }
+}
+
+/// Milliseconds since some moment (only differences mean anything).
+pub fn now_ms() -> u64 {
+    let per = unsafe { PER_MS };
+    if per == 0 { 0 } else { tsc() / per }
 }
 
 /// 0 restarts cold, 2 switches off.

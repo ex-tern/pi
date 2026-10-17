@@ -12,7 +12,12 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-pub const VERSION: &str = "0.1";
+pub const VERSION: &str = "0.2";
+
+// the browser (owner, 2026-10-17: "add a simple browser to reach piii.app on piii os")
+mod browser;
+pub use browser::Fetch;
+use browser::Browser;
 
 #[derive(Clone, Copy, PartialEq, Debug)]
 pub enum Key {
@@ -28,6 +33,7 @@ pub enum Key {
     PageUp,
     PageDown,
     Home,
+    Backspace,
     Char(char),
 }
 
@@ -70,6 +76,12 @@ enum Act {
     PowerOff,
     Scroll(i64),
     Speed(i64),
+    /// the browser: a field to type in (0 the address, 1 a post, 2 a name), go, the portal, a link, post
+    Field(u8),
+    Go,
+    Portal,
+    Link(usize),
+    Post,
 }
 
 struct Super {
@@ -107,13 +119,7 @@ const SUPERS: [Super; 9] = [
         online: &["The Global Map of Science", "Whitepaper", "Architecture", "Capabilities", "Learn to program", "Assessment results", "The journal"],
     },
     Super { name: "Lab", note: "online", fx: 0.20, fy: 0.80, online: &["QuVI", "HAL-OS", "Unigyro", "Neuro Frenzy", "MD"] },
-    Super {
-        name: "Connect",
-        note: "online",
-        fx: 0.50,
-        fy: 0.80,
-        online: &["Your account", "Research profile", "piQ held for you", "Private projects", "Support Pi", "Contact us"],
-    },
+    Super { name: "Browser", note: "piii.app", fx: 0.50, fy: 0.80, online: &[] },
     Super { name: "Devices", note: "this machine", fx: 0.80, fy: 0.80, online: &[] },
 ];
 
@@ -155,6 +161,8 @@ pub struct App {
     armed: Option<Act>,
     /// what the machine is: shown in Devices (given by main.rs)
     pub info: Vec<(String, String)>,
+    /// how the machine keeps up, measured each second (shown in Devices)
+    pub live: Vec<(String, String)>,
     pub request: Option<Request>,
     /// the screen must be drawn again
     pub dirty: bool,
@@ -164,6 +172,9 @@ pub struct App {
     /// a mouse's moves smaller than a pixel, kept until they add up
     rest: (f64, f64),
     cursor: Sprite,
+    /// the browser's state; and a request for the network, which the machine's loop carries out
+    br: Browser,
+    pub fetch: Option<Fetch>,
 }
 
 impl App {
@@ -191,6 +202,7 @@ impl App {
             scroll: 0,
             armed: None,
             info: Vec::new(),
+            live: Vec::new(),
             request: None,
             dirty: true,
             key_run: 0,
@@ -198,6 +210,8 @@ impl App {
             speed: SPEED_START,
             rest: (0.0, 0.0),
             cursor: Self::cursor(),
+            br: Browser::default(),
+            fetch: None,
         };
         a.layout();
         a
@@ -292,6 +306,10 @@ impl App {
         self.moved = false;
         let a = self.hit(self.px, self.py);
         self.press = Some((self.px, self.py, a));
+        if !matches!(a, Some(Act::Field(_))) && self.br.field.is_some() {
+            self.br.field = None;
+            self.dirty = true;
+        }
         if let (View::Canvas, Some(Act::Super(i))) = (self.view, a) {
             self.drag = Some((i, self.px - self.pos[i].0, self.py - self.pos[i].1));
             self.focus = Some(i);
@@ -319,6 +337,9 @@ impl App {
     }
 
     fn key(&mut self, k: Key) {
+        if self.br_key(k) {
+            return;
+        }
         // arrows move the pointer (faster when held), so the keyboard alone can do everything
         let step = |run: u32| -> f64 { (8.0 + run as f64 * 6.0).min(48.0) };
         match k {
@@ -380,6 +401,7 @@ impl App {
                 self.view = View::Canvas;
                 self.dirty = true;
             }
+            Key::Backspace => {}
             Key::Char(c) if matches!(c, '-' | '+' | '=') => {
                 // anywhere: the pointer slower (−) or faster (+)
                 self.act(Act::Speed(if c == '-' { -1 } else { 1 }));
@@ -410,6 +432,9 @@ impl App {
                 self.view = View::Open(i);
                 self.scroll = 0;
                 self.focus = Some(i);
+                if i == 7 {
+                    self.br_open();
+                }
                 if i == 2 && self.numbers.is_none() {
                     self.computing = true;
                 }
@@ -446,6 +471,7 @@ impl App {
                 self.speed = (self.speed as i64 + d).clamp(0, SPEEDS.len() as i64 - 1) as usize;
                 self.rest = (0.0, 0.0);
             }
+            Act::Field(_) | Act::Go | Act::Portal | Act::Link(_) | Act::Post => self.br_act(a),
             Act::Restart | Act::PowerOff => {
                 // pressed twice: the first press asks "sure?"
                 if self.armed == Some(a) {
@@ -549,6 +575,7 @@ impl App {
         match i {
             0 => self.welcome(f, x, y, w),
             1 => self.program(f, x, y, w),
+            7 => self.browser(f, x, y, w),
             2 => self.numbers_view(f, x, y, w),
             8 => self.devices(f, x, y, w),
             _ => self.online(f, i, x, y, w),
@@ -570,8 +597,9 @@ impl App {
                     counting, a factorial, Fibonacci, Euclid's greatest common divisor and a Turing machine. Numbers \
                     works out π, e, φ and γ exactly, to as many digits as you ask. Devices shows what this machine \
                     is, and restarts or switches it off.\n\n\
-                    Tools, Explore, Library, Lab and Connect live on the lab's servers. piii OS does not reach the \
-                    internet yet, so they list what they hold; open www.piii.app on another device to use them.\n\n\
+                    Browser reaches piii.app over the network (an Ethernet cable): read and write on its Open portal, \
+                    and open plain http:// pages as text. Tools, Explore, Library and Lab live on the lab's servers; \
+                    they list what they hold, and www.piii.app on another device opens them.\n\n\
                     No mouse? The arrow keys move the pointer, Enter or Space clicks, and Tab jumps to the next \
                     thing to click. The pointer too fast or too slow? The - and + keys change its speed (also in \
                     Devices).";
@@ -694,9 +722,15 @@ impl App {
         }
     }
 
+    /// Devices is open (it shows the live numbers, so it is drawn again each second)
+    pub fn devices_open(&self) -> bool {
+        matches!(self.view, View::Open(8))
+    }
+
     fn devices(&mut self, f: &mut Frame, x: f64, y: f64, w: f64) {
         let mut yy = y;
-        let info = self.info.clone();
+        let mut info = self.info.clone();
+        info.extend(self.live.iter().cloned());
         for (k, v) in &info {
             f.text(&SMALL, x, yy, k, MUTED, 1);
             let h = f.para(&SMALL, x + 190.0, yy, (w - 190.0).min(900.0), v, INK);

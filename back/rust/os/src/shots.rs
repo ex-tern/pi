@@ -77,10 +77,16 @@ impl Shooter {
         for e in events {
             self.app.event(*e);
             // as the machine's loop does: a tick, and a redraw when asked (twice: "Computing…", then the result)
-            for _ in 0..2 {
+            for _ in 0..3 {
                 self.app.event(Event::Tick(10));
                 if self.app.dirty {
                     self.app.draw(&mut self.frame);
+                }
+                // the network, played by this tool: what piii.app and a small page would answer
+                if let Some(fx) = self.app.fetch.take() {
+                    self.app.set_network("Ethernet, address 192.168.0.57 (gateway 192.168.0.1, names from 192.168.0.1)");
+                    let r = fake_web(&fx);
+                    self.app.fetched(r);
                 }
             }
         }
@@ -100,8 +106,73 @@ impl Shooter {
     }
 }
 
+static mut POSTS: Vec<(i64, String, String)> = Vec::new();
+
+fn fake_web(fx: &crate::app::Fetch) -> Result<(crate::web::Url, crate::web::Response), String> {
+    use crate::web::{quote, Response, Url};
+    let u = Url::parse(&fx.url)?;
+    let posts = unsafe { &mut *core::ptr::addr_of_mut!(POSTS) };
+    if posts.is_empty() {
+        posts.push((1, "Ada".into(), "Hello from the open portal.".into()));
+        posts.push((2, String::new(), "Can anyone see this from a 2008 Mac?".into()));
+    }
+    let body = if fx.method == "POST" {
+        let j = crate::web::Json::parse(&fx.body).unwrap();
+        posts.push((posts.len() as i64 + 1, j.get("name").text(), j.get("text").text()));
+        format!("{{\"id\":{},\"key\":\"k\"}}", posts.len())
+    } else if u.path.starts_with("/api/portal") {
+        let list: Vec<String> = posts
+            .iter()
+            .rev()
+            .map(|(i, n, t)| format!("{{\"id\":{},\"text\":{},\"name\":{},\"at\":\"2026-10-17 01:{:02}:00\"}}", i, quote(t), quote(n), i))
+            .collect();
+        format!("{{\"posts\":[{}],\"more\":false,\"total\":{}}}", list.join(","), posts.len())
+    } else {
+        "<!doctype html><html><head><title>A small page</title></head><body><h1>Welcome</h1><p>This is plain HTML, read by piii OS's browser: text and <b>links</b>.</p><a href=\"/about\">About this page</a><p>The end.</p></body></html>".into()
+    };
+    let ctype = if body.starts_with('{') { "application/json" } else { "text/html" };
+    let raw = format!("HTTP/1.1 200 OK\r\nContent-Type: {}\r\nContent-Length: {}\r\n\r\n{}", ctype, body.len(), body);
+    Ok((u, Response::parse(raw.as_bytes())?))
+}
+
+fn typing(s: &str) -> Vec<Event> {
+    s.chars().map(|c| Event::Key(if c == ' ' { Key::Space } else { Key::Char(c) })).collect()
+}
+
 pub fn main() {
     let args: Vec<String> = std::env::args().collect();
+    if args.get(1).map(|s| s.as_str()) == Some("bench") {
+        // how long one whole drawing of the canvas takes (the pointer waits for it)
+        let mut app = App::new(1280, 800);
+        let mut f = Frame::new(1280, 800);
+        let t = std::time::Instant::now();
+        for _ in 0..50 {
+            app.dirty = true;
+            app.draw(&mut f);
+        }
+        println!("canvas: {:.2} ms a drawing", t.elapsed().as_secs_f64() * 1000.0 / 50.0);
+        use crate::gfx::Rect;
+        let tm = |name: &str, f: &mut Frame, d: &dyn Fn(&mut Frame)| {
+            let t = std::time::Instant::now();
+            for _ in 0..50 {
+                d(f);
+            }
+            println!("  {}: {:.3} ms", name, t.elapsed().as_secs_f64() * 1000.0 / 50.0);
+        };
+        tm("clear", &mut f, &|f| f.clear(0xF6F5F2));
+        tm("9 big superellipses", &mut f, &|f| for i in 0..9 { f.superellipse(Rect::new(100.0 + i as f64 * 10.0, 100.0, 195.0, 117.0), Some(0xFFFFFF), 0, 2.0) });
+        tm("36 small superellipses", &mut f, &|f| for i in 0..36 { f.superellipse(Rect::new(100.0 + i as f64 * 10.0, 100.0, 10.0, 10.0), Some(0xFFFFFF), 0, 1.6) });
+        tm("36 discs", &mut f, &|f| for i in 0..36 { f.disc(100.0 + i as f64 * 10.0, 100.0, 5.5, 0xFFFFFF) });
+        tm("10 wires", &mut f, &|f| for i in 0..10 { f.wire((100.0, 100.0 + i as f64), (400.0, 160.0), 0, None, false) });
+        tm("text", &mut f, &|f| { for _ in 0..20 { f.text_center(&crate::font::SMALL, 600.0, 400.0, "Drag a super to move it · click to open", 0, 1); } });
+        let mut g = Frame::new(1280, 800);
+        let t = std::time::Instant::now();
+        for _ in 0..50 {
+            app.draw_pointer(&mut g);
+        }
+        println!("pointer: {:.4} ms", t.elapsed().as_secs_f64() * 1000.0 / 50.0);
+        return;
+    }
     if args.get(1).map(|s| s.as_str()) != Some("shots") {
         eprintln!("piii OS is built for UEFI (x86_64-unknown-uefi). Here: piii-os shots DIR [WIDTH HEIGHT]");
         std::process::exit(2);
@@ -151,4 +222,17 @@ pub fn main() {
     }
     s.go(&[Event::Key(Key::Enter)]);
     s.shot("devices");
+    s.go(&[Event::Key(Key::Esc)]);
+    // Browser: piii.app's Open portal; write a post; then a plain page by its address
+    s.click_at(fw * 0.50, 70.0 + 0.80 * (fh - 110.0));
+    s.shot("browser-portal");
+    s.click_at(60.0, 84.0 + 76.0 + 20.0);
+    s.go(&typing("Hello from piii OS"));
+    s.shot("browser-typing");
+    s.go(&[Event::Key(Key::Enter)]);
+    s.shot("browser-posted");
+    s.click_at(60.0, 84.0 + 18.0);
+    s.go(&typing("example.org"));
+    s.go(&[Event::Key(Key::Enter)]);
+    s.shot("browser-page");
 }

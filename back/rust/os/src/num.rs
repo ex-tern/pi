@@ -13,6 +13,14 @@ pub fn sqrt(x: f64) -> f64 {
     if x <= 0.0 {
         return 0.0;
     }
+    // the processor's own square root (SSE2: every x86-64, and piii OS turns it on)
+    #[cfg(target_arch = "x86_64")]
+    #[allow(unused_unsafe)]
+    unsafe {
+        use core::arch::x86_64::{_mm_cvtsd_f64, _mm_set_sd, _mm_sqrt_pd};
+        return _mm_cvtsd_f64(_mm_sqrt_pd(_mm_set_sd(x)));
+    }
+    #[allow(unreachable_code)]
     // a first guess from the exponent bits, then Newton
     let mut g = f64::from_bits((x.to_bits() >> 1) + (1023u64 << 51));
     for _ in 0..6 {

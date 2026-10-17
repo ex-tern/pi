@@ -200,6 +200,7 @@ impl Input {
             (0x09, _) => Key::PageUp,
             (0x0a, _) => Key::PageDown,
             (0x17, _) => Key::Esc,
+            (0x08, _) | (0, 0x08) => Key::Backspace,
             (0, 0x0d) | (0, 0x0a) => Key::Enter,
             (0, 0x20) => Key::Space,
             (0, 0x09) => if shift { Key::BackTab } else { Key::Tab },
@@ -387,7 +388,30 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
     let mut events = Vec::new();
     let mut last_ptr = app.pointer_rect();
     let mut frames: u64 = 0;
+    let mut net: Option<crate::net::Net> = None;
+    // time, in the processor's own ticks: how many to a millisecond
+    let tsc = uefi::tsc;
+    let per_ms = uefi::clock_start();
+    let (mut sec_start, mut looks, mut draws, mut worst, mut reports0) = (tsc(), 0u32, 0u32, 0u64, crate::usb::reports());
     loop {
+        looks += 1;
+        if tsc() - sec_start >= per_ms * 1000 {
+            let r = crate::usb::reports();
+            app.live = alloc::vec![
+                ("Mouse reports".into(), format!("{} a second (a moving mouse sends 60 to 125)", r - reports0)),
+                ("Looks a second".into(), format!("{} (how often piii OS reads the mouse and keys)", looks)),
+                ("Drawing".into(), format!("{} whole drawings in the last second, the slowest {} ms", draws, worst / per_ms)),
+            ];
+            if app.devices_open() {
+                app.dirty = true;
+            }
+            uefi::log(&format!("piii OS: second: {} reports, {} looks, {} drawings, slowest {} ms", r - reports0, looks, draws, worst / per_ms));
+            reports0 = r;
+            looks = 0;
+            draws = 0;
+            worst = 0;
+            sec_start = tsc();
+        }
         events.clear();
         input.poll(w, h, &mut events);
         let (px, py) = (app.px, app.py);
@@ -404,6 +428,7 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             app.dirty = true;
         }
         if app.dirty {
+            let started = tsc();
             // drawn whole, but only what changed goes to the screen (a hover, a dragged super: a small part of it)
             core::mem::swap(&mut scene, &mut before);
             app.draw(&mut scene);
@@ -421,6 +446,8 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             app.draw_pointer(&mut shown);
             screen.show(&mut shown, r);
             last_ptr = now;
+            draws += 1;
+            worst = worst.max(tsc() - started);
             frames += 1;
             if frames <= 3 || frames % 50 == 0 {
                 uefi::log(&format!("piii OS: frame {}", frames));
@@ -433,8 +460,32 @@ extern "efiapi" fn efi_main(image: Handle, st: *mut SystemTable) -> Status {
             screen.show(&mut shown, union(last_ptr, now));
             last_ptr = now;
         }
-        // about 200 looks a second: a mouse reports up to 125 times a second
-        uefi::stall(5_000);
+        // the browser asked for the network: done now, with "Loading…" already on the screen
+        if !app.dirty {
+            if let Some(fx) = app.fetch.take() {
+                if net.is_none() {
+                    match crate::net::Net::start() {
+                        Ok(n) => {
+                            app.set_network(&n.how);
+                            net = Some(n);
+                        }
+                        Err(e) => {
+                            uefi::log(&format!("piii OS: network: {}", e));
+                            app.fetched(Err(e));
+                        }
+                    }
+                }
+                if let Some(n) = net.as_mut() {
+                    let r = n.fetch(&fx.method, &fx.url, &fx.body, &fx.ctype);
+                    uefi::log(&format!("piii OS: {} {}: {}", fx.method, fx.url, match &r { Ok((_, resp)) => format!("{} ({} bytes)", resp.status, resp.body.len()), Err(e) => e.clone() }));
+                    app.fetched(r);
+                }
+                // what the mice did meanwhile is old: not a jump of the pointer
+                let _ = input.mice.take();
+            }
+        }
+        // about 250 looks a second (a mouse asked directly waits up to 1 ms of it): a mouse reports up to 125
+        uefi::stall(3_000);
     }
 }
 

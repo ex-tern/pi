@@ -7,6 +7,7 @@
 //!   gfx.rs    drawing: superellipses (n = π), wires, text (font.rs: Spleen, made by tools/font.py)
 //!   uefi.rs   the firmware's tables and protocols, by hand; boot.rs: efi_main, screen, keyboard, pointers
 //!   usb.rs    piii OS's own USB mouse driver (a mouse's receiver, the Mac's trackpad), through the firmware's USB layer
+//!   net.rs    its own internet stack (Ethernet, DHCP, DNS, TCP) for the browser (app/browser.rs; web.rs: HTTP, HTML)
 //!
 //! Built for the machine (x86_64-unknown-uefi), it is BOOTX64.EFI. Built for this computer, it is a tool that runs
 //! the same app with scripted clicks and writes what it draws as pictures (shots.rs): `cargo run -- shots DIR`.
@@ -20,6 +21,7 @@ mod font;
 mod gfx;
 mod lang;
 mod num;
+mod web;
 
 #[cfg(target_os = "uefi")]
 mod boot;
@@ -27,6 +29,8 @@ mod boot;
 mod uefi;
 #[cfg(target_os = "uefi")]
 mod usb;
+#[cfg(target_os = "uefi")]
+mod net;
 
 #[cfg(not(target_os = "uefi"))]
 mod shots;

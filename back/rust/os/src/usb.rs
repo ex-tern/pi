@@ -22,10 +22,9 @@ static REPORTS: AtomicU32 = AtomicU32::new(0);
 static DOWNS: AtomicU32 = AtomicU32::new(0);
 static UPS: AtomicU32 = AtomicU32::new(0);
 
-/// A report from a mouse: called by the firmware (on its timer), so it only adds to what the loop takes.
-extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: u32) -> Status {
-    if status == 0 && !data.is_null() && len >= 3 {
-        let b = unsafe { core::slice::from_raw_parts(data, len) };
+/// What a report says: the buttons, then how far in x and in y.
+fn feed(b: &[u8]) {
+    if b.len() >= 3 {
         let before = BUTTONS.swap(b[0] as u32, Ordering::Relaxed) & 1;
         let now = b[0] as u32 & 1;
         if now == 1 && before == 0 {
@@ -39,16 +38,31 @@ extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: 
         DY.fetch_add(b[2] as i8 as i32, Ordering::Relaxed);
         REPORTS.fetch_add(1, Ordering::Relaxed);
     }
+}
+
+/// A report from a mouse, when the firmware gathers them (on its own timer).
+extern "efiapi" fn report(data: *mut u8, len: usize, _ctx: *mut c_void, status: u32) -> Status {
+    if status == 0 && !data.is_null() {
+        feed(unsafe { core::slice::from_raw_parts(data, len) });
+    }
     SUCCESS
+}
+
+/// The reports seen since piii OS started (to count how many a second arrive).
+pub fn reports() -> u32 {
+    REPORTS.load(Ordering::Relaxed)
 }
 
 pub struct Mice {
     pub found: Vec<String>,
+    /// the mice piii OS asks itself, at every look of its loop: (the device, its endpoint, a report's size)
+    asked: Vec<(*mut UsbIo, u8, usize)>,
 }
 
 /// The mice piii OS reads itself: every USB boot mouse that the firmware does not already read.
 pub fn start() -> Mice {
     let mut found = Vec::new();
+    let mut asked = Vec::new();
     for h in uefi::handles(&USB_IO) {
         // a firmware that has its own driver for it gives a pointer there: left to the firmware
         if handle_protocol::<Pointer>(h, &POINTER).is_some() {
@@ -86,25 +100,58 @@ pub fn start() -> Mice {
             ((*io).control)(io, &mut set_protocol, 2, 1000, core::ptr::null_mut(), 0, &mut st);
             ((*io).control)(io, &mut set_idle, 2, 1000, core::ptr::null_mut(), 0, &mut st);
         }
-        let r = unsafe { ((*io).async_interrupt)(io, addr, 1, interval, max.clamp(3, 64), Some(report), core::ptr::null_mut()) };
+        // Asked directly at each look of piii OS's own loop (about 200 a second) when the firmware lets it: an older
+        // firmware gathers a mouse's reports on its own timer only every 50 ms or so, and the pointer then jumps
+        // 20 times a second instead of gliding. A try with a short wait says whether this works here.
+        let size = max.clamp(3, 64);
+        let mut buf = [0u8; 64];
+        let mut len = size;
+        let mut st = 0u32;
+        let probe = unsafe { ((*io).sync_interrupt)(io, addr, buf.as_mut_ptr() as *mut c_void, &mut len, 2, &mut st) };
+        // 0: a report came; 0x8000000000000012: none in the wait (the mouse was still), which is fine too
+        let direct = probe == SUCCESS || probe == 0x8000_0000_0000_0012;
+        if probe == SUCCESS {
+            feed(&buf[..len.min(64)]);
+        }
+        let r = if direct {
+            asked.push((io, addr, size));
+            SUCCESS
+        } else {
+            unsafe { ((*io).async_interrupt)(io, addr, 1, interval, size, Some(report), core::ptr::null_mut()) }
+        };
         let who = match vendor {
             0x046d => "Logitech",
             0x05ac => "Apple",
             0x045e => "Microsoft",
             _ => "USB",
         };
-        let line = format!("{} mouse {:04x}:{:04x}{}", who, vendor, product, if r == SUCCESS { "" } else { " (could not be read)" });
+        let line = format!(
+            "{} mouse {:04x}:{:04x}{}",
+            who,
+            vendor,
+            product,
+            if r != SUCCESS { " (could not be read)" } else if direct { ", asked directly" } else { ", through the firmware's timer" }
+        );
         uefi::log(&format!("piii OS: {}", line));
         if r == SUCCESS {
             found.push(line);
         }
     }
-    Mice { found }
+    Mice { found, asked }
 }
 
 impl Mice {
     /// what the mice did since last asked: how far, the left button's presses and releases, and whether it is held
     pub fn take(&self) -> Option<(i32, i32, u32, u32, bool)> {
+        // the mice asked directly: what each has (a still mouse answers nothing within the 1 ms wait)
+        for &(io, addr, size) in &self.asked {
+            let mut buf = [0u8; 64];
+            let mut len = size;
+            let mut st = 0u32;
+            if unsafe { ((*io).sync_interrupt)(io, addr, buf.as_mut_ptr() as *mut c_void, &mut len, 1, &mut st) } == SUCCESS {
+                feed(&buf[..len.min(64)]);
+            }
+        }
         if self.found.is_empty() || REPORTS.load(Ordering::Relaxed) == 0 {
             return None;
         }

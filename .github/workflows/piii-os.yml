@@ -48,7 +48,13 @@ jobs:
 
       - name: Boot it on UEFI firmware and take pictures
         working-directory: back/rust/os
-        run: python3 tools/qemu-shots.py ../../../piii-os.img ../../../shots
+        run: |
+          # a small page for the browser to open, on this machine (10.0.2.2 from inside the emulator)
+          mkdir -p /tmp/page
+          printf '<!doctype html><html><head><title>A page on the build machine</title></head><body><h1>Hello, piii OS</h1><p>This page came over Ethernet, DHCP, TCP and HTTP, all piii OS'"'"'s own.</p><a href="/second.html">A second page</a></body></html>' > /tmp/page/index.html
+          printf '<html><body><p>The second page.</p></body></html>' > /tmp/page/second.html
+          (cd /tmp/page && python3 -m http.server 8080 >/tmp/page.log 2>&1 &)
+          python3 tools/qemu-shots.py ../../../piii-os.img ../../../shots
         continue-on-error: true
 
       - name: The copy piii.app serves (front/os, written to flash drives from the site) starts too

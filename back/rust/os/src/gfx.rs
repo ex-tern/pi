@@ -48,8 +48,34 @@ impl Rect {
             return false;
         }
         let (u, v) = (abs(px - self.cx()) / a, abs(py - self.cy()) / b);
-        u <= 1.0 && v <= 1.0 && pow(u, N) + pow(v, N) <= 1.0
+        u <= 1.0 && v <= 1.0 && u <= se_half(v)
     }
+}
+
+/// How wide the superellipse is at height v (0 at the middle, 1 at the top), as a part of its half width:
+/// (1 − vⁿ)^(1/n). Worked out once into a table (powers are slow), then read with a straight line between entries.
+pub fn se_half(v: f64) -> f64 {
+    use core::sync::atomic::{AtomicBool, Ordering};
+    const K: usize = 8192;
+    static READY: AtomicBool = AtomicBool::new(false);
+    static mut TABLE: [f32; K + 1] = [0.0; K + 1];
+    let t = core::ptr::addr_of_mut!(TABLE);
+    if !READY.load(Ordering::Relaxed) {
+        for i in 0..=K {
+            let v = i as f64 / K as f64;
+            let w = if i == K { 0.0 } else { pow(1.0 - pow(v, N), 1.0 / N) };
+            unsafe { (*t)[i] = w as f32 };
+        }
+        READY.store(true, Ordering::Relaxed);
+    }
+    if v >= 1.0 {
+        return 0.0;
+    }
+    let x = v.max(0.0) * K as f64;
+    let i = x as usize;
+    let f = x - i as f64;
+    let (a, b) = unsafe { ((*t)[i] as f64, (*t)[i + 1] as f64) };
+    a + (b - a) * f
 }
 
 pub struct Frame {
@@ -65,9 +91,11 @@ fn mix(dst: u32, src: u32, a: u32) -> u32 {
     if a == 0 {
         return dst;
     }
+    // x / 255 without dividing: (x + 1 + x / 256) / 256, exact for these sums
     let ch = |s: u32| -> u32 {
         let (d, c) = ((dst >> s) & 0xFF, (src >> s) & 0xFF);
-        ((c * a + d * (255 - a) + 127) / 255) << s
+        let x = c * a + d * (255 - a) + 127;
+        ((x + 1 + (x >> 8)) >> 8) << s
     };
     ch(16) | ch(8) | ch(0)
 }
@@ -162,15 +190,22 @@ impl Frame {
         }
         let n = cov.len() as i64;
         let (li, ri) = (floor(l) as i64, floor(r) as i64);
-        for xi in li..=ri {
+        let mut part = |xi: i64, a: f64, b: f64| {
             let i = xi - x0;
-            if i < 0 || i >= n {
-                continue;
-            }
-            let (a, b) = ((xi as f64).max(l), ((xi + 1) as f64).min(r));
-            if b > a {
+            if i >= 0 && i < n && b > a {
                 cov[i as usize] += ((b - a) * wgt as f64) as u32;
             }
+        };
+        if li == ri {
+            part(li, l, r);
+            return;
+        }
+        // the two ends partly covered, every pixel between them wholly (no arithmetic on fractions there)
+        part(li, l, (li + 1) as f64);
+        part(ri, ri as f64, r);
+        let (s, e) = ((li + 1 - x0).clamp(0, n) as usize, (ri - x0).clamp(0, n) as usize);
+        for c in &mut cov[s..e.max(s)] {
+            *c += wgt;
         }
     }
 
@@ -186,7 +221,7 @@ impl Frame {
             if v >= 1.0 {
                 return -1.0;
             }
-            a * pow(1.0 - pow(v, N), 1.0 / N)
+            a * se_half(v)
         };
         let x0 = floor(cx - a) as i64 - 1;
         let width = (2.0 * a) as usize + 4;
