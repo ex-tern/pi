@@ -1579,7 +1579,6 @@ fn ai_level_view(s: &State) -> N {
                 .cls_if(s.ai_busy, "busy")
                 .kid(se_shape_n(2.25))
                 .kid(el("span").cls("ai-spark").kid(line_icon(&["M12 3c.6 4.6 3.4 7.4 9 9-5.6 1.6-8.4 4.4-9 9-.6-4.6-3.4-7.4-9-9 5.6-1.6 8.4-4.4 9-9z"])))
-                .kid(el("div").cls("ai-title").text("Super AI"))
                 .kid(
                     el("div")
                         .cls("ai-row")

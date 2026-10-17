@@ -844,6 +844,11 @@ pub fn on_timer(token: u32) {
         // the program runs always (owner, 2026-10-17: "the apps runs always constantly"): after every change, and
         // over and over while it reads the clock or dice
         s.autorun_at = 0.0;
+        // each run starts from the beginning: registers back to where they start (else a counter that has stopped
+        // would carry on from where it stopped, every time anything changes)
+        s.prog.regs.clear();
+        s.prog.vals.clear();
+        s.prog.steps = 0;
         prog_run(None);
         let live = st().prog.nodes.iter().any(|n| matches!(kind_of(&n.text), Kind::Op("now") | Kind::Op("random")));
         if live {

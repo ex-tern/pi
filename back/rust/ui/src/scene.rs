@@ -1453,6 +1453,43 @@ fn scene_view(s: &State, mini: bool) -> N {
         };
         let d = match tip {
             _ if spoke.is_some() => spoke.clone().unwrap_or_default(),
+            // a wire going back (a loop through a register): out, down below both supers, across, and up into the
+            // in, never through them (owner, 2026-10-17: the counter's wiring crossed its own supers)
+            Tip::In | Tip::Out if qx < px + 4.0 => {
+                let e = 24.0 * du;
+                // clear of every super in the way: above them all or below them all, whichever is nearer
+                let (x0, x1) = (qx - e, px + e);
+                let (ra, rb) = (rect(&g, a), rect(&g, b));
+                let mut top = ra.1.min(rb.1);
+                let mut bottom = (ra.1 + ra.3).max(rb.1 + rb.3);
+                for n in s.prog.nodes.iter() {
+                    let r = rect(&g, n.id);
+                    if r.0 < x1 && r.0 + r.2 > x0 && r.1 < bottom + 200.0 && r.1 + r.3 > top - 200.0 {
+                        top = top.min(r.1);
+                        bottom = bottom.max(r.1 + r.3);
+                    }
+                }
+                let (up, down) = (top - 26.0 * du, bottom + 26.0 * du);
+                let lane = if (py - up).abs() <= (down - py).abs() { up } else { down };
+                format!("M{:.1},{:.1} H{:.1} V{:.1} H{:.1} V{:.1} H{:.1}", px, py, px + e, lane, qx - e, qy, qx)
+            }
+            // forward: its upright part where no super stands (the middle, else nearer either end)
+            Tip::In | Tip::Out if (qy - py).abs() > 0.5 => {
+                let clear = |x: f64| {
+                    let (y0, y1) = (py.min(qy), py.max(qy));
+                    !s.prog.nodes.iter().any(|n| {
+                        if n.id == a || n.id == b {
+                            return false;
+                        }
+                        let r = rect(&g, n.id);
+                        x > r.0 - 6.0 * du && x < r.0 + r.2 + 6.0 * du && y1 > r.1 && y0 < r.1 + r.3
+                    })
+                };
+                let mid = (px + qx) / 2.0;
+                let picks = [mid, px + 0.25 * (qx - px), px + 0.75 * (qx - px), px + 14.0 * du, qx - 14.0 * du];
+                let x = picks.iter().copied().find(|x| clear(*x)).unwrap_or(mid);
+                format!("M{:.1},{:.1} H{:.1} V{:.1} H{:.1}", px, py, x, qy, qx)
+            }
             Tip::In | Tip::Out => elbow(px, py, qx, qy, 24.0 * du),
             _ => {
                 // top-to-bottom wires curve (owner, 2026-10-14): leave the way the tip faces, arrive straight down
@@ -1468,18 +1505,18 @@ fn scene_view(s: &State, mini: bool) -> N {
         // each wire is coloured by what it carries (a number, true or false, words, a list) and says it at its middle
         if let (false, Some(v)) = (mini, s.prog.vals.get(&a).filter(|v| !v.is_null())) {
             let (ty, mut t) = (value_type(v), vtext(v));
-            if t.chars().count() > 18 {
-                t = t.chars().take(17).collect::<String>() + "…";
+            if t.chars().count() > 14 {
+                t = t.chars().take(13).collect::<String>() + "…";
             }
-            // just after the out it leaves, where wires that meet later are still apart
-            let (mx, my) = (px + ((qx - px) / 2.0).clamp(-34.0 * du, 34.0 * du), py - 6.0 * du);
+            // just after the out it leaves, starting there (so it never runs back over the super it leaves)
+            let (mx, my) = (px + 8.0 * du, py - 6.0 * du);
             wires = wires.kid(
                 el("svg:text")
                     .cls("w-val")
                     .cls(ty)
                     .attr("x", format!("{:.1}", mx))
                     .attr("y", format!("{:.1}", my))
-                    .attr("text-anchor", "middle")
+                    .attr("text-anchor", "start")
                     .attr("font-size", format!("{:.2}", 12.0 * du))
                     .attr("stroke-width", format!("{:.2}", 4.0 * du))
                     .text(t),
