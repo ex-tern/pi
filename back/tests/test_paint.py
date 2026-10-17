@@ -96,3 +96,14 @@ def test_the_second_lesson_other_words_two_words_and_plurals():
     sea = api._hsl(198, 70, 42)
     assert sea in svg(api.paint_picture("a shark")) and sea not in svg(api.paint_picture("a shark on the beach"))
     assert api.paint_unknown("a tiger and a laptop") == []
+
+
+def test_the_third_lesson_people_two_word_things_and_irregular_plurals():
+    assert api.paint_learned_name("polar") is None
+    assert svg(api.paint_picture("a polar bear in the snow")).count("<image") == 1     # not the bear it draws itself
+    assert svg(api.paint_picture("a light bulb")).count("<image") == 1                 # light is a word for the sky too
+    assert svg(api.paint_picture("a hot dog")).count("<image") == 1
+    assert api.paint_learned_name("knives") == "knife" and api.paint_learned_name("leaves") == "leaf"
+    assert api.paint_learned_name("men") == "man" and api.paint_learned_name("cop") == "police"
+    assert svg(api.paint_picture("women in the park")).count("<image") >= 2
+    assert svg(api.paint_picture("a woman in the park")).count("<image") == 1

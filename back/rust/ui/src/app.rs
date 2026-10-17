@@ -3888,7 +3888,7 @@ include!("portal.rs");
 include!("proxy.rs");
 include!("ts.rs");
 
-/// Save, lock, chain and reset, floating over an open super as they sit on the canvas.
+/// Save, lock, chain, reset and ▶, floating over an open super as they sit on the canvas.
 fn ctl_bar(s: &State) -> N {
     el("div")
         .cls("ctl-bar")

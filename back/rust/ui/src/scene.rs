@@ -203,12 +203,13 @@ fn is_gone(id: usize) -> bool {
     if rail_pin(id).is_some() {
         return host::vw() < 700.0;
     }
-    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET)
+    !matches!(id, S_SAVE | S_LOCK | S_CHAIN | S_RESET | S_RUN)
 }
 
-/// The controls on the bar, in its order: their supers sit pinned under its buttons. No ▶ or ■ (owner, 2026-10-17:
-/// "delete these buttons"): the program runs by itself whenever it changes, as LabVIEW's run continuously.
-const BAR: [usize; 4] = [S_SAVE, S_LOCK, S_CHAIN, S_RESET];
+/// The controls on the bar, in its order: their supers sit pinned under its buttons. The program runs by itself
+/// whenever it changes, as LabVIEW's run continuously, and ▶ is back on the bar to run it on purpose (owner,
+/// 2026-10-17: "add this to the top icons"); no ■.
+const BAR: [usize; 5] = [S_SAVE, S_LOCK, S_CHAIN, S_RESET, S_RUN];
 
 /// The sidebar's icons, top to bottom (π, the five groups, the map; then privacy, cookies and the API), stand on
 /// supers of their own that sit pinned under them, so they are wired like anything else (owner, 2026-10-14).

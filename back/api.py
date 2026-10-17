@@ -28283,7 +28283,21 @@ PAINT_SEED_WORDS = ("giraffe zebra horse cow pig sheep goat chicken frog snake m
                     "paintbrush envelope donut cookie cupcake sandwich taco sushi bread cheese egg pear grape lemon "
                     "pineapple peach coconut corn broccoli tomato pumpkin popcorn lollipop daisy bamboo lotus clover "
                     "acorn feather shell diamond mermaid fairy ninja king queen clown cowboy chef doctor firefighter "
-                    "scientist angel superhero viking elf witch vampire").split()
+                    "scientist angel superhero viking elf witch vampire "
+                    # the third lesson
+                    "bull bison hyena meerkat armadillo porcupine skunk badger crow pigeon seagull pelican stork "
+                    "woodpecker turkey goose puffin walrus stingray squid axolotl chameleon scorpion beetle caterpillar "
+                    "worm grasshopper firefly polarbear reindeer hospital school shop palace temple stadium greenhouse "
+                    "observatory swing carousel ferriswheel rollercoaster caravan bulldozer excavator blimp raft "
+                    "gondola carriage wagon policecar limousine forklift snowmobile sled parachute cablecar jeep teepee "
+                    "statue football basketball racket surfboard snowboard skis medal dumbbell helmet tornado lightning "
+                    "snowflake toothbrush bottle kettle spoon fork knife plate bowl toaster fridge mirror door ladder "
+                    "bucket shovel broom axe wrench screwdriver magnet battery lightbulb padlock ring necklace "
+                    "sunglasses suitcase compass hourglass dice doll accordion flute xylophone banjo cello hotdog "
+                    "icecream pancake waffle croissant pretzel avocado mango kiwi eggplant potato leaf police pilot "
+                    "nurse farmer painter builder teacher dancer ballerina singer baby boy girl man woman grandma "
+                    "grandpa troll genie scarecrow skeleton mummy monster yeti phoenix sailor gardener student postman "
+                    "baker").split()
 PAINT_DIR = os.path.join(BASE_DIR, "paint-learned")
 
 
@@ -28311,11 +28325,24 @@ PAINT_LEARNED_ALIASES = {"tv": "television", "telly": "television", "telephone":
                          "fireman": "firefighter", "firewoman": "firefighter", "doc": "doctor", "cook": "chef",
                          "hero": "superhero", "seashell": "shell", "gem": "diamond", "jewel": "diamond",
                          "candy": "lollipop", "streetcar": "tram", "trolley": "tram", "yacht": "sailboat", "kayak": "canoe",
-                         "cottage": "cabin", "hut": "cabin", "farm": "barn", "seastar": "starfish", "orca": "whale"}
+                         "cottage": "cabin", "hut": "cabin", "farm": "barn", "seastar": "starfish", "orca": "whale",
+                         # the third lesson
+                         "men": "man", "women": "woman", "lady": "woman", "gentleman": "man", "guy": "man",
+                         "grandmother": "grandma", "granny": "grandma", "grandfather": "grandpa", "grandad": "grandpa",
+                         "granddad": "grandpa", "children": "girl", "child": "boy", "kid": "boy", "policeman": "police",
+                         "policewoman": "police", "cop": "police", "officer": "police", "postwoman": "postman",
+                         "mailman": "postman", "artist": "painter", "ballet": "ballerina", "soccer": "football",
+                         "ski": "skis", "bulb": "lightbulb", "refrigerator": "fridge", "luggage": "suitcase",
+                         "gelato": "icecream", "sledge": "sled", "sleigh": "sled", "tipi": "teepee", "tepee": "teepee",
+                         "geese": "goose", "buffalo": "bison", "ox": "bull", "caribou": "reindeer", "bug": "beetle",
+                         "zeppelin": "blimp", "airship": "blimp", "digger": "excavator", "dove": "pigeon", "raven": "crow",
+                         "gull": "seagull", "skull": "skeleton", "sausage": "hotdog", "lock": "padlock", "torch": "lantern"}
 # taught things that fly (they go up in the air) and that swim (a picture of them is under water)
 PAINT_FLYING = set("eagle parrot bat dragonfly hummingbird butterfly bee ufo satellite fairy angel kite comet airplane "
-                   "helicopter feather toucan dragon superhero balloon".split())
-PAINT_SWIMMING = set("shark jellyfish seahorse starfish lobster octopus dolphin whale submarine mermaid".split())
+                   "helicopter feather toucan dragon superhero balloon crow pigeon seagull pelican stork firefly blimp "
+                   "parachute phoenix genie lightning".split())
+PAINT_SWIMMING = set("shark jellyfish seahorse starfish lobster octopus dolphin whale submarine mermaid stingray squid "
+                     "axolotl".split())
 
 
 def paint_learned_name(w: str) -> Optional[str]:
@@ -28328,7 +28355,7 @@ def paint_learned_name(w: str) -> Optional[str]:
     if w.endswith("es") and len(w) > 4:
         tries.append(w[:-2])
     if w.endswith("ves") and len(w) > 4:
-        tries.append(w[:-3] + "f")
+        tries += [w[:-3] + "f", w[:-3] + "fe"]
     for t in list(tries):
         if PAINT_LEARNED_ALIASES.get(t):
             tries.append(PAINT_LEARNED_ALIASES[t])
@@ -28460,7 +28487,7 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
     learned = None
     for i, w in enumerate(words):
         # two words for one thing it was taught ("a fire truck", "a tree house")
-        if i + 1 < len(words) and w not in PAINT_STOP and paint_learned_name(w + words[i + 1]):
+        if i + 1 < len(words) and len(w) > 2 and paint_learned_name(w + words[i + 1]):
             learned, subject = paint_learned(w + words[i + 1]), "learned:" + w + words[i + 1]
             break
         # a word it was taught comes before a look-alike it draws itself (a penguin, not just a bird)
@@ -28486,7 +28513,8 @@ def paint_picture(prompt: str, size: int = 512, moving: bool = False) -> str:
     if subject and count == 1 and any(w.endswith("s") and w != subject and one(w) == subject for w in words):
         count = 2 + rnd.randrange(2)
     # a taught thing asked for in the plural ("penguins") is a few of them
-    if learned and count == 1 and taught not in (subject[8:], PAINT_LEARNED_ALIASES.get(subject[8:])):
+    if learned and count == 1 and (taught not in (subject[8:], PAINT_LEARNED_ALIASES.get(subject[8:]))
+                                   or subject[8:] in ("men", "women", "geese", "children")):
         count = 2 + rnd.randrange(2)
     count = max(1, min(count, 5))
     # ---------------------------------------------------------------- the sky
