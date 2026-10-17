@@ -779,6 +779,11 @@ fn canvas_live(s: &State) -> bool {
 }
 
 fn lock_target_free(s: &State) -> Option<bool> {
+    if canvas_live(s) {
+        if let Some(id) = s.sup_pick.or(s.prog.sel) {
+            return Some(!locked(s, id));
+        }
+    }
     if let Page::Group(g) = s.page {
         if let Some(b) = s.boards.get(g as usize) {
             if let Some(n) = b.picked {
@@ -827,7 +832,8 @@ fn lock_toggle() {
             true
         }
     };
-    if let Page::Group(g) = s.page {
+    let super_picked = canvas_live(s) && (s.sup_pick.is_some() || s.prog.sel.is_some());
+    if let (false, Page::Group(g)) = (super_picked, s.page) {
         let gi = g as usize;
         if let Some(n) = board(gi).picked {
             let b = board(gi);
@@ -837,13 +843,13 @@ fn lock_toggle() {
             return;
         }
     }
-    if s.float_pick {
+    if s.float_pick && !super_picked {
         s.float_free = !s.float_free;
         host::store_set("piii:float-free", if s.float_free { "1" } else { "0" });
         note(if s.float_free { "The canvas is unlocked: drag it to move it, click it to change its size" } else { "The canvas is locked in place" }.to_string());
         return;
     }
-    if s.win_pick {
+    if s.win_pick && !super_picked {
         s.win_free = !s.win_free;
         host::store_set("piii:win-free", if s.win_free { "1" } else { "0" });
         note(if s.win_free { "The window is unlocked: drag its edges to resize it" } else { "The window is locked at its size" }.to_string());
@@ -853,7 +859,7 @@ fn lock_toggle() {
     let id = match picks {
         (Some(id), _) | (None, Some(id)) => id,
         _ => {
-            note("Select a canvas first, then click the lock to unlock it".to_string());
+            note("Select something first, then click the lock to lock it in place (or free it again)".to_string());
             return;
         }
     };
@@ -899,6 +905,8 @@ fn name_of(id: usize) -> String {
         _ if is_unode(id) => match unode(st(), id) {
             Some(n) if n.text.trim().is_empty() => "a super".to_string(),
             Some(n) if n.text == SPARKLE => "a sparkle".to_string(),
+            // a place is called by its name
+            Some(n) if n.text.starts_with(MEMBER) => n.text[MEMBER.len()..].to_string(),
             // words already in quotes are not quoted again
             Some(n) => format!("“{}”", n.text.trim().trim_matches(|c| c == '"' || c == '“' || c == '”')),
             None => "a node".to_string(),
@@ -2216,6 +2224,10 @@ fn begin_drag(id: usize, at: &str) {
         let s = st();
         s.sup_pick = None;
         s.prog.sel = Some(id);
+        // the lock acts on what was picked last (owner, 2026-10-17: "the locking mechanism doesn't work": a window
+        // picked before kept the lock to itself)
+        s.win_pick = false;
+        s.float_pick = false;
         // a canvas super carries what is drawn inside it
         if how == 0 {
             let inside = unode_inside(s, id);

@@ -408,6 +408,9 @@ fn board_update(a: u16, v: String) {
         return;
     }
     if a == 52 {
+        // a press on the bare canvas lets go of a picked window or floating canvas
+        st().win_pick = false;
+        st().float_pick = false;
         canvas_pan_begin(&v);
         return;
     }
@@ -438,6 +441,7 @@ fn board_update(a: u16, v: String) {
         s.win_pick = true;
         s.float_pick = false;
         s.sup_pick = None;
+        s.prog.sel = None;
         if let Page::Group(g) = s.page {
             board(g as usize).picked = None;
         }
