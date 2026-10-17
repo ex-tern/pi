@@ -28154,14 +28154,367 @@ def attach_text(name: str, data: bytes) -> str:
     return data.decode("utf-8", "replace")
 
 
+# ==============================================================================================================
+# piii Paint: the site's own picture maker (owner, 2026-10-17: "make a homegrown picture generative LLM"). No model
+# weights and no outside service: the words are read for a setting (sea, mountains, forest, city, desert, snow, garden,
+# space), a time of day, colours, a subject (a dozen animals and some things) and a style (watercolour, neon,
+# sketch), and the scene is painted as a picture (SVG). The same words always make the same picture; every choice the
+# words leave open is drawn from a seed made of them, so different words give different pictures.
+# ==============================================================================================================
+import base64 as _pb64
+import hashlib as _phash
+import math as _pmath
+import random as _prand
+import re as _pre
+
+PAINT_COLORS = {"red": 2, "orange": 25, "gold": 45, "golden": 45, "yellow": 52, "lime": 90, "green": 125, "teal": 175,
+                "cyan": 188, "turquoise": 178, "blue": 215, "navy": 228, "indigo": 245, "purple": 275, "violet": 268,
+                "magenta": 310, "pink": 335, "rose": 345, "brown": 28, "white": -1, "black": -2, "grey": -3, "gray": -3}
+PAINT_ANIMALS = ["cat", "dog", "bird", "fish", "rabbit", "bear", "fox", "owl", "elephant", "lion", "turtle", "mouse"]
+PAINT_ALIASES = {"kitten": "cat", "kitty": "cat", "puppy": "dog", "bunny": "rabbit", "hare": "rabbit", "parrot": "bird",
+                 "sparrow": "bird", "eagle": "bird", "penguin": "bird", "duck": "bird", "goldfish": "fish", "shark": "fish",
+                 "whale": "fish", "dolphin": "fish", "teddy": "bear", "panda": "bear", "wolf": "fox", "tiger": "lion",
+                 "tortoise": "turtle", "rat": "mouse", "hamster": "mouse"}
+PAINT_THINGS = ["house", "tree", "car", "boat", "rocket", "heart", "star", "flower", "robot", "balloon"]
+PAINT_NUMBERS = {"two": 2, "three": 3, "four": 4, "five": 5, "a": 1, "an": 1, "one": 1, "some": 3, "many": 5, "pair": 2}
+
+
+def _hsl(h, s, l, a=1.0):
+    return f"hsla({h % 360:.0f},{s:.0f}%,{l:.0f}%,{a:.2f})"
+
+
+def paint_picture(prompt: str, size: int = 512) -> str:
+    """A picture of the words, painted here: an SVG data URL."""
+    words = _pre.findall(r"[a-z]+", prompt.lower())
+    ws = set(words)
+    rnd = _prand.Random(int(_phash.sha256(prompt.strip().lower().encode()).hexdigest()[:16], 16))
+    S = size
+    out = []
+    # ---------------------------------------------------------------- what the words say
+    hues = [PAINT_COLORS[w] for w in words if w in PAINT_COLORS]
+    base_h = next((h for h in hues if h >= 0), rnd.randrange(360))
+    night = bool(ws & {"night", "midnight", "moon", "moonlight", "stars", "starry", "dark"})
+    sunset = bool(ws & {"sunset", "sunrise", "dawn", "dusk", "evening"})
+    space = bool(ws & {"space", "galaxy", "planet", "universe", "cosmos", "nebula", "astronaut"})
+    sea = bool(ws & {"sea", "ocean", "beach", "waves", "lake", "river", "water", "underwater"})
+    under = "underwater" in ws or ("fish" in ws and not (ws & {"beach", "boat"}))
+    mount = bool(ws & {"mountain", "mountains", "hills", "hill", "alps", "peak"})
+    forest = bool(ws & {"forest", "woods", "jungle", "trees"})
+    city = bool(ws & {"city", "town", "skyline", "street", "buildings"})
+    desert = bool(ws & {"desert", "sand", "dunes", "sahara"})
+    snow = bool(ws & {"snow", "snowy", "winter", "ice", "arctic", "christmas"})
+    garden = bool(ws & {"garden", "field", "meadow", "flowers", "spring", "park", "grass"})
+    rain = bool(ws & {"rain", "rainy", "storm", "cloudy", "clouds"})
+    style = "neon" if ws & {"neon", "glow", "glowing", "cyberpunk"} else "sketch" if ws & {"sketch", "pencil", "drawing", "outline"} \
+        else "water" if ws & {"watercolor", "watercolour", "painting", "painted", "soft"} else "flat"
+    subject = None
+    def one(w):
+        for v in (w, w[:-1] if w.endswith("s") else w, w[:-2] if w.endswith("es") else w):
+            v = PAINT_ALIASES.get(v, v)
+            if v in PAINT_ANIMALS or v in PAINT_THINGS:
+                return v
+        return None
+    for w in words:
+        subject = one(w)
+        if subject:
+            break
+    if subject is None and ws & {"animal", "animals", "pet", "pets", "creature", "creatures", "zoo"}:
+        # land animals on land, fish in water
+        subject = "fish" if under else rnd.choice([a for a in PAINT_ANIMALS if a != "fish"])
+    count = 1
+    for i, w in enumerate(words[:-1]):
+        if w in PAINT_NUMBERS and one(words[i + 1]):
+            count = PAINT_NUMBERS[w]
+    if subject and count == 1 and any(w.endswith("s") and w != subject and one(w) == subject for w in words):
+        count = 2 + rnd.randrange(2)
+    count = max(1, min(count, 5))
+    # ---------------------------------------------------------------- the sky
+    if space:
+        sky = ["#05060f", "#141a3a"]
+    elif under:
+        sky = [_hsl(198, 70, 42), _hsl(215, 75, 18)]
+    elif night:
+        sky = ["#0b1030", "#27305e"]
+    elif sunset:
+        sky = [_hsl(260, 45, 38), _hsl(18, 90, 64)]
+    elif rain:
+        sky = ["#7d8796", "#c3c8cf"]
+    elif style == "neon":
+        sky = ["#0b0420", "#2a0b45"]
+    else:
+        sky = [_hsl(205, 75, 62), _hsl(195, 80, 86)]
+    defs = [f'<linearGradient id="sky" x1="0" y1="0" x2="0" y2="1"><stop offset="0" stop-color="{sky[0]}"/><stop offset="1" stop-color="{sky[1]}"/></linearGradient>']
+    out.append(f'<rect width="{S}" height="{S}" fill="url(#sky)"/>')
+    horizon = S * (0.62 + rnd.uniform(-0.04, 0.04))
+    if space:
+        for _ in range(140):
+            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(.4,1.8):.1f}" fill="#fff" opacity="{rnd.uniform(.3,1):.2f}"/>')
+        for k in range(3):
+            h = (base_h + k * 70) % 360
+            defs.append(f'<radialGradient id="neb{k}"><stop offset="0" stop-color="{_hsl(h,80,60,.55)}"/><stop offset="1" stop-color="{_hsl(h,80,40,0)}"/></radialGradient>')
+            out.append(f'<ellipse cx="{rnd.uniform(.2,.8)*S:.0f}" cy="{rnd.uniform(.2,.7)*S:.0f}" rx="{rnd.uniform(.25,.45)*S:.0f}" ry="{rnd.uniform(.12,.25)*S:.0f}" fill="url(#neb{k})" transform="rotate({rnd.uniform(-40,40):.0f} {S/2} {S/2})"/>')
+        px, py, pr = rnd.uniform(.25, .75) * S, rnd.uniform(.25, .6) * S, rnd.uniform(.08, .16) * S
+        defs.append(f'<radialGradient id="pl" cx=".35" cy=".35"><stop offset="0" stop-color="{_hsl(base_h,70,70)}"/><stop offset="1" stop-color="{_hsl(base_h,60,25)}"/></radialGradient>')
+        out.append(f'<circle cx="{px:.0f}" cy="{py:.0f}" r="{pr:.0f}" fill="url(#pl)"/>')
+        out.append(f'<ellipse cx="{px:.0f}" cy="{py:.0f}" rx="{pr*1.7:.0f}" ry="{pr*.35:.0f}" fill="none" stroke="{_hsl(base_h+40,60,80,.8)}" stroke-width="3" transform="rotate(-18 {px:.0f} {py:.0f})"/>')
+        horizon = S * 1.1
+    elif not under:
+        if night or style == "neon":
+            for _ in range(70):
+                out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,horizon*.8):.0f}" r="{rnd.uniform(.5,1.6):.1f}" fill="#fff" opacity="{rnd.uniform(.4,1):.2f}"/>')
+            mx, my = rnd.uniform(.15, .85) * S, rnd.uniform(.1, .25) * S
+            out.append(f'<circle cx="{mx:.0f}" cy="{my:.0f}" r="{S*.06:.0f}" fill="#f4f1d8"/><circle cx="{mx+S*.025:.0f}" cy="{my-S*.012:.0f}" r="{S*.055:.0f}" fill="{sky[0]}"/>')
+        elif not rain:
+            sx, sy = rnd.uniform(.15, .85) * S, (horizon - S * .05) if sunset else rnd.uniform(.1, .22) * S
+            sc = "#ffd166" if not sunset else "#ff9f5a"
+            defs.append(f'<radialGradient id="sun"><stop offset=".55" stop-color="{sc}"/><stop offset="1" stop-color="{sc}" stop-opacity="0"/></radialGradient>')
+            out.append(f'<circle cx="{sx:.0f}" cy="{sy:.0f}" r="{S*.13:.0f}" fill="url(#sun)"/>')
+        for _ in range(rnd.randrange(2, 5) + (3 if rain else 0)):
+            cx, cy, w = rnd.uniform(0, S), rnd.uniform(.08, .35) * S, rnd.uniform(.12, .26) * S
+            col = "#e9edf2" if not rain else "#9aa3ae"
+            if not (night and not rain) and style != "neon":
+                out.append(f'<g fill="{col}" opacity=".92"><ellipse cx="{cx:.0f}" cy="{cy:.0f}" rx="{w:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx-w*.3:.0f}" cy="{cy-w*.15:.0f}" rx="{w*.42:.0f}" ry="{w*.32:.0f}"/><ellipse cx="{cx+w*.25:.0f}" cy="{cy-w*.2:.0f}" rx="{w*.38:.0f}" ry="{w*.34:.0f}"/></g>')
+        if rain:
+            for _ in range(90):
+                x, y = rnd.uniform(0, S), rnd.uniform(0, S)
+                out.append(f'<line x1="{x:.0f}" y1="{y:.0f}" x2="{x-4:.0f}" y2="{y+14:.0f}" stroke="#d9e2ec" stroke-width="1.2" opacity=".6"/>')
+    # ---------------------------------------------------------------- the land, or the sea
+    def ridge(y0, amp, col, n=7):
+        pts = [(0, S)]
+        for i in range(n + 1):
+            pts.append((i * S / n, y0 - rnd.uniform(.2, 1) * amp))
+        pts.append((S, S))
+        return f'<polygon points="{" ".join(f"{x:.0f},{y:.0f}" for x, y in pts)}" fill="{col}"/>'
+    if under:
+        for _ in range(26):
+            out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(2,7):.0f}" fill="none" stroke="#e8f6ff" stroke-width="1.2" opacity=".55"/>')
+        out.append(ridge(S * .92, S * .05, _hsl(42, 45, 62)))
+        for _ in range(5):
+            x = rnd.uniform(0, S)
+            out.append(f'<path d="M{x:.0f},{S*.95:.0f} q{rnd.uniform(-20,20):.0f},-{S*.12:.0f} {rnd.uniform(-10,10):.0f},-{S*.22:.0f}" stroke="{_hsl(140,50,35)}" stroke-width="5" fill="none" stroke-linecap="round"/>')
+        horizon = S * .9
+    elif not space:
+        if mount:
+            out.append(ridge(horizon - S * .12, S * .28, _hsl(225, 18, 52 if not night else 28)))
+            if snow or rnd.random() < .5:
+                pass
+            out.append(ridge(horizon - S * .04, S * .16, _hsl(220, 20, 42 if not night else 22)))
+        if city:
+            x = 0
+            while x < S:
+                w, h = rnd.uniform(.06, .12) * S, rnd.uniform(.12, .38) * S
+                bc = _hsl(230, 15, 30 if not night else 16) if style != "neon" else "#14102b"
+                out.append(f'<rect x="{x:.0f}" y="{horizon-h:.0f}" width="{w-2:.0f}" height="{h+2:.0f}" fill="{bc}"/>')
+                for wy in range(int(horizon - h + 8), int(horizon - 6), 14):
+                    for wx in range(int(x + 5), int(x + w - 8), 11):
+                        if rnd.random() < (.55 if night or style == "neon" else .3):
+                            lc = "#ffe08a" if style != "neon" else _hsl(rnd.choice([300, 190, 50]), 100, 65)
+                            out.append(f'<rect x="{wx}" y="{wy}" width="5" height="7" fill="{lc}"/>')
+                x += w
+        if sea:
+            out.append(f'<rect x="0" y="{horizon:.0f}" width="{S}" height="{S-horizon:.0f}" fill="{_hsl(205,65,40 if not night else 20)}"/>')
+            for i in range(9):
+                y = horizon + (i + 1) * (S - horizon) / 10
+                out.append(f'<path d="M0,{y:.0f} q{S/16:.0f},-6 {S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0 t{S/8:.0f},0" fill="none" stroke="#dff1ff" stroke-width="1.6" opacity=".45"/>')
+            if "beach" in ws:
+                out.append(f'<path d="M0,{S:.0f} L0,{S*.84:.0f} Q{S*.5:.0f},{S*.78:.0f} {S},{S*.88:.0f} L{S},{S}Z" fill="{_hsl(42,60,72)}"/>')
+                horizon = S * .86
+        else:
+            ground = _hsl(0, 0, 96) if snow else _hsl(38, 60, 66) if desert else _hsl(110, 40, 46 if not night else 22)
+            if style == "neon":
+                ground = "#120a26"
+            out.append(f'<rect x="0" y="{horizon:.0f}" width="{S}" height="{S-horizon:.0f}" fill="{ground}"/>')
+            if desert:
+                out.append(ridge(horizon + S * .1, S * .05, _hsl(34, 55, 60), 4))
+            if style == "neon":
+                for i in range(1, 9):
+                    y = horizon + (S - horizon) * (i / 9) ** 1.6
+                    out.append(f'<line x1="0" y1="{y:.0f}" x2="{S}" y2="{y:.0f}" stroke="#ff4fd8" stroke-width="1.2" opacity=".7"/>')
+                for i in range(-6, 7):
+                    out.append(f'<line x1="{S/2:.0f}" y1="{horizon:.0f}" x2="{S/2+i*S*.18:.0f}" y2="{S}" stroke="#ff4fd8" stroke-width="1.2" opacity=".7"/>')
+            if garden:
+                for _ in range(40):
+                    x, y = rnd.uniform(0, S), rnd.uniform(horizon + 10, S - 6)
+                    fc = _hsl(rnd.choice([0, 330, 50, 280, 200, base_h]), 80, 62)
+                    out.append(f'<circle cx="{x:.0f}" cy="{y:.0f}" r="{rnd.uniform(3,6):.0f}" fill="{fc}"/><circle cx="{x:.0f}" cy="{y:.0f}" r="1.6" fill="#ffe680"/>')
+            if snow:
+                for _ in range(60):
+                    out.append(f'<circle cx="{rnd.uniform(0,S):.0f}" cy="{rnd.uniform(0,S):.0f}" r="{rnd.uniform(1,2.6):.1f}" fill="#fff" opacity=".9"/>')
+        if forest:
+            for _ in range(14):
+                x, h = rnd.uniform(0, S), rnd.uniform(.12, .26) * S
+                y = horizon + rnd.uniform(-4, S * .06)
+                c = _hsl(140 + rnd.uniform(-15, 15), 45, 26 if not night else 14)
+                out.append(f'<rect x="{x-3:.0f}" y="{y-h*.25:.0f}" width="6" height="{h*.3:.0f}" fill="#5b3a22"/><polygon points="{x:.0f},{y-h:.0f} {x-h*.32:.0f},{y-h*.2:.0f} {x+h*.32:.0f},{y-h*.2:.0f}" fill="{c}"/>')
+    # ---------------------------------------------------------------- the subject
+    def creature(kind, cx, cy, r, hue):
+        col = _hsl(hue, 45, 58)
+        dark, light = _hsl(hue, 40, 30), _hsl(hue, 50, 82)
+        if "white" in ws:
+            col, dark, light = "#f4f2ee", "#b9b4aa", "#ffffff"
+        elif "black" in ws:
+            col, dark, light = "#2b2b2f", "#111", "#56565c"
+        g = []
+        eye = lambda x, y, s=1.0: f'<circle cx="{x:.1f}" cy="{y:.1f}" r="{r*.07*s:.1f}" fill="#1b1b1f"/><circle cx="{x+r*.025:.1f}" cy="{y-r*.025:.1f}" r="{r*.025*s:.1f}" fill="#fff"/>'
+        if kind == "fish":
+            g.append(f'<ellipse cx="{cx}" cy="{cy}" rx="{r}" ry="{r*.6}" fill="{col}"/>')
+            g.append(f'<polygon points="{cx+r*.85},{cy} {cx+r*1.5},{cy-r*.5} {cx+r*1.5},{cy+r*.5}" fill="{dark}"/>')
+            g.append(eye(cx - r * .55, cy - r * .12, 1.2))
+            return "".join(g)
+        if kind == "bird" or kind == "owl":
+            g.append(f'<ellipse cx="{cx}" cy="{cy}" rx="{r*.8}" ry="{r}" fill="{col}"/><ellipse cx="{cx}" cy="{cy+r*.25}" rx="{r*.5}" ry="{r*.6}" fill="{light}"/>')
+            g.append(f'<path d="M{cx+r*.6},{cy} q{r*.7},{r*.1} {r*.3},{r*.6}" fill="{dark}"/>')
+            if kind == "owl":
+                g.append(f'<polygon points="{cx-r*.55},{cy-r*.75} {cx-r*.3},{cy-r*1.15} {cx-r*.15},{cy-r*.8}" fill="{dark}"/><polygon points="{cx+r*.55},{cy-r*.75} {cx+r*.3},{cy-r*1.15} {cx+r*.15},{cy-r*.8}" fill="{dark}"/>')
+                g.append(f'<circle cx="{cx-r*.28}" cy="{cy-r*.4}" r="{r*.22}" fill="#fff"/><circle cx="{cx+r*.28}" cy="{cy-r*.4}" r="{r*.22}" fill="#fff"/>' + eye(cx - r * .28, cy - r * .4, 1.6) + eye(cx + r * .28, cy - r * .4, 1.6))
+            else:
+                g.append(eye(cx - r * .25, cy - r * .45))
+            g.append(f'<polygon points="{cx-r*.05},{cy-r*.25} {cx+r*.12},{cy-r*.32} {cx+r*.02},{cy-r*.1}" fill="#f4a522"/>' if kind == "owl" else f'<polygon points="{cx-r*.55},{cy-r*.4} {cx-r*1.05},{cy-r*.3} {cx-r*.55},{cy-r*.2}" fill="#f4a522"/>')
+            return "".join(g)
+        if kind == "turtle":
+            g.append(f'<ellipse cx="{cx-r*1.0}" cy="{cy+r*.15}" rx="{r*.35}" ry="{r*.28}" fill="{_hsl(100,35,55)}"/>' + eye(cx - r * 1.1, cy + r * .08))
+            g.append(f'<path d="M{cx-r*.9},{cy+r*.4} A{r*.9},{r*.8} 0 0 1 {cx+r*.9},{cy+r*.4} Z" fill="{_hsl(120,35,35)}"/>')
+            for k in range(-1, 2):
+                g.append(f'<circle cx="{cx+k*r*.45:.1f}" cy="{cy+r*.05:.1f}" r="{r*.18:.1f}" fill="{_hsl(110,35,48)}"/>')
+            return "".join(g)
+        # four-legged and round-headed: body, legs, head, ears, face
+        big = kind in ("elephant", "bear")
+        bx, by, brx, bry = cx + r * .35, cy + r * .25, r * (1.0 if big else .85), r * (.62 if big else .5)
+        if kind == "elephant":
+            col, dark, light = _hsl(220, 8, 62), _hsl(220, 8, 42), _hsl(220, 10, 78)
+        if kind == "lion":
+            col, dark = _hsl(38, 70, 58), _hsl(25, 65, 38)
+        if kind == "fox":
+            col, dark, light = _hsl(22, 80, 55), _hsl(18, 70, 35), "#fff"
+        for k in (-.6, -.2, .25, .65):
+            g.append(f'<rect x="{bx+k*brx-r*.08:.1f}" y="{by+bry*.4:.1f}" width="{r*.16:.1f}" height="{r*.45:.1f}" rx="{r*.06:.1f}" fill="{dark}"/>')
+        tail = {"cat": f'<path d="M{bx+brx*.9},{by} q{r*.6},{-r*.2} {r*.4},{-r*.9}" stroke="{col}" stroke-width="{r*.12}" fill="none" stroke-linecap="round"/>',
+                "fox": f'<ellipse cx="{bx+brx*1.15}" cy="{by-r*.1}" rx="{r*.5}" ry="{r*.2}" fill="{col}" transform="rotate(-30 {bx+brx*1.15} {by-r*.1})"/>',
+                "rabbit": f'<circle cx="{bx+brx*.95}" cy="{by-r*.05}" r="{r*.16}" fill="#fff"/>',
+                "dog": f'<path d="M{bx+brx*.9},{by-r*.05} q{r*.4},{-r*.1} {r*.45},{-r*.5}" stroke="{col}" stroke-width="{r*.1}" fill="none" stroke-linecap="round"/>',
+                "mouse": f'<path d="M{bx+brx*.9},{by} q{r*.8},{r*.1} {r*.9},{-r*.5}" stroke="{dark}" stroke-width="{r*.04}" fill="none"/>',
+                "lion": f'<path d="M{bx+brx*.9},{by} q{r*.6},{r*.1} {r*.6},{-r*.5}" stroke="{col}" stroke-width="{r*.06}" fill="none"/><circle cx="{bx+brx*.9+r*.6}" cy="{by-r*.5}" r="{r*.1}" fill="{dark}"/>'}.get(kind, "")
+        g.append(tail)
+        g.append(f'<ellipse cx="{bx:.1f}" cy="{by:.1f}" rx="{brx:.1f}" ry="{bry:.1f}" fill="{col}"/>')
+        hx, hy, hr = cx - r * .55, cy - r * .2, r * (.5 if not big else .55)
+        if kind == "lion":
+            g.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="{hr*1.45:.1f}" fill="{dark}"/>')
+        ears = {"cat": "tri", "fox": "tri", "lion": "round", "bear": "round", "mouse": "biground", "dog": "flop", "rabbit": "long", "elephant": "fan"}.get(kind, "round")
+        if ears == "tri":
+            for sgn in (-1, 1):
+                g.append(f'<polygon points="{hx+sgn*hr*.75:.1f},{hy-hr*.35:.1f} {hx+sgn*hr*.55:.1f},{hy-hr*1.25:.1f} {hx+sgn*hr*.1:.1f},{hy-hr*.75:.1f}" fill="{col}"/>')
+        elif ears in ("round", "biground"):
+            er = hr * (.32 if ears == "round" else .5)
+            for sgn in (-1, 1):
+                g.append(f'<circle cx="{hx+sgn*hr*.7:.1f}" cy="{hy-hr*.75:.1f}" r="{er:.1f}" fill="{col}"/><circle cx="{hx+sgn*hr*.7:.1f}" cy="{hy-hr*.75:.1f}" r="{er*.55:.1f}" fill="{light}"/>')
+        elif ears == "long":
+            for sgn in (-1, 1):
+                g.append(f'<ellipse cx="{hx+sgn*hr*.35:.1f}" cy="{hy-hr*1.35:.1f}" rx="{hr*.2:.1f}" ry="{hr*.75:.1f}" fill="{col}"/><ellipse cx="{hx+sgn*hr*.35:.1f}" cy="{hy-hr*1.35:.1f}" rx="{hr*.09:.1f}" ry="{hr*.55:.1f}" fill="#f6b8c8"/>')
+        elif ears == "fan":
+            for sgn in (-1, 1):
+                g.append(f'<ellipse cx="{hx+sgn*hr*.85:.1f}" cy="{hy:.1f}" rx="{hr*.6:.1f}" ry="{hr*.8:.1f}" fill="{dark}"/>')
+        g.append(f'<circle cx="{hx:.1f}" cy="{hy:.1f}" r="{hr:.1f}" fill="{col}"/>')
+        if ears == "flop":
+            for sgn in (-1, 1):
+                g.append(f'<ellipse cx="{hx+sgn*hr*.85:.1f}" cy="{hy+hr*.05:.1f}" rx="{hr*.25:.1f}" ry="{hr*.55:.1f}" fill="{dark}"/>')
+        if kind == "elephant":
+            g.append(f'<path d="M{hx:.1f},{hy+hr*.3:.1f} q{-hr*.2:.1f},{hr*1.2:.1f} {-hr*.7:.1f},{hr*1.2:.1f}" stroke="{col}" stroke-width="{hr*.35:.1f}" fill="none" stroke-linecap="round"/>')
+        if kind == "fox":
+            g.append(f'<path d="M{hx-hr*.7:.1f},{hy+hr*.1:.1f} Q{hx:.1f},{hy+hr*.95:.1f} {hx+hr*.7:.1f},{hy+hr*.1:.1f} Z" fill="#fff"/>')
+        g.append(eye(hx - hr * .35, hy - hr * .1, 1.1) + eye(hx + hr * .35, hy - hr * .1, 1.1))
+        g.append(f'<ellipse cx="{hx:.1f}" cy="{hy+hr*.28:.1f}" rx="{hr*.13:.1f}" ry="{hr*.09:.1f}" fill="#3a2a2a"/>')
+        g.append(f'<path d="M{hx-hr*.18:.1f},{hy+hr*.45:.1f} q{hr*.18:.1f},{hr*.15:.1f} {hr*.18:.1f},0 q0,{hr*.15:.1f} {hr*.18:.1f},0" stroke="#3a2a2a" stroke-width="{max(1,hr*.04):.1f}" fill="none"/>')
+        if kind in ("cat", "fox", "mouse", "lion"):
+            for sgn in (-1, 1):
+                for dy in (-.04, .06):
+                    g.append(f'<line x1="{hx+sgn*hr*.22:.1f}" y1="{hy+hr*(.32+dy):.1f}" x2="{hx+sgn*hr*.9:.1f}" y2="{hy+hr*(.25+dy*2):.1f}" stroke="#3a2a2a" stroke-width="1" opacity=".6"/>')
+        return "".join(g)
+
+    def thing(kind, cx, cy, r, hue):
+        c, d = _hsl(hue, 65, 58), _hsl(hue, 55, 34)
+        if kind == "house":
+            return (f'<rect x="{cx-r}" y="{cy-r*.4}" width="{2*r}" height="{r*1.3}" fill="{_hsl(hue,35,80)}"/><polygon points="{cx-r*1.2},{cy-r*.4} {cx},{cy-r*1.3} {cx+r*1.2},{cy-r*.4}" fill="{d}"/>'
+                    f'<rect x="{cx-r*.22}" y="{cy+r*.3}" width="{r*.44}" height="{r*.6}" fill="#6b4226"/><rect x="{cx+r*.4}" y="{cy-r*.1}" width="{r*.4}" height="{r*.35}" fill="#ffe08a"/><rect x="{cx-r*.8}" y="{cy-r*.1}" width="{r*.4}" height="{r*.35}" fill="#ffe08a"/>')
+        if kind == "tree":
+            return f'<rect x="{cx-r*.15}" y="{cy}" width="{r*.3}" height="{r*.9}" fill="#6b4226"/><circle cx="{cx}" cy="{cy-r*.3}" r="{r*.75}" fill="{_hsl(125,45,38)}"/><circle cx="{cx-r*.45}" cy="{cy}" r="{r*.45}" fill="{_hsl(125,45,42)}"/><circle cx="{cx+r*.45}" cy="{cy}" r="{r*.45}" fill="{_hsl(125,45,34)}"/>'
+        if kind == "car":
+            return (f'<rect x="{cx-r*1.2}" y="{cy-r*.1}" width="{r*2.4}" height="{r*.55}" rx="{r*.18}" fill="{c}"/><path d="M{cx-r*.7},{cy-r*.1} L{cx-r*.4},{cy-r*.55} L{cx+r*.5},{cy-r*.55} L{cx+r*.8},{cy-r*.1} Z" fill="{c}"/>'
+                    f'<path d="M{cx-r*.3},{cy-r*.15} L{cx-r*.15},{cy-r*.45} L{cx+r*.4},{cy-r*.45} L{cx+r*.6},{cy-r*.15} Z" fill="#cfe8ff"/><circle cx="{cx-r*.65}" cy="{cy+r*.48}" r="{r*.22}" fill="#222"/><circle cx="{cx+r*.65}" cy="{cy+r*.48}" r="{r*.22}" fill="#222"/>')
+        if kind == "boat":
+            return f'<path d="M{cx-r*1.1},{cy} L{cx+r*1.1},{cy} L{cx+r*.75},{cy+r*.45} L{cx-r*.75},{cy+r*.45} Z" fill="{d}"/><line x1="{cx}" y1="{cy}" x2="{cx}" y2="{cy-r*1.3}" stroke="#4a3a2a" stroke-width="3"/><polygon points="{cx+3},{cy-r*1.25} {cx+r*.85},{cy-r*.15} {cx+3},{cy-r*.15}" fill="#fafafa"/>'
+        if kind == "rocket":
+            return f'<path d="M{cx},{cy-r*1.3} Q{cx+r*.55},{cy-r*.6} {cx+r*.4},{cy+r*.5} L{cx-r*.4},{cy+r*.5} Q{cx-r*.55},{cy-r*.6} {cx},{cy-r*1.3}Z" fill="#eef0f5"/><circle cx="{cx}" cy="{cy-r*.4}" r="{r*.2}" fill="{_hsl(200,70,60)}"/><polygon points="{cx-r*.4},{cy+r*.2} {cx-r*.75},{cy+r*.75} {cx-r*.4},{cy+r*.5}" fill="{c}"/><polygon points="{cx+r*.4},{cy+r*.2} {cx+r*.75},{cy+r*.75} {cx+r*.4},{cy+r*.5}" fill="{c}"/><path d="M{cx-r*.25},{cy+r*.5} Q{cx},{cy+r*1.4} {cx+r*.25},{cy+r*.5}Z" fill="#ffb347"/>'
+        if kind == "heart":
+            return f'<path d="M{cx},{cy+r*.8} C{cx-r*1.6},{cy-r*.2} {cx-r*.6},{cy-r*1.3} {cx},{cy-r*.45} C{cx+r*.6},{cy-r*1.3} {cx+r*1.6},{cy-r*.2} {cx},{cy+r*.8}Z" fill="{_hsl(hue if hues else 350,75,58)}"/>'
+        if kind == "star":
+            pts = " ".join(f"{cx+(r if i%2==0 else r*.45)*_pmath.cos(_pmath.pi*i/5-_pmath.pi/2):.1f},{cy+(r if i%2==0 else r*.45)*_pmath.sin(_pmath.pi*i/5-_pmath.pi/2):.1f}" for i in range(10))
+            return f'<polygon points="{pts}" fill="{_hsl(hue if hues else 48,90,60)}"/>'
+        if kind == "flower":
+            petals = "".join(f'<ellipse cx="{cx+r*.45*_pmath.cos(a):.1f}" cy="{cy-r*.4+r*.45*_pmath.sin(a):.1f}" rx="{r*.32}" ry="{r*.2}" fill="{c}" transform="rotate({a*180/_pmath.pi:.0f} {cx+r*.45*_pmath.cos(a):.1f} {cy-r*.4+r*.45*_pmath.sin(a):.1f})"/>' for a in [k * _pmath.pi / 3 for k in range(6)])
+            return f'<line x1="{cx}" y1="{cy-r*.4}" x2="{cx}" y2="{cy+r*.9}" stroke="{_hsl(125,45,35)}" stroke-width="4"/>{petals}<circle cx="{cx}" cy="{cy-r*.4}" r="{r*.22}" fill="#ffd34d"/>'
+        if kind == "robot":
+            return (f'<rect x="{cx-r*.55}" y="{cy-r*.1}" width="{r*1.1}" height="{r*.9}" rx="{r*.12}" fill="#c9ced8"/><rect x="{cx-r*.45}" y="{cy-r*.85}" width="{r*.9}" height="{r*.65}" rx="{r*.15}" fill="#dfe3ea"/>'
+                    f'<circle cx="{cx-r*.18}" cy="{cy-r*.55}" r="{r*.1}" fill="{c}"/><circle cx="{cx+r*.18}" cy="{cy-r*.55}" r="{r*.1}" fill="{c}"/><line x1="{cx}" y1="{cy-r*.85}" x2="{cx}" y2="{cy-r*1.1}" stroke="#888" stroke-width="3"/><circle cx="{cx}" cy="{cy-r*1.15}" r="{r*.07}" fill="{c}"/>')
+        if kind == "balloon":
+            return f'<line x1="{cx}" y1="{cy+r*.55}" x2="{cx+r*.1}" y2="{cy+r*1.4}" stroke="#555" stroke-width="1.5"/><ellipse cx="{cx}" cy="{cy-r*.2}" rx="{r*.55}" ry="{r*.7}" fill="{c}"/>'
+        return ""
+
+    if subject:
+        hue = base_h if hues else rnd.choice([25, 35, 40, 200, 0, 280, 120])
+        r = S * (.17 if count == 1 else .11)
+        for i in range(count):
+            cx = S * (.5 if count == 1 else .18 + .64 * i / (count - 1))
+            cy = horizon - r * .2 if subject not in ("fish", "bird", "star", "heart", "balloon", "rocket") else S * rnd.uniform(.35, .55)
+            if under and subject == "fish":
+                cy = S * rnd.uniform(.3, .7)
+            h = hue + (i * 23 if count > 1 else 0)
+            out.append(f'<ellipse cx="{cx:.0f}" cy="{horizon+r*.7:.0f}" rx="{r*1.1:.0f}" ry="{r*.16:.0f}" fill="#000" opacity=".16"/>' if cy > horizon - r else "")
+            out.append((creature if subject in PAINT_ANIMALS else thing)(subject, round(cx, 1), round(cy, 1), round(r, 1), h))
+    elif not any((space, sea, mount, forest, city, desert, snow, garden)):
+        # nothing named that can be drawn: an arrangement in the site's own shape, the superellipse
+        for _ in range(9):
+            cx, cy, r = rnd.uniform(.15, .85) * S, rnd.uniform(.15, .85) * S, rnd.uniform(.06, .2) * S
+            n = _pmath.pi
+            pts = []
+            for k in range(48):
+                t = 2 * _pmath.pi * k / 48
+                ct, st = _pmath.cos(t), _pmath.sin(t)
+                pts.append(f"{cx+r*_pmath.copysign(abs(ct)**(2/n),ct):.1f},{cy+r*_pmath.copysign(abs(st)**(2/n),st):.1f}")
+            h = (base_h + rnd.uniform(-60, 60)) % 360
+            out.append(f'<polygon points="{" ".join(pts)}" fill="{_hsl(h,65,60,.75)}" stroke="{_hsl(h,60,35,.6)}" stroke-width="2"/>')
+    # ---------------------------------------------------------------- the style
+    filt = ""
+    if style == "water":
+        defs.append('<filter id="wc"><feTurbulence type="fractalNoise" baseFrequency="0.035" numOctaves="2" seed="3"/><feDisplacementMap in="SourceGraphic" scale="9"/><feGaussianBlur stdDeviation="1.2"/></filter>')
+        filt = ' filter="url(#wc)"'
+    elif style == "neon":
+        defs.append('<filter id="ne"><feGaussianBlur stdDeviation="2.5" result="b"/><feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>')
+        filt = ' filter="url(#ne)"'
+    elif style == "sketch":
+        defs.append('<filter id="sk"><feColorMatrix type="saturate" values="0"/><feComponentTransfer><feFuncR type="linear" slope="1.4" intercept="-.1"/><feFuncG type="linear" slope="1.4" intercept="-.1"/><feFuncB type="linear" slope="1.4" intercept="-.1"/></feComponentTransfer></filter>')
+        filt = ' filter="url(#sk)"'
+    svg = (f'<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {S} {S}" width="{S}" height="{S}"><defs>{"".join(defs)}</defs>'
+           f'<g{filt}>{"".join(out)}</g></svg>')
+    return "data:image/svg+xml;base64," + _pb64.b64encode(svg.encode()).decode()
+
+
 class PictureAsk(BaseModel):
     prompt: str
 
 
+def picture_engine() -> str:
+    """Who makes pictures: piii Paint, the site's own (the default), or an outside model first (PICTURE_ENGINE=outside),
+    piii Paint answering when none does."""
+    return "outside" if (os.getenv("PICTURE_ENGINE") or "").strip().lower() == "outside" else "home"
+
+
 def picture_make(prompt: str) -> Optional[str]:
     """A picture of the words (owner, 2026-10-17: "if these two connected, they should generate a picture of animal"),
-    as a data URL: Together's FLUX first, then Google's image model; kept on disk, so the same words make the same
-    picture without asking again."""
+    as a data URL. With PICTURE_ENGINE=outside: Together's FLUX first, then Google's image model, kept on disk so the
+    same words make the same picture without asking again; piii Paint otherwise, and whenever no outside model
+    answers."""
+    if picture_engine() == "home":
+        return paint_picture(prompt)
     key = hashlib.sha256(prompt.strip().lower().encode()).hexdigest()
     cdir = os.path.join(BASE_DIR, "pictures")
     cpath = os.path.join(cdir, key + ".txt")
@@ -28203,7 +28556,7 @@ def picture_make(prompt: str) -> Optional[str]:
         os.makedirs(cdir, exist_ok=True)
         with open(cpath, "w") as f:
             f.write(out)
-    return out
+    return out or paint_picture(prompt)
 
 
 def attached_block(files: List[Dict]) -> str:
@@ -28599,8 +28952,10 @@ def super_engine_build_router(answer: Callable[[str], Dict], rows: Callable[[], 
         prompt = re.sub(r"\s+", " ", (req.prompt or "")).strip()[:600]
         if not prompt:
             raise HTTPException(status_code=400, detail="Wire some words into it first.")
-        if declined(request, "ext"):
-            raise HTTPException(status_code=403, detail=WHY["ext"])
+        # piii Paint stays here; an outside model only for those who allow it
+        if picture_engine() == "outside" and declined(request, "ext"):
+            _limit_one(request, "picture")
+            return {"image": paint_picture(prompt), "engine": "piii Paint"}
         _limit_one(request, "picture")
         img = picture_make(prompt)
         if not img:
